@@ -1,0 +1,4 @@
+/target/
+.artifactize/
+*.log
+.DS_Store
