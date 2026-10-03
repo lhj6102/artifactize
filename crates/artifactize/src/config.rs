@@ -11,7 +11,8 @@ use thiserror::Error;
 pub mod families;
 mod validation;
 
-use validation::{identifier, paths, positive_integer, present, script, text, timeout};
+pub(crate) use validation::identifier;
+use validation::{paths, positive_integer, present, script, text, timeout};
 
 /// Format version for artifactize configuration documents.
 pub const CONFIG_FORMAT_VERSION: u32 = 1;
@@ -25,7 +26,7 @@ pub struct ConfigError {
 }
 
 impl ConfigError {
-    fn new(path: impl Into<PathBuf>, message: impl ToString) -> Self {
+    pub(crate) fn new(path: impl Into<PathBuf>, message: impl ToString) -> Self {
         Self {
             path: path.into(),
             message: message.to_string(),
@@ -399,6 +400,7 @@ pub fn parse_declaration(json: &str) -> Result<ArtifactDeclaration, String> {
 #[derive(Debug)]
 pub struct Artifact {
     pub path: PathBuf,
+    pub children: BTreeMap<String, String>,
     pub name: String,
     pub views: Views,
     pub mounts: BTreeMap<String, String>,
@@ -413,6 +415,8 @@ pub struct Critic {
     /// Workspace-qualified identity; declaration.id remains the owner's local id.
     pub id: String,
     pub target: String,
+    pub references: BTreeMap<String, String>,
+    pub deps: Vec<String>,
     pub declaration: CriticDeclaration,
 }
 
@@ -428,6 +432,7 @@ pub struct RepoConfig {
     pub root: PathBuf,
     pub artifacts: BTreeMap<String, Artifact>,
     pub critics: Vec<Critic>,
+    pub relations: Vec<crate::scope::Relation>,
 }
 
 impl RepoConfig {
@@ -455,9 +460,10 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
         root,
         artifacts: BTreeMap::new(),
         critics: Vec::new(),
+        relations: Vec::new(),
     };
-    let mut pending = vec![PathBuf::new()];
-    while let Some(relative) = pending.pop() {
+    let mut pending = vec![(PathBuf::new(), None::<String>)];
+    while let Some((relative, mut owner)) = pending.pop() {
         let directory = config.root.join(&relative);
         let entries = fs::read_dir(&directory)
             .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
@@ -506,10 +512,21 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     ),
                 ));
             }
+            if let Some(parent) = &owner {
+                let parent = config.artifacts.get_mut(parent).unwrap();
+                let child = relative.strip_prefix(&parent.path).unwrap();
+                let child = child
+                    .to_str()
+                    .ok_or_else(|| ConfigError::new(&file, "Artifact paths must be UTF-8."))?;
+                parent.children.insert(child.to_owned(), name.clone());
+            }
+            owner = Some(name.clone());
             for declaration in critics {
                 config.critics.push(Critic {
                     id: format!("{name}/{}", declaration.id),
                     target: name.clone(),
+                    references: BTreeMap::new(),
+                    deps: Vec::new(),
                     declaration,
                 });
             }
@@ -517,6 +534,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 name.clone(),
                 Artifact {
                     path: relative.clone(),
+                    children: BTreeMap::new(),
                     name,
                     views,
                     mounts,
@@ -532,7 +550,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 .file_type()
                 .map_err(|error| ConfigError::new(entry.path(), error))?;
             if kind.is_dir() && entry.file_name() != ".git" && entry.file_name() != "node_modules" {
-                pending.push(relative.join(entry.file_name()));
+                pending.push((relative.join(entry.file_name()), owner.clone()));
             }
         }
     }
@@ -542,6 +560,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             "Workspace must contain at least one artifactize.json Artifact.",
         ));
     }
+    crate::scope::resolve_config(&mut config)?;
     Ok(config)
 }
 

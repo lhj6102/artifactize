@@ -4,6 +4,32 @@ A Rust rebrand of [CCDD](https://github.com/lhj6102/ccdd), ported from CCDD 7.0.
 
 Work in progress. See the [plan](docs/PLAN.md) and the [parity checklist](docs/ccdd-7-inventory.md).
 
+## Scoped input library
+
+`config::read_workspace_config` (also used by `config check`) resolves nearest
+child ownership, validates mounts and explicit references, and returns typed
+input-to-consumer `relations` for graph scheduling. Instruction references resolve
+an owner's mount alias or a global Artifact name. Backslash-escaped braces, doubled
+braces, `${variables}`, nested/JSON groups and unmatched braces stay literal.
+Payloads are never changed and references never expand file content.
+
+`scope::critic_scope` admits the target and explicit references plus their child
+and mount closure, not the referenced Artifacts' Critic instructions.
+`Scope::resolve_path` follows logical child/mount paths to canonical Artifact
+identities; `Scope::resolve_input` additionally requires existing files/directories
+without symlink traversal. Logical paths reject absolute paths, traversal, empty
+components, backslashes, colons, controls and lengths above 4096 characters.
+
+Before preparing a runtime command, call `scope::resolve_argv` with the admitted
+scope. Explicit `{name}`, `{name}/path` and `--flag={name}/path` operands resolve to
+absolute scoped input paths and add dependencies even without instruction
+references. Use `{owner}/mount/path` for logical paths starting at the owner.
+Other arguments (including escaped references) remain literal, and the command
+is never interpolated. `config check` validates reference names and syntax but
+does not open runtime operands or execute programs. Input existence and symlink
+checks happen during argument preparation. Graph closure, family expansion,
+tool enforcement and CLI execution are delivered by later tasks.
+
 ## Runtime execution library
 
 `runtime::Command::prepare(program, args, workspace, run_dir, timeout_ms)` prepares
