@@ -38,6 +38,8 @@ P8.2 completes CLI-01/02/04/17/36: one binary prints help for no arguments, `hel
 
 P8.3 completes EX-01/02/03/04/06/07/08 with three offline-checkable examples in `examples/`. `runtime-relations` covers parent/child folders, a basis glossary mounted under an alias, instruction and argv references, identity reuse, and a RED-able check that blocks its parent. `agent-tools` covers a basis/mount dependency, an Agent eval using built-in `read`/`grep`/`view_image`, a `plain` tool and a `json` tool that computes a structured observation, strict pass/fail schemas, backend variants, and a Human sign-off with `launch`/`output` tools. `family` covers one family declaration with an instance list, parameters/variants, shared and per-instance material, per-instance identity reuse and family selectors. `tests/examples.rs` runs them from the built binary without network access. EX-05/09/10 remain DROP; no blind A/B script, default-tools package or demo tooling is added.
 
+P8.4 closes the inventory. The last five non-DROP items were checked against the current code and tests and are user-observable. CFG-06: owner payload fields are saved, hashed and sent to the Agent unchanged, and `{name}` references add graph relations but never inline file content (`config::tests::defaults_and_payload_are_preserved_without_interpolation`, `scope::tests::aliases_keep_canonical_identity_and_cycles_consume_components`, plus a new prompt assertion in `agent::tests::openai_exact_payload_sequential_registry_round_trip_and_usage`; `graph --json` and `run show` print the authored payload). ENG-02: discovery, `config check`, `graph` and static `tools check` read JSON only and never run identity, tool or eval commands (`tests/config_check.rs`, `static_commands_never_execute_hooks_and_status_only_runs_identity` in `tests/status_graph.rs`, `tests/tool_check_mcp.rs`). ENG-07: logical paths follow children and mount aliases to canonical Artifacts with component-consuming hops and reject absolute, traversal, dot, empty, backslash, colon, control and over-4096-character paths (`scope::tests::logical_paths_reject_traversal_and_noncanonical_components`). WKS-04: scoped runtime inputs, built-in tools, MCP calls, identity inputs, family material and Human operands refuse symlink traversal and special files (`scope::tests::scoped_inputs_reject_internal_external_dangling_and_owner_symlinks`, `tools::builtin::tests::paths_reject_escapes_links_and_nonregular_targets_without_writes`, `tests/tool_check_mcp.rs`, `tests/human_tools.rs`, `tests/identity.rs`, `tests/families.rs`; `tools check --execute ... --tool read` rejects `../`, `a:b`, a symlink and a FIFO). WKS-14: the inert group leader's PID and start time are saved before exec (`run show` prints `child`), a failed registration or dropped caller never starts user code, and timeout, exit and drop kill descendants (`tests/process.rs`, `tests/runtime.rs`). The counts below were recomputed from the item lines; every non-DROP item is checked. `docs/INSTALL.md` covers installation; the owner still runs one real review per Agent backend.
+
 ## CLI and executable interfaces
 
 - [x] CLI-01 Command entrypoints — `ccdd` and `ccdd-project` dispatch the same Project CLI; no arguments, `help`, command `--help`, or a parsed `--help` display text help and return 0. (`src/cli.ts`, `src/project/cli.ts`, `packages/ccdd/src/cli.ts`) → P1.1, P8.2 (SIMPLIFIED: One artifactize binary provides help and command dispatch; no CCDD alias entrypoints.)
@@ -88,7 +90,7 @@ P8.3 completes EX-01/02/03/04/06/07/08 with three offline-checkable examples in 
 - [x] CFG-03 `basis` — Optional boolean explicitly accepts a no-Critic input; `true` cannot coexist with owned Critics and does not erase dependency-scope satisfaction requirements. (`src/broker/config.ts`, `src/project/query.ts`) → P1.2, P2.3
 - [x] CFG-04 `mounts` — Alias-to-Artifact-name map creates logical dependencies; reject unknown/family targets, ambiguous global aliases, and aliases colliding with physical entries. (`src/broker/config.ts`) → P1.3
 - [x] CFG-05 Critic required fields — Each Critic requires safe local `id`, nonblank `title`, valid `profile`, and object `payload` containing nonblank `instruction`; `target`, `deps`, and other undeclared Critic fields are invalid. (`src/broker/config.ts`) → L.1, P1.2
-- [ ] CFG-06 Critic payload extensibility — Additional JSON payload fields remain owner-defined and immutable; instruction references affect dependencies but do not expand or interpolate Artifact content. (`src/definitions.ts`, `src/executors/prompt.ts`) → L.1, P1.2, P1.3
+- [x] CFG-06 Critic payload extensibility — Additional JSON payload fields remain owner-defined and immutable; instruction references affect dependencies but do not expand or interpolate Artifact content. (`src/definitions.ts`, `src/executors/prompt.ts`) → L.1, P1.2, P1.3
 - [x] CFG-07 Agent profile fields — `kind:'agent'`, explicit `backend`, nonblank `model`, optional exact `reasoning`, optional `timeoutMs`, `maxToolCalls`, and `maxTokens`; unknown fields are rejected. (`src/broker/config.ts`) → P1.2, P5.1
 - [x] CFG-08 Human profile fields — `kind:'human'` is the complete profile; alarms, inbox behavior, claim leases, and preparation are execution settings rather than extra Human profile keys. (`src/definitions.ts`, `src/broker/config.ts`) → P1.2, P6.1 (SIMPLIFIED: Human profile remains kind-only; no alarms, inbox preparation or claim leases.)
 - [x] CFG-09 Runtime profile fields — `kind:'runtime'`, fixed `command`, string `args`, and optional `timeoutMs`; declaration validation is separate from supported executor-command validation. (`src/broker/config.ts`, `src/executors/index.ts`) → P1.2, P1.5 (SIMPLIFIED: Runtime evals accept generic command/args with optional timeout; no Node-only command restriction.)
@@ -144,12 +146,12 @@ P8.3 completes EX-01/02/03/04/06/07/08 with three offline-checkable examples in 
 ## Project engine, discovery, graph, and selection
 
 - [x] ENG-01 Static recursive discovery — Find regular folder markers throughout supplied input without requiring a root marker or Git; exclude `.git`, `node_modules`, and symlink directories from discovery only. (`src/broker/config.ts`) → P1.2
-- [ ] ENG-02 Inert declarations — Discovery reads JSON/fingerprints declared material but never executes factories, identity functions, views, providers, environment checks, or generators. (`src/broker/config.ts`) → P1.2, L.1 (SIMPLIFIED: Discovery reads static JSON only; no material fingerprints or executable hooks.)
+- [x] ENG-02 Inert declarations — Discovery reads JSON/fingerprints declared material but never executes factories, identity functions, views, providers, environment checks, or generators. (`src/broker/config.ts`) → P1.2, L.1 (SIMPLIFIED: Discovery reads static JSON only; no material fingerprints or executable hooks.)
 - [x] ENG-03 Ownership boundaries — Unmarked folders belong to nearest marked ancestor; nearest marked descendants become separate child Artifacts without inheriting or merging their parent's Critics/views. (`src/broker/config.ts`) → P1.3
 - [x] ENG-04 Three graph relations — Child containment, logical mounts, and explicit instruction references produce typed input→consumer edges retaining alias/path/Critic metadata. (`src/broker/config.ts`, `src/broker/graph.ts`) → P1.3, P2.4
 - [x] ENG-05 Instruction parsing — `{name}` resolves mount alias or global Artifact; `\{name}` and `{{name}}` are literals, unmatched braces remain text, and unknown/family references fail. (`src/artifacts/instruction.ts`, `src/broker/config.ts`) → P1.3
 - [x] ENG-06 Observation versus dependency scope — Tools admit target/explicit references plus child/mount closure, not recursively the referenced Artifacts' Critic instructions; validation closure follows all dependency relation types. (`src/artifacts/scope.ts`, `src/requester/index.ts`) → P1.3, P4.1
-- [ ] ENG-07 Logical path resolver — Traverse children/mount aliases with canonical identity and finite component-consuming hops, without copies/symlinks; reject absolute/traversal/control/backslash/colon/empty-component paths and paths above 4096 characters. (`src/artifact-scope.ts`) → P1.3
+- [x] ENG-07 Logical path resolver — Traverse children/mount aliases with canonical identity and finite component-consuming hops, without copies/symlinks; reject absolute/traversal/control/backslash/colon/empty-component paths and paths above 4096 characters. (`src/artifact-scope.ts`) → P1.3
 - [x] ENG-08 Static family expansion — Materialize ordinary per-instance Artifacts/Critics/relations from shared template/list, keeping family membership and per-entry digest while executing no generator. (`src/broker/config.ts`) → L.1, P2.1 (SIMPLIFIED: Static per-instance expansion and family membership remain; no per-entry digest.)
 - [x] ENG-09 Family logical addressing — Parent sees `<family-folder>/<instance>` children; direct material access through the family folder without naming an instance is rejected, and all instance scripts share the physical folder. (`src/artifact-scope.ts`, `src/broker/config.ts`) → P2.1, P4.1
 - [ ] ENG-10 Family material fingerprint isolation — Shared material and instance-specific params/material are fingerprinted separately so sibling-only changes do not contaminate instance material hashes; this is integrity metadata, not automatic 7.0 caching. (`src/project/identity.ts`) → DROP (Plan: Content fingerprints, runtime pinning removed.)
@@ -290,7 +292,7 @@ P8.3 completes EX-01/02/03/04/06/07/08 with three offline-checkable examples in 
 - [x] WKS-01 Supplied-workspace execution — Use original canonical workspace directly, with no Git/commit requirement, automatic worktree creation, input copying, mount symlinks, publication cache, or remote materialization. (`src/workspaces/index.ts`) → P1.7
 - [ ] WKS-02 Whole-input coverage — Include every entry, ignored/untracked files, `.git`, installed dependencies, and empty directories in integrity monitoring regardless of discovery/material-hash exclusions. (`src/workspaces/index.ts`) → DROP (replaced by end-of-review identity recheck, ccdd#104)
 - [ ] WKS-03 Workspace content identity — Deterministic SHA256 covers sorted paths, entry kinds, file bytes, executable bits, and relative symlink targets; timestamps/inodes/write bits are separate mutation evidence. (`src/workspaces/index.ts`) → DROP (replaced by end-of-review identity recheck, ccdd#104)
-- [ ] WKS-04 Symlink and file-type policy — Allow contained valid relative links for snapshot identity, reject absolute/escaping/dangling links and special files, and prevent tool/input paths from traversing symlinks where scoped contracts forbid them. (`src/workspaces/index.ts`, `src/tools/paths.ts`) → P1.3 (SIMPLIFIED: Reject traversal/symlink escapes for scoped paths; no whole-workspace snapshot identity or link hashing.)
+- [x] WKS-04 Symlink and file-type policy — Allow contained valid relative links for snapshot identity, reject absolute/escaping/dangling links and special files, and prevent tool/input paths from traversing symlinks where scoped contracts forbid them. (`src/workspaces/index.ts`, `src/tools/paths.ts`) → P1.3 (SIMPLIFIED: Reject traversal/symlink escapes for scoped paths; no whole-workspace snapshot identity or link hashing.)
 - [x] WKS-05 External state/output — Canonicalize existing ancestors to reject state/run/output/temp inside workspace even through symlinks; create private independent output per request. (`src/workspaces/index.ts`, `src/tools/runner.ts`) → P1.6
 - [ ] WKS-06 Observer-before-acquisition — Activate watcher during initial capture/reopen, track events and metadata, fail closed on unsupported monitoring, and latch edit-restore/create-delete mutations as ERROR. (`src/workspaces/index.ts`) → DROP (replaced by end-of-review identity recheck, ccdd#104)
 - [ ] WKS-07 Content-policy boundaries — Default content integrity rehashes input at acquisition and explicit execution/notification/tool/claim/result boundaries, including after user code before accepting output. (`src/workspaces/index.ts`, `src/broker/index.ts`) → DROP (replaced by end-of-review identity recheck, ccdd#104)
@@ -300,7 +302,7 @@ P8.3 completes EX-01/02/03/04/06/07/08 with three offline-checkable examples in 
 - [ ] WKS-11 Adaptive idle monitoring — Fallback metadata checks schedule after previous completion at ten times scan duration, bounded 1..30 seconds; filesystem events request immediate checks and close/cancel stops scheduling. (`src/workspaces/index.ts`) → DROP (replaced by end-of-review identity recheck, ccdd#104)
 - [ ] WKS-12 Resource-bounded traversal — Bound open files/I/O/hash buffers independent of tree width, preserve deterministic ordering, drain active scans on error/close, and expose bounded scan progress. (`src/workspaces/index.ts`) → DROP (replaced by end-of-review identity recheck, ccdd#104)
 - [x] WKS-13 Process execution safety — Fixed executable/argv, no shell, bounded stdout/stderr, cancellation/timeouts, group termination/escalation, and ordinary main-process exit cleanup protect owned subprocesses. (`src/executors/process.ts`, `src/tools/environment.ts`) → P1.5, P1.6
-- [ ] WKS-14 Registered-child launch handshake — Register inert group leader PID/start identity before admitting user command; failed registration or parent disconnect cannot begin work, and cleanup precedes slot release. (`src/executors/launch-host.ts`, `src/resources.ts`) → P1.5, P1.6 (SIMPLIFIED: Gated process-group launch and descendant cleanup remain; no admission registration or slot release.)
+- [x] WKS-14 Registered-child launch handshake — Register inert group leader PID/start identity before admitting user command; failed registration or parent disconnect cannot begin work, and cleanup precedes slot release. (`src/executors/launch-host.ts`, `src/resources.ts`) → P1.5, P1.6 (SIMPLIFIED: Gated process-group launch and descendant cleanup remain; no admission registration or slot release.)
 - [x] WKS-15 Filtered writable environment — Tool/runtime commands receive external home/cache/tmp/output locations and only allowed host variables; preparation scripts retain selected user/home/toolchain/display settings, excluding provider secrets/preloads. (`src/tools/runner.ts`, `src/tools/environment.ts`, `src/executors/index.ts`) → P1.6, P4.1, P4.4 (SIMPLIFIED: Runtime/Agent tools use PATH/LANG and private HOME/TMP/output; Human commands use reviewer environment; no preparation scripts.)
 - [x] WKS-16 Cooperative—not hostile-code—isolation — Trusted scripts can use ordinary OS access and deliberately detached descendants may escape supported cleanup; do not promise sandboxing, adversarial transient-write detection, or confinement. (`docs/contracts.md`, `docs/review-management.md`) → P1.6
 - [x] WKS-17 Owned temporary cleanup — Tool registries remove owned output/root on close, abort, and failed initialization, drain active calls, retain caller-owned roots, and embed image bytes before removal. (`src/tools/runner.ts`) → P1.6, P4.1, P4.2
@@ -410,20 +412,20 @@ P8.3 completes EX-01/02/03/04/06/07/08 with three offline-checkable examples in 
 
 ## Counts
 
-| Area | Checklist items | Kept | SIMPLIFIED | DROP |
-|---|---:|---:|---:|---:|
-| CLI | 40 | 2 | 25 | 13 |
-| CFG | 57 | 18 | 22 | 17 |
-| ENG | 26 | 14 | 9 | 3 |
-| CAC | 23 | 5 | 13 | 5 |
-| BRK | 33 | 0 | 15 | 18 |
-| EXE | 27 | 4 | 11 | 12 |
-| HUM | 20 | 1 | 9 | 10 |
-| WKS | 20 | 5 | 5 | 10 |
-| TOOL | 30 | 7 | 18 | 5 |
-| MON | 26 | 1 | 15 | 10 |
-| API | 22 | 0 | 0 | 22 |
-| EX | 10 | 0 | 7 | 3 |
-| **Total** | **334** | **57** | **149** | **128** |
+| Area | Checklist items | Kept | SIMPLIFIED | DROP | Ticked |
+|---|---:|---:|---:|---:|---:|
+| CLI | 40 | 0 | 27 | 13 | 27 |
+| CFG | 57 | 18 | 22 | 17 | 40 |
+| ENG | 26 | 13 | 10 | 3 | 23 |
+| CAC | 23 | 3 | 15 | 5 | 18 |
+| BRK | 33 | 0 | 15 | 18 | 15 |
+| EXE | 27 | 2 | 13 | 12 | 15 |
+| HUM | 20 | 0 | 10 | 10 | 10 |
+| WKS | 20 | 5 | 5 | 10 | 10 |
+| TOOL | 30 | 7 | 18 | 5 | 25 |
+| MON | 26 | 1 | 15 | 10 | 16 |
+| API | 22 | 0 | 0 | 22 | 0 |
+| EX | 10 | 0 | 7 | 3 | 7 |
+| **Total** | **334** | **49** | **157** | **128** | **206** |
 
-Kept means task IDs without a SIMPLIFIED marker; counts are mutually exclusive and include all original items. Checkbox state is unchanged by scope classification. Ticked-but-DROP items: none.
+Kept means task IDs without a SIMPLIFIED marker; Kept, SIMPLIFIED and DROP are mutually exclusive and include all original items. Ticked counts checked items: every Kept and SIMPLIFIED item is ticked, and no DROP item is ticked.
