@@ -2,7 +2,7 @@ use serde_json::json;
 
 use super::*;
 use crate::{
-    config::{Artifact, Critic, parse_declaration, read_workspace_config},
+    config::{Artifact, Eval, parse_declaration, read_workspace_config},
     scope::{Relation, RelationKind},
 };
 
@@ -11,7 +11,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
         root: "/unused".into(),
         artifacts: BTreeMap::new(),
         families: BTreeMap::new(),
-        critics: Vec::new(),
+        evals: Vec::new(),
         relations: edges
             .iter()
             .map(|&(source, target)| Relation {
@@ -23,22 +23,22 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
             })
             .collect(),
     };
-    for &(name, basis, critics) in definitions {
+    for &(name, basis, evals) in definitions {
         let declaration = parse_declaration(
-            &json!({"name": name, "basis": basis, "critics": critics.iter().map(|id| {
+            &json!({"name": name, "basis": basis, "evals": evals.iter().map(|id| {
                 json!({"id": id, "title": "Check", "profile": {"kind": "human"},
                     "payload": {"instruction": "Inspect."}})
             }).collect::<Vec<_>>()})
             .to_string(),
         )
         .unwrap();
-        for critic in declaration.critics {
-            config.critics.push(Critic {
-                id: format!("{name}/{}", critic.id),
+        for eval in declaration.evals {
+            config.evals.push(Eval {
+                id: format!("{name}/{}", eval.id),
                 target: name.into(),
                 references: BTreeMap::new(),
                 deps: Vec::new(),
-                declaration: critic,
+                declaration: eval,
             });
         }
         config.artifacts.insert(
@@ -52,7 +52,6 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 mounts: declaration.mounts,
                 views: declaration.views,
                 stale: declaration.stale,
-                env_requirements: declaration.env_requirements,
                 review_policy: declaration.review_policy,
             },
         );
@@ -100,23 +99,23 @@ fn cycle_peers_share_external_gates_but_need_individual_final_evidence() {
 
     let mut outcomes = BTreeMap::new();
     let waiting = graph.evaluate(&outcomes);
-    assert_eq!(waiting.critics["a/check"].readiness, Readiness::Wait);
-    assert_eq!(waiting.critics["b/check"].readiness, Readiness::Wait);
-    assert_eq!(waiting.critics["consumer/check"].readiness, Readiness::Wait);
-    assert!(waiting.critics["external/check"].can_execute());
-    assert!(waiting.critics["independent/check"].can_execute());
+    assert_eq!(waiting.evals["a/check"].readiness, Readiness::Wait);
+    assert_eq!(waiting.evals["b/check"].readiness, Readiness::Wait);
+    assert_eq!(waiting.evals["consumer/check"].readiness, Readiness::Wait);
+    assert!(waiting.evals["external/check"].can_execute());
+    assert!(waiting.evals["independent/check"].can_execute());
 
     outcomes.insert("external/check".into(), GREEN);
     let ready = graph.evaluate(&outcomes);
-    assert!(ready.critics["a/check"].can_execute());
-    assert!(ready.critics["b/check"].can_execute());
-    assert!(!ready.critics["external/check"].can_execute());
-    assert_eq!(ready.critics["consumer/check"].readiness, Readiness::Wait);
+    assert!(ready.evals["a/check"].can_execute());
+    assert!(ready.evals["b/check"].can_execute());
+    assert!(!ready.evals["external/check"].can_execute());
+    assert_eq!(ready.evals["consumer/check"].readiness, Readiness::Wait);
 
     outcomes.insert("a/check".into(), GREEN);
     let partial = graph.evaluate(&outcomes);
-    assert_eq!(partial.critics["a/check"].status, CriticStatus::Green);
-    assert!(partial.critics["b/check"].can_execute());
+    assert_eq!(partial.evals["a/check"].status, EvalStatus::Green);
+    assert!(partial.evals["b/check"].can_execute());
     assert_eq!(partial.artifacts["a"].status, ArtifactStatus::Incomplete);
     assert!(partial.artifacts["a"].own_satisfied);
     assert!(!partial.artifacts["a"].satisfied);
@@ -125,7 +124,7 @@ fn cycle_peers_share_external_gates_but_need_individual_final_evidence() {
 
     outcomes.insert("b/check".into(), GREEN);
     let released = graph.evaluate(&outcomes);
-    assert!(released.critics["consumer/check"].can_execute());
+    assert!(released.evals["consumer/check"].can_execute());
     assert!(released.artifacts["a"].satisfied);
     outcomes.insert("consumer/check".into(), GREEN);
     outcomes.insert("independent/check".into(), GREEN);
@@ -142,18 +141,18 @@ fn red_blocks_transitively_and_retry_releases_retained_evidence() {
     let blocked = graph.evaluate(&outcomes);
     assert_eq!(blocked.status, FinalStatus::Red);
     for id in ["b/check", "c/check"] {
-        assert_eq!(blocked.critics[id].readiness, Readiness::Blocked);
-        assert_eq!(blocked.critics[id].status, CriticStatus::Blocked);
-        assert_eq!(blocked.critics[id].evidence, Some(GREEN));
-        assert!(!blocked.critics[id].can_execute());
+        assert_eq!(blocked.evals[id].readiness, Readiness::Blocked);
+        assert_eq!(blocked.evals[id].status, EvalStatus::Blocked);
+        assert_eq!(blocked.evals[id].evidence, Some(GREEN));
+        assert!(!blocked.evals[id].can_execute());
     }
-    assert_eq!(blocked.critics["c/check"].unmet_gates, ["b/check"]);
+    assert_eq!(blocked.evals["c/check"].unmet_gates, ["b/check"]);
     assert_eq!(blocked.artifacts["c"].passed, 0);
     outcomes.insert("a/check".into(), GREEN);
     let released = graph.evaluate(&outcomes);
     assert_eq!(released.status, FinalStatus::Green);
-    assert_eq!(released.critics["c/check"].status, CriticStatus::Green);
-    assert!(!released.critics["c/check"].can_execute());
+    assert_eq!(released.evals["c/check"].status, EvalStatus::Green);
+    assert!(!released.evals["c/check"].can_execute());
 }
 
 #[test]
@@ -163,14 +162,14 @@ fn operational_error_waits_without_fabricating_descendant_verdicts() {
     let outcomes = evidence(&[("a/check", Evidence::OperationalError), ("b/check", GREEN)]);
     let evaluation = graph.evaluate(&outcomes);
     assert_eq!(evaluation.status, FinalStatus::Error);
-    assert_eq!(evaluation.critics["a/check"].status, CriticStatus::Error);
-    assert!(!evaluation.critics["a/check"].can_execute());
+    assert_eq!(evaluation.evals["a/check"].status, EvalStatus::Error);
+    assert!(!evaluation.evals["a/check"].can_execute());
     for id in ["b/check", "c/check"] {
-        assert_eq!(evaluation.critics[id].readiness, Readiness::Wait);
-        assert_eq!(evaluation.critics[id].status, CriticStatus::Wait);
+        assert_eq!(evaluation.evals[id].readiness, Readiness::Wait);
+        assert_eq!(evaluation.evals[id].status, EvalStatus::Wait);
     }
-    assert_eq!(evaluation.critics["b/check"].evidence, Some(GREEN));
-    assert_eq!(evaluation.critics["c/check"].evidence, None);
+    assert_eq!(evaluation.evals["b/check"].evidence, Some(GREEN));
+    assert_eq!(evaluation.evals["c/check"].evidence, None);
     assert_eq!(evaluation.obligations, ["a", "b", "c"]);
 }
 
@@ -181,19 +180,19 @@ fn stale_and_missing_evidence_never_satisfy_a_gate() {
     let mut outcomes = evidence(&[("b/check", GREEN), ("unrelated/check", RED)]);
     let missing = graph.evaluate(&outcomes);
     assert_eq!(missing.status, FinalStatus::Incomplete);
-    assert_eq!(missing.critics["a/check"].status, CriticStatus::Unreviewed);
-    assert!(missing.critics["a/check"].can_execute());
-    assert_eq!(missing.critics["b/check"].readiness, Readiness::Wait);
+    assert_eq!(missing.evals["a/check"].status, EvalStatus::Unreviewed);
+    assert!(missing.evals["a/check"].can_execute());
+    assert_eq!(missing.evals["b/check"].readiness, Readiness::Wait);
     outcomes.insert("a/check".into(), Evidence::Stale);
     let stale = graph.evaluate(&outcomes);
-    assert_eq!(stale.critics["a/check"].status, CriticStatus::Stale);
-    assert!(stale.critics["a/check"].can_execute());
-    assert_eq!(stale.critics["b/check"].readiness, Readiness::Wait);
+    assert_eq!(stale.evals["a/check"].status, EvalStatus::Stale);
+    assert!(stale.evals["a/check"].can_execute());
+    assert_eq!(stale.evals["b/check"].readiness, Readiness::Wait);
     assert_eq!(stale.status, FinalStatus::Incomplete);
 }
 
 #[test]
-fn every_critic_is_an_external_obligation_and_red_wins_over_wait() {
+fn every_eval_is_an_external_obligation_and_red_wins_over_wait() {
     let config = config(
         &[("a", false, &["one", "two"]), ("b", false, &["check"])],
         &[("a", "b"), ("a", "b")],
@@ -204,18 +203,18 @@ fn every_critic_is_an_external_obligation_and_red_wins_over_wait() {
     assert_eq!(component.dependencies.len(), 1);
     let mut outcomes = evidence(&[("a/one", GREEN)]);
     let partial = graph.evaluate(&outcomes);
-    assert_eq!(partial.critics["b/check"].readiness, Readiness::Wait);
-    assert_eq!(partial.critics["b/check"].unmet_gates, ["a/two"]);
+    assert_eq!(partial.evals["b/check"].readiness, Readiness::Wait);
+    assert_eq!(partial.evals["b/check"].unmet_gates, ["a/two"]);
     assert_eq!(partial.artifacts["a"].passed, 1);
     assert_eq!(partial.artifacts["a"].total, 2);
     outcomes.insert("a/one".into(), RED);
     outcomes.insert("a/two".into(), Evidence::OperationalError);
     let blocked = graph.evaluate(&outcomes);
-    assert_eq!(blocked.critics["b/check"].readiness, Readiness::Blocked);
+    assert_eq!(blocked.evals["b/check"].readiness, Readiness::Blocked);
     assert_eq!(blocked.status, FinalStatus::Error);
     outcomes.insert("a/one".into(), GREEN);
     outcomes.insert("a/two".into(), GREEN);
-    assert!(graph.evaluate(&outcomes).critics["b/check"].can_execute());
+    assert!(graph.evaluate(&outcomes).evals["b/check"].can_execute());
 }
 
 #[test]
@@ -223,14 +222,14 @@ fn cycle_peer_red_does_not_gate_its_peers() {
     let config = reviewed(&["a", "b", "c"], &[("a", "b"), ("b", "a"), ("b", "c")]);
     let graph = Graph::new(&config).unwrap();
     let evaluation = graph.evaluate(&evidence(&[("a/check", RED)]));
-    assert!(evaluation.critics["b/check"].can_execute());
-    assert_eq!(evaluation.critics["c/check"].readiness, Readiness::Blocked);
+    assert!(evaluation.evals["b/check"].can_execute());
+    assert_eq!(evaluation.evals["c/check"].readiness, Readiness::Blocked);
     assert_eq!(evaluation.artifacts["b"].status, ArtifactStatus::Unreviewed);
     assert!(!evaluation.artifacts["b"].satisfied);
 }
 
 #[test]
-fn no_critic_inputs_do_not_gate_but_basis_and_unreviewed_differ() {
+fn no_eval_inputs_do_not_gate_but_basis_and_unreviewed_differ() {
     let config = config(
         &[
             ("basis", true, &[]),
@@ -246,7 +245,7 @@ fn no_critic_inputs_do_not_gate_but_basis_and_unreviewed_differ() {
     );
     let graph = Graph::new(&config).unwrap();
     let initial = graph.evaluate(&BTreeMap::new());
-    assert!(initial.critics["consumer/check"].can_execute());
+    assert!(initial.evals["consumer/check"].can_execute());
     assert_eq!(initial.artifacts["basis"].status, ArtifactStatus::Basis);
     assert_eq!(
         initial.artifacts["unreviewed"].status,
@@ -256,10 +255,7 @@ fn no_critic_inputs_do_not_gate_but_basis_and_unreviewed_differ() {
         ("consumer/check", GREEN),
         ("accepted/check", GREEN),
     ]));
-    assert_eq!(
-        complete.critics["consumer/check"].status,
-        CriticStatus::Green
-    );
+    assert_eq!(complete.evals["consumer/check"].status, EvalStatus::Green);
     assert_eq!(
         complete.artifacts["consumer"].status,
         ArtifactStatus::Incomplete
@@ -309,11 +305,11 @@ fn components_and_gates_are_deterministic_and_only_direct() {
     let component = &graph.components()[graph.artifacts()["c"].component];
     assert_eq!(component.gates, ["b/check"]);
     assert_eq!(component.dependencies, [graph.artifacts()["b"].component]);
-    assert!(result.critics["isolated/check"].can_execute());
+    assert!(result.evals["isolated/check"].can_execute());
     assert_eq!(graph.dependency_closure(&[]).unwrap(), Vec::<&str>::new());
     let mut reordered = reviewed(&ids, &edges);
     reordered.relations.reverse();
-    reordered.critics.reverse();
+    reordered.evals.reverse();
     let reordered = Graph::new(&reordered).unwrap();
     assert_eq!(graph.components(), reordered.components());
     assert_eq!(result, reordered.evaluate(&BTreeMap::new()));
@@ -325,7 +321,7 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
     for (path, declaration) in [
         (
             "owner",
-            json!({"name":"owner", "mounts":{"input":"mounted"}, "critics":[
+            json!({"name":"owner", "mounts":{"input":"mounted"}, "evals":[
                 {"id":"check", "title":"Check", "profile":{"kind":"runtime", "command":"not-run", "args":["{argument}/file"]},
                  "payload":{"instruction":"Inspect {instruction}."}}
             ]}),
@@ -346,8 +342,8 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
         graph.dependency_closure(&["owner"]).unwrap(),
         ["argument", "child", "instruction", "mounted", "owner"]
     );
-    assert_eq!(graph.critic_target("owner/check"), Some("owner"));
-    assert!(graph.evaluate(&BTreeMap::new()).critics["owner/check"].can_execute());
+    assert_eq!(graph.eval_target("owner/check"), Some("owner"));
+    assert!(graph.evaluate(&BTreeMap::new()).evals["owner/check"].can_execute());
 }
 
 #[test]
@@ -360,28 +356,28 @@ fn invalid_graph_references_fail_closed() {
             .contains("Unknown relation")
     );
     config.relations.clear();
-    config.critics[0].target = "missing".into();
+    config.evals[0].target = "missing".into();
     assert!(
         Graph::new(&config)
             .unwrap_err()
             .0
-            .contains("Unknown Critic target")
+            .contains("Unknown Eval target")
     );
-    config.critics[0].target = "a".into();
-    config.critics[1].id = config.critics[0].id.clone();
+    config.evals[0].target = "a".into();
+    config.evals[1].id = config.evals[0].id.clone();
     assert!(
         Graph::new(&config)
             .unwrap_err()
             .0
-            .contains("Duplicate Critic")
+            .contains("Duplicate Eval")
     );
-    config.critics.pop();
+    config.evals.pop();
     config.artifacts.get_mut("a").unwrap().basis = Some(true);
     assert!(
         Graph::new(&config)
             .unwrap_err()
             .0
-            .contains("cannot own Critics")
+            .contains("cannot own Evals")
     );
 }
 
@@ -410,7 +406,7 @@ fn deep_graphs_keep_sparse_edges_and_iterative_traversal() {
     );
     let evaluation = graph.evaluate(&evidence(&[("a0000/check", RED)]));
     assert_eq!(
-        evaluation.critics["a4095/check"].readiness,
+        evaluation.evals["a4095/check"].readiness,
         Readiness::Blocked
     );
 }
@@ -421,14 +417,14 @@ fn ignored_gates_leave_actual_evidence_and_final_obligations_intact() {
     let graph = Graph::new(&config).unwrap();
     let outcomes = evidence(&[("b/check", GREEN)]);
     let ignored = graph.evaluate_with_policy(&outcomes, true);
-    assert!(ignored.critics["c/check"].can_execute());
-    assert_eq!(ignored.critics["b/check"].status, CriticStatus::Green);
+    assert!(ignored.evals["c/check"].can_execute());
+    assert_eq!(ignored.evals["b/check"].status, EvalStatus::Green);
     assert!(!ignored.artifacts["b"].satisfied);
     assert_eq!(ignored.obligations, ["a", "c"]);
     assert_eq!(ignored.status, FinalStatus::Incomplete);
     assert_eq!(
-        graph.evaluate(&outcomes).critics["b/check"].status,
-        CriticStatus::Wait
+        graph.evaluate(&outcomes).evals["b/check"].status,
+        EvalStatus::Wait
     );
     let failed = graph.evaluate_with_policy(
         &evidence(&[
@@ -439,8 +435,8 @@ fn ignored_gates_leave_actual_evidence_and_final_obligations_intact() {
         true,
     );
     assert_eq!(failed.status, FinalStatus::Error);
-    assert_eq!(failed.critics["a/check"].status, CriticStatus::Red);
-    assert_eq!(failed.critics["b/check"].status, CriticStatus::Error);
-    assert_eq!(failed.critics["c/check"].status, CriticStatus::Green);
+    assert_eq!(failed.evals["a/check"].status, EvalStatus::Red);
+    assert_eq!(failed.evals["b/check"].status, EvalStatus::Error);
+    assert_eq!(failed.evals["c/check"].status, EvalStatus::Green);
     assert_eq!(failed.obligations, ["a", "b"]);
 }

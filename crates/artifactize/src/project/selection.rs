@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    config::{Critic, RepoConfig, identifier},
+    config::{Eval, RepoConfig, identifier},
     graph::Graph,
 };
 
@@ -24,48 +24,45 @@ pub enum Selection {
         #[serde(rename = "artifactId")]
         artifact_id: String,
     },
-    Critic {
-        #[serde(rename = "criticId")]
-        critic_id: String,
+    Eval {
+        #[serde(rename = "evalId")]
+        eval_id: String,
     },
     Artifacts {
         #[serde(rename = "artifactIds")]
         artifact_ids: Vec<String>,
     },
-    Critics {
-        #[serde(rename = "criticIds")]
-        critic_ids: Vec<String>,
+    Evals {
+        #[serde(rename = "evalIds")]
+        eval_ids: Vec<String>,
     },
 }
 
 #[derive(Debug)]
 pub struct ResolvedSelection<'a> {
-    pub critics: Vec<&'a Critic>,
+    pub evals: Vec<&'a Eval>,
     pub roots: Vec<&'a str>,
 }
 
 impl Selection {
-    /// Preserve selector order, then declaration order, keeping each root/Critic once.
+    /// Preserve selector order, then declaration order, keeping each root/Eval once.
     pub fn resolve<'a>(&self, config: &'a RepoConfig) -> Result<ResolvedSelection<'a>, String> {
-        let critics_by_id: BTreeMap<_, _> = config
-            .critics
+        let evals_by_id: BTreeMap<_, _> = config
+            .evals
             .iter()
-            .map(|critic| (critic.id.as_str(), critic))
+            .map(|eval| (eval.id.as_str(), eval))
             .collect();
-        let mut critics_by_target: BTreeMap<&str, Vec<&Critic>> = BTreeMap::new();
-        for critic in &config.critics {
-            critics_by_target
-                .entry(&critic.target)
-                .or_default()
-                .push(critic);
+        let mut evals_by_target: BTreeMap<&str, Vec<&Eval>> = BTreeMap::new();
+        for eval in &config.evals {
+            evals_by_target.entry(&eval.target).or_default().push(eval);
         }
         let mut result = ResolvedSelection {
-            critics: Vec::new(),
+            evals: Vec::new(),
             roots: Vec::new(),
         };
         match self {
             Self::All => {
-                result.critics.extend(&config.critics);
+                result.evals.extend(&config.evals);
                 result
                     .roots
                     .extend(config.artifacts.keys().map(String::as_str));
@@ -81,54 +78,52 @@ impl Selection {
                     result.roots.extend(selected_artifacts(config, id)?);
                 }
             }
-            Self::Critic { critic_id } => {
-                result.critics.push(
-                    *critics_by_id
-                        .get(critic_id.as_str())
-                        .ok_or_else(|| format!("Unknown Critic: {critic_id}"))?,
+            Self::Eval { eval_id } => {
+                result.evals.push(
+                    *evals_by_id
+                        .get(eval_id.as_str())
+                        .ok_or_else(|| format!("Unknown Eval: {eval_id}"))?,
                 );
             }
-            Self::Critics { critic_ids } => {
-                nonempty(critic_ids)?;
-                for id in critic_ids {
-                    result.critics.push(
-                        *critics_by_id
+            Self::Evals { eval_ids } => {
+                nonempty(eval_ids)?;
+                for id in eval_ids {
+                    result.evals.push(
+                        *evals_by_id
                             .get(id.as_str())
-                            .ok_or_else(|| format!("Unknown Critic: {id}"))?,
+                            .ok_or_else(|| format!("Unknown Eval: {id}"))?,
                     );
                 }
             }
         }
-        if matches!(self, Self::Critic { .. } | Self::Critics { .. }) {
+        if matches!(self, Self::Eval { .. } | Self::Evals { .. }) {
             result
                 .roots
-                .extend(result.critics.iter().map(|critic| critic.target.as_str()));
+                .extend(result.evals.iter().map(|eval| eval.target.as_str()));
         }
         let mut seen = BTreeSet::new();
         result.roots.retain(|id| seen.insert(*id));
         if matches!(self, Self::Artifact { .. } | Self::Artifacts { .. }) {
             for id in &result.roots {
-                if let Some(critics) = critics_by_target.get(id) {
-                    result.critics.extend(critics);
+                if let Some(evals) = evals_by_target.get(id) {
+                    result.evals.extend(evals);
                 }
             }
         }
         seen.clear();
-        result
-            .critics
-            .retain(|critic| seen.insert(critic.id.as_str()));
+        result.evals.retain(|eval| seen.insert(eval.id.as_str()));
         Ok(result)
     }
 
-    /// Recursive execution includes every Critic in the required Artifact scope.
-    pub fn included_critics<'a>(
+    /// Recursive execution includes every Eval in the required Artifact scope.
+    pub fn included_evals<'a>(
         &self,
         config: &'a RepoConfig,
         recursive: bool,
-    ) -> Result<Vec<&'a Critic>, String> {
+    ) -> Result<Vec<&'a Eval>, String> {
         let selected = self.resolve(config)?;
         if !recursive {
-            return Ok(selected.critics);
+            return Ok(selected.evals);
         }
         let graph = Graph::new(config).map_err(|error| error.to_string())?;
         let required: BTreeSet<_> = graph
@@ -137,9 +132,9 @@ impl Selection {
             .into_iter()
             .collect();
         Ok(config
-            .critics
+            .evals
             .iter()
-            .filter(|critic| required.contains(critic.target.as_str()))
+            .filter(|eval| required.contains(eval.target.as_str()))
             .collect())
     }
 }
@@ -176,7 +171,7 @@ fn selected_artifacts<'a>(config: &'a RepoConfig, id: &str) -> Result<Vec<&'a st
 #[serde(untagged)]
 pub enum ProfileSelection {
     Named(String),
-    Critics(BTreeMap<String, String>),
+    Evals(BTreeMap<String, String>),
 }
 
 /// Resolve complete declared profiles in owned configuration, never rewriting source files.
@@ -189,27 +184,24 @@ pub fn select_profiles(
     let Some(profile) = profile else {
         return Ok(config);
     };
-    let critics = selection.included_critics(&config, recursive)?;
-    let included: BTreeMap<_, _> = critics
-        .iter()
-        .map(|critic| (critic.id.as_str(), *critic))
-        .collect();
+    let evals = selection.included_evals(&config, recursive)?;
+    let included: BTreeMap<_, _> = evals.iter().map(|eval| (eval.id.as_str(), *eval)).collect();
     let mapping: Vec<(&str, &str)> = match profile {
-        ProfileSelection::Named(name) => critics
+        ProfileSelection::Named(name) => evals
             .iter()
-            .map(|critic| (critic.id.as_str(), name.as_str()))
+            .map(|eval| (eval.id.as_str(), name.as_str()))
             .collect(),
-        ProfileSelection::Critics(mapping) => mapping
+        ProfileSelection::Evals(mapping) => mapping
             .iter()
             .map(|(id, name)| (id.as_str(), name.as_str()))
             .collect(),
     };
     let mut profiles = BTreeMap::new();
     for (id, name) in mapping {
-        let critic = included.get(id).ok_or_else(|| {
-            format!("Profile selection is outside the submitted Critic scope: {id}")
+        let eval = included.get(id).ok_or_else(|| {
+            format!("Profile selection is outside the submitted Eval scope: {id}")
         })?;
-        let variant = critic
+        let variant = eval
             .declaration
             .profile_variants
             .get(name)
@@ -217,9 +209,9 @@ pub fn select_profiles(
             .ok_or_else(|| format!("Unknown profile variant for {id}: {name}"))?;
         profiles.insert(id.to_owned(), variant.clone());
     }
-    for critic in &mut config.critics {
-        if let Some(profile) = profiles.remove(&critic.id) {
-            critic.declaration.profile = profile;
+    for eval in &mut config.evals {
+        if let Some(profile) = profiles.remove(&eval.id) {
+            eval.declaration.profile = profile;
         }
     }
     // Runtime variants can introduce or remove argv references and dependency gates.

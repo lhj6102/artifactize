@@ -56,7 +56,7 @@ fn json_output(output: &Output) -> Value {
 fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs() {
     let fixture = Fixture::new();
     fixture.write("input/artifactize.json", r#"{"name":"input"}"#);
-    let mut declaration = json!({"name":"review","mounts":{"source":"input"},"critics":[{
+    let mut declaration = json!({"name":"review","mounts":{"source":"input"},"evals":[{
         "id":"run","title":"Run","profile":{"kind":"runtime","command":"missing-command","args":["{source}/missing-file"]},
         "payload":{"instruction":"Read {source}."}
     }]});
@@ -69,9 +69,9 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
     assert!(output.status.success());
     assert_eq!(
         json_output(&output),
-        json!({"ok":true,"artifacts":2,"critics":1})
+        json!({"ok":true,"artifacts":2,"evals":1})
     );
-    declaration["critics"][0]["payload"]["instruction"] = json!("Unknown {missing}.");
+    declaration["evals"][0]["payload"]["instruction"] = json!("Unknown {missing}.");
     fixture.write("review/artifactize.json", &declaration.to_string());
     let output = fixture
         .command()
@@ -83,8 +83,8 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
     assert!(error.contains("review/artifactize.json"));
     assert!(error.contains("review/run"));
     assert!(error.contains("Unknown Artifact reference {missing}"));
-    declaration["critics"][0]["payload"]["instruction"] = json!("Inspect.");
-    declaration["critics"][0]["profile"]["args"] = json!(["{missing}/file"]);
+    declaration["evals"][0]["payload"]["instruction"] = json!("Inspect.");
+    declaration["evals"][0]["profile"]["args"] = json!(["{missing}/file"]);
     fixture.write("review/artifactize.json", &declaration.to_string());
     let output = fixture
         .command()
@@ -165,7 +165,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     assert!(output.status.success());
     assert_eq!(
         json_output(&output),
-        json!({"ok": true, "artifacts": 3, "critics": 3})
+        json!({"ok": true, "artifacts": 3, "evals": 3})
     );
     assert!(!fixture.0.join("review/hook-executed").exists());
     assert!(!fixture.0.join("hook-executed").exists());
@@ -183,26 +183,26 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     );
     assert_eq!(
         config.review_requirement("review"),
-        Some(ReviewRequirement::Critics)
+        Some(ReviewRequirement::Evals)
     );
     assert_eq!(config.review_requirement("missing"), None);
     assert_eq!(
         config
-            .critics
+            .evals
             .iter()
-            .map(|critic| critic.id.as_str())
+            .map(|eval| eval.id.as_str())
             .collect::<Vec<_>>(),
         ["review/runtime", "review/agent", "review/human"]
     );
     assert_eq!(config.artifacts["review"].path, Path::new("review"));
     assert_eq!(
-        config.critics[0].declaration.payload["instruction"],
+        config.evals[0].declaration.payload["instruction"],
         "Check {source}."
     );
 
-    fixture.write("other/artifactize.json", r#"{"name":"other","critics":[{"id":"runtime","title":"Other","profile":{"kind":"human"},"payload":{"instruction":"Inspect"}}]}"#);
+    fixture.write("other/artifactize.json", r#"{"name":"other","evals":[{"id":"runtime","title":"Other","profile":{"kind":"human"},"payload":{"instruction":"Inspect"}}]}"#);
     let config = read_workspace_config(&fixture.0).unwrap();
-    assert_eq!(config.critics[0].id, "other/runtime");
+    assert_eq!(config.evals[0].id, "other/runtime");
     fixture.write("other/artifactize.json", r#"{"name":"review"}"#);
     let output = fixture
         .command()

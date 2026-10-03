@@ -1,4 +1,1 @@
-//! Identity reuse, shared execution claims, and subscriptions.
-
-pub mod compute;
-pub mod gc;
+//! Identity commands, rechecks, reuse, cross-process claims, and LRU collection.

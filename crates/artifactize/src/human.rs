@@ -1,1 +1,1 @@
-//! Human waiting, claims, preparation, tools, and submission.
+//! Human waiting, claim locks, tools, and submission.

@@ -5,8 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
-use sha2::{Digest, Sha256};
+use serde_json::{Map, Value};
 
 use super::{ArtifactDeclaration, CONFIG_FILE, identifier, validation};
 use crate::scope::scoped_path;
@@ -48,8 +47,6 @@ pub struct FamilyMembership {
     pub instances: Option<String>,
     /// Sorted owner-relative material; scripts still see the shared physical folder.
     pub material: Vec<String>,
-    /// SHA-256 over the JCS-encoded merged parameters and material list, not a reuse identity.
-    pub entry: String,
 }
 
 pub(super) fn parameterized(value: &Value) -> bool {
@@ -185,7 +182,7 @@ pub(super) fn expand(
             let params = Value::Object(params);
             let mut expanded = template.clone();
             expanded.insert("name".into(), Value::String(id.clone()));
-            for key in ["views", "critics"] {
+            for key in ["views", "evals"] {
                 if let Some(value) = expanded.get_mut(key) {
                     substitute(value, &params)?;
                 }
@@ -193,11 +190,8 @@ pub(super) fn expand(
             let declaration = super::validated_declaration(Value::Object(expanded))?;
             let mut material = instance.material;
             material.sort();
-            let entry = serde_json_canonicalizer::to_vec(&json!({"params": params, "material": material}))
-                .map_err(|error| error.to_string())?;
             Ok((declaration, FamilyMembership {
                 name: name.clone(), instances: file.clone(), material,
-                entry: format!("{:x}", Sha256::digest(entry)),
             }))
         })().map_err(|error: String| format!("Instance {id}: {error}"))?;
         members.push(member);

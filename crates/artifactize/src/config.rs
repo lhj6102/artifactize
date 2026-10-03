@@ -1,4 +1,4 @@
-//! Inert discovery, strict declarations, defaults, and family expansion.
+//! Inert discovery, strict declarations, and family expansion.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -89,15 +89,7 @@ impl Profile {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ResultCheck {
-    pub script: Script,
-    #[serde(default, deserialize_with = "timeout")]
-    pub timeout_ms: Option<u32>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CriticDeclaration {
+pub struct EvalDeclaration {
     pub id: String,
     pub title: String,
     pub profile: Profile,
@@ -109,19 +101,14 @@ pub struct CriticDeclaration {
     pub pass_schema: Option<Map<String, Value>>,
     #[serde(default, deserialize_with = "present")]
     pub fail_schema: Option<Map<String, Value>>,
-    #[serde(default, deserialize_with = "present")]
-    pub result_check: Option<ResultCheck>,
 }
 
-impl CriticDeclaration {
+impl EvalDeclaration {
     fn validate(&self) -> Result<(), String> {
-        identifier(&self.id, "Critic id")?;
-        text(&self.title, "Critic title")?;
+        identifier(&self.id, "Eval id")?;
+        text(&self.title, "Eval title")?;
         let instruction = self.payload.get("instruction").and_then(Value::as_str);
-        text(
-            instruction.unwrap_or_default(),
-            "Critic payload.instruction",
-        )?;
+        text(instruction.unwrap_or_default(), "Eval payload.instruction")?;
         self.profile.validate()?;
         if self.profile_variants.len() > 64 {
             return Err("profileVariants must contain at most 64 named profiles.".into());
@@ -132,12 +119,6 @@ impl CriticDeclaration {
             if std::mem::discriminant(profile) != std::mem::discriminant(&self.profile) {
                 return Err("Profile variants must retain the declared reviewer kind.".into());
             }
-        }
-        if let Some(check) = &self.result_check {
-            if !matches!(self.profile, Profile::Agent { .. }) {
-                return Err("resultCheck requires an Agent Critic.".into());
-            }
-            script(&check.script.command, &check.script.args)?;
         }
         Ok(())
     }
@@ -150,7 +131,6 @@ pub struct ToolMetadata {
     /// Kept as owner-authored JSON; tool schema validation belongs to the tool host.
     pub input_schema: Map<String, Value>,
     pub result_kinds: Vec<ResultKind>,
-    pub observation: Observation,
     #[serde(default, deserialize_with = "present")]
     pub artifact_kind: Option<ArtifactKind>,
     #[serde(default, deserialize_with = "timeout")]
@@ -166,13 +146,6 @@ pub enum ResultKind {
     Json,
     Image,
     Launch,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Observation {
-    Content,
-    None,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
@@ -228,11 +201,6 @@ impl Views {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Stale {
-    Always {},
-    FileHash {
-        #[serde(default, deserialize_with = "present")]
-        paths: Option<Vec<String>>,
-    },
     Identity {
         script: Script,
         #[serde(default)]
@@ -247,17 +215,6 @@ pub enum Stale {
 impl Stale {
     fn validate(&self) -> Result<(), String> {
         match self {
-            Self::Always {} => Ok(()),
-            Self::FileHash { paths: Some(items) } => {
-                if items.is_empty() {
-                    return Err("stale.paths must be a nonempty array.".into());
-                }
-                for item in items {
-                    validation::path(item)?;
-                }
-                Ok(())
-            }
-            Self::FileHash { paths: None } => Ok(()),
             Self::Identity {
                 script: definition,
                 inputs,
@@ -292,17 +249,6 @@ impl Stale {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct EnvironmentRequirement {
-    pub description: String,
-    pub script: Script,
-    #[serde(default, deserialize_with = "timeout")]
-    pub timeout_ms: Option<u32>,
-    #[serde(default)]
-    pub inputs: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DependencyGates {
     Green,
@@ -314,8 +260,6 @@ pub enum DependencyGates {
 pub struct ReviewPolicy {
     #[serde(default, deserialize_with = "present")]
     pub dependency_gates: Option<DependencyGates>,
-    #[serde(default, deserialize_with = "positive_integer")]
-    pub max_concurrent_executors: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -323,7 +267,7 @@ pub struct ReviewPolicy {
 pub struct ArtifactDeclaration {
     pub name: String,
     #[serde(default)]
-    pub critics: Vec<CriticDeclaration>,
+    pub evals: Vec<EvalDeclaration>,
     #[serde(default)]
     pub views: Views,
     #[serde(default)]
@@ -332,8 +276,6 @@ pub struct ArtifactDeclaration {
     pub basis: Option<bool>,
     #[serde(default, deserialize_with = "present")]
     pub stale: Option<Stale>,
-    #[serde(default)]
-    pub env_requirements: BTreeMap<String, EnvironmentRequirement>,
     #[serde(default, deserialize_with = "present")]
     pub review_policy: Option<ReviewPolicy>,
 }
@@ -342,19 +284,18 @@ impl ArtifactDeclaration {
     fn validate(&self) -> Result<(), String> {
         identifier(&self.name, "Artifact name")?;
         let mut ids = BTreeSet::new();
-        for critic in &self.critics {
-            critic
-                .validate()
-                .map_err(|message| format!("Critic {}: {message}", critic.id))?;
-            if !ids.insert(&critic.id) {
+        for eval in &self.evals {
+            eval.validate()
+                .map_err(|message| format!("Eval {}: {message}", eval.id))?;
+            if !ids.insert(&eval.id) {
                 return Err(format!(
-                    "Duplicate local Critic in {}: {}",
-                    self.name, critic.id
+                    "Duplicate local Eval in {}: {}",
+                    self.name, eval.id
                 ));
             }
         }
-        if self.basis == Some(true) && !self.critics.is_empty() {
-            return Err(format!("Basis Artifact {} cannot own Critics.", self.name));
+        if self.basis == Some(true) && !self.evals.is_empty() {
+            return Err(format!("Basis Artifact {} cannot own Evals.", self.name));
         }
         self.views.validate()?;
         for (alias, target) in &self.mounts {
@@ -363,20 +304,6 @@ impl ArtifactDeclaration {
         }
         if let Some(stale) = &self.stale {
             stale.validate()?;
-        }
-        if self.env_requirements.len() > 32 {
-            return Err("envRequirements must contain at most 32 checks.".into());
-        }
-        for (name, requirement) in &self.env_requirements {
-            identifier(name, "Environment check name")?;
-            text(&requirement.description, "Environment check description")?;
-            if requirement.description.encode_utf16().count() > 2000 {
-                return Err(
-                    "Environment check descriptions are limited to 2000 characters.".into(),
-                );
-            }
-            script(&requirement.script.command, &requirement.script.args)?;
-            paths(&requirement.inputs, "Environment check inputs")?;
         }
         Ok(())
     }
@@ -390,7 +317,7 @@ pub fn parse_declaration(json: &str) -> Result<ArtifactDeclaration, String> {
 }
 
 fn ordinary_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
-    if ["views", "critics"]
+    if ["views", "evals"]
         .iter()
         .any(|key| value.get(key).is_some_and(families::parameterized))
     {
@@ -416,25 +343,24 @@ pub struct Artifact {
     pub mounts: BTreeMap<String, String>,
     pub basis: Option<bool>,
     pub stale: Option<Stale>,
-    pub env_requirements: BTreeMap<String, EnvironmentRequirement>,
     pub review_policy: Option<ReviewPolicy>,
 }
 
 #[derive(Debug)]
-pub struct Critic {
+pub struct Eval {
     /// Workspace-qualified identity; declaration.id remains the owner's local id.
     pub id: String,
     pub target: String,
     pub references: BTreeMap<String, String>,
     pub deps: Vec<String>,
-    pub declaration: CriticDeclaration,
+    pub declaration: EvalDeclaration,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReviewRequirement {
     Basis,
     Unreviewed,
-    Critics,
+    Evals,
 }
 
 #[derive(Debug)]
@@ -443,7 +369,7 @@ pub struct RepoConfig {
     pub artifacts: BTreeMap<String, Artifact>,
     /// Reserved family names mapped to shared physical folders; not Artifacts.
     pub families: BTreeMap<String, PathBuf>,
-    pub critics: Vec<Critic>,
+    pub evals: Vec<Eval>,
     pub relations: Vec<crate::scope::Relation>,
 }
 
@@ -453,12 +379,8 @@ impl RepoConfig {
         let artifact = self.artifacts.get(artifact_id)?;
         Some(if artifact.basis == Some(true) {
             ReviewRequirement::Basis
-        } else if self
-            .critics
-            .iter()
-            .any(|critic| critic.target == artifact_id)
-        {
-            ReviewRequirement::Critics
+        } else if self.evals.iter().any(|eval| eval.target == artifact_id) {
+            ReviewRequirement::Evals
         } else {
             ReviewRequirement::Unreviewed
         })
@@ -472,7 +394,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
         root,
         artifacts: BTreeMap::new(),
         families: BTreeMap::new(),
-        critics: Vec::new(),
+        evals: Vec::new(),
         relations: Vec::new(),
     };
     let mut pending = vec![(PathBuf::new(), None::<String>, None::<String>)];
@@ -544,12 +466,11 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 }
                 let ArtifactDeclaration {
                     name,
-                    critics,
+                    evals,
                     views,
                     mounts,
                     basis,
                     stale,
-                    env_requirements,
                     review_policy,
                 } = declaration;
                 if config.artifacts.contains_key(&name) || config.families.contains_key(&name) {
@@ -574,8 +495,8 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 if membership.is_none() {
                     owner = Some(name.clone());
                 }
-                for declaration in critics {
-                    config.critics.push(Critic {
+                for declaration in evals {
+                    config.evals.push(Eval {
                         id: format!("{name}/{}", declaration.id),
                         target: name.clone(),
                         references: BTreeMap::new(),
@@ -594,7 +515,6 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                         mounts,
                         basis,
                         stale,
-                        env_requirements,
                         review_policy,
                     },
                 );

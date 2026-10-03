@@ -1,1 +1,1 @@
-//! Scoped stdio MCP serving and observation audit.
+//! Scoped stdio MCP serving and tool-call audit.

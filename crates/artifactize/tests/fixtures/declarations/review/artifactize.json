@@ -1,64 +1,108 @@
 {
   "name": "review",
-  "mounts": { "source": "input" },
+  "mounts": {
+    "source": "input"
+  },
   "stale": {
     "kind": "identity",
-    "script": { "command": "hook.sh", "args": [] },
-    "inputs": ["hook.sh"],
+    "script": {
+      "command": "hook.sh",
+      "args": []
+    },
+    "inputs": [
+      "hook.sh"
+    ],
     "timeoutMs": 1000
-  },
-  "envRequirements": {
-    "ready": {
-      "description": "The environment is ready",
-      "script": { "command": "sh", "args": ["hook.sh"] },
-      "timeoutMs": 1000
-    }
   },
   "views": {
     "agentTools": {
       "read": {
         "metadata": {
           "description": "Read {artifactName}",
-          "inputSchema": { "type": "object" },
-          "resultKinds": ["text"],
-          "observation": "content",
+          "inputSchema": {
+            "type": "object"
+          },
+          "resultKinds": [
+            "text"
+          ],
           "timeoutMs": 1000
         },
-        "script": { "command": "sh", "args": ["hook.sh"] }
+        "script": {
+          "command": "sh",
+          "args": [
+            "hook.sh"
+          ]
+        }
       }
     },
     "humanTools": {
       "read": {
         "metadata": {
           "description": "Read {artifactName}",
-          "inputSchema": { "type": "object" },
-          "resultKinds": ["text"],
-          "observation": "content"
+          "inputSchema": {
+            "type": "object"
+          },
+          "resultKinds": [
+            "text"
+          ]
         },
-        "script": { "command": "sh", "args": ["hook.sh"] }
+        "script": {
+          "command": "sh",
+          "args": [
+            "hook.sh"
+          ]
+        }
       }
     }
   },
-  "critics": [
+  "evals": [
     {
       "id": "runtime",
       "title": "Check input",
-      "profile": { "kind": "runtime", "command": "sh", "args": ["hook.sh"], "timeoutMs": 1000 },
-      "payload": { "instruction": "Check {source}.", "owner": { "literal": "$HOME" } }
+      "profile": {
+        "kind": "runtime",
+        "command": "sh",
+        "args": [
+          "hook.sh"
+        ],
+        "timeoutMs": 1000
+      },
+      "payload": {
+        "instruction": "Check {source}.",
+        "owner": {
+          "literal": "$HOME"
+        }
+      }
     },
     {
       "id": "agent",
       "title": "Review input",
-      "profile": { "kind": "agent", "provider": "not-called", "model": "not-called", "reasoning": "high" },
-      "payload": { "instruction": "Inspect {source}." },
-      "passSchema": { "properties": { "notes": { "type": "string" } } },
-      "resultCheck": { "script": { "command": "sh", "args": ["hook.sh"] }, "timeoutMs": 1000 }
+      "profile": {
+        "kind": "agent",
+        "provider": "not-called",
+        "model": "not-called",
+        "reasoning": "high"
+      },
+      "payload": {
+        "instruction": "Inspect {source}."
+      },
+      "passSchema": {
+        "properties": {
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
     },
     {
       "id": "human",
       "title": "Inspect input",
-      "profile": { "kind": "human" },
-      "payload": { "instruction": "Inspect {source}." }
+      "profile": {
+        "kind": "human"
+      },
+      "payload": {
+        "instruction": "Inspect {source}."
+      }
     }
   ]
 }

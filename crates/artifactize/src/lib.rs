@@ -1,7 +1,6 @@
 //! Pull validation and explicit review execution.
 
 pub mod agent;
-pub mod audit;
 pub mod auth;
 pub mod broker;
 pub mod cache;
@@ -12,14 +11,12 @@ pub mod graph;
 pub mod human;
 pub mod llm;
 pub mod mcp;
+pub mod monitor;
 pub mod process;
 pub mod project;
-pub mod provider_control;
 pub mod query;
-pub mod resources;
 pub mod runtime;
 pub mod scope;
 pub mod store;
 pub mod tools;
-pub mod worker;
 pub mod workspace;

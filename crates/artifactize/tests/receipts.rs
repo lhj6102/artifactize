@@ -1,4 +1,4 @@
-use std::{fs, os::unix::fs::symlink, path::Path, process::Command};
+use std::{fs, os::unix::fs::symlink, process::Command};
 
 use artifactize::store::{DATABASE, Receipts, read_run};
 use rusqlite::Connection;
@@ -9,7 +9,7 @@ async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
-    assert!(read_run(&state, None, "missing").await.is_err());
+    assert!(read_run(&state, "missing").await.is_err());
     assert!(!state.exists());
     let receipts = Receipts::open(&state, &repo).await.unwrap();
     drop(receipts);
@@ -23,13 +23,13 @@ async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
             .await
             .err()
             .unwrap()
-            .contains("Unsupported receipts schema")
+            .contains("Unsupported state schema")
     );
     assert!(
-        read_run(&state, None, "missing")
+        read_run(&state, "missing")
             .await
             .unwrap_err()
-            .contains("Unsupported receipts schema")
+            .contains("Unsupported state schema")
     );
     assert_eq!(
         db.pragma_query_value::<u32, _>(None, "user_version", |r| r.get(0))
@@ -44,37 +44,73 @@ async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
 }
 
 #[tokio::test]
-async fn explicit_receipts_cannot_be_rebound_to_another_repository() {
+async fn repositories_share_one_state_database() {
     let root = tempfile::tempdir().unwrap();
     let first = root.path().join("first");
     let second = root.path().join("second");
     let state = root.path().join("state");
     fs::create_dir(&first).unwrap();
     fs::create_dir(&second).unwrap();
-    let receipts = Receipts::open(&state, &first).await.unwrap();
-    assert!(
-        Receipts::open(&state, &second)
-            .await
-            .err()
-            .unwrap()
-            .contains("different repository")
-    );
-    assert!(
-        read_run(&state, Some(&second), "missing")
-            .await
-            .unwrap_err()
-            .contains("different repository")
-    );
-    drop(receipts);
-    let db = Connection::open(state.join(DATABASE)).unwrap();
-    let repo: String = db
-        .query_row(
-            "SELECT value FROM metadata WHERE key='repo_path'",
-            [],
-            |r| r.get(0),
+    for (repo, name) in [(&first, "first"), (&second, "second")] {
+        fs::write(
+            repo.join("artifactize.json"),
+            format!(r#"{{"name":"{name}","basis":true}}"#),
         )
         .unwrap();
-    assert_eq!(Path::new(&repo), first);
+    }
+    let mut saved = Vec::new();
+    for explicit in [false, true] {
+        for repo in [&first, &second] {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+            command
+                .env("ARTIFACTIZE_STATE_HOME", &state)
+                .arg("--repo")
+                .arg(repo);
+            if explicit {
+                command
+                    .env("ARTIFACTIZE_STATE_HOME", root.path().join("unused"))
+                    .arg("--state-dir")
+                    .arg(&state);
+            }
+            let output = command
+                .args(["verify", "--all", "--json"])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let run: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(run["repoPath"], repo.to_string_lossy().as_ref());
+            assert_eq!(run["stateDir"], state.to_string_lossy().as_ref());
+            assert!(
+                state
+                    .join("runs")
+                    .join(run["id"].as_str().unwrap())
+                    .is_dir()
+            );
+            saved.push(run);
+        }
+    }
+    let db = Connection::open(state.join(DATABASE)).unwrap();
+    assert_eq!(
+        db.query_row::<u32, _, _>("SELECT count(DISTINCT repo) FROM runs", [], |r| r.get(0))
+            .unwrap(),
+        2
+    );
+    assert_eq!(
+        db.query_row::<u32, _, _>("SELECT count(*) FROM runs", [], |r| r.get(0))
+            .unwrap(),
+        4
+    );
+    fs::remove_dir_all(first).unwrap();
+    fs::remove_dir_all(second).unwrap();
+    for run in saved {
+        let read = read_run(&state, run["id"].as_str().unwrap()).await.unwrap();
+        assert_eq!(serde_json::to_value(read).unwrap(), run);
+    }
+    assert!(!root.path().join("unused").exists());
 }
 
 #[test]
@@ -96,19 +132,24 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         root.path().join("alias/state"),
         root.path().join("nested-alias/../state"),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
-            .env("ARTIFACTIZE_STATE_HOME", root.path().join("home"))
-            .arg("--repo")
-            .arg(&repo)
-            .arg("--state-dir")
-            .arg(state)
-            .args(["verify", "--all", "--json"])
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2));
-        assert!(
-            String::from_utf8_lossy(&output.stdout).contains("outside the reviewed repository")
-        );
+        for explicit in [false, true] {
+            let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+            command
+                .env("ARTIFACTIZE_STATE_HOME", &state)
+                .arg("--repo")
+                .arg(&repo);
+            if explicit {
+                command.arg("--state-dir").arg(&state);
+            }
+            let output = command
+                .args(["verify", "--all", "--json"])
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(2));
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("outside the reviewed repository")
+            );
+        }
     }
     assert!(!repo.join("state").exists());
     let state = root.path().join("state");
@@ -135,8 +176,13 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         .args(["verify", "--all"])
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(!repo.join("home").exists());
+    assert!(state.join(DATABASE).is_file());
 }
 
 #[tokio::test]
@@ -148,13 +194,23 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
     fs::create_dir(&state).unwrap();
     let protected = repo.join("must-not-write");
     fs::write(&protected, "unchanged").unwrap();
-    symlink(&protected, state.join(DATABASE)).unwrap();
-    assert!(
-        Receipts::open(&state, &repo)
-            .await
-            .err()
-            .unwrap()
-            .contains("regular files")
-    );
-    assert_eq!(fs::read_to_string(&protected).unwrap(), "unchanged");
+    for suffix in ["", "-wal", "-shm"] {
+        let file = state.join(format!("{DATABASE}{suffix}"));
+        symlink(&protected, &file).unwrap();
+        assert!(
+            Receipts::open(&state, &repo)
+                .await
+                .err()
+                .unwrap()
+                .contains("regular files")
+        );
+        assert!(
+            read_run(&state, "missing")
+                .await
+                .unwrap_err()
+                .contains("regular files")
+        );
+        assert_eq!(fs::read_to_string(&protected).unwrap(), "unchanged");
+        fs::remove_file(file).unwrap();
+    }
 }

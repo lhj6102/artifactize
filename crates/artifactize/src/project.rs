@@ -1,6 +1,5 @@
-//! Project selection, inspection, preparation, and input manifests.
+//! Project selection, verification orchestration, and status.
 
-pub mod prepare;
 pub mod selection;
 
 mod verify;

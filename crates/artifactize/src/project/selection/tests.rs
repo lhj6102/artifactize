@@ -13,13 +13,13 @@ fn fixture() -> RepoConfig {
         .unwrap()
 }
 
-fn critic_ids(selection: &Selection, config: &RepoConfig) -> Vec<String> {
+fn eval_ids(selection: &Selection, config: &RepoConfig) -> Vec<String> {
     selection
         .resolve(config)
         .unwrap()
-        .critics
+        .evals
         .iter()
-        .map(|critic| critic.id.clone())
+        .map(|eval| eval.id.clone())
         .collect()
 }
 
@@ -34,8 +34,8 @@ fn ordered_union_keeps_first_occurrence_and_rejects_unknown_or_empty_roots() {
             "cycle-a".into(),
         ],
     };
-    let critics = Selection::Critics {
-        critic_ids: vec![
+    let evals = Selection::Evals {
+        eval_ids: vec![
             "green/check".into(),
             "cycle-b/check".into(),
             "green/check".into(),
@@ -43,26 +43,26 @@ fn ordered_union_keeps_first_occurrence_and_rejects_unknown_or_empty_roots() {
         ],
     };
     let expected = ["green/check", "cycle-b/check", "cycle-a/check"];
-    assert_eq!(critic_ids(&artifacts, &config), expected);
-    assert_eq!(critic_ids(&critics, &config), expected);
+    assert_eq!(eval_ids(&artifacts, &config), expected);
+    assert_eq!(eval_ids(&evals, &config), expected);
     assert_eq!(
         artifacts.resolve(&config).unwrap().roots,
         ["green", "cycle-b", "cycle-a"]
     );
     assert_eq!(
-        critic_ids(&Selection::All, &config),
+        eval_ids(&Selection::All, &config),
         config
-            .critics
+            .evals
             .iter()
-            .map(|critic| critic.id.clone())
+            .map(|eval| eval.id.clone())
             .collect::<Vec<_>>()
     );
-    let selected = Selection::Critic {
-        critic_id: "cycle-a/check".into(),
+    let selected = Selection::Eval {
+        eval_id: "cycle-a/check".into(),
     }
     .resolve(&config)
     .unwrap();
-    assert_eq!(selected.critics.len(), 1);
+    assert_eq!(selected.evals.len(), 1);
     assert_eq!(
         Graph::new(&config)
             .unwrap()
@@ -71,7 +71,7 @@ fn ordered_union_keeps_first_occurrence_and_rejects_unknown_or_empty_roots() {
         ["cycle-a", "cycle-b"]
     );
     assert!(
-        critic_ids(
+        eval_ids(
             &Selection::Artifact {
                 artifact_id: "input".into()
             },
@@ -83,26 +83,26 @@ fn ordered_union_keeps_first_occurrence_and_rejects_unknown_or_empty_roots() {
         Selection::Artifact {
             artifact_id: "missing".into(),
         },
-        Selection::Critic {
-            critic_id: "green".into(),
+        Selection::Eval {
+            eval_id: "green".into(),
         },
         Selection::Artifacts {
             artifact_ids: vec!["green".into(), "".into()],
         },
-        Selection::Critics {
-            critic_ids: vec!["green/check".into(), "missing".into()],
+        Selection::Evals {
+            eval_ids: vec!["green/check".into(), "missing".into()],
         },
         Selection::Artifacts {
             artifact_ids: vec![],
         },
-        Selection::Critics { critic_ids: vec![] },
+        Selection::Evals { eval_ids: vec![] },
     ] {
         assert!(selection.resolve(&config).is_err(), "{selection:?}");
     }
 }
 
 #[test]
-fn json_and_line_files_select_the_same_ordered_critics() {
+fn json_and_line_files_select_the_same_ordered_evals() {
     let directory = tempfile::tempdir().unwrap();
     let json_path = directory.path().join("selection.json");
     let line_path = directory.path().join("selection.txt");
@@ -122,8 +122,8 @@ fn json_and_line_files_select_the_same_ordered_critics() {
     assert_eq!(json, lines);
     let config = fixture();
     assert_eq!(
-        critic_ids(&Selection::Artifacts { artifact_ids: json }, &config),
-        critic_ids(
+        eval_ids(&Selection::Artifacts { artifact_ids: json }, &config),
+        eval_ids(
             &Selection::Artifacts {
                 artifact_ids: lines
             },
@@ -214,7 +214,7 @@ fn file_reads_reject_nonregular_and_oversized_inputs() {
 fn profile_fixture() -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
     fs::write(directory.path().join("artifactize.json"), json!({
-        "name":"target", "critics":[
+        "name":"target", "evals":[
             {"id":"z", "title":"Z", "profile":{"kind":"runtime","command":"/bin/true","args":[]},
              "profileVariants":{"careful":{"kind":"runtime","command":"/bin/echo","args":["{input}"],"timeoutMs":9}},
              "payload":{"instruction":"Check."}},
@@ -232,13 +232,13 @@ fn profile_fixture() -> tempfile::TempDir {
 }
 
 #[test]
-fn named_profiles_only_apply_to_included_critics_and_rebuild_runtime_dependencies() {
+fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies() {
     let directory = profile_fixture();
     let source = directory.path().join("artifactize.json");
     let before = fs::read(&source).unwrap();
     let load = || read_workspace_config(directory.path()).unwrap();
-    let selection = Selection::Critic {
-        critic_id: "target/z".into(),
+    let selection = Selection::Eval {
+        eval_id: "target/z".into(),
     };
     let selected = select_profiles(
         load(),
@@ -247,21 +247,21 @@ fn named_profiles_only_apply_to_included_critics_and_rebuild_runtime_dependencie
         false,
     )
     .unwrap();
-    assert_eq!(selected.critics[0].deps, ["input"]);
+    assert_eq!(selected.evals[0].deps, ["input"]);
     assert_eq!(
-        serde_json::to_value(&selected.critics[0].declaration.profile).unwrap()["command"],
+        serde_json::to_value(&selected.evals[0].declaration.profile).unwrap()["command"],
         "/bin/echo"
     );
     assert_eq!(
-        serde_json::to_value(&selected.critics[0].declaration.profile).unwrap()["timeoutMs"],
+        serde_json::to_value(&selected.evals[0].declaration.profile).unwrap()["timeoutMs"],
         9
     );
     assert_eq!(
-        serde_json::to_value(&selected.critics[1].declaration.profile).unwrap()["command"],
+        serde_json::to_value(&selected.evals[1].declaration.profile).unwrap()["command"],
         "/bin/true"
     );
     assert_eq!(
-        critic_ids(
+        eval_ids(
             &Selection::Artifact {
                 artifact_id: "target".into()
             },
@@ -270,7 +270,7 @@ fn named_profiles_only_apply_to_included_critics_and_rebuild_runtime_dependencie
         ["target/z", "target/a"]
     );
     assert_eq!(fs::read(source).unwrap(), before);
-    assert!(load().critics[0].deps.is_empty());
+    assert!(load().evals[0].deps.is_empty());
     assert!(
         select_profiles(
             load(),
@@ -291,15 +291,13 @@ fn named_profiles_only_apply_to_included_critics_and_rebuild_runtime_dependencie
         .unwrap_err()
         .contains("Unknown profile variant for target/z")
     );
-    let mapping =
-        ProfileSelection::Critics(BTreeMap::from([("target/z".into(), "careful".into())]));
+    let mapping = ProfileSelection::Evals(BTreeMap::from([("target/z".into(), "careful".into())]));
     assert!(select_profiles(load(), &Selection::All, Some(&mapping), false).is_ok());
-    let outside =
-        ProfileSelection::Critics(BTreeMap::from([("target/a".into(), "careful".into())]));
+    let outside = ProfileSelection::Evals(BTreeMap::from([("target/a".into(), "careful".into())]));
     assert!(
         select_profiles(load(), &selection, Some(&outside), false)
             .unwrap_err()
-            .contains("outside the submitted Critic scope: target/a")
+            .contains("outside the submitted Eval scope: target/a")
     );
     assert!(serde_json::from_value::<ProfileSelection>(json!({"target/z":1})).is_err());
     assert!(serde_json::from_value::<ProfileSelection>(json!(["careful"])).is_err());
@@ -308,7 +306,7 @@ fn named_profiles_only_apply_to_included_critics_and_rebuild_runtime_dependencie
 #[test]
 fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
     let declaration = |variants| {
-        json!({"name":"target", "critics":[{
+        json!({"name":"target", "evals":[{
         "id":"check", "title":"Check", "profile":{"kind":"runtime", "command":"/bin/true","args":[]},
         "payload":{"instruction":"Check."}, "profileVariants": variants
     }]}).to_string()

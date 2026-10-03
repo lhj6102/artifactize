@@ -57,7 +57,7 @@ impl Fixture {
             .command()
             .arg("verify")
             .args(args)
-            .arg("--full")
+            .arg("--json")
             .output()
             .unwrap();
         assert_eq!(
@@ -71,7 +71,7 @@ impl Fixture {
 
     fn runtime(&self, program: &str, args: &[&str]) {
         fs::write(self.repo.join("artifactize.json"), json!({
-            "name":"test", "critics":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":program,"args":args}, "payload":{"instruction":"Check runtime."}}]
+            "name":"test", "evals":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":program,"args":args}, "payload":{"instruction":"Check runtime."}}]
         }).to_string()).unwrap();
     }
 }
@@ -112,20 +112,17 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    let compact = json_output(&output);
-    assert_eq!(compact["status"], "ERROR");
-    assert!(!output.stdout.windows(6).any(|bytes| bytes == b"stdout"));
-    assert!(
-        !fixture.home.exists(),
-        "--state-dir only creates receipts here"
-    );
+    let verified = json_output(&output);
+    assert_eq!(verified["status"], "ERROR");
+    assert!(output.stdout.windows(6).any(|bytes| bytes == b"stdout"));
+    assert!(!fixture.home.exists(), "--state-dir moves the whole state");
     fs::remove_dir_all(&fixture.repo).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .current_dir(fixture._root.path())
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .arg("--state-dir")
         .arg(&fixture.state)
-        .args(["run", "show", compact["id"].as_str().unwrap()])
+        .args(["run", "show", verified["id"].as_str().unwrap()])
         .output()
         .unwrap();
     assert!(
@@ -135,12 +132,12 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     );
     let full = json_output(&output);
     assert_eq!(full["status"], "ERROR");
-    assert_eq!(full["id"], compact["id"]);
+    assert_eq!(full, verified);
     let requests = full["requests"].as_array().unwrap();
     let request = |id: &str| {
         requests
             .iter()
-            .find(|request| request["criticId"] == id)
+            .find(|request| request["evalId"] == id)
             .unwrap()
     };
     let green = request("green/check");
@@ -221,7 +218,7 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
     ] {
         let output = fixture
             .command()
-            .args(["verify", selection, "--wait", "--full"])
+            .args(["verify", selection, "--wait", "--json"])
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(code));
@@ -265,7 +262,7 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
 }
 
 #[test]
-fn default_receipts_are_canonical_repo_bound_and_errors_do_not_invent_results() {
+fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     let fixture = Fixture::new();
     fixture.runtime("/bin/echo", &["$HOME", "a; echo injected", "a b"]);
     let alias = fixture._root.path().join("alias");
@@ -274,7 +271,7 @@ fn default_receipts_are_canonical_repo_bound_and_errors_do_not_invent_results() 
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .arg("--repo")
         .arg(&alias)
-        .args(["verify", "--all", "--full"])
+        .args(["verify", "--all", "--json"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -284,12 +281,12 @@ fn default_receipts_are_canonical_repo_bound_and_errors_do_not_invent_results() 
         "$HOME a; echo injected a b\n"
     );
     let state = PathBuf::from(first["stateDir"].as_str().unwrap());
-    assert!(state.starts_with(&fixture.home));
-    assert_eq!(state.file_name().unwrap().len(), 24);
+    assert_eq!(state, fixture.home);
+    assert_eq!(first["repoPath"], fixture.repo.to_string_lossy().as_ref());
+    assert!(state.join("state.sqlite").is_file());
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
-        .arg("--repo")
-        .arg(&fixture.repo)
+        .current_dir(fixture._root.path())
         .args(["run", "show", first["id"].as_str().unwrap()])
         .output()
         .unwrap();
@@ -303,7 +300,7 @@ fn default_receipts_are_canonical_repo_bound_and_errors_do_not_invent_results() 
         fixture.runtime(program, &args);
         let output = fixture
             .command()
-            .args(["verify", "--all", "--full"])
+            .args(["verify", "--all", "--json"])
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
@@ -315,14 +312,14 @@ fn default_receipts_are_canonical_repo_bound_and_errors_do_not_invent_results() 
     let second = json_output(
         &fixture
             .command()
-            .args(["verify", "--all", "--full"])
+            .args(["verify", "--all", "--json"])
             .output()
             .unwrap(),
     );
     let third = json_output(
         &fixture
             .command()
-            .args(["verify", "--all", "--full"])
+            .args(["verify", "--all", "--json"])
             .output()
             .unwrap(),
     );
@@ -343,7 +340,7 @@ fn unsupported_profiles_fail_before_any_execution_or_store_creation() {
         fixture.runtime("/bin/true", &[]);
         let path = fixture.repo.join("artifactize.json");
         let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        declaration["critics"].as_array_mut().unwrap().push(json!({"id":"unsupported","title":"Unsupported","profile":profile,"payload":{"instruction":"Review."}}));
+        declaration["evals"].as_array_mut().unwrap().push(json!({"id":"unsupported","title":"Unsupported","profile":profile,"payload":{"instruction":"Review."}}));
         fs::write(path, declaration.to_string()).unwrap();
         let output = fixture
             .command()
@@ -438,18 +435,12 @@ fn selection_errors_fail_before_discovery_or_receipts() {
     for args in [
         vec!["verify"],
         vec!["verify", "green", "red"],
-        vec!["verify", "green", "--critic", "green/check"],
-        vec![
-            "verify",
-            "--critic",
-            "green/check",
-            "--critics",
-            "red/check",
-        ],
+        vec!["verify", "green", "--eval", "green/check"],
+        vec!["verify", "--eval", "green/check", "--evals", "red/check"],
         vec!["verify", "--all", "--artifacts", "green"],
         vec![
             "verify",
-            "--critics-file",
+            "--evals-file",
             "missing",
             "--artifacts-file",
             "missing",
@@ -483,7 +474,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
     );
     let source = fixture.repo.join("review/artifactize.json");
     let mut declaration: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
-    declaration["critics"][0]["profileVariants"] = json!({
+    declaration["evals"][0]["profileVariants"] = json!({
         "brief": {"kind":"runtime","command":"/bin/echo","args":["variant", "{input}/data.txt"],"timeoutMs":1000}
     });
     fs::write(&source, declaration.to_string()).unwrap();
@@ -492,11 +483,11 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
         .command()
         .args([
             "verify",
-            "--critic",
+            "--eval",
             "green/check",
             "--profile",
             "brief",
-            "--full",
+            "--json",
         ])
         .output()
         .unwrap();
@@ -504,7 +495,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
     let run = json_output(&selected);
     assert_eq!(
         run["selection"],
-        json!({"kind":"critic","criticId":"green/check"})
+        json!({"kind":"eval","evalId":"green/check"})
     );
     assert_eq!(run["requests"][0]["profile"]["command"], "/bin/echo");
     assert_eq!(
@@ -519,7 +510,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
     let path = fixture._root.path().join("ids");
     for (flag, json, lines) in [
         (
-            "--critics-file",
+            "--evals-file",
             r#"["cycle-b/check","green/check","cycle-a/check","green/check"]"#,
             " cycle-b/check \r\n\r\ngreen/check\r\ncycle-a/check\ngreen/check\n",
         ),
@@ -535,7 +526,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
                 .command()
                 .args(["verify", flag])
                 .arg(&path)
-                .arg("--full")
+                .arg("--json")
                 .output()
                 .unwrap();
             assert!(
@@ -548,7 +539,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
             assert_eq!(
                 requests
                     .iter()
-                    .map(|request| request["criticId"].as_str().unwrap())
+                    .map(|request| request["evalId"].as_str().unwrap())
                     .collect::<Vec<_>>(),
                 ["cycle-b/check", "green/check", "cycle-a/check"]
             );
@@ -557,7 +548,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
     }
     let output = fixture
         .command()
-        .args(["verify", "--artifacts", "cycle-b,cycle-a,cycle-b", "--full"])
+        .args(["verify", "--artifacts", "cycle-b,cycle-a,cycle-b", "--json"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -567,12 +558,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
     );
     let output = fixture
         .command()
-        .args([
-            "verify",
-            "--critics",
-            "cycle-a/check,cycle-a/check",
-            "--full",
-        ])
+        .args(["verify", "--evals", "cycle-a/check,cycle-a/check", "--json"])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(4));
@@ -590,8 +576,8 @@ fn invalid_selections_and_profiles_never_create_a_run() {
         &fixture.repo,
     );
     for args in [
-        vec!["verify", "--critic", "missing"],
-        vec!["verify", "--critics", "green/check,"],
+        vec!["verify", "--eval", "missing"],
+        vec!["verify", "--evals", "green/check,"],
         vec!["verify", "--artifacts", "green,unknown"],
         vec!["verify", "--artifacts", ""],
         vec!["verify", "green", "--profile", "unknown"],
@@ -614,14 +600,14 @@ fn request<'a>(run: &'a Value, id: &str) -> &'a Value {
         .as_array()
         .unwrap()
         .iter()
-        .find(|request| request["criticId"] == id)
+        .find(|request| request["evalId"] == id)
         .unwrap()
 }
 
 #[test]
 fn individual_saves_success_while_recursive_completes_cycle_obligations() {
     let fixture = Fixture::runtime_fixture();
-    let individual = fixture.verify(&["--critic", "cycle-a/check"], 4);
+    let individual = fixture.verify(&["--eval", "cycle-a/check"], 4);
     assert_eq!(individual["status"], "INCOMPLETE");
     assert_eq!(
         request(&individual, "cycle-a/check")["result"]["verdict"],
@@ -629,7 +615,7 @@ fn individual_saves_success_while_recursive_completes_cycle_obligations() {
     );
     assert_eq!(individual["validation"]["obligations"], json!(["cycle-b"]));
     assert_eq!(
-        individual["validation"]["includedCriticIds"],
+        individual["validation"]["includedEvalIds"],
         json!(["cycle-a/check"])
     );
     let saved = fixture
@@ -640,15 +626,15 @@ fn individual_saves_success_while_recursive_completes_cycle_obligations() {
     assert!(saved.status.success());
     assert_eq!(json_output(&saved), individual);
 
-    let recursive = fixture.verify(&["--critic", "cycle-a/check", "--recursive", "--force"], 0);
+    let recursive = fixture.verify(&["--eval", "cycle-a/check", "--recursive", "--force"], 0);
     assert_eq!(recursive["status"], "GREEN");
     assert_eq!(recursive["validation"]["obligations"], json!([]));
     assert_eq!(
-        recursive["validation"]["selectedCriticIds"],
+        recursive["validation"]["selectedEvalIds"],
         json!(["cycle-a/check"])
     );
     assert_eq!(
-        recursive["validation"]["includedCriticIds"],
+        recursive["validation"]["includedEvalIds"],
         json!(["cycle-a/check", "cycle-b/check"])
     );
     assert_eq!(request(&recursive, "cycle-a/check")["force"], true);
@@ -703,7 +689,7 @@ fn ignore_gates_saves_actual_verdicts_but_never_waives_final_obligations() {
     assert_eq!(request(&individual, "blocked/check")["status"], "GREEN");
     assert_eq!(individual["validation"]["obligations"], json!(["red"]));
     assert_eq!(individual["validation"]["satisfied"], false);
-    assert_eq!(individual["validation"]["critics"][0]["status"], "GREEN");
+    assert_eq!(individual["validation"]["evals"][0]["status"], "GREEN");
     let recursive = fixture.verify(&["blocked", "--recursive", "--ignore-gates"], 1);
     assert_eq!(request(&recursive, "blocked/check")["status"], "GREEN");
     assert_eq!(request(&recursive, "red/check")["status"], "RED");
@@ -711,13 +697,13 @@ fn ignore_gates_saves_actual_verdicts_but_never_waives_final_obligations() {
 
     let path = fixture.repo.join("blocked/artifactize.json");
     let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    declaration["critics"][0]["profile"] =
+    declaration["evals"][0]["profile"] =
         json!({"kind":"runtime","command":"/missing-command","args":[]});
     fs::write(path, declaration.to_string()).unwrap();
     let failed = fixture.verify(&["blocked", "--ignore-gates"], 2);
     assert_eq!(request(&failed, "blocked/check")["status"], "ERROR");
     assert_eq!(failed["status"], "ERROR");
-    assert_eq!(failed["validation"]["critics"][0]["status"], "ERROR");
+    assert_eq!(failed["validation"]["evals"][0]["status"], "ERROR");
 }
 
 #[tokio::test]
@@ -756,9 +742,7 @@ async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
     assert!(!enforced.run.ignore_gates);
     assert_eq!(enforced.run.status, "INCOMPLETE");
     assert_eq!(enforced.requests[0].status, "WAIT_DEPENDENCY");
-    let saved = read_run(&fixture.state, None, &enforced.run.id)
-        .await
-        .unwrap();
+    let saved = read_run(&fixture.state, &enforced.run.id).await.unwrap();
     assert!(!saved.run.ignore_gates);
 
     fs::write(
@@ -771,7 +755,7 @@ async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
 }
 
 #[test]
-fn basis_and_all_keep_no_critic_dependency_obligations() {
+fn basis_and_all_keep_no_eval_dependency_obligations() {
     let fixture = Fixture::new();
     fixture.runtime("/bin/true", &[]);
     fs::create_dir(fixture.repo.join("input")).unwrap();
@@ -815,7 +799,7 @@ fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
     for folder in ["blocked", "red"] {
         let path = fixture.repo.join(folder).join("artifactize.json");
         let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        declaration["critics"][0]["profileVariants"] =
+        declaration["evals"][0]["profileVariants"] =
             json!({"pass":{"kind":"runtime","command":"/bin/echo","args":["{input}"]}});
         fs::write(path, declaration.to_string()).unwrap();
     }
@@ -848,7 +832,7 @@ fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
 }
 
 #[test]
-fn recursive_family_selection_includes_external_critics_without_forcing_them() {
+fn recursive_family_selection_includes_external_evals_without_forcing_them() {
     let fixture = Fixture::new();
     copy_directory(
         &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/families"),
@@ -856,7 +840,7 @@ fn recursive_family_selection_includes_external_critics_without_forcing_them() {
     );
     fs::create_dir(fixture.repo.join("external")).unwrap();
     fs::write(fixture.repo.join("external/artifactize.json"), json!({
-        "name":"external", "critics":[{"id":"check","title":"External",
+        "name":"external", "evals":[{"id":"check","title":"External",
             "profile":{"kind":"runtime","command":"/bin/true","args":[]},
             "profileVariants":{"brief":{"kind":"runtime","command":"/bin/echo","args":["external variant"]}},
             "payload":{"instruction":"Check."}}]
@@ -864,7 +848,7 @@ fn recursive_family_selection_includes_external_critics_without_forcing_them() {
     let path = fixture.repo.join("scenarios/artifactize.json");
     let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     declaration["mounts"] = json!({"external":"external"});
-    declaration["critics"][0]["profileVariants"] =
+    declaration["evals"][0]["profileVariants"] =
         json!({"brief":{"kind":"runtime","command":"/bin/echo","args":["family variant"]}});
     fs::write(path, declaration.to_string()).unwrap();
 
@@ -915,18 +899,18 @@ fn recursive_family_selection_includes_external_critics_without_forcing_them() {
 }
 
 #[test]
-fn recursive_critic_selection_includes_sibling_critics_on_the_same_artifact() {
+fn recursive_eval_selection_includes_sibling_evals_on_the_same_artifact() {
     let fixture = Fixture::new();
     fixture.runtime("/bin/true", &[]);
     let path = fixture.repo.join("artifactize.json");
     let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    let mut sibling = declaration["critics"][0].clone();
+    let mut sibling = declaration["evals"][0].clone();
     sibling["id"] = json!("sibling");
-    declaration["critics"].as_array_mut().unwrap().push(sibling);
+    declaration["evals"].as_array_mut().unwrap().push(sibling);
     fs::write(path, declaration.to_string()).unwrap();
-    let individual = fixture.verify(&["--critic", "test/check"], 4);
+    let individual = fixture.verify(&["--eval", "test/check"], 4);
     assert_eq!(individual["validation"]["obligations"], json!(["test"]));
-    let recursive = fixture.verify(&["--critic", "test/check", "--recursive", "--force"], 0);
+    let recursive = fixture.verify(&["--eval", "test/check", "--recursive", "--force"], 0);
     assert_eq!(recursive["requests"].as_array().unwrap().len(), 2);
     assert_eq!(request(&recursive, "test/check")["force"], true);
     assert_eq!(request(&recursive, "test/sibling")["force"], false);

@@ -1,6 +1,6 @@
 {
   "name": "waiting",
-  "critics": [
+  "evals": [
     {
       "id": "check",
       "title": "Check waiting",

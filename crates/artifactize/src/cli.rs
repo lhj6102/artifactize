@@ -23,7 +23,7 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "PATH")]
     pub repo: Option<PathBuf>,
 
-    /// Run receipts and history directory; global services stay in the state home.
+    /// State database and Run output directory.
     #[arg(long, global = true, value_name = "PATH")]
     pub state_dir: Option<PathBuf>,
 
@@ -37,17 +37,17 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Execute selected runtime Critics in the foreground.
+    /// Execute selected runtime Evals in the foreground.
     Verify {
         #[command(flatten)]
         selection: SelectionArgs,
-        /// Use a declared profile variant for every included Critic.
+        /// Use a declared profile variant for every included Eval.
         #[arg(long, value_name = "NAME")]
         profile: Option<String>,
-        /// Include all Critics in the required dependency scope, including cycle peers.
+        /// Include all Evals in the required dependency scope, including cycle peers.
         #[arg(long)]
         recursive: bool,
-        /// Force explicitly selected Critics only; dependency gates still apply.
+        /// Force explicitly selected Evals only; dependency gates still apply.
         #[arg(long)]
         force: bool,
         /// Bypass execution gates, never final validation obligations.
@@ -56,9 +56,6 @@ pub enum Command {
         /// Wait for completion (currently always foreground).
         #[arg(long)]
         wait: bool,
-        /// Include the full runtime audit JSON.
-        #[arg(long)]
-        full: bool,
     },
     /// Read recorded Runs without discovering or executing project code.
     Run {
@@ -77,18 +74,18 @@ pub enum Command {
 pub struct SelectionArgs {
     /// Select one Artifact or every instance of a family.
     artifact: Option<String>,
-    /// Select one qualified Critic ID.
+    /// Select one qualified Eval ID.
     #[arg(long, value_name = "ID")]
-    critic: Option<String>,
-    /// Select comma-separated qualified Critic IDs.
+    eval: Option<String>,
+    /// Select comma-separated qualified Eval IDs.
     #[arg(long, value_name = "CSV")]
-    critics: Option<String>,
+    evals: Option<String>,
     /// Select comma-separated Artifact or family names.
     #[arg(long, value_name = "CSV")]
     artifacts: Option<String>,
-    /// Read Critic IDs from a JSON array or one ID per line.
+    /// Read Eval IDs from a JSON array or one ID per line.
     #[arg(long, value_name = "PATH")]
-    critics_file: Option<PathBuf>,
+    evals_file: Option<PathBuf>,
     /// Read Artifact or family names from a JSON array or one ID per line.
     #[arg(long, value_name = "PATH")]
     artifacts_file: Option<PathBuf>,
@@ -101,19 +98,19 @@ impl SelectionArgs {
     fn resolve(self) -> Result<Selection, String> {
         if let Some(artifact_id) = self.artifact {
             Ok(Selection::Artifact { artifact_id })
-        } else if let Some(critic_id) = self.critic {
-            Ok(Selection::Critic { critic_id })
-        } else if let Some(ids) = self.critics {
-            Ok(Selection::Critics {
-                critic_ids: ids.split(',').map(str::to_owned).collect(),
+        } else if let Some(eval_id) = self.eval {
+            Ok(Selection::Eval { eval_id })
+        } else if let Some(ids) = self.evals {
+            Ok(Selection::Evals {
+                eval_ids: ids.split(',').map(str::to_owned).collect(),
             })
         } else if let Some(ids) = self.artifacts {
             Ok(Selection::Artifacts {
                 artifact_ids: ids.split(',').map(str::to_owned).collect(),
             })
-        } else if let Some(path) = self.critics_file {
-            Ok(Selection::Critics {
-                critic_ids: read_selection_file(&path)?,
+        } else if let Some(path) = self.evals_file {
+            Ok(Selection::Evals {
+                eval_ids: read_selection_file(&path)?,
             })
         } else if let Some(path) = self.artifacts_file {
             Ok(Selection::Artifacts {
@@ -127,7 +124,7 @@ impl SelectionArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
-    /// Validate declarations and unique Artifact/Critic identities.
+    /// Validate declarations and unique Artifact/Eval identities.
     Check,
 }
 
@@ -151,7 +148,6 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             recursive,
             force,
             ignore_gates,
-            full,
             ..
         }) => {
             let selection = selection.resolve()?;
@@ -183,10 +179,8 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             .await;
             listener.abort();
             let view = result?;
-            if full {
+            if cli.json {
                 print_json(&view)?;
-            } else if cli.json {
-                print_json(&crate::query::requester_run(&view))?;
             } else {
                 let mut stdout = io::stdout().lock();
                 writeln!(
@@ -201,7 +195,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                     writeln!(
                         stdout,
                         "  {}: {}{}",
-                        request.critic_id,
+                        request.eval_id,
                         request.status,
                         request
                             .error
@@ -238,21 +232,8 @@ async fn execute(cli: Cli) -> Result<u8, String> {
         Some(Command::Run {
             command: RunCommand::Show { run_id },
         }) => {
-            let repo = cli
-                .repo
-                .map(|path| path.canonicalize().map_err(|e| e.to_string()))
-                .transpose()?;
-            let default_repo = if cli.state_dir.is_none() && repo.is_none() {
-                Some(std::fs::canonicalize(".").map_err(|e| e.to_string())?)
-            } else {
-                None
-            };
-            let repo = repo.as_deref().or(default_repo.as_deref());
-            let state = crate::store::receipts_dir(
-                repo.unwrap_or(std::path::Path::new("")),
-                cli.state_dir.as_deref(),
-            )?;
-            let view = crate::store::read_run(&state, repo, &run_id).await?;
+            let state = crate::store::state_dir(cli.state_dir.as_deref())?;
+            let view = crate::store::read_run(&state, &run_id).await?;
             print_json(&view)?;
             Ok(0)
         }
@@ -263,7 +244,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             let config = read_workspace_config(&repo).map_err(|error| error.to_string())?;
             let mut stdout = io::stdout().lock();
             if cli.json {
-                writeln!(stdout, "{}", json!({ "ok": true, "artifacts": config.artifacts.len(), "critics": config.critics.len() }))
+                writeln!(stdout, "{}", json!({ "ok": true, "artifacts": config.artifacts.len(), "evals": config.evals.len() }))
             } else {
                 writeln!(stdout, "Folder configuration is valid.")
             }.map_err(|error| error.to_string())?;

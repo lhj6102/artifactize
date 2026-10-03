@@ -6,7 +6,7 @@
 - Preserve SQLite WAL, short `BEGIN IMMEDIATE` transactions, read-only snapshot queries, explicit busy handling, and separate project-state versus machine-resource databases.
 - Recommend **jsonschema 0.58.4** for dynamic argument and verdict-schema validation. **Schemars generates schemas; it does not replace runtime validation.**
 - Recommend the official **rmcp 3.5.0** SDK with **stdio transport**, dynamic tool definitions, explicit message limits, and application-controlled cancellation/auditing.
-- Use a **language-neutral command supervisor** for Runtime Critics, script tools, readiness, owner identity, and result checks. Do not retain CCDD’s Node-only Runtime restriction or Node import hooks.
+- Use a **language-neutral command supervisor** for runtime evals, script tools, and owner identity. Do not retain CCDD’s Node-only Runtime restriction or Node import hooks.
 - Use **tokio::process + process-wrap 10.0.1** for async pipes, Unix process groups/sessions, and Windows Job Objects; retain explicit admission-before-execution and cleanup logic.
 - Use **SHA-256 and one defined RFC 8785/JCS encoding** for artifactize’s new identity format. Compatibility with CCDD config, state, and hashes is explicitly unnecessary.
 - Use **Axum** for the optional loopback HTTP API, with the existing security boundary implemented deliberately; neither HTTPS nor a TLS crate is required for this API.
@@ -518,7 +518,7 @@ Recommendation: make artifactize’s support matrix explicit. **Linux first is t
 
 ## 14. Testing strategy and spike results
 
-Replace Node’s test runner for the engine with **`cargo test`**. This is independent of Runtime Critics: a Runtime Critic may run any configured test CLI.
+Replace Node’s test runner for the engine with **`cargo test`**. This is independent of runtime evals: a runtime eval may run any configured test CLI.
 
 Recommended layers:
 
@@ -624,7 +624,7 @@ All selected top-level crates have permissive licenses. This is not a complete t
 1. **Supported platforms:** Is v1 Linux/WSL-first, Linux+macOS, or native Windows too? This determines how much process identity, handle-based filesystem safety, and cleanup work must precede release.
 2. **Path-reference syntax:** Should generic command arguments use whole-token `{artifact}/path` references, or a typed argv schema supporting literal and path arguments? Are embedded flag substitutions required?
 3. **Executable/runtime identity:** Must every executable/runtime be explicitly declared and content-pinned, or may ordinary installed PATH programs be treated as external environment prerequisites? How should a changed installed compiler/test runner affect evidence reuse?
-4. **Schema dialect:** Retain a restrictive no-`$ref` subset with enhanced regex syntax, or intentionally choose linear-time regexes and a smaller language? Should owner response schemas for Runtime Critics remain verdict-only, or should a separate structured-result Runtime adapter exist?
+4. **Schema dialect:** Retain a restrictive no-`$ref` subset with enhanced regex syntax, or intentionally choose linear-time regexes and a smaller language? Should owner response schemas for runtime evals remain verdict-only, or should a separate structured-result Runtime adapter exist?
 5. **Environment policy:** Which developer environment variables and actual HOME/config locations may readiness checks see, versus private HOME/cache for ordinary tools and Runtime execution?
 7. **Persistence policy:** Should the first artifactize release reject old artifactize state on incompatible schema versions, or establish incremental migrations immediately? Is power-loss durability required for every accepted observation/result?
 8. **Human program lifetime:** Which tool kinds may intentionally hand off a long-running GUI/application process rather than kill descendants after command completion?
