@@ -18,7 +18,7 @@ use crate::{
 
 pub(super) enum Prepared {
     Runtime(runtime::Command),
-    Agent,
+    Agent { state: PathBuf },
     Human,
 }
 
@@ -46,13 +46,14 @@ pub(super) async fn execute(
             request.human_definition = None;
             None
         }
-        Ok(Prepared::Agent) => {
+        Ok(Prepared::Agent { state }) => {
             let eval = config
                 .evals
                 .iter()
                 .find(|eval| eval.id == request.eval_id)
                 .expect("included eval");
-            let review = agent::execute(&config, eval, &run_dir, cancellation.clone()).await;
+            let review =
+                agent::execute(&config, eval, &run_dir, &state, cancellation.clone()).await;
             request.usage = Some(json!(review.attempts));
             request.tool_calls = review.tool_calls;
             match review.result {
@@ -191,6 +192,7 @@ pub(super) fn prepare(
     config: &crate::config::RepoConfig,
     eval: &Eval,
     run_dir: &Path,
+    state: &Path,
     request: &mut Request,
 ) -> Result<Prepared, String> {
     if matches!(eval.declaration.profile, Profile::Human {}) {
@@ -200,7 +202,9 @@ pub(super) fn prepare(
     }
     if matches!(eval.declaration.profile, Profile::Agent { .. }) {
         request.run_dir = Some(run_dir.to_path_buf());
-        return Ok(Prepared::Agent);
+        return Ok(Prepared::Agent {
+            state: state.into(),
+        });
     }
     let Profile::Runtime {
         command,

@@ -248,7 +248,13 @@ impl Scheduler<'_, '_> {
                         .iter()
                         .find(|eval| eval.id == request.eval_id)
                         .expect("included eval");
-                    let prepared = execution::prepare(&self.config, eval, &run_dir, request);
+                    let prepared = execution::prepare(
+                        &self.config,
+                        eval,
+                        &run_dir,
+                        &self.run.state_dir,
+                        request,
+                    );
                     if prepared.is_ok() && !human && !self.cancellation.is_cancelled() {
                         self.run.executions_started += 1;
                         execution.started_at = now();

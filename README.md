@@ -267,8 +267,8 @@ use these same resolvers. The Agent tool registry uses the same admitted scope.
 
 ## Agent reviews
 
-Agent evals use one explicit model and backend, with no catalog, aliases, credential
-search or fallback:
+Agent evals use one explicit model and backend, with no bundled catalog, aliases,
+credential search or fallback:
 
 ```json
 {
@@ -281,11 +281,38 @@ search or fallback:
 ```
 
 `backend` accepts `openai`, `anthropic`, `chatgpt` or `claude`. The first two use
-only `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, respectively. ChatGPT login is separate;
-ChatGPT inference (P5.5) and the official Claude CLI backend (P5.6) currently return
-an explicit not-yet-implemented ERROR. `provider` and `effort` are not config aliases.
+only `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, respectively. ChatGPT uses the stored
+Sign in with ChatGPT credentials, never an API-key fallback. The official Claude
+CLI backend (P5.6) currently returns an explicit not-yet-implemented ERROR.
+`provider` and `effort` are not config aliases.
 
-`reasoning` is optional. When present, OpenAI receives exactly `reasoning.effort`
+For an eligible ChatGPT subscription:
+
+```sh
+artifactize login chatgpt
+artifactize models chatgpt           # account-visible slug and display name, in server order
+artifactize models chatgpt --json
+# Set backend: "chatgpt" and model to one returned slug, then:
+artifactize verify --all
+```
+
+Use the same `--state-dir` for login, models and verify if overriding the default.
+Each inference attempt obtains a valid access token (refreshing under the auth lock
+as needed). rig's ordinary Responses client sends it to `https://api.openai.com/v1`,
+never the ChatGPT backend-api. Every request explicitly sets `store:false`, streams,
+lifts all system messages into `instructions`, and replays the full history. There
+is no `previous_response_id` or server-side conversation state, nor any unsupported
+SIWC output cap, sampling, metadata or background parameter. Budgets stay client-side.
+Subscription failures retain the provider code and message; authentication failures
+explain how to sign in again. A usage-limit failure points to ChatGPT Settings > Usage.
+`models chatgpt` uses a fresh GET `/v1/models`, filtering `visibility == "list"` and
+printing `slug` and `display_name`. Model listing for other backends remains P8.1.
+
+This contract follows the official SIWC [models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference),
+[preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
+and [errors and recovery](https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery) documentation.
+
+`reasoning` is optional. When present, OpenAI and ChatGPT receive exactly `reasoning.effort`
 (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Anthropic receives
 adaptive thinking and exactly `output_config.effort` (`low`, `medium`, `high`,
 `max`). Other values are rejected, never remapped. A model that does not support
@@ -313,15 +340,17 @@ separate. OpenAI input already includes its cache reads. Never sum every counter
 Unreported fields stay absent. Assistant messages and reasoning are not persisted.
 
 Agent evals share runtime evals' dependency gates, identity claims, reuse and final
-identity recheck. For this phase, final output must be one JSON object containing
-`"verdict":"GREEN"` or `"verdict":"RED"`. Owner schemas are described in the prompt,
-but strict schema validation and the one repair are P5.3. `maxTokens` and
-`maxToolCalls` parse as positive integers; setting either currently returns an
-explicit P5.2 not-yet-implemented ERROR rather than silently ignoring the budget.
+identity recheck. Final output must be one strict JSON object containing
+`"verdict":"GREEN"` or `"verdict":"RED"` and only the permitted owner-schema fields.
+One tools-disabled repair is allowed for invalid final output, within the original
+deadline. `maxTokens` and `maxToolCalls` are enforced client-side before further tools
+execute; neither becomes a ChatGPT request parameter.
 
 Owner validation before relying on a provider: run one real review with each API-key
-backend and an accessible exact model ID. Automated tests use fake HTTP transports
-and make no real inference requests.
+backend and an accessible exact model ID. The owner's real ChatGPT review is pending:
+sign in, list models, then run an Agent eval with a declared tool using a returned slug.
+Automated tests use fake HTTP transports or local HTTP servers and make no real
+inference requests.
 
 ## Agent tools
 
