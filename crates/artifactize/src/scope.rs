@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use serde::Serialize;
 use thiserror::Error;
 
 use crate::config::{Artifact, CONFIG_FILE, ConfigError, Eval, Profile, RepoConfig};
@@ -15,16 +16,18 @@ pub use instruction::instruction_references;
 #[error("{0}")]
 pub struct ScopeError(pub String);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Relation {
     /// Input Artifact.
     pub source: String,
     /// Consumer Artifact.
     pub target: String,
+    #[serde(flatten)]
     pub kind: RelationKind,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
 pub enum RelationKind {
     Child {
         path: String,
@@ -33,10 +36,13 @@ pub enum RelationKind {
         alias: String,
     },
     Instruction {
+        #[serde(rename = "evalId")]
         eval_id: String,
         name: String,
     },
+    #[serde(rename = "argv")]
     Argument {
+        #[serde(rename = "evalId")]
         eval_id: String,
         index: usize,
         name: String,

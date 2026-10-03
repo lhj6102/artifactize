@@ -8,7 +8,9 @@ use std::{
 use crate::workspace::canonical_target;
 
 mod receipts;
-pub use receipts::{DATABASE, Receipts, Request, Run, RunView, read_run};
+pub use receipts::{
+    DATABASE, LastRequest, Receipts, Request, Run, RunView, read_latest_requests, read_run,
+};
 
 /// Resolve the single state directory without creating it.
 pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {

@@ -34,7 +34,7 @@ impl ConfigError {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Script {
     pub command: String,
@@ -87,7 +87,7 @@ impl Profile {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EvalDeclaration {
     pub id: String,
@@ -124,7 +124,7 @@ impl EvalDeclaration {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ToolMetadata {
     pub description: String,
@@ -139,7 +139,7 @@ pub struct ToolMetadata {
     pub execution_paths: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ResultKind {
     Text,
@@ -148,21 +148,21 @@ pub enum ResultKind {
     Launch,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ArtifactKind {
     Directory,
     Any,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct View {
     pub metadata: ToolMetadata,
     pub script: Script,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Views {
     #[serde(default)]
@@ -198,7 +198,7 @@ impl Views {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Stale {
     Identity {
@@ -225,14 +225,14 @@ impl Stale {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DependencyGates {
     Green,
     Ignore,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReviewPolicy {
     #[serde(default, deserialize_with = "present")]
@@ -310,7 +310,8 @@ fn validated_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
     Ok(declaration)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Artifact {
     pub family: Option<families::FamilyMembership>,
     pub path: PathBuf,
@@ -323,7 +324,7 @@ pub struct Artifact {
     pub review_policy: Option<ReviewPolicy>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct Eval {
     /// Workspace-qualified identity; declaration.id remains the owner's local id.
     pub id: String,

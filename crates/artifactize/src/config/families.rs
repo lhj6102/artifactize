@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::{ArtifactDeclaration, CONFIG_FILE, identifier, validation};
@@ -40,7 +40,7 @@ pub struct InstanceDeclaration {
     pub material: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FamilyMembership {
     pub name: String,
     /// Owner-relative list file, when instances are not declared inline.

@@ -38,6 +38,9 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Execute selected runtime Evals in the foreground.
+    #[command(group(clap::ArgGroup::new("required_selection")
+        .args(["artifact", "eval", "evals", "artifacts", "evals_file", "artifacts_file", "all"])
+        .required(true)))]
     Verify {
         #[command(flatten)]
         selection: SelectionArgs,
@@ -57,6 +60,24 @@ pub enum Command {
         #[arg(long)]
         wait: bool,
     },
+    /// Inspect current validation, saved Run audit, and what verify would do.
+    Status {
+        #[command(flatten)]
+        selection: SelectionArgs,
+        #[arg(long, value_name = "NAME")]
+        profile: Option<String>,
+        #[arg(long)]
+        recursive: bool,
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        ignore_gates: bool,
+    },
+    /// Inspect full static definitions, relations, cycles, and families.
+    Graph {
+        /// Select one Artifact or family and its required closure; defaults to all.
+        artifact: Option<String>,
+    },
     /// Read recorded Runs without discovering or executing project code.
     Run {
         #[command(subcommand)]
@@ -70,7 +91,7 @@ pub enum Command {
 }
 
 #[derive(Debug, Args)]
-#[group(required = true, multiple = false)]
+#[group(multiple = false)]
 pub struct SelectionArgs {
     /// Select one Artifact or every instance of a family.
     artifact: Option<String>,
@@ -229,6 +250,46 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 _ => 2,
             })
         }
+        Some(Command::Status {
+            selection,
+            profile,
+            recursive,
+            force,
+            ignore_gates,
+        }) => {
+            let view = crate::project::status(
+                &cli.repo.unwrap_or_else(|| PathBuf::from(".")),
+                cli.state_dir.as_deref(),
+                &selection.resolve()?,
+                &crate::project::VerifyOptions {
+                    profile: profile.map(ProfileSelection::Named),
+                    recursive,
+                    force,
+                    ignore_gates: ignore_gates.then_some(true),
+                },
+            )
+            .await?;
+            if cli.json {
+                print_json(&view)?;
+            } else {
+                print_status(&view).map_err(|error| error.to_string())?;
+            }
+            Ok(u8::from(!view.satisfied))
+        }
+        Some(Command::Graph { artifact }) => {
+            let config = read_workspace_config(&cli.repo.unwrap_or_else(|| PathBuf::from(".")))
+                .map_err(|error| error.to_string())?;
+            let selection = artifact.map_or(Selection::All, |artifact_id| Selection::Artifact {
+                artifact_id,
+            });
+            let view = crate::query::graph(&config, &selection)?;
+            if cli.json {
+                print_json(&view)?;
+            } else {
+                print_graph(&view).map_err(|error| error.to_string())?;
+            }
+            Ok(0)
+        }
         Some(Command::Run {
             command: RunCommand::Show { run_id },
         }) => {
@@ -251,6 +312,140 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             Ok(0)
         }
     }
+}
+
+fn print_status(view: &crate::project::StatusView) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    writeln!(
+        out,
+        "Current validation: {}",
+        if view.satisfied {
+            "SATISFIED"
+        } else {
+            "NOT SATISFIED"
+        }
+    )?;
+    for artifact in &view.artifacts {
+        writeln!(
+            out,
+            "  Artifact {}: {} ({}/{} Evals){}",
+            artifact.id,
+            artifact.state,
+            artifact.passed,
+            artifact.total,
+            artifact
+                .family
+                .as_ref()
+                .map_or(String::new(), |family| format!(" [family {family}]"))
+        )?;
+    }
+    for eval in &view.evals {
+        writeln!(
+            out,
+            "  {}: {} — {}{}\n    {}",
+            eval.id,
+            eval.state,
+            eval.action,
+            if eval.included {
+                ""
+            } else {
+                " (not included; use --recursive)"
+            },
+            eval.reason
+        )?;
+        if let Some(last) = &eval.last {
+            writeln!(
+                out,
+                "    Last: {} (Run {}; historical, not current evidence)",
+                last.verdict, last.run_id
+            )?;
+        }
+    }
+    for artifact in &view.obligations {
+        writeln!(out, "  Unmet obligation: {artifact}")?;
+    }
+    writeln!(
+        out,
+        "Verify actions: execute {}, reuse {}, wait {}, blocked {}",
+        view.counts.execute, view.counts.reuse, view.counts.wait, view.counts.blocked
+    )?;
+    Ok(())
+}
+
+fn print_graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    writeln!(
+        out,
+        "Graph: {} Artifacts, {} Evals",
+        view.artifacts.len(),
+        view.evals.len()
+    )?;
+    for (name, family) in &view.families {
+        writeln!(out, "  Family {name}: {}", family.artifact_ids.join(", "))?;
+    }
+    for component in &view.components {
+        writeln!(
+            out,
+            "  Component {}{}: {}",
+            component.id,
+            if component.cyclic { " [cycle]" } else { "" },
+            component.artifacts.join(", ")
+        )?;
+        for id in &component.artifacts {
+            let artifact = view.artifacts[id];
+            writeln!(
+                out,
+                "    Artifact {id}{} ({})",
+                if artifact.basis == Some(true) {
+                    " [basis]"
+                } else {
+                    ""
+                },
+                if artifact.path.as_os_str().is_empty() {
+                    ".".into()
+                } else {
+                    artifact.path.display().to_string()
+                }
+            )?;
+            for eval in view.evals.iter().filter(|eval| eval.target == *id) {
+                writeln!(
+                    out,
+                    "      {}: {} -> {}",
+                    eval.id,
+                    if eval.deps.is_empty() {
+                        "(no deps)".into()
+                    } else {
+                        eval.deps.join(", ")
+                    },
+                    eval.target
+                )?;
+            }
+        }
+    }
+    for edge in &view.relations {
+        use crate::scope::RelationKind;
+        let detail = match &edge.relation.kind {
+            RelationKind::Child { path } => format!("child path={path}"),
+            RelationKind::Mount { alias } => format!("mount alias={alias}"),
+            RelationKind::Instruction { eval_id, name } => {
+                format!("instruction eval={eval_id} name={name}")
+            }
+            RelationKind::Argument {
+                eval_id,
+                index,
+                name,
+                path,
+            } => format!("argv eval={eval_id} index={index} name={name} path={path}"),
+        };
+        writeln!(
+            out,
+            "  {} -> {} [{detail}]{}",
+            edge.relation.source,
+            edge.relation.target,
+            if edge.cyclic { " [cycle]" } else { "" }
+        )?;
+    }
+    Ok(())
 }
 
 fn print_json(value: &impl serde::Serialize) -> Result<(), String> {
