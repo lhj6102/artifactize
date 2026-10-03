@@ -12,6 +12,8 @@ mod executions;
 mod human;
 pub use human::HumanClaim;
 mod receipts;
+mod runs;
+pub use runs::{RunSummary, read_runs};
 mod tool_calls;
 pub use executions::{Claim, Execution, Provenance, read_identity_executions};
 pub use receipts::{

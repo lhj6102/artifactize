@@ -34,6 +34,10 @@ pub struct Run {
     pub completed_at: Option<String>,
     pub selection: Value,
     #[serde(default)]
+    pub profile: Value,
+    #[serde(default)]
+    pub definitions: Value,
+    #[serde(default)]
     pub recursive: bool,
     #[serde(default)]
     pub force: bool,
