@@ -1,0 +1,18 @@
+{
+  "name": "waiting",
+  "critics": [
+    {
+      "id": "check",
+      "title": "Check waiting",
+      "profile": {
+        "kind": "runtime",
+        "command": "/bin/false",
+        "args": [],
+        "timeoutMs": 1000
+      },
+      "payload": {
+        "instruction": "Check {timeout}."
+      }
+    }
+  ]
+}

@@ -1,15 +1,15 @@
 {
-  "name": "green",
+  "name": "red",
   "critics": [
     {
       "id": "check",
-      "title": "Check green",
+      "title": "Check red",
       "profile": {
         "kind": "runtime",
         "command": "/bin/sh",
         "args": [
-          "check.sh",
-          "{input}/data.txt"
+          "-c",
+          "printf 'RED finding\\n'; exit 7"
         ],
         "timeoutMs": 1000
       },

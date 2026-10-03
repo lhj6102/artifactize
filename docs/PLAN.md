@@ -118,7 +118,7 @@ Each task takes a worker about half a day to a day. It lands as one PR from `tas
 - [x] **P1.4** SCC scheduling, shared external gates, verdict propagation. Check: focused cycle, external-gate, RED-blocks and ERROR-waits tests.
 - [x] **P1.5** Generic runtime execution with gated process-group launch. Check: exit 0/nonzero → GREEN/RED; spawn/signal/timeout → ERROR.
 - [x] **P1.6** Private environments, deadlines, bounded output, descendant cleanup. Check: secrets are not inherited; a timeout kills grandchildren.
-- [ ] **P1.7** Receipts store and the end-to-end runtime `verify` plus `run show`. Check: `verify`, then `run show` from a fresh process.
+- [x] **P1.7** Receipts store and the end-to-end runtime `verify` plus `run show`. Check: `verify`, then `run show` from a fresh process.
 
 ### P2 Complete project and input
 - [ ] **P2.1** Families: inline/file instances, material, parameter precedence, variants, `$param` pointers, per-instance identities and Critics. Check: the family fixture validates expansion and isolation.

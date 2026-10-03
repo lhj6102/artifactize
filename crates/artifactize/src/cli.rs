@@ -34,6 +34,25 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Execute runtime Critics in the foreground (defaults to all Artifacts).
+    Verify {
+        #[arg(conflicts_with = "all")]
+        artifact: Option<String>,
+        /// Select every Artifact.
+        #[arg(long)]
+        all: bool,
+        /// Wait for completion (currently always foreground).
+        #[arg(long)]
+        wait: bool,
+        /// Include the full runtime audit JSON.
+        #[arg(long)]
+        full: bool,
+    },
+    /// Read recorded Runs without discovering or executing project code.
+    Run {
+        #[command(subcommand)]
+        command: RunCommand,
+    },
     /// Inspect static folder declarations without executing hooks or reviews.
     Config {
         #[command(subcommand)]
@@ -47,24 +66,119 @@ pub enum ConfigCommand {
     Check,
 }
 
-fn execute(cli: Cli) -> Result<(), String> {
-    let mut stdout = io::stdout().lock();
+#[derive(Debug, Subcommand)]
+pub enum RunCommand {
+    /// Read the full saved audit as JSON, even without --json.
+    Show { run_id: String },
+}
+
+async fn execute(cli: Cli) -> Result<u8, String> {
     match cli.command {
-        None => Cli::command()
-            .write_help(&mut stdout)
-            .map_err(|error| error.to_string()),
+        None => {
+            Cli::command()
+                .write_help(&mut io::stdout().lock())
+                .map_err(|error| error.to_string())?;
+            Ok(0)
+        }
+        Some(Command::Verify { artifact, full, .. }) => {
+            let cancellation = tokio_util::sync::CancellationToken::new();
+            let mut interrupt =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+                    .map_err(|e| e.to_string())?;
+            let mut terminate =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .map_err(|e| e.to_string())?;
+            let token = cancellation.clone();
+            let listener = tokio::spawn(async move {
+                tokio::select! { _ = interrupt.recv() => {}, _ = terminate.recv() => {} }
+                token.cancel();
+            });
+            let result = crate::project::verify(
+                &cli.repo.unwrap_or_else(|| PathBuf::from(".")),
+                cli.state_dir.as_deref(),
+                artifact.as_deref(),
+                cancellation,
+            )
+            .await;
+            listener.abort();
+            let view = result?;
+            if full {
+                print_json(&view)?;
+            } else if cli.json {
+                print_json(&crate::query::requester_run(&view))?;
+            } else {
+                let mut stdout = io::stdout().lock();
+                writeln!(
+                    stdout,
+                    "Run: {}\nExecution: {}\nState: {}",
+                    view.run.id,
+                    view.run.status,
+                    view.run.state_dir.display()
+                )
+                .map_err(|e| e.to_string())?;
+                for request in &view.requests {
+                    writeln!(
+                        stdout,
+                        "  {}: {}{}",
+                        request.critic_id,
+                        request.status,
+                        request
+                            .error
+                            .as_ref()
+                            .or(request.blocked_reason.as_ref())
+                            .map_or(String::new(), |reason| format!(" — {reason}"))
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+            Ok(match view.run.status.as_str() {
+                "GREEN" => 0,
+                "RED" => 1,
+                "INCOMPLETE" => 4,
+                _ => 2,
+            })
+        }
+        Some(Command::Run {
+            command: RunCommand::Show { run_id },
+        }) => {
+            let repo = cli
+                .repo
+                .map(|path| path.canonicalize().map_err(|e| e.to_string()))
+                .transpose()?;
+            let default_repo = if cli.state_dir.is_none() && repo.is_none() {
+                Some(std::fs::canonicalize(".").map_err(|e| e.to_string())?)
+            } else {
+                None
+            };
+            let repo = repo.as_deref().or(default_repo.as_deref());
+            let state = crate::store::receipts_dir(
+                repo.unwrap_or(std::path::Path::new("")),
+                cli.state_dir.as_deref(),
+            )?;
+            let view = crate::store::read_run(&state, repo, &run_id).await?;
+            print_json(&view)?;
+            Ok(0)
+        }
         Some(Command::Config {
             command: ConfigCommand::Check,
         }) => {
             let repo = cli.repo.unwrap_or_else(|| PathBuf::from("."));
             let config = read_workspace_config(&repo).map_err(|error| error.to_string())?;
+            let mut stdout = io::stdout().lock();
             if cli.json {
                 writeln!(stdout, "{}", json!({ "ok": true, "artifacts": config.artifacts.len(), "critics": config.critics.len() }))
             } else {
                 writeln!(stdout, "Folder configuration is valid.")
-            }.map_err(|error| error.to_string())
+            }.map_err(|error| error.to_string())?;
+            Ok(0)
         }
     }
+}
+
+fn print_json(value: &impl serde::Serialize) -> Result<(), String> {
+    let mut stdout = io::stdout().lock();
+    serde_json::to_writer_pretty(&mut stdout, value).map_err(|e| e.to_string())?;
+    writeln!(stdout).map_err(|e| e.to_string())
 }
 
 fn failure(message: &str, json: bool) -> ExitCode {
@@ -90,8 +204,15 @@ pub fn run() -> ExitCode {
             };
         }
     };
-    match execute(cli) {
-        Ok(()) => ExitCode::SUCCESS,
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => return failure(&error.to_string(), json),
+    };
+    match runtime.block_on(execute(cli)) {
+        Ok(code) => ExitCode::from(code),
         Err(error) => failure(&error, json),
     }
 }

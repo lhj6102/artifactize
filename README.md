@@ -4,6 +4,41 @@ A Rust rebrand of [CCDD](https://github.com/lhj6102/ccdd), ported from CCDD 7.0.
 
 Work in progress. See the [plan](docs/PLAN.md) and the [parity checklist](docs/ccdd-7-inventory.md).
 
+## Runtime CLI
+
+```sh
+cargo run -q -p artifactize -- --repo crates/artifactize/tests/fixtures/runtime verify
+cargo run -q -p artifactize -- --repo crates/artifactize/tests/fixtures/runtime run show RUN_ID
+```
+
+The fixture intentionally includes GREEN, RED, a timeout ERROR, RED-blocked and
+ERROR-waiting dependents, and a two-Artifact cycle. Its overall exit code is 2.
+`verify [ARTIFACT]` runs runtime Critics sequentially in dependency-gate order;
+`--all` or an omitted selector selects everything. An Artifact selector runs only
+that Artifact's Critics, while its dependency closure remains a final obligation.
+RED blocks downstream execution; missing/operational evidence waits. Cycle peers
+have no internal gates. Selected GREEN results with missing obligations remain
+recorded in an INCOMPLETE Run. Agent/Human Critics fail clearly before execution.
+
+P1 verification is foreground, with or without `--wait`: GREEN exits 0, RED 1,
+ERROR 2, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels the owned child group and records
+ERROR/CANCELLED, never RED. P3.2 will add detached submission and CCDD's non-wait
+acceptance codes; P3.15 adds following/wait timeouts without cancelling execution.
+`--json` prints compact requester results; `--full` includes the runtime audit.
+`run show RUN_ID` always prints full saved JSON and exits 0 on a successful read,
+regardless of the saved verdict. It never discovers declarations or runs code.
+
+Default receipts live in `$ARTIFACTIZE_STATE_HOME/<canonical-repo-sha256-prefix>`
+(or the state home fallback), in `receipts.sqlite` (bundled SQLite, WAL, schema 1).
+`--state-dir PATH` moves only Run receipts/history and binds that directory to its
+original canonical repository. Use `--state-dir PATH run show RUN_ID` without
+`--repo` to read even after the original repository is removed. Private run output
+lives below the receipt directory; state/output inside the reviewed repository is
+rejected, including through symlink ancestors. No writer transaction spans a
+subprocess or async suspension. This phase does not reuse earlier Run evidence,
+run identity hooks, or monitor/hash the workspace. End-of-review identity checks
+arrive with identity commands in P3.3.
+
 ## Scoped input library
 
 `config::read_workspace_config` (also used by `config check`) resolves nearest
@@ -27,8 +62,9 @@ references. Use `{owner}/mount/path` for logical paths starting at the owner.
 Other arguments (including escaped references) remain literal, and the command
 is never interpolated. `config check` validates reference names and syntax but
 does not open runtime operands or execute programs. Input existence and symlink
-checks happen during argument preparation. Graph closure, family expansion,
-tool enforcement and CLI execution are delivered by later tasks.
+checks happen during argument preparation. Graph closure and runtime CLI execution
+use these same resolvers. Family expansion and tool enforcement are delivered by
+later tasks.
 
 ## Runtime execution library
 
@@ -37,7 +73,7 @@ one invocation for `runtime::execute`. Arguments are literal; the runner never a
 a shell. The default cwd is the canonical workspace; a scoped caller can set
 `command.cwd` to the resolved Artifact directory. `process::run` remains the
 lower-level API for already-resolved commands with a complete explicit environment.
-CLI runtime execution is not wired yet (P1.7).
+`verify` uses this policy with the resolved owner Artifact as cwd.
 
 Only `PATH` and `LANG` are inherited (`LANG` defaults to `en_US.UTF-8`). Each prepared
 runtime command gets a fresh 0700 directory below the caller's external `run_dir`,

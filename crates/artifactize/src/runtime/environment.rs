@@ -5,10 +5,11 @@ use std::{
     fs::{self, DirBuilder, Permissions},
     io,
     os::unix::fs::{DirBuilderExt, PermissionsExt},
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 use super::Error;
+use crate::store::canonical_target;
 
 pub(super) fn prepare(
     workspace: &Path,
@@ -65,32 +66,4 @@ fn outside_workspace(workspace: &Path, output: &Path) -> Result<(), Error> {
         return Err(Error::OutputInsideWorkspace);
     }
     Ok(())
-}
-
-fn canonical_target(path: &Path) -> io::Result<PathBuf> {
-    let mut ancestor = PathBuf::new();
-    for component in std::path::absolute(path)?.components() {
-        match component {
-            Component::ParentDir => {
-                ancestor.pop();
-            }
-            _ => ancestor.push(component),
-        }
-    }
-    let mut missing = Vec::new();
-    loop {
-        match ancestor.canonicalize() {
-            Ok(mut path) => {
-                for name in missing.into_iter().rev() {
-                    path.push(name);
-                }
-                return Ok(path);
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                missing.push(ancestor.file_name().ok_or(error)?.to_os_string());
-                ancestor.pop();
-            }
-            Err(error) => return Err(error),
-        }
-    }
 }
