@@ -102,7 +102,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
             .arg(&repo)
             .arg("--state-dir")
             .arg(state)
-            .args(["verify", "--json"])
+            .args(["verify", "--all", "--json"])
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
@@ -120,7 +120,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         .arg(&repo)
         .arg("--state-dir")
         .arg(&state)
-        .arg("verify")
+        .args(["verify", "--all"])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
@@ -132,7 +132,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         .arg(&repo)
         .arg("--state-dir")
         .arg(&state)
-        .arg("verify")
+        .args(["verify", "--all"])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));

@@ -8,6 +8,7 @@ use crate::{
     config::{Critic, Profile, read_workspace_config},
     graph::{CriticStatus, Evidence, Graph},
     process,
+    project::selection::{ProfileSelection, Selection, select_profiles},
     runtime::{self, Outcome, Verdict},
     scope,
     store::{self, Receipts, Request, Run, RunView},
@@ -23,30 +24,18 @@ fn now() -> String {
 pub async fn verify(
     repo: &Path,
     state_dir: Option<&Path>,
-    artifact: Option<&str>,
+    selection: &Selection,
+    profile: Option<&ProfileSelection>,
     cancellation: CancellationToken,
 ) -> Result<RunView, String> {
     let config = read_workspace_config(repo).map_err(|e| e.to_string())?;
+    let config = select_profiles(config, selection, profile)?;
     let graph = Graph::new(&config).map_err(|e| e.to_string())?;
-    let roots: Vec<_> = artifact.map_or_else(
-        || config.artifacts.keys().map(String::as_str).collect(),
-        |id| vec![id],
-    );
+    let selected = selection.resolve(&config)?;
     let required = graph
-        .dependency_closure(&roots)
+        .dependency_closure(&selected.roots)
         .map_err(|e| e.to_string())?;
-    let critics: Vec<_> = graph
-        .components()
-        .iter()
-        .flat_map(|component| &component.artifacts)
-        .filter(|target| artifact.is_none_or(|id| id == **target))
-        .flat_map(|target| {
-            config
-                .critics
-                .iter()
-                .filter(move |critic| critic.target == *target)
-        })
-        .collect();
+    let critics = selected.critics;
     for critic in &critics {
         let unsupported = match critic.declaration.profile {
             Profile::Agent { .. } => Some("Agent Critics are not supported yet (P5)"),
@@ -82,10 +71,7 @@ pub async fn verify(
         status: "RUNNING".into(),
         created_at: now(),
         completed_at: None,
-        selection: artifact.map_or_else(
-            || json!({"kind":"all"}),
-            |id| json!({"kind":"artifact", "artifactId":id}),
-        ),
+        selection: serde_json::to_value(selection).expect("selection is JSON"),
         validation: Value::Null,
         error: None,
     };

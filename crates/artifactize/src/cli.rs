@@ -4,10 +4,13 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use serde_json::json;
 
-use crate::config::read_workspace_config;
+use crate::{
+    config::read_workspace_config,
+    project::selection::{ProfileSelection, Selection, read_selection_file},
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -34,13 +37,13 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Execute runtime Critics in the foreground (defaults to all Artifacts).
+    /// Execute selected runtime Critics in the foreground.
     Verify {
-        #[arg(conflicts_with = "all")]
-        artifact: Option<String>,
-        /// Select every Artifact.
-        #[arg(long)]
-        all: bool,
+        #[command(flatten)]
+        selection: SelectionArgs,
+        /// Use a declared profile variant for every selected Critic.
+        #[arg(long, value_name = "NAME")]
+        profile: Option<String>,
         /// Wait for completion (currently always foreground).
         #[arg(long)]
         wait: bool,
@@ -58,6 +61,59 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+}
+
+#[derive(Debug, Args)]
+#[group(required = true, multiple = false)]
+pub struct SelectionArgs {
+    /// Select one Artifact.
+    artifact: Option<String>,
+    /// Select one qualified Critic ID.
+    #[arg(long, value_name = "ID")]
+    critic: Option<String>,
+    /// Select comma-separated qualified Critic IDs.
+    #[arg(long, value_name = "CSV")]
+    critics: Option<String>,
+    /// Select comma-separated Artifact names.
+    #[arg(long, value_name = "CSV")]
+    artifacts: Option<String>,
+    /// Read Critic IDs from a JSON array or one ID per line.
+    #[arg(long, value_name = "PATH")]
+    critics_file: Option<PathBuf>,
+    /// Read Artifact names from a JSON array or one ID per line.
+    #[arg(long, value_name = "PATH")]
+    artifacts_file: Option<PathBuf>,
+    /// Select every Artifact.
+    #[arg(long)]
+    all: bool,
+}
+
+impl SelectionArgs {
+    fn resolve(self) -> Result<Selection, String> {
+        if let Some(artifact_id) = self.artifact {
+            Ok(Selection::Artifact { artifact_id })
+        } else if let Some(critic_id) = self.critic {
+            Ok(Selection::Critic { critic_id })
+        } else if let Some(ids) = self.critics {
+            Ok(Selection::Critics {
+                critic_ids: ids.split(',').map(str::to_owned).collect(),
+            })
+        } else if let Some(ids) = self.artifacts {
+            Ok(Selection::Artifacts {
+                artifact_ids: ids.split(',').map(str::to_owned).collect(),
+            })
+        } else if let Some(path) = self.critics_file {
+            Ok(Selection::Critics {
+                critic_ids: read_selection_file(&path)?,
+            })
+        } else if let Some(path) = self.artifacts_file {
+            Ok(Selection::Artifacts {
+                artifact_ids: read_selection_file(&path)?,
+            })
+        } else {
+            Ok(Selection::All)
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -80,7 +136,14 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 .map_err(|error| error.to_string())?;
             Ok(0)
         }
-        Some(Command::Verify { artifact, full, .. }) => {
+        Some(Command::Verify {
+            selection,
+            profile,
+            full,
+            ..
+        }) => {
+            let selection = selection.resolve()?;
+            let profile = profile.map(ProfileSelection::Named);
             let cancellation = tokio_util::sync::CancellationToken::new();
             let mut interrupt =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
@@ -96,7 +159,8 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             let result = crate::project::verify(
                 &cli.repo.unwrap_or_else(|| PathBuf::from(".")),
                 cli.state_dir.as_deref(),
-                artifact.as_deref(),
+                &selection,
+                profile.as_ref(),
                 cancellation,
             )
             .await;

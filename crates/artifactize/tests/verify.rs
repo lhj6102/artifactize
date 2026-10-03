@@ -229,7 +229,7 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
     assert_eq!(
         empty
             .command()
-            .arg("verify")
+            .args(["verify", "--all"])
             .output()
             .unwrap()
             .status
@@ -248,7 +248,7 @@ fn default_receipts_are_canonical_repo_bound_and_errors_do_not_invent_results() 
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .arg("--repo")
         .arg(&alias)
-        .args(["verify", "--full"])
+        .args(["verify", "--all", "--full"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -277,7 +277,7 @@ fn default_receipts_are_canonical_repo_bound_and_errors_do_not_invent_results() 
         fixture.runtime(program, &args);
         let output = fixture
             .command()
-            .args(["verify", "--full"])
+            .args(["verify", "--all", "--full"])
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
@@ -289,14 +289,14 @@ fn default_receipts_are_canonical_repo_bound_and_errors_do_not_invent_results() 
     let second = json_output(
         &fixture
             .command()
-            .args(["verify", "--full"])
+            .args(["verify", "--all", "--full"])
             .output()
             .unwrap(),
     );
     let third = json_output(
         &fixture
             .command()
-            .args(["verify", "--full"])
+            .args(["verify", "--all", "--full"])
             .output()
             .unwrap(),
     );
@@ -321,7 +321,7 @@ fn unsupported_profiles_fail_before_any_execution_or_store_creation() {
         fs::write(path, declaration.to_string()).unwrap();
         let output = fixture
             .command()
-            .args(["verify", "--json"])
+            .args(["verify", "--all", "--json"])
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
@@ -362,7 +362,7 @@ fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() 
     );
     let child = fixture
         .command()
-        .args(["verify", "--json"])
+        .args(["verify", "--all", "--json"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -403,5 +403,182 @@ fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() 
             stat.split_once(") ").unwrap().1.starts_with('Z'),
             "descendant still running: {stat}"
         );
+    }
+}
+
+#[test]
+fn selection_errors_fail_before_discovery_or_receipts() {
+    let fixture = Fixture::new();
+    for args in [
+        vec!["verify"],
+        vec!["verify", "green", "red"],
+        vec!["verify", "green", "--critic", "green/check"],
+        vec![
+            "verify",
+            "--critic",
+            "green/check",
+            "--critics",
+            "red/check",
+        ],
+        vec!["verify", "--all", "--artifacts", "green"],
+        vec![
+            "verify",
+            "--critics-file",
+            "missing",
+            "--artifacts-file",
+            "missing",
+        ],
+        vec!["verify", "--artifacts-file", "missing", "green"],
+    ] {
+        let output = fixture
+            .command()
+            .args(&args)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        let error = json_output(&output)["error"].as_str().unwrap().to_owned();
+        assert!(
+            error.contains("cannot be used")
+                || error.contains("required")
+                || error.contains("unexpected argument"),
+            "{error}"
+        );
+        assert!(!fixture.state.exists());
+    }
+}
+
+#[test]
+fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_patching_sources() {
+    let fixture = Fixture::new();
+    copy_directory(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runtime"),
+        &fixture.repo,
+    );
+    let source = fixture.repo.join("review/artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
+    declaration["critics"][0]["profileVariants"] = json!({
+        "brief": {"kind":"runtime","command":"/bin/echo","args":["variant", "{input}/data.txt"],"timeoutMs":1000}
+    });
+    fs::write(&source, declaration.to_string()).unwrap();
+    let original = fs::read(&source).unwrap();
+    let selected = fixture
+        .command()
+        .args([
+            "verify",
+            "--critic",
+            "green/check",
+            "--profile",
+            "brief",
+            "--full",
+        ])
+        .output()
+        .unwrap();
+    assert!(selected.status.success());
+    let run = json_output(&selected);
+    assert_eq!(
+        run["selection"],
+        json!({"kind":"critic","criticId":"green/check"})
+    );
+    assert_eq!(run["requests"][0]["profile"]["command"], "/bin/echo");
+    assert_eq!(
+        run["requests"][0]["result"]["stdout"],
+        format!(
+            "variant {}\n",
+            fixture.repo.join("input/data.txt").display()
+        )
+    );
+    assert_eq!(fs::read(&source).unwrap(), original);
+
+    let path = fixture._root.path().join("ids");
+    for (flag, json, lines) in [
+        (
+            "--critics-file",
+            r#"["cycle-b/check","green/check","cycle-a/check","green/check"]"#,
+            " cycle-b/check \r\n\r\ngreen/check\r\ncycle-a/check\ngreen/check\n",
+        ),
+        (
+            "--artifacts-file",
+            r#"["cycle-b","green","cycle-a","green"]"#,
+            " cycle-b \r\n\r\ngreen\r\ncycle-a\ngreen\n",
+        ),
+    ] {
+        for content in [json.to_owned(), format!("\u{feff}{lines}")] {
+            fs::write(&path, content).unwrap();
+            let output = fixture
+                .command()
+                .args(["verify", flag])
+                .arg(&path)
+                .arg("--full")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let run = json_output(&output);
+            let requests = run["requests"].as_array().unwrap();
+            assert_eq!(
+                requests
+                    .iter()
+                    .map(|request| request["criticId"].as_str().unwrap())
+                    .collect::<Vec<_>>(),
+                ["cycle-b/check", "green/check", "cycle-a/check"]
+            );
+            assert!(requests.iter().all(|request| request["status"] == "GREEN"));
+        }
+    }
+    let output = fixture
+        .command()
+        .args(["verify", "--artifacts", "cycle-b,cycle-a,cycle-b", "--full"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        json_output(&output)["requests"].as_array().unwrap().len(),
+        2
+    );
+    let output = fixture
+        .command()
+        .args([
+            "verify",
+            "--critics",
+            "cycle-a/check,cycle-a/check",
+            "--full",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(4));
+    let run = json_output(&output);
+    assert_eq!(run["requests"].as_array().unwrap().len(), 1);
+    assert_eq!(run["requests"][0]["status"], "GREEN");
+    assert_eq!(run["validation"]["artifacts"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn invalid_selections_and_profiles_never_create_a_run() {
+    let fixture = Fixture::new();
+    copy_directory(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runtime"),
+        &fixture.repo,
+    );
+    for args in [
+        vec!["verify", "--critic", "missing"],
+        vec!["verify", "--critics", "green/check,"],
+        vec!["verify", "--artifacts", "green,unknown"],
+        vec!["verify", "--artifacts", ""],
+        vec!["verify", "green", "--profile", "unknown"],
+        vec!["verify", "green", "--profile", "bad name"],
+    ] {
+        let output = fixture
+            .command()
+            .args(&args)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(json_output(&output)["error"].is_string());
+        assert!(!fixture.state.exists());
     }
 }

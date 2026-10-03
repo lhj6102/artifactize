@@ -98,7 +98,7 @@ The module boundaries below are permanent; later phases add code inside them rat
 
 | Phase | Runnable exit |
 |---|---|
-| P1 Runtime loop | `artifactize verify --repo fixtures/runtime` runs discovery → graph → Critics → verdicts; `run show` reads them in a new process |
+| P1 Runtime loop | `artifactize verify --all --repo fixtures/runtime` runs discovery → graph → Critics → verdicts; `run show` reads them in a new process |
 | P2 Complete project and input | Verify a cyclic, parameterized family selection with profile variants |
 | P3 Durable shared execution | Concurrent verifies share one execution; an input change during review fails the identity recheck as ERROR; detached runs, cancel/resume, budgets, admission and cache GC work |
 | P4 Complete tool host | `artifactize view` reads text and images; `tools check --execute` exercises scoped scripts; MCP serves them |
@@ -122,7 +122,7 @@ Each task takes a worker about half a day to a day. It lands as one PR from `tas
 
 ### P2 Complete project and input
 - [ ] **P2.1** Families: inline/file instances, material, parameter precedence, variants, `$param` pointers, per-instance identities and Critics. Check: the family fixture validates expansion and isolation.
-- [ ] **P2.2** Selectors (artifact, critic, family, multiple, `--all`), bounded JSON/line selection files, profile variants. Check: JSON and line files select identical ordered sets.
+- [x] **P2.2** Selectors (artifact, critic, family, multiple, `--all`), bounded JSON/line selection files, profile variants. Check: JSON and line files select identical ordered sets. Artifact/Critic selectors, files, and profile variants are delivered; family selectors await P2.1 and a follow-up.
 - [ ] **P2.3** Recursion, force, gate policy (`--ignore-gates`), final obligations. Check: selected success with missing evidence stays INCOMPLETE.
 - [ ] **P2.4** Canonical scoped and family fingerprints, mandatory execution inputs. Check: sibling material cannot change another instance's fingerprint.
 - [ ] **P2.5** Current inspection, `status`/`plan` explanations (REUSE/COALESCE/EXECUTE/WAIT/BLOCKED/FAILED), full/compact `graph`/config projections. Check: static queries never run owner code.
