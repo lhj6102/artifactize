@@ -9,7 +9,10 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 pub mod families;
+mod tools;
 mod validation;
+
+pub use tools::{AgentTool, Builtin, BuiltinTool, CommandTool, ToolProtocol};
 
 pub(crate) use validation::identifier;
 use validation::{paths, positive_integer, present, script, text, timeout};
@@ -166,26 +169,22 @@ pub struct View {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Views {
     #[serde(default)]
-    pub agent_tools: BTreeMap<String, View>,
+    pub agent_tools: BTreeMap<String, AgentTool>,
     #[serde(default)]
     pub human_tools: BTreeMap<String, View>,
 }
 
 impl Views {
     fn validate(&self) -> Result<(), String> {
-        for (name, view) in self.agent_tools.iter().chain(&self.human_tools) {
+        for (name, tool) in &self.agent_tools {
+            identifier(name, "Agent tool name")?;
+            tool.validate().map_err(|e| format!("Tool {name}: {e}"))?;
+        }
+        for (name, view) in &self.human_tools {
             identifier(name, "View name")?;
             script(&view.script.command, &view.script.args)?;
             let metadata = &view.metadata;
-            text(&metadata.description, "Tool description")?;
-            if metadata.description.encode_utf16().count() > 4000
-                || metadata
-                    .description
-                    .replace("{artifactName}", "")
-                    .contains(['{', '}'])
-            {
-                return Err("Tool description is limited to 4000 characters and supports only {artifactName}.".into());
-            }
+            tools::description(&metadata.description)?;
             if metadata.result_kinds.is_empty()
                 || metadata.result_kinds.iter().collect::<BTreeSet<_>>().len()
                     != metadata.result_kinds.len()

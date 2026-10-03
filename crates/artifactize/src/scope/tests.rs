@@ -74,7 +74,7 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     fixture.artifact(
         "outer",
         json!({"name":"parent","evals":[eval("Inspect {child}.")],
-            "views":{"agentTools":{"read":{"metadata":{"description":"Read","inputSchema":{},"resultKinds":["text"]},"script":{"command":"not-run","args":[]}}}}}),
+            "views":{"agentTools":{"read":{"description":"Read","protocol":"json","command":"not-run","args":[]}}}}),
     );
     fixture.artifact("outer/unmarked/deep", json!({"name":"child"}));
     fixture.artifact(

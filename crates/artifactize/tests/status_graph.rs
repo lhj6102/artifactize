@@ -285,7 +285,7 @@ fn families_keep_full_definitions_grouping_and_last_run_pointers() {
         json!(["checkout.txt"])
     );
     assert_eq!(
-        graph["artifacts"]["search"]["views"]["agentTools"]["detail"]["metadata"]["inputSchema"]["properties"]
+        graph["artifacts"]["search"]["views"]["agentTools"]["detail"]["inputSchema"]["properties"]
             ["id"]["enum"],
         json!(["message", "query"])
     );

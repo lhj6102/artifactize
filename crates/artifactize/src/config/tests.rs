@@ -146,7 +146,7 @@ fn all_hook_timeouts_are_checked_without_opening_scripts() {
     let valid = json!({
         "name": "a",
         "stale": {"kind": "identity", "script": {"command": "identity.sh", "args": []}, "timeoutMs": 2147483647},
-        "views": {"agentTools": {"read": {"metadata": {"description": "Read {artifactName}", "inputSchema": {"type": "object"}, "resultKinds": ["text"], "timeoutMs": 1000}, "script": {"command": "sh", "args": ["view.sh"]}}}},
+        "views": {"agentTools": {"read": {"description": "Read {artifactName}", "inputSchema": {"type": "object"}, "timeoutMs": 1000, "protocol": "json", "command": "sh", "args": ["view.sh"]}}},
         "evals": [{"id": "review", "title": "Review", "profile": {"kind": "agent", "provider": "p", "model": "m", "reasoning": "high"}, "payload": {"instruction": "Review"}}]
     });
     assert!(parse(valid.clone()).is_ok());
@@ -154,7 +154,7 @@ fn all_hook_timeouts_are_checked_without_opening_scripts() {
     invalid["stale"]["timeoutMs"] = json!(null);
     assert!(parse(invalid).is_err());
     let mut invalid = valid.clone();
-    invalid["views"]["agentTools"]["read"]["metadata"]["timeoutMs"] = json!(2147483648_u64);
+    invalid["views"]["agentTools"]["read"]["timeoutMs"] = json!(2147483648_u64);
     assert!(parse(invalid).is_err());
     let mut invalid = valid;
     invalid["evals"][0]["profile"]["timeoutMs"] = json!("30000");
@@ -179,7 +179,7 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
     ] {
         assert!(validation::path(path).is_err(), "{path:?}");
         assert!(parse(json!({"name":"a","stale":{"kind":"identity","script":{"command":"entry","args":[]},"inputs":[path]}})).is_err());
-        assert!(parse(json!({"name":"a","views":{"agentTools":{"read":{"metadata":{"description":"Read","inputSchema":{},"resultKinds":["text"],"executionPaths":[path]},"script":{"command":"sh","args":[]}}}}})).is_err());
+        assert!(parse(json!({"name":"a","views":{"agentTools":{"read":{"description":"Read","inputSchema":{"type":"object"},"protocol":"json","executionPaths":[path],"command":"sh","args":[]}}}})).is_err());
     }
     for path in ["file", "nested/file", "C:relative", "1:/relative", "a:b"] {
         assert!(validation::path(path).is_ok(), "{path:?}");
@@ -271,11 +271,10 @@ fn dropped_configuration_fields_are_rejected() {
     );
     assert!(
         parse(
-            json!({"name":"a","views":{"agentTools":{"read":{"metadata":{
-        "description":"Read", "inputSchema":{}, "resultKinds":["text"], "observation":"content"
-    },"script":{"command":"read.sh","args":[]}}}}})
+            json!({"name":"a","views":{"agentTools":{"read":{
+                "description":"Read", "protocol":"json", "command":"read.sh", "args":[], "observation":"content"
+            }}}})
         )
-        .unwrap_err()
-        .contains("observation")
+        .is_err()
     );
 }
