@@ -245,7 +245,8 @@ impl Receipts {
         let request = request.clone();
         self.connection
             .call(move |db| -> Result<(), Error> {
-                let transaction = db.transaction()?;
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 let published = settle(&transaction, &execution, &request)?;
                 transaction.commit()?;
                 if published && let Err(error) = super::cache_entries::collect(db) {

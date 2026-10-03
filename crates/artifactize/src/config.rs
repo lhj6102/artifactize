@@ -62,9 +62,8 @@ impl Backend {
                 reasoning,
                 "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
             ),
-            Self::Anthropic | Self::Claude => {
-                matches!(reasoning, "low" | "medium" | "high" | "max")
-            }
+            Self::Anthropic => matches!(reasoning, "low" | "medium" | "high" | "max"),
+            Self::Claude => matches!(reasoning, "low" | "medium" | "high" | "xhigh" | "max"),
         };
         if supported {
             Ok(())
