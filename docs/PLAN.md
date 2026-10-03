@@ -213,7 +213,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [ ] **P5.1** rig OpenAI/Anthropic API-key backends, explicit profiles, multimodal turns, transient retries, per-attempt usage. Check: fake transport asserts model, effort and payloads.
 - [ ] **P5.2** `maxToolCalls`, token and deadline gates; duplicate-ID failure. Check: crossing a budget blocks further tools.
 - [ ] **P5.3** Strict verdict schemas, owner fields, one tools-disabled repair. Check: fenced JSON is rejected; a second failure is ERROR.
-- [ ] **P5.4** ChatGPT login: registration, PKCE, protected storage, serialized refresh. Check: callback-validation and refresh-race tests; a real `login chatgpt` (owner).
+- [x] **P5.4** ChatGPT login: registration, PKCE, protected storage, serialized refresh. Check: callback-validation and refresh-race tests; a real `login chatgpt` (owner).
 - [ ] **P5.5** ChatGPT subscription inference via rig Responses. Check: incomplete responses are rejected; a real review (owner).
 - [ ] **P5.6** Claude backend: launch controls, stream-json parsing, MCP gated by assistant turn, separate repair invocation. Check: a fake CLI asserts flags and env; a real review (owner).
 

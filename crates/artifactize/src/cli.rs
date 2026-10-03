@@ -37,6 +37,16 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Sign in with ChatGPT using the system browser.
+    Login {
+        #[command(subcommand)]
+        provider: AuthProvider,
+    },
+    /// Revoke the ChatGPT session and remove local tokens.
+    Logout {
+        #[command(subcommand)]
+        provider: AuthProvider,
+    },
     /// Execute selected runtime Evals in the foreground.
     #[command(group(clap::ArgGroup::new("required_selection")
         .args(["artifact", "eval", "evals", "artifacts", "evals_file", "artifacts_file", "all"])
@@ -144,6 +154,12 @@ impl SelectionArgs {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum AuthProvider {
+    /// Use your ChatGPT account and eligible plan.
+    Chatgpt,
+}
+
+#[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
     /// Validate declarations and unique Artifact/Eval identities.
     Check,
@@ -157,6 +173,37 @@ pub enum RunCommand {
 
 async fn execute(cli: Cli) -> Result<u8, String> {
     match cli.command {
+        Some(Command::Login {
+            provider: AuthProvider::Chatgpt,
+        }) => {
+            crate::auth::login_chatgpt(cli.state_dir.as_deref(), cli.repo.as_deref()).await?;
+            if cli.json {
+                print_json(&json!({ "provider": "chatgpt", "signed_in": true }))?;
+            } else {
+                writeln!(io::stdout().lock(), "Signed in with ChatGPT.")
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(0)
+        }
+        Some(Command::Logout {
+            provider: AuthProvider::Chatgpt,
+        }) => {
+            let revoked =
+                crate::auth::logout_chatgpt(cli.state_dir.as_deref(), cli.repo.as_deref()).await?;
+            if !revoked {
+                writeln!(io::stderr().lock(), "Local tokens removed; remote revocation was not confirmed. Disconnect artifactize in ChatGPT Settings.")
+                    .map_err(|e| e.to_string())?;
+            }
+            if cli.json {
+                print_json(
+                    &json!({ "provider": "chatgpt", "signed_in": false, "revoked": revoked }),
+                )?;
+            } else {
+                writeln!(io::stdout().lock(), "Signed out of ChatGPT.")
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(0)
+        }
         None => {
             Cli::command()
                 .write_help(&mut io::stdout().lock())
