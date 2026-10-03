@@ -41,9 +41,18 @@ pub enum Command {
     Verify {
         #[command(flatten)]
         selection: SelectionArgs,
-        /// Use a declared profile variant for every selected Critic.
+        /// Use a declared profile variant for every included Critic.
         #[arg(long, value_name = "NAME")]
         profile: Option<String>,
+        /// Include all Critics in the required dependency scope, including cycle peers.
+        #[arg(long)]
+        recursive: bool,
+        /// Force explicitly selected Critics only; dependency gates still apply.
+        #[arg(long)]
+        force: bool,
+        /// Bypass execution gates, never final validation obligations.
+        #[arg(long)]
+        ignore_gates: bool,
         /// Wait for completion (currently always foreground).
         #[arg(long)]
         wait: bool,
@@ -139,11 +148,19 @@ async fn execute(cli: Cli) -> Result<u8, String> {
         Some(Command::Verify {
             selection,
             profile,
+            recursive,
+            force,
+            ignore_gates,
             full,
             ..
         }) => {
             let selection = selection.resolve()?;
-            let profile = profile.map(ProfileSelection::Named);
+            let options = crate::project::VerifyOptions {
+                profile: profile.map(ProfileSelection::Named),
+                recursive,
+                force,
+                ignore_gates: ignore_gates.then_some(true),
+            };
             let cancellation = tokio_util::sync::CancellationToken::new();
             let mut interrupt =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
@@ -160,7 +177,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 &cli.repo.unwrap_or_else(|| PathBuf::from(".")),
                 cli.state_dir.as_deref(),
                 &selection,
-                profile.as_ref(),
+                &options,
                 cancellation,
             )
             .await;
@@ -193,6 +210,22 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                             .map_or(String::new(), |reason| format!(" — {reason}"))
                     )
                     .map_err(|e| e.to_string())?;
+                }
+                writeln!(
+                    stdout,
+                    "Validation: {}",
+                    if view.run.validation["satisfied"] == true {
+                        "SATISFIED"
+                    } else {
+                        "NOT SATISFIED"
+                    }
+                )
+                .map_err(|e| e.to_string())?;
+                if let Some(obligations) = view.run.validation["obligations"].as_array() {
+                    for artifact in obligations.iter().filter_map(serde_json::Value::as_str) {
+                        writeln!(stdout, "  Unmet obligation: {artifact}")
+                            .map_err(|e| e.to_string())?;
+                    }
                 }
             }
             Ok(match view.run.status.as_str() {

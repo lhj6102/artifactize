@@ -43,6 +43,32 @@ impl Fixture {
         command
     }
 
+    fn runtime_fixture() -> Self {
+        let fixture = Self::new();
+        copy_directory(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runtime"),
+            &fixture.repo,
+        );
+        fixture
+    }
+
+    fn verify(&self, args: &[&str], code: i32) -> Value {
+        let output = self
+            .command()
+            .arg("verify")
+            .args(args)
+            .arg("--full")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(code),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        json_output(&output)
+    }
+
     fn runtime(&self, program: &str, args: &[&str]) {
         fs::write(self.repo.join("artifactize.json"), json!({
             "name":"test", "critics":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":program,"args":args}, "payload":{"instruction":"Check runtime."}}]
@@ -581,4 +607,327 @@ fn invalid_selections_and_profiles_never_create_a_run() {
         assert!(json_output(&output)["error"].is_string());
         assert!(!fixture.state.exists());
     }
+}
+
+fn request<'a>(run: &'a Value, id: &str) -> &'a Value {
+    run["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["criticId"] == id)
+        .unwrap()
+}
+
+#[test]
+fn individual_saves_success_while_recursive_completes_cycle_obligations() {
+    let fixture = Fixture::runtime_fixture();
+    let individual = fixture.verify(&["--critic", "cycle-a/check"], 4);
+    assert_eq!(individual["status"], "INCOMPLETE");
+    assert_eq!(
+        request(&individual, "cycle-a/check")["result"]["verdict"],
+        "GREEN"
+    );
+    assert_eq!(individual["validation"]["obligations"], json!(["cycle-b"]));
+    assert_eq!(
+        individual["validation"]["includedCriticIds"],
+        json!(["cycle-a/check"])
+    );
+    let saved = fixture
+        .command()
+        .args(["run", "show", individual["id"].as_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(saved.status.success());
+    assert_eq!(json_output(&saved), individual);
+
+    let recursive = fixture.verify(&["--critic", "cycle-a/check", "--recursive", "--force"], 0);
+    assert_eq!(recursive["status"], "GREEN");
+    assert_eq!(recursive["validation"]["obligations"], json!([]));
+    assert_eq!(
+        recursive["validation"]["selectedCriticIds"],
+        json!(["cycle-a/check"])
+    );
+    assert_eq!(
+        recursive["validation"]["includedCriticIds"],
+        json!(["cycle-a/check", "cycle-b/check"])
+    );
+    assert_eq!(request(&recursive, "cycle-a/check")["force"], true);
+    assert_eq!(request(&recursive, "cycle-b/check")["force"], false);
+    assert!(
+        recursive["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["status"] == "GREEN")
+    );
+}
+
+#[test]
+fn force_neither_expands_selection_nor_bypasses_gates() {
+    let fixture = Fixture::runtime_fixture();
+    let individual = fixture.verify(&["blocked", "--force"], 4);
+    assert_eq!(individual["requests"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        request(&individual, "blocked/check")["status"],
+        "WAIT_DEPENDENCY"
+    );
+    assert_eq!(request(&individual, "blocked/check")["force"], true);
+    assert!(request(&individual, "blocked/check")["startedAt"].is_null());
+
+    let recursive = fixture.verify(&["blocked", "--recursive", "--force"], 1);
+    assert_eq!(request(&recursive, "blocked/check")["status"], "BLOCKED");
+    assert_eq!(request(&recursive, "red/check")["force"], false);
+    assert_eq!(recursive["status"], "RED");
+    let waiting = fixture.verify(&["waiting", "--recursive"], 2);
+    assert_eq!(
+        request(&waiting, "waiting/check")["status"],
+        "WAIT_DEPENDENCY"
+    );
+    assert_eq!(request(&waiting, "timeout/check")["status"], "ERROR");
+
+    let all = fixture.verify(&["--all", "--force"], 2);
+    assert!(
+        all["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["force"] == true)
+    );
+}
+
+#[test]
+fn ignore_gates_saves_actual_verdicts_but_never_waives_final_obligations() {
+    let fixture = Fixture::runtime_fixture();
+    let individual = fixture.verify(&["blocked", "--ignore-gates"], 4);
+    assert_eq!(individual["ignoreGates"], true);
+    assert_eq!(request(&individual, "blocked/check")["status"], "GREEN");
+    assert_eq!(individual["validation"]["obligations"], json!(["red"]));
+    assert_eq!(individual["validation"]["satisfied"], false);
+    assert_eq!(individual["validation"]["critics"][0]["status"], "GREEN");
+    let recursive = fixture.verify(&["blocked", "--recursive", "--ignore-gates"], 1);
+    assert_eq!(request(&recursive, "blocked/check")["status"], "GREEN");
+    assert_eq!(request(&recursive, "red/check")["status"], "RED");
+    assert_eq!(recursive["validation"]["obligations"], json!(["red"]));
+
+    let path = fixture.repo.join("blocked/artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    declaration["critics"][0]["profile"] =
+        json!({"kind":"runtime","command":"/missing-command","args":[]});
+    fs::write(path, declaration.to_string()).unwrap();
+    let failed = fixture.verify(&["blocked", "--ignore-gates"], 2);
+    assert_eq!(request(&failed, "blocked/check")["status"], "ERROR");
+    assert_eq!(failed["status"], "ERROR");
+    assert_eq!(failed["validation"]["critics"][0]["status"], "ERROR");
+}
+
+#[tokio::test]
+async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
+    use artifactize::{
+        project::{VerifyOptions, selection::Selection, verify},
+        store::read_run,
+    };
+    use tokio_util::sync::CancellationToken;
+
+    let fixture = Fixture::runtime_fixture();
+    fs::write(
+        fixture.repo.join("artifactize.json"),
+        r#"{"name":"root","basis":true,"reviewPolicy":{"dependencyGates":"ignore"}}"#,
+    )
+    .unwrap();
+    let inherited = fixture.verify(&["blocked"], 4);
+    assert_eq!(inherited["ignoreGates"], true);
+    assert_eq!(request(&inherited, "blocked/check")["status"], "GREEN");
+    assert_eq!(inherited["validation"]["obligations"], json!(["red"]));
+
+    let enforced = verify(
+        &fixture.repo,
+        Some(&fixture.state),
+        &Selection::Artifact {
+            artifact_id: "blocked".into(),
+        },
+        &VerifyOptions {
+            ignore_gates: Some(false),
+            ..Default::default()
+        },
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(!enforced.run.ignore_gates);
+    assert_eq!(enforced.run.status, "INCOMPLETE");
+    assert_eq!(enforced.requests[0].status, "WAIT_DEPENDENCY");
+    let saved = read_run(&fixture.state, None, &enforced.run.id)
+        .await
+        .unwrap();
+    assert!(!saved.run.ignore_gates);
+
+    fs::write(
+        fixture.repo.join("artifactize.json"),
+        r#"{"name":"root","basis":true,"reviewPolicy":{"dependencyGates":"green"}}"#,
+    )
+    .unwrap();
+    let override_green = fixture.verify(&["blocked", "--ignore-gates"], 4);
+    assert_eq!(request(&override_green, "blocked/check")["status"], "GREEN");
+}
+
+#[test]
+fn basis_and_all_keep_no_critic_dependency_obligations() {
+    let fixture = Fixture::new();
+    fixture.runtime("/bin/true", &[]);
+    fs::create_dir(fixture.repo.join("input")).unwrap();
+    fs::write(
+        fixture.repo.join("input/artifactize.json"),
+        r#"{"name":"input"}"#,
+    )
+    .unwrap();
+    let individual = fixture.verify(&["test"], 4);
+    assert_eq!(individual["validation"]["obligations"], json!(["input"]));
+    assert_eq!(individual["requests"][0]["status"], "GREEN");
+    let recursive = fixture.verify(&["test", "--recursive", "--ignore-gates"], 4);
+    assert_eq!(recursive["validation"]["obligations"], json!(["input"]));
+    let text = fixture
+        .command()
+        .args(["verify", "--all"])
+        .output()
+        .unwrap();
+    assert_eq!(text.status.code(), Some(4));
+    assert!(String::from_utf8_lossy(&text.stdout).contains("Unmet obligation: input"));
+
+    fs::write(
+        fixture.repo.join("artifactize.json"),
+        r#"{"name":"test","basis":true}"#,
+    )
+    .unwrap();
+    let basis = fixture.verify(&["test"], 4);
+    assert!(basis["requests"].as_array().unwrap().is_empty());
+    assert_eq!(basis["validation"]["obligations"], json!(["input"]));
+    fs::write(
+        fixture.repo.join("input/artifactize.json"),
+        r#"{"name":"input","basis":true}"#,
+    )
+    .unwrap();
+    assert_eq!(fixture.verify(&["--all"], 0)["status"], "GREEN");
+}
+
+#[test]
+fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
+    let fixture = Fixture::runtime_fixture();
+    for folder in ["blocked", "red"] {
+        let path = fixture.repo.join(folder).join("artifactize.json");
+        let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        declaration["critics"][0]["profileVariants"] =
+            json!({"pass":{"kind":"runtime","command":"/bin/echo","args":["{input}"]}});
+        fs::write(path, declaration.to_string()).unwrap();
+    }
+    let recursive = fixture.verify(&["blocked", "--recursive", "--profile", "pass"], 0);
+    assert_eq!(recursive["requests"].as_array().unwrap().len(), 2);
+    assert!(
+        recursive["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["profile"]["command"] == "/bin/echo")
+    );
+    assert_eq!(
+        recursive["validation"]["artifacts"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    let input = recursive["validation"]["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == "input")
+        .unwrap();
+    assert_eq!(input["status"], "BASIS");
+    let individual = fixture.verify(&["blocked", "--profile", "pass"], 4);
+    assert_eq!(individual["requests"].as_array().unwrap().len(), 1);
+    assert_eq!(individual["requests"][0]["status"], "WAIT_DEPENDENCY");
+}
+
+#[test]
+fn recursive_family_selection_includes_external_critics_without_forcing_them() {
+    let fixture = Fixture::new();
+    copy_directory(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/families"),
+        &fixture.repo,
+    );
+    fs::create_dir(fixture.repo.join("external")).unwrap();
+    fs::write(fixture.repo.join("external/artifactize.json"), json!({
+        "name":"external", "critics":[{"id":"check","title":"External",
+            "profile":{"kind":"runtime","command":"/bin/true","args":[]},
+            "profileVariants":{"brief":{"kind":"runtime","command":"/bin/echo","args":["external variant"]}},
+            "payload":{"instruction":"Check."}}]
+    }).to_string()).unwrap();
+    let path = fixture.repo.join("scenarios/artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    declaration["mounts"] = json!({"external":"external"});
+    declaration["critics"][0]["profileVariants"] =
+        json!({"brief":{"kind":"runtime","command":"/bin/echo","args":["family variant"]}});
+    fs::write(path, declaration.to_string()).unwrap();
+
+    let individual = fixture.verify(&["scenarios"], 4);
+    assert_eq!(individual["requests"].as_array().unwrap().len(), 2);
+    assert!(
+        individual["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["status"] == "WAIT_DEPENDENCY")
+    );
+    let instance = fixture.verify(&["checkout", "--recursive", "--force"], 0);
+    assert_eq!(instance["requests"].as_array().unwrap().len(), 2);
+    assert_eq!(request(&instance, "checkout/review")["force"], true);
+    assert_eq!(request(&instance, "external/check")["force"], false);
+    assert!(
+        !instance["validation"]["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|a| a["id"] == "search")
+    );
+
+    let family = fixture.verify(
+        &[
+            "--artifacts",
+            "scenarios,checkout",
+            "--recursive",
+            "--force",
+            "--profile",
+            "brief",
+        ],
+        0,
+    );
+    assert_eq!(family["requests"].as_array().unwrap().len(), 3);
+    assert_eq!(request(&family, "checkout/review")["force"], true);
+    assert_eq!(request(&family, "search/review")["force"], true);
+    assert_eq!(request(&family, "external/check")["force"], false);
+    assert!(
+        family["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["status"] == "GREEN" && r["profile"]["command"] == "/bin/echo")
+    );
+    assert!(!fixture.repo.join("scenarios/identity-ran").exists());
+}
+
+#[test]
+fn recursive_critic_selection_includes_sibling_critics_on_the_same_artifact() {
+    let fixture = Fixture::new();
+    fixture.runtime("/bin/true", &[]);
+    let path = fixture.repo.join("artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mut sibling = declaration["critics"][0].clone();
+    sibling["id"] = json!("sibling");
+    declaration["critics"].as_array_mut().unwrap().push(sibling);
+    fs::write(path, declaration.to_string()).unwrap();
+    let individual = fixture.verify(&["--critic", "test/check"], 4);
+    assert_eq!(individual["validation"]["obligations"], json!(["test"]));
+    let recursive = fixture.verify(&["--critic", "test/check", "--recursive", "--force"], 0);
+    assert_eq!(recursive["requests"].as_array().unwrap().len(), 2);
+    assert_eq!(request(&recursive, "test/check")["force"], true);
+    assert_eq!(request(&recursive, "test/sibling")["force"], false);
 }
