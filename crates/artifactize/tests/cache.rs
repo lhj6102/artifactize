@@ -499,7 +499,7 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     let target = fixture.shared_repo("target", "echo replacement >> \"$1\"; printf recovered");
     let mut owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.root.path().join("starts").exists());
-    let waiter = fixture.spawn(&target, &[]);
+    let waiter = fixture.spawn(&target, &["--max-executions", "1"]);
     let waiting = fixture.waiting_request();
     owner.kill().unwrap();
     owner.wait().unwrap();
@@ -516,6 +516,7 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     assert_eq!(fixture.count("executions"), 2);
     assert_eq!(fixture.count("cache_entries"), 1);
     assert_eq!(fixture.starts(), 2);
+    assert_eq!(recovered["executionsStarted"], 1);
     // SIGKILL cannot run foreground cleanup; stop this fixture's orphaned group.
     let pid = fs::read_to_string(fixture.root.path().join("starts")).unwrap();
     assert!(
@@ -627,4 +628,97 @@ fn force_bypasses_a_live_claim_and_never_publishes() {
         original["requests"][0]["executionId"]
     );
     assert_eq!(fixture.starts(), 2);
+}
+
+#[test]
+fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo(
+        "repo",
+        json!({"name":"test","stale":identity("one-start"),"evals":[
+            eval("first", "echo first >> starts; sleep 0.1"),
+            eval("second", "touch must-not-run"),
+            eval("third", "touch must-not-run")
+        ]}),
+    );
+    let run = fixture.command(
+        &repo,
+        &["verify", "--all", "--jobs", "3", "--max-executions", "1"],
+        0,
+    );
+    assert_eq!(run["executionsStarted"], 1);
+    assert_eq!(fixture.count("executions"), 1);
+    for request in run["requests"].as_array().unwrap() {
+        assert_eq!(request["executionId"], run["requests"][0]["executionId"]);
+    }
+    let hit = fixture.command(&repo, &["verify", "--all", "--max-executions", "0"], 0);
+    assert_eq!(hit["executionsStarted"], 0);
+    let forced = fixture.command(
+        &repo,
+        &["verify", "--all", "--max-executions", "0", "--force"],
+        4,
+    );
+    assert_eq!(forced["executionsStarted"], 0);
+    assert_eq!(fixture.count("executions"), 1);
+    assert!(!repo.join("must-not-run").exists());
+}
+
+#[test]
+fn zero_budget_can_join_an_owner_but_cannot_replace_it_after_failure() {
+    for success in [true, false] {
+        let fixture = Fixture::new();
+        let script = if success {
+            WAIT_SCRIPT.to_owned()
+        } else {
+            format!("{WAIT_SCRIPT}; kill -TERM $$")
+        };
+        let source = fixture.shared_repo("source", &script);
+        let target = fixture.shared_repo("target", "echo replacement >> \"$1\"");
+        let owner = fixture.spawn(&source, &[]);
+        wait_until(|| fixture.root.path().join("starts").exists());
+        let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
+        fixture.waiting_request();
+        fixture.release();
+        let original = finish(owner, if success { 0 } else { 2 });
+        let joined = finish(waiter, if success { 0 } else { 4 });
+        assert_eq!(original["executionsStarted"], 1);
+        assert_eq!(joined["executionsStarted"], 0);
+        assert_eq!(fixture.starts(), 1);
+        assert_eq!(fixture.count("executions"), 1);
+        if success {
+            assert_eq!(
+                joined["requests"][0]["executionId"],
+                original["requests"][0]["executionId"]
+            );
+        } else {
+            assert_eq!(joined["requests"][0]["status"], "BUDGET_EXHAUSTED");
+        }
+    }
+}
+
+#[test]
+fn an_identity_waiter_occupies_a_job_slot_without_consuming_execution_budget() {
+    let fixture = Fixture::new();
+    let source = fixture.shared_repo("source", WAIT_SCRIPT);
+    let target = fixture.shared_repo("a-target", "touch must-not-run");
+    write(
+        &target,
+        "independent/artifactize.json",
+        json!({"name":"z-independent","evals":[eval("check", "touch ran")]}),
+    );
+    let owner = fixture.spawn(&source, &[]);
+    wait_until(|| fixture.root.path().join("starts").exists());
+    let waiter = fixture.spawn(
+        &target,
+        &["--jobs", "1", "--max-executions", "1", "--ignore-gates"],
+    );
+    fixture.waiting_request();
+    thread::sleep(Duration::from_millis(250));
+    assert!(!target.join("independent/ran").exists());
+    fixture.release();
+    finish(owner, 0);
+    let run = finish(waiter, 0);
+    assert_eq!(run["executionsStarted"], 1);
+    assert_eq!(fixture.starts(), 1);
+    assert!(target.join("independent/ran").exists());
 }

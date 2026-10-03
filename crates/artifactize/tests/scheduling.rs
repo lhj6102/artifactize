@@ -1,0 +1,365 @@
+use std::{
+    fs,
+    path::PathBuf,
+    process::{Child, Command, Stdio},
+    thread,
+    time::{Duration, Instant},
+};
+
+use rusqlite::Connection;
+use serde_json::{Value, json};
+use tempfile::TempDir;
+
+struct Fixture {
+    _root: TempDir,
+    repo: PathBuf,
+    state: PathBuf,
+}
+
+impl Fixture {
+    fn new(evals: Vec<Value>) -> Self {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        fs::create_dir(&repo).unwrap();
+        fs::write(
+            repo.join("artifactize.json"),
+            json!({"name":"test","evals":evals}).to_string(),
+        )
+        .unwrap();
+        Self {
+            repo,
+            state: root.path().join("state"),
+            _root: root,
+        }
+    }
+
+    fn command(&self, args: &[&str]) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        command
+            .arg("--repo")
+            .arg(&self.repo)
+            .arg("--state-dir")
+            .arg(&self.state)
+            .args(["verify", "--all", "--json"])
+            .args(args);
+        command
+    }
+
+    fn spawn(&self, args: &[&str]) -> Child {
+        self.command(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    }
+
+    fn run(&self, args: &[&str], code: i32) -> Value {
+        finish(self.spawn(args), code)
+    }
+
+    fn starts(&self) -> Vec<String> {
+        fs::read_to_string(self.repo.join("events"))
+            .unwrap_or_default()
+            .lines()
+            .filter_map(|line| line.strip_prefix("start ").map(str::to_owned))
+            .collect()
+    }
+}
+
+fn eval(id: &str, script: &str) -> Value {
+    json!({"id":id,"title":"Check","profile":{"kind":"runtime","command":"/bin/sh","args":["-c",script,"sh",id],"timeoutMs":10000},"payload":{"instruction":"Check."}})
+}
+
+fn wait_until(mut condition: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !condition() {
+        assert!(Instant::now() < deadline, "condition was not reached");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn finish(mut child: Child, code: i32) -> Value {
+    wait_until(|| child.try_wait().unwrap().is_some());
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(code),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn signal(child: &Child, signal: &str) {
+    assert!(
+        Command::new("/bin/kill")
+            .args([signal, &child.id().to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+const SLOW: &str = "printf 'start %s\n' \"$1\" >> events; while [ ! -e release ]; do sleep 0.02; done; sleep 0.1; printf 'end %s\n' \"$1\" >> events";
+
+#[test]
+fn independent_evals_fill_jobs_without_exceeding_them_and_default_to_four() {
+    for (args, jobs) in [(vec!["--jobs", "2"], 2), (vec![], 4)] {
+        let fixture = Fixture::new((0..6).map(|id| eval(&format!("e{id}"), SLOW)).collect());
+        let child = fixture.spawn(&args);
+        wait_until(|| fixture.starts().len() >= jobs);
+        let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+        db.busy_timeout(Duration::from_millis(100)).unwrap();
+        db.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
+        let data: String = db
+            .query_row("SELECT data FROM runs", [], |row| row.get(0))
+            .unwrap();
+        let run: Value = serde_json::from_str(&data).unwrap();
+        assert_eq!(run["executionsStarted"], jobs);
+        fs::write(fixture.repo.join("release"), "").unwrap();
+        let run = finish(child, 0);
+        assert_eq!(run["jobs"], jobs);
+        assert_eq!(run["executionsStarted"], 6);
+        let mut active = 0;
+        let mut peak = 0;
+        for event in fs::read_to_string(fixture.repo.join("events"))
+            .unwrap()
+            .lines()
+        {
+            if event.starts_with("start ") {
+                active += 1;
+            } else {
+                active -= 1;
+            }
+            peak = peak.max(active);
+            assert!(active <= jobs);
+        }
+        assert_eq!(active, 0);
+        assert_eq!(peak, jobs);
+        let requests = run["requests"].as_array().unwrap();
+        for pair in requests.windows(2) {
+            assert!(
+                pair[0]["startedAt"].as_str().unwrap() <= pair[1]["startedAt"].as_str().unwrap()
+            );
+        }
+    }
+}
+
+#[test]
+fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() {
+    let fixture = Fixture::new(vec![]);
+    fs::write(
+        fixture.repo.join("artifactize.json"),
+        r#"{"name":"root","basis":true}"#,
+    )
+    .unwrap();
+    for (name, script, instruction) in [
+        (
+            "a-dependent",
+            "test -e ../b-input/done; touch started",
+            "Check {b-input}.",
+        ),
+        ("b-input", "sleep 0.2; touch done", "Check."),
+        (
+            "c-slow",
+            "touch started; while [ ! -e release ]; do sleep 0.02; done",
+            "Check.",
+        ),
+    ] {
+        let folder = fixture.repo.join(name);
+        fs::create_dir(&folder).unwrap();
+        let mut check = eval("check", script);
+        check["payload"]["instruction"] = json!(instruction);
+        fs::write(
+            folder.join("artifactize.json"),
+            json!({"name":name,"evals":[check]}).to_string(),
+        )
+        .unwrap();
+    }
+    let mut child = fixture.spawn(&["--jobs", "2"]);
+    wait_until(|| fixture.repo.join("a-dependent/started").exists());
+    assert!(child.try_wait().unwrap().is_none());
+    assert!(fixture.repo.join("c-slow/started").exists());
+    fs::write(fixture.repo.join("c-slow/release"), "").unwrap();
+    let run = finish(child, 0);
+    let requests = run["requests"].as_array().unwrap();
+    assert!(
+        requests[0]["startedAt"].as_str().unwrap() >= requests[1]["completedAt"].as_str().unwrap()
+    );
+    assert_eq!(run["executionsStarted"], 3);
+}
+
+#[test]
+fn budget_is_shared_across_selected_evals_and_stops_new_starts() {
+    let fixture = Fixture::new(
+        (0..5)
+            .map(|id| {
+                eval(
+                    &format!("e{id}"),
+                    "printf 'start %s\n' \"$1\" >> events; sleep 0.05",
+                )
+            })
+            .collect(),
+    );
+    let run = fixture.run(&["--jobs", "4", "--max-executions", "2"], 4);
+    assert_eq!(run["status"], "INCOMPLETE");
+    assert_eq!(run["maxExecutions"], 2);
+    assert_eq!(run["executionsStarted"], 2);
+    assert!(
+        run["error"]
+            .as_str()
+            .unwrap()
+            .contains("maxExecutions budget exhausted")
+    );
+    assert_eq!(fixture.starts().len(), 2);
+    assert_eq!(run["requests"][0]["status"], "GREEN");
+    assert_eq!(run["requests"][1]["status"], "GREEN");
+    for request in run["requests"].as_array().unwrap().iter().skip(2) {
+        assert_eq!(request["status"], "BUDGET_EXHAUSTED");
+        assert!(request["startedAt"].is_null());
+        assert!(request["executionId"].is_null());
+        assert!(
+            request["blockedReason"]
+                .as_str()
+                .unwrap()
+                .contains("2 of 2")
+        );
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        .arg("--state-dir")
+        .arg(&fixture.state)
+        .args(["run", "show", run["id"].as_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        run
+    );
+    let zero = fixture.run(&["--max-executions", "0"], 4);
+    assert_eq!(zero["executionsStarted"], 0);
+    assert_eq!(fixture.starts().len(), 2);
+}
+
+#[test]
+fn preparation_failures_do_not_consume_a_start_and_finished_runs_at_the_cap_succeed() {
+    let mut invalid = eval("bad", "exit 0");
+    invalid["profile"]["args"] = json!(["{test}/missing"]);
+    let fixture = Fixture::new(vec![
+        invalid,
+        eval("good", "printf 'start good\n' >> events"),
+    ]);
+    let run = fixture.run(&["--max-executions", "1"], 2);
+    assert_eq!(run["executionsStarted"], 1);
+    assert_eq!(run["requests"][0]["errorCode"], "PREPARATION_FAILED");
+    assert!(run["requests"][0]["startedAt"].is_null());
+    assert_eq!(run["requests"][1]["status"], "GREEN");
+    let fixture = Fixture::new(vec![eval("good", "exit 0")]);
+    assert_eq!(
+        fixture.run(&["--max-executions", "1"], 0)["executionsStarted"],
+        1
+    );
+}
+
+#[test]
+fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
+    for interrupt in ["-INT", "-TERM"] {
+        let fixture = Fixture::new(
+            (0..5)
+                .map(|id| {
+                    eval(
+                        &format!("e{id}"),
+                        "sleep 30 & printf '%s %s\n' \"$$\" \"$!\" > \"$1.pids\"; wait",
+                    )
+                })
+                .collect(),
+        );
+        let child = fixture.spawn(&["--jobs", "3"]);
+        wait_until(|| (0..3).all(|id| fixture.repo.join(format!("e{id}.pids")).exists()));
+        signal(&child, interrupt);
+        let run = finish(child, 2);
+        assert_eq!(run["status"], "ERROR");
+        assert_eq!(run["executionsStarted"], 3);
+        for request in run["requests"].as_array().unwrap() {
+            assert_eq!(request["status"], "ERROR");
+            assert_eq!(request["errorCode"], "CANCELLED");
+            assert!(request["result"].is_null());
+        }
+        for id in 0..3 {
+            for pid in fs::read_to_string(fixture.repo.join(format!("e{id}.pids")))
+                .unwrap()
+                .split_whitespace()
+            {
+                if let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) {
+                    assert!(
+                        stat.split_once(") ").unwrap().1.starts_with('Z'),
+                        "process still running: {stat}"
+                    );
+                }
+            }
+        }
+        assert!(!fixture.repo.join("e3.pids").exists());
+    }
+}
+
+#[test]
+fn invalid_limits_fail_without_creating_state() {
+    let fixture = Fixture::new(vec![eval("check", "exit 0")]);
+    for args in [
+        ["--jobs", "0"],
+        ["--jobs", "-1"],
+        ["--max-executions", "-1"],
+    ] {
+        let run = fixture.run(&args, 2);
+        assert!(run["error"].is_string());
+        assert!(!fixture.state.exists());
+    }
+}
+
+#[test]
+fn budget_is_rechecked_when_a_dependency_makes_an_eval_ready() {
+    let fixture = Fixture::new(vec![]);
+    fs::write(
+        fixture.repo.join("artifactize.json"),
+        r#"{"name":"root","basis":true}"#,
+    )
+    .unwrap();
+    for name in ["dependency", "consumer"] {
+        let folder = fixture.repo.join(name);
+        fs::create_dir(&folder).unwrap();
+        let mut check = eval("check", "touch ran");
+        if name == "consumer" {
+            check["payload"]["instruction"] = json!("Check {dependency}.");
+        }
+        fs::write(
+            folder.join("artifactize.json"),
+            json!({"name":name,"evals":[check]}).to_string(),
+        )
+        .unwrap();
+    }
+    let run = fixture.run(&["--jobs", "2", "--max-executions", "1"], 4);
+    assert_eq!(run["executionsStarted"], 1);
+    assert_eq!(run["requests"][0]["status"], "BUDGET_EXHAUSTED");
+    assert_eq!(run["requests"][1]["status"], "GREEN");
+    assert!(!fixture.repo.join("consumer/ran").exists());
+    assert!(fixture.repo.join("dependency/ran").exists());
+}
+
+#[test]
+fn cancellation_keeps_already_committed_evidence() {
+    let fixture = Fixture::new(vec![
+        eval("completed", "exit 0"),
+        eval(
+            "running",
+            "touch started; while [ ! -e release ]; do sleep 0.02; done",
+        ),
+    ]);
+    let child = fixture.spawn(&["--jobs", "1"]);
+    wait_until(|| fixture.repo.join("started").exists());
+    signal(&child, "-INT");
+    let run = finish(child, 2);
+    assert_eq!(run["requests"][0]["status"], "GREEN");
+    assert_eq!(run["requests"][0]["result"]["verdict"], "GREEN");
+    assert_eq!(run["requests"][1]["errorCode"], "CANCELLED");
+}

@@ -39,8 +39,18 @@ pub struct Run {
     pub force: bool,
     #[serde(default)]
     pub ignore_gates: bool,
+    #[serde(default = "default_jobs")]
+    pub jobs: usize,
+    #[serde(default)]
+    pub max_executions: Option<u64>,
+    #[serde(default)]
+    pub executions_started: u64,
     pub validation: Value,
     pub error: Option<String>,
+}
+
+fn default_jobs() -> usize {
+    4
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +164,20 @@ impl Receipts {
         let request = request.clone();
         self.connection
             .call(move |db| update_request(db, &request))
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn save_run(&self, run: &Run) -> Result<(), String> {
+        let run = run.clone();
+        self.connection
+            .call(move |db| -> Result<(), Error> {
+                db.execute(
+                    "UPDATE runs SET status=?,data=? WHERE id=?",
+                    params![run.status, serde_json::to_string(&run)?, run.id],
+                )?;
+                Ok(())
+            })
             .await
             .map_err(|e| e.to_string())
     }

@@ -1,33 +1,22 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::Path,
-    time::Duration,
-};
+use std::{collections::BTreeSet, path::Path, sync::Arc};
 
 use serde_json::{Value, json};
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    broker::{self, now},
     cache,
-    config::{DependencyGates, Eval, Profile, read_workspace_config},
+    config::{DependencyGates, Profile, read_workspace_config},
     graph::{EvalStatus, Evidence, Graph},
-    process,
     project::selection::{ProfileSelection, Selection, select_profiles},
-    runtime::{self, Outcome, Verdict},
-    scope,
-    store::{self, Claim, Execution, Provenance, Receipts, Request, Run, RunView},
+    store::{self, Receipts, Request, Run, RunView},
     workspace,
 };
 
-fn now() -> String {
-    OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .expect("UTC timestamp is representable")
-}
-
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct VerifyOptions {
+    pub jobs: usize,
+    pub max_executions: Option<u64>,
     pub profile: Option<ProfileSelection>,
     pub recursive: bool,
     /// Force only explicitly selected Evals, never recursive dependencies.
@@ -36,7 +25,20 @@ pub struct VerifyOptions {
     pub ignore_gates: Option<bool>,
 }
 
-/// Executes foreground and sequentially, reusing completed explicit identities.
+impl Default for VerifyOptions {
+    fn default() -> Self {
+        Self {
+            jobs: 4,
+            max_executions: None,
+            profile: None,
+            recursive: false,
+            force: false,
+            ignore_gates: None,
+        }
+    }
+}
+
+/// Executes READY evals in the foreground, reusing completed explicit identities.
 pub async fn verify(
     repo: &Path,
     state_dir: Option<&Path>,
@@ -44,13 +46,16 @@ pub async fn verify(
     options: &VerifyOptions,
     cancellation: CancellationToken,
 ) -> Result<RunView, String> {
+    if options.jobs == 0 {
+        return Err("jobs must be at least 1.".into());
+    }
     let config = read_workspace_config(repo).map_err(|e| e.to_string())?;
-    let config = select_profiles(
+    let config = Arc::new(select_profiles(
         config,
         selection,
         options.profile.as_ref(),
         options.recursive,
-    )?;
+    )?);
     let ignore_gates = options.ignore_gates.unwrap_or_else(|| {
         config
             .artifacts
@@ -105,7 +110,6 @@ pub async fn verify(
             ));
         }
     }
-    let owner = process::identity(std::process::id()).map_err(|e| e.to_string())?;
     if cancellation.is_cancelled() {
         return Err("Project preparation was cancelled.".into());
     }
@@ -119,7 +123,7 @@ pub async fn verify(
         .unwrap()
         .to_string_lossy()
         .into_owned();
-    let run_dir = directory.keep();
+    let _ = directory.keep();
     let mut run = Run {
         id,
         repo_path: config.root.clone(),
@@ -128,6 +132,9 @@ pub async fn verify(
         created_at: now(),
         completed_at: None,
         selection: serde_json::to_value(selection).expect("selection is JSON"),
+        jobs: options.jobs,
+        max_executions: options.max_executions,
+        executions_started: 0,
         recursive: options.recursive,
         force: options.force,
         ignore_gates,
@@ -169,205 +176,16 @@ pub async fn verify(
         })
         .collect();
     receipts.create_run(&run, &requests).await?;
-    let mut evidence = BTreeMap::new();
-    let mut poll_interval = Duration::from_millis(200);
-    loop {
-        if cancellation.is_cancelled() {
-            break;
-        }
-        for eval in config
-            .evals
-            .iter()
-            .filter(|eval| required.contains(eval.target.as_str()))
-        {
-            if evidence.contains_key(&eval.id)
-                || (options.force && selected_ids.contains(eval.id.as_str()))
-            {
-                continue;
-            }
-            if let Some(identity) = identities.get(eval.target.as_str())
-                && let Some(execution) = receipts.cached_execution(identity).await?
-            {
-                evidence.insert(
-                    eval.id.clone(),
-                    Evidence::Current(execution.verdict().expect("completed cache entry")),
-                );
-                if let Some(request) = requests
-                    .iter_mut()
-                    .find(|request| request.eval_id == eval.id)
-                {
-                    cache::reuse(request, &execution, now());
-                    receipts.reuse_execution(request).await?;
-                }
-            }
-        }
-        let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
-        let Some(index) = evals
-            .iter()
-            .position(|eval| evaluation.evals[eval.id.as_str()].can_execute())
-        else {
-            break;
-        };
-        let eval = evals[index];
-        let request = &mut requests[index];
-        let mut execution = Execution {
-            id: format!("execution-{}", request.id),
-            identity: request.identity.clone().filter(|_| !request.force),
-            owner_pid: owner.pid,
-            owner_start_time: owner.start_time,
-            status: "RUNNING".into(),
-            result: None,
-            error: None,
-            error_code: None,
-            profile: request.profile.clone(),
-            usage: None,
-            provenance: Provenance {
-                repo_path: config.root.clone(),
-                run_id: run.id.clone(),
-                request_id: request.id.clone(),
-                eval_id: eval.id.clone(),
-                completed_at: None,
-            },
-            started_at: now(),
-            completed_at: None,
-        };
-        match receipts.claim_execution(&execution).await? {
-            Claim::Reuse(execution) => {
-                evidence.insert(
-                    eval.id.clone(),
-                    Evidence::Current(execution.verdict().expect("completed cache entry")),
-                );
-                cache::reuse(request, &execution, now());
-                receipts.reuse_execution(request).await?;
-                poll_interval = Duration::from_millis(200);
-                continue;
-            }
-            Claim::Wait(id) => {
-                if request.execution_id.as_ref() != Some(&id) {
-                    request.execution_id = Some(id);
-                    request.blocked_reason =
-                        Some("Waiting for the active identity execution.".into());
-                    receipts.save_request(request).await?;
-                }
-                tokio::select! {
-                    _ = cancellation.cancelled() => {},
-                    _ = tokio::time::sleep(poll_interval) => {},
-                }
-                poll_interval = (poll_interval * 2).min(Duration::from_millis(500));
-                continue;
-            }
-            Claim::Owned => {}
-        }
-        poll_interval = Duration::from_millis(200);
-        request.execution_id = execution.identity.as_ref().map(|_| execution.id.clone());
-        request.blocked_reason = None;
-        request.status = "RUNNING".into();
-        request.started_at = Some(execution.started_at.clone());
-        receipts.save_request(request).await?;
-        let prepared = prepare(&config, eval, &run_dir, request);
-        let outcome = match prepared {
-            Ok(command) => {
-                receipts.save_request(request).await?;
-                let receipts = receipts.clone();
-                let mut registered = request.clone();
-                let (send, mut receive) = tokio::sync::oneshot::channel();
-                let outcome =
-                    runtime::execute(command, cancellation.clone(), move |child| async move {
-                        registered.child =
-                            Some(json!({"pid":child.pid,"startTime":child.start_time}));
-                        let _ = send.send(registered.child.clone());
-                        receipts
-                            .save_request(&registered)
-                            .await
-                            .map_err(std::io::Error::other)?;
-                        Ok(())
-                    })
-                    .await;
-                if let Ok(child) = receive.try_recv() {
-                    request.child = child;
-                }
-                Some(outcome)
-            }
-            Err(error) => {
-                request.error = Some(error);
-                request.error_code = Some("PREPARATION_FAILED".into());
-                None
-            }
-        };
-        let outcome = if matches!(outcome, Some(Outcome::Completed(_)))
-            && let Some(expected) = &request.identity
-        {
-            match cache::identity(&config, &eval.target, &run_dir, cancellation.clone()).await {
-                Ok(value) if &value == expected => outcome,
-                Ok(_) => {
-                    request.error =
-                        Some("Artifact input changed during review (identity differs).".into());
-                    request.error_code = Some("INPUT_CHANGED".into());
-                    None
-                }
-                Err(error) => {
-                    request.error = Some(error);
-                    request.error_code = Some(
-                        if cancellation.is_cancelled() {
-                            "CANCELLED"
-                        } else {
-                            "IDENTITY_RECHECK_FAILED"
-                        }
-                        .into(),
-                    );
-                    None
-                }
-            }
-        } else {
-            outcome
-        };
-        match outcome {
-            Some(Outcome::Completed(result)) => {
-                request.status = match result.verdict {
-                    Verdict::Green => "GREEN",
-                    Verdict::Red => "RED",
-                }
-                .into();
-                evidence.insert(eval.id.clone(), Evidence::Current(result.verdict));
-                request.result = Some(json!({
-                    "verdict":request.status,
-                    "exitCode":result.exit_code,
-                    "stdout":String::from_utf8_lossy(&result.output.stdout),
-                    "stderr":String::from_utf8_lossy(&result.output.stderr),
-                    "durationMs":result.output.duration.as_millis() as u64,
-                    "truncated":result.output.truncated,
-                }));
-            }
-            failure => {
-                request.status = "ERROR".into();
-                evidence.insert(eval.id.clone(), Evidence::OperationalError);
-                if let Some(Outcome::OperationalError(error)) = failure {
-                    request.error_code = Some(
-                        match &error {
-                            runtime::Error::Process(process::Error::Cancelled) => "CANCELLED",
-                            runtime::Error::Process(process::Error::Timeout) => "TIMEOUT",
-                            runtime::Error::Process(process::Error::Spawn(_)) => "SPAWN_FAILED",
-                            runtime::Error::AbnormalExit { .. } => "ABNORMAL_EXIT",
-                            _ => "RUNTIME_ERROR",
-                        }
-                        .into(),
-                    );
-                    request.error = Some(error.to_string());
-                }
-            }
-        }
-        request.completed_at = Some(now());
-        execution.status = request.status.clone();
-        execution.result = request.result.clone();
-        execution.error = request.error.clone();
-        execution.error_code = request.error_code.clone();
-        execution.usage = request.usage.clone();
-        execution.completed_at = request.completed_at.clone();
-        execution.provenance.completed_at = request.completed_at.clone();
-        request.execution_id = Some(execution.id.clone());
-        request.provenance = Some(execution.provenance.clone());
-        receipts.complete_execution(&execution, request).await?;
-    }
+    let mut evidence = broker::schedule(
+        config.clone(),
+        &graph,
+        &identities,
+        &mut run,
+        &mut requests,
+        &receipts,
+        cancellation.clone(),
+    )
+    .await?;
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
         if evidence.contains_key(&request.eval_id) {
@@ -380,6 +198,8 @@ pub async fn verify(
             request.error_code = Some("CANCELLED".into());
             request.completed_at = Some(now());
             evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
+        } else if request.status == "BUDGET_EXHAUSTED" && eval.can_execute() {
+            continue;
         } else {
             request.status = status(eval.status).into();
             request.blocked_reason = Some(format!(
@@ -400,10 +220,16 @@ pub async fn verify(
         .filter(|(id, _)| required.contains(&graph.eval_target(id).unwrap()))
         .collect();
     let satisfied = required.iter().all(|id| evaluation.artifacts[id].satisfied);
-    run.status = if cancellation.is_cancelled()
-        || required_evals
-            .iter()
-            .any(|(_, c)| c.status == EvalStatus::Error)
+    let budget_exhausted = requests
+        .iter()
+        .any(|request| request.status == "BUDGET_EXHAUSTED");
+    run.status = if cancellation.is_cancelled() {
+        "ERROR"
+    } else if budget_exhausted {
+        "INCOMPLETE"
+    } else if required_evals
+        .iter()
+        .any(|(_, c)| c.status == EvalStatus::Error)
     {
         "ERROR"
     } else if required_evals
@@ -419,6 +245,8 @@ pub async fn verify(
     .into();
     if cancellation.is_cancelled() {
         run.error = Some("Run was cancelled.".into());
+    } else if budget_exhausted {
+        run.error = Some(broker::budget_reason(&run));
     }
     run.completed_at = Some(now());
     run.validation = json!({
@@ -443,40 +271,6 @@ pub async fn verify(
     });
     receipts.finish(&run, &requests).await?;
     Ok(RunView { run, requests })
-}
-
-fn prepare(
-    config: &crate::config::RepoConfig,
-    eval: &Eval,
-    run_dir: &Path,
-    request: &mut Request,
-) -> Result<runtime::Command, String> {
-    let Profile::Runtime {
-        command,
-        args,
-        timeout_ms,
-    } = &eval.declaration.profile
-    else {
-        return Err("Evals of this kind are not supported yet without cached evidence.".into());
-    };
-    let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
-    let args =
-        scope::resolve_argv(config, &scope, &eval.target, args).map_err(|e| e.to_string())?;
-    let cwd = scope
-        .resolve_input(&config.root, &eval.target, "")
-        .map_err(|e| e.to_string())?;
-    let mut prepared = runtime::Command::prepare(
-        command.into(),
-        args.iter().map(Into::into).collect(),
-        &config.root,
-        run_dir,
-        *timeout_ms,
-    )
-    .map_err(|e| e.to_string())?;
-    prepared.cwd = cwd;
-    request.run_dir = Some(prepared.directory().to_path_buf());
-    request.argv = Some(std::iter::once(command.clone()).chain(args).collect());
-    Ok(prepared)
 }
 
 fn status(status: EvalStatus) -> &'static str {
