@@ -71,6 +71,7 @@ pub struct Request {
     pub title: String,
     pub profile: Value,
     pub requested_profile: Value,
+    pub eval_def_hash: String,
     pub execution_id: Option<String>,
     pub provenance: Option<Provenance>,
     pub usage: Option<Value>,
@@ -132,10 +133,10 @@ impl Receipts {
             schema_initialized(&transaction)?;
             // Publish the schema and its version together; readers see an empty snapshot until commit.
             transaction.execute_batch("CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS executions(id TEXT PRIMARY KEY, identity TEXT, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE UNIQUE INDEX IF NOT EXISTS active_identity ON executions(identity) WHERE identity IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
-                CREATE TABLE IF NOT EXISTS cache_entries(identity TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES executions(id), bytes INTEGER NOT NULL, last_used TEXT NOT NULL);
-                CREATE INDEX IF NOT EXISTS cache_lru ON cache_entries(last_used,identity);
+                CREATE TABLE IF NOT EXISTS executions(id TEXT PRIMARY KEY, identity TEXT, eval_def_hash TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+                CREATE UNIQUE INDEX IF NOT EXISTS active_identity ON executions(identity,eval_def_hash) WHERE identity IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
+                CREATE TABLE IF NOT EXISTS cache_entries(identity TEXT NOT NULL, eval_def_hash TEXT NOT NULL, execution_id TEXT NOT NULL REFERENCES executions(id), bytes INTEGER NOT NULL, last_used TEXT NOT NULL, PRIMARY KEY(identity,eval_def_hash));
+                CREATE INDEX IF NOT EXISTS cache_lru ON cache_entries(last_used,identity,eval_def_hash);
                 CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS active_request_execution ON requests(execution_id) WHERE status IN ('QUEUED','RUNNING','WAITING_HUMAN');
                 CREATE TABLE IF NOT EXISTS human_claims(request_id TEXT PRIMARY KEY REFERENCES requests(id), reviewer TEXT NOT NULL, claimed_at TEXT NOT NULL);

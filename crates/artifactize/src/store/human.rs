@@ -79,7 +79,7 @@ impl Receipts {
                     return Err(Error::Invalid("Active execution not found.".into()));
                 }
             } else {
-                transaction.execute("INSERT INTO executions(id,identity,owner_pid,owner_start_time,status,data) VALUES (?,NULL,?,?,'WAITING_HUMAN',?)", params![execution.id, execution.owner_pid, execution.owner_start_time as i64, data])?;
+                transaction.execute("INSERT INTO executions(id,identity,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?,NULL,?,?,?,'WAITING_HUMAN',?)", params![execution.id, execution.eval_def_hash, execution.owner_pid, execution.owner_start_time as i64, data])?;
             }
             update_request(&transaction, &request)?;
             transaction.commit()?;
@@ -94,8 +94,12 @@ impl Receipts {
                 let transaction =
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 let data: String = transaction.query_row(
-                    "SELECT data FROM executions WHERE id=?",
-                    [&request.execution_id],
+                    "SELECT data FROM executions WHERE id=? AND identity=? AND eval_def_hash=?",
+                    params![
+                        request.execution_id,
+                        request.identity,
+                        request.eval_def_hash
+                    ],
                     |row| row.get(0),
                 )?;
                 let execution: Execution = serde_json::from_str(&data)?;

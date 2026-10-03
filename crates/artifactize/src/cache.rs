@@ -3,16 +3,32 @@
 use std::{collections::BTreeMap, path::Path};
 
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 pub use crate::store::cache_entries::{Entry, GcResult, gc, list, remove, show};
 
 use crate::{
-    config::{RepoConfig, Stale},
+    config::{EvalDeclaration, RepoConfig, Stale},
     process, runtime, scope,
     store::{Execution, Request},
     workspace,
 };
+
+/// Hash the effective declaration after profile selection, without file fingerprints.
+pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
+    let mut definition = json!({
+        "profile": eval.profile,
+        "payload": eval.payload,
+        "passSchema": eval.pass_schema,
+        "failSchema": eval.fail_schema,
+    });
+    definition.sort_all_objects();
+    Sha256::digest(serde_json::to_vec(&definition).expect("eval definition is JSON"))
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
 
 /// Prepare only the selected dependency closure, once per Artifact.
 pub async fn prepare<'a>(

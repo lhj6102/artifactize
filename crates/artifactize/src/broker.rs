@@ -81,6 +81,18 @@ impl Scheduler<'_, '_> {
     async fn run(&mut self) -> Result<BTreeMap<String, Evidence>, String> {
         let owner = process::identity(std::process::id()).map_err(|e| e.to_string())?;
         let run_dir = self.run.state_dir.join("runs").join(&self.run.id);
+        let eval_hashes: BTreeMap<_, _> = self
+            .config
+            .evals
+            .iter()
+            .filter(|eval| self.identities.contains_key(eval.target.as_str()))
+            .map(|eval| {
+                (
+                    eval.id.as_str(),
+                    cache::eval_definition_hash(&eval.declaration),
+                )
+            })
+            .collect();
         let mut evidence = BTreeMap::new();
         let mut running = BTreeSet::new();
         let mut waiting = BTreeSet::new();
@@ -133,7 +145,10 @@ impl Scheduler<'_, '_> {
                         continue;
                     }
                     if let Some(identity) = self.identities.get(eval.target.as_str())
-                        && let Some(execution) = self.receipts.cached_execution(identity).await?
+                        && let Some(execution) = self
+                            .receipts
+                            .cached_execution(identity, &eval_hashes[eval.id.as_str()])
+                            .await?
                     {
                         evidence.insert(
                             eval.id.clone(),
@@ -172,6 +187,7 @@ impl Scheduler<'_, '_> {
                     let mut execution = Execution {
                         id: format!("execution-{}", request.id),
                         identity: request.identity.clone().filter(|_| !request.force),
+                        eval_def_hash: request.eval_def_hash.clone(),
                         owner_pid: owner.pid,
                         owner_start_time: owner.start_time,
                         status: "RUNNING".into(),
@@ -186,6 +202,7 @@ impl Scheduler<'_, '_> {
                             run_id: self.run.id.clone(),
                             request_id: request.id.clone(),
                             eval_id: request.eval_id.clone(),
+                            eval_def_hash: request.eval_def_hash.clone(),
                             completed_at: None,
                         },
                         started_at: now(),
@@ -230,8 +247,10 @@ impl Scheduler<'_, '_> {
                             waiting.remove(&index);
                             request.execution_id = Some(id);
                             request.status = "WAITING_HUMAN".into();
-                            request.blocked_reason =
-                                Some("Waiting for the active Human identity execution.".into());
+                            request.blocked_reason = Some(
+                                "Waiting for the active Human identity/Eval-definition execution."
+                                    .into(),
+                            );
                             *request = self.receipts.follow_human(request).await?;
                             if request.status != "WAITING_HUMAN" {
                                 evidence.insert(
@@ -253,8 +272,10 @@ impl Scheduler<'_, '_> {
                             if request.execution_id.as_ref() != Some(&id) {
                                 request.execution_id = Some(id);
                                 request.status = "QUEUED".into();
-                                request.blocked_reason =
-                                    Some("Waiting for the active identity execution.".into());
+                                request.blocked_reason = Some(
+                                    "Waiting for the active identity/Eval-definition execution."
+                                        .into(),
+                                );
                                 self.receipts.save_request(request).await?;
                             }
                             continue;

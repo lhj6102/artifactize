@@ -29,7 +29,7 @@ Version 0.1.0 ships when every non-DROP item is checked off. Lean means no proce
 - The identity cache:
   - An explicit identity maps to a completed GREEN/RED result.
   - No identity means no reuse.
-  - The same identity runs only once at a time.
+  - The same identity/Eval-definition pair runs only once at a time.
   - Each review ends with an identity recheck.
 - Budgets: `maxExecutions`, `maxTokens`, `maxToolCalls`, deadlines.
 - The CLI, including `models` to list a configured provider's models, and an `artifactize monitor` TUI for review progress.
@@ -116,9 +116,10 @@ The module boundaries are fixed; later tasks add code inside them. The CLI and t
   - `output` runs a command and shows its output to the reviewer.
 
 **Identity cache.**
-- A process claims an identity by inserting the single active execution row, holding its pid and start time.
+- The key is (owner identity, Eval definition hash), intentionally departing from CCDD's identity-only key. SHA-256 hashes canonical JSON (sorted keys) of the effective profile after variant selection, payload/instruction and pass/fail schemas, excluding Eval id/title and unused variants. Equal definitions share across evals and repositories; no script/material file contents are hashed, so those remain the identity script's responsibility.
+- A process claims a key by inserting the single active execution row for that pair, holding its pid and start time.
 - Other processes poll and take the published result.
-- If the owner process is dead, its row becomes ERROR and the next caller claims the identity again.
+- If the owner process is dead, its row becomes ERROR and the next caller claims the same key again.
 - Only GREEN and RED are published. Hits return the original result and profile.
 - Status prepares current identities for the required closure, then reads completed entries without executing evals or updating saved evidence. Graph and config checks remain static.
 
@@ -158,7 +159,7 @@ The module boundaries are fixed; later tasks add code inside them. The CLI and t
 |---|---|
 | P1 Runtime loop | `verify --all` runs discovery → graph → evals → verdicts; `run show` reads them in a new process |
 | P2 Project | Verify a cyclic family selection with profile variants; `status` explains it; saved Runs stay readable without the repo |
-| P3 Identity cache | Concurrent verifies of one identity execute once; an input change during review is ERROR; `--jobs` and budgets hold |
+| P3 Identity cache | Concurrent verifies of one identity/definition pair execute once; an input change during review is ERROR; `--jobs` and budgets hold |
 | P4 Tools | Scoped text/image tools run through the script protocol and over MCP |
 | P5 Agents | Real OpenAI-key, Anthropic-key, ChatGPT and Claude reviews use tools, strict verdicts and repair |
 | P6 Human | Claim → tools → submit completes a waiting request; the next `verify` continues |
@@ -197,7 +198,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 ### P3 Identity cache
 - [x] **P3.1** Identity commands (`stale: {kind: identity, script, inputs?, timeoutMs?}`; the unused `weight` field is removed) with exact output validation, and the end-of-review recheck. Check: malformed output fails preparation with no fallback; editing input during a review makes it ERROR and unpublished.
 - [x] **P3.2** Reuse of completed GREEN/RED results across repositories; no-identity and `--force` bypass. Check: cross-repo RED reuse; force leaves the entry unchanged.
-- [x] **P3.3** Cross-process claim, polling waiters, dead-owner reclaim. Check: two processes execute one identity once; a killed owner is reclaimed.
+- [x] **P3.3** Cross-process claim, polling waiters, dead-owner reclaim. Check: two processes execute one identity/definition pair once; a killed owner is reclaimed.
 - [x] **P3.4** `--jobs N` scheduling and `maxExecutions` counter. Check: concurrency never exceeds N; the budget stops new starts.
 - [x] **P3.5** `cache list/show/rm` and LRU GC on entries and bytes. Check: GC never removes an active execution.
 

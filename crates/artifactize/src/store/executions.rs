@@ -25,6 +25,7 @@ pub struct Provenance {
     pub run_id: String,
     pub request_id: String,
     pub eval_id: String,
+    pub eval_def_hash: String,
     pub completed_at: Option<String>,
 }
 
@@ -33,6 +34,7 @@ pub struct Provenance {
 pub struct Execution {
     pub id: String,
     pub identity: Option<String>,
+    pub eval_def_hash: String,
     pub owner_pid: u32,
     pub owner_start_time: u64,
     pub status: String,
@@ -61,10 +63,11 @@ impl Execution {
 pub(super) fn lookup(
     db: &rusqlite::Connection,
     identity: &str,
+    eval_def_hash: &str,
 ) -> Result<Option<Execution>, Error> {
     let data: Option<String> = db.query_row(
-        "SELECT e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE c.identity=? AND e.status IN ('GREEN','RED')",
-        [identity], |row| row.get(0),
+        "SELECT e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE c.identity=? AND c.eval_def_hash=? AND e.status IN ('GREEN','RED')",
+        params![identity, eval_def_hash], |row| row.get(0),
     ).optional()?;
     data.map(|data| serde_json::from_str(&data))
         .transpose()
@@ -74,10 +77,11 @@ pub(super) fn lookup(
 fn active_owner(
     db: &rusqlite::Connection,
     identity: &str,
+    eval_def_hash: &str,
 ) -> Result<Option<(String, process::ChildIdentity, String)>, Error> {
     db.query_row(
-        "SELECT id,owner_pid,owner_start_time,status FROM executions WHERE identity=? AND status IN ('RUNNING','WAITING_HUMAN')",
-        [identity],
+        "SELECT id,owner_pid,owner_start_time,status FROM executions WHERE identity=? AND eval_def_hash=? AND status IN ('RUNNING','WAITING_HUMAN')",
+        params![identity, eval_def_hash],
         |row| Ok((row.get(0)?, process::ChildIdentity { pid: row.get(1)?, start_time: row.get::<_, i64>(2)? as u64 }, row.get(3)?)),
     ).optional().map_err(Into::into)
 }
@@ -85,25 +89,30 @@ fn active_owner(
 fn available_to_waiter(
     db: &rusqlite::Connection,
     identity: &str,
+    eval_def_hash: &str,
     waiting_for: Option<&str>,
 ) -> Result<Option<Claim>, Error> {
     if let Some(id) = waiting_for {
         let data: Option<String> = db.query_row(
-            "SELECT data FROM executions WHERE id=? AND identity=? AND status IN ('GREEN','RED')",
-            params![id, identity], |row| row.get(0),
+            "SELECT data FROM executions WHERE id=? AND identity=? AND eval_def_hash=? AND status IN ('GREEN','RED')",
+            params![id, identity, eval_def_hash], |row| row.get(0),
         ).optional()?;
         if let Some(data) = data {
             return Ok(Some(Claim::Reuse(Box::new(serde_json::from_str(&data)?))));
         }
     }
-    available(db, identity)
+    available(db, identity, eval_def_hash)
 }
 
-fn available(db: &rusqlite::Connection, identity: &str) -> Result<Option<Claim>, Error> {
-    if let Some(execution) = lookup(db, identity)? {
+fn available(
+    db: &rusqlite::Connection,
+    identity: &str,
+    eval_def_hash: &str,
+) -> Result<Option<Claim>, Error> {
+    if let Some(execution) = lookup(db, identity, eval_def_hash)? {
         return Ok(Some(Claim::Reuse(Box::new(execution))));
     }
-    if let Some((id, owner, status)) = active_owner(db, identity)? {
+    if let Some((id, owner, status)) = active_owner(db, identity, eval_def_hash)? {
         if status == "WAITING_HUMAN" {
             return Ok(Some(Claim::WaitHuman(id)));
         }
@@ -117,11 +126,11 @@ fn available(db: &rusqlite::Connection, identity: &str) -> Result<Option<Claim>,
 /// Read completed entries or live owners without creating or changing the database.
 pub async fn read_identity_executions(
     state: &std::path::Path,
-    identities: &[String],
-) -> Result<std::collections::BTreeMap<String, Claim>, String> {
+    keys: &[(String, String)],
+) -> Result<std::collections::BTreeMap<(String, String), Claim>, String> {
     let state = crate::workspace::canonical_target(state).map_err(|e| e.to_string())?;
     super::receipts::check_files(&state)?;
-    if identities.is_empty()
+    if keys.is_empty()
         || !state
             .join(super::DATABASE)
             .try_exists()
@@ -135,7 +144,7 @@ pub async fn read_identity_executions(
     )
     .await
     .map_err(|e| e.to_string())?;
-    let identities = identities.to_vec();
+    let keys = keys.to_vec();
     connection
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -144,9 +153,9 @@ pub async fn read_identity_executions(
                 return Ok(Default::default());
             }
             let mut entries = std::collections::BTreeMap::new();
-            for identity in identities {
-                if let Some(execution) = available(&transaction, &identity)? {
-                    entries.insert(identity, execution);
+            for (identity, eval_def_hash) in keys {
+                if let Some(execution) = available(&transaction, &identity, &eval_def_hash)? {
+                    entries.insert((identity, eval_def_hash), execution);
                 }
             }
             transaction.commit()?;
@@ -157,15 +166,20 @@ pub async fn read_identity_executions(
 }
 
 impl Receipts {
-    pub async fn cached_execution(&self, identity: &str) -> Result<Option<Execution>, String> {
+    pub async fn cached_execution(
+        &self,
+        identity: &str,
+        eval_def_hash: &str,
+    ) -> Result<Option<Execution>, String> {
         let identity = identity.to_owned();
+        let eval_def_hash = eval_def_hash.to_owned();
         self.connection
             .call(move |db| -> Result<_, Error> {
-                let execution = lookup(db, &identity)?;
+                let execution = lookup(db, &identity, &eval_def_hash)?;
                 if let Some(execution) = &execution {
                     db.execute(
-                        "UPDATE cache_entries SET last_used=? WHERE identity=? AND execution_id=?",
-                        params![crate::broker::now(), identity, execution.id],
+                        "UPDATE cache_entries SET last_used=? WHERE identity=? AND eval_def_hash=? AND execution_id=?",
+                        params![crate::broker::now(), identity, eval_def_hash, execution.id],
                     )?;
                 }
                 Ok(execution)
@@ -188,7 +202,7 @@ impl Receipts {
             };
             {
                 let transaction = db.transaction()?;
-                if let Some(claim) = available_to_waiter(&transaction, identity, waiting_for.as_deref())? {
+                if let Some(claim) = available_to_waiter(&transaction, identity, &execution.eval_def_hash, waiting_for.as_deref())? {
                     return Ok(claim);
                 }
             }
@@ -196,23 +210,23 @@ impl Receipts {
                 return Ok(Claim::BudgetExhausted);
             }
             let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            if let Some(claim) = available_to_waiter(&transaction, identity, waiting_for.as_deref())? {
+            if let Some(claim) = available_to_waiter(&transaction, identity, &execution.eval_def_hash, waiting_for.as_deref())? {
                 return Ok(claim);
             }
-            if let Some((id, _, _)) = active_owner(&transaction, identity)? {
+            if let Some((id, _, _)) = active_owner(&transaction, identity, &execution.eval_def_hash)? {
                 transaction.execute(
                     "UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Execution owner died.','$.errorCode','OWNER_DIED','$.completedAt',?,'$.provenance.completedAt',?) WHERE id=? AND status='RUNNING'",
                     params![execution.started_at, execution.started_at, id],
                 )?;
             }
             let inserted = transaction.execute(
-                "INSERT INTO executions(id,identity,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?) ON CONFLICT(identity) WHERE identity IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN') DO NOTHING",
-                params![execution.id, identity, execution.owner_pid, execution.owner_start_time as i64, execution.status, serde_json::to_string(&execution)?],
+                "INSERT INTO executions(id,identity,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?,?) ON CONFLICT(identity,eval_def_hash) WHERE identity IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN') DO NOTHING",
+                params![execution.id, identity, execution.eval_def_hash, execution.owner_pid, execution.owner_start_time as i64, execution.status, serde_json::to_string(&execution)?],
             )?;
             let claim = if inserted == 1 {
                 Claim::Owned
             } else {
-                Claim::Wait(active_owner(&transaction, identity)?.expect("conflicting active identity").0)
+                Claim::Wait(active_owner(&transaction, identity, &execution.eval_def_hash)?.expect("conflicting active identity").0)
             };
             transaction.commit()?;
             Ok(claim)
@@ -226,8 +240,8 @@ impl Receipts {
                 let transaction = db.transaction()?;
                 update_request(&transaction, &request)?;
                 transaction.execute(
-                    "UPDATE cache_entries SET last_used=? WHERE identity=? AND execution_id=?",
-                    params![request.completed_at, request.identity, request.execution_id],
+                    "UPDATE cache_entries SET last_used=? WHERE identity=? AND eval_def_hash=? AND execution_id=?",
+                    params![request.completed_at, request.identity, request.eval_def_hash, request.execution_id],
                 )?;
                 transaction.commit()?;
                 Ok(())
@@ -279,13 +293,13 @@ pub(super) fn settle(
                     return Err(Error::Invalid("Active execution not found.".into()));
                 }
     } else {
-        db.execute("INSERT INTO executions(id,identity,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?)", params![execution.id, execution.identity, execution.owner_pid, execution.owner_start_time as i64, execution.status, data])?;
+        db.execute("INSERT INTO executions(id,identity,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?,?)", params![execution.id, execution.identity, execution.eval_def_hash, execution.owner_pid, execution.owner_start_time as i64, execution.status, data])?;
     }
     let published = if execution.verdict().is_some()
         && data.len() <= super::cache_entries::MAX_ENTRY_BYTES
         && let Some(identity) = &execution.identity
     {
-        db.execute("INSERT INTO cache_entries(identity,execution_id,bytes,last_used) VALUES (?,?,?,?) ON CONFLICT(identity) DO NOTHING", params![identity, execution.id, data.len() as i64, execution.completed_at])? != 0
+        db.execute("INSERT INTO cache_entries(identity,eval_def_hash,execution_id,bytes,last_used) VALUES (?,?,?,?,?) ON CONFLICT(identity,eval_def_hash) DO NOTHING", params![identity, execution.eval_def_hash, execution.id, data.len() as i64, execution.completed_at])? != 0
     } else {
         false
     };

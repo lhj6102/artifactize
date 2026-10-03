@@ -133,20 +133,28 @@ pub async fn status(
         cancellation.clone(),
     )
     .await?;
-    let keys: Vec<_> = config
+    let keys: BTreeMap<_, _> = config
         .evals
         .iter()
         .filter(|eval| !(options.force && selected_ids.contains(&eval.id)))
-        .filter_map(|eval| identities.get(eval.target.as_str()).cloned())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
+        .filter_map(|eval| {
+            identities.get(eval.target.as_str()).map(|identity| {
+                (
+                    eval.id.as_str(),
+                    (
+                        identity.clone(),
+                        cache::eval_definition_hash(&eval.declaration),
+                    ),
+                )
+            })
+        })
         .collect();
-    let cached = store::read_identity_executions(&state, &keys).await?;
+    let cached =
+        store::read_identity_executions(&state, &keys.values().cloned().collect::<Vec<_>>())
+            .await?;
     for eval in &config.evals {
-        if !(options.force && selected_ids.contains(&eval.id))
-            && let Some(Claim::Reuse(execution)) = identities
-                .get(eval.target.as_str())
-                .and_then(|identity| cached.get(identity))
+        if let Some(Claim::Reuse(execution)) =
+            keys.get(eval.id.as_str()).and_then(|key| cached.get(key))
         {
             evidence.insert(
                 eval.id.clone(),
@@ -228,36 +236,32 @@ pub async fn status(
             ),
             Readiness::Ready if matches!(current.evidence, Some(Evidence::Current(_))) => (
                 "reuse",
-                "The current owner identity has a completed cached result.".into(),
+                "The current identity and Eval definition have a completed cached result.".into(),
             ),
             Readiness::Ready
                 if !force
                     && matches!(
-                        identities
-                            .get(eval.target.as_str())
-                            .and_then(|id| cached.get(id)),
+                        keys.get(eval.id.as_str()).and_then(|key| cached.get(key)),
                         Some(Claim::Wait(_) | Claim::WaitHuman(_))
                     ) =>
             {
                 (
                     "wait",
-                    "The current owner identity has a live execution.".into(),
+                    "The current identity and Eval definition have a live execution.".into(),
                 )
             }
             Readiness::Ready => match eval.declaration.profile {
-                Profile::Agent { .. } => {
-                    ("blocked", "Agent Evals are not supported yet (P5).".into())
-                }
                 Profile::Human { .. } => (
                     "execute",
                     "Record a request awaiting a Human claim and submission.".into(),
                 ),
-                Profile::Runtime { .. } => (
+                Profile::Runtime { .. } | Profile::Agent { .. } => (
                     "execute",
                     if force {
                         "An explicitly forced Eval requires a new execution.".into()
                     } else if config.artifacts[&eval.target].stale.is_some() {
-                        "The current owner identity has no completed cached result.".into()
+                        "The current identity and Eval definition have no completed cached result."
+                            .into()
                     } else {
                         "No identity is declared; saved noncached results satisfy only their own Run.".into()
                     },
@@ -266,9 +270,7 @@ pub async fn status(
         };
         let status = if !force
             && matches!(
-                identities
-                    .get(eval.target.as_str())
-                    .and_then(|id| cached.get(id)),
+                keys.get(eval.id.as_str()).and_then(|key| cached.get(key)),
                 Some(Claim::WaitHuman(_))
             ) {
             "WAITING_HUMAN"
