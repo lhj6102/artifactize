@@ -78,6 +78,7 @@ fn image_blocks_normalize_all_formats_and_serialize_without_paths() {
         fs::write(&file, &bytes).unwrap();
         for source in [
             block.clone(),
+            json!({"type":"image","data":encoded.trim_end_matches('='),"mimeType":mime}),
             json!({"type":"image","path":"nested/image.wrong-extension","mimeType":mime}),
             json!({"type":"image","path":file,"mimeType":mime}),
         ] {

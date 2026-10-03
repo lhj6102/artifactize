@@ -1,6 +1,9 @@
 use std::{fs::File, io::Read, path::Path};
 
-use base64::{Engine, engine::general_purpose::STANDARD};
+use base64::{
+    Engine, alphabet,
+    engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig, general_purpose::STANDARD},
+};
 
 use crate::scope;
 
@@ -13,7 +16,11 @@ pub(super) fn from_base64(data: &str, mime_type: &str) -> Result<Content, String
     if data.len() > IMAGE_LIMIT.div_ceil(3) * 4 {
         return Err("Image exceeds the 4 MiB limit.".into());
     }
-    let bytes = STANDARD
+    let decoder = GeneralPurpose::new(
+        &alphabet::STANDARD,
+        GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
+    );
+    let bytes = decoder
         .decode(data)
         .map_err(|_| "Image requires valid base64 data.")?;
     normalize(&bytes, Some(mime_type))
