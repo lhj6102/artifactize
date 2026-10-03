@@ -1,3 +1,3 @@
-fn main() {
-    println!("artifactize {}", env!("CARGO_PKG_VERSION"));
+fn main() -> std::io::Result<()> {
+    artifactize::cli::run()
 }
