@@ -127,7 +127,8 @@ fn file_instances_expand_to_ordinary_artifacts_evals_scopes_and_relations() {
         let Some(Stale::Identity { script, inputs, .. }) = &artifact.stale else {
             panic!()
         };
-        assert_eq!(script.command, "identity.sh");
+        assert_eq!(script.command, "/bin/sh");
+        assert_eq!(script.args, ["identity.sh"]);
         assert_eq!(inputs, &["check.sh"]);
     }
     assert_eq!(
@@ -197,8 +198,10 @@ fn file_instances_expand_to_ordinary_artifacts_evals_scopes_and_relations() {
 }
 
 #[test]
-fn config_check_and_verify_keep_runtime_verdicts_separate_and_identity_hooks_inert() {
+fn config_check_is_inert_and_verify_keeps_runtime_verdicts_separate() {
     let fixture = Fixture::new();
+    let identity = fixture.repo.join("scenarios/identity.sh");
+    fs::write(&identity, "#!/bin/sh\ntouch identity-ran\nexit 1\n").unwrap();
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
@@ -210,6 +213,12 @@ fn config_check_and_verify_keep_runtime_verdicts_separate_and_identity_hooks_ine
         json!({"ok":true,"artifacts":3,"evals":2})
     );
     assert!(!fixture.root.path().join("state").exists());
+    assert!(!fixture.repo.join("scenarios/identity-ran").exists());
+    fs::write(
+        identity,
+        include_str!("fixtures/families/scenarios/identity.sh"),
+    )
+    .unwrap();
     let output = fixture
         .command()
         .args(["verify", "--all", "--json"])
@@ -228,6 +237,8 @@ fn config_check_and_verify_keep_runtime_verdicts_separate_and_identity_hooks_ine
         .iter()
         .find(|request| request["evalId"] == "search/review")
         .unwrap();
+    assert_eq!(checkout["identity"], "checkout:READY");
+    assert_eq!(search["identity"], "search:SEARCH");
     assert_eq!(checkout["result"]["stdout"], "READY\n");
     assert_eq!(search["result"]["stdout"], "SEARCH\n");
     assert_ne!(checkout["runDir"], search["runDir"]);

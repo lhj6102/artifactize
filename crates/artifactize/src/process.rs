@@ -15,7 +15,7 @@ use std::{
 use process_wrap::tokio::{ChildWrapper, CommandWrap, ProcessGroup};
 use thiserror::Error;
 use tokio::{
-    io::{AsyncRead, AsyncReadExt},
+    io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     time::{Instant, sleep, sleep_until, timeout},
 };
 use tokio_util::sync::CancellationToken;
@@ -81,9 +81,22 @@ where
     F: FnOnce(ChildIdentity) -> R + Send + 'static,
     R: Future<Output = io::Result<()>> + Send + 'static,
 {
+    run_with_input(command, None, cancellation, register).await
+}
+
+pub(crate) async fn run_with_input<F, R>(
+    command: Command,
+    input: Option<Vec<u8>>,
+    cancellation: CancellationToken,
+    register: F,
+) -> Result<Output, Error>
+where
+    F: FnOnce(ChildIdentity) -> R + Send + 'static,
+    R: Future<Output = io::Result<()>> + Send + 'static,
+{
     let cancellation = cancellation.child_token();
     let _cancel_on_drop = cancellation.clone().drop_guard();
-    tokio::spawn(run_inner(command, cancellation, register)).await?
+    tokio::spawn(run_inner(command, input, cancellation, register)).await?
 }
 
 struct Child(Box<dyn ChildWrapper>);
@@ -96,6 +109,7 @@ impl Drop for Child {
 
 async fn run_inner<F, R>(
     command: Command,
+    input: Option<Vec<u8>>,
     cancellation: CancellationToken,
     register: F,
 ) -> Result<Output, Error>
@@ -118,7 +132,11 @@ where
             .current_dir(&command.cwd)
             .env_clear()
             .envs(&command.env)
-            .stdin(Stdio::null())
+            .stdin(if input.is_some() {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
@@ -164,7 +182,24 @@ where
 
     let stdout = child.0.stdout().take().expect("stdout is piped");
     let stderr = child.0.stderr().take().expect("stderr is piped");
+    let stdin = child.0.stdin().take();
     let reaped = CancellationToken::new();
+    let feed = async {
+        if let (Some(mut stdin), Some(input)) = (stdin, input) {
+            tokio::select! {
+                _ = reaped.cancelled() => {},
+                _ = cancellation.cancelled() => {},
+                _ = sleep_until(deadline) => {},
+                result = stdin.write_all(&input) => {
+                    // Identity scripts may intentionally ignore their context.
+                    if let Err(error) = result && error.kind() != io::ErrorKind::BrokenPipe {
+                        return Err(Error::Io(error));
+                    }
+                }
+            }
+        }
+        Ok(())
+    };
     let wait = async {
         let result = tokio::select! {
             biased;
@@ -194,8 +229,9 @@ where
             }
         }
     };
-    let (status, output) = tokio::join!(wait, capture);
+    let (status, output, input) = tokio::join!(wait, capture, feed);
     let status = status?;
+    input?;
     let ((stdout, stdout_truncated), (stderr, stderr_truncated)) = output?;
     Ok(Output {
         status,

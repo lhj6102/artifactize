@@ -208,14 +208,13 @@ fn later_schema_semantics_are_kept_as_inert_objects() {
 fn stale_accepts_only_inert_identity_declarations() {
     let identity = json!({
         "kind":"identity", "script":{"command":"missing.sh","args":["literal"]},
-        "inputs":["missing-input"], "timeoutMs":1000, "weight":100
+        "inputs":["missing-input"], "timeoutMs":1000
     });
     let declaration = parse(json!({"name":"a","stale":identity})).unwrap();
     let Some(Stale::Identity {
         script,
         inputs,
         timeout_ms,
-        weight,
     }) = declaration.stale
     else {
         panic!()
@@ -224,21 +223,16 @@ fn stale_accepts_only_inert_identity_declarations() {
     assert_eq!(script.args, ["literal"]);
     assert_eq!(inputs, ["missing-input"]);
     assert_eq!(timeout_ms, Some(1000));
-    assert_eq!(weight, Some(100));
     let minimum = json!({"kind":"identity","script":{"command":"missing.sh","args":[]}});
     let declaration = parse(json!({"name":"a","stale":minimum})).unwrap();
     let Some(Stale::Identity {
-        inputs,
-        timeout_ms,
-        weight,
-        ..
+        inputs, timeout_ms, ..
     }) = declaration.stale
     else {
         panic!()
     };
     assert!(inputs.is_empty());
     assert_eq!(timeout_ms, None);
-    assert_eq!(weight, None);
     for stale in [
         json!({"kind":"always"}),
         json!({"kind":"file-hash"}),
@@ -248,7 +242,7 @@ fn stale_accepts_only_inert_identity_declarations() {
     }
     for (key, value) in [
         ("paths", json!(["input"])),
-        ("weight", json!(0)),
+        ("weight", json!(1)),
         ("weight", json!(101)),
         ("weight", json!(null)),
         ("inputs", json!(null)),

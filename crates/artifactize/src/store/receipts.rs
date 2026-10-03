@@ -57,6 +57,8 @@ pub struct Request {
     pub deps: Vec<String>,
     #[serde(default)]
     pub force: bool,
+    #[serde(default)]
+    pub identity: Option<String>,
     pub status: String,
     pub created_at: String,
     pub started_at: Option<String>,

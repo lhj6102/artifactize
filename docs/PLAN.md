@@ -190,7 +190,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [ ] **P2.5** Persisted definitions and family membership; `run list`. Check: saved results stay readable after the repository is removed.
 
 ### P3 Identity cache
-- [ ] **P3.1** Identity commands (`stale: {kind: identity, script, inputs?, timeoutMs?}`; the unused `weight` field is removed) with exact output validation, and the end-of-review recheck. Check: malformed output fails preparation with no fallback; editing input during a review makes it ERROR and unpublished.
+- [x] **P3.1** Identity commands (`stale: {kind: identity, script, inputs?, timeoutMs?}`; the unused `weight` field is removed) with exact output validation, and the end-of-review recheck. Check: malformed output fails preparation with no fallback; editing input during a review makes it ERROR and unpublished.
 - [ ] **P3.2** Reuse of completed GREEN/RED results across repositories; no-identity and `--force` bypass. Check: cross-repo RED reuse; force leaves the entry unchanged.
 - [ ] **P3.3** Cross-process claim, polling waiters, dead-owner reclaim. Check: two processes execute one identity once; a killed owner is reclaimed.
 - [ ] **P3.4** `--jobs N` scheduling and `maxExecutions` counter. Check: concurrency never exceeds N; the budget stops new starts.

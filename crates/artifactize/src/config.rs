@@ -207,8 +207,6 @@ pub enum Stale {
         inputs: Vec<String>,
         #[serde(rename = "timeoutMs", default, deserialize_with = "timeout")]
         timeout_ms: Option<u32>,
-        #[serde(default, deserialize_with = "positive_integer")]
-        weight: Option<u64>,
     },
 }
 
@@ -218,31 +216,10 @@ impl Stale {
             Self::Identity {
                 script: definition,
                 inputs,
-                weight,
                 ..
             } => {
                 script(&definition.command, &definition.args)?;
-                let entry = if definition.command == "node" {
-                    definition
-                        .args
-                        .first()
-                        .map(String::as_str)
-                        .unwrap_or_default()
-                } else {
-                    &definition.command
-                };
-                validation::path(entry)?;
-                if entry.starts_with('-') {
-                    return Err(
-                        "Identity scripts require an owner-relative entry, not command flags."
-                            .into(),
-                    );
-                }
-                paths(inputs, "stale.inputs")?;
-                if weight.is_some_and(|weight| weight > 100) {
-                    return Err("Identity weight must be 1–100.".into());
-                }
-                Ok(())
+                paths(inputs, "stale.inputs")
             }
         }
     }

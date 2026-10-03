@@ -1,4 +1,5 @@
 #!/bin/sh
-# Identity hooks remain inert until P3.3.
-touch identity-ran
-exit 1
+exec python3 -c 'import json, pathlib, sys
+context = json.load(sys.stdin)
+value = pathlib.Path(context["family"]["material"][0]).read_text().strip()
+print(context["artifactId"] + ":" + value)'

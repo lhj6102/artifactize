@@ -22,8 +22,8 @@
   "stale": {
     "kind": "identity",
     "script": {
-      "command": "identity.sh",
-      "args": []
+      "command": "/bin/sh",
+      "args": ["identity.sh"]
     },
     "inputs": [
       "check.sh"
