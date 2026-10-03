@@ -1,0 +1,18 @@
+{
+  "name": "cycle-b",
+  "critics": [
+    {
+      "id": "check",
+      "title": "Check cycle-b",
+      "profile": {
+        "kind": "runtime",
+        "command": "/bin/true",
+        "args": [],
+        "timeoutMs": 1000
+      },
+      "payload": {
+        "instruction": "Check {cycle-a}."
+      }
+    }
+  ]
+}

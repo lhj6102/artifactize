@@ -1,20 +1,20 @@
 {
-  "name": "green",
+  "name": "blocked",
   "critics": [
     {
       "id": "check",
-      "title": "Check green",
+      "title": "Check blocked",
       "profile": {
         "kind": "runtime",
         "command": "/bin/sh",
         "args": [
-          "check.sh",
-          "{input}/data.txt"
+          "-c",
+          "printf 'must not execute\\n'"
         ],
         "timeoutMs": 1000
       },
       "payload": {
-        "instruction": "Check runtime."
+        "instruction": "Check {red}."
       }
     }
   ]

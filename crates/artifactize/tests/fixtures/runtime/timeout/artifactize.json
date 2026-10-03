@@ -1,17 +1,16 @@
 {
-  "name": "green",
+  "name": "timeout",
   "critics": [
     {
       "id": "check",
-      "title": "Check green",
+      "title": "Check timeout",
       "profile": {
         "kind": "runtime",
-        "command": "/bin/sh",
+        "command": "/bin/sleep",
         "args": [
-          "check.sh",
-          "{input}/data.txt"
+          "30"
         ],
-        "timeoutMs": 1000
+        "timeoutMs": 100
       },
       "payload": {
         "instruction": "Check runtime."

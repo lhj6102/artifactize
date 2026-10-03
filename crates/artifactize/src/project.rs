@@ -2,3 +2,6 @@
 
 pub mod prepare;
 pub mod selection;
+
+mod verify;
+pub use verify::verify;

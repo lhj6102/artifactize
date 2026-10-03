@@ -116,19 +116,19 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let fixture = Fixture::new();
     fixture.write(
         "input/artifactize.json",
-        include_str!("fixtures/runtime/input/artifactize.json"),
+        include_str!("fixtures/declarations/input/artifactize.json"),
     );
     fixture.write(
         "review/artifactize.json",
-        include_str!("fixtures/runtime/review/artifactize.json"),
+        include_str!("fixtures/declarations/review/artifactize.json"),
     );
     fixture.write(
         "review/hook.sh",
-        include_str!("fixtures/runtime/review/hook.sh"),
+        include_str!("fixtures/declarations/review/hook.sh"),
     );
     fixture.write(
         "unreviewed/artifactize.json",
-        include_str!("fixtures/runtime/unreviewed/artifactize.json"),
+        include_str!("fixtures/declarations/unreviewed/artifactize.json"),
     );
     fs::set_permissions(
         fixture.0.join("review/hook.sh"),
