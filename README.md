@@ -163,6 +163,37 @@ No identity means no cache lookup or publication. `--force` bypasses lookup and
 publication for explicitly selected evals, leaving any existing entry unchanged.
 Forced and uncached results still satisfy their own Run and retain execution audit.
 
+## Cache inspection and limits
+
+```sh
+artifactize cache list --json
+artifactize cache show IDENTITY
+artifactize cache rm IDENTITY
+artifactize cache gc
+```
+
+These commands use the shared state home or `--state-dir PATH`, without loading a
+repository. `list` shows identity, original verdict/repository/eval, retained JSON
+bytes and last use (a text table, or a JSON array). `show` always prints the full
+saved execution with result, actual profile, provenance and usage; a missing
+entry prints `null` and exits 4. Reads neither create missing state nor update
+access times. `rm` prints `{"removed":true}` (false if absent), preserving saved
+Runs and execution audit. It refuses identities with active executions or waiters.
+
+Publishing a new reusable entry triggers LRU GC: at most 10,000 entries and 1 GiB
+of retained execution JSON, with a 16 MiB per-entry limit. Oversized results still
+reach their Run and existing waiters through the saved execution, but later calls
+execute again. Reuse hits update last use; inspection does not. GC evicts oldest
+eligible entries first, using identity to break ties, and skips active executions
+and in-flight waiters. Protected entries can temporarily exceed the caps; a later
+publication or `cache gc` retries collection. Explicit GC prints removed and
+remaining entry/byte counts as JSON. Automatic maintenance failures are reported
+on stderr without replacing an already completed verdict.
+
+GC and `rm` remove only reuse mappings, never execution or receipt rows or Run
+output. These limits are not a bound on total database size or active scratch
+space, and there is no semantic TTL, protected-reader registry or scratch cleanup.
+
 ## Status and static graph
 
 ```sh

@@ -81,6 +81,23 @@ fn active_owner(
     ).optional().map_err(Into::into)
 }
 
+fn available_to_waiter(
+    db: &rusqlite::Connection,
+    identity: &str,
+    waiting_for: Option<&str>,
+) -> Result<Option<Claim>, Error> {
+    if let Some(id) = waiting_for {
+        let data: Option<String> = db.query_row(
+            "SELECT data FROM executions WHERE id=? AND identity=? AND status IN ('GREEN','RED')",
+            params![id, identity], |row| row.get(0),
+        ).optional()?;
+        if let Some(data) = data {
+            return Ok(Some(Claim::Reuse(Box::new(serde_json::from_str(&data)?))));
+        }
+    }
+    available(db, identity)
+}
+
 fn available(db: &rusqlite::Connection, identity: &str) -> Result<Option<Claim>, Error> {
     if let Some(execution) = lookup(db, identity)? {
         return Ok(Some(Claim::Reuse(Box::new(execution))));
@@ -143,7 +160,16 @@ impl Receipts {
     pub async fn cached_execution(&self, identity: &str) -> Result<Option<Execution>, String> {
         let identity = identity.to_owned();
         self.connection
-            .call(move |db| lookup(db, &identity))
+            .call(move |db| -> Result<_, Error> {
+                let execution = lookup(db, &identity)?;
+                if let Some(execution) = &execution {
+                    db.execute(
+                        "UPDATE cache_entries SET last_used=? WHERE identity=? AND execution_id=?",
+                        params![crate::broker::now(), identity, execution.id],
+                    )?;
+                }
+                Ok(execution)
+            })
             .await
             .map_err(|e| e.to_string())
     }
@@ -151,21 +177,26 @@ impl Receipts {
     pub async fn claim_execution(
         &self,
         execution: &Execution,
+        waiting_for: Option<&str>,
         allow_start: bool,
     ) -> Result<Claim, String> {
         let execution = execution.clone();
+        let waiting_for = waiting_for.map(str::to_owned);
         self.connection.call(move |db| -> Result<Claim, Error> {
             let Some(identity) = &execution.identity else {
                 return Ok(if allow_start { Claim::Owned } else { Claim::BudgetExhausted });
             };
-            if let Some(claim) = available(db, identity)? {
-                return Ok(claim);
+            {
+                let transaction = db.transaction()?;
+                if let Some(claim) = available_to_waiter(&transaction, identity, waiting_for.as_deref())? {
+                    return Ok(claim);
+                }
             }
             if !allow_start {
                 return Ok(Claim::BudgetExhausted);
             }
             let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            if let Some(claim) = available(&transaction, identity)? {
+            if let Some(claim) = available_to_waiter(&transaction, identity, waiting_for.as_deref())? {
                 return Ok(claim);
             }
             if let Some((id, _)) = active_owner(&transaction, identity)? {
@@ -195,8 +226,8 @@ impl Receipts {
                 let transaction = db.transaction()?;
                 update_request(&transaction, &request)?;
                 transaction.execute(
-                    "UPDATE cache_entries SET last_used=? WHERE identity=?",
-                    params![request.completed_at, request.identity],
+                    "UPDATE cache_entries SET last_used=? WHERE identity=? AND execution_id=?",
+                    params![request.completed_at, request.identity, request.execution_id],
                 )?;
                 transaction.commit()?;
                 Ok(())
@@ -225,11 +256,20 @@ impl Receipts {
             } else {
                 transaction.execute("INSERT INTO executions(id,identity,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?)", params![execution.id, execution.identity, execution.owner_pid, execution.owner_start_time as i64, execution.status, data])?;
             }
-            if execution.verdict().is_some() && let Some(identity) = &execution.identity {
-                transaction.execute("INSERT INTO cache_entries(identity,execution_id,bytes,last_used) VALUES (?,?,?,?) ON CONFLICT(identity) DO NOTHING", params![identity, execution.id, data.len() as i64, execution.completed_at])?;
-            }
+            let published = if execution.verdict().is_some()
+                && data.len() <= super::cache_entries::MAX_ENTRY_BYTES
+                && let Some(identity) = &execution.identity
+            {
+                transaction.execute("INSERT INTO cache_entries(identity,execution_id,bytes,last_used) VALUES (?,?,?,?) ON CONFLICT(identity) DO NOTHING", params![identity, execution.id, data.len() as i64, execution.completed_at])? != 0
+            } else {
+                false
+            };
             update_request(&transaction, &request)?;
             transaction.commit()?;
+            if published && let Err(error) = super::cache_entries::collect(db) {
+                use std::io::Write;
+                let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
+            }
             Ok(())
         }).await.map_err(|e| e.to_string())
     }

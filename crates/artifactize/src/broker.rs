@@ -95,9 +95,11 @@ impl Scheduler<'_, '_> {
                         .requests
                         .iter()
                         .position(|request| request.eval_id == eval.id);
-                    if index
-                        .is_some_and(|index| running.contains(&index) || self.requests[index].force)
-                    {
+                    if index.is_some_and(|index| {
+                        running.contains(&index)
+                            || waiting.contains(&index)
+                            || self.requests[index].force
+                    }) {
                         continue;
                     }
                     if let Some(identity) = self.identities.get(eval.target.as_str())
@@ -162,7 +164,7 @@ impl Scheduler<'_, '_> {
                         .is_none_or(|limit| self.run.executions_started < limit);
                     match self
                         .receipts
-                        .claim_execution(&execution, allow_start)
+                        .claim_execution(&execution, request.execution_id.as_deref(), allow_start)
                         .await?
                     {
                         Claim::Reuse(execution) => {

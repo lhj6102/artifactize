@@ -99,6 +99,11 @@ pub enum Command {
         #[command(subcommand)]
         command: RunCommand,
     },
+    /// Inspect or maintain reusable identities without a repository.
+    Cache {
+        #[command(subcommand)]
+        command: CacheCommand,
+    },
     /// Inspect static folder declarations without executing hooks or reviews.
     Config {
         #[command(subcommand)]
@@ -175,6 +180,18 @@ pub enum ConfigCommand {
 pub enum RunCommand {
     /// Read the full saved audit as JSON, even without --json.
     Show { run_id: String },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CacheCommand {
+    /// List retained identities and their original execution metadata.
+    List,
+    /// Read the full saved result, profile and provenance as JSON.
+    Show { identity: String },
+    /// Remove an unused cache entry, preserving saved Runs and executions.
+    Rm { identity: String },
+    /// Evict least-recently-used entries above the entry and byte limits.
+    Gc,
 }
 
 async fn execute(cli: Cli) -> Result<u8, String> {
@@ -351,6 +368,46 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             let state = crate::store::state_dir(cli.state_dir.as_deref())?;
             let view = crate::store::read_run(&state, &run_id).await?;
             print_json(&view)?;
+            Ok(0)
+        }
+        Some(Command::Cache { command }) => {
+            let state = crate::store::state_dir(cli.state_dir.as_deref())?;
+            match command {
+                CacheCommand::List => {
+                    let entries = crate::cache::list(&state).await?;
+                    if cli.json {
+                        print_json(&entries)?;
+                    } else {
+                        let mut out = io::stdout().lock();
+                        writeln!(out, "IDENTITY\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED")
+                            .map_err(|e| e.to_string())?;
+                        for entry in entries {
+                            writeln!(
+                                out,
+                                "{}\t{}\t{}\t{}\t{}\t{}",
+                                entry.identity,
+                                entry.verdict,
+                                entry.repo_path,
+                                entry.eval_id,
+                                entry.bytes,
+                                entry.last_used
+                            )
+                            .map_err(|e| e.to_string())?;
+                        }
+                    }
+                }
+                CacheCommand::Show { identity } => {
+                    let entry = crate::cache::show(&state, &identity).await?;
+                    print_json(&entry)?;
+                    return Ok(if entry.is_some() { 0 } else { 4 });
+                }
+                CacheCommand::Rm { identity } => {
+                    print_json(
+                        &json!({"removed": crate::cache::remove(&state, &identity).await?}),
+                    )?;
+                }
+                CacheCommand::Gc => print_json(&crate::cache::gc(&state).await?)?,
+            }
             Ok(0)
         }
         Some(Command::Config {

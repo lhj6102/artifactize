@@ -125,6 +125,7 @@ impl Receipts {
                 CREATE TABLE IF NOT EXISTS cache_entries(identity TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES executions(id), bytes INTEGER NOT NULL, last_used TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS cache_lru ON cache_entries(last_used,identity);
                 CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, data TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS active_request_execution ON requests(execution_id) WHERE status IN ('QUEUED','RUNNING','WAITING_HUMAN');
                 CREATE TABLE IF NOT EXISTS run_members(run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), PRIMARY KEY(run_id, eval_id), UNIQUE(run_id, ordinal));")?;
             transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
             transaction.commit()?;
