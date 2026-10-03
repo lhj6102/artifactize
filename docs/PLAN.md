@@ -210,7 +210,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [ ] **P4.5** `tools check [--execute]` and the stdio MCP server serving Agent tools, with call audit. Check: MCP text/image calls obey scope and audit.
 
 ### P5 Agents
-- [ ] **P5.1** rig OpenAI/Anthropic API-key backends, explicit profiles, multimodal turns, transient retries, per-attempt usage. Check: fake transport asserts model, effort and payloads.
+- [x] **P5.1** rig OpenAI/Anthropic API-key backends, explicit profiles, multimodal turns, transient retries, per-attempt usage. Check: fake transport asserts model, effort and payloads.
 - [ ] **P5.2** `maxToolCalls`, token and deadline gates; duplicate-ID failure. Check: crossing a budget blocks further tools.
 - [ ] **P5.3** Strict verdict schemas, owner fields, one tools-disabled repair. Check: fenced JSON is rejected; a second failure is ERROR.
 - [x] **P5.4** ChatGPT login: registration, PKCE, protected storage, serialized refresh. Check: callback-validation and refresh-race tests; a real `login chatgpt` (owner).

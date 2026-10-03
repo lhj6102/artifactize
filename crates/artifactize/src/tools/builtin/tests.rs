@@ -32,7 +32,7 @@ impl Fixture {
         self.write(&format!("{path}/artifactize.json"), json!({
             "name":name,"mounts":mounts,"views":{"agentTools":{
                 "read":{"builtin":"read"},"list":{"builtin":"list"},"glob":{"builtin":"glob"},"grep":{"builtin":"grep"},"view_image":{"builtin":"view_image"}
-            }},"evals":[{"id":"review","title":"Review","profile":{"kind":"agent","provider":"test","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}]
+            }},"evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}]
         }).to_string());
     }
 

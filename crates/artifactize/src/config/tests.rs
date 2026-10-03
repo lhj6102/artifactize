@@ -92,7 +92,7 @@ fn duplicate_evals_and_basis_with_evals_are_rejected() {
 
 #[test]
 fn profile_fields_and_numeric_limits_match_declarations() {
-    let profile = json!({"kind": "agent", "provider": "provider", "model": "model", "reasoning": "high", "timeoutMs": 2147483647, "maxToolCalls": 9007199254740991_u64, "maxTokens": 1.0});
+    let profile = json!({"kind": "agent", "backend":"openai", "model": "model", "reasoning": "high", "timeoutMs": 2147483647, "maxToolCalls": 9007199254740991_u64, "maxTokens": 1.0});
     assert!(parse(json!({"name": "a", "evals": [eval(profile.clone())]})).is_ok());
     let mut invalid = profile.clone();
     invalid["timeoutMs"] = json!(2147483648_u64);
@@ -147,7 +147,7 @@ fn all_hook_timeouts_are_checked_without_opening_scripts() {
         "name": "a",
         "stale": {"kind": "identity", "script": {"command": "identity.sh", "args": []}, "timeoutMs": 2147483647},
         "views": {"agentTools": {"read": {"description": "Read {artifactName}", "inputSchema": {"type": "object"}, "timeoutMs": 1000, "protocol": "json", "command": "sh", "args": ["view.sh"]}}},
-        "evals": [{"id": "review", "title": "Review", "profile": {"kind": "agent", "provider": "p", "model": "m", "reasoning": "high"}, "payload": {"instruction": "Review"}}]
+        "evals": [{"id": "review", "title": "Review", "profile": {"kind": "agent", "backend":"openai", "model": "m", "reasoning": "high"}, "payload": {"instruction": "Review"}}]
     });
     assert!(parse(valid.clone()).is_ok());
     let mut invalid = valid.clone();
@@ -262,7 +262,8 @@ fn dropped_configuration_fields_are_rejected() {
     ] {
         assert!(parse(declaration).unwrap_err().contains("unknown field"));
     }
-    let mut declared = eval(json!({"kind":"agent","provider":"p","model":"m","reasoning":"high"}));
+    let mut declared =
+        eval(json!({"kind":"agent","backend":"openai","model":"m","reasoning":"high"}));
     declared["resultCheck"] = json!({"script":{"command":"check.sh","args":[]}});
     assert!(
         parse(json!({"name":"a","evals":[declared]}))
@@ -277,4 +278,22 @@ fn dropped_configuration_fields_are_rejected() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn agent_backends_are_explicit_and_optional_reasoning_is_exact() {
+    for backend in ["openai", "anthropic", "chatgpt", "claude"] {
+        let profile = json!({"kind":"agent","backend":backend,"model":"owner-chosen-model"});
+        assert!(parse(json!({"name":"a","evals":[eval(profile)]})).is_ok());
+    }
+    for profile in [
+        json!({"kind":"agent","provider":"openai","model":"m"}),
+        json!({"kind":"agent","backend":"unknown","model":"m"}),
+        json!({"kind":"agent","backend":"openai","model":"m","reasoning":null}),
+        json!({"kind":"agent","backend":"openai","model":"m","reasoning":"off"}),
+        json!({"kind":"agent","backend":"anthropic","model":"m","reasoning":"xhigh"}),
+        json!({"kind":"agent","backend":"openai","model":"m","effort":"high"}),
+    ] {
+        assert!(parse(json!({"name":"a","evals":[eval(profile)]})).is_err());
+    }
 }

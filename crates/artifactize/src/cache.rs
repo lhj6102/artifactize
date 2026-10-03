@@ -38,6 +38,7 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String)
     request.profile = execution.profile.clone();
     request.provenance = Some(execution.provenance.clone());
     request.usage = execution.usage.clone();
+    request.tool_calls = execution.tool_calls.clone();
     request.completed_at = Some(completed_at);
     request.blocked_reason = None;
 }

@@ -40,6 +40,8 @@ pub struct Execution {
     pub error_code: Option<String>,
     pub profile: Value,
     pub usage: Option<Value>,
+    #[serde(default)]
+    pub tool_calls: Vec<Value>,
     pub provenance: Provenance,
     pub started_at: String,
     pub completed_at: Option<String>,

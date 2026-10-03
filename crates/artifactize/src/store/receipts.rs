@@ -66,6 +66,8 @@ pub struct Request {
     pub execution_id: Option<String>,
     pub provenance: Option<Provenance>,
     pub usage: Option<Value>,
+    #[serde(default)]
+    pub tool_calls: Vec<Value>,
     pub payload: Value,
     pub references: Value,
     pub deps: Vec<String>,

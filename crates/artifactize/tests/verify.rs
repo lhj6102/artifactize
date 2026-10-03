@@ -332,10 +332,8 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
 
 #[test]
 fn unsupported_profiles_fail_before_any_execution_or_store_creation() {
-    for profile in [
-        json!({"kind":"human"}),
-        json!({"kind":"agent","provider":"not-called","model":"not-called","reasoning":"high"}),
-    ] {
+    {
+        let profile = json!({"kind":"human"});
         let fixture = Fixture::new();
         fixture.runtime("/bin/true", &[]);
         let path = fixture.repo.join("artifactize.json");
@@ -914,4 +912,72 @@ fn recursive_eval_selection_includes_sibling_evals_on_the_same_artifact() {
     assert_eq!(recursive["requests"].as_array().unwrap().len(), 2);
     assert_eq!(request(&recursive, "test/check")["force"], true);
     assert_eq!(request(&recursive, "test/sibling")["force"], false);
+}
+
+#[test]
+fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
+    for (backend, expected) in [
+        ("openai", "OPENAI_API_KEY"),
+        ("anthropic", "ANTHROPIC_API_KEY"),
+        ("chatgpt", "P5.5"),
+        ("claude", "P5.6"),
+    ] {
+        let fixture = Fixture::new();
+        fixture.runtime("/bin/true", &[]);
+        let path = fixture.repo.join("artifactize.json");
+        let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        declaration["evals"].as_array_mut().unwrap().push(json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":backend,"model":"exact-model"},"payload":{"instruction":"Review."}}));
+        fs::write(path, declaration.to_string()).unwrap();
+        let output = fixture
+            .command()
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
+            .args(["verify", "--all", "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let run = json_output(&output);
+        assert_eq!(run["requests"][0]["status"], "GREEN");
+        assert_eq!(run["requests"][1]["status"], "ERROR");
+        assert!(
+            run["requests"][1]["error"]
+                .as_str()
+                .unwrap()
+                .contains(expected)
+        );
+        assert_eq!(run["requests"][1]["usage"], json!([]));
+        assert_eq!(run["requests"][1]["toolCalls"], json!([]));
+        assert!(run["requests"][1]["result"].is_null());
+        fs::remove_dir_all(&fixture.repo).unwrap();
+        let shown = fixture
+            .command()
+            .args(["run", "show", run["id"].as_str().unwrap(), "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(json_output(&shown)["requests"], run["requests"]);
+    }
+}
+
+#[test]
+fn runtime_and_agent_starts_share_the_run_budget() {
+    let fixture = Fixture::new();
+    fixture.runtime("/bin/true", &[]);
+    let path = fixture.repo.join("artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    declaration["evals"].as_array_mut().unwrap().push(json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"chatgpt","model":"not-called"},"payload":{"instruction":"Review."}}));
+    fs::write(path, declaration.to_string()).unwrap();
+    let run = fixture.verify(&["--all", "--jobs", "1", "--max-executions", "1"], 4);
+    assert_eq!(run["executionsStarted"], 1);
+    assert_eq!(run["requests"][0]["status"], "GREEN");
+    assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
+    assert!(run["requests"][1]["error"].is_null());
+    let run = fixture.verify(&["--all", "--jobs", "1", "--max-executions", "2"], 2);
+    assert_eq!(run["executionsStarted"], 2);
+    assert_eq!(run["requests"][1]["status"], "ERROR");
+    assert!(
+        run["requests"][1]["error"]
+            .as_str()
+            .unwrap()
+            .contains("P5.5")
+    );
 }

@@ -145,6 +145,7 @@ impl Scheduler<'_, '_> {
                         error_code: None,
                         profile: request.profile.clone(),
                         usage: None,
+                        tool_calls: Vec::new(),
                         provenance: Provenance {
                             repo_path: self.config.root.clone(),
                             run_id: self.run.id.clone(),
