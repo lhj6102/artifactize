@@ -109,7 +109,7 @@ The module boundaries below are permanent; later phases add code inside them rat
 Each task takes a worker about half a day to a day. It lands as one PR from `task/<id>-<slug>`. That PR ticks its box here and the inventory items it completes. A task is done when its check passes and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` are green.
 
 ### P1 Runtime loop
-- [ ] **P1.1** Package skeleton: module tree from the architecture table, versioned config/state, clap CLI, `--version`. Check: `artifactize --version` prints 0.1.0.
+- [x] **P1.1** Package skeleton: module tree from the architecture table, versioned config/state, clap CLI, `--version`. Check: `artifactize --version` prints 0.1.0.
 - [ ] **P1.2** Inert declarations, discovery, unique IDs, basis vs UNREVIEWED, `config check`. Check: duplicates rejected; no hook executed.
 - [ ] **P1.3** Children, mounts, aliases, `{artifact}` references in instructions and argv. Check: focused alias/traversal/symlink tests.
 - [ ] **P1.4** SCC scheduling, shared external gates, verdict propagation. Check: focused cycle, external-gate, RED-blocks and ERROR-waits tests.
