@@ -66,7 +66,7 @@ pub enum Command {
 #[derive(Debug, Args)]
 #[group(required = true, multiple = false)]
 pub struct SelectionArgs {
-    /// Select one Artifact.
+    /// Select one Artifact or every instance of a family.
     artifact: Option<String>,
     /// Select one qualified Critic ID.
     #[arg(long, value_name = "ID")]
@@ -74,13 +74,13 @@ pub struct SelectionArgs {
     /// Select comma-separated qualified Critic IDs.
     #[arg(long, value_name = "CSV")]
     critics: Option<String>,
-    /// Select comma-separated Artifact names.
+    /// Select comma-separated Artifact or family names.
     #[arg(long, value_name = "CSV")]
     artifacts: Option<String>,
     /// Read Critic IDs from a JSON array or one ID per line.
     #[arg(long, value_name = "PATH")]
     critics_file: Option<PathBuf>,
-    /// Read Artifact names from a JSON array or one ID per line.
+    /// Read Artifact or family names from a JSON array or one ID per line.
     #[arg(long, value_name = "PATH")]
     artifacts_file: Option<PathBuf>,
     /// Select every Artifact.

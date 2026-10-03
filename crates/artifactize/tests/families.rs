@@ -393,3 +393,152 @@ fn instance_lists_and_material_cannot_escape_or_follow_links() {
         ["directory"]
     );
 }
+
+#[test]
+fn family_selectors_expand_and_deduplicate_across_positional_csv_and_files() {
+    use artifactize::project::selection::{Selection, read_selection_file};
+
+    let fixture = Fixture::new();
+    let config = fixture.config();
+    let family = Selection::Artifact {
+        artifact_id: "scenarios".into(),
+    };
+    let selected = family.resolve(&config).unwrap();
+    assert_eq!(selected.roots, ["checkout", "search"]);
+    assert_eq!(
+        selected
+            .critics
+            .iter()
+            .map(|critic| critic.id.as_str())
+            .collect::<Vec<_>>(),
+        ["checkout/review", "search/review"]
+    );
+    let json_path = fixture.root.path().join("selection.json");
+    let line_path = fixture.root.path().join("selection.txt");
+    fs::write(&json_path, r#"["search","scenarios","checkout"]"#).unwrap();
+    fs::write(&line_path, "search\nscenarios\ncheckout\n").unwrap();
+    let select = |path: &Path| Selection::Artifacts {
+        artifact_ids: read_selection_file(path).unwrap(),
+    };
+    assert_eq!(select(&json_path), select(&line_path));
+    let selected = select(&json_path).resolve(&config).unwrap();
+    assert_eq!(selected.roots, ["search", "checkout"]);
+    assert_eq!(
+        selected
+            .critics
+            .iter()
+            .map(|critic| critic.id.as_str())
+            .collect::<Vec<_>>(),
+        ["search/review", "checkout/review"]
+    );
+
+    let output = fixture
+        .command()
+        .args(["verify", "scenarios", "--full"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let run = output_json(&output);
+    assert_eq!(
+        run["selection"],
+        json!({"kind":"artifact", "artifactId":"scenarios"})
+    );
+    assert_eq!(run["requests"].as_array().unwrap().len(), 2);
+    let csv = fixture
+        .command()
+        .args([
+            "verify",
+            "--artifacts",
+            "search,scenarios,checkout",
+            "--full",
+        ])
+        .output()
+        .unwrap();
+    assert!(csv.status.success());
+    let csv = output_json(&csv);
+    for path in [&json_path, &line_path] {
+        let output = fixture
+            .command()
+            .args(["verify", "--artifacts-file"])
+            .arg(path)
+            .arg("--full")
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        let run = output_json(&output);
+        assert_eq!(run["selection"], csv["selection"]);
+        assert_eq!(run["requests"].as_array().unwrap().len(), 2);
+        assert!(
+            run["requests"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|request| request["result"]["verdict"] == "GREEN")
+        );
+    }
+    let output = fixture
+        .command()
+        .args(["verify", "--critic", "scenarios/review", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output_json(&output)["error"]
+            .as_str()
+            .unwrap()
+            .contains("Unknown Critic")
+    );
+}
+
+#[test]
+fn family_profile_variants_are_substituted_per_instance_before_selection() {
+    use artifactize::project::selection::{ProfileSelection, Selection, select_profiles};
+
+    let fixture = Fixture::new();
+    let mut template = fixture.read("scenarios/artifactize.json");
+    template["critics"][0]["profileVariants"] = json!({"echo":{
+        "kind":"runtime", "command":"/bin/echo", "args":[{"$param":"/expected"}]
+    }});
+    fixture.write("scenarios/artifactize.json", template.clone());
+    let selection = Selection::Artifact {
+        artifact_id: "scenarios".into(),
+    };
+    let config = select_profiles(
+        fixture.config(),
+        &selection,
+        Some(&ProfileSelection::Named("echo".into())),
+    )
+    .unwrap();
+    let selected = selection.resolve(&config).unwrap();
+    assert_eq!(
+        serde_json::to_value(&selected.critics[0].declaration.profile).unwrap()["args"],
+        json!(["READY"])
+    );
+    assert_eq!(
+        serde_json::to_value(&selected.critics[1].declaration.profile).unwrap()["args"],
+        json!(["SEARCH"])
+    );
+    let output = fixture
+        .command()
+        .args(["verify", "scenarios", "--profile", "echo", "--full"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let run = output_json(&output);
+    let requests = run["requests"].as_array().unwrap();
+    assert_eq!(
+        requests
+            .iter()
+            .find(|request| request["criticId"] == "checkout/review")
+            .unwrap()["result"]["stdout"],
+        "READY\n"
+    );
+    assert_eq!(
+        requests
+            .iter()
+            .find(|request| request["criticId"] == "search/review")
+            .unwrap()["result"]["stdout"],
+        "SEARCH\n"
+    );
+    assert_eq!(fixture.read("scenarios/artifactize.json"), template);
+}

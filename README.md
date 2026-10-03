@@ -20,7 +20,9 @@ with duplicates removed at their first occurrence; Artifacts expand to their
 Critics in declaration order. Runtime Critics execute sequentially when their
 dependency gates allow. An Artifact selector runs only that Artifact's Critics;
 an individual Critic selector runs only that Critic. Both retain the full dependency
-closure as a final obligation. Family-name selectors follow the family task P2.1.
+closure as a final obligation. A family name selects every instance, also in
+`--artifacts` and `--artifacts-file`; overlapping family/instance entries are
+deduplicated without selecting the family template itself.
 RED blocks downstream execution; missing/operational evidence waits. Cycle peers
 have no internal gates. Selected GREEN results with missing obligations remain
 recorded in an INCOMPLETE Run. Agent/Human Critics fail clearly before execution.
