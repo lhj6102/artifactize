@@ -7,6 +7,7 @@ repository.workspace = true
 
 [dependencies]
 clap = { version = "4.5", features = ["derive"] }
+jsonschema = { version = "0.58.4", default-features = false }
 libc = "0.2"
 petgraph = { version = "0.8", default-features = false, features = ["std"] }
 process-wrap = { version = "10.0.1", default-features = false, features = ["tokio1", "process-group"] }

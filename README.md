@@ -88,7 +88,8 @@ these fields without opening or executing the script or its inputs. There is no
 implicit file-hash or always-stale mode: no identity means no reuse. The old
 `critics`, `stale.paths`, `resultCheck`, `envRequirements`,
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` fields are
-rejected. Tool protocol and audience-specific declaration updates arrive in P4.
+rejected. Agent tools use the flat declarations below; Human tools still use their
+existing declaration shape until P4.4.
 
 ## Owner identity commands
 
@@ -213,7 +214,133 @@ Other arguments (including escaped references) remain literal, and the command
 is never interpolated. `config check` validates reference names and syntax but
 does not open runtime operands or execute programs. Input existence and symlink
 checks happen during argument preparation. Graph closure and runtime CLI execution
-use these same resolvers. Tool enforcement is delivered by later tasks.
+use these same resolvers. The Agent tool registry uses the same admitted scope.
+
+## Agent tools
+
+`views.agentTools` is an explicit safe-name map. Each entry is either a flat
+command declaration or a built-in reference; unknown and mixed fields are rejected.
+There is no `metadata`, `script`, `resultKinds`, `artifactKind` or `observation`
+wrapper on Agent tools.
+
+```json
+{
+  "views": {
+    "agentTools": {
+      "inspect": {
+        "description": "Inspect a section of {artifactName}.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {"section": {"type": "string"}},
+          "required": ["section"],
+          "additionalProperties": false
+        },
+        "protocol": "json",
+        "command": "python3",
+        "args": ["inspect.py"],
+        "timeoutMs": 120000,
+        "executionPaths": ["shared/rules.json"]
+      },
+      "search": {
+        "description": "Search {artifactName}.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {"query": {"type": "string"}},
+          "required": ["query"],
+          "additionalProperties": false
+        },
+        "protocol": "plain",
+        "command": "rg",
+        "args": ["--", "{query}", "."]
+      },
+      "read": {"builtin": "read", "description": "Read {artifactName}."}
+    }
+  }
+}
+```
+
+Command fields `description`, `protocol`, `command` and `args` are required.
+`inputSchema` defaults to `{"type":"object","additionalProperties":false}`
+(empty arguments only). Supplied schemas must have root `type: "object"` and are
+compiled by `jsonschema`, without its file/HTTP resolution features. Local `$ref`,
+composition and other standard schema features work; there is no custom keyword
+subset. Schema defaults never change arguments. Declarations/schemas are capped
+at 8 MiB. Calls require a JSON object of at most 64 KiB before any process or output
+directory is created. Validation errors show at most five bounded, escaped
+instance/schema paths (under 4 KiB), never argument values.
+
+Descriptions must be nonblank, at most 4000 UTF-16 code units, and support only
+`{artifactName}` interpolation (the canonical Artifact ID). Built-in references
+accept `builtin: "read" | "list" | "glob" | "grep" | "view_image"` and optional
+`description`. They are registered now but calls return a clear **not yet
+implemented** error until P4.3; image results arrive in P4.2.
+
+The `json` protocol receives exactly one request on stdin:
+
+```json
+{
+  "version": 1,
+  "context": {
+    "artifactId": "example",
+    "artifactPath": "/workspace/example",
+    "outputDir": "/external/private/output",
+    "tmpDir": "/external/private/tmp",
+    "scope": {
+      "example": {"path": "/workspace/example", "children": {}, "mounts": {}}
+    },
+    "executionPaths": {"shared/rules.json": "/workspace/shared/rules.json"}
+  },
+  "args": {"section": "summary"}
+}
+```
+
+Scope entries contain canonical physical paths and logical child/mount maps;
+family instances also include `family: {name, material}`. `executionPaths` is
+omitted when empty. Declared execution paths are up to 64 unique workspace-relative
+files/directories, resolved without symlinks, copying, hashing or pinning.
+Successful stdout is one JSON object with 1–32 content blocks:
+`{"content":[{"type":"text","text":"..."},{"type":"json","data":{}}]}`.
+Text is at most 64 KiB per block; compact JSON data at most 512 KiB per block;
+the normalized result at most 8 MiB. Both process streams are bounded at 16 MiB.
+An optional `isError` boolean is accepted. Exit-0 authored errors must have
+exactly one nonblank text block, such as
+`{"isError":true,"content":[{"type":"text","text":"Choose a smaller range."}]}`.
+These reach the reviewer unchanged. Nonzero exit, crash, malformed/truncated
+JSON, and process failures yield generic errors; stderr is never forwarded.
+There are no observation receipts.
+
+For `plain`, only top-level declared `inputSchema.properties` can appear as argv
+placeholders. Whole-token `{query}` and embedded `--query={query}` both work.
+Strings substitute literally; other JSON values use compact JSON. Missing values
+and NUL bytes fail before spawn. `{{` and `}}` escape literal braces. Substitution
+is single-pass: values containing braces, quotes, spaces, `$()` or semicolons
+remain one literal argv element, never shell code. Plain tools receive empty
+stdin. Cleaned, lossily decoded stdout becomes one text block, capped at 64 KiB
+with an explicit truncation marker; nonzero exit marks that bounded stdout as a
+tool error. Stderr is not included. Commands such as `rg` that exit nonzero for
+no matches need an owner wrapper if that should count as successful empty output.
+
+Bare executables use PATH only, never implicit owner or `node_modules/.bin`
+lookup. Commands containing `/` resolve from the owner through the scope resolver
+(`./tool` is accepted; traversal and symlinks are rejected). Absolute commands run
+as given. JSON-protocol argv may use existing scoped Artifact references, but
+cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
+schema-property placeholders. Commands themselves are never interpolated.
+All calls use the owner folder as cwd, runtime's PATH/LANG-only inheritance and
+private external HOME/TMP/output, a default 120000 ms deadline (1–2147483647), and
+process-group cancellation/cleanup. Per-call directories are removed on success,
+failure and cancellation, including dropped call futures; caller-owned output
+roots remain. Commands are trusted read-only programs, not sandboxed.
+
+Internal callers use `tools::Registry::new(&config, "artifact/eval")`, `list()`
+and `call(name, args, output_root, cancellation).await`. Only Agent evals are
+accepted. Each Artifact in its admitted scope contributes its Agent declarations
+under `<name>_<artifactId>`; concatenation collisions are rejected. Human tools
+are never listed. Listing creates no directories and runs no owner code. Calls
+return normalized `ToolResult {content, is_error}` for successful, authored and
+system-error results. Registry calls do not mutate payloads or declarations. The
+Agent loop (P5) and MCP/audit integration (P4.5) will call this API; neither is
+implemented here.
 
 ## Artifact families
 

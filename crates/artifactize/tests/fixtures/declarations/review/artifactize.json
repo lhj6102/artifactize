@@ -17,22 +17,16 @@
   "views": {
     "agentTools": {
       "read": {
-        "metadata": {
-          "description": "Read {artifactName}",
-          "inputSchema": {
-            "type": "object"
-          },
-          "resultKinds": [
-            "text"
-          ],
-          "timeoutMs": 1000
+        "description": "Read {artifactName}",
+        "inputSchema": {
+          "type": "object"
         },
-        "script": {
-          "command": "sh",
-          "args": [
-            "hook.sh"
-          ]
-        }
+        "timeoutMs": 1000,
+        "command": "sh",
+        "args": [
+          "hook.sh"
+        ],
+        "protocol": "plain"
       }
     },
     "humanTools": {

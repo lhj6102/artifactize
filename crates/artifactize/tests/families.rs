@@ -132,15 +132,12 @@ fn file_instances_expand_to_ordinary_artifacts_evals_scopes_and_relations() {
         assert_eq!(inputs, &["check.sh"]);
     }
     assert_eq!(
-        config.artifacts["checkout"].views.agent_tools["detail"]
-            .metadata
-            .input_schema["properties"]["id"]["enum"],
+        config.artifacts["checkout"].views.agent_tools["detail"].input_schema()["properties"]["id"]
+            ["enum"],
         json!(["summary", "navigation"])
     );
     assert_eq!(
-        config.artifacts["search"].views.agent_tools["detail"]
-            .metadata
-            .input_schema["properties"]["id"]["enum"],
+        config.artifacts["search"].views.agent_tools["detail"].input_schema()["properties"]["id"]["enum"],
         json!(["message", "query"])
     );
     let scope = artifact_scope(&config, &["project"]).unwrap();

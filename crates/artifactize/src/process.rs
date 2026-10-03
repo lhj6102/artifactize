@@ -94,9 +94,30 @@ where
     F: FnOnce(ChildIdentity) -> R + Send + 'static,
     R: Future<Output = io::Result<()>> + Send + 'static,
 {
+    run_with_input_limit(command, input, OUTPUT_LIMIT, cancellation, register).await
+}
+
+pub(crate) async fn run_with_input_limit<F, R>(
+    command: Command,
+    input: Option<Vec<u8>>,
+    output_limit: usize,
+    cancellation: CancellationToken,
+    register: F,
+) -> Result<Output, Error>
+where
+    F: FnOnce(ChildIdentity) -> R + Send + 'static,
+    R: Future<Output = io::Result<()>> + Send + 'static,
+{
     let cancellation = cancellation.child_token();
     let _cancel_on_drop = cancellation.clone().drop_guard();
-    tokio::spawn(run_inner(command, input, cancellation, register)).await?
+    tokio::spawn(run_inner(
+        command,
+        input,
+        output_limit,
+        cancellation,
+        register,
+    ))
+    .await?
 }
 
 struct Child(Box<dyn ChildWrapper>);
@@ -110,6 +131,7 @@ impl Drop for Child {
 async fn run_inner<F, R>(
     command: Command,
     input: Option<Vec<u8>>,
+    output_limit: usize,
     cancellation: CancellationToken,
     register: F,
 ) -> Result<Output, Error>
@@ -218,7 +240,9 @@ where
         result
     };
     let capture = async {
-        let read = async { tokio::try_join!(capture(stdout), capture(stderr)) };
+        let read = async {
+            tokio::try_join!(capture(stdout, output_limit), capture(stderr, output_limit))
+        };
         tokio::pin!(read);
         tokio::select! {
             result = &mut read => result.map_err(Error::Io),
@@ -270,7 +294,7 @@ async fn terminate(child: &mut Child) -> io::Result<()> {
     Ok(())
 }
 
-async fn capture(mut pipe: impl AsyncRead + Unpin) -> io::Result<(Vec<u8>, bool)> {
+async fn capture(mut pipe: impl AsyncRead + Unpin, limit: usize) -> io::Result<(Vec<u8>, bool)> {
     let mut output = Vec::new();
     let mut buffer = [0; 8192];
     let mut truncated = false;
@@ -279,7 +303,7 @@ async fn capture(mut pipe: impl AsyncRead + Unpin) -> io::Result<(Vec<u8>, bool)
         if count == 0 {
             return Ok((output, truncated));
         }
-        let retained = count.min(OUTPUT_LIMIT - output.len());
+        let retained = count.min(limit - output.len());
         output.extend_from_slice(&buffer[..retained]);
         truncated |= retained < count;
     }

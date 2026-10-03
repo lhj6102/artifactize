@@ -23,7 +23,9 @@
     "kind": "identity",
     "script": {
       "command": "/bin/sh",
-      "args": ["identity.sh"]
+      "args": [
+        "identity.sh"
+      ]
     },
     "inputs": [
       "check.sh"
@@ -32,34 +34,28 @@
   "views": {
     "agentTools": {
       "detail": {
-        "metadata": {
-          "description": "Read a detail of {artifactName}.",
-          "inputSchema": {
-            "type": "object",
-            "properties": {
-              "id": {
-                "enum": {
-                  "$param": "/detailIds"
-                }
+        "description": "Read a detail of {artifactName}.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "enum": {
+                "$param": "/detailIds"
               }
-            },
-            "required": [
-              "id"
-            ],
-            "additionalProperties": false
-          },
-          "resultKinds": [
-            "text"
-          ]
-        },
-        "script": {
-          "command": "/bin/cat",
-          "args": [
-            {
-              "$param": "/file"
             }
-          ]
-        }
+          },
+          "required": [
+            "id"
+          ],
+          "additionalProperties": false
+        },
+        "command": "/bin/cat",
+        "args": [
+          {
+            "$param": "/file"
+          }
+        ],
+        "protocol": "plain"
       }
     }
   },

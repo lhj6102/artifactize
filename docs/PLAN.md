@@ -198,7 +198,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [ ] **P3.5** `cache list/show/rm` and LRU GC on entries and bytes. Check: GC never removes an active execution.
 
 ### P4 Tools
-- [ ] **P4.1** Agent tool declarations and registry:
+- [x] **P4.1** Agent tool declarations and registry:
   - Declared commands with the `json` and `plain` protocols, and executable and declared execution-path resolution.
   - `jsonschema` argument validation with a size limit.
   - Text/JSON results and authored errors.

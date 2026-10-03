@@ -78,6 +78,24 @@ impl Command {
         })
         .await
     }
+
+    /// Tool protocols use a larger bounded capture than runtime audit output.
+    pub(crate) async fn tool_output(
+        mut self,
+        input: Vec<u8>,
+        output_limit: usize,
+        cancellation: CancellationToken,
+    ) -> Result<Output, process::Error> {
+        self.command.cwd = self.cwd;
+        process::run_with_input_limit(
+            self.command,
+            Some(input),
+            output_limit,
+            cancellation,
+            |_| async { Ok(()) },
+        )
+        .await
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,7 +168,7 @@ where
     }
 }
 
-fn clean_output(bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn clean_output(bytes: &[u8]) -> Vec<u8> {
     let text = String::from_utf8_lossy(bytes);
     let mut bytes = text.as_bytes();
     let mut clean = Vec::with_capacity(bytes.len());
