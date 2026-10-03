@@ -11,7 +11,7 @@ use crate::{
     config::{DependencyGates, Profile, read_workspace_config},
     graph::{ArtifactStatus, EvalStatus, Evidence, Graph, Readiness},
     project::{VerifyOptions, selection::select_profiles},
-    store::{self, LastRequest},
+    store::{self, Claim, LastRequest},
 };
 
 use super::selection::Selection;
@@ -141,10 +141,10 @@ pub async fn status(
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect();
-    let cached = store::read_cached_executions(&state, &keys).await?;
+    let cached = store::read_identity_executions(&state, &keys).await?;
     for eval in &config.evals {
         if !(options.force && selected_ids.contains(&eval.id))
-            && let Some(execution) = identities
+            && let Some(Claim::Reuse(execution)) = identities
                 .get(eval.target.as_str())
                 .and_then(|identity| cached.get(identity))
         {
@@ -230,6 +230,20 @@ pub async fn status(
                 "reuse",
                 "The current owner identity has a completed cached result.".into(),
             ),
+            Readiness::Ready
+                if !force
+                    && matches!(
+                        identities
+                            .get(eval.target.as_str())
+                            .and_then(|id| cached.get(id)),
+                        Some(Claim::Wait(_))
+                    ) =>
+            {
+                (
+                    "wait",
+                    "The current owner identity has a live execution.".into(),
+                )
+            }
             Readiness::Ready => match eval.declaration.profile {
                 Profile::Agent { .. } => {
                     ("blocked", "Agent Evals are not supported yet (P5).".into())

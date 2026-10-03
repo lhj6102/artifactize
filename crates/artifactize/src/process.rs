@@ -276,6 +276,14 @@ pub(crate) fn identity(pid: u32) -> io::Result<ChildIdentity> {
     Ok(ChildIdentity { pid, start_time })
 }
 
+pub(crate) fn is_alive(owner: ChildIdentity) -> io::Result<bool> {
+    match identity(owner.pid) {
+        Ok(current) => Ok(current == owner),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
 fn kill(child: &mut Child) -> io::Result<()> {
     match child.0.start_kill() {
         Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),

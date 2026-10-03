@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
+    time::Duration,
 };
 
 use serde_json::{Value, json};
@@ -15,7 +16,7 @@ use crate::{
     project::selection::{ProfileSelection, Selection, select_profiles},
     runtime::{self, Outcome, Verdict},
     scope,
-    store::{self, Execution, Provenance, Receipts, Request, Run, RunView},
+    store::{self, Claim, Execution, Provenance, Receipts, Request, Run, RunView},
     workspace,
 };
 
@@ -169,6 +170,7 @@ pub async fn verify(
         .collect();
     receipts.create_run(&run, &requests).await?;
     let mut evidence = BTreeMap::new();
+    let mut poll_interval = Duration::from_millis(200);
     loop {
         if cancellation.is_cancelled() {
             break;
@@ -208,8 +210,59 @@ pub async fn verify(
         };
         let eval = evals[index];
         let request = &mut requests[index];
+        let mut execution = Execution {
+            id: format!("execution-{}", request.id),
+            identity: request.identity.clone().filter(|_| !request.force),
+            owner_pid: owner.pid,
+            owner_start_time: owner.start_time,
+            status: "RUNNING".into(),
+            result: None,
+            error: None,
+            error_code: None,
+            profile: request.profile.clone(),
+            usage: None,
+            provenance: Provenance {
+                repo_path: config.root.clone(),
+                run_id: run.id.clone(),
+                request_id: request.id.clone(),
+                eval_id: eval.id.clone(),
+                completed_at: None,
+            },
+            started_at: now(),
+            completed_at: None,
+        };
+        match receipts.claim_execution(&execution).await? {
+            Claim::Reuse(execution) => {
+                evidence.insert(
+                    eval.id.clone(),
+                    Evidence::Current(execution.verdict().expect("completed cache entry")),
+                );
+                cache::reuse(request, &execution, now());
+                receipts.reuse_execution(request).await?;
+                poll_interval = Duration::from_millis(200);
+                continue;
+            }
+            Claim::Wait(id) => {
+                if request.execution_id.as_ref() != Some(&id) {
+                    request.execution_id = Some(id);
+                    request.blocked_reason =
+                        Some("Waiting for the active identity execution.".into());
+                    receipts.save_request(request).await?;
+                }
+                tokio::select! {
+                    _ = cancellation.cancelled() => {},
+                    _ = tokio::time::sleep(poll_interval) => {},
+                }
+                poll_interval = (poll_interval * 2).min(Duration::from_millis(500));
+                continue;
+            }
+            Claim::Owned => {}
+        }
+        poll_interval = Duration::from_millis(200);
+        request.execution_id = execution.identity.as_ref().map(|_| execution.id.clone());
+        request.blocked_reason = None;
         request.status = "RUNNING".into();
-        request.started_at = Some(now());
+        request.started_at = Some(execution.started_at.clone());
         receipts.save_request(request).await?;
         let prepared = prepare(&config, eval, &run_dir, request);
         let outcome = match prepared {
@@ -303,32 +356,16 @@ pub async fn verify(
                 }
             }
         }
-        let completed_at = now();
-        request.completed_at = Some(completed_at.clone());
-        let provenance = Provenance {
-            repo_path: config.root.clone(),
-            run_id: run.id.clone(),
-            request_id: request.id.clone(),
-            eval_id: eval.id.clone(),
-            completed_at: completed_at.clone(),
-        };
-        let execution = Execution {
-            id: format!("execution-{}", request.id),
-            identity: request.identity.clone().filter(|_| !request.force),
-            owner_pid: owner.pid,
-            owner_start_time: owner.start_time,
-            status: request.status.clone(),
-            result: request.result.clone(),
-            error: request.error.clone(),
-            error_code: request.error_code.clone(),
-            profile: request.profile.clone(),
-            usage: request.usage.clone(),
-            provenance: provenance.clone(),
-            started_at: request.started_at.clone().expect("execution started"),
-            completed_at,
-        };
+        request.completed_at = Some(now());
+        execution.status = request.status.clone();
+        execution.result = request.result.clone();
+        execution.error = request.error.clone();
+        execution.error_code = request.error_code.clone();
+        execution.usage = request.usage.clone();
+        execution.completed_at = request.completed_at.clone();
+        execution.provenance.completed_at = request.completed_at.clone();
         request.execution_id = Some(execution.id.clone());
-        request.provenance = Some(provenance);
+        request.provenance = Some(execution.provenance.clone());
         receipts.complete_execution(&execution, request).await?;
     }
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);

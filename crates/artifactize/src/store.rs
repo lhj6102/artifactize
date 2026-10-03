@@ -9,7 +9,7 @@ use crate::workspace::canonical_target;
 
 mod executions;
 mod receipts;
-pub use executions::{Execution, Provenance, read_cached_executions};
+pub use executions::{Claim, Execution, Provenance, read_identity_executions};
 pub use receipts::{
     DATABASE, LastRequest, Receipts, Request, Run, RunView, read_latest_requests, read_run,
 };
