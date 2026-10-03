@@ -186,7 +186,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
   - Move receipts to the single `state.sqlite` with `--state-dir` moving the whole state.
 
   Check: existing tests pass on the new layout; removed fields are rejected.
-- [ ] **P2.4** `status` (state plus what `verify` would do: reuse/execute/wait/blocked), `graph` and config output, one output level with `--json`. Check: static queries never run owner code.
+- [x] **P2.4** `status` (state plus what `verify` would do: reuse/execute/wait/blocked), `graph` and config output, one output level with `--json`. Check: static queries never run owner code.
 - [ ] **P2.5** Persisted definitions and family membership; `run list`. Check: saved results stay readable after the repository is removed.
 
 ### P3 Identity cache

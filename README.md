@@ -122,6 +122,46 @@ result; a failed recheck also records ERROR. Force does not skip preparation or
 this recheck. Artifacts without an identity run without either step. There is no
 workspace monitoring, hashing or fingerprinting.
 
+## Static status and graph
+
+```sh
+artifactize --repo PROJECT status
+artifactize --repo PROJECT status ARTIFACT --recursive --json
+artifactize --repo PROJECT graph FAMILY --json
+artifactize --repo PROJECT config check --json
+```
+
+`status` accepts the same exclusive selectors as `verify`, defaulting to `--all`,
+and the same `--profile`, `--recursive`, `--force` and `--ignore-gates` policy
+options. It reports current Artifact/eval states, unmet final obligations, and
+`execute` / `reuse` / `wait` / `blocked` actions. All evals in the required closure
+are shown; `selected` and `included` distinguish explicit selection from recursive
+execution. Action counts cover included evals only. Exit 0 means current validation
+is satisfied; 1 means obligations remain; invalid input or state errors exit 2.
+
+Status never runs identity, tool or runtime commands, creates Runs, reserves work,
+or creates a missing state store. Saved attempts are read from `state.sqlite` for
+this canonical repository only. Each eval's optional `last: {runId, verdict}` is a
+historical pointer; `verdict` preserves the saved request status, including ERROR,
+BLOCKED or waiting states. When present, `last.identity` is the saved owner value,
+not a fresh identity computation. Use `run show RUN_ID` for the full audit.
+A Run's fresh noncached GREEN result satisfies that Run, not a later current-input
+query (ENG-24). Thus an earlier GREEN/RED is STALE in status, never PASS/RED reuse;
+dependents wait for current GREEN evidence. Identity hooks remain inert even when
+declared, and `reuse` remains zero until P3.2. Agent/Human execution actions are
+explicitly blocked until their execution support arrives. Basis-only scopes can
+already be satisfied; a basis with unmet dependencies is INCOMPLETE.
+
+`graph [ARTIFACT|FAMILY]` defaults to the whole project, or shows the selected
+required closure including cycle peers. Text lists Artifacts, evals, families,
+components and input-to-consumer relations. Full JSON includes expanded static
+Artifact/eval definitions (including profiles, payloads, schemas and tool views),
+child/mount/instruction/argv relation metadata, cycle markers, dependency-first
+SCCs and family membership. Component IDs refer to the full graph and may be
+noncontiguous in a selected projection. `config check` keeps its static validity
+confirmation and JSON Artifact/eval counts. There is one text or full JSON output
+level, with no `plan`, `--compact` or `--full`.
+
 ## Scoped input library
 
 `config::read_workspace_config` (also used by `config check`) resolves nearest

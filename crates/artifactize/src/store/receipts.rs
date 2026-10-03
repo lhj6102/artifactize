@@ -185,6 +185,77 @@ fn check_files(state: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LastRequest {
+    pub run_id: String,
+    pub verdict: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity: Option<String>,
+}
+
+/// Last attempts are audit pointers, never evidence for a new current-input query.
+pub async fn read_latest_requests(
+    state: &Path,
+    repo: &Path,
+) -> Result<std::collections::BTreeMap<String, LastRequest>, String> {
+    let state = canonical_target(state).map_err(|e| e.to_string())?;
+    outside_workspace(repo, &state).map_err(|e| e.to_string())?;
+    check_files(&state)?;
+    if !state
+        .join(DATABASE)
+        .try_exists()
+        .map_err(|e| e.to_string())?
+    {
+        return Ok(Default::default());
+    }
+    let connection = Connection::open_with_flags(
+        state.join(DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let repo = repo.to_path_buf();
+    connection
+        .call(move |db| -> Result<_, Error> {
+            db.busy_timeout(Duration::from_secs(5))?;
+            let transaction = db.transaction()?;
+            let version: u32 =
+                transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
+            if version != STATE_SCHEMA_VERSION {
+                return Err(Error::Invalid(format!(
+                    "Unsupported state schema version: {version}"
+                )));
+            }
+            let latest = {
+                let mut statement = transaction.prepare(
+                    "SELECT eval_id,run_id,status,identity FROM (
+                SELECT m.eval_id,q.run_id,q.status,json_extract(q.data, '$.identity') AS identity,
+                    row_number() OVER (PARTITION BY m.eval_id ORDER BY r.rowid DESC) AS rank
+                FROM run_members m JOIN requests q ON q.id=m.request_id JOIN runs r ON r.id=m.run_id
+                WHERE r.repo=?
+            ) WHERE rank=1 ORDER BY eval_id",
+                )?;
+                statement
+                    .query_map([repo.to_string_lossy()], |row| {
+                        Ok((
+                            row.get(0)?,
+                            LastRequest {
+                                run_id: row.get(1)?,
+                                verdict: row.get(2)?,
+                                identity: row.get(3)?,
+                            },
+                        ))
+                    })?
+                    .collect::<Result<_, _>>()?
+            };
+            transaction.commit()?;
+            Ok(latest)
+        })
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Existing store only: no discovery, schema creation, or execution.
 pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     let state = canonical_target(state).map_err(|e| e.to_string())?;
