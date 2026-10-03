@@ -101,6 +101,39 @@ impl AgentTool {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HumanTool {
+    pub description: String,
+    pub kind: HumanToolKind,
+    pub command: String,
+    pub args: Vec<String>,
+    #[serde(
+        default,
+        deserialize_with = "timeout",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub timeout_ms: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HumanToolKind {
+    Launch,
+    Output,
+}
+
+impl HumanTool {
+    pub(super) fn validate(&self) -> Result<(), String> {
+        description(&self.description)?;
+        script(&self.command, &self.args)?;
+        if self.command.contains(['{', '}']) {
+            return Err("Tool command must not contain placeholders.".into());
+        }
+        crate::scope::validate_human_args(&self.args).map_err(|e| e.to_string())
+    }
+}
+
 fn empty_schema() -> Value {
     serde_json::json!({"type":"object", "additionalProperties":false})
 }

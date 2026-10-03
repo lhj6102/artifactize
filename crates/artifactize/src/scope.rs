@@ -14,7 +14,9 @@ use thiserror::Error;
 
 use crate::config::{Artifact, CONFIG_FILE, ConfigError, Eval, Profile, RepoConfig};
 
+mod human;
 mod instruction;
+pub(crate) use human::{resolve_human_argv, validate_human_args};
 pub use instruction::instruction_references;
 
 #[derive(Debug, Error)]
@@ -524,7 +526,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         eval.deps = deps;
     }
     config.relations = relations;
-    Ok(())
+    human::validate_references(config)
 }
 
 #[cfg(test)]

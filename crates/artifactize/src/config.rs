@@ -12,7 +12,9 @@ pub mod families;
 mod tools;
 mod validation;
 
-pub use tools::{AgentTool, Builtin, BuiltinTool, CommandTool, ToolProtocol};
+pub use tools::{
+    AgentTool, Builtin, BuiltinTool, CommandTool, HumanTool, HumanToolKind, ToolProtocol,
+};
 
 pub(crate) use validation::identifier;
 use validation::{paths, positive_integer, present, script, text, timeout};
@@ -160,51 +162,13 @@ impl EvalDeclaration {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ToolMetadata {
-    pub description: String,
-    /// Kept as owner-authored JSON; tool schema validation belongs to the tool host.
-    pub input_schema: Map<String, Value>,
-    pub result_kinds: Vec<ResultKind>,
-    #[serde(default, deserialize_with = "present")]
-    pub artifact_kind: Option<ArtifactKind>,
-    #[serde(default, deserialize_with = "timeout")]
-    pub timeout_ms: Option<u32>,
-    #[serde(default)]
-    pub execution_paths: Vec<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ResultKind {
-    Text,
-    Json,
-    Image,
-    Launch,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ArtifactKind {
-    Directory,
-    Any,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct View {
-    pub metadata: ToolMetadata,
-    pub script: Script,
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Views {
     #[serde(default)]
     pub agent_tools: BTreeMap<String, AgentTool>,
     #[serde(default)]
-    pub human_tools: BTreeMap<String, View>,
+    pub human_tools: BTreeMap<String, HumanTool>,
 }
 
 impl Views {
@@ -213,18 +177,9 @@ impl Views {
             identifier(name, "Agent tool name")?;
             tool.validate().map_err(|e| format!("Tool {name}: {e}"))?;
         }
-        for (name, view) in &self.human_tools {
-            identifier(name, "View name")?;
-            script(&view.script.command, &view.script.args)?;
-            let metadata = &view.metadata;
-            tools::description(&metadata.description)?;
-            if metadata.result_kinds.is_empty()
-                || metadata.result_kinds.iter().collect::<BTreeSet<_>>().len()
-                    != metadata.result_kinds.len()
-            {
-                return Err("Tool resultKinds must be nonempty and unique.".into());
-            }
-            paths(&metadata.execution_paths, "metadata.executionPaths")?;
+        for (name, tool) in &self.human_tools {
+            identifier(name, "Human tool name")?;
+            tool.validate().map_err(|e| format!("Tool {name}: {e}"))?;
         }
         Ok(())
     }
