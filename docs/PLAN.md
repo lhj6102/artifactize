@@ -190,7 +190,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [ ] **P2.5** Persisted definitions and family membership; `run list`. Check: saved results stay readable after the repository is removed.
 
 ### P3 Identity cache
-- [ ] **P3.1** Identity commands with exact output validation, and the end-of-review recheck. Check: malformed output fails preparation with no fallback; editing input during a review makes it ERROR and unpublished.
+- [ ] **P3.1** Identity commands (`stale: {kind: identity, script, inputs?, timeoutMs?}`; the unused `weight` field is removed) with exact output validation, and the end-of-review recheck. Check: malformed output fails preparation with no fallback; editing input during a review makes it ERROR and unpublished.
 - [ ] **P3.2** Reuse of completed GREEN/RED results across repositories; no-identity and `--force` bypass. Check: cross-repo RED reuse; force leaves the entry unchanged.
 - [ ] **P3.3** Cross-process claim, polling waiters, dead-owner reclaim. Check: two processes execute one identity once; a killed owner is reclaimed.
 - [ ] **P3.4** `--jobs N` scheduling and `maxExecutions` counter. Check: concurrency never exceeds N; the budget stops new starts.
@@ -229,7 +229,12 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 ### P8 Finish
 - [ ] **P8.1** `doctor` (backends, auth presence, `claude` binary), `models <backend>` and plain `prune` of finished Run output. Check: doctor creates no Run; prune never touches active Runs or the repository.
 - [ ] **P8.2** Remaining CLI flags and exit codes. Check: wait codes 0/1/2/3/4 cover success/RED/error/timeout/incomplete.
-- [ ] **P8.3** Port the CCDD examples as fixtures and docs (folders, mounts, computed views, families, built-in and declared tools). Check: each example runs from the installed binary.
+- [ ] **P8.3** Three example projects with docs:
+  - runtime evals with children, mounts and references;
+  - an Agent eval using built-in and declared tools;
+  - a family.
+
+  Check: each example runs from the installed binary.
 - [ ] **P8.4** Install docs; close the inventory. Check: a clean install completes runtime, Agent and Human workflows and the monitor; no unchecked non-DROP item remains.
 
 ## Data model
