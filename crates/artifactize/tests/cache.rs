@@ -1,7 +1,9 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Child, Command, Output, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
 
 use rusqlite::Connection;
@@ -48,6 +50,72 @@ impl Fixture {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
+    fn spawn(&self, repo: &Path, args: &[&str]) -> Child {
+        Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .arg("--repo")
+            .arg(repo)
+            .arg("--state-dir")
+            .arg(&self.state)
+            .args(["verify", "--all", "--json"])
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap()
+    }
+
+    fn waiting_request(&self) -> Value {
+        let mut request = Value::Null;
+        wait_until(|| {
+            let Ok(db) = Connection::open_with_flags(
+                self.state.join("state.sqlite"),
+                rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+            ) else {
+                return false;
+            };
+            let data = db.query_row::<String, _, _>(
+                "SELECT data FROM requests WHERE status='QUEUED' AND execution_id IS NOT NULL LIMIT 1",
+                [], |row| row.get(0),
+            ).ok();
+            if let Some(data) = data {
+                request = serde_json::from_str(&data).unwrap();
+                true
+            } else {
+                false
+            }
+        });
+        request
+    }
+
+    fn execution(&self, id: &str) -> Value {
+        let data: String = Connection::open(self.state.join("state.sqlite"))
+            .unwrap()
+            .query_row("SELECT data FROM executions WHERE id=?", [id], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        serde_json::from_str(&data).unwrap()
+    }
+
+    fn shared_repo(&self, name: &str, script: &str) -> PathBuf {
+        self.repo(name, json!({"name":name,"stale":identity("concurrent"),"evals":[{
+            "id":"check","title":"Review","profile":{"kind":"runtime","command":"/bin/sh",
+                "args":["-c",script,"sh",self.root.path().join("starts"),self.root.path().join("release")],"timeoutMs":10000},
+            "payload":{"instruction":"Review."}
+        }]}))
+    }
+
+    fn release(&self) {
+        fs::write(self.root.path().join("release"), "").unwrap();
+    }
+
+    fn starts(&self) -> usize {
+        fs::read_to_string(self.root.path().join("starts"))
+            .unwrap()
+            .lines()
+            .count()
+    }
+
     fn count(&self, table: &str) -> u32 {
         Connection::open(self.state.join("state.sqlite"))
             .unwrap()
@@ -74,6 +142,42 @@ impl Fixture {
             .map(Result::unwrap)
             .collect()
     }
+}
+
+const WAIT_SCRIPT: &str = "echo $$ >> \"$1\"; i=0; while [ ! -e \"$2\" ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i+1)); done; printf original";
+
+fn wait_until(mut condition: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !condition() {
+        assert!(Instant::now() < deadline, "condition was not reached");
+        thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn finish(mut child: Child, code: i32) -> Value {
+    wait_until(|| child.try_wait().unwrap().is_some());
+    output(child.wait_with_output().unwrap(), code)
+}
+
+fn output(output: Output, code: i32) -> Value {
+    assert_eq!(
+        output.status.code(),
+        Some(code),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+fn signal(pid: u32, signal: &str) {
+    assert!(
+        Command::new("/bin/kill")
+            .args([signal, &pid.to_string()])
+            .status()
+            .unwrap()
+            .success()
+    );
 }
 
 fn write(repo: &Path, path: &str, value: Value) {
@@ -344,4 +448,183 @@ fn status_uses_current_identity_and_only_prepares_the_selected_closure() {
     assert_eq!(selected["evals"].as_array().unwrap().len(), 1);
     assert_eq!(fixture.count("runs"), 1);
     assert!(!repo.join("selected/must-not-run").exists());
+}
+
+#[test]
+fn concurrent_repos_claim_once_and_poll_for_the_original_red_result() {
+    let fixture = Fixture::new();
+    let first = fixture.shared_repo("first", &format!("{WAIT_SCRIPT}; exit 7"));
+    let second = fixture.shared_repo("second", &format!("{WAIT_SCRIPT}; exit 7"));
+    let owner = fixture.spawn(&first, &[]);
+    let waiter = fixture.spawn(&second, &[]);
+    let waiting = fixture.waiting_request();
+    wait_until(|| fixture.root.path().join("starts").exists());
+    assert_eq!(fixture.starts(), 1);
+    let execution = fixture.execution(waiting["executionId"].as_str().unwrap());
+    assert_eq!(execution["status"], "RUNNING");
+    assert!(execution["completedAt"].is_null());
+    assert!(execution["ownerStartTime"].as_u64().unwrap() > 0);
+    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    db.busy_timeout(Duration::from_millis(100)).unwrap();
+    db.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
+    assert_eq!(
+        fixture.command(&second, &["status"], 1)["evals"][0]["action"],
+        "wait"
+    );
+    assert_eq!(fixture.count("executions"), 1);
+    fixture.release();
+    let first = finish(owner, 1);
+    let second = finish(waiter, 1);
+    for field in ["executionId", "result", "profile", "provenance"] {
+        assert_eq!(
+            first["requests"][0][field], second["requests"][0][field],
+            "{field}"
+        );
+    }
+    assert_eq!(fixture.starts(), 1);
+    assert_eq!(fixture.count("cache_entries"), 1);
+    let follower = if first["requests"][0]["child"].is_null() {
+        &first
+    } else {
+        &second
+    };
+    assert!(follower["requests"][0]["startedAt"].is_null());
+    assert!(follower["requests"][0]["blockedReason"].is_null());
+}
+
+#[test]
+fn killed_owner_is_reclaimed_by_a_waiting_verify() {
+    let fixture = Fixture::new();
+    let source = fixture.shared_repo("source", WAIT_SCRIPT);
+    let target = fixture.shared_repo("target", "echo replacement >> \"$1\"; printf recovered");
+    let mut owner = fixture.spawn(&source, &[]);
+    wait_until(|| fixture.root.path().join("starts").exists());
+    let waiter = fixture.spawn(&target, &[]);
+    let waiting = fixture.waiting_request();
+    owner.kill().unwrap();
+    owner.wait().unwrap();
+    let recovered = finish(waiter, 0);
+    let dead = fixture.execution(waiting["executionId"].as_str().unwrap());
+    assert_eq!(dead["status"], "ERROR");
+    assert_eq!(dead["errorCode"], "OWNER_DIED");
+    assert!(dead["completedAt"].is_string());
+    assert_eq!(recovered["requests"][0]["result"]["stdout"], "recovered");
+    assert_ne!(
+        recovered["requests"][0]["executionId"],
+        waiting["executionId"]
+    );
+    assert_eq!(fixture.count("executions"), 2);
+    assert_eq!(fixture.count("cache_entries"), 1);
+    assert_eq!(fixture.starts(), 2);
+    // SIGKILL cannot run foreground cleanup; stop this fixture's orphaned group.
+    let pid = fs::read_to_string(fixture.root.path().join("starts")).unwrap();
+    assert!(
+        Command::new("/bin/kill")
+            .args(["-KILL", "--", &format!("-{}", pid.lines().next().unwrap())])
+            .status()
+            .unwrap()
+            .success()
+    );
+}
+
+#[test]
+fn owner_error_releases_claim_and_waiter_uses_its_own_profile() {
+    let fixture = Fixture::new();
+    let source = fixture.shared_repo("source", &format!("{WAIT_SCRIPT}; kill -TERM $$"));
+    let target = fixture.shared_repo("target", "echo retry >> \"$1\"; printf retried");
+    let owner = fixture.spawn(&source, &[]);
+    wait_until(|| fixture.root.path().join("starts").exists());
+    let waiter = fixture.spawn(&target, &[]);
+    fixture.waiting_request();
+    fixture.release();
+    let failed = finish(owner, 2);
+    let recovered = finish(waiter, 0);
+    assert_eq!(failed["requests"][0]["errorCode"], "ABNORMAL_EXIT");
+    assert_eq!(recovered["requests"][0]["result"]["stdout"], "retried");
+    assert_eq!(
+        recovered["requests"][0]["profile"],
+        recovered["requests"][0]["requestedProfile"]
+    );
+    assert_eq!(fixture.count("executions"), 2);
+    assert_eq!(fixture.count("cache_entries"), 1);
+    assert_eq!(fixture.starts(), 2);
+}
+
+#[test]
+fn waiter_ctrl_c_leaves_owner_running_and_owner_ctrl_c_releases_the_claim() {
+    let fixture = Fixture::new();
+    let source = fixture.shared_repo("source", WAIT_SCRIPT);
+    let target = fixture.shared_repo("target", "echo retry >> \"$1\"; printf retried");
+    let mut owner = fixture.spawn(&source, &[]);
+    wait_until(|| fixture.root.path().join("starts").exists());
+    let waiter = fixture.spawn(&target, &[]);
+    let waiting = fixture.waiting_request();
+    signal(waiter.id(), "-INT");
+    let cancelled = finish(waiter, 2);
+    assert_eq!(cancelled["requests"][0]["errorCode"], "CANCELLED");
+    assert!(cancelled["requests"][0]["child"].is_null());
+    assert!(owner.try_wait().unwrap().is_none());
+    assert_eq!(
+        fixture.execution(waiting["executionId"].as_str().unwrap())["status"],
+        "RUNNING"
+    );
+    assert_eq!(fixture.starts(), 1);
+    let waiter = fixture.spawn(&target, &[]);
+    fixture.waiting_request();
+    signal(owner.id(), "-INT");
+    let cancelled = finish(owner, 2);
+    assert_eq!(cancelled["requests"][0]["errorCode"], "CANCELLED");
+    let execution = fixture.execution(waiting["executionId"].as_str().unwrap());
+    assert_eq!(execution["errorCode"], "CANCELLED");
+    let recovered = finish(waiter, 0);
+    assert_eq!(recovered["requests"][0]["result"]["stdout"], "retried");
+    assert_eq!(fixture.count("executions"), 2);
+    let pid = cancelled["requests"][0]["child"]["pid"].as_u64().unwrap();
+    assert!(!Path::new(&format!("/proc/{pid}")).exists());
+}
+
+#[test]
+fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconcile() {
+    let fixture = Fixture::new();
+    let repo = fixture.shared_repo("repo", "echo attempt >> \"$1\"");
+    let original = fixture.command(&repo, &["verify", "--all"], 0);
+    let id = original["requests"][0]["executionId"].as_str().unwrap();
+    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    db.execute("DELETE FROM cache_entries", []).unwrap();
+    db.execute(
+        "UPDATE executions SET owner_pid=?,owner_start_time=0,status='RUNNING',data=json_set(data,'$.ownerPid',?,'$.ownerStartTime',0,'$.status','RUNNING','$.result',NULL,'$.completedAt',NULL,'$.provenance.completedAt',NULL) WHERE id=?",
+        rusqlite::params![std::process::id(), std::process::id(), id],
+    ).unwrap();
+    assert_eq!(
+        fixture.command(&repo, &["status"], 1)["evals"][0]["action"],
+        "execute"
+    );
+    fixture.command(&repo, &["run", "show", original["id"].as_str().unwrap()], 0);
+    assert_eq!(fixture.execution(id)["status"], "RUNNING");
+    let recovered = fixture.command(&repo, &["verify", "--all"], 0);
+    assert_ne!(recovered["requests"][0]["executionId"], id);
+    assert_eq!(fixture.execution(id)["errorCode"], "OWNER_DIED");
+    assert_eq!(fixture.starts(), 2);
+}
+
+#[test]
+fn force_bypasses_a_live_claim_and_never_publishes() {
+    let fixture = Fixture::new();
+    let source = fixture.shared_repo("source", WAIT_SCRIPT);
+    let target = fixture.shared_repo("target", "echo forced >> \"$1\"; printf forced");
+    let owner = fixture.spawn(&source, &[]);
+    wait_until(|| fixture.root.path().join("starts").exists());
+    let forced = finish(fixture.spawn(&target, &["--force"]), 0);
+    let execution = fixture.execution(forced["requests"][0]["executionId"].as_str().unwrap());
+    assert!(execution["identity"].is_null());
+    assert_eq!(fixture.count("cache_entries"), 0);
+    assert_eq!(fixture.starts(), 2);
+    fixture.release();
+    let original = finish(owner, 0);
+    let reused = fixture.command(&target, &["verify", "--all"], 0);
+    assert_eq!(
+        reused["requests"][0]["executionId"],
+        original["requests"][0]["executionId"]
+    );
+    assert_eq!(fixture.starts(), 2);
 }

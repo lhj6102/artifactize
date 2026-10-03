@@ -96,7 +96,9 @@ impl Receipts {
         let connection = Connection::open(state.join(DATABASE))
             .await
             .map_err(|e| e.to_string())?;
-        connection.call(move |db| -> Result<(), Error> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let initialized = connection.call(move |db| -> Result<(), Error> {
             db.busy_timeout(Duration::from_secs(5))?;
             db.pragma_update(None, "foreign_keys", true)?;
             let version: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -115,7 +117,21 @@ impl Receipts {
             transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
             transaction.commit()?;
             Ok(())
-        }).await.map_err(|e| e.to_string())?;
+            }).await;
+            match initialized {
+                Ok(()) => break,
+                Err(tokio_rusqlite::Error::Error(Error::Sql(rusqlite::Error::SqliteFailure(
+                    error,
+                    _,
+                )))) if error.code == rusqlite::ErrorCode::DatabaseBusy
+                    && tokio::time::Instant::now() < deadline =>
+                {
+                    // Concurrent first opens can race when enabling WAL despite busy_timeout.
+                    tokio::time::sleep(Duration::from_millis(20)).await;
+                }
+                Err(error) => return Err(error.to_string()),
+            }
+        }
         Ok(Self { connection })
     }
 

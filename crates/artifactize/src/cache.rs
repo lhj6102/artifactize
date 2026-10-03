@@ -1,4 +1,4 @@
-//! Identity preparation, completed-result reuse, and end-of-review rechecks.
+//! Identity preparation, execution ownership, reuse, and end-of-review rechecks.
 
 use std::{collections::BTreeMap, path::Path};
 
@@ -39,6 +39,7 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String)
     request.provenance = Some(execution.provenance.clone());
     request.usage = execution.usage.clone();
     request.completed_at = Some(completed_at);
+    request.blocked_reason = None;
 }
 
 /// The returned owner value is the whole identity, shared by all of its Evals.
