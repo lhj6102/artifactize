@@ -146,6 +146,12 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
+    /// Watch saved and running Runs in a read-only terminal UI; defaults to the current repository.
+    Monitor {
+        /// Show Runs from every repository in the shared state.
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -578,6 +584,18 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             let state = crate::store::state_dir(cli.state_dir.as_deref())?;
             let view = crate::store::read_run(&state, &run_id).await?;
             print_json(&crate::query::run_output(&view))?;
+            Ok(0)
+        }
+        Some(Command::Monitor { all }) => {
+            if all && cli.repo.is_some() {
+                return Err("monitor accepts --repo or --all, not both.".into());
+            }
+            let state = crate::store::state_dir(cli.state_dir.as_deref())?;
+            let repo = (!all).then(|| cli.repo.unwrap_or_else(|| PathBuf::from(".")));
+            let (cancellation, listener) = cancellation_listener()?;
+            let result = crate::monitor::run(state, repo, cancellation).await;
+            listener.abort();
+            result?;
             Ok(0)
         }
         Some(Command::Request { command }) => {

@@ -809,6 +809,28 @@ summaries retain source attribution and raw per-provider attempts in `usage`.
 Unreported usage is never represented as a known zero token count. There are no
 separate summary commands or `--full` mode.
 
+## Monitor
+
+```sh
+artifactize monitor [--repo PATH | --all] [--state-dir PATH]
+```
+
+A terminal UI for review progress. Like `run list`, it shows the canonical
+`--repo` (default: the current directory) or, with `--all`, every repository.
+The Run list (newest first: ID, repository, status, request counts, age) refreshes
+every second and on `r`; `j`/`k` or arrows move (moving past the end loads older
+Runs), Enter opens a Run, `q` quits. A Run shows state counts, validation,
+durations, budgets, running evals, waiting Human requests and errors above an
+Artifact/eval tree built from the saved definitions: families group their
+instances (collapsed until expanded with `l`/→ or Enter), each eval shows its
+status glyph and dependency Artifacts, `⇐` rows show child/mount/reference inputs,
+and `↻` marks cycles. The right pane details the selected Artifact, family or
+request: result, actual and requested profile, identity, reuse source, claim, tool
+calls, usage and errors (PgUp/PgDn scroll; Esc returns to the list). The monitor
+only reads the state database (read-only connections): it runs no owner code,
+needs no repository, keeps the last data with an error line if a read fails, and
+is not a review console; Human claim and submit stay in `request`.
+
 ## Artifact families
 
 A subfolder's `artifactize.json` can declare a static family with
