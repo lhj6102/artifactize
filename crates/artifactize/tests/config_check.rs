@@ -53,6 +53,65 @@ fn json_output(output: &Output) -> Value {
 }
 
 #[test]
+fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs() {
+    let fixture = Fixture::new();
+    fixture.write("input/artifactize.json", r#"{"name":"input"}"#);
+    let mut declaration = json!({"name":"review","mounts":{"source":"input"},"critics":[{
+        "id":"run","title":"Run","profile":{"kind":"runtime","command":"missing-command","args":["{source}/missing-file"]},
+        "payload":{"instruction":"Read {source}."}
+    }]});
+    fixture.write("review/artifactize.json", &declaration.to_string());
+    let output = fixture
+        .command()
+        .args(["config", "check", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(
+        json_output(&output),
+        json!({"ok":true,"artifacts":2,"critics":1})
+    );
+    declaration["critics"][0]["payload"]["instruction"] = json!("Unknown {missing}.");
+    fixture.write("review/artifactize.json", &declaration.to_string());
+    let output = fixture
+        .command()
+        .args(["config", "check", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let error = json_output(&output)["error"].as_str().unwrap().to_owned();
+    assert!(error.contains("review/artifactize.json"));
+    assert!(error.contains("review/run"));
+    assert!(error.contains("Unknown Artifact reference {missing}"));
+    declaration["critics"][0]["payload"]["instruction"] = json!("Inspect.");
+    declaration["critics"][0]["profile"]["args"] = json!(["{missing}/file"]);
+    fixture.write("review/artifactize.json", &declaration.to_string());
+    let output = fixture
+        .command()
+        .args(["config", "check", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        json_output(&output)["error"]
+            .as_str()
+            .unwrap()
+            .contains("Unknown Artifact reference {missing}")
+    );
+    declaration["mounts"]["source"] = json!("missing");
+    fixture.write("review/artifactize.json", &declaration.to_string());
+    let output = fixture
+        .command()
+        .args(["config", "check"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unknown mount target"));
+    assert!(!fixture.0.join("state-home").exists());
+}
+
+#[test]
 fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let fixture = Fixture::new();
     fixture.write(

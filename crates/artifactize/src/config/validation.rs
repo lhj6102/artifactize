@@ -49,7 +49,7 @@ where
     .map(|value| Some(value as u32))
 }
 
-pub(super) fn identifier(value: &str, label: &str) -> Result<(), String> {
+pub(crate) fn identifier(value: &str, label: &str) -> Result<(), String> {
     if value.is_empty()
         || value.len() > 64
         || !value.as_bytes()[0].is_ascii_alphanumeric()
@@ -82,8 +82,12 @@ pub(super) fn script(command: &str, args: &[String]) -> Result<(), String> {
 }
 
 pub(super) fn path(value: &str) -> Result<(), String> {
-    let windows_absolute =
-        value.as_bytes().get(1) == Some(&b':') && value.as_bytes().get(2) == Some(&b'/');
+    let windows_absolute = value
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_alphabetic)
+        && value.as_bytes().get(1) == Some(&b':')
+        && value.as_bytes().get(2) == Some(&b'/');
     if value.encode_utf16().count() > 1024
         || windows_absolute
         || value

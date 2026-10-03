@@ -166,6 +166,37 @@ fn all_hook_timeouts_are_checked_without_opening_scripts() {
 }
 
 #[test]
+fn declared_paths_share_the_posix_and_windows_safe_grammar() {
+    for path in [
+        "",
+        "/absolute",
+        "C:/absolute",
+        "C:\\absolute",
+        "../escape",
+        "a/../b",
+        "a/./b",
+        "a//b",
+        "a/",
+        "a\\b",
+        "a\nb",
+        "a\u{7f}b",
+    ] {
+        assert!(validation::path(path).is_err(), "{path:?}");
+        assert!(parse(json!({"name":"a","stale":{"kind":"file-hash","paths":[path]}})).is_err());
+        assert!(parse(json!({"name":"a","stale":{"kind":"identity","script":{"command":"entry","args":[]},"inputs":[path]}})).is_err());
+        assert!(parse(json!({"name":"a","envRequirements":{"ready":{"description":"Ready","script":{"command":"sh","args":[]},"inputs":[path]}}})).is_err());
+        assert!(parse(json!({"name":"a","views":{"agentTools":{"read":{"metadata":{"description":"Read","inputSchema":{},"resultKinds":["text"],"observation":"content","executionPaths":[path]},"script":{"command":"sh","args":[]}}}}})).is_err());
+    }
+    for path in ["file", "nested/file", "C:relative", "1:/relative", "a:b"] {
+        assert!(validation::path(path).is_ok(), "{path:?}");
+    }
+    assert!(validation::path(&"a".repeat(1024)).is_ok());
+    assert!(validation::path(&"a".repeat(1025)).is_err());
+    assert!(validation::path(&"🦀".repeat(512)).is_ok());
+    assert!(validation::path(&"🦀".repeat(513)).is_err());
+}
+
+#[test]
 fn later_schema_semantics_are_kept_as_inert_objects() {
     let schema = json!({"anyOf": [{"properties": {"ownerField": {"type": "string"}}}], "ownerKeyword": true});
     let mut declared = critic(json!({"kind": "human"}));
