@@ -1,6 +1,7 @@
 //! Exact-model rig backends with explicit API-key or ChatGPT credentials.
 
 mod chatgpt;
+pub mod models;
 pub use chatgpt::models as chatgpt_models;
 #[cfg(test)]
 pub(crate) use chatgpt::tests::{Server, stored_credentials};

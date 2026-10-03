@@ -199,10 +199,36 @@ pub async fn chatgpt_access_token(
     refresh(&storage, &client, &discovery).await
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LoginStatus {
+    pub present: bool,
+    pub expires_at: Option<u64>,
+    pub expired: bool,
+}
+
+/// Inspect local metadata only: no lock, refresh, network, or credential writes.
+pub fn chatgpt_status(state: Option<&Path>, repo: Option<&Path>) -> Result<LoginStatus, String> {
+    let storage = Storage::inspect(state, repo)?;
+    let stored = read_credentials(&storage)?;
+    Ok(LoginStatus {
+        present: stored.is_some(),
+        expires_at: stored.as_ref().map(|stored| stored.expires_at),
+        expired: match stored {
+            Some(stored) => stored.expires_at <= now()?,
+            None => false,
+        },
+    })
+}
+
 fn load_credentials(storage: &Storage) -> Result<Credentials, String> {
-    let stored = storage
-        .read::<Credentials>(CREDENTIALS)?
-        .ok_or(LOGIN_REQUIRED)?;
+    read_credentials(storage)?.ok_or_else(|| LOGIN_REQUIRED.into())
+}
+
+fn read_credentials(storage: &Storage) -> Result<Option<Credentials>, String> {
+    let Some(stored) = storage.read::<Credentials>(CREDENTIALS)? else {
+        return Ok(None);
+    };
     let registration = storage
         .read::<Registration>(REGISTRATION)?
         .ok_or(LOGIN_REQUIRED)?;
@@ -219,7 +245,7 @@ fn load_credentials(storage: &Storage) -> Result<Credentials, String> {
     {
         return Err("Invalid ChatGPT credential binding; run `artifactize login chatgpt`.".into());
     }
-    Ok(stored)
+    Ok(Some(stored))
 }
 
 async fn refresh(

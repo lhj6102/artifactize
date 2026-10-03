@@ -11,6 +11,7 @@ pub(crate) mod cache_entries;
 mod executions;
 mod human;
 pub use human::HumanClaim;
+pub mod prune;
 mod receipts;
 mod runs;
 pub use runs::{RunSummary, read_runs};

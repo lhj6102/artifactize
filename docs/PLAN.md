@@ -228,7 +228,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [ ] **P7.4** Request detail pane: result, provenance, tool calls, usage, errors. Check: a historical request shows its saved result.
 
 ### P8 Finish
-- [ ] **P8.1** `doctor` (backends, auth presence, `claude` binary), `models <backend>` and plain `prune` of finished Run output. Check: doctor creates no Run; prune never touches active Runs or the repository. Partial: `models chatgpt` is complete in P5.5; other providers, doctor and prune remain.
+- [x] **P8.1** `doctor` (backends, auth presence, `claude` binary), `models <backend>` and plain `prune` of finished Run output. Check: doctor creates no Run; prune never touches active Runs or the repository.
 - [ ] **P8.2** Remaining CLI flags and exit codes. Check: wait codes 0/1/2/3/4 cover success/RED/error/timeout/incomplete.
 - [ ] **P8.3** Three example projects with docs:
   - runtime evals with children, mounts and references;
