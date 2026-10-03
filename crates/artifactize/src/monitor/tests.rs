@@ -16,7 +16,7 @@ fn request(eval: &str, status: &str, extra: Value) -> RequestView {
     let mut value = json!({
         "id":format!("run-1-{eval}"),"runId":"run-1","evalId":eval,"target":eval.split('/').next(),
         "title":"Title","profile":{"kind":"runtime","command":"true","args":[]},
-        "requestedProfile":{"kind":"runtime","command":"true","args":[]},
+        "requestedProfile":{"kind":"runtime","command":"true","args":[]},"evalDefHash":"hash",
         "payload":{"instruction":"Check."},"references":{},"deps":[],"status":status,
         "createdAt":"2026-01-01T00:00:00Z","cwd":"/repo"
     });
