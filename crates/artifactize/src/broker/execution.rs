@@ -52,8 +52,15 @@ pub(super) async fn execute(
                 .iter()
                 .find(|eval| eval.id == request.eval_id)
                 .expect("included eval");
-            let review =
-                agent::execute(&config, eval, &run_dir, &state, cancellation.clone()).await;
+            let review = agent::execute(
+                &config,
+                eval,
+                &run_dir,
+                &state,
+                &execution.id,
+                cancellation.clone(),
+            )
+            .await;
             request.usage = Some(json!(review.attempts));
             request.tool_calls = review.tool_calls;
             match review.result {

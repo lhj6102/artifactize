@@ -357,6 +357,7 @@ async fn partial_text_usage_or_prior_tools_prevent_replay() {
 fn profiles_reject_remapped_effort_and_subscription_backends_are_explicit() {
     assert!(Client::parameters(Backend::Openai, Some("xhigh")).is_ok());
     assert!(Client::parameters(Backend::Anthropic, Some("xhigh")).is_err());
+    assert!(Backend::Claude.validate_reasoning("xhigh").is_ok());
     assert!(Client::parameters(Backend::Openai, Some("off")).is_err());
     assert_eq!(
         Client::parameters(Backend::Openai, None)
@@ -382,7 +383,7 @@ fn profiles_reject_remapped_effort_and_subscription_backends_are_explicit() {
         )
         .err()
         .unwrap()
-        .contains("P5.6")
+        .contains("supervised CLI")
     );
 }
 

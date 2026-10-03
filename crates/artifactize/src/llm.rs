@@ -82,7 +82,7 @@ impl Client {
             Backend::Openai => "OPENAI_API_KEY",
             Backend::Anthropic => "ANTHROPIC_API_KEY",
             Backend::Chatgpt => unreachable!(),
-            Backend::Claude => return Err("Claude inference is not yet implemented (P5.6).".into()),
+            Backend::Claude => return Err("Claude reviews use the supervised CLI executor.".into()),
         };
         let key = std::env::var(variable)
             .ok()

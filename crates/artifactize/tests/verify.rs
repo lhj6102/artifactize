@@ -908,7 +908,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         ("openai", "OPENAI_API_KEY"),
         ("anthropic", "ANTHROPIC_API_KEY"),
         ("chatgpt", "artifactize login chatgpt"),
-        ("claude", "P5.6"),
+        ("claude", "could not be spawned"),
     ] {
         let fixture = Fixture::new();
         fixture.runtime("/bin/true", &[]);
@@ -918,6 +918,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         fs::write(path, declaration.to_string()).unwrap();
         let output = fixture
             .command()
+            .env("PATH", fixture.state.join("no-claude"))
             .env_remove("OPENAI_API_KEY")
             .env_remove("ANTHROPIC_API_KEY")
             .args(["verify", "--all", "--json"])
@@ -933,7 +934,11 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
                 .unwrap()
                 .contains(expected)
         );
-        assert_eq!(run["requests"][1]["usage"], json!([]));
+        if backend == "claude" {
+            assert_eq!(run["requests"][1]["usage"][0]["usage"], json!({}));
+        } else {
+            assert_eq!(run["requests"][1]["usage"], json!([]));
+        }
         assert_eq!(run["requests"][1]["toolCalls"], json!([]));
         assert!(run["requests"][1]["result"].is_null());
         fs::remove_dir_all(&fixture.repo).unwrap();

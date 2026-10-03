@@ -116,6 +116,29 @@ where
         output_limit,
         cancellation,
         register,
+        None,
+    ))
+    .await?
+}
+
+type Observer = Box<dyn FnMut(&[u8]) + Send>;
+
+/// Observe stdout while the existing supervisor owns cancellation and descendant cleanup.
+pub(crate) async fn run_stream(
+    command: Command,
+    input: Vec<u8>,
+    cancellation: CancellationToken,
+    observer: impl FnMut(&[u8]) + Send + 'static,
+) -> Result<Output, Error> {
+    let cancellation = cancellation.child_token();
+    let _cancel_on_drop = cancellation.clone().drop_guard();
+    tokio::spawn(run_inner(
+        command,
+        Some(input),
+        OUTPUT_LIMIT,
+        cancellation,
+        |_| async { Ok(()) },
+        Some(Box::new(observer)),
     ))
     .await?
 }
@@ -134,6 +157,7 @@ async fn run_inner<F, R>(
     output_limit: usize,
     cancellation: CancellationToken,
     register: F,
+    observer: Option<Observer>,
 ) -> Result<Output, Error>
 where
     F: FnOnce(ChildIdentity) -> R,
@@ -141,6 +165,7 @@ where
 {
     let started = Instant::now();
     let deadline = started + command.timeout;
+    let streaming = observer.is_some();
     if cancellation.is_cancelled() {
         return Err(Error::Cancelled);
     }
@@ -229,7 +254,14 @@ where
             _ = sleep_until(deadline) => Err(Error::Timeout),
             status = child.0.wait() => status.map_err(Error::Io),
         };
-        let cleanup = if result.is_err() {
+        let cleanup = if streaming {
+            // MCP owns tool groups of its own; let it cancel them even if Claude exits first.
+            if child.0.signal(libc::SIGTERM).is_ok() {
+                sleep(CLEANUP_GRACE + CLEANUP_GRACE).await;
+            }
+            kill(&mut child)?;
+            child.0.wait().await.map(|_| ())
+        } else if result.is_err() {
             terminate(&mut child).await
         } else {
             // An ordinary main-process exit must not leave its descendants running.
@@ -241,7 +273,10 @@ where
     };
     let capture = async {
         let read = async {
-            tokio::try_join!(capture(stdout, output_limit), capture(stderr, output_limit))
+            tokio::try_join!(
+                capture(stdout, output_limit, observer),
+                capture(stderr, output_limit, None)
+            )
         };
         tokio::pin!(read);
         tokio::select! {
@@ -331,7 +366,11 @@ async fn terminate(child: &mut Child) -> io::Result<()> {
     Ok(())
 }
 
-async fn capture(mut pipe: impl AsyncRead + Unpin, limit: usize) -> io::Result<(Vec<u8>, bool)> {
+async fn capture(
+    mut pipe: impl AsyncRead + Unpin,
+    limit: usize,
+    mut observer: Option<Observer>,
+) -> io::Result<(Vec<u8>, bool)> {
     let mut output = Vec::new();
     let mut buffer = [0; 8192];
     let mut truncated = false;
@@ -339,6 +378,9 @@ async fn capture(mut pipe: impl AsyncRead + Unpin, limit: usize) -> io::Result<(
         let count = pipe.read(&mut buffer).await?;
         if count == 0 {
             return Ok((output, truncated));
+        }
+        if let Some(observer) = observer.as_mut() {
+            observer(&buffer[..count]);
         }
         let retained = count.min(limit - output.len());
         output.extend_from_slice(&buffer[..retained]);

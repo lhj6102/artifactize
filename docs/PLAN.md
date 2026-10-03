@@ -146,6 +146,10 @@ The module boundaries are fixed; later tasks add code inside them. The CLI and t
   - Model switching and fallback are disabled (verify the setting names against `claude --help`), and provider/effort override env vars are stripped.
   - artifactize never reads Claude credentials.
   - The repair turn is a second invocation with an empty strict MCP config.
+  - P5.6 also passes `--include-partial-messages`, `--disable-slash-commands`, `--no-chrome` and a replacement `--system-prompt`; inline settings exclude all CLAUDE.md files, disable memory/hooks and model switching, and set an empty fallback chain. Omitted reasoning uses explicit `high`; configured effort is passed unchanged, including `xhigh`. CLI-reported model identity must exactly match the requested full ID; aliases are not resolved by artifactize.
+  - Claude relaxations: MCP requests carry no assistant-turn ID, and tools can execute before the matching stream model/usage event is consumed. No exact pre-tool model/token permit is claimed; detected violations cancel the review and prevent a verdict. The persisted MCP `maxToolCalls` gate and supervised deadline remain strict. Unknown/malformed calls rejected inside Claude never reach the MCP counter/audit. Effort can be clamped by the CLI/provider without being reported, so artifactize records requested effort, not verified actual effort.
+  - Init tools must equal the registered artifactize MCP set, except for optional `EndConversation` when that set is nonempty: current official docs say this control-only tool cannot be removed even with `--disallowedTools`. Empty-tool repair permits no tools. No other builtin, connector or undeclared MCP tool is accepted.
+  - Claude retries and non-streaming fallback are disabled (`CLAUDE_CODE_MAX_RETRIES=0`, `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES=0`, `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1`); artifactize does not replay CLI invocations. Usage is deduplicated by assistant message ID, including cache tokens, with terminal invocation totals kept separately. Token checks are best effort at each received event, across repair too. Cleanup allows MCP two seconds to cancel its separate tool groups before SIGKILL; this cleanup grace does not admit new review work.
 - A transient provider failure is retried at most twice, and only before any output or tool call. Auth and quota failures are ERROR with the provider's message.
 
 ## Phases
@@ -215,7 +219,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [x] **P5.3** Strict verdict schemas, owner fields, one tools-disabled repair. Check: fenced JSON is rejected; a second failure is ERROR.
 - [x] **P5.4** ChatGPT login: registration, PKCE, protected storage, serialized refresh. Check: callback-validation and refresh-race tests; a real `login chatgpt` (owner).
 - [x] **P5.5** ChatGPT subscription inference via rig Responses. Check: offline HTTP tests cover stored bearer tokens, stateless tool/repair turns, request parameters, incomplete/interrupted responses, subscription errors and account model listing. Owner's real review is pending.
-- [ ] **P5.6** Claude backend: launch controls, stream-json parsing, MCP gated by assistant turn, separate repair invocation. Check: a fake CLI asserts flags and env; a real review (owner).
+- [x] **P5.6** Claude backend: launch controls, stream-json parsing, separate repair invocation. Check: fake CLI asserts flags/env, real MCP audit/budgets, strict results, repair and process-group cancellation. Owner's real Claude subscription review is pending. Assistant-turn MCP admission is relaxed as documented above and in the subscription feasibility note.
 
 ### P6 Human
 - [x] **P6.1** WAITING_HUMAN state, claim lock, claimant-only tools, schema-valid submission with the identity recheck, dependents continuing on the next `verify`. Check: a wrong claimant, changed input or duplicate submission fails.
