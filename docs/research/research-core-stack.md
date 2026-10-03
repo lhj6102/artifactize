@@ -8,7 +8,6 @@
 - Recommend the official **rmcp 3.5.0** SDK with **stdio transport**, dynamic tool definitions, explicit message limits, and application-controlled cancellation/auditing.
 - Use a **language-neutral command supervisor** for Runtime Critics, script tools, readiness, owner identity, and result checks. Do not retain CCDD’s Node-only Runtime restriction or Node import hooks.
 - Use **tokio::process + process-wrap 10.0.1** for async pipes, Unix process groups/sessions, and Windows Job Objects; retain explicit admission-before-execution and cleanup logic.
-- Use **notify + explicit bounded filesystem scans**, not watcher events alone, for workspace integrity.
 - Use **SHA-256 and one defined RFC 8785/JCS encoding** for artifactize’s new identity format. Compatibility with CCDD config, state, and hashes is explicitly unnecessary.
 - Use **Axum** for the optional loopback HTTP API, with the existing security boundary implemented deliberately; neither HTTPS nor a TLS crate is required for this API.
 - Use **petgraph’s iterative SCC algorithm**, but keep graph ordering, identity construction, dependency gates, and evidence semantics in artifactize.
@@ -310,42 +309,34 @@ Keep PID/start identity and ownership tokens. For native Windows support, add a 
 
 ### CCDD behavior
 
-- [Workspace scan and observer](ccdd@eddf8f7/src/workspaces/index.ts).
+- [Supplied workspace rules](ccdd@eddf8f7/src/workspaces/index.ts).
 - [Scoped physical paths](ccdd@eddf8f7/src/tools/paths.ts).
 - [Declared execution-input paths](ccdd@eddf8f7/src/tools/inputs.ts).
 - [Pure logical scope resolver](ccdd@eddf8f7/src/artifact-scope.ts).
 - [Explicit prune](ccdd@eddf8f7/src/project/prune.ts).
 
-There are **three different policies**, not one generic recursive walk:
+There are **two different policies**, not one generic recursive walk:
 
 1. Static declaration discovery skips `.git`, `node_modules`, and symlink directories.
 2. Default Artifact material hashing excludes separate child Artifacts and installed-runtime directories, with explicit mandatory/declaration/family exceptions.
-3. Whole-workspace integrity includes every entry, including `.git`, dependencies, ignored/untracked files, and empty directories.
 
-Reviews use the existing workspace, not a copy. State/output must be outside it even through symlinked ancestors. Logical mounts/family paths are resolved without creating filesystem entries. Reader paths reject symlink traversal, whereas whole-workspace integrity allows valid relative internal symlinks and hashes their targets. Declared execution runtimes have their own contained-symlink policy.
+Reviews use the existing workspace, not a copy. State/output must be outside it even through symlinked ancestors. Logical mounts/family paths are resolved without creating filesystem entries. Reader paths reject symlink traversal. Declared execution runtimes have their own contained-symlink policy.
 
-The observer registers before acquisition, performs bounded metadata/content scans, checks metadata before/after reads, latches changes, and monitors through Human waiting. It serializes scans and ensures an action boundary does not reuse a scan that started before that boundary. Fallback metadata polling is adaptive, not a full-content rescan on every scheduler tick.
+Input changes during a review are detected by re-running the Artifact's identity command when the review completes ([ccdd#104](https://github.com/lhj6102/ccdd/issues/104)); there is no workspace monitoring.
 
 ### Recommendation
 
 - **std::path/std::fs** for path representation, ordinary operations, and canonicalization.
-- **notify 8.2.0** for native filesystem event sources.
 - **rustix 1.1.5**, target-gated on Unix, for descriptor-relative/open flags needed by secure readers and pruning.
 - **tempfile 3.27.0** for private engine-owned temporary roots.
 - Optional **cap-std 4.0.3** if capability-relative directory APIs are adopted broadly; do not add it merely as a decorative wrapper around pathname operations.
 - Optional **dunce 1.0.5** only for Windows-friendly canonical path presentation/interoperability; it is not a containment mechanism.
 
-Implement explicit deterministic traversal. A generic walker can assist discovery, but it cannot replace the before/open/after identity checks, generation-aware scan coalescing, symlink policy, entry-type checks, and independent concurrency limits. Do not choose an ignore-aware walker whose defaults accidentally omit workspace input.
+Implement explicit deterministic traversal. A generic walker can assist discovery, but it cannot replace the symlink policy and entry-type checks. Do not choose an ignore-aware walker whose defaults accidentally omit workspace input.
 
 Distinguish lexical validation from canonical containment. A path can be lexically relative yet escape via symlinks. `canonicalize()` alone is not race-free authorization. For stronger boundaries, open directories relative to pinned parent descriptors with no-follow semantics, verify opened file metadata, and use the resulting handles. Windows requires a corresponding reparse-point/handle policy, not translated Unix flag names.
 
 For a not-yet-existing output path, canonicalize its existing ancestor before creation and revalidate after creation; ensure that writes cannot enter the reviewed root through a symlink. Preserve root/outside checks even when directories are created concurrently.
-
-### Watcher limitations and portability
-
-notify documents caveats for NFS-like storage, WSL watching Windows paths, Docker/emulation, inotify limits, and large trees with missed events. [notify documentation](https://docs.rs/notify/8.2.0/notify/)
-
-Do not silently turn a failed native watcher into “safe because polling exists.” The integrity contract needs an explicit supported-filesystem policy. If artifactize offers polling-only or metadata-only modes, label their weaker assumptions and keep explicit action-boundary validation. Delayed events also should not by themselves manufacture a mutation verdict; compare actual metadata/content according to the chosen policy.
 
 CCDD’s prune operation is expressly **Linux-only**, using `/proc/self/fd`, no-follow directory opens, private quarantine renames, and device/inode verification. Artifactize can implement descriptor-relative `renameat`/`unlinkat` directly through rustix and potentially extend support later, but retain the safety design: claim only eligible terminal work, move to private quarantine under a short transaction, delete after commit, and preserve suspicious/quarantined data for manual recovery. Never replace this with an unconstrained recursive delete of a joined pathname.
 
@@ -522,9 +513,8 @@ CCDD has cross-platform branches for Linux/macOS/Windows, historical Windows per
 - Non-Linux process identity relies on `ps`, which is not a reliable native-Windows implementation.
 - Windows branches often kill a direct child rather than guaranteeing the whole descendant tree.
 - The default Human desktop opener is macOS-only; other platforms require explicit commands.
-- Watcher/filesystem support is conditional; unsupported monitoring is supposed to fail closed.
 
-Recommendation: make artifactize’s support matrix explicit. **Linux first is the lowest-risk complete-engine target**, macOS is feasible with dedicated watcher/process/permission tests, and native Windows needs deliberate Job Object, process identity, reparse-point, executable-resolution, and cleanup work. WSL is Linux execution with filesystem caveats, not a native-Windows verification substitute. Do not advertise Windows support just because all dependencies compile there.
+Recommendation: make artifactize’s support matrix explicit. **Linux first is the lowest-risk complete-engine target**, macOS is feasible with dedicated process/permission tests, and native Windows needs deliberate Job Object, process identity, reparse-point, executable-resolution, and cleanup work. WSL is Linux execution with filesystem caveats, not a native-Windows verification substitute. Do not advertise Windows support just because all dependencies compile there.
 
 ## 14. Testing strategy and spike results
 
@@ -584,7 +574,6 @@ Versions below are **verified highest non-yanked stable releases available by 20
 | [jsonschema](https://crates.io/api/v1/crates/jsonschema/0.58.4) | 0.58.4 | Dynamic schemas; disable default remote/file resolution features | MIT |
 | [rmcp](https://crates.io/api/v1/crates/rmcp/3.5.0) | 3.5.0 | Official MCP server, stdio transport | Apache-2.0 |
 | [process-wrap](https://crates.io/api/v1/crates/process-wrap/10.0.1) | 10.0.1 | Tokio process groups/sessions and Windows Job Objects | MIT OR Apache-2.0 |
-| [notify](https://crates.io/api/v1/crates/notify/8.2.0) | 8.2.0 | Native workspace-change notifications | CC0-1.0 |
 | [rustix](https://crates.io/api/v1/crates/rustix/1.1.5) | 1.1.5 | Target-gated descriptor-relative filesystem operations | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | [tempfile](https://crates.io/api/v1/crates/tempfile/3.27.0) | 3.27.0 | Private temporary output roots | MIT OR Apache-2.0 |
 | [sha2](https://crates.io/api/v1/crates/sha2/0.11.0) | 0.11.0 | SHA-256 content/identity hashes | MIT OR Apache-2.0 |
@@ -637,7 +626,6 @@ All selected top-level crates have permissive licenses. This is not a complete t
 3. **Executable/runtime identity:** Must every executable/runtime be explicitly declared and content-pinned, or may ordinary installed PATH programs be treated as external environment prerequisites? How should a changed installed compiler/test runner affect evidence reuse?
 4. **Schema dialect:** Retain a restrictive no-`$ref` subset with enhanced regex syntax, or intentionally choose linear-time regexes and a smaller language? Should owner response schemas for Runtime Critics remain verdict-only, or should a separate structured-result Runtime adapter exist?
 5. **Environment policy:** Which developer environment variables and actual HOME/config locations may readiness checks see, versus private HOME/cache for ordinary tools and Runtime execution?
-6. **Workspace integrity support:** Should unsupported native-watch filesystems fail immediately, or is an explicitly weaker polling/metadata mode desirable? Is the entire workspace—including dependency/build directories—still the monitored unit?
 7. **Persistence policy:** Should the first artifactize release reject old artifactize state on incompatible schema versions, or establish incremental migrations immediately? Is power-loss durability required for every accepted observation/result?
 8. **Human program lifetime:** Which tool kinds may intentionally hand off a long-running GUI/application process rather than kill descendants after command completion?
 9. **Synthetic benchmark commands:** Will load-check execute only generated synthetic tools, or may it invoke real project scripts? Either is possible, but only structural exclusion of artifactize’s real provider clients is guaranteed; arbitrary command networking is not blocked.
@@ -660,7 +648,6 @@ Primary crate version/license sources are the exact crates.io API links in the d
 - [Tokio process lifecycle](https://docs.rs/tokio/1.53.1/tokio/process/index.html)
 - [Tokio blocking-task limitations](https://docs.rs/tokio/1.53.1/tokio/task/fn.spawn_blocking.html)
 - [process-wrap 10.0.1](https://docs.rs/process-wrap/10.0.1/process_wrap/)
-- [notify 8.2.0](https://docs.rs/notify/8.2.0/notify/)
 - [rustix descriptor-relative open](https://docs.rs/rustix/1.1.5/rustix/fs/fn.openat.html)
 - [JCS canonicalizer](https://docs.rs/serde_json_canonicalizer/0.3.2/serde_json_canonicalizer/)
 - [Axum 0.8.9](https://docs.rs/axum/0.8.9/axum/)

@@ -18,6 +18,7 @@ These are the only exclusions. Each is marked DROP or REPLACED in the inventory.
 | Pi catalog and auth adapters, Pi re-exports | rig-core `=0.43.0` (OpenAI/Anthropic API keys), ChatGPT via official Sign in with ChatGPT, Claude via the unmodified official `claude` CLI |
 | Vue/HTTP web monitor | Native desktop app `artifactize-desktop` (iced) with the same capabilities |
 | CCDD config/state/cache compatibility | New format only: `artifactize.json`, fresh state and hashes |
+| Continuous workspace monitoring | End-of-review identity recheck ([ccdd#104](https://github.com/lhj6102/ccdd/issues/104)) |
 
 CCDD 7.0 has no remote snapshot-transfer review (inventory HUM-20). Its local cross-process review and shared-execution forwarding are ported as they are; no remote transport is added.
 
@@ -48,11 +49,11 @@ The module boundaries below are permanent; later phases add code inside them rat
 | `scope` | Mounts, aliases, `{artifact}` references, canonical scoped paths, traversal/symlink rejection | `artifact-scope.ts`, `artifacts/scope.ts`, `execution-scope.ts` |
 | `graph` | Edges, SCCs, shared external gates, RED blocking vs operational waiting, final obligations | `project/graph.ts`, `project/gates.ts`, `broker/graph.ts` |
 | `project`, `project::selection`, `project::prepare` | Selection, selection files, profile variants, status/plan explanations, prepared handles, input manifests | `project/*`, `requester/` |
-| `workspace` | Capture, content/metadata modes, watcher with scan fallback, mutation latch, runtime pinning | `workspaces/`, `runtime-paths.ts` |
+| `workspace` | Supplied-workspace rules, external state/output checks, runtime file pinning | `workspaces/`, `runtime-paths.ts` |
 | `process`, `runtime` | Literal argv, sanitized env, private HOME/TMP/output, bounded pipes, process groups, gated launch | `executors/process.ts`, `tools/environment.ts` |
 | `broker`, `worker` | Run lifecycle, indexed gate propagation, detached `__worker`, ownership fencing, cancel/resume/drain | `broker/*`, `worker*.ts` |
 | `resources`, `resources::budgets` | Weighted identity FIFO, provider/model/runtime pools, caps, leases, child tracking, `maxExecutions` ledger | `resources.ts`, `broker/admission.ts` |
-| `cache`, `cache::compute`, `cache::gc` | Identity reuse, cross-process claim/join, subscriptions, owner handoff, capacity GC | `cache/*`, `broker/cache-execution.ts`, `project/owner-identity.ts` |
+| `cache`, `cache::compute`, `cache::gc` | Identity commands, end-of-review identity recheck, identity reuse, cross-process claim/join, subscriptions, owner handoff, capacity GC | `cache/*`, `broker/cache-execution.ts`, `project/owner-identity.ts` |
 | `store`, `query`, `audit` | SQL schema, canonical objects, receipts, projections, audit and change cursors, prune | `broker/storage.ts`, `project/store.ts`, `result-view.ts`, `provenance.ts`, `project/prune.ts` |
 | `tools`, `tools::defaults`, `mcp` | Registries, manifests, argument schemas, script protocol, images, default tools, view CLI, stdio MCP | `tools/*`, `artifacts/*`, `packages/default-tools` |
 | `agent`, `llm`, `auth`, `provider_control` | Agent loop, strict verdicts and one repair, resultCheck, rig/ChatGPT/Claude backends, ChatGPT login, recovery and account lanes, usage | `executors/*`, `response-schema.ts`, `review-result.ts` |
@@ -61,7 +62,7 @@ The module boundaries below are permanent; later phases add code inside them rat
 | `cli` | Every command, flag, projection and exit code | `project/cli.ts`, `cache/cli.ts`, `cli.ts` |
 
 **Execution model.**
-- There is no permanent daemon. As in CCDD, `artifactize __worker RUN_ID` outlives the submitting CLI. It keeps workspace observation through Human waiting and drains shared computation after its own Run ends.
+- There is no permanent daemon. As in CCDD, `artifactize __worker RUN_ID` outlives the submitting CLI. It keeps ownership through Human waiting and drains shared computation after its own Run ends.
 - Competing workers are fenced by SQLite owner tokens plus pid/start-time identity.
 - Children are registered before execution starts. Leases stay held until their process groups are gone.
 
@@ -69,6 +70,8 @@ The module boundaries below are permanent; later phases add code inside them rat
 - Global state lives in `$ARTIFACTIZE_STATE_HOME` (default `~/.local/state/artifactize`): computation, cache, admission and default receipts.
 - `--state-dir` moves Run receipts and history only; it never partitions global services.
 - State, credential and output paths inside reviewed input are rejected.
+
+**Input changes.** When a review completes (runtime or Agent exit, Human submission), artifactize re-runs the Artifact's identity command. If the output differs from the identity computed at preparation, the review becomes an operational ERROR and nothing is published. A review without an identity function gets no input-change check.
 
 **Results.**
 - A result is published globally first, then copied idempotently (result, provenance, audit) into each receipt store before settlement is acknowledged. No transaction spans two databases.
@@ -96,8 +99,8 @@ The module boundaries below are permanent; later phases add code inside them rat
 | Phase | Runnable exit |
 |---|---|
 | P1 Runtime loop | `artifactize verify --repo fixtures/runtime` runs discovery → graph → Critics → verdicts; `run show` reads them in a new process |
-| P2 Complete project and input | Verify a cyclic, parameterized family selection; mutating input yields ERROR |
-| P3 Durable shared execution | Concurrent verifies share one execution; detached runs, cancel/resume, budgets, admission and cache GC work |
+| P2 Complete project and input | Verify a cyclic, parameterized family selection with profile variants |
+| P3 Durable shared execution | Concurrent verifies share one execution; an input change during review fails the identity recheck as ERROR; detached runs, cancel/resume, budgets, admission and cache GC work |
 | P4 Complete tool host | `artifactize view` reads text and images; `tools check --execute` exercises scoped scripts; MCP serves them |
 | P5 Complete Agent execution | Real OpenAI-key, Anthropic-key, ChatGPT and Claude reviews use tools, strict validation, repair and provider control |
 | P6 Human review | CLI claim → prepare → tools → submit completes an asynchronously waiting Run |
@@ -122,14 +125,13 @@ Each task takes a worker about half a day to a day. It lands as one PR from `tas
 - [ ] **P2.2** Selectors (artifact, critic, family, multiple, `--all`), bounded JSON/line selection files, profile variants. Check: JSON and line files select identical ordered sets.
 - [ ] **P2.3** Recursion, force, gate policy (`--ignore-gates`), final obligations. Check: selected success with missing evidence stays INCOMPLETE.
 - [ ] **P2.4** Canonical scoped and family fingerprints, mandatory execution inputs. Check: sibling material cannot change another instance's fingerprint.
-- [ ] **P2.5** Workspace capture, watcher, metadata mode, boundary scans, mutation latch. Check: edit+restore, unsafe links and metadata changes fail as specified.
-- [ ] **P2.6** Current inspection, `status`/`plan` explanations (REUSE/COALESCE/EXECUTE/WAIT/BLOCKED/FAILED), full/compact `graph`/config projections. Check: static queries never run owner code.
-- [ ] **P2.7** Persist definitions, family membership and compact/full historical references. Check: saved results stay readable after the repository is removed.
+- [ ] **P2.5** Current inspection, `status`/`plan` explanations (REUSE/COALESCE/EXECUTE/WAIT/BLOCKED/FAILED), full/compact `graph`/config projections. Check: static queries never run owner code.
+- [ ] **P2.6** Persist definitions, family membership and compact/full historical references. Check: saved results stay readable after the repository is removed.
 
 ### P3 Durable shared execution
 - [ ] **P3.1** Broker lifecycle, indexed gate propagation, same-input ERROR retry, lightweight revision-only idle polling for Human/follower waits. Check: retry keeps completed results and the original requested profile.
 - [ ] **P3.2** Detached `__worker`, saved settings, startup handshake, ownership recovery. Check: killing the submitter does not end its Run.
-- [ ] **P3.3** Owner identity scripts with exact output validation. Check: malformed output fails preparation with no fallback.
+- [ ] **P3.3** Owner identity scripts with exact output validation, and the end-of-review identity recheck. Check: malformed output fails preparation with no fallback; editing input during a review makes it ERROR and unpublished.
 - [ ] **P3.4** Global completed reuse, provenance, no-identity and force bypass. Check: cross-repo RED reuse; force leaves the entry unchanged.
 - [ ] **P3.5** Transactional claim/join and stale-owner publication fencing. Check: two processes execute one identity once.
 - [ ] **P3.6** Subscriber cancellation, owner handoff, shared draining. Check: the surviving subscriber completes after the initiating Run is cancelled.
@@ -169,8 +171,8 @@ Each task takes a worker about half a day to a day. It lands as one PR from `tas
 ### P6 Human review
 - [ ] **P6.1** Human waiting, alarm registration and delivery, JSONL inbox. Check: a failed alarm gives ERROR; waiting survives the caller's exit.
 - [ ] **P6.2** Two-phase claim: reservation, renewal, expiry, release, confirmation. Check: stale or competing attempts cannot confirm or release successors.
-- [ ] **P6.3** Preparation phases, receipts, scan progress, cancellation, retry diagnostics. Check: a failed preparation stays waiting and reclaimable.
-- [ ] **P6.4** Claimant-only tools, exact-once schema-valid submission, shared-owner forwarding. Check: a wrong claimant, changed input or duplicate submission fails.
+- [ ] **P6.3** Preparation phases, receipts, cancellation, retry diagnostics. Check: a failed preparation stays waiting and reclaimable.
+- [ ] **P6.4** Claimant-only tools, exact-once schema-valid submission with the identity recheck, shared-owner forwarding. Check: a wrong claimant, changed input or duplicate submission fails.
 - [ ] **P6.5** `request list/show/claim/tool/submit/summary` CLI and desktop review handoff. Check: the CLI completes a waiting Run end to end.
 
 ### P7 Desktop monitor (`crates/artifactize-desktop`)
@@ -214,7 +216,7 @@ Core types:
 
 1. **Subscription protocol drift.** Prove ChatGPT registration/refresh and Claude turn/MCP ordering early in P5. Keep tiny fake-transport tests plus one real review per backend run by the owner. Fail closed on incomplete output, a wrong model or a budget violation.
 2. **Crashes during shared execution.** Use token/generation fencing, a durable start ledger and idempotent settlement. Focused two-process cancel/death tests cover the dangerous transitions.
-3. **Workspace or process escape.** One scope resolver, watcher plus scans, pinned inputs, gated group launch, and adversarial path/link/descendant fixtures. Configured commands are trusted programs, not a sandbox.
+3. **Workspace or process escape.** One scope resolver, end-of-review identity recheck, pinned inputs, gated group launch, and adversarial path/link/descendant fixtures. Configured commands are trusted programs, not a sandbox.
 4. **Human and desktop state divergence.** One authoritative claim lifecycle, read-only observation and explicit actions. Exercise expiry and window close against a live worker.
 5. **Hidden feature loss.** Every PR ticks the inventory items it delivers. Release happens only at P8 with no unchecked non-DROP item.
 
