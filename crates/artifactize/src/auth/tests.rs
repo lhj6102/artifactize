@@ -227,7 +227,17 @@ async fn loopback_is_one_shot_and_rejects_wrong_host_and_path() {
         receiver.await.unwrap().unwrap(),
         ("abc".into(), "oaiapp_test".into())
     );
-    assert!(tokio::net::TcpStream::connect(address).await.is_err());
+    // Concurrent process tests can inherit the CLOEXEC listener between fork and exec.
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if tokio::net::TcpStream::connect(address).await.is_err() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("one-shot listener closes after fork/exec children release it");
 }
 
 #[test]
