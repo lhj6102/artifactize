@@ -157,13 +157,21 @@ impl Scope<'_> {
 
 /// Open each component relative to its pinned parent, so replacement cannot redirect a read through a link.
 pub(crate) fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, ScopeError> {
-    logical_path(path)?;
     if !root.is_absolute() || artifact.path.is_absolute() {
         return Err(ScopeError(
             "Artifact roots must be absolute and owner paths relative.".into(),
         ));
     }
-    let target = root.join(&artifact.path).join(path);
+    open_scoped(&root.join(&artifact.path), path)
+}
+
+/// Open a relative path below an absolute root without following any symlink components.
+pub(crate) fn open_scoped(root: &Path, path: &str) -> Result<File, ScopeError> {
+    logical_path(path)?;
+    if !root.is_absolute() {
+        return Err(ScopeError("Scoped roots must be absolute.".into()));
+    }
+    let target = root.join(path);
     let mut directory = File::open("/").map_err(|e| ScopeError(e.to_string()))?;
     for component in target.components() {
         let name = match component {

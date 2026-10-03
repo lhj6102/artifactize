@@ -4,6 +4,7 @@ use std::{
     path::Path,
 };
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -227,7 +228,8 @@ async fn json_success_authored_error_and_credential_safe_failures() {
 
 #[test]
 fn json_result_limits_and_strict_shapes() {
-    let parse = |value: Value| result::parse(&serde_json::to_vec(&value).unwrap());
+    let output = tempfile::tempdir().unwrap();
+    let parse = |value: Value| result::parse(&serde_json::to_vec(&value).unwrap(), output.path());
     let block = json!({"type":"text","text":"ok"});
     for invalid in [
         json!({"content":[]}),
@@ -248,7 +250,13 @@ fn json_result_limits_and_strict_shapes() {
     assert!(parse(json!({"content":[{"type":"text","text":"x".repeat(65536)}]})).is_ok());
     assert!(parse(json!({"content":[{"type":"json","data":"x".repeat(524286)}]})).is_ok());
     assert!(parse(json!({"content":vec![block;32],"isError":false})).is_ok());
-    assert!(result::parse(b"{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]} {}").is_err());
+    assert!(
+        result::parse(
+            b"{\"content\":[{\"type\":\"text\",\"text\":\"ok\"}]} {}",
+            output.path()
+        )
+        .is_err()
+    );
 }
 
 #[tokio::test]
@@ -262,6 +270,54 @@ async fn json_capture_supports_large_blocks_but_rejects_truncation() {
         text(&fixture.call(json!({})).await),
         "Agent tool returned invalid output."
     );
+}
+
+#[tokio::test]
+async fn json_images_are_embedded_before_output_cleanup_and_invalid_files_are_tool_errors() {
+    let fixture = Fixture::new(command());
+    for (mime, bytes) in image::tests::fixtures() {
+        let encoded = STANDARD.encode(&bytes);
+        fixture.script(&format!(
+            r#"import base64, json, os, sys
+request = json.load(sys.stdin)
+root = request['context']['outputDir']
+os.mkdir(os.path.join(root, 'nested'))
+path = os.path.join(root, 'nested', 'image')
+open(path, 'wb').write(base64.b64decode('{encoded}'))
+print(json.dumps({{'content':[
+    {{'type':'image','path':path,'mimeType':'{mime}'}},
+    {{'type':'image','path':'nested/image','mimeType':'{mime}'}},
+    {{'type':'image','data':'{encoded}','mimeType':'{mime}'}}
+]}}))
+"#
+        ));
+        let result = fixture.call(json!({})).await;
+        assert!(!result.is_error, "{result:?}");
+        assert_eq!(
+            result.content,
+            vec![
+                Content::Image {
+                    data: encoded,
+                    mime_type: mime.into()
+                };
+                3
+            ]
+        );
+    }
+    fs::write(fixture.repo.join("source"), &image::tests::fixtures()[0].1).unwrap();
+    for setup in [
+        "path = request['context']['artifactPath'] + '/source'",
+        "path = '../tmp/image'; shutil.copy('source', os.path.join(root, path))",
+        "path = 'link'; os.symlink(os.path.abspath('source'), os.path.join(root, path))",
+        "path = 'linkdir/source'; os.symlink(os.getcwd(), os.path.join(root, 'linkdir'))",
+        "path = 'image'; open(os.path.join(root,path), 'wb').write(b'not a PNG')",
+        "path = 'image'; open(os.path.join(root,path), 'wb').truncate(4*1024*1024+1)",
+    ] {
+        fixture.script(&format!("import json, os, shutil, sys\nrequest = json.load(sys.stdin)\nroot = request['context']['outputDir']\n{setup}\nprint(json.dumps({{'content':[{{'type':'image','path':path,'mimeType':'image/png'}}]}}))"));
+        let result = fixture.call(json!({})).await;
+        assert!(result.is_error, "{setup}");
+        assert_eq!(text(&result), "Agent tool returned invalid output.");
+    }
 }
 
 #[tokio::test]

@@ -1,6 +1,7 @@
 //! Scoped Agent declarations and language-neutral command protocols.
 
 pub mod builtin;
+mod image;
 mod result;
 pub(crate) mod schema;
 
@@ -278,7 +279,8 @@ async fn invoke(
                 .as_str()
                 .ok_or("Agent tool preparation failed.")?,
         );
-        context["outputDir"] = json!(command.directory().join("output"));
+        let output_dir = command.directory().join("output");
+        context["outputDir"] = json!(output_dir);
         context["tmpDir"] = json!(command.directory().join("tmp"));
         let input = match protocol {
             ToolProtocol::Json => json!({"version":1,"context":context,"args":args})
@@ -302,7 +304,8 @@ async fn invoke(
                 if output.truncated {
                     return Err("Agent tool returned invalid output.");
                 }
-                result::parse(&output.stdout).map_err(|_| "Agent tool returned invalid output.")
+                result::parse(&output.stdout, &output_dir)
+                    .map_err(|_| "Agent tool returned invalid output.")
             }
             ToolProtocol::Plain => Ok(result::plain(&output)),
         }
