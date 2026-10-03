@@ -6,8 +6,9 @@ use request::RequestCommand;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
-use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand, error::ErrorKind};
 use serde_json::json;
 
 use crate::{
@@ -47,6 +48,7 @@ pub enum Command {
     },
     /// Serve an execution's scoped Agent tools over stdio MCP.
     Mcp {
+        /// Execution manifest written for one Agent review.
         #[arg(long, value_name = "PATH")]
         manifest: PathBuf,
     },
@@ -83,20 +85,10 @@ pub enum Command {
     Verify {
         #[command(flatten)]
         selection: SelectionArgs,
-        /// Use a declared profile variant for every included Eval.
-        #[arg(long, value_name = "NAME")]
-        profile: Option<String>,
-        /// Include all Evals in the required dependency scope, including cycle peers.
-        #[arg(long)]
-        recursive: bool,
-        /// Force explicitly selected Evals only; dependency gates still apply.
-        #[arg(long)]
-        force: bool,
-        /// Bypass execution gates, never final validation obligations.
-        #[arg(long)]
-        ignore_gates: bool,
+        #[command(flatten)]
+        policy: PolicyArgs,
         /// Maximum concurrent evals, including identity waiters.
-        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u32).range(1..))]
+        #[arg(long, value_name = "N", default_value = "4", value_parser = clap::value_parser!(u32).range(1..))]
         jobs: u32,
         /// Limit executor starts in this Run; cache hits and waiters are free.
         #[arg(long, value_name = "N")]
@@ -105,21 +97,15 @@ pub enum Command {
         #[arg(long)]
         wait: bool,
         /// Human wait timeout; does not cancel pending requests (default 600000).
-        #[arg(long, requires = "wait", value_parser = clap::value_parser!(u32).range(1..=2_147_483_647))]
+        #[arg(long, value_name = "MS", requires = "wait", value_parser = clap::value_parser!(u32).range(1..=2_147_483_647))]
         timeout_ms: Option<u32>,
     },
     /// Inspect current validation, saved Run audit, and what verify would do.
     Status {
         #[command(flatten)]
         selection: SelectionArgs,
-        #[arg(long, value_name = "NAME")]
-        profile: Option<String>,
-        #[arg(long)]
-        recursive: bool,
-        #[arg(long)]
-        force: bool,
-        #[arg(long)]
-        ignore_gates: bool,
+        #[command(flatten)]
+        policy: PolicyArgs,
     },
     /// Inspect full static definitions, relations, cycles, and families.
     Graph {
@@ -207,6 +193,34 @@ impl SelectionArgs {
     }
 }
 
+#[derive(Debug, Args)]
+pub struct PolicyArgs {
+    /// Use a declared profile variant for every included Eval.
+    #[arg(long, value_name = "NAME")]
+    profile: Option<String>,
+    /// Include all Evals in the required dependency scope, including cycle peers.
+    #[arg(long)]
+    recursive: bool,
+    /// Force explicitly selected Evals only; dependency gates still apply.
+    #[arg(long)]
+    force: bool,
+    /// Bypass execution gates, never final validation obligations.
+    #[arg(long)]
+    ignore_gates: bool,
+}
+
+impl PolicyArgs {
+    fn options(self) -> crate::project::VerifyOptions {
+        crate::project::VerifyOptions {
+            profile: self.profile.map(ProfileSelection::Named),
+            recursive: self.recursive,
+            force: self.force,
+            ignore_gates: self.ignore_gates.then_some(true),
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 pub enum AuthProvider {
     /// Use your ChatGPT account and eligible plan.
@@ -215,9 +229,13 @@ pub enum AuthProvider {
 
 #[derive(Debug, Subcommand)]
 pub enum ModelProvider {
+    /// OpenAI API models (OPENAI_API_KEY).
     Openai,
+    /// Anthropic API models (ANTHROPIC_API_KEY).
     Anthropic,
+    /// Models visible to the signed-in ChatGPT account.
     Chatgpt,
+    /// Explain Claude CLI model names; no listing API.
     Claude,
 }
 
@@ -249,14 +267,22 @@ pub enum RunCommand {
         #[arg(long)]
         all: bool,
         /// Maximum number of Runs to return.
-        #[arg(long, default_value = "50")]
+        #[arg(long, value_name = "N", default_value = "50")]
         limit: u32,
         /// Skip this many Runs before returning results.
-        #[arg(long, default_value = "0")]
+        #[arg(long, value_name = "N", default_value = "0")]
         offset: u32,
     },
     /// Read the full saved audit as JSON, even without --json.
-    Show { run_id: String },
+    Show {
+        run_id: String,
+        /// Follow a RUNNING Run until it finishes and exit with its outcome code.
+        #[arg(long)]
+        wait: bool,
+        /// Wait timeout; never cancels the Run (default 600000).
+        #[arg(long, value_name = "MS", requires = "wait", value_parser = clap::value_parser!(u32).range(1..=2_147_483_647))]
+        timeout_ms: Option<u32>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -288,6 +314,9 @@ pub enum ToolsCommand {
 async fn execute(cli: Cli) -> Result<u8, String> {
     match cli.command {
         Some(Command::Mcp { manifest }) => {
+            if cli.repo.is_some() || cli.state_dir.is_some() || cli.json {
+                return Err("mcp reads its repository and state from --manifest and speaks only MCP; --repo, --state-dir and --json are not supported.".into());
+            }
             let (cancellation, listener) = cancellation_listener()?;
             let result = crate::mcp::serve(&manifest, cancellation).await;
             listener.abort();
@@ -417,10 +446,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
         }
         Some(Command::Verify {
             selection,
-            profile,
-            recursive,
-            force,
-            ignore_gates,
+            policy,
             jobs,
             max_executions,
             wait,
@@ -431,10 +457,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 jobs: jobs as usize,
                 max_executions,
                 wait_timeout_ms: wait.then_some(timeout_ms.unwrap_or(600_000)),
-                profile: profile.map(ProfileSelection::Named),
-                recursive,
-                force,
-                ignore_gates: ignore_gates.then_some(true),
+                ..policy.options()
             };
             let (cancellation, listener) = cancellation_listener()?;
             let result = crate::project::verify(
@@ -494,36 +517,16 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                     }
                 }
             }
-            if view.run.wait_timed_out {
-                return Ok(3);
-            }
-            Ok(match view.run.status.as_str() {
-                "GREEN" => 0,
-                "RED" => 1,
-                "INCOMPLETE" => 4,
-                _ => 2,
-            })
+            Ok(outcome_code(&view.run))
         }
-        Some(Command::Status {
-            selection,
-            profile,
-            recursive,
-            force,
-            ignore_gates,
-        }) => {
+        Some(Command::Status { selection, policy }) => {
             let selection = selection.resolve()?;
             let (cancellation, listener) = cancellation_listener()?;
             let result = crate::project::status(
                 &cli.repo.unwrap_or_else(|| PathBuf::from(".")),
                 cli.state_dir.as_deref(),
                 &selection,
-                &crate::project::VerifyOptions {
-                    profile: profile.map(ProfileSelection::Named),
-                    recursive,
-                    force,
-                    ignore_gates: ignore_gates.then_some(true),
-                    ..Default::default()
-                },
+                &policy.options(),
                 cancellation,
             )
             .await;
@@ -587,14 +590,45 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             Ok(0)
         }
         Some(Command::Run {
-            command: RunCommand::Show { run_id },
+            command:
+                RunCommand::Show {
+                    run_id,
+                    wait,
+                    timeout_ms,
+                },
         }) => {
             let state = crate::store::state_dir(cli.state_dir.as_deref())?;
-            let view = crate::store::read_run(&state, &run_id).await?;
+            let deadline = tokio::time::Instant::now()
+                + Duration::from_millis(timeout_ms.unwrap_or(600_000).into());
+            let mut view = crate::store::read_run(&state, &run_id).await?;
+            while wait && view.run.status == "RUNNING" {
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    break;
+                }
+                tokio::time::sleep(remaining.min(Duration::from_millis(200))).await;
+                view = crate::store::read_run(&state, &run_id).await?;
+            }
             print_json(&crate::query::run_output(&view))?;
-            Ok(0)
+            if !wait {
+                return Ok(0);
+            }
+            if view.run.status == "RUNNING" {
+                writeln!(
+                    io::stderr().lock(),
+                    "Waiting timed out; Run {run_id} is still RUNNING."
+                )
+                .map_err(|e| e.to_string())?;
+                return Ok(3);
+            }
+            Ok(outcome_code(&view.run))
         }
         Some(Command::Monitor { all }) => {
+            if cli.json {
+                return Err(
+                    "monitor is an interactive terminal UI; --json is not supported.".into(),
+                );
+            }
             if all && cli.repo.is_some() {
                 return Err("monitor accepts --repo or --all, not both.".into());
             }
@@ -830,6 +864,19 @@ fn print_graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
     Ok(())
 }
 
+/// Run outcome exit codes shared by `verify` and `run show --wait`.
+fn outcome_code(run: &crate::store::Run) -> u8 {
+    if run.wait_timed_out {
+        return 3;
+    }
+    match run.status.as_str() {
+        "GREEN" => 0,
+        "RED" => 1,
+        "INCOMPLETE" => 4,
+        _ => 2,
+    }
+}
+
 fn print_json(value: &impl serde::Serialize) -> Result<(), String> {
     let mut stdout = io::stdout().lock();
     serde_json::to_writer_pretty(&mut stdout, value).map_err(|e| e.to_string())?;
@@ -845,14 +892,48 @@ fn failure(message: &str, json: bool) -> ExitCode {
     ExitCode::from(2)
 }
 
+/// Global options may precede or follow the subcommand, but only once in total.
+fn repeated_global(options: &[&str]) -> Option<&'static str> {
+    ["--repo", "--state-dir", "--json"]
+        .into_iter()
+        .find(|name| {
+            options
+                .iter()
+                .filter(|arg| {
+                    arg.strip_prefix(name)
+                        .is_some_and(|rest| rest.is_empty() || rest.starts_with('='))
+                })
+                .count()
+                > 1
+        })
+}
+
 pub fn run() -> ExitCode {
     let args: Vec<_> = std::env::args_os().collect();
-    let json = args.iter().any(|arg| arg == "--json");
+    let options: Vec<_> = args
+        .iter()
+        .skip(1)
+        .take_while(|arg| *arg != "--")
+        .filter_map(|arg| arg.to_str())
+        .collect();
+    let json = options.contains(&"--json");
+    if let Some(name) = repeated_global(&options) {
+        return failure(&format!("{name} cannot be used multiple times."), json);
+    }
     let cli = match Cli::try_parse_from(args) {
         Ok(cli) => cli,
-        Err(error) if error.use_stderr() => return failure(&error.to_string(), json),
+        Err(error) if json && error.use_stderr() => {
+            let message = error.to_string();
+            let message = if error.kind() == ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand {
+                "A subcommand is required; see --help."
+            } else {
+                let usage = message.split("\n\n").next().unwrap_or_default();
+                usage.trim_start_matches("error: ")
+            };
+            return failure(message, true);
+        }
         Err(error) => {
-            return if error.print().is_ok() {
+            return if error.print().is_ok() && !error.use_stderr() {
                 ExitCode::SUCCESS
             } else {
                 ExitCode::from(2)

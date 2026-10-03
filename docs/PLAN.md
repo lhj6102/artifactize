@@ -234,7 +234,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 
 ### P8 Finish
 - [x] **P8.1** `doctor` (backends, auth presence, `claude` binary), `models <backend>` and plain `prune` of finished Run output. Check: doctor creates no Run; prune never touches active Runs or the repository.
-- [ ] **P8.2** Remaining CLI flags and exit codes. Check: wait codes 0/1/2/3/4 cover success/RED/error/timeout/incomplete.
+- [x] **P8.2** Remaining CLI flags and exit codes. Check: wait codes 0/1/2/3/4 cover success/RED/error/timeout/incomplete.
 - [x] **P8.3** Three example projects with docs:
   - runtime evals with children, mounts and references;
   - an Agent eval using built-in and declared tools;

@@ -27,17 +27,22 @@ pub struct ToolCheckOptions {
     /// Select one Agent or Human eval's admitted scope (same as --eval).
     #[arg(conflicts_with = "eval")]
     pub selector: Option<String>,
+    /// Select one Agent or Human eval's admitted scope.
     #[arg(long, value_name = "ID")]
     pub eval: Option<String>,
+    /// Check tools declared for one Artifact.
     #[arg(long, value_name = "ID")]
     pub artifact: Option<String>,
+    /// Restrict --artifact to Agent or Human tools.
     #[arg(long, value_enum)]
     pub audience: Option<Audience>,
+    /// Check one tool by short or published name.
     #[arg(long, value_name = "NAME")]
     pub tool: Option<String>,
     /// Invoke exactly one explicitly selected tool; never create review evidence.
     #[arg(long)]
     pub execute: bool,
+    /// JSON arguments for an executed Agent tool.
     #[arg(long, value_name = "JSON")]
     pub args: Option<String>,
 }
