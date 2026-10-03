@@ -1,6 +1,15 @@
 use jsonschema::Validator;
 use serde_json::{Map, Value, json};
 
+use crate::config::EvalDeclaration;
+
+/// Validate a parsed Agent or Human result without repair or owner-field rewriting.
+pub fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<Value, String> {
+    let schema = VerdictSchema::new(eval.pass_schema.as_ref(), eval.fail_schema.as_ref())?;
+    schema.validate(value).map_err(str::to_owned)?;
+    Ok(value.clone())
+}
+
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const MAX_RESULT_CHARS: usize = 256_000;
 const RESERVED: &[&str] = &[
@@ -89,6 +98,11 @@ impl VerdictSchema {
         let value: Value = serde_json::from_str(text).map_err(
             |_| "not_json: return exactly one JSON object, without prose or code fences",
         )?;
+        self.validate(&value)?;
+        Ok(value)
+    }
+
+    fn validate(&self, value: &Value) -> Result<(), &'static str> {
         let (validator, branch) = match value.get("verdict").and_then(Value::as_str) {
             Some("GREEN") => (&self.green, &self.schema["GREEN"]),
             Some("RED") => (&self.red, &self.schema["RED"]),
@@ -99,12 +113,12 @@ impl VerdictSchema {
             object
                 .keys()
                 .all(|key| branch["properties"].get(key).is_some())
-        }) || !validator.is_valid(&value)
+        }) || !validator.is_valid(value)
         {
             return Err("schema_mismatch: result must match the selected verdict's owner schema");
         }
         // Audit and usage live in separate rows; this bounds the persisted semantic result.
-        if serde_json::to_string(&value)
+        if serde_json::to_string(value)
             .expect("result is JSON")
             .encode_utf16()
             .count()
@@ -112,7 +126,7 @@ impl VerdictSchema {
         {
             return Err("over_size: normalized result exceeds 256000 characters");
         }
-        Ok(value)
+        Ok(())
     }
 }
 

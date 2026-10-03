@@ -2,7 +2,7 @@
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
-pub(crate) mod verdict;
+pub mod verdict;
 
 use rig_core::{
     completion::{CompletionRequest, FinishReason, ToolDefinition},

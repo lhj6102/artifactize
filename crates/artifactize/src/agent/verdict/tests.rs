@@ -96,3 +96,24 @@ fn diagnostics_never_echo_invalid_values_or_instance_names() {
         assert!(!error.contains("PRIVATE_SECRET"));
     }
 }
+
+#[test]
+fn parsed_human_submission_uses_same_validation_without_repair() {
+    let eval: EvalDeclaration = serde_json::from_value(json!({
+        "id":"human", "title":"Review", "profile":{"kind":"human"},
+        "payload":{"instruction":"Review."},
+        "passSchema":{"properties":{"reason":{"type":"string"}},"required":["reason"]}
+    }))
+    .unwrap();
+    let valid = json!({"verdict":"GREEN","reason":"  preserved  "});
+    assert_eq!(validate_result(&eval, &valid).unwrap(), valid);
+    assert!(validate_result(&eval, &json!({"verdict":"RED"})).is_ok());
+    for invalid in [
+        json!({"verdict":"GREEN"}),
+        json!({"verdict":"RED","reason":"undeclared"}),
+        json!({"verdict":"GREEN","reason":"x".repeat(MAX_RESULT_CHARS)}),
+        json!([{"verdict":"GREEN"}]),
+    ] {
+        assert!(validate_result(&eval, &invalid).is_err());
+    }
+}
