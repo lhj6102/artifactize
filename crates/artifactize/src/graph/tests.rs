@@ -414,3 +414,33 @@ fn deep_graphs_keep_sparse_edges_and_iterative_traversal() {
         Readiness::Blocked
     );
 }
+
+#[test]
+fn ignored_gates_leave_actual_evidence_and_final_obligations_intact() {
+    let config = reviewed(&["a", "b", "c"], &[("a", "b"), ("b", "c")]);
+    let graph = Graph::new(&config).unwrap();
+    let outcomes = evidence(&[("b/check", GREEN)]);
+    let ignored = graph.evaluate_with_policy(&outcomes, true);
+    assert!(ignored.critics["c/check"].can_execute());
+    assert_eq!(ignored.critics["b/check"].status, CriticStatus::Green);
+    assert!(!ignored.artifacts["b"].satisfied);
+    assert_eq!(ignored.obligations, ["a", "c"]);
+    assert_eq!(ignored.status, FinalStatus::Incomplete);
+    assert_eq!(
+        graph.evaluate(&outcomes).critics["b/check"].status,
+        CriticStatus::Wait
+    );
+    let failed = graph.evaluate_with_policy(
+        &evidence(&[
+            ("a/check", RED),
+            ("b/check", Evidence::OperationalError),
+            ("c/check", GREEN),
+        ]),
+        true,
+    );
+    assert_eq!(failed.status, FinalStatus::Error);
+    assert_eq!(failed.critics["a/check"].status, CriticStatus::Red);
+    assert_eq!(failed.critics["b/check"].status, CriticStatus::Error);
+    assert_eq!(failed.critics["c/check"].status, CriticStatus::Green);
+    assert_eq!(failed.obligations, ["a", "b"]);
+}

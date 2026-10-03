@@ -20,12 +20,27 @@ with duplicates removed at their first occurrence; Artifacts expand to their
 Critics in declaration order. Runtime Critics execute sequentially when their
 dependency gates allow. An Artifact selector runs only that Artifact's Critics;
 an individual Critic selector runs only that Critic. Both retain the full dependency
-closure as a final obligation. A family name selects every instance, also in
+closure as a final obligation. `--recursive` includes every Critic in that closure,
+including other Critics on the selected Artifact and cycle peers, in configuration
+order. `--all` already includes every Critic and all no-Critic Artifact obligations.
+A family name selects every instance, also in
 `--artifacts` and `--artifacts-file`; overlapping family/instance entries are
 deduplicated without selecting the family template itself.
+
 RED blocks downstream execution; missing/operational evidence waits. Cycle peers
-have no internal gates. Selected GREEN results with missing obligations remain
-recorded in an INCOMPLETE Run. Agent/Human Critics fail clearly before execution.
+have no internal gates. `--ignore-gates` bypasses execution gates only: final
+validation still requires actual GREEN evidence or explicit `basis: true` throughout
+the required scope. A basis never waives its dependencies. Selected GREEN results
+with missing obligations remain recorded in an INCOMPLETE Run; both text and JSON
+output identify unmet obligations. Agent/Human Critics fail clearly before execution.
+
+Root `reviewPolicy.dependencyGates` defaults to `green`; `ignore` enables bypass.
+The library's `project::VerifyOptions.ignore_gates` can explicitly override either
+policy, including `Some(false)` to enforce gates. `--force` marks only explicitly
+selected Critics for a fresh review, not recursive dependencies; it neither expands
+the execution scope nor bypasses gates. Runs record the resolved policy and each
+request's force flag. Every included Critic currently executes without reuse;
+P3.4 will connect force to cache lookup/join/publication bypass.
 
 Selection files must be regular files no larger than 4 MiB, containing a JSON
 string array or one trimmed ID per line (UTF-8 BOM and CRLF are accepted). They
@@ -39,7 +54,8 @@ for every included Critic. Each Critic can declare up to 64 safely named variant
 all retaining its default reviewer kind. Unknown variants fail before creating a
 Run, and source declarations are never rewritten. The library accepts
 `project::selection::ProfileSelection::Named` or `ProfileSelection::Critics` (a
-qualified-Critic-to-name map); mappings outside the selection fail. Runtime
+qualified-Critic-to-name map); mappings outside the included scope fail. With
+`--recursive`, variants also apply to dependency Critics. Runtime
 variant arguments rebuild scoped references and dependency gates. Stored request
 profiles and argv describe the variant actually used.
 

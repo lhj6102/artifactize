@@ -244,6 +244,7 @@ fn named_profiles_only_apply_to_included_critics_and_rebuild_runtime_dependencie
         load(),
         &selection,
         Some(&ProfileSelection::Named("careful".into())),
+        false,
     )
     .unwrap();
     assert_eq!(selected.critics[0].deps, ["input"]);
@@ -274,7 +275,8 @@ fn named_profiles_only_apply_to_included_critics_and_rebuild_runtime_dependencie
         select_profiles(
             load(),
             &Selection::All,
-            Some(&ProfileSelection::Named("careful".into()))
+            Some(&ProfileSelection::Named("careful".into())),
+            false,
         )
         .unwrap_err()
         .contains("Unknown profile variant for target/a")
@@ -283,18 +285,19 @@ fn named_profiles_only_apply_to_included_critics_and_rebuild_runtime_dependencie
         select_profiles(
             load(),
             &selection,
-            Some(&ProfileSelection::Named("missing".into()))
+            Some(&ProfileSelection::Named("missing".into())),
+            false,
         )
         .unwrap_err()
         .contains("Unknown profile variant for target/z")
     );
     let mapping =
         ProfileSelection::Critics(BTreeMap::from([("target/z".into(), "careful".into())]));
-    assert!(select_profiles(load(), &Selection::All, Some(&mapping)).is_ok());
+    assert!(select_profiles(load(), &Selection::All, Some(&mapping), false).is_ok());
     let outside =
         ProfileSelection::Critics(BTreeMap::from([("target/a".into(), "careful".into())]));
     assert!(
-        select_profiles(load(), &selection, Some(&outside))
+        select_profiles(load(), &selection, Some(&outside), false)
             .unwrap_err()
             .contains("outside the submitted Critic scope: target/a")
     );

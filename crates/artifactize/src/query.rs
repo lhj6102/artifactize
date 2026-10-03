@@ -19,7 +19,7 @@ pub fn requester_run(view: &RunView) -> Value {
         "validation":view.run.validation,
         "requests":view.requests.iter().map(|request| json!({
             "id":request.id,"runId":request.run_id,"criticId":request.critic_id,
-            "target":request.target,"status":request.status,"profile":request.profile,
+            "target":request.target,"status":request.status,"profile":request.profile,"force":request.force,
             "reference":reference(Some(&request.id)),"error":request.error,
             "errorCode":request.error_code,"blockedReason":request.blocked_reason,
             "result":request.result.as_ref().map(|_| json!({"requestId":request.id})),

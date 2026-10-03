@@ -171,13 +171,22 @@ impl<'a> Graph<'a> {
     /// Evaluate the whole graph. Evidence freshness is supplied by the caller;
     /// absent entries are unreviewed, and unrelated entries are ignored.
     pub fn evaluate(&self, evidence: &BTreeMap<String, Evidence>) -> Evaluation<'a> {
+        self.evaluate_with_policy(evidence, false)
+    }
+
+    /// Gate bypass changes readiness, never the required final obligations.
+    pub fn evaluate_with_policy(
+        &self,
+        evidence: &BTreeMap<String, Evidence>,
+        ignore_gates: bool,
+    ) -> Evaluation<'a> {
         let mut critics: BTreeMap<&str, CriticEvaluation<'_>> = BTreeMap::new();
         for component in &self.components {
             let unmet_gates: Vec<_> = component
                 .gates
                 .iter()
                 .copied()
-                .filter(|id| critics[id].status != CriticStatus::Green)
+                .filter(|id| !ignore_gates && critics[id].status != CriticStatus::Green)
                 .collect();
             let readiness = if unmet_gates.iter().any(|id| {
                 matches!(

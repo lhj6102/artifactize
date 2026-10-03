@@ -11,7 +11,10 @@ use std::{
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::config::{Critic, RepoConfig, identifier};
+use crate::{
+    config::{Critic, RepoConfig, identifier},
+    graph::Graph,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
@@ -116,6 +119,29 @@ impl Selection {
             .retain(|critic| seen.insert(critic.id.as_str()));
         Ok(result)
     }
+
+    /// Recursive execution includes every Critic in the required Artifact scope.
+    pub fn included_critics<'a>(
+        &self,
+        config: &'a RepoConfig,
+        recursive: bool,
+    ) -> Result<Vec<&'a Critic>, String> {
+        let selected = self.resolve(config)?;
+        if !recursive {
+            return Ok(selected.critics);
+        }
+        let graph = Graph::new(config).map_err(|error| error.to_string())?;
+        let required: BTreeSet<_> = graph
+            .dependency_closure(&selected.roots)
+            .map_err(|error| error.to_string())?
+            .into_iter()
+            .collect();
+        Ok(config
+            .critics
+            .iter()
+            .filter(|critic| required.contains(critic.target.as_str()))
+            .collect())
+    }
 }
 
 fn nonempty(ids: &[String]) -> Result<(), String> {
@@ -158,19 +184,18 @@ pub fn select_profiles(
     mut config: RepoConfig,
     selection: &Selection,
     profile: Option<&ProfileSelection>,
+    recursive: bool,
 ) -> Result<RepoConfig, String> {
     let Some(profile) = profile else {
         return Ok(config);
     };
-    let selected = selection.resolve(&config)?;
-    let included: BTreeMap<_, _> = selected
-        .critics
+    let critics = selection.included_critics(&config, recursive)?;
+    let included: BTreeMap<_, _> = critics
         .iter()
         .map(|critic| (critic.id.as_str(), *critic))
         .collect();
     let mapping: Vec<(&str, &str)> = match profile {
-        ProfileSelection::Named(name) => selected
-            .critics
+        ProfileSelection::Named(name) => critics
             .iter()
             .map(|critic| (critic.id.as_str(), name.as_str()))
             .collect(),

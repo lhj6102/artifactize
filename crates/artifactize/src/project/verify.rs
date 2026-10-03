@@ -1,11 +1,14 @@
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
 
 use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::{Critic, Profile, read_workspace_config},
+    config::{Critic, DependencyGates, Profile, read_workspace_config},
     graph::{CriticStatus, Evidence, Graph},
     process,
     project::selection::{ProfileSelection, Selection, select_profiles},
@@ -20,22 +23,52 @@ fn now() -> String {
         .expect("UTC timestamp is representable")
 }
 
-/// P1 executes foreground and sequentially. There is no cross-run evidence reuse.
+#[derive(Debug, Default, Clone)]
+pub struct VerifyOptions {
+    pub profile: Option<ProfileSelection>,
+    pub recursive: bool,
+    /// Force only explicitly selected Critics, never recursive dependencies.
+    pub force: bool,
+    /// None uses root reviewPolicy; Some(false) explicitly enforces GREEN gates.
+    pub ignore_gates: Option<bool>,
+}
+
+/// Executes foreground and sequentially. There is no cross-run evidence reuse.
 pub async fn verify(
     repo: &Path,
     state_dir: Option<&Path>,
     selection: &Selection,
-    profile: Option<&ProfileSelection>,
+    options: &VerifyOptions,
     cancellation: CancellationToken,
 ) -> Result<RunView, String> {
     let config = read_workspace_config(repo).map_err(|e| e.to_string())?;
-    let config = select_profiles(config, selection, profile)?;
+    let config = select_profiles(
+        config,
+        selection,
+        options.profile.as_ref(),
+        options.recursive,
+    )?;
+    let ignore_gates = options.ignore_gates.unwrap_or_else(|| {
+        config
+            .artifacts
+            .values()
+            .find(|artifact| artifact.path.as_os_str().is_empty())
+            .and_then(|artifact| artifact.review_policy.as_ref())
+            .is_some_and(|policy| matches!(policy.dependency_gates, Some(DependencyGates::Ignore)))
+    });
     let graph = Graph::new(&config).map_err(|e| e.to_string())?;
     let selected = selection.resolve(&config)?;
-    let required = graph
+    let selected_ids: BTreeSet<_> = selected
+        .critics
+        .iter()
+        .map(|critic| critic.id.as_str())
+        .collect();
+    let required: BTreeSet<_> = graph
         .dependency_closure(&selected.roots)
-        .map_err(|e| e.to_string())?;
-    let critics = selected.critics;
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .collect();
+    let critics = selection.included_critics(&config, options.recursive)?;
     for critic in &critics {
         let unsupported = match critic.declaration.profile {
             Profile::Agent { .. } => Some("Agent Critics are not supported yet (P5)"),
@@ -72,6 +105,9 @@ pub async fn verify(
         created_at: now(),
         completed_at: None,
         selection: serde_json::to_value(selection).expect("selection is JSON"),
+        recursive: options.recursive,
+        force: options.force,
+        ignore_gates,
         validation: Value::Null,
         error: None,
     };
@@ -88,6 +124,7 @@ pub async fn verify(
             payload: json!(critic.declaration.payload),
             references: json!(critic.references),
             deps: critic.deps.clone(),
+            force: options.force && selected_ids.contains(critic.id.as_str()),
             status: "QUEUED".into(),
             created_at: run.created_at.clone(),
             started_at: None,
@@ -108,7 +145,7 @@ pub async fn verify(
         if cancellation.is_cancelled() {
             break;
         }
-        let evaluation = graph.evaluate(&evidence);
+        let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
         let Some(index) = critics
             .iter()
             .position(|critic| evaluation.critics[critic.id.as_str()].can_execute())
@@ -188,7 +225,7 @@ pub async fn verify(
         request.completed_at = Some(now());
         receipts.save_request(request).await?;
     }
-    let evaluation = graph.evaluate(&evidence);
+    let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
         if evidence.contains_key(&request.critic_id) {
             continue;
@@ -213,7 +250,7 @@ pub async fn verify(
             ));
         }
     }
-    let evaluation = graph.evaluate(&evidence);
+    let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     let required_critics: Vec<_> = evaluation
         .critics
         .iter()
@@ -243,8 +280,13 @@ pub async fn verify(
     run.completed_at = Some(now());
     run.validation = json!({
         "selection":run.selection,
+        "recursive":run.recursive,
+        "force":run.force,
+        "ignoreGates":run.ignore_gates,
+        "selectedCriticIds":selected.critics.iter().map(|critic| &critic.id).collect::<Vec<_>>(),
+        "includedCriticIds":critics.iter().map(|critic| &critic.id).collect::<Vec<_>>(),
         "satisfied":satisfied && !cancellation.is_cancelled(),
-        "obligations":evaluation.obligations.iter().filter(|id| required.contains(id)).collect::<Vec<_>>(),
+        "obligations":evaluation.obligations.iter().filter(|id| required.contains(*id)).collect::<Vec<_>>(),
         "artifacts":required.iter().map(|id| {
             let a = &evaluation.artifacts[id];
             json!({"id":id,"status":format!("{:?}",a.status).to_uppercase(),"passed":a.passed,"total":a.total,"satisfied":a.satisfied})

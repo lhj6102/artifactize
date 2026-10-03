@@ -32,6 +32,12 @@ pub struct Run {
     pub created_at: String,
     pub completed_at: Option<String>,
     pub selection: Value,
+    #[serde(default)]
+    pub recursive: bool,
+    #[serde(default)]
+    pub force: bool,
+    #[serde(default)]
+    pub ignore_gates: bool,
     pub validation: Value,
     pub error: Option<String>,
 }
@@ -48,6 +54,8 @@ pub struct Request {
     pub payload: Value,
     pub references: Value,
     pub deps: Vec<String>,
+    #[serde(default)]
+    pub force: bool,
     pub status: String,
     pub created_at: String,
     pub started_at: Option<String>,

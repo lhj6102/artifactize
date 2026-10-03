@@ -507,6 +507,7 @@ fn family_profile_variants_are_substituted_per_instance_before_selection() {
         fixture.config(),
         &selection,
         Some(&ProfileSelection::Named("echo".into())),
+        false,
     )
     .unwrap();
     let selected = selection.resolve(&config).unwrap();
