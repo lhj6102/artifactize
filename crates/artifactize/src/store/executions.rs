@@ -268,7 +268,12 @@ pub(super) fn settle(
     execution: &Execution,
     request: &Request,
 ) -> Result<bool, Error> {
-    let data = serde_json::to_string(execution)?;
+    let mut execution = execution.clone();
+    let mut request = request.clone();
+    execution.tool_calls =
+        super::tool_calls::project(db, Some(&execution.id), &execution.tool_calls)?;
+    request.tool_calls = execution.tool_calls.clone();
+    let data = serde_json::to_string(&execution)?;
     if execution.identity.is_some() || request.human_definition.is_some() {
         if db.execute(
                     "UPDATE executions SET status=?,data=? WHERE id=? AND owner_pid=? AND owner_start_time=? AND status IN ('RUNNING','WAITING_HUMAN')",
@@ -287,6 +292,6 @@ pub(super) fn settle(
     } else {
         false
     };
-    update_request(db, request)?;
+    update_request(db, &request)?;
     Ok(published)
 }

@@ -69,7 +69,20 @@ impl<'a> Registry<'a> {
         if !matches!(eval.declaration.profile, Profile::Agent { .. }) {
             return Err("Agent tools require an Agent eval.".into());
         }
-        let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
+        Self::with_scope(
+            config,
+            scope::eval_scope(config, eval).map_err(|e| e.to_string())?,
+        )
+    }
+
+    pub fn for_artifact(config: &'a RepoConfig, artifact_id: &str) -> Result<Self, String> {
+        Self::with_scope(
+            config,
+            scope::artifact_scope(config, &[artifact_id]).map_err(|e| e.to_string())?,
+        )
+    }
+
+    fn with_scope(config: &'a RepoConfig, scope: Scope<'a>) -> Result<Self, String> {
         let mut tools = BTreeMap::new();
         for (id, artifact) in &scope.artifacts {
             for (operation, declaration) in &artifact.views.agent_tools {
@@ -108,6 +121,30 @@ impl<'a> Registry<'a> {
 
     pub fn list(&self) -> impl Iterator<Item = &ToolDefinition> {
         self.tools.values().map(|tool| &tool.definition)
+    }
+
+    /// Resolve static prerequisites without substituting free arguments.
+    pub fn preflight(&self, name: &str) -> Result<(), String> {
+        let tool = self
+            .tools
+            .get(name)
+            .ok_or("Unknown registered Agent tool.")?;
+        let owner = &tool.definition.artifact_id;
+        self.scope
+            .resolve_input(&self.config.root, owner, "")
+            .map_err(|e| e.to_string())?;
+        if let AgentTool::Command(command) = tool.declaration {
+            preflight_executable(&self.config.root, &self.scope, owner, &command.command)?;
+            if matches!(command.protocol, ToolProtocol::Json) {
+                scope::resolve_argv(self.config, &self.scope, owner, &command.args)
+                    .map_err(|e| e.to_string())?;
+            }
+            for path in &command.execution_paths {
+                scope::scoped_path(&self.config.root, Path::new(path))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+        Ok(())
     }
 
     pub async fn call(
@@ -244,6 +281,35 @@ fn executable(root: &Path, scope: &Scope<'_>, owner: &str, command: &str) -> Res
         Ok(program.into_os_string())
     } else {
         Ok(command.into())
+    }
+}
+
+fn preflight_executable(
+    root: &Path,
+    scope: &Scope<'_>,
+    owner: &str,
+    command: &str,
+) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let program = executable(root, scope, owner, command)
+        .map_err(|_| "Tool executable path is unavailable or outside scope.".to_owned())?;
+    let runnable = |path: &Path| {
+        path.metadata()
+            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    };
+    let found = if Path::new(&program).is_absolute() {
+        runnable(Path::new(&program))
+    } else {
+        let cwd = scope
+            .resolve_input(root, owner, "")
+            .map_err(|e| e.to_string())?;
+        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+            .any(|dir| runnable(&cwd.join(dir).join(&program)))
+    };
+    if found {
+        Ok(())
+    } else {
+        Err(format!("Tool executable is unavailable: {command}"))
     }
 }
 

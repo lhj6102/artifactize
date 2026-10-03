@@ -114,6 +114,26 @@ impl<'a> Registry<'a> {
         self.tools.values().map(|tool| &tool.definition)
     }
 
+    pub fn preflight(&self, name: &str) -> Result<(), String> {
+        let tool = self
+            .tools
+            .get(name)
+            .ok_or("Unknown registered Human tool.")?;
+        let owner = &tool.definition.artifact_id;
+        self.scope
+            .resolve_input(&self.config.root, owner, "")
+            .map_err(|e| e.to_string())?;
+        super::preflight_executable(
+            &self.config.root,
+            &self.scope,
+            owner,
+            &tool.declaration.command,
+        )?;
+        scope::resolve_human_argv(self.config, &self.scope, owner, &tool.declaration.args)
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     pub async fn call(&self, name: &str, cancellation: CancellationToken) -> ToolResult {
         let Some(tool) = self.tools.get(name) else {
             return ToolResult::error("Unknown registered Human tool.");
