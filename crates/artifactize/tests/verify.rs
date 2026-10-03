@@ -907,7 +907,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
     for (backend, expected) in [
         ("openai", "OPENAI_API_KEY"),
         ("anthropic", "ANTHROPIC_API_KEY"),
-        ("chatgpt", "P5.5"),
+        ("chatgpt", "artifactize login chatgpt"),
         ("claude", "P5.6"),
     ] {
         let fixture = Fixture::new();
@@ -966,6 +966,6 @@ fn runtime_and_agent_starts_share_the_run_budget() {
         run["requests"][1]["error"]
             .as_str()
             .unwrap()
-            .contains("P5.5")
+            .contains("artifactize login chatgpt")
     );
 }

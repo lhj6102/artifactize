@@ -214,7 +214,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [x] **P5.2** `maxToolCalls`, token and deadline gates; duplicate-ID failure. Check: crossing a budget blocks further tools.
 - [x] **P5.3** Strict verdict schemas, owner fields, one tools-disabled repair. Check: fenced JSON is rejected; a second failure is ERROR.
 - [x] **P5.4** ChatGPT login: registration, PKCE, protected storage, serialized refresh. Check: callback-validation and refresh-race tests; a real `login chatgpt` (owner).
-- [ ] **P5.5** ChatGPT subscription inference via rig Responses. Check: incomplete responses are rejected; a real review (owner).
+- [x] **P5.5** ChatGPT subscription inference via rig Responses. Check: offline HTTP tests cover stored bearer tokens, stateless tool/repair turns, request parameters, incomplete/interrupted responses, subscription errors and account model listing. Owner's real review is pending.
 - [ ] **P5.6** Claude backend: launch controls, stream-json parsing, MCP gated by assistant turn, separate repair invocation. Check: a fake CLI asserts flags and env; a real review (owner).
 
 ### P6 Human
@@ -228,7 +228,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [ ] **P7.4** Request detail pane: result, provenance, tool calls, usage, errors. Check: a historical request shows its saved result.
 
 ### P8 Finish
-- [ ] **P8.1** `doctor` (backends, auth presence, `claude` binary), `models <backend>` and plain `prune` of finished Run output. Check: doctor creates no Run; prune never touches active Runs or the repository.
+- [ ] **P8.1** `doctor` (backends, auth presence, `claude` binary), `models <backend>` and plain `prune` of finished Run output. Check: doctor creates no Run; prune never touches active Runs or the repository. Partial: `models chatgpt` is complete in P5.5; other providers, doctor and prune remain.
 - [ ] **P8.2** Remaining CLI flags and exit codes. Check: wait codes 0/1/2/3/4 cover success/RED/error/timeout/incomplete.
 - [ ] **P8.3** Three example projects with docs:
   - runtime evals with children, mounts and references;

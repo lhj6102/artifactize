@@ -57,6 +57,11 @@ pub enum Command {
         #[command(subcommand)]
         provider: AuthProvider,
     },
+    /// List models available to the signed-in ChatGPT account.
+    Models {
+        #[command(subcommand)]
+        provider: AuthProvider,
+    },
     /// Execute selected runtime Evals in the foreground.
     #[command(group(clap::ArgGroup::new("required_selection")
         .args(["artifact", "eval", "evals", "artifacts", "evals_file", "artifacts_file", "all"])
@@ -266,6 +271,22 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             } else {
                 writeln!(io::stdout().lock(), "Signed out of ChatGPT.")
                     .map_err(|e| e.to_string())?;
+            }
+            Ok(0)
+        }
+        Some(Command::Models {
+            provider: AuthProvider::Chatgpt,
+        }) => {
+            let models =
+                crate::llm::chatgpt_models(cli.state_dir.as_deref(), cli.repo.as_deref()).await?;
+            if cli.json {
+                print_json(&models)?;
+            } else {
+                let mut out = io::stdout().lock();
+                for model in models {
+                    writeln!(out, "{}\t{}", model.slug, model.display_name)
+                        .map_err(|e| e.to_string())?;
+                }
             }
             Ok(0)
         }

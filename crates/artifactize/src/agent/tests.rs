@@ -11,6 +11,7 @@ use super::*;
 use crate::config::{Backend, read_workspace_config};
 
 mod budgets;
+mod chatgpt;
 mod repair;
 
 struct Fixture {
@@ -363,14 +364,26 @@ fn profiles_reject_remapped_effort_and_subscription_backends_are_explicit() {
             .get("reasoning"),
         None
     );
-    for (backend, task) in [(Backend::Chatgpt, "P5.5"), (Backend::Claude, "P5.6")] {
-        assert!(
-            Client::from_env(backend, "exact-model")
-                .err()
-                .unwrap()
-                .contains(task)
-        );
-    }
+    assert!(
+        Client::new(
+            Backend::Chatgpt,
+            "exact-model",
+            Path::new("."),
+            Path::new(".")
+        )
+        .is_ok()
+    );
+    assert!(
+        Client::new(
+            Backend::Claude,
+            "exact-model",
+            Path::new("."),
+            Path::new(".")
+        )
+        .err()
+        .unwrap()
+        .contains("P5.6")
+    );
 }
 
 #[tokio::test]
