@@ -251,24 +251,29 @@ fn families_keep_full_definitions_grouping_and_last_run_pointers() {
     );
     let run = fixture.json(&["verify", "scenarios"], 0);
     assert_eq!(run["validation"]["satisfied"], true);
-    fs::write(
-        fixture.repo.join("scenarios/identity.sh"),
-        "#!/bin/sh\ntouch must-not-run\nexit 91\n",
-    )
-    .unwrap();
-    let view = fixture.json(&["status", "scenarios"], 1);
-    assert_eq!(view["counts"]["reuse"], 0);
+    let view = fixture.json(&["status", "scenarios"], 0);
+    assert_eq!(view["counts"]["reuse"], 2);
     for (id, identity) in [
         ("checkout/review", "checkout:READY"),
         ("search/review", "search:SEARCH"),
     ] {
-        assert_eq!(row(&view, "evals", id)["state"], "STALE");
+        assert_eq!(row(&view, "evals", id)["state"], "PASS");
+        assert_eq!(row(&view, "evals", id)["action"], "reuse");
         assert_eq!(
             row(&view, "evals", id)["last"],
             json!({"runId":run["id"],"verdict":"GREEN","identity":identity})
         );
     }
-    assert!(!fixture.repo.join("scenarios/must-not-run").exists());
+    fs::write(
+        fixture.repo.join("scenarios/identity.sh"),
+        "#!/bin/sh\ntouch identity-ran\nexit 91\n",
+    )
+    .unwrap();
+    let error = fixture.json(&["status", "scenarios"], 2);
+    assert!(error["error"].as_str().unwrap().contains("exited with"));
+    assert!(fixture.repo.join("scenarios/identity-ran").exists());
+    fs::remove_file(fixture.repo.join("scenarios/identity-ran")).unwrap();
+    fixture.json(&["config", "check"], 0);
     let graph = fixture.json(&["graph", "scenarios"], 0);
     assert_eq!(
         graph["families"]["scenarios"],
@@ -286,6 +291,7 @@ fn families_keep_full_definitions_grouping_and_last_run_pointers() {
     );
     let text = String::from_utf8(fixture.output(&["graph", "scenarios"], 0).stdout).unwrap();
     assert!(text.contains("Family scenarios: checkout, search"));
+    assert!(!fixture.repo.join("scenarios/identity-ran").exists());
 }
 
 #[test]
@@ -366,7 +372,7 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
 }
 
 #[test]
-fn static_commands_never_execute_owner_hooks_or_write_state() {
+fn static_commands_never_execute_hooks_and_status_only_runs_identity() {
     let fixture = Fixture::new("declarations");
     let marker = fixture.root.path().join("hook-executed");
     let hook = fixture.repo.join("review/hook.sh");
@@ -381,13 +387,20 @@ fn static_commands_never_execute_owner_hooks_or_write_state() {
     fs::set_permissions(hook, fs::Permissions::from_mode(0o755)).unwrap();
     fixture.json(&["config", "check"], 0);
     fixture.json(&["graph"], 0);
+    assert!(!marker.exists());
+    assert!(!fixture.state.exists());
+    let path = fixture.repo.join("review/artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    declaration["stale"]["script"] = json!({"command":"/bin/echo","args":["current-identity"]});
+    fs::write(path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");
     assert_eq!(row(&view, "evals", "review/agent")["action"], "blocked");
     assert_eq!(row(&view, "evals", "review/human")["action"], "blocked");
     assert_eq!(row(&view, "evals", "review/runtime")["action"], "execute");
     assert!(!marker.exists());
-    assert!(!fixture.state.exists());
+    assert!(!fixture.state.join("state.sqlite").exists());
+    assert_eq!(fs::read_dir(&fixture.state).unwrap().count(), 0);
 }
 
 #[test]

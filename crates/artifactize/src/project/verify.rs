@@ -15,7 +15,7 @@ use crate::{
     project::selection::{ProfileSelection, Selection, select_profiles},
     runtime::{self, Outcome, Verdict},
     scope,
-    store::{self, Receipts, Request, Run, RunView},
+    store::{self, Execution, Provenance, Receipts, Request, Run, RunView},
     workspace,
 };
 
@@ -35,7 +35,7 @@ pub struct VerifyOptions {
     pub ignore_gates: Option<bool>,
 }
 
-/// Executes foreground and sequentially. There is no cross-run evidence reuse.
+/// Executes foreground and sequentially, reusing completed explicit identities.
 pub async fn verify(
     repo: &Path,
     state_dir: Option<&Path>,
@@ -73,7 +73,10 @@ pub async fn verify(
             Profile::Human { .. } => Some("Human Evals are not supported yet (P6)"),
             Profile::Runtime { .. } => None,
         };
-        if let Some(message) = unsupported {
+        if let Some(message) = unsupported
+            && (config.artifacts[&eval.target].stale.is_none()
+                || (options.force && selected_ids.contains(eval.id.as_str())))
+        {
             return Err(format!("{}: {message}.", eval.id));
         }
     }
@@ -81,13 +84,27 @@ pub async fn verify(
     let receipts = Receipts::open(&state, &config.root).await?;
     let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
         .map_err(|e| e.to_string())?;
-    let mut identities = BTreeMap::new();
-    for id in &required {
-        if config.artifacts[*id].stale.is_some() {
-            let value = cache::identity(&config, id, &runs, cancellation.clone()).await?;
-            identities.insert(*id, value);
+    let identities = cache::prepare(
+        &config,
+        required.iter().copied(),
+        &runs,
+        cancellation.clone(),
+    )
+    .await?;
+    for eval in &evals {
+        if !matches!(eval.declaration.profile, Profile::Runtime { .. })
+            && receipts
+                .cached_execution(&identities[eval.target.as_str()])
+                .await?
+                .is_none()
+        {
+            return Err(format!(
+                "{}: Evals of this kind are not supported yet without cached evidence.",
+                eval.id
+            ));
         }
     }
+    let owner = process::identity(std::process::id()).map_err(|e| e.to_string())?;
     if cancellation.is_cancelled() {
         return Err("Project preparation was cancelled.".into());
     }
@@ -126,6 +143,11 @@ pub async fn verify(
             target: eval.target.clone(),
             title: eval.declaration.title.clone(),
             profile: serde_json::to_value(&eval.declaration.profile).expect("profile is JSON"),
+            requested_profile: serde_json::to_value(&eval.declaration.profile)
+                .expect("profile is JSON"),
+            execution_id: None,
+            provenance: None,
+            usage: None,
             payload: json!(eval.declaration.payload),
             references: json!(eval.references),
             deps: eval.deps.clone(),
@@ -150,6 +172,32 @@ pub async fn verify(
     loop {
         if cancellation.is_cancelled() {
             break;
+        }
+        for eval in config
+            .evals
+            .iter()
+            .filter(|eval| required.contains(eval.target.as_str()))
+        {
+            if evidence.contains_key(&eval.id)
+                || (options.force && selected_ids.contains(eval.id.as_str()))
+            {
+                continue;
+            }
+            if let Some(identity) = identities.get(eval.target.as_str())
+                && let Some(execution) = receipts.cached_execution(identity).await?
+            {
+                evidence.insert(
+                    eval.id.clone(),
+                    Evidence::Current(execution.verdict().expect("completed cache entry")),
+                );
+                if let Some(request) = requests
+                    .iter_mut()
+                    .find(|request| request.eval_id == eval.id)
+                {
+                    cache::reuse(request, &execution, now());
+                    receipts.reuse_execution(request).await?;
+                }
+            }
         }
         let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
         let Some(index) = evals
@@ -255,8 +303,33 @@ pub async fn verify(
                 }
             }
         }
-        request.completed_at = Some(now());
-        receipts.save_request(request).await?;
+        let completed_at = now();
+        request.completed_at = Some(completed_at.clone());
+        let provenance = Provenance {
+            repo_path: config.root.clone(),
+            run_id: run.id.clone(),
+            request_id: request.id.clone(),
+            eval_id: eval.id.clone(),
+            completed_at: completed_at.clone(),
+        };
+        let execution = Execution {
+            id: format!("execution-{}", request.id),
+            identity: request.identity.clone().filter(|_| !request.force),
+            owner_pid: owner.pid,
+            owner_start_time: owner.start_time,
+            status: request.status.clone(),
+            result: request.result.clone(),
+            error: request.error.clone(),
+            error_code: request.error_code.clone(),
+            profile: request.profile.clone(),
+            usage: request.usage.clone(),
+            provenance: provenance.clone(),
+            started_at: request.started_at.clone().expect("execution started"),
+            completed_at,
+        };
+        request.execution_id = Some(execution.id.clone());
+        request.provenance = Some(provenance);
+        receipts.complete_execution(&execution, request).await?;
     }
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
@@ -347,7 +420,7 @@ fn prepare(
         timeout_ms,
     } = &eval.declaration.profile
     else {
-        unreachable!("profiles checked before submission")
+        return Err("Evals of this kind are not supported yet without cached evidence.".into());
     };
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
     let args =

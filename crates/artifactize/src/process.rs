@@ -242,7 +242,7 @@ where
     })
 }
 
-fn identity(pid: u32) -> io::Result<ChildIdentity> {
+pub(crate) fn identity(pid: u32) -> io::Result<ChildIdentity> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
     let start_time = stat
         .rsplit_once(')')

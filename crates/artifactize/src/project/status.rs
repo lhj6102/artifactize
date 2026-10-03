@@ -4,8 +4,10 @@ use std::{
 };
 
 use serde::Serialize;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
+    cache,
     config::{DependencyGates, Profile, read_workspace_config},
     graph::{ArtifactStatus, EvalStatus, Evidence, Graph, Readiness},
     project::{VerifyOptions, selection::select_profiles},
@@ -73,12 +75,13 @@ pub struct Counts {
     pub blocked: usize,
 }
 
-/// Static observation only: saved noncached results belong to their Run (ENG-24).
+/// Prepare current identities without executing evals or changing saved evidence.
 pub async fn status(
     repo: &Path,
     state_dir: Option<&Path>,
     selection: &Selection,
     options: &VerifyOptions,
+    cancellation: CancellationToken,
 ) -> Result<StatusView, String> {
     let config = read_workspace_config(repo).map_err(|error| error.to_string())?;
     let config = select_profiles(
@@ -123,6 +126,37 @@ pub async fn status(
     }
     let selected_ids: BTreeSet<_> = selected_eval_ids.iter().collect();
     let included_ids: BTreeSet<_> = included_eval_ids.iter().collect();
+    let identities = cache::prepare(
+        &config,
+        required.iter().copied(),
+        &state,
+        cancellation.clone(),
+    )
+    .await?;
+    let keys: Vec<_> = config
+        .evals
+        .iter()
+        .filter(|eval| !(options.force && selected_ids.contains(&eval.id)))
+        .filter_map(|eval| identities.get(eval.target.as_str()).cloned())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let cached = store::read_cached_executions(&state, &keys).await?;
+    for eval in &config.evals {
+        if !(options.force && selected_ids.contains(&eval.id))
+            && let Some(execution) = identities
+                .get(eval.target.as_str())
+                .and_then(|identity| cached.get(identity))
+        {
+            evidence.insert(
+                eval.id.clone(),
+                Evidence::Current(execution.verdict().expect("completed cache entry")),
+            );
+        }
+    }
+    if cancellation.is_cancelled() {
+        return Err("Project preparation was cancelled.".into());
+    }
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     let obligations: Vec<_> = evaluation
         .obligations
@@ -192,6 +226,10 @@ pub async fn status(
                     current.unmet_gates.join(", ")
                 ),
             ),
+            Readiness::Ready if matches!(current.evidence, Some(Evidence::Current(_))) => (
+                "reuse",
+                "The current owner identity has a completed cached result.".into(),
+            ),
             Readiness::Ready => match eval.declaration.profile {
                 Profile::Agent { .. } => {
                     ("blocked", "Agent Evals are not supported yet (P5).".into())
@@ -204,7 +242,7 @@ pub async fn status(
                     if force {
                         "An explicitly forced Eval requires a new execution.".into()
                     } else if config.artifacts[&eval.target].stale.is_some() {
-                        "Identity is not evaluated by static queries; no current reusable evidence is available.".into()
+                        "The current owner identity has no completed cached result.".into()
                     } else {
                         "No identity is declared; saved noncached results satisfy only their own Run.".into()
                     },

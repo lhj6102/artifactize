@@ -263,6 +263,12 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
             "must not persist a semantic verdict"
         );
         assert_eq!(run["validation"]["satisfied"], false);
+        let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+        assert_eq!(
+            db.query_row::<u32, _, _>("SELECT count(*) FROM cache_entries", [], |row| row.get(0))
+                .unwrap(),
+            0
+        );
     }
     fixture.write(
         "artifactize.json",
@@ -334,7 +340,7 @@ fn family_context_is_per_instance_and_identity_material_is_rechecked() {
             .unwrap();
     declaration["evals"] = json!([eval("check", "rm first.txt")]);
     fixture.write("family/artifactize.json", declaration);
-    let run = fixture.verify(&["first"], 2);
+    let run = fixture.verify(&["first", "--force"], 2);
     assert_eq!(run["requests"][0]["errorCode"], "IDENTITY_RECHECK_FAILED");
 }
 
@@ -370,6 +376,12 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         assert!(!Path::new(output).exists());
         assert!(!Path::new(&format!("/proc/{pid}")).exists());
         let result: Value = serde_json::from_slice(&result.stdout).unwrap();
+        let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+        assert_eq!(
+            db.query_row::<u32, _, _>("SELECT count(*) FROM cache_entries", [], |row| row.get(0))
+                .unwrap(),
+            0
+        );
         if recheck {
             assert_eq!(result["requests"][0]["status"], "ERROR");
             assert_eq!(result["requests"][0]["errorCode"], "CANCELLED");
