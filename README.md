@@ -4,6 +4,22 @@ A Rust rebrand of [CCDD](https://github.com/lhj6102/ccdd), ported from CCDD 7.0.
 
 Work in progress. See the [plan](docs/PLAN.md) and the [capability inventory](docs/ccdd-7-inventory.md).
 
+## Examples
+
+Install the binary with `cargo install --path crates/artifactize`, then try the
+example projects. Each README lists the exact commands:
+
+- [Runtime relations](examples/runtime-relations/README.md): runtime evals over
+  parent/child folders, a mount alias, `{artifact}` references in instructions
+  and argv, a basis Artifact, a RED-able check and identity reuse.
+- [Agent tools](examples/agent-tools/README.md): an Agent eval using the built-in
+  `read`, `grep` and `view_image` tools, a declared `plain` tool and a declared `json` tool,
+  pass/fail schemas, backend and model selection, and a Human sign-off with
+  `launch` and `output` tools.
+- [Family](examples/family/README.md): one family declaration with an instance
+  list, parameters and variants, shared and per-instance material, and family
+  selectors.
+
 ## Runtime CLI
 
 ```sh

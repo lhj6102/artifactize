@@ -1,0 +1,25 @@
+{
+  "name": "usage",
+  "stale": {
+    "kind": "identity",
+    "script": {
+      "command": "python3",
+      "args": ["../identity.py", "."]
+    }
+  },
+  "evals": [
+    {
+      "id": "heading",
+      "title": "The page has a top-level heading",
+      "profile": {
+        "kind": "runtime",
+        "command": "grep",
+        "args": ["-m", "1", "^# ", "page.md"],
+        "timeoutMs": 5000
+      },
+      "payload": {
+        "instruction": "Check that {usage} starts with a top-level heading."
+      }
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "welcome": {
+    "params": {"file": "{welcome}/welcome.md"},
+    "material": ["welcome.md"]
+  },
+  "release-notes": {
+    "params": {"file": "{release-notes}/release-notes.md"},
+    "material": ["release-notes.md"]
+  },
+  "tip": {
+    "variant": "brief",
+    "params": {"file": "{tip}/tip.md"},
+    "material": ["tip.md"]
+  }
+}
