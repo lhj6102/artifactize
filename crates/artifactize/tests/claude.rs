@@ -102,6 +102,38 @@ fn error(body: &Value, fragment: &str) {
 }
 
 #[test]
+fn concurrent_claude_setup_and_runtime_settlement_keep_all_requests() {
+    let fixture = Fixture::new();
+    let path = fixture.root.path().join("repo/artifactize.json");
+    let mut config: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let agent = config["evals"][0].clone();
+    let mut evals = Vec::new();
+    for index in 0..12 {
+        let mut agent = agent.clone();
+        agent["id"] = json!(format!("agent{index}"));
+        evals.push(agent);
+        evals.push(json!({"id":format!("runtime{index}"),"title":"Runtime","profile":{"kind":"runtime","command":"/bin/true","args":[]},"payload":{"instruction":"Review."}}));
+    }
+    config["evals"] = json!(evals);
+    fs::write(path, config.to_string()).unwrap();
+    let body = parsed(
+        fixture
+            .command("success")
+            .args(["--jobs", "24"])
+            .output()
+            .unwrap(),
+    );
+    let requests = body["requests"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{body}"));
+    assert_eq!(requests.len(), 24);
+    assert!(
+        requests.iter().all(|request| request["status"] == "GREEN"),
+        "{body}"
+    );
+}
+
+#[test]
 fn launch_contract_real_mcp_tools_and_deduplicated_usage() {
     let fixture = Fixture::new();
     let mut command = fixture.command("success");
