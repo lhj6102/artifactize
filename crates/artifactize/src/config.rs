@@ -134,7 +134,6 @@ pub struct EvalDeclaration {
     #[serde(default)]
     pub profile_variants: BTreeMap<String, Profile>,
     pub payload: Map<String, Value>,
-    /// Schema semantics are validated by the result executor, not discovery.
     #[serde(default, deserialize_with = "present")]
     pub pass_schema: Option<Map<String, Value>>,
     #[serde(default, deserialize_with = "present")]
@@ -148,6 +147,9 @@ impl EvalDeclaration {
         let instruction = self.payload.get("instruction").and_then(Value::as_str);
         text(instruction.unwrap_or_default(), "Eval payload.instruction")?;
         self.profile.validate()?;
+        for schema in [&self.pass_schema, &self.fail_schema].into_iter().flatten() {
+            crate::agent::verdict::validate_schema(schema)?;
+        }
         if self.profile_variants.len() > 64 {
             return Err("profileVariants must contain at most 64 named profiles.".into());
         }

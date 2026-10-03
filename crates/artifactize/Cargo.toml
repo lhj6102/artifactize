@@ -34,3 +34,4 @@ url = { version = "2", features = ["serde"] }
 
 [dev-dependencies]
 rig-core = { version = "=0.43.0", default-features = false, features = ["test-utils"] }
+tokio = { version = "1", features = ["test-util"] }
