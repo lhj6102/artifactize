@@ -236,7 +236,7 @@ pub async fn status(
                         identities
                             .get(eval.target.as_str())
                             .and_then(|id| cached.get(id)),
-                        Some(Claim::Wait(_))
+                        Some(Claim::Wait(_) | Claim::WaitHuman(_))
                     ) =>
             {
                 (
@@ -248,9 +248,10 @@ pub async fn status(
                 Profile::Agent { .. } => {
                     ("blocked", "Agent Evals are not supported yet (P5).".into())
                 }
-                Profile::Human { .. } => {
-                    ("blocked", "Human Evals are not supported yet (P6).".into())
-                }
+                Profile::Human { .. } => (
+                    "execute",
+                    "Record a request awaiting a Human claim and submission.".into(),
+                ),
                 Profile::Runtime { .. } => (
                     "execute",
                     if force {
@@ -263,7 +264,17 @@ pub async fn status(
                 ),
             },
         };
-        let status = eval_status(current.status);
+        let status = if !force
+            && matches!(
+                identities
+                    .get(eval.target.as_str())
+                    .and_then(|id| cached.get(id)),
+                Some(Claim::WaitHuman(_))
+            ) {
+            "WAITING_HUMAN"
+        } else {
+            eval_status(current.status)
+        };
         *counts.evals.entry(status).or_default() += 1;
         if included {
             match action {

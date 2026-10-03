@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     cache,
-    config::RepoConfig,
+    config::{Profile, RepoConfig},
     graph::{Evidence, Graph},
     process,
     runtime::Verdict,
@@ -126,7 +126,10 @@ impl Scheduler<'_, '_> {
                         break;
                     }
                     let request = &mut self.requests[index];
-                    if running.contains(&index) || evidence.contains_key(&request.eval_id) {
+                    if running.contains(&index)
+                        || request.status == "WAITING_HUMAN"
+                        || evidence.contains_key(&request.eval_id)
+                    {
                         continue;
                     }
                     if !evaluation.evals[request.eval_id.as_str()].can_execute() {
@@ -158,10 +161,21 @@ impl Scheduler<'_, '_> {
                         started_at: now(),
                         completed_at: None,
                     };
-                    let allow_start = self
-                        .run
-                        .max_executions
-                        .is_none_or(|limit| self.run.executions_started < limit);
+                    let human = matches!(
+                        self.config
+                            .evals
+                            .iter()
+                            .find(|eval| eval.id == request.eval_id)
+                            .expect("included eval")
+                            .declaration
+                            .profile,
+                        Profile::Human {}
+                    );
+                    let allow_start = human
+                        || self
+                            .run
+                            .max_executions
+                            .is_none_or(|limit| self.run.executions_started < limit);
                     match self
                         .receipts
                         .claim_execution(&execution, request.execution_id.as_deref(), allow_start)
@@ -180,6 +194,28 @@ impl Scheduler<'_, '_> {
                             evaluation = self
                                 .graph
                                 .evaluate_with_policy(&evidence, self.run.ignore_gates);
+                            continue;
+                        }
+                        Claim::WaitHuman(id) => {
+                            waiting.remove(&index);
+                            request.execution_id = Some(id);
+                            request.status = "WAITING_HUMAN".into();
+                            request.blocked_reason =
+                                Some("Waiting for the active Human identity execution.".into());
+                            *request = self.receipts.follow_human(request).await?;
+                            if request.status != "WAITING_HUMAN" {
+                                evidence.insert(
+                                    request.eval_id.clone(),
+                                    match request.status.as_str() {
+                                        "GREEN" => Evidence::Current(Verdict::Green),
+                                        "RED" => Evidence::Current(Verdict::Red),
+                                        _ => Evidence::OperationalError,
+                                    },
+                                );
+                                evaluation = self
+                                    .graph
+                                    .evaluate_with_policy(&evidence, self.run.ignore_gates);
+                            }
                             continue;
                         }
                         Claim::Wait(id) => {
@@ -213,7 +249,7 @@ impl Scheduler<'_, '_> {
                         .find(|eval| eval.id == request.eval_id)
                         .expect("included eval");
                     let prepared = execution::prepare(&self.config, eval, &run_dir, request);
-                    if prepared.is_ok() && !self.cancellation.is_cancelled() {
+                    if prepared.is_ok() && !human && !self.cancellation.is_cancelled() {
                         self.run.executions_started += 1;
                         execution.started_at = now();
                         request.started_at = Some(execution.started_at.clone());
@@ -254,11 +290,13 @@ impl Scheduler<'_, '_> {
                 result = self.tasks.join_next(), if !self.tasks.is_empty() => {
                     let (index, request) = result.expect("active tasks").map_err(|e| e.to_string())??;
                     running.remove(&index);
-                    evidence.insert(request.eval_id.clone(), match request.status.as_str() {
-                        "GREEN" => Evidence::Current(Verdict::Green),
-                        "RED" => Evidence::Current(Verdict::Red),
-                        _ => Evidence::OperationalError,
-                    });
+                    if request.status != "WAITING_HUMAN" {
+                        evidence.insert(request.eval_id.clone(), match request.status.as_str() {
+                            "GREEN" => Evidence::Current(Verdict::Green),
+                            "RED" => Evidence::Current(Verdict::Red),
+                            _ => Evidence::OperationalError,
+                        });
+                    }
                     self.requests[index] = request;
                 }
                 _ = self.cancellation.cancelled(), if !cancelled => {},

@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     broker::{self, now},
     cache,
-    config::{DependencyGates, Profile, read_workspace_config},
+    config::{DependencyGates, read_workspace_config},
     graph::{EvalStatus, Evidence, Graph},
     project::selection::{ProfileSelection, Selection, select_profiles},
     store::{self, Receipts, Request, Run, RunView},
@@ -73,19 +73,6 @@ pub async fn verify(
         .into_iter()
         .collect();
     let evals = selection.included_evals(&config, options.recursive)?;
-    for eval in &evals {
-        let unsupported = match eval.declaration.profile {
-            Profile::Agent { .. } => None,
-            Profile::Human { .. } => Some("Human Evals are not supported yet (P6)"),
-            Profile::Runtime { .. } => None,
-        };
-        if let Some(message) = unsupported
-            && (config.artifacts[&eval.target].stale.is_none()
-                || (options.force && selected_ids.contains(eval.id.as_str())))
-        {
-            return Err(format!("{}: {message}.", eval.id));
-        }
-    }
     let state = store::state_dir(state_dir)?;
     let receipts = Receipts::open(&state, &config.root).await?;
     let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
@@ -97,19 +84,6 @@ pub async fn verify(
         cancellation.clone(),
     )
     .await?;
-    for eval in &evals {
-        if matches!(eval.declaration.profile, Profile::Human { .. })
-            && receipts
-                .cached_execution(&identities[eval.target.as_str()])
-                .await?
-                .is_none()
-        {
-            return Err(format!(
-                "{}: Evals of this kind are not supported yet without cached evidence.",
-                eval.id
-            ));
-        }
-    }
     if cancellation.is_cancelled() {
         return Err("Project preparation was cancelled.".into());
     }
@@ -157,6 +131,7 @@ pub async fn verify(
             provenance: None,
             usage: None,
             tool_calls: Vec::new(),
+            human_definition: None,
             payload: json!(eval.declaration.payload),
             references: json!(eval.references),
             deps: eval.deps.clone(),
@@ -189,7 +164,7 @@ pub async fn verify(
     .await?;
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
-        if evidence.contains_key(&request.eval_id) {
+        if evidence.contains_key(&request.eval_id) || request.status == "WAITING_HUMAN" {
             continue;
         }
         let eval = &evaluation.evals[request.eval_id.as_str()];

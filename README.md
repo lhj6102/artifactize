@@ -36,8 +36,8 @@ have no internal gates. `--ignore-gates` bypasses execution gates only: final
 validation still requires actual GREEN evidence or explicit `basis: true` throughout
 the required scope. A basis never waives its dependencies. Selected GREEN results
 with missing obligations remain recorded in an INCOMPLETE Run; both text and JSON
-output identify unmet obligations. Agent/Human evals require an existing identity
-hit until their execution support arrives.
+output identify unmet obligations. Human evals record WAITING_HUMAN requests;
+without a submission, verify exits INCOMPLETE (4).
 
 Root `reviewPolicy.dependencyGates` defaults to `green`; `ignore` enables bypass.
 The library's `project::VerifyOptions.ignore_gates` can explicitly override either
@@ -50,10 +50,10 @@ dependencies may still reuse their own identity entries.
 `verify --max-executions N` sets a nonnegative, shared per-Run executor-start
 budget (unlimited when omitted); it is not an Artifact declaration field.
 The Run records `jobs`, `maxExecutions` and `executionsStarted`. A prepared
-executor invocation consumes one start, even when it fails to spawn or later
-returns ERROR. Identity preparation/rechecks, cache hits, and joined waiters
+Runtime or Agent invocation consumes one start, even when it fails to spawn or
+later returns ERROR. Human waiting, claim and tool actions consume no starts. Identity preparation/rechecks, cache hits, and joined waiters
 consume none. Preparation failures before invocation consume none. Zero permits
-reuse and joining only; a waiter needing to replace a failed/dead owner must use
+reuse, joining and Human reviews; a budgeted waiter replacing a failed/dead owner uses
 its own Run's remaining budget. Exhaustion never interrupts running evals, but
 leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
@@ -220,8 +220,9 @@ created even when no database exists. `graph` and `config check` remain fully
 static and never run owner code.
 
 A current completed identity entry yields PASS or RED and a `reuse` action when
-gates allow. Force still applies only to selected evals. Without a hit, Agent/Human
-execution actions remain blocked until execution support arrives. Saved attempts
+gates allow. Force still applies only to selected evals. Human execution actions
+record a waiting request; an active Human identity projects WAITING_HUMAN and a
+`wait` action, even after the original verifier exits. Saved attempts
 are read for this canonical repository only: each eval's optional
 `last: {runId, verdict, identity?}` is historical, not current evidence. Use
 `run show RUN_ID` for full attribution. Noncached GREEN/RED satisfies only its own
@@ -553,9 +554,46 @@ then `list()` and `call(name, cancellation).await`. Names are
 `<operation>_<artifactId>`, with collision rejection. Agent tools are never listed,
 and Agent evals cannot construct a Human eval registry. Listing executes nothing.
 Human results use a separate text/launch type; Agent results cannot include launch
-blocks. These internal operations are not claimant authorization: the claim lock,
-`request tool` CLI and submission checks arrive in P6. No desktop/project launcher
-factory, preparation phase, readiness hook or observation receipt is added.
+blocks. These low-level registry operations do not authorize a claimant; use the
+`human` lifecycle API below for recorded requests. The `request tool` CLI arrives
+in P6.2. No desktop/project launcher factory, preparation phase, readiness hook
+or observation receipt is added.
+
+## Human reviews
+
+READY Human evals persist WAITING_HUMAN and release their job slot. They consume
+no `maxExecutions` budget, so even a zero budget admits a Human review. `verify`
+exits INCOMPLETE and lists waiting requests; it does not fabricate a verdict or
+keep a worker alive. Identity-bearing waiting executions retain their exclusive
+identity claim after the verifier exits. Cross-repository followers refer to that
+same execution and forward Human actions to its original request and repository.
+
+The internal library exposes asynchronous operations with an open `store::Receipts`:
+
+- `human::claim(receipts, request_id, reviewer)` acquires one reviewer lock.
+  Repeating the same reviewer is idempotent; another reviewer is refused.
+  `human::default_reviewer()` reads `$USER`. There are no reservations, renewals,
+  expiry timers, preparation phases, readiness hooks or alarms.
+- `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation)`
+  authorizes the claimant, reopens the recorded Artifact/eval scope and declarations,
+  and checks the identity before invoking a registered Human tool. The tool takes
+  no free arguments and uses the reviewer's real environment. Ordinary tool errors
+  are correctable actions, not verdicts. Only tool name and error metadata are saved.
+- `human::submit(receipts, request_id, reviewer, result, cancellation)` accepts
+  GREEN/RED with fields matching `passSchema`/`failSchema`, using the Agent result
+  validator without repair. Invalid or oversized results (over 256000 JSON bytes)
+  leave the request waiting for correction. A valid submission re-runs the identity
+  command: changed input settles ERROR/INPUT_CHANGED instead of the verdict.
+  Settlement rechecks the claimant and waiting state transactionally, so a second
+  submission fails. It releases the reviewer lock, completes saved followers, and
+  publishes only identity-bearing GREEN/RED results to the cache.
+
+For an identity-bearing Human eval, the next `verify` reuses the submitted result
+and runs its dependents. **No identity means no reuse**: submission settles only
+that Run, and a later `verify` asks for a new Human review. Continuing no-identity
+Human dependents requires keeping the same Run alive with `verify --wait`, planned
+for P6.2 together with `request list/show/claim/tool/submit`; those CLI operations
+are not implemented yet.
 
 ## Artifact families
 
