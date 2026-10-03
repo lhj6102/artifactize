@@ -1,14 +1,45 @@
-//! Identity commands and end-of-review rechecks. Reuse and claims are added separately.
+//! Identity preparation, completed-result reuse, and end-of-review rechecks.
 
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{RepoConfig, Stale},
-    process, runtime, scope, workspace,
+    process, runtime, scope,
+    store::{Execution, Request},
+    workspace,
 };
+
+/// Prepare only the selected dependency closure, once per Artifact.
+pub async fn prepare<'a>(
+    config: &RepoConfig,
+    artifacts: impl IntoIterator<Item = &'a str>,
+    output_root: &Path,
+    cancellation: CancellationToken,
+) -> Result<BTreeMap<&'a str, String>, String> {
+    let mut identities = BTreeMap::new();
+    for id in artifacts {
+        if config.artifacts[id].stale.is_some() {
+            identities.insert(
+                id,
+                identity(config, id, output_root, cancellation.clone()).await?,
+            );
+        }
+    }
+    Ok(identities)
+}
+
+pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String) {
+    request.status = execution.status.clone();
+    request.execution_id = Some(execution.id.clone());
+    request.result = execution.result.clone();
+    request.profile = execution.profile.clone();
+    request.provenance = Some(execution.provenance.clone());
+    request.usage = execution.usage.clone();
+    request.completed_at = Some(completed_at);
+}
 
 /// The returned owner value is the whole identity, shared by all of its Evals.
 pub async fn identity(

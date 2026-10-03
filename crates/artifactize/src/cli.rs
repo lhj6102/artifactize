@@ -178,18 +178,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 force,
                 ignore_gates: ignore_gates.then_some(true),
             };
-            let cancellation = tokio_util::sync::CancellationToken::new();
-            let mut interrupt =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-                    .map_err(|e| e.to_string())?;
-            let mut terminate =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                    .map_err(|e| e.to_string())?;
-            let token = cancellation.clone();
-            let listener = tokio::spawn(async move {
-                tokio::select! { _ = interrupt.recv() => {}, _ = terminate.recv() => {} }
-                token.cancel();
-            });
+            let (cancellation, listener) = cancellation_listener()?;
             let result = crate::project::verify(
                 &cli.repo.unwrap_or_else(|| PathBuf::from(".")),
                 cli.state_dir.as_deref(),
@@ -257,18 +246,23 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             force,
             ignore_gates,
         }) => {
-            let view = crate::project::status(
+            let selection = selection.resolve()?;
+            let (cancellation, listener) = cancellation_listener()?;
+            let result = crate::project::status(
                 &cli.repo.unwrap_or_else(|| PathBuf::from(".")),
                 cli.state_dir.as_deref(),
-                &selection.resolve()?,
+                &selection,
                 &crate::project::VerifyOptions {
                     profile: profile.map(ProfileSelection::Named),
                     recursive,
                     force,
                     ignore_gates: ignore_gates.then_some(true),
                 },
+                cancellation,
             )
-            .await?;
+            .await;
+            listener.abort();
+            let view = result?;
             if cli.json {
                 print_json(&view)?;
             } else {
@@ -312,6 +306,26 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             Ok(0)
         }
     }
+}
+
+fn cancellation_listener() -> Result<
+    (
+        tokio_util::sync::CancellationToken,
+        tokio::task::JoinHandle<()>,
+    ),
+    String,
+> {
+    let cancellation = tokio_util::sync::CancellationToken::new();
+    let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+        .map_err(|e| e.to_string())?;
+    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+        .map_err(|e| e.to_string())?;
+    let token = cancellation.clone();
+    let listener = tokio::spawn(async move {
+        tokio::select! { _ = interrupt.recv() => {}, _ = terminate.recv() => {} }
+        token.cancel();
+    });
+    Ok((cancellation, listener))
 }
 
 fn print_status(view: &crate::project::StatusView) -> io::Result<()> {

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_rusqlite::Connection;
 
-use super::STATE_SCHEMA_VERSION;
+use super::{Provenance, STATE_SCHEMA_VERSION};
 use crate::workspace::{canonical_target, outside_workspace, prepare_directory};
 
 pub const DATABASE: &str = "state.sqlite";
@@ -52,6 +52,10 @@ pub struct Request {
     pub target: String,
     pub title: String,
     pub profile: Value,
+    pub requested_profile: Value,
+    pub execution_id: Option<String>,
+    pub provenance: Option<Provenance>,
+    pub usage: Option<Value>,
     pub payload: Value,
     pub references: Value,
     pub deps: Vec<String>,
@@ -82,7 +86,7 @@ pub struct RunView {
 
 #[derive(Clone)]
 pub struct Receipts {
-    connection: Connection,
+    pub(super) connection: Connection,
 }
 
 impl Receipts {
@@ -102,7 +106,11 @@ impl Receipts {
             db.pragma_update(None, "journal_mode", "WAL")?;
             let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             transaction.execute_batch("CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), status TEXT NOT NULL, data TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS executions(id TEXT PRIMARY KEY, identity TEXT, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+                CREATE UNIQUE INDEX IF NOT EXISTS active_identity ON executions(identity) WHERE identity IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
+                CREATE TABLE IF NOT EXISTS cache_entries(identity TEXT PRIMARY KEY, execution_id TEXT NOT NULL REFERENCES executions(id), bytes INTEGER NOT NULL, last_used TEXT NOT NULL);
+                CREATE INDEX IF NOT EXISTS cache_lru ON cache_entries(last_used,identity);
+                CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS run_members(run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), PRIMARY KEY(run_id, eval_id), UNIQUE(run_id, ordinal));")?;
             transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
             transaction.commit()?;
@@ -155,10 +163,15 @@ impl Receipts {
     }
 }
 
-fn update_request(db: &rusqlite::Connection, request: &Request) -> Result<(), Error> {
+pub(super) fn update_request(db: &rusqlite::Connection, request: &Request) -> Result<(), Error> {
     if db.execute(
-        "UPDATE requests SET status=?,data=? WHERE id=?",
-        params![request.status, serde_json::to_string(request)?, request.id],
+        "UPDATE requests SET status=?,data=?,execution_id=? WHERE id=?",
+        params![
+            request.status,
+            serde_json::to_string(request)?,
+            request.execution_id,
+            request.id
+        ],
     )? != 1
     {
         return Err(Error::Invalid("Review request not found.".into()));
@@ -166,7 +179,7 @@ fn update_request(db: &rusqlite::Connection, request: &Request) -> Result<(), Er
     Ok(())
 }
 
-fn check_files(state: &Path) -> Result<(), String> {
+pub(super) fn check_files(state: &Path) -> Result<(), String> {
     for suffix in ["", "-wal", "-shm"] {
         let path = state.join(format!("{DATABASE}{suffix}"));
         match path.symlink_metadata() {

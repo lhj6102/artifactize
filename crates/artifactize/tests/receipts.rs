@@ -113,6 +113,31 @@ async fn repositories_share_one_state_database() {
     assert!(!root.path().join("unused").exists());
 }
 
+#[tokio::test]
+async fn schema_allows_only_one_active_execution_per_identity() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir(&repo).unwrap();
+    let _receipts = Receipts::open(&state, &repo).await.unwrap();
+    let db = Connection::open(state.join(DATABASE)).unwrap();
+    let insert = "INSERT INTO executions(id,identity,owner_pid,owner_start_time,status,data) VALUES (?, ?, 1, 1, ?, '{}')";
+    db.execute(insert, ["first", "shared", "RUNNING"]).unwrap();
+    assert!(
+        db.execute(insert, ["second", "shared", "WAITING_HUMAN"])
+            .is_err()
+    );
+    db.execute(insert, ["completed", "shared", "GREEN"])
+        .unwrap();
+    db.execute("UPDATE executions SET status='ERROR' WHERE id='first'", [])
+        .unwrap();
+    db.execute(insert, ["second", "shared", "RUNNING"]).unwrap();
+    db.execute(insert, [Some("uncached"), None, Some("RUNNING")])
+        .unwrap();
+    db.execute(insert, [Some("forced"), None, Some("RUNNING")])
+        .unwrap();
+}
+
 #[test]
 fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     let root = tempfile::tempdir().unwrap();

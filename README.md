@@ -32,15 +32,16 @@ have no internal gates. `--ignore-gates` bypasses execution gates only: final
 validation still requires actual GREEN evidence or explicit `basis: true` throughout
 the required scope. A basis never waives its dependencies. Selected GREEN results
 with missing obligations remain recorded in an INCOMPLETE Run; both text and JSON
-output identify unmet obligations. Agent/Human evals fail clearly before execution.
+output identify unmet obligations. Agent/Human evals require an existing identity
+hit until their execution support arrives.
 
 Root `reviewPolicy.dependencyGates` defaults to `green`; `ignore` enables bypass.
 The library's `project::VerifyOptions.ignore_gates` can explicitly override either
 policy, including `Some(false)` to enforce gates. `--force` marks only explicitly
 selected evals for a fresh review, not recursive dependencies; it neither expands
 the execution scope nor bypasses gates. Runs record the resolved policy and each
-request's force flag. Every included eval currently executes without reuse;
-P3.2 will connect force to cache bypass.
+request's force flag. Forced evals never read, join or replace cached results;
+dependencies may still reuse their own identity entries.
 
 Selection files must be regular files no larger than 4 MiB, containing a JSON
 string array or one trimmed ID per line (UTF-8 BOM and CRLF are accepted). They
@@ -57,7 +58,8 @@ Run, and source declarations are never rewritten. The library accepts
 qualified-eval-to-name map); mappings outside the included scope fail. With
 `--recursive`, variants also apply to dependency evals. Runtime
 variant arguments rebuild scoped references and dependency gates. Stored request
-profiles and argv describe the variant actually used.
+profiles describe the actual execution; `requestedProfile` retains the requested
+variant separately when an identity hit returns another profile.
 
 Verification runs in the foreground, with or without `--wait`: GREEN exits 0,
 RED 1, ERROR 2, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels the owned child group and
@@ -76,8 +78,8 @@ there is no migration from earlier receipt layouts. Saved Runs stay readable aft
 the original repository is removed. State/output inside the reviewed repository
 is rejected, including through symlink ancestors; database files and their WAL
 sidecars must be regular files. No writer transaction spans a subprocess or async
-suspension. This phase does not reuse earlier Run evidence; reusable results and
-claims arrive in P3.2/P3.3.
+suspension. Completed identity results are shared within this database; cross-process
+claims and in-flight deduplication arrive in P3.3.
 
 Declarations use `evals`, with qualified eval IDs such as `green/check`.
 `stale` accepts only `{"kind":"identity","script":{"command":"/bin/sh","args":["identity.sh"]}}`,
@@ -122,7 +124,28 @@ result; a failed recheck also records ERROR. Force does not skip preparation or
 this recheck. Artifacts without an identity run without either step. There is no
 workspace monitoring, hashing or fingerprinting.
 
-## Static status and graph
+## Completed identity reuse
+
+A successful identity recheck publishes either GREEN or RED to `cache_entries`,
+pointing to a self-contained `executions` row. Errors and cancellation are never
+published. The owner identity alone is the key: repositories, evals, profiles,
+schemas and criteria do not partition it. Owners must include any distinction
+that makes results noninterchangeable in their identity output.
+
+A hit returns the original result without running the eval or re-validating it
+against the requested profile/schema. The request saves the original execution ID,
+actual `profile`, `provenance` (repository, Run, request, eval and completion time)
+and `usage` when reported, alongside `requestedProfile`. Runtime usage is null,
+not an invented zero. Cached RED remains RED for gates and final obligations.
+Dependencies outside execution selection can supply cached evidence without
+running. Results remain readable after the source repository is deleted; external
+paths embedded in result text are not made portable.
+
+No identity means no cache lookup or publication. `--force` bypasses lookup and
+publication for explicitly selected evals, leaving any existing entry unchanged.
+Forced and uncached results still satisfy their own Run and retain execution audit.
+
+## Status and static graph
 
 ```sh
 artifactize --repo PROJECT status
@@ -139,18 +162,22 @@ are shown; `selected` and `included` distinguish explicit selection from recursi
 execution. Action counts cover included evals only. Exit 0 means current validation
 is satisfied; 1 means obligations remain; invalid input or state errors exit 2.
 
-Status never runs identity, tool or runtime commands, creates Runs, reserves work,
-or creates a missing state store. Saved attempts are read from `state.sqlite` for
-this canonical repository only. Each eval's optional `last: {runId, verdict}` is a
-historical pointer; `verdict` preserves the saved request status, including ERROR,
-BLOCKED or waiting states. When present, `last.identity` is the saved owner value,
-not a fresh identity computation. Use `run show RUN_ID` for the full audit.
-A Run's fresh noncached GREEN result satisfies that Run, not a later current-input
-query (ENG-24). Thus an earlier GREEN/RED is STALE in status, never PASS/RED reuse;
-dependents wait for current GREEN evidence. Identity hooks remain inert even when
-declared, and `reuse` remains zero until P3.2. Agent/Human execution actions are
-explicitly blocked until their execution support arrives. Basis-only scopes can
-already be satisfied; a basis with unmet dependencies is INCOMPLETE.
+Status prepares current owner identities for the selected required closure, using
+the same isolation and validation as verify. Identity failures exit 2; an old
+saved identity is never substituted. It never runs tools or eval commands, creates
+Runs, reserves work, creates a missing database or updates cache access times.
+Identity commands use disposable output under the state directory, which may be
+created even when no database exists. `graph` and `config check` remain fully
+static and never run owner code.
+
+A current completed identity entry yields PASS or RED and a `reuse` action when
+gates allow. Force still applies only to selected evals. Without a hit, Agent/Human
+execution actions remain blocked until execution support arrives. Saved attempts
+are read for this canonical repository only: each eval's optional
+`last: {runId, verdict, identity?}` is historical, not current evidence. Use
+`run show RUN_ID` for full attribution. Noncached GREEN/RED satisfies only its own
+Run, so its later status is STALE rather than reuse (ENG-24). Basis-only scopes can
+be satisfied; a basis with unmet dependencies is INCOMPLETE.
 
 `graph [ARTIFACT|FAMILY]` defaults to the whole project, or shows the selected
 required closure including cycle peers. Text lists Artifacts, evals, families,

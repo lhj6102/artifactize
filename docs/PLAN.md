@@ -120,6 +120,7 @@ The module boundaries are fixed; later tasks add code inside them. The CLI and t
 - Other processes poll and take the published result.
 - If the owner process is dead, its row becomes ERROR and the next caller claims the identity again.
 - Only GREEN and RED are published. Hits return the original result and profile.
+- Status prepares current identities for the required closure, then reads completed entries without executing evals or updating saved evidence. Graph and config checks remain static.
 
 **Input changes.** When a review completes (runtime or Agent exit, Human submission), artifactize re-runs the Artifact's identity command. If the output differs from the identity computed at preparation, the review becomes ERROR and nothing is published. A review without an identity function gets no input-change check.
 
@@ -186,12 +187,12 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
   - Move receipts to the single `state.sqlite` with `--state-dir` moving the whole state.
 
   Check: existing tests pass on the new layout; removed fields are rejected.
-- [x] **P2.4** `status` (state plus what `verify` would do: reuse/execute/wait/blocked), `graph` and config output, one output level with `--json`. Check: static queries never run owner code.
+- [x] **P2.4** `status` (state plus what `verify` would do: reuse/execute/wait/blocked), `graph` and config output, one output level with `--json`. Check: graph/config queries never run owner code; status prepares current identities without running evals or tools.
 - [ ] **P2.5** Persisted definitions and family membership; `run list`. Check: saved results stay readable after the repository is removed.
 
 ### P3 Identity cache
 - [x] **P3.1** Identity commands (`stale: {kind: identity, script, inputs?, timeoutMs?}`; the unused `weight` field is removed) with exact output validation, and the end-of-review recheck. Check: malformed output fails preparation with no fallback; editing input during a review makes it ERROR and unpublished.
-- [ ] **P3.2** Reuse of completed GREEN/RED results across repositories; no-identity and `--force` bypass. Check: cross-repo RED reuse; force leaves the entry unchanged.
+- [x] **P3.2** Reuse of completed GREEN/RED results across repositories; no-identity and `--force` bypass. Check: cross-repo RED reuse; force leaves the entry unchanged.
 - [ ] **P3.3** Cross-process claim, polling waiters, dead-owner reclaim. Check: two processes execute one identity once; a killed owner is reclaimed.
 - [ ] **P3.4** `--jobs N` scheduling and `maxExecutions` counter. Check: concurrency never exceeds N; the budget stops new starts.
 - [ ] **P3.5** `cache list/show/rm` and LRU GC on entries and bytes. Check: GC never removes an active execution.
