@@ -2,7 +2,8 @@ use std::{
     collections::BTreeMap,
     ffi::OsString,
     io,
-    path::PathBuf,
+    os::unix::fs::{PermissionsExt, symlink},
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicU32, Ordering},
@@ -11,21 +12,44 @@ use std::{
 };
 
 use artifactize::{
-    process::{self, ChildIdentity, Command},
-    runtime::{self, Error, Outcome, Verdict},
+    process,
+    runtime::{self, Command, Error, Outcome, Verdict},
 };
 use tokio::{sync::oneshot, time::timeout};
 use tokio_util::sync::CancellationToken;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
-fn command(program: &str, args: &[&str]) -> Command {
-    Command {
-        program: program.into(),
-        args: args.iter().map(OsString::from).collect(),
-        cwd: PathBuf::from("/"),
-        env: BTreeMap::from([("PATH".into(), "/usr/bin:/bin".into())]),
-        timeout: TEST_TIMEOUT,
+struct Scratch(tempfile::TempDir);
+
+impl Scratch {
+    fn new() -> Self {
+        let target = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target")
+            .canonicalize()
+            .unwrap();
+        let scratch = Self(tempfile::tempdir_in(target).unwrap());
+        std::fs::create_dir(scratch.workspace()).unwrap();
+        scratch
+    }
+
+    fn workspace(&self) -> PathBuf {
+        self.0.path().join("workspace")
+    }
+
+    fn run_dir(&self) -> PathBuf {
+        self.0.path().join("runs")
+    }
+
+    fn command(&self, program: &str, args: &[&str], timeout_ms: Option<u32>) -> Command {
+        Command::prepare(
+            program.into(),
+            args.iter().map(OsString::from).collect(),
+            &self.workspace(),
+            &self.run_dir(),
+            timeout_ms,
+        )
+        .unwrap()
     }
 }
 
@@ -47,8 +71,10 @@ fn completed(outcome: Outcome) -> runtime::ReviewResult {
 
 #[tokio::test]
 async fn ordinary_zero_exit_is_green_with_actual_output() {
-    let result =
-        completed(execute(command("/bin/sh", &["-c", "printf out; printf err >&2"])).await);
+    let scratch = Scratch::new();
+    let result = completed(
+        execute(scratch.command("/bin/sh", &["-c", "printf out; printf err >&2"], None)).await,
+    );
     assert_eq!(result.verdict, Verdict::Green);
     assert_eq!(result.exit_code, 0);
     assert_eq!(result.output.stdout, b"out");
@@ -59,15 +85,17 @@ async fn ordinary_zero_exit_is_green_with_actual_output() {
 
 #[tokio::test]
 async fn ordinary_nonzero_exit_is_red() {
-    let result = completed(execute(command("/bin/sh", &["-c", "exit 127"])).await);
+    let scratch = Scratch::new();
+    let result = completed(execute(scratch.command("/bin/sh", &["-c", "exit 127"], None)).await);
     assert_eq!(result.verdict, Verdict::Red);
     assert_eq!(result.exit_code, 127);
 }
 
 #[tokio::test]
 async fn missing_binary_is_an_operational_error_not_red() {
+    let scratch = Scratch::new();
     assert!(matches!(
-        execute(command("/artifactize/nonexistent-binary", &[])).await,
+        execute(scratch.command("/artifactize/nonexistent-binary", &[], None)).await,
         Outcome::OperationalError(Error::Process(process::Error::Spawn(error)))
             if error.kind() == io::ErrorKind::NotFound
     ));
@@ -75,8 +103,9 @@ async fn missing_binary_is_an_operational_error_not_red() {
 
 #[tokio::test]
 async fn signal_is_an_operational_error() {
+    let scratch = Scratch::new();
     assert!(matches!(
-        execute(command("/bin/sh", &["-c", "kill -TERM $$"])).await,
+        execute(scratch.command("/bin/sh", &["-c", "kill -TERM $$"], None)).await,
         Outcome::OperationalError(Error::AbnormalExit {
             signal: Some(libc::SIGTERM),
             ..
@@ -86,8 +115,8 @@ async fn signal_is_an_operational_error() {
 
 #[tokio::test]
 async fn timeout_is_an_operational_error_and_reaps_the_leader() {
-    let mut command = command("/bin/sleep", &["30"]);
-    command.timeout = Duration::from_millis(100);
+    let scratch = Scratch::new();
+    let command = scratch.command("/bin/sleep", &["30"], Some(100));
     let pid = Arc::new(AtomicU32::new(0));
     let observed = pid.clone();
     let outcome = runtime::execute(command, CancellationToken::new(), move |child| async move {
@@ -104,10 +133,11 @@ async fn timeout_is_an_operational_error_and_reaps_the_leader() {
 
 #[tokio::test]
 async fn cancellation_is_an_operational_error_and_cleans_up() {
+    let scratch = Scratch::new();
     let cancellation = CancellationToken::new();
     let (registered, child) = oneshot::channel();
     let running = tokio::spawn(runtime::execute(
-        command("/bin/sleep", &["30"]),
+        scratch.command("/bin/sleep", &["30"], None),
         cancellation.clone(),
         |identity| async move {
             registered.send(identity).unwrap();
@@ -115,7 +145,6 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
         },
     ));
     let identity = child.await.unwrap();
-    // Wait until the command has exec'd; cancellation must also stop active work.
     wait_for(|| {
         std::fs::read_to_string(format!("/proc/{}/comm", identity.pid))
             .is_ok_and(|comm| comm.trim() == "sleep")
@@ -131,11 +160,14 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
 
 #[tokio::test]
 async fn pre_cancelled_commands_never_register() {
+    let scratch = Scratch::new();
     let cancellation = CancellationToken::new();
     cancellation.cancel();
-    let outcome = runtime::execute(command("/bin/true", &[]), cancellation, |_| async {
-        panic!("pre-cancelled commands must not spawn")
-    })
+    let outcome = runtime::execute(
+        scratch.command("/bin/true", &[], None),
+        cancellation,
+        |_| async { panic!("pre-cancelled commands must not spawn") },
+    )
     .await;
     assert!(matches!(
         outcome,
@@ -144,17 +176,13 @@ async fn pre_cancelled_commands_never_register() {
 }
 
 #[tokio::test]
-async fn explicit_environment_and_literal_argv_are_preserved() {
-    let mut env = command("/usr/bin/env", &[]);
-    env.env = BTreeMap::from([("ONLY_EXPLICIT".into(), "value".into())]);
-    assert_eq!(
-        completed(execute(env).await).output.stdout,
-        b"ONLY_EXPLICIT=value\n"
-    );
+async fn literal_argv_is_preserved() {
+    let scratch = Scratch::new();
     let result = completed(
-        execute(command(
+        execute(scratch.command(
             "/usr/bin/printf",
             &["%s\n", "$(id); $HOME * a b", "{artifact}/path"],
+            None,
         ))
         .await,
     );
@@ -164,144 +192,215 @@ async fn explicit_environment_and_literal_argv_are_preserved() {
     );
 }
 
-#[tokio::test]
-async fn registration_observes_inert_group_leader_before_exec() {
+#[test]
+fn runtime_timeout_defaults_and_bounds_match_current_source() {
     let scratch = Scratch::new();
-    let marker = scratch.0.join("started");
-    let mut command = command("/bin/sh", &["-c", "printf started > started; pwd"]);
-    command.cwd = scratch.0.clone();
-    let expected_cwd = scratch.0.clone();
-    let output = process::run(
-        command,
-        CancellationToken::new(),
-        move |identity| async move {
-            assert!(!marker.exists());
-            let stat = std::fs::read_to_string(format!("/proc/{}/stat", identity.pid))?;
-            let fields: Vec<_> = stat
-                .rsplit_once(')')
-                .unwrap()
-                .1
-                .split_whitespace()
-                .collect();
-            assert_eq!(fields[2].parse::<u32>().unwrap(), identity.pid);
-            assert_eq!(fields[19].parse::<u64>().unwrap(), identity.start_time);
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            assert!(
-                !marker.exists(),
-                "user code ran before registration finished"
-            );
-            Ok(())
-        },
-    )
-    .await
-    .unwrap();
-    assert!(output.status.success());
     assert_eq!(
-        String::from_utf8(output.stdout).unwrap().trim(),
-        expected_cwd.display().to_string()
+        scratch.command("/bin/true", &[], None).timeout(),
+        Duration::from_secs(30)
     );
+    for ms in [1, 2_147_483_647] {
+        assert_eq!(
+            scratch.command("/bin/true", &[], Some(ms)).timeout(),
+            Duration::from_millis(ms.into())
+        );
+    }
+    for ms in [0, 2_147_483_648, u32::MAX] {
+        let run_dir = scratch.0.path().join("invalid-timeout");
+        assert!(matches!(
+            Command::prepare(
+                "/bin/true".into(),
+                vec![],
+                &scratch.workspace(),
+                &run_dir,
+                Some(ms)
+            ),
+            Err(Error::InvalidTimeout)
+        ));
+        assert!(!run_dir.exists());
+    }
+}
+
+#[tokio::test]
+async fn runtime_has_independent_private_external_directories() {
+    let scratch = Scratch::new();
+    let command = scratch.command("/usr/bin/env", &[], None);
+    let directory = command.directory().to_owned();
+    let other = scratch.command("/bin/true", &[], None);
+    assert_ne!(directory, other.directory());
+    let result = completed(execute(command).await);
+    let text = String::from_utf8(result.output.stdout).unwrap();
+    let environment: BTreeMap<_, _> = text
+        .lines()
+        .map(|line| line.split_once('=').unwrap())
+        .collect();
+    assert_eq!(environment.len(), 10);
     assert_eq!(
-        std::fs::read(scratch.0.join("started")).unwrap(),
-        b"started"
+        environment["ARTIFACTIZE_WORKSPACE_DIR"],
+        scratch.workspace().to_str().unwrap()
     );
-}
-
-#[tokio::test]
-async fn failed_registration_never_executes_and_reaps_the_child() {
-    let scratch = Scratch::new();
-    let mut command = command("/bin/sh", &["-c", "touch started"]);
-    command.cwd = scratch.0.clone();
-    let pid = Arc::new(AtomicU32::new(0));
-    let observed = pid.clone();
-    let result = process::run(
-        command,
-        CancellationToken::new(),
-        move |identity| async move {
-            observed.store(identity.pid, Ordering::SeqCst);
-            Err(io::Error::other("registration rejected"))
-        },
-    )
-    .await;
-    assert!(matches!(result, Err(process::Error::Registration(_))));
-    assert!(!scratch.0.join("started").exists());
-    assert_gone(pid.load(Ordering::SeqCst)).await;
-}
-
-#[tokio::test]
-async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
-    let scratch = Scratch::new();
-    let mut command = command("/bin/sh", &["-c", "touch started"]);
-    command.cwd = scratch.0.clone();
-    let (registered, child) = oneshot::channel::<ChildIdentity>();
-    let running = tokio::spawn(process::run(
-        command,
-        CancellationToken::new(),
-        |identity| async move {
-            registered.send(identity).unwrap();
-            std::future::pending().await
-        },
-    ));
-    let identity = child.await.unwrap();
-    running.abort();
-    assert!(running.await.unwrap_err().is_cancelled());
-    assert_gone(identity.pid).await;
-    assert!(!scratch.0.join("started").exists());
-}
-
-#[tokio::test]
-async fn registration_is_covered_by_the_deadline() {
-    let scratch = Scratch::new();
-    let mut command = command("/bin/sh", &["-c", "touch started"]);
-    command.cwd = scratch.0.clone();
-    command.timeout = Duration::from_millis(100);
-    let pid = Arc::new(AtomicU32::new(0));
-    let observed = pid.clone();
-    let result = process::run(
-        command,
-        CancellationToken::new(),
-        move |identity| async move {
-            observed.store(identity.pid, Ordering::SeqCst);
-            std::future::pending().await
-        },
-    )
-    .await;
-    assert!(matches!(result, Err(process::Error::Timeout)));
-    assert!(!scratch.0.join("started").exists());
-    assert_gone(pid.load(Ordering::SeqCst)).await;
-}
-
-#[tokio::test]
-async fn invalid_cwd_is_a_spawn_error_before_registration() {
-    let mut command = command("/bin/true", &[]);
-    command.cwd = PathBuf::from("/artifactize/nonexistent-directory");
-    let result = timeout(
-        Duration::from_secs(2),
-        process::run(command, CancellationToken::new(), |_| async {
-            panic!("an invalid cwd must not reach registration")
-        }),
-    )
-    .await
-    .unwrap();
+    for (variable, name) in [
+        ("ARTIFACTIZE_OUTPUT_DIR", "output"),
+        ("ARTIFACTIZE_TMP_DIR", "tmp"),
+        ("HOME", "home"),
+        ("XDG_CACHE_HOME", "cache"),
+        ("TMPDIR", "tmp"),
+        ("TMP", "tmp"),
+        ("TEMP", "tmp"),
+    ] {
+        let path = Path::new(environment[variable]);
+        assert_eq!(path, directory.join(name));
+        assert!(!path.starts_with(scratch.workspace()));
+        assert!(path.is_dir());
+        assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o700);
+    }
+    for path in [&directory, &scratch.run_dir()] {
+        assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o700);
+    }
     assert!(
-        matches!(result, Err(process::Error::Spawn(error)) if error.kind() == io::ErrorKind::NotFound)
+        directory.exists(),
+        "caller-owned runtime output persists after exit"
     );
+}
+
+#[test]
+fn output_inside_workspace_is_rejected_before_creation_even_through_symlinks() {
+    let scratch = Scratch::new();
+    let alias = scratch.0.path().join("alias");
+    symlink(scratch.workspace(), &alias).unwrap();
+    let workspace_alias = scratch.0.path().join("workspace-alias");
+    symlink(scratch.workspace(), &workspace_alias).unwrap();
+    for output in [
+        scratch.workspace(),
+        scratch.workspace().join("new/nested"),
+        alias.join("new/nested"),
+        scratch.0.path().join("missing/../workspace/new"),
+    ] {
+        let result = Command::prepare("/bin/true".into(), vec![], &workspace_alias, &output, None);
+        assert!(
+            matches!(result, Err(Error::OutputInsideWorkspace)),
+            "{output:?}: {result:?}"
+        );
+    }
+    assert!(!scratch.workspace().join("new").exists());
+    assert!(!scratch.0.path().join("missing").exists());
+}
+
+#[tokio::test]
+async fn external_symlinked_output_uses_canonical_existing_ancestors() {
+    let scratch = Scratch::new();
+    let external = scratch.0.path().join("external");
+    std::fs::create_dir(&external).unwrap();
+    let alias = scratch.0.path().join("alias");
+    symlink(&external, &alias).unwrap();
+    let command = Command::prepare(
+        "/usr/bin/env".into(),
+        vec![],
+        &scratch.workspace(),
+        &alias.join("new/nested"),
+        None,
+    )
+    .unwrap();
+    assert!(command.directory().starts_with(external.join("new/nested")));
+    assert_eq!(completed(execute(command).await).verdict, Verdict::Green);
+}
+
+#[test]
+fn parent_secret_is_not_visible_to_runtime_child() {
+    // Set the parent environment in another process, never mutate this test runner's env.
+    let result = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "environment_subprocess_probe", "--nocapture"])
+        .env("ARTIFACTIZE_ENV_PROBE", "enabled")
+        .env("PROVIDER_SECRET", "not-for-child")
+        .env("NODE_OPTIONS", "--require=not-for-child")
+        .env("PYTHONPATH", "/not-for-child")
+        .env("PATH", "/usr/bin:/bin")
+        .env("LANG", "C")
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[tokio::test]
+async fn environment_subprocess_probe() {
+    if std::env::var_os("ARTIFACTIZE_ENV_PROBE").is_none() {
+        return;
+    }
+    assert_eq!(std::env::var("PROVIDER_SECRET").unwrap(), "not-for-child");
+    let scratch = Scratch::new();
+    let result = completed(execute(scratch.command("/usr/bin/env", &[], None)).await);
+    let output = String::from_utf8(result.output.stdout).unwrap();
+    assert!(output.lines().any(|line| line == "PATH=/usr/bin:/bin"));
+    assert!(output.lines().any(|line| line == "LANG=C"));
+    for forbidden in [
+        "PROVIDER_SECRET",
+        "NODE_OPTIONS",
+        "PYTHONPATH",
+        "ARTIFACTIZE_ENV_PROBE",
+        "not-for-child",
+        "NODE_NO_WARNINGS",
+    ] {
+        assert!(!output.contains(forbidden));
+    }
+}
+
+#[tokio::test]
+async fn runtime_cleans_ansi_and_controls_without_changing_whitespace_or_del() {
+    let scratch = Scratch::new();
+    let result = completed(execute(scratch.command("/usr/bin/printf", &["\\033[31mred\\033[0m\\000\\001\\010\\013\\014\\016\\037\\t\\n\\r\\177\\377\\033[?25l\\033[1 qend"], None)).await);
+    assert_eq!(result.output.stdout, "red\t\n\r\x7f\u{fffd}end".as_bytes());
+    assert!(!result.output.truncated);
+    let stderr = completed(
+        execute(scratch.command(
+            "/bin/sh",
+            &["-c", "printf '\\033[31merror\\033[0m\\001' >&2"],
+            None,
+        ))
+        .await,
+    );
+    assert_eq!(stderr.output.stderr, b"error");
+}
+
+#[tokio::test]
+async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata() {
+    let scratch = Scratch::new();
+    let result = completed(execute(scratch.command("/bin/sh", &["-c", "head -c 262144 /dev/zero | tr '\\000' x & head -c 262144 /dev/zero | tr '\\000' y >&2 & wait"], None)).await);
+    assert_eq!(result.verdict, Verdict::Green);
+    assert_eq!(result.output.stdout, vec![b'x'; 128 * 1024]);
+    assert_eq!(result.output.stderr, vec![b'y'; 128 * 1024]);
+    assert!(result.output.truncated);
+    let result = completed(
+        execute(scratch.command(
+            "/bin/sh",
+            &["-c", "head -c 131072 /dev/zero; printf discarded"],
+            None,
+        ))
+        .await,
+    );
+    assert!(result.output.stdout.is_empty());
+    assert!(result.output.truncated);
 }
 
 #[tokio::test]
 async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     let scratch = Scratch::new();
-    let mut command = command(
+    let command = scratch.command(
         "/bin/sh",
-        &["-c", "trap '' TERM; sleep 30 & echo $! > grandchild; wait"],
+        &["-c", "trap '' TERM; sh -c 'sleep 30 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait"],
+        Some(500),
     );
-    command.cwd = scratch.0.clone();
-    command.timeout = Duration::from_millis(500);
+    let marker = command.directory().join("output/grandchild");
     let outcome = execute(command).await;
     assert!(matches!(
         outcome,
         Outcome::OperationalError(Error::Process(process::Error::Timeout))
     ));
-    let pid = std::fs::read_to_string(scratch.0.join("grandchild"))
+    let pid = std::fs::read_to_string(marker)
         .unwrap()
         .trim()
         .parse()
@@ -311,7 +410,9 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
 
 #[tokio::test]
 async fn normal_exit_also_kills_a_background_descendant() {
-    let result = completed(execute(command("/bin/sh", &["-c", "sleep 30 & echo $!"])).await);
+    let scratch = Scratch::new();
+    let result =
+        completed(execute(scratch.command("/bin/sh", &["-c", "sleep 30 & echo $!"], None)).await);
     assert_eq!(result.verdict, Verdict::Green);
     let pid = String::from_utf8(result.output.stdout)
         .unwrap()
@@ -322,21 +423,61 @@ async fn normal_exit_also_kills_a_background_descendant() {
 }
 
 #[tokio::test]
-async fn stdout_and_stderr_are_drained_concurrently_after_capture_limit() {
-    let result = completed(
-        execute(command(
-            "/bin/sh",
-            &[
-                "-c",
-                "head -c 262144 /dev/zero & head -c 262144 /dev/zero >&2 & wait",
-            ],
-        ))
-        .await,
+async fn dropping_an_active_caller_cleans_its_grandchild() {
+    let scratch = Scratch::new();
+    let command = scratch.command(
+        "/bin/sh",
+        &["-c", "trap '' TERM; sh -c 'sleep 30 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait"],
+        None,
     );
-    assert_eq!(result.verdict, Verdict::Green);
-    assert_eq!(result.output.stdout.len(), 128 * 1024);
-    assert_eq!(result.output.stderr.len(), 128 * 1024);
-    assert!(result.output.truncated);
+    let marker = command.directory().join("output/grandchild");
+    let (registered, child) = oneshot::channel();
+    let running = tokio::spawn(runtime::execute(
+        command,
+        CancellationToken::new(),
+        |identity| async move {
+            registered.send(identity).unwrap();
+            Ok(())
+        },
+    ));
+    let identity = child.await.unwrap();
+    wait_for(|| {
+        std::fs::read_to_string(&marker).is_ok_and(|text| text.trim().parse::<u32>().is_ok())
+    })
+    .await;
+    let pid = std::fs::read_to_string(marker)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    running.abort();
+    assert!(running.await.unwrap_err().is_cancelled());
+    assert_gone(identity.pid).await;
+    assert_gone(pid).await;
+}
+
+#[tokio::test]
+async fn deadline_is_not_reset_after_registration() {
+    let scratch = Scratch::new();
+    let command = scratch.command(
+        "/bin/sh",
+        &[
+            "-c",
+            "sleep 0.6; touch \"$ARTIFACTIZE_OUTPUT_DIR/too-late\"",
+        ],
+        Some(1000),
+    );
+    let marker = command.directory().join("output/too-late");
+    let outcome = runtime::execute(command, CancellationToken::new(), |_| async {
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        Ok(())
+    })
+    .await;
+    assert!(matches!(
+        outcome,
+        Outcome::OperationalError(Error::Process(process::Error::Timeout))
+    ));
+    assert!(!marker.exists());
 }
 
 async fn assert_gone(pid: u32) {
@@ -352,27 +493,4 @@ async fn wait_for(condition: impl Fn() -> bool) {
     })
     .await
     .expect("process did not reach the expected state");
-}
-
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Self {
-        static NEXT: AtomicU32 = AtomicU32::new(0);
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
-            .join(format!(
-                "runtime-test-{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::SeqCst)
-            ));
-        std::fs::create_dir_all(&path).unwrap();
-        Self(std::fs::canonicalize(path).unwrap())
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).unwrap();
-    }
 }
