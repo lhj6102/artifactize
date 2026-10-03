@@ -1,0 +1,18 @@
+artifactize monitor | read-only | all repositories
+Last refresh: 2026-01-01T12:02:00Z | every 1s
+┌Runs | page 1───────────────────────────────────────────────────────────────────────────────────────────────┐
+│  ID                             REPO                      STATUS            COUNTS                 AGE     │
+│> running                        /saved/first              RUNNING           ERROR=1                1m 0s   │
+│                                                                             RUNNING=1                      │
+│                                                                             WAITING_HUMAN=1                │
+│                                                                             WAIT_DEPENDENCY=1              │
+│  finished                       /saved/second             COMPLETED         GREEN=1                2m 0s   │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+j/k Up/Down: select | Enter: progress | n/p PgDn/PgUp: older/newer Runs
+r: refresh | q/Esc: quit

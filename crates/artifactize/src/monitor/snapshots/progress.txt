@@ -1,0 +1,30 @@
+artifactize monitor | read-only | all repositories
+Last refresh: 2026-01-01T12:02:00Z | every 1s
+┌Run progress (saved state)──────────────────────────────────────────────────────────────────────────────────┐
+│Run: running                                                                                                │
+│Repo: /saved/first                                                                                          │
+│Status: RUNNING | duration: 1m 0s | saved satisfaction: not recorded                                        │
+│Created: 2026-01-01T12:01:00Z | completed: -                                                                │
+│                                                                                                            │
+│Request state counts                                                                                        │
+│BLOCKED=0  BUDGET_EXHAUSTED=0  ERROR=1  GREEN=0  QUEUED=0  RED=0  RUNNING=1  STALE=0  UNREVIEWED=0          │
+│WAITING_HUMAN=1  WAIT_DEPENDENCY=1                                                                          │
+│                                                                                                            │
+│Running evals (elapsed)                                                                                     │
+│  artifact/slow | RUNNING | 1m 0s                                                                           │
+│                                                                                                            │
+│Waiting Human requests (elapsed)                                                                            │
+│  artifact/review | WAITING_HUMAN | 1m 0s                                                                   │
+│    request: running-review                                                                                 │
+│                                                                                                            │
+│Other evals (duration, errors and waiting reasons)                                                          │
+│  artifact/broken | ERROR | 15s                                                                             │
+│    error: RUNTIME_ERROR: command failed                                                                    │
+│  artifact/dependent | WAIT_DEPENDENCY | -                                                                  │
+│    reason: Waiting for artifact/broken.                                                                    │
+│                                                                                                            │
+│                                                                                                            │
+│                                                                                                            │
+└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+j/k Up/Down PgDn/PgUp: scroll | b/Backspace/Left: Runs
+r: refresh | q/Esc: quit | Human review: artifactize request (CLI only)

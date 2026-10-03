@@ -4,6 +4,32 @@ A Rust rebrand of [CCDD](https://github.com/lhj6102/ccdd), ported from CCDD 7.0.
 
 Work in progress. See the [plan](docs/PLAN.md) and the [capability inventory](docs/ccdd-7-inventory.md).
 
+## Review monitor
+
+```sh
+artifactize monitor                 # Runs for the current repository
+artifactize monitor --repo /path/to/repo
+artifactize monitor --all           # All repositories in the shared state
+artifactize --state-dir /path/to/state monitor --all
+```
+
+The ratatui TUI opens `state.sqlite` read-only and refreshes every second. It never
+loads repository declarations, executes owner code, starts or cancels reviews,
+reconciles dead owners, or changes saved state. Removed repositories remain readable.
+Run pages are newest first; progress shows saved state counts, running evals and
+elapsed times, waiting Human request IDs, completed durations, errors and waiting
+reasons. Failed reads keep the last-known data with an error and last-refresh time.
+
+- `j`/`k` or Up/Down: select a Run or scroll progress; Enter: open progress.
+- `n`/`p` or PageDown/PageUp: older/newer Run pages (50 per page); PageDown/PageUp
+  scroll within progress.
+- `b`, Backspace or Left: return to Runs; Home: first row/top of progress.
+- `r`: refresh now; `q`, Esc or Ctrl-C: quit. SIGTERM also restores the terminal.
+
+The monitor requires an interactive terminal and does not support `--json`; use
+`run list`/`run show` for noninteractive queries. Human review stays in the CLI.
+The Artifact/eval tree and request details are planned next (P7.3/P7.4).
+
 ## Runtime CLI
 
 ```sh

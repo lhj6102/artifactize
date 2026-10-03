@@ -40,6 +40,12 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Watch saved Run progress without executing or changing review state.
+    Monitor {
+        /// Show every repository in this state directory; defaults to --repo or cwd.
+        #[arg(long, conflicts_with = "repo")]
+        all: bool,
+    },
     /// Check declared tools, optionally invoking exactly one without a review.
     Tools {
         #[command(subcommand)]
@@ -243,6 +249,22 @@ pub enum ToolsCommand {
 
 async fn execute(cli: Cli) -> Result<u8, String> {
     match cli.command {
+        Some(Command::Monitor { all }) => {
+            if cli.json {
+                return Err("monitor is interactive; use run list/show for JSON.".into());
+            }
+            let state = crate::store::state_dir(cli.state_dir.as_deref())?;
+            let repo = if all {
+                None
+            } else {
+                Some(cli.repo.unwrap_or_else(|| PathBuf::from(".")))
+            };
+            let (cancellation, listener) = cancellation_listener()?;
+            let result = crate::monitor::run(state, repo, cancellation).await;
+            listener.abort();
+            result?;
+            Ok(0)
+        }
         Some(Command::Mcp { manifest }) => {
             let (cancellation, listener) = cancellation_listener()?;
             let result = crate::mcp::serve(&manifest, cancellation).await;

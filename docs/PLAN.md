@@ -222,8 +222,8 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [x] **P6.2** `request list/show/claim/tool/submit` and `verify --wait` for Human results. Check: the CLI completes a waiting request end to end.
 
 ### P7 Monitor (`artifactize monitor`, ratatui)
-- [ ] **P7.1** TUI shell over read-only state queries with periodic refresh, and the Run list. Check: saved and running Runs appear and update without touching the repository.
-- [ ] **P7.2** Run progress: counts per state, running evals, durations, errors. Check: a running `verify` is reflected live.
+- [x] **P7.1** TUI shell over read-only state queries with periodic refresh, and the Run list. Check: saved and running Runs appear and update without touching the repository.
+- [x] **P7.2** Run progress: counts per state, running evals, durations, errors. Check: a running `verify` is reflected live.
 - [ ] **P7.3** Artifact/eval tree with status, dependency and cycle markers, and family grouping. Check: every Artifact and instance is reachable.
 - [ ] **P7.4** Request detail pane: result, provenance, tool calls, usage, errors. Check: a historical request shows its saved result.
 
