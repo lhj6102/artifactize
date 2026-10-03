@@ -49,6 +49,10 @@ pub struct Run {
     pub max_executions: Option<u64>,
     #[serde(default)]
     pub executions_started: u64,
+    #[serde(default)]
+    pub wait_timeout_ms: Option<u32>,
+    #[serde(default)]
+    pub wait_timed_out: bool,
     pub validation: Value,
     pub error: Option<String>,
 }

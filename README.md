@@ -37,7 +37,8 @@ validation still requires actual GREEN evidence or explicit `basis: true` throug
 the required scope. A basis never waives its dependencies. Selected GREEN results
 with missing obligations remain recorded in an INCOMPLETE Run; both text and JSON
 output identify unmet obligations. Human evals record WAITING_HUMAN requests;
-without a submission, verify exits INCOMPLETE (4).
+without a submission, ordinary verify exits INCOMPLETE (4). Use `--wait` to keep
+the same Run scheduling after Human submissions.
 
 Root `reviewPolicy.dependencyGates` defaults to `green`; `ignore` enables bypass.
 The library's `project::VerifyOptions.ignore_gates` can explicitly override either
@@ -78,7 +79,7 @@ profiles describe the actual execution; `requestedProfile` retains the requested
 variant separately when an identity hit returns another profile.
 
 Verification runs in the foreground, with or without `--wait`: GREEN exits 0,
-RED 1, ERROR 2, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels every owned process
+RED 1, ERROR 2, Human wait timeout 3, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels every owned process
 group, waits for cleanup, and records ERROR/CANCELLED for running and queued
 requests, never RED. Previously committed results remain unchanged. There is no
 detached worker. `--json` prints
@@ -657,16 +658,16 @@ then `list()` and `call(name, cancellation).await`. Names are
 and Agent evals cannot construct a Human eval registry. Listing executes nothing.
 Human results use a separate text/launch type; Agent results cannot include launch
 blocks. These low-level registry operations do not authorize a claimant; use the
-`human` lifecycle API below for recorded requests. The `request tool` CLI arrives
-in P6.2. No desktop/project launcher factory, preparation phase, readiness hook
+`human` lifecycle API or `request tool` below for recorded requests.
+No desktop/project launcher factory, preparation phase, readiness hook
 or observation receipt is added.
 
 ## Human reviews
 
 READY Human evals persist WAITING_HUMAN and release their job slot. They consume
 no `maxExecutions` budget, so even a zero budget admits a Human review. `verify`
-exits INCOMPLETE and lists waiting requests; it does not fabricate a verdict or
-keep a worker alive. Identity-bearing waiting executions retain their exclusive
+without `--wait` exits INCOMPLETE and lists waiting requests; it does not fabricate
+a verdict or keep a worker alive. Identity-bearing waiting executions retain their exclusive
 identity claim after the verifier exits. Cross-repository followers refer to that
 same execution and forward Human actions to its original request and repository.
 
@@ -693,9 +694,58 @@ The internal library exposes asynchronous operations with an open `store::Receip
 For an identity-bearing Human eval, the next `verify` reuses the submitted result
 and runs its dependents. **No identity means no reuse**: submission settles only
 that Run, and a later `verify` asks for a new Human review. Continuing no-identity
-Human dependents requires keeping the same Run alive with `verify --wait`, planned
-for P6.2 together with `request list/show/claim/tool/submit`; those CLI operations
-are not implemented yet.
+Human dependents requires keeping the same Run alive with `verify --wait`.
+
+```sh
+artifactize verify --all --wait --timeout-ms 600000
+# In another terminal, using the same state directory:
+artifactize request list [--run RUN_ID] [--json]
+artifactize request show REQUEST_ID
+artifactize request claim REQUEST_ID [--reviewer NAME]
+artifactize request tool REQUEST_ID inspect_child [--reviewer NAME]
+artifactize request submit REQUEST_ID --verdict GREEN --fields '{"approved":true}'
+# Alternatively: --fields-file /path/to/fields.json
+```
+
+Claim, tool and submit default the reviewer to `$USER`; `--reviewer NAME` can
+select the same explicit reviewer for each action. Reviewer names are local
+cooperative locks, not authenticated identities. Only the claimant can run tools
+or submit. Tool names are `<operation>_<artifactId>` and take no free arguments.
+Text output prints captured text or a launch notice; `--json` prints the tool
+result. A tool failure exits 2 and does not invent a verdict.
+
+Submission requires `--verdict GREEN|RED`. `--fields` and `--fields-file` are
+mutually exclusive JSON objects of owner fields (default `{}`), not verdict
+wrappers. Files must be regular files; fields and the complete result are bounded
+at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
+leave the request correctable. A successful submission exits 0, even for RED;
+it does not start a separate verifier.
+
+`verify --wait` polls saved pending Human request states and resumes newly READY
+dependents in the **same Run**, retaining its execution budget and earlier
+results. While waiting the Run remains RUNNING. `--timeout-ms` requires `--wait`,
+defaults to 600000, and accepts 1–2147483647. The deadline begins when scheduling
+starts and is checked when foreground execution is idle with pending Human work;
+it never interrupts running evals or cancels Human requests. On timeout the Run
+ends INCOMPLETE with `waitTimedOut: true` and exit 3. Claims and submissions remain
+available, but no background worker continues dependents. Without an identity,
+use a new waiting verify and submit its new request to complete those dependents.
+Ctrl-C/SIGTERM exits 2, cleans owned processes, and ends the Run as cancelled;
+previously created Human requests remain available. Missing non-Human obligations
+without any pending Human request return INCOMPLETE (4) immediately.
+
+`request list` includes all saved requests (waiting, claimed and settled), with
+optional `--run` filtering. Text includes request/Run/eval IDs, status and reviewer;
+`--json` and `request show` include the full saved audit, current claim (also for
+shared-execution followers), source execution and summary. The `definition` field
+joins the saved eval and its owning Artifact (including family membership) from
+the Run; older Runs without saved definitions return null. These queries need no
+repository and run no owner code. `run show` and JSON verify include a Run summary:
+status counts, wall time, actual executor starts, attempts, tool counts and usage
+reporting completeness. Run totals exclude reused source executions; request
+summaries retain source attribution and raw per-provider attempts in `usage`.
+Unreported usage is never represented as a known zero token count. There are no
+separate summary commands or `--full` mode.
 
 ## Artifact families
 

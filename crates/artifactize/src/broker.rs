@@ -84,8 +84,37 @@ impl Scheduler<'_, '_> {
         let mut evidence = BTreeMap::new();
         let mut running = BTreeSet::new();
         let mut waiting = BTreeSet::new();
+        let deadline = self
+            .run
+            .wait_timeout_ms
+            .map(|ms| tokio::time::Instant::now() + Duration::from_millis(u64::from(ms)));
         loop {
             let completed = evidence.len();
+            let human_ids: Vec<_> = self
+                .requests
+                .iter()
+                .filter(|request| request.status == "WAITING_HUMAN")
+                .map(|request| request.id.clone())
+                .collect();
+            if !human_ids.is_empty() {
+                for request in self.receipts.settled_human_requests(human_ids).await? {
+                    if let Some(saved) = self
+                        .requests
+                        .iter_mut()
+                        .find(|saved| saved.id == request.id && saved.status == "WAITING_HUMAN")
+                    {
+                        evidence.insert(
+                            request.eval_id.clone(),
+                            match request.status.as_str() {
+                                "GREEN" => Evidence::Current(Verdict::Green),
+                                "RED" => Evidence::Current(Verdict::Red),
+                                _ => Evidence::OperationalError,
+                            },
+                        );
+                        *saved = request;
+                    }
+                }
+            }
             if !self.cancellation.is_cancelled() {
                 for eval in &self.config.evals {
                     if evidence.contains_key(&eval.id) {
@@ -98,6 +127,7 @@ impl Scheduler<'_, '_> {
                     if index.is_some_and(|index| {
                         running.contains(&index)
                             || waiting.contains(&index)
+                            || self.requests[index].status == "WAITING_HUMAN"
                             || self.requests[index].force
                     }) {
                         continue;
@@ -288,9 +318,26 @@ impl Scheduler<'_, '_> {
             if !cancelled && evidence.len() != completed {
                 continue;
             }
+            let human_wait = deadline.is_some()
+                && self
+                    .requests
+                    .iter()
+                    .any(|request| request.status == "WAITING_HUMAN");
             if self.tasks.is_empty() && (waiting.is_empty() || cancelled) {
-                break;
+                if cancelled || !human_wait {
+                    break;
+                }
+                if deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
+                    self.run.wait_timed_out = true;
+                    break;
+                }
             }
+            let poll = deadline
+                .filter(|_| human_wait)
+                .map(|deadline| deadline.saturating_duration_since(tokio::time::Instant::now()))
+                .filter(|remaining| !remaining.is_zero())
+                .unwrap_or(Duration::from_millis(200))
+                .min(Duration::from_millis(200));
             tokio::select! {
                 biased;
                 result = self.tasks.join_next(), if !self.tasks.is_empty() => {
@@ -306,7 +353,7 @@ impl Scheduler<'_, '_> {
                     self.requests[index] = request;
                 }
                 _ = self.cancellation.cancelled(), if !cancelled => {},
-                _ = tokio::time::sleep(Duration::from_millis(200)), if !waiting.is_empty() && !cancelled => {},
+                _ = tokio::time::sleep(poll), if (!waiting.is_empty() || human_wait) && !cancelled => {},
             }
         }
         Ok(evidence)

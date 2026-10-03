@@ -108,7 +108,7 @@ async fn repositories_share_one_state_database() {
     fs::remove_dir_all(second).unwrap();
     for run in saved {
         let read = read_run(&state, run["id"].as_str().unwrap()).await.unwrap();
-        assert_eq!(serde_json::to_value(read).unwrap(), run);
+        assert_eq!(artifactize::query::run_output(&read), run);
     }
     assert!(!root.path().join("unused").exists());
 }

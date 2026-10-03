@@ -1,5 +1,8 @@
 //! Read-only state queries and result projections.
 
+mod summary;
+pub use summary::{request_output, run_output};
+
 use std::{collections::BTreeMap, path::Path};
 
 use serde::Serialize;

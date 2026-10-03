@@ -53,6 +53,17 @@ fn claimant(db: &rusqlite::Connection, request: &str, reviewer: &str) -> Result<
 }
 
 impl Receipts {
+    pub(crate) async fn settled_human_requests(
+        &self,
+        ids: Vec<String>,
+    ) -> Result<Vec<Request>, String> {
+        self.connection.call(move |db| -> Result<_, Error> {
+            let mut statement = db.prepare("SELECT data FROM requests WHERE id IN (SELECT value FROM json_each(?)) AND status!='WAITING_HUMAN'")?;
+            statement.query_map([serde_json::to_string(&ids)?], |row| row.get::<_, String>(0))?
+                .map(|row| Ok(serde_json::from_str(&row?)?)).collect()
+        }).await.map_err(|e| e.to_string())
+    }
+
     pub(crate) async fn wait_for_human(
         &self,
         execution: &Execution,

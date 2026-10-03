@@ -1,5 +1,8 @@
 //! Command-line parsing, projections, and exit codes.
 
+mod request;
+use request::RequestCommand;
+
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -62,7 +65,7 @@ pub enum Command {
         #[command(subcommand)]
         provider: AuthProvider,
     },
-    /// Execute selected runtime Evals in the foreground.
+    /// Execute selected evals in the foreground.
     #[command(group(clap::ArgGroup::new("required_selection")
         .args(["artifact", "eval", "evals", "artifacts", "evals_file", "artifacts_file", "all"])
         .required(true)))]
@@ -87,9 +90,12 @@ pub enum Command {
         /// Limit executor starts in this Run; cache hits and waiters are free.
         #[arg(long, value_name = "N")]
         max_executions: Option<u64>,
-        /// Wait for completion (currently always foreground).
+        /// Keep this Run alive while Human results are pending.
         #[arg(long)]
         wait: bool,
+        /// Human wait timeout; does not cancel pending requests (default 600000).
+        #[arg(long, requires = "wait", value_parser = clap::value_parser!(u32).range(1..=2_147_483_647))]
+        timeout_ms: Option<u32>,
     },
     /// Inspect current validation, saved Run audit, and what verify would do.
     Status {
@@ -113,6 +119,11 @@ pub enum Command {
     Run {
         #[command(subcommand)]
         command: RunCommand,
+    },
+    /// Read saved requests or claim, inspect, and submit Human reviews.
+    Request {
+        #[command(subcommand)]
+        command: RequestCommand,
     },
     /// Inspect or maintain reusable identities without a repository.
     Cache {
@@ -319,12 +330,14 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             ignore_gates,
             jobs,
             max_executions,
-            ..
+            wait,
+            timeout_ms,
         }) => {
             let selection = selection.resolve()?;
             let options = crate::project::VerifyOptions {
                 jobs: jobs as usize,
                 max_executions,
+                wait_timeout_ms: wait.then_some(timeout_ms.unwrap_or(600_000)),
                 profile: profile.map(ProfileSelection::Named),
                 recursive,
                 force,
@@ -342,7 +355,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             listener.abort();
             let view = result?;
             if cli.json {
-                print_json(&view)?;
+                print_json(&crate::query::run_output(&view))?;
             } else {
                 let mut stdout = io::stdout().lock();
                 writeln!(
@@ -359,8 +372,9 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 for request in &view.requests {
                     writeln!(
                         stdout,
-                        "  {}: {}{}",
+                        "  {} [{}]: {}{}",
                         request.eval_id,
+                        request.id,
                         request.status,
                         request
                             .error
@@ -386,6 +400,9 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                             .map_err(|e| e.to_string())?;
                     }
                 }
+            }
+            if view.run.wait_timed_out {
+                return Ok(3);
             }
             Ok(match view.run.status.as_str() {
                 "GREEN" => 0,
@@ -481,8 +498,12 @@ async fn execute(cli: Cli) -> Result<u8, String> {
         }) => {
             let state = crate::store::state_dir(cli.state_dir.as_deref())?;
             let view = crate::store::read_run(&state, &run_id).await?;
-            print_json(&view)?;
+            print_json(&crate::query::run_output(&view))?;
             Ok(0)
+        }
+        Some(Command::Request { command }) => {
+            let state = crate::store::state_dir(cli.state_dir.as_deref())?;
+            request::execute(&state, command, cli.json).await
         }
         Some(Command::Cache { command }) => {
             let state = crate::store::state_dir(cli.state_dir.as_deref())?;

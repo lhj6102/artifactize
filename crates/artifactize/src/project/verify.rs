@@ -17,6 +17,8 @@ use crate::{
 pub struct VerifyOptions {
     pub jobs: usize,
     pub max_executions: Option<u64>,
+    /// Keep this Run alive for Human submissions; timeout never cancels a review.
+    pub wait_timeout_ms: Option<u32>,
     pub profile: Option<ProfileSelection>,
     pub recursive: bool,
     /// Force only explicitly selected Evals, never recursive dependencies.
@@ -30,6 +32,7 @@ impl Default for VerifyOptions {
         Self {
             jobs: 4,
             max_executions: None,
+            wait_timeout_ms: None,
             profile: None,
             recursive: false,
             force: false,
@@ -48,6 +51,12 @@ pub async fn verify(
 ) -> Result<RunView, String> {
     if options.jobs == 0 {
         return Err("jobs must be at least 1.".into());
+    }
+    if options
+        .wait_timeout_ms
+        .is_some_and(|ms| ms == 0 || ms > 2_147_483_647)
+    {
+        return Err("wait timeout must be between 1 and 2147483647 ms.".into());
     }
     let config = read_workspace_config(repo).map_err(|e| e.to_string())?;
     let config = Arc::new(select_profiles(
@@ -113,6 +122,8 @@ pub async fn verify(
         jobs: options.jobs,
         max_executions: options.max_executions,
         executions_started: 0,
+        wait_timeout_ms: options.wait_timeout_ms,
+        wait_timed_out: false,
         recursive: options.recursive,
         force: options.force,
         ignore_gates,
@@ -205,7 +216,7 @@ pub async fn verify(
         .any(|request| request.status == "BUDGET_EXHAUSTED");
     run.status = if cancellation.is_cancelled() {
         "ERROR"
-    } else if budget_exhausted {
+    } else if run.wait_timed_out || budget_exhausted {
         "INCOMPLETE"
     } else if required_evals
         .iter()
@@ -225,6 +236,9 @@ pub async fn verify(
     .into();
     if cancellation.is_cancelled() {
         run.error = Some("Run was cancelled.".into());
+    } else if run.wait_timed_out {
+        run.error =
+            Some("Human wait timed out; pending requests remain available for submission.".into());
     } else if budget_exhausted {
         run.error = Some(broker::budget_reason(&run));
     }
@@ -250,7 +264,7 @@ pub async fn verify(
         "evals":required_evals.iter().map(|(id, eval)| json!({"id":id,"status":status(eval.status),"blockedBy":eval.unmet_gates})).collect::<Vec<_>>(),
     });
     receipts.finish(&run, &requests).await?;
-    Ok(RunView { run, requests })
+    store::read_run(&run.state_dir, &run.id).await
 }
 
 fn status(status: EvalStatus) -> &'static str {
