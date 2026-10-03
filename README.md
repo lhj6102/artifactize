@@ -1,12 +1,21 @@
 # Artifactize
 
-A Rust rebrand of [CCDD](https://github.com/lhj6102/ccdd), ported from CCDD 7.0.0 (`cbf28b4`).
+A lean Rust port and rebrand of [CCDD](https://github.com/lhj6102/ccdd), from CCDD 7.0.0 (`cbf28b4`).
 
-Work in progress. See the [plan](docs/PLAN.md) and the [capability inventory](docs/ccdd-7-inventory.md).
+artifactize 0.1.0 is complete. Folders declare Artifacts and their evals in static
+`artifactize.json` files. artifactize builds the dependency graph and runs runtime,
+Agent (OpenAI or Anthropic API key, ChatGPT sign-in, or the Claude CLI) and Human
+evals, reusing GREEN/RED results by explicit identity. The CLI drives reviews and
+`artifactize monitor` shows their progress. It runs on Linux and WSL.
+
+Every non-DROP item in the [CCDD 7.0 capability inventory](docs/ccdd-7-inventory.md)
+is checked off; the [plan](docs/PLAN.md) records the lean scope and what was dropped.
+Start with [Install](docs/INSTALL.md): prerequisites, backend setup, a 5-minute
+quick start, the monitor and cleanup.
 
 ## Examples
 
-Install the binary with `cargo install --path crates/artifactize`, then try the
+Install the binary as described in [Install](docs/INSTALL.md), then try the
 example projects. Each README lists the exact commands:
 
 - [Runtime relations](examples/runtime-relations/README.md): runtime evals over
@@ -370,8 +379,10 @@ credential search or fallback:
 
 `backend` accepts `openai`, `anthropic`, `chatgpt` or `claude`. The first two use
 only `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, respectively. ChatGPT uses the stored
-Sign in with ChatGPT credentials, never an API-key fallback. The official Claude
-CLI backend (P5.6) currently returns an explicit not-yet-implemented ERROR.
+Sign in with ChatGPT credentials, never an API-key fallback. `claude` runs the
+unmodified official `claude` CLI from `PATH`, already signed in, with the eval's
+tools served over MCP; artifactize never reads Claude credentials (launch controls
+are in `docs/PLAN.md`).
 `provider` and `effort` are not config aliases.
 
 For an eligible ChatGPT subscription:
@@ -435,9 +446,9 @@ One tools-disabled repair is allowed for invalid final output, within the origin
 deadline. `maxTokens` and `maxToolCalls` are enforced client-side before further tools
 execute; neither becomes a ChatGPT request parameter.
 
-Owner validation before relying on a provider: run one real review with each API-key
-backend and an accessible exact model ID. The owner's real ChatGPT review is pending:
-sign in, list models, then run an Agent eval with a declared tool using a returned slug.
+Owner validation before relying on a provider: run one real review per backend
+(OpenAI key, Anthropic key, ChatGPT sign-in, Claude CLI) with an accessible exact
+model ID and a declared tool. These real reviews are still pending for the owner.
 Automated tests use fake HTTP transports or local HTTP servers and make no real
 inference requests.
 
@@ -544,7 +555,7 @@ Descriptions must be nonblank, at most 4000 UTF-16 code units, and support only
 accept `builtin: "read" | "list" | "glob" | "grep" | "view_image"` and optional
 `description`. Only explicitly declared tools are listed. `read`, `list`, `glob`
 and `grep` execute in-process without subprocesses or output directories;
-`view_image` and image results arrive together in P4.2.
+`view_image` applies the same image checks as `json` image results.
 
 | Built-in | Arguments | Result |
 |---|---|---|
@@ -678,8 +689,9 @@ state_dir, output_dir)` writes private `mcp-manifest.json` and `mcp-config.json`
 files in an external execution directory and returns the config path. Pass the
 config to the unmodified Claude CLI with `--strict-mcp-config --mcp-config CFG
 --allowedTools 'mcp__artifactize__*'` (full backend controls are in `docs/PLAN.md`).
-The generated stdio server uses the current executable's absolute path. P5.6 owns
-launching Claude, assistant-turn admission and the tools-disabled repair call.
+The generated stdio server uses the current executable's absolute path. The Claude
+backend launches the CLI with this config and runs the tools-disabled repair as a
+second invocation with an empty MCP config.
 
 The manifest contains `executionId`, `evalId`, `repo`, `state`, `output` and the
 effective Agent `profile`. The server reloads static declarations and binds that

@@ -241,7 +241,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
   - a family.
 
   Check: each example runs from the installed binary.
-- [ ] **P8.4** Install docs; close the inventory. Check: a clean install completes runtime, Agent and Human workflows and the monitor; no unchecked non-DROP item remains.
+- [x] **P8.4** Install docs; close the inventory. Check: a clean install completes runtime, Agent and Human workflows and the monitor; no unchecked non-DROP item remains.
 
 ## Data model
 

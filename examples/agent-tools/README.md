@@ -48,8 +48,8 @@ What it demonstrates:
 
 ## Check the tools (no model needed)
 
-You need `artifactize` on your `PATH` (`cargo install --path crates/artifactize`
-from the repository root), plus `python3`.
+You need `artifactize` on your `PATH` ([Install](../../docs/INSTALL.md):
+`cargo install --path crates/artifactize --locked`), plus `python3`.
 
 ```sh
 cd examples/agent-tools

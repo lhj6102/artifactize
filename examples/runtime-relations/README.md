@@ -42,8 +42,8 @@ What it demonstrates:
 
 ## Run it
 
-You need `artifactize` on your `PATH` (`cargo install --path crates/artifactize`
-from the repository root), plus `python3` and `grep`.
+You need `artifactize` on your `PATH` ([Install](../../docs/INSTALL.md):
+`cargo install --path crates/artifactize --locked`), plus `python3` and `grep`.
 
 ```sh
 cd examples/runtime-relations
