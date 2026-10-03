@@ -1,3 +1,3 @@
-fn main() -> std::io::Result<()> {
+fn main() -> std::process::ExitCode {
     artifactize::cli::run()
 }
