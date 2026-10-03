@@ -1,11 +1,71 @@
 //! Runtime verdicts come only from ordinary command exit codes.
+//! Commands are trusted, not sandboxed; detached descendants can escape group cleanup.
 
-use std::{future::Future, io, os::unix::process::ExitStatusExt};
+mod environment;
+
+use std::{
+    ffi::OsString,
+    future::Future,
+    io,
+    os::unix::process::ExitStatusExt,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 
-use crate::process::{self, ChildIdentity, Command, Output};
+use crate::process::{self, ChildIdentity, Output};
+
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+pub const MAX_TIMEOUT: Duration = Duration::from_millis(2_147_483_647);
+
+/// A single runtime invocation with private writable directories and filtered env.
+/// The caller owns the run directory and retains its contents for receipts/pruning.
+#[derive(Debug)]
+pub struct Command {
+    /// Resolved artifact cwd; defaults to the canonical workspace.
+    pub cwd: PathBuf,
+    command: process::Command,
+    directory: PathBuf,
+}
+
+impl Command {
+    /// Prepare literal argv. Only PATH and LANG are inherited from the host.
+    /// Each invocation gets independent 0700 directories below external `run_dir`.
+    pub fn prepare(
+        program: OsString,
+        args: Vec<OsString>,
+        workspace: &Path,
+        run_dir: &Path,
+        timeout_ms: Option<u32>,
+    ) -> Result<Self, Error> {
+        let timeout = timeout_ms.map_or(DEFAULT_TIMEOUT, |ms| Duration::from_millis(ms.into()));
+        if timeout.is_zero() || timeout > MAX_TIMEOUT {
+            return Err(Error::InvalidTimeout);
+        }
+        let (cwd, directory, env) = environment::prepare(workspace, run_dir)?;
+        Ok(Self {
+            command: process::Command {
+                program,
+                args,
+                cwd: cwd.clone(),
+                env,
+                timeout,
+            },
+            cwd,
+            directory,
+        })
+    }
+
+    pub fn directory(&self) -> &Path {
+        &self.directory
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.command.timeout
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
@@ -29,15 +89,22 @@ pub enum Outcome {
 
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("timeoutMs must be between 1 and 2147483647")]
+    InvalidTimeout,
+    #[error("runtime output directory must be outside the review workspace")]
+    OutputInsideWorkspace,
+    #[error("runtime environment preparation failed: {0}")]
+    Environment(#[from] io::Error),
     #[error(transparent)]
     Process(#[from] process::Error),
     #[error("runtime process terminated without a verdict (signal {signal:?})")]
     AbnormalExit { signal: Option<i32>, output: Output },
 }
 
-/// Execute resolved argv in the caller's cwd and explicit environment.
+/// Execute prepared argv with one deadline covering registration and execution.
+/// Process capture is raw and bounded; only runtime audit text is cleaned.
 pub async fn execute<F, R>(
-    command: Command,
+    mut command: Command,
     cancellation: CancellationToken,
     register: F,
 ) -> Outcome
@@ -45,22 +112,62 @@ where
     F: FnOnce(ChildIdentity) -> R + Send + 'static,
     R: Future<Output = io::Result<()>> + Send + 'static,
 {
-    match process::run(command, cancellation, register).await {
-        Ok(output) => match output.status.code() {
-            Some(exit_code) => Outcome::Completed(ReviewResult {
-                verdict: if exit_code == 0 {
-                    Verdict::Green
-                } else {
-                    Verdict::Red
-                },
-                exit_code,
-                output,
-            }),
-            None => Outcome::OperationalError(Error::AbnormalExit {
-                signal: output.status.signal(),
-                output,
-            }),
-        },
+    command.command.cwd = command.cwd;
+    match process::run(command.command, cancellation, register).await {
+        Ok(mut output) => {
+            output.stdout = clean_output(&output.stdout);
+            output.stderr = clean_output(&output.stderr);
+            match output.status.code() {
+                Some(exit_code) => Outcome::Completed(ReviewResult {
+                    verdict: if exit_code == 0 {
+                        Verdict::Green
+                    } else {
+                        Verdict::Red
+                    },
+                    exit_code,
+                    output,
+                }),
+                None => Outcome::OperationalError(Error::AbnormalExit {
+                    signal: output.status.signal(),
+                    output,
+                }),
+            }
+        }
         Err(error) => Outcome::OperationalError(Error::Process(error)),
     }
+}
+
+fn clean_output(bytes: &[u8]) -> Vec<u8> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut bytes = text.as_bytes();
+    let mut clean = Vec::with_capacity(bytes.len());
+    while let Some((&byte, tail)) = bytes.split_first() {
+        if bytes.starts_with(b"\x1b[") {
+            let mut end = 2;
+            while bytes
+                .get(end)
+                .is_some_and(|byte| (0x30..=0x3f).contains(byte))
+            {
+                end += 1;
+            }
+            while bytes
+                .get(end)
+                .is_some_and(|byte| (0x20..=0x2f).contains(byte))
+            {
+                end += 1;
+            }
+            if bytes
+                .get(end)
+                .is_some_and(|byte| (0x40..=0x7e).contains(byte))
+            {
+                bytes = &bytes[end + 1..];
+                continue;
+            }
+        }
+        if !matches!(byte, 0..=8 | 11..=12 | 14..=31) {
+            clean.push(byte);
+        }
+        bytes = tail;
+    }
+    clean
 }
