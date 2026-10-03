@@ -308,7 +308,7 @@ async fn identity_change_before_submit_or_tool_settles_error_without_publishing(
         );
         assert!(
             receipts
-                .cached_execution("human-v1")
+                .cached_execution("human-v1", &run.requests[0].eval_def_hash)
                 .await
                 .unwrap()
                 .is_none()
@@ -544,7 +544,7 @@ async fn forced_human_checks_identity_without_replacing_cache() {
         .is_err()
     );
     let cached = receipts
-        .cached_execution("human-v1")
+        .cached_execution("human-v1", &run.requests[0].eval_def_hash)
         .await
         .unwrap()
         .unwrap();
@@ -572,4 +572,102 @@ async fn no_identity_results_are_not_reused_by_a_new_verify() {
     let next = fixture.verify(Default::default()).await;
     assert_eq!(next.requests[0].status, "WAITING_HUMAN");
     assert_ne!(next.requests[0].execution_id, run.requests[0].execution_id);
+}
+
+#[tokio::test]
+async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
+    let fixture = Fixture::new(true);
+    let path = fixture.repo.join("artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let mut same = declaration["evals"][0].clone();
+    same["id"] = json!("same");
+    same["title"] = json!("Same criteria");
+    let mut different = same.clone();
+    different["id"] = json!("different");
+    different["passSchema"]["properties"]["approved"]["const"] = json!(false);
+    declaration["evals"]
+        .as_array_mut()
+        .unwrap()
+        .extend([same, different]);
+    fs::write(path, declaration.to_string()).unwrap();
+    let run = fixture.verify(Default::default()).await;
+    assert_eq!(run.requests[0].execution_id, run.requests[1].execution_id);
+    assert_eq!(run.requests[0].eval_def_hash, run.requests[1].eval_def_hash);
+    assert_ne!(run.requests[0].execution_id, run.requests[2].execution_id);
+    assert_ne!(run.requests[0].eval_def_hash, run.requests[2].eval_def_hash);
+    let receipts = fixture.receipts().await;
+    let claim = human::claim(&receipts, &run.requests[1].id, "alice")
+        .await
+        .unwrap();
+    assert_eq!(claim.request_id, run.requests[0].id);
+    human::submit(
+        &receipts,
+        &run.requests[1].id,
+        "alice",
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let saved = store::read_run(&fixture.state, &run.run.id).await.unwrap();
+    assert_eq!(saved.requests[0].status, "GREEN");
+    assert_eq!(saved.requests[1].status, "GREEN");
+    assert_eq!(saved.requests[2].status, "WAITING_HUMAN");
+    let status = project::status(
+        &fixture.repo,
+        Some(&fixture.state),
+        &Selection::All,
+        &VerifyOptions::default(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(status.counts.reuse, 2);
+    assert_eq!(status.counts.wait, 1);
+    assert_eq!(status.evals[2].state, "WAITING_HUMAN");
+    assert_eq!(
+        human::claim(&receipts, &run.requests[2].id, "bob")
+            .await
+            .unwrap()
+            .request_id,
+        run.requests[2].id
+    );
+    human::submit(
+        &receipts,
+        &run.requests[2].id,
+        "bob",
+        &json!({"verdict":"RED","reason":"Different review"}),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let reused = fixture.verify(Default::default()).await;
+    assert_eq!(reused.requests[0].status, "GREEN");
+    assert_eq!(reused.requests[1].status, "GREEN");
+    assert_eq!(reused.requests[2].status, "RED");
+    for (new, original) in reused.requests.iter().zip(&run.requests) {
+        assert_eq!(new.execution_id, original.execution_id);
+        assert_eq!(
+            new.provenance.as_ref().unwrap().eval_def_hash,
+            original.eval_def_hash
+        );
+    }
+    assert_eq!(
+        fixture
+            .database()
+            .query_row::<u32, _, _>("SELECT count(*) FROM cache_entries", [], |row| row.get(0))
+            .unwrap(),
+        2
+    );
+    let status = project::status(
+        &fixture.repo,
+        Some(&fixture.state),
+        &Selection::All,
+        &VerifyOptions::default(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(status.counts.reuse, 3);
+    assert_eq!(status.evals[2].state, "RED");
 }

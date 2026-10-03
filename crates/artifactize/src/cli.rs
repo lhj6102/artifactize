@@ -261,12 +261,20 @@ pub enum RunCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum CacheCommand {
-    /// List retained identities and their original execution metadata.
+    /// List retained identity/Eval-definition pairs and original execution metadata.
     List,
     /// Read the full saved result, profile and provenance as JSON.
-    Show { identity: String },
+    Show {
+        identity: String,
+        /// Required when the identity has multiple cached Eval definitions.
+        eval_hash: Option<String>,
+    },
     /// Remove an unused cache entry, preserving saved Runs and executions.
-    Rm { identity: String },
+    Rm {
+        identity: String,
+        /// Required when the identity has multiple cached Eval definitions.
+        eval_hash: Option<String>,
+    },
     /// Evict least-recently-used entries above the entry and byte limits.
     Gc,
 }
@@ -611,13 +619,17 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                         print_json(&entries)?;
                     } else {
                         let mut out = io::stdout().lock();
-                        writeln!(out, "IDENTITY\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED")
-                            .map_err(|e| e.to_string())?;
+                        writeln!(
+                            out,
+                            "IDENTITY\tEVAL HASH\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED"
+                        )
+                        .map_err(|e| e.to_string())?;
                         for entry in entries {
                             writeln!(
                                 out,
-                                "{}\t{}\t{}\t{}\t{}\t{}",
+                                "{}\t{}\t{}\t{}\t{}\t{}\t{}",
                                 entry.identity,
+                                entry.eval_def_hash,
                                 entry.verdict,
                                 entry.repo_path,
                                 entry.eval_id,
@@ -628,14 +640,20 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                         }
                     }
                 }
-                CacheCommand::Show { identity } => {
-                    let entry = crate::cache::show(&state, &identity).await?;
+                CacheCommand::Show {
+                    identity,
+                    eval_hash,
+                } => {
+                    let entry = crate::cache::show(&state, &identity, eval_hash.as_deref()).await?;
                     print_json(&entry)?;
                     return Ok(if entry.is_some() { 0 } else { 4 });
                 }
-                CacheCommand::Rm { identity } => {
+                CacheCommand::Rm {
+                    identity,
+                    eval_hash,
+                } => {
                     print_json(
-                        &json!({"removed": crate::cache::remove(&state, &identity).await?}),
+                        &json!({"removed": crate::cache::remove(&state, &identity, eval_hash.as_deref()).await?}),
                     )?;
                 }
                 CacheCommand::Gc => print_json(&crate::cache::gc(&state).await?)?,

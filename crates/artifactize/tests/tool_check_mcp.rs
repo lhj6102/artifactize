@@ -405,7 +405,7 @@ async fn stdio_tools_are_scoped_multimodal_audited_and_budgeted_across_reconnect
     );
     let run: store::Run = serde_json::from_value(json!({"id":"saved","repoPath":repo,"stateDir":state,"status":"ERROR","createdAt":"now","selection":{},"validation":{}})).unwrap();
     let request: store::Request = serde_json::from_value(json!({
-        "id":"request","runId":"saved","evalId":"a/review","target":"a","title":"Review","profile":{},"requestedProfile":{},
+        "id":"request","runId":"saved","evalId":"a/review","target":"a","title":"Review","profile":{},"requestedProfile":{},"evalDefHash":"definition",
         "payload":{},"references":{},"deps":[],"status":"ERROR","createdAt":"now","cwd":repo
     })).unwrap();
     receipts.create_run(&run, &[request]).await.unwrap();

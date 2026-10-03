@@ -171,19 +171,29 @@ After each runtime or Agent review completes, its identity is recomputed before 
 GREEN or RED verdict. A changed value records ERROR/INPUT_CHANGED with no semantic
 result; a failed recheck also records ERROR. Force does not skip preparation or
 this recheck. Artifacts without an identity run without either step. There is no
-workspace monitoring, hashing or fingerprinting.
+workspace monitoring or file-content fingerprinting.
 
 ## Completed identity reuse
 
 A successful identity recheck publishes either GREEN or RED to `cache_entries`,
 pointing to a self-contained `executions` row. Errors and cancellation are never
-published. The owner identity alone is the key: repositories, evals, profiles,
-schemas and criteria do not partition it. Owners must include any distinction
-that makes results noninterchangeable in their identity output.
+published. The key is **(owner identity, Eval definition hash)**, intentionally
+departing from CCDD's identity-only key. The definition hash is lowercase SHA-256
+of canonical JSON with recursively sorted keys, containing the effective
+`profile`, `payload` (including instruction), `passSchema` and `failSchema`.
+The profile is the selected variant's full definition when `--profile` is used:
+runtime command/args/timeout, Agent backend/model/reasoning/budgets/timeout, or
+Human. Eval id/title, repository paths and unused profile variants are excluded.
+Equal definitions still share across evals and repositories; changing criteria,
+schema, args or effective profile requires a separate execution.
+
+No script or material file contents are hashed. Owners must still encode input,
+script and material changes that invalidate results in their identity output.
 
 A hit returns the original result without running the eval or re-validating it
 against the requested profile/schema. The request saves the original execution ID,
-actual `profile`, `provenance` (repository, Run, request, eval and completion time)
+actual `profile`, `evalDefHash`, `provenance` (repository, Run, request, eval,
+definition hash and completion time)
 and `usage` when reported, alongside `requestedProfile`. Runtime usage is null,
 not an invented zero. Cached RED remains RED for gates and final obligations.
 Dependencies outside execution selection can supply cached evidence without
@@ -198,24 +208,27 @@ Forced and uncached results still satisfy their own Run and retain execution aud
 
 ```sh
 artifactize cache list --json
-artifactize cache show IDENTITY
-artifactize cache rm IDENTITY
+artifactize cache show IDENTITY [EVAL_HASH]
+artifactize cache rm IDENTITY [EVAL_HASH]
 artifactize cache gc
 ```
 
 These commands use the shared state home or `--state-dir PATH`, without loading a
-repository. `list` shows identity, original verdict/repository/eval, retained JSON
+repository. `list` shows identity, Eval definition hash, original verdict/repository/eval, retained JSON
 bytes and last use (a text table, or a JSON array). `show` always prints the full
 saved execution with result, actual profile, provenance and usage; a missing
 entry prints `null` and exits 4. Reads neither create missing state nor update
 access times. `rm` prints `{"removed":true}` (false if absent), preserving saved
-Runs and execution audit. It refuses identities with active executions or waiters.
+Runs and execution audit. For `show` and `rm`, the hash may be omitted when the
+identity has only one entry; multiple definitions require the full hash from
+`cache list`. `rm` refuses a key with active executions or waiters (without a hash,
+any active definition for that identity prevents removal).
 
 Publishing a new reusable entry triggers LRU GC: at most 10,000 entries and 1 GiB
 of retained execution JSON, with a 16 MiB per-entry limit. Oversized results still
 reach their Run and existing waiters through the saved execution, but later calls
 execute again. Reuse hits update last use; inspection does not. GC evicts oldest
-eligible entries first, using identity to break ties, and skips active executions
+eligible entries first, using identity then definition hash to break ties, and skips active executions
 and in-flight waiters. Protected entries can temporarily exceed the caps; a later
 publication or `cache gc` retries collection. Explicit GC prints removed and
 remaining entry/byte counts as JSON. Automatic maintenance failures are reported
@@ -250,9 +263,9 @@ Identity commands use disposable output under the state directory, which may be
 created even when no database exists. `graph` and `config check` remain fully
 static and never run owner code.
 
-A current completed identity entry yields PASS or RED and a `reuse` action when
+A current completed identity/Eval-definition entry yields PASS or RED and a `reuse` action when
 gates allow. Force still applies only to selected evals. Human execution actions
-record a waiting request; an active Human identity projects WAITING_HUMAN and a
+record a waiting request; an active Human identity/Eval-definition pair projects WAITING_HUMAN and a
 `wait` action, even after the original verifier exits. Saved attempts
 are read for this canonical repository only: each eval's optional
 `last: {runId, verdict, identity?}` is historical, not current evidence. Use
@@ -730,7 +743,7 @@ READY Human evals persist WAITING_HUMAN and release their job slot. They consume
 no `maxExecutions` budget, so even a zero budget admits a Human review. `verify`
 without `--wait` exits INCOMPLETE and lists waiting requests; it does not fabricate
 a verdict or keep a worker alive. Identity-bearing waiting executions retain their exclusive
-identity claim after the verifier exits. Cross-repository followers refer to that
+identity/Eval-definition claim after the verifier exits. Cross-repository followers refer to that
 same execution and forward Human actions to its original request and repository.
 
 The internal library exposes asynchronous operations with an open `store::Receipts`:
