@@ -323,7 +323,7 @@ Partial items stay unchecked, and previously checked items remain checked; this 
 - [ ] MON-08 Result and operational distinction — Display GREEN criteria-met, RED criteria-not-met, ERROR execution failure, waiting reasons, actual result JSON, instructions, Agent provider/model/reasoning, and lifecycle timeline. (`src/monitor/ui/RequestDrawer.vue`) → P7.2, P7.4 (SIMPLIFIED: TUI request results, profiles, usage, errors and waiting states; no lifecycle-event timeline.)
 - [ ] MON-09 Artifact location browser — List canonical admitted Artifact names/folder locations and direct active Human users to registered review tools rather than arbitrary workspace file browsing. (`src/monitor/ui/ArtifactBrowser.vue`) → P7.3 (SIMPLIFIED: Read-only Artifact/eval tree from saved definitions; no Human tool browser.)
 - [ ] MON-10 Explicit current-input inspection — User action runs recursive Project inspection with cancellation/timeout and displays observed-at snapshot; GET/refresh does not execute identity functions or persist stale flags. (`src/monitor/server.ts`, `src/monitor/ui/ValidationView.vue`) → DROP (Plan: Web monitor row removes current-input inspection.)
-- [ ] MON-11 Validation results view — Show overall satisfaction, per-Artifact state/pass counts/basis absence, per-Critic next action/reason/gates, reuse/coalesce/ready/wait counts, shared request/lease details, and recorded verdict links. (`src/monitor/ui/ValidationView.vue`) → DROP (Plan: Web monitor row removes current-input inspection.)
+- [ ] MON-11 Validation results view — Show overall satisfaction, per-Artifact state/pass counts/basis absence, per-Critic next action/reason/gates, reuse/coalesce/ready/wait counts, shared request/lease details, and recorded verdict links. (`src/monitor/ui/ValidationView.vue`) → P7.2, P7.3 (SIMPLIFIED: Saved Run satisfaction, per-Artifact/eval state and gate reasons; no live next-action inspection.)
 - [ ] MON-12 Saved graph view — Display input→target child/mount/instruction relations, owned Critics, paths, statuses/pass counts, cycle edges, snapshot identity, and partial selected-Critic Run context from saved data only. (`src/monitor/ui/GraphView.vue`, `src/broker/graph.ts`) → P7.3 (SIMPLIFIED: Saved Artifact/eval tree shows status, dependencies and cycles; no snapshot hash or graph canvas.)
 - [ ] MON-13 Graph interaction — Pan, zoom, fit entire graph, select Artifact, inspect incoming/outgoing relation kinds/aliases/cycles, and open actionable Critic requests while distinguishing unselected Critics. (`src/monitor/ui/GraphView.vue`) → P7.3, P7.4 (SIMPLIFIED: Navigate tree, dependency/cycle markers and request details; no pan/zoom graph canvas.)
 - [ ] MON-14 Family graph grouping — Collapse family into aggregate node by default, aggregate instances/relations/status, expand/collapse up to 200 members, page all members in groups of 100, and inspect selected instance's Critics. (`src/monitor/ui/family-groups.ts`, `src/monitor/ui/family-pagination.ts`, `src/monitor/ui/GraphView.vue`) → P7.3 (SIMPLIFIED: Family-grouped Artifact/eval tree keeps every instance reachable; no canvas aggregation or fixed pagination protocol.)
@@ -391,9 +391,9 @@ Partial items stay unchecked, and previously checked items remain checked; this 
 | HUM | 20 | 1 | 9 | 10 |
 | WKS | 20 | 5 | 5 | 10 |
 | TOOL | 30 | 7 | 18 | 5 |
-| MON | 26 | 1 | 14 | 11 |
+| MON | 26 | 1 | 15 | 10 |
 | API | 22 | 0 | 0 | 22 |
 | EX | 10 | 5 | 4 | 1 |
-| **Total** | **334** | **62** | **145** | **127** |
+| **Total** | **334** | **62** | **146** | **126** |
 
 Kept means task IDs without a SIMPLIFIED marker; counts are mutually exclusive and include all original items. Checkbox state is unchanged by scope classification. Ticked-but-DROP items: none.
