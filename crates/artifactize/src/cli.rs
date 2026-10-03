@@ -66,6 +66,12 @@ pub enum Command {
         /// Bypass execution gates, never final validation obligations.
         #[arg(long)]
         ignore_gates: bool,
+        /// Maximum concurrent evals, including identity waiters.
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u32).range(1..))]
+        jobs: u32,
+        /// Limit executor starts in this Run; cache hits and waiters are free.
+        #[arg(long, value_name = "N")]
+        max_executions: Option<u64>,
         /// Wait for completion (currently always foreground).
         #[arg(long)]
         wait: bool,
@@ -216,10 +222,14 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             recursive,
             force,
             ignore_gates,
+            jobs,
+            max_executions,
             ..
         }) => {
             let selection = selection.resolve()?;
             let options = crate::project::VerifyOptions {
+                jobs: jobs as usize,
+                max_executions,
                 profile: profile.map(ProfileSelection::Named),
                 recursive,
                 force,
@@ -248,6 +258,9 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                     view.run.state_dir.display()
                 )
                 .map_err(|e| e.to_string())?;
+                if let Some(error) = &view.run.error {
+                    writeln!(stdout, "Reason: {error}").map_err(|e| e.to_string())?;
+                }
                 for request in &view.requests {
                     writeln!(
                         stdout,
@@ -304,6 +317,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                     recursive,
                     force,
                     ignore_gates: ignore_gates.then_some(true),
+                    ..Default::default()
                 },
                 cancellation,
             )

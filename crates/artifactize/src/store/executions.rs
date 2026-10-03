@@ -12,6 +12,7 @@ use crate::{process, runtime::Verdict};
 
 pub enum Claim {
     Owned,
+    BudgetExhausted,
     Reuse(Box<Execution>),
     Wait(String),
 }
@@ -145,14 +146,21 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
-    pub async fn claim_execution(&self, execution: &Execution) -> Result<Claim, String> {
+    pub async fn claim_execution(
+        &self,
+        execution: &Execution,
+        allow_start: bool,
+    ) -> Result<Claim, String> {
         let execution = execution.clone();
         self.connection.call(move |db| -> Result<Claim, Error> {
             let Some(identity) = &execution.identity else {
-                return Ok(Claim::Owned);
+                return Ok(if allow_start { Claim::Owned } else { Claim::BudgetExhausted });
             };
             if let Some(claim) = available(db, identity)? {
                 return Ok(claim);
+            }
+            if !allow_start {
+                return Ok(Claim::BudgetExhausted);
             }
             let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             if let Some(claim) = available(&transaction, identity)? {

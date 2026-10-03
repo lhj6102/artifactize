@@ -17,8 +17,12 @@ ERROR-waiting dependents, and a two-Artifact cycle. Its overall exit code is 2.
 `--evals CSV`, `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH`,
 or `--all`. Eval IDs are qualified (`green/check`). Selection order is preserved,
 with duplicates removed at their first occurrence; Artifacts expand to their
-evals in declaration order. Runtime evals execute sequentially when their
-dependency gates allow. An Artifact selector runs only that Artifact's evals;
+evals in declaration order. READY runtime evals execute concurrently up to
+`--jobs N` (default 4, minimum 1), with dispatch in that same ordered selection
+then recursive configuration order. The graph is re-evaluated after each result;
+newly READY evals do not wait for an entire batch to finish. Identity
+claim waiters occupy job slots while polling, but cache hits occupy none.
+An Artifact selector runs only that Artifact's evals;
 an individual eval selector runs only that eval. Both retain the full dependency
 closure as a final obligation. `--recursive` includes every eval in that closure,
 including other evals on the selected Artifact and cycle peers, in configuration
@@ -43,6 +47,18 @@ the execution scope nor bypasses gates. Runs record the resolved policy and each
 request's force flag. Forced evals never read, join or replace cached results;
 dependencies may still reuse their own identity entries.
 
+`verify --max-executions N` sets a nonnegative, shared per-Run executor-start
+budget (unlimited when omitted); it is not an Artifact declaration field.
+The Run records `jobs`, `maxExecutions` and `executionsStarted`. A prepared
+executor invocation consumes one start, even when it fails to spawn or later
+returns ERROR. Identity preparation/rechecks, cache hits, and joined waiters
+consume none. Preparation failures before invocation consume none. Zero permits
+reuse and joining only; a waiter needing to replace a failed/dead owner must use
+its own Run's remaining budget. Exhaustion never interrupts running evals, but
+leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
+with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
+error. There are no reservations, refunds, admission pools or restart ledger.
+
 Selection files must be regular files no larger than 4 MiB, containing a JSON
 string array or one trimmed ID per line (UTF-8 BOM and CRLF are accepted). They
 must contain 1–100000 IDs before deduplication. Empty lines are ignored; IDs cannot
@@ -62,8 +78,10 @@ profiles describe the actual execution; `requestedProfile` retains the requested
 variant separately when an identity hit returns another profile.
 
 Verification runs in the foreground, with or without `--wait`: GREEN exits 0,
-RED 1, ERROR 2, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels the owned child group and
-records ERROR/CANCELLED, never RED. There is no detached worker. `--json` prints
+RED 1, ERROR 2, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels every owned process
+group, waits for cleanup, and records ERROR/CANCELLED for running and queued
+requests, never RED. Previously committed results remain unchanged. There is no
+detached worker. `--json` prints
 full saved results, including payloads, argv, stdout/stderr and runtime details;
 there is no compact projection or `--full` flag. `run show RUN_ID` always prints
 full saved JSON and exits 0 on a successful read, regardless of the saved verdict.
@@ -79,7 +97,7 @@ the original repository is removed. State/output inside the reviewed repository
 is rejected, including through symlink ancestors; database files and their WAL
 sidecars must be regular files. No writer transaction spans a subprocess or async
 suspension. Completed identity results are shared within this database; cross-process
-claims and in-flight deduplication arrive in P3.3.
+claims and polling waiters prevent duplicate identity execution.
 
 Declarations use `evals`, with qualified eval IDs such as `green/check`.
 `stale` accepts only `{"kind":"identity","script":{"command":"/bin/sh","args":["identity.sh"]}}`,
