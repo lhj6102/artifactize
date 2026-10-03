@@ -239,10 +239,11 @@ impl Scheduler<'_, '_> {
                     });
                 }
             }
-            if !self.cancellation.is_cancelled() && evidence.len() != completed {
+            let cancelled = self.cancellation.is_cancelled();
+            if !cancelled && evidence.len() != completed {
                 continue;
             }
-            if self.tasks.is_empty() && (waiting.is_empty() || self.cancellation.is_cancelled()) {
+            if self.tasks.is_empty() && (waiting.is_empty() || cancelled) {
                 break;
             }
             tokio::select! {
@@ -257,8 +258,8 @@ impl Scheduler<'_, '_> {
                     });
                     self.requests[index] = request;
                 }
-                _ = self.cancellation.cancelled(), if !self.cancellation.is_cancelled() => {},
-                _ = tokio::time::sleep(Duration::from_millis(200)), if !waiting.is_empty() && !self.cancellation.is_cancelled() => {},
+                _ = self.cancellation.cancelled(), if !cancelled => {},
+                _ = tokio::time::sleep(Duration::from_millis(200)), if !waiting.is_empty() && !cancelled => {},
             }
         }
         Ok(evidence)
