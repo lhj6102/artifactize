@@ -110,7 +110,7 @@ Each task takes a worker about half a day to a day. It lands as one PR from `tas
 
 ### P1 Runtime loop
 - [x] **P1.1** Package skeleton: module tree from the architecture table, versioned config/state, clap CLI, `--version`. Check: `artifactize --version` prints 0.1.0.
-- [ ] **P1.2** Inert declarations, discovery, unique IDs, basis vs UNREVIEWED, `config check`. Check: duplicates rejected; no hook executed.
+- [x] **P1.2** Inert declarations, discovery, unique IDs, basis vs UNREVIEWED, `config check`. Check: duplicates rejected; no hook executed.
 - [ ] **P1.3** Children, mounts, aliases, `{artifact}` references in instructions and argv. Check: focused alias/traversal/symlink tests.
 - [ ] **P1.4** SCC scheduling, shared external gates, verdict propagation. Check: focused cycle, external-gate, RED-blocks and ERROR-waits tests.
 - [ ] **P1.5** Generic runtime execution with gated process-group launch. Check: exit 0/nonzero → GREEN/RED; spawn/signal/timeout → ERROR.
