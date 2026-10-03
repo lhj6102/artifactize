@@ -86,6 +86,20 @@ full saved results, including payloads, argv, stdout/stderr and runtime details;
 there is no compact projection or `--full` flag. `run show RUN_ID` always prints
 full saved JSON and exits 0 on a successful read, regardless of the saved verdict.
 It never discovers declarations or runs code, and does not need `--repo`.
+Each Run saves its selection, effective policy, requested profile option, and
+expanded Artifact/eval definitions for the selected dependency closure, including
+family membership, schemas, tool views and graph relations. These are recorded
+with the initial request rows, not reconstructed from current declarations.
+
+`run list [--repo-only | --all]` lists saved Runs newest first as a text table, or
+as a JSON array with `--json`. It defaults to the canonical `--repo` path (the
+current directory when omitted); `--repo-only` makes that default explicit, and
+`--all` includes every repository in the shared state. `--limit N` (default 50)
+and `--offset N` (default 0) page the filtered results. Each row includes the Run
+ID, repository, creation/completion timestamps, status, and request counts by
+verdict/state (absent states have zero requests). Reads do not run owner code,
+create missing state, or require a repository to still exist. There is no
+separate `history` command.
 
 One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 1),
 with the canonical repository path recorded on each Run. The state home is

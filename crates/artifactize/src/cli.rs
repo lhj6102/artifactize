@@ -193,6 +193,21 @@ pub enum ConfigCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum RunCommand {
+    /// List saved Runs, newest first; defaults to the current repository.
+    List {
+        /// Explicitly restrict results to --repo (the default).
+        #[arg(long, conflicts_with = "all")]
+        repo_only: bool,
+        /// List Runs from every repository in the shared state.
+        #[arg(long)]
+        all: bool,
+        /// Maximum number of Runs to return.
+        #[arg(long, default_value = "50")]
+        limit: u32,
+        /// Skip this many Runs before returning results.
+        #[arg(long, default_value = "0")]
+        offset: u32,
+    },
     /// Read the full saved audit as JSON, even without --json.
     Show { run_id: String },
 }
@@ -422,6 +437,42 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 print_json(&view)?;
             } else {
                 print_graph(&view).map_err(|error| error.to_string())?;
+            }
+            Ok(0)
+        }
+        Some(Command::Run {
+            command: RunCommand::List {
+                all, limit, offset, ..
+            },
+        }) => {
+            let state = crate::store::state_dir(cli.state_dir.as_deref())?;
+            let repo = (!all).then(|| cli.repo.unwrap_or_else(|| PathBuf::from(".")));
+            let runs = crate::store::read_runs(&state, repo.as_deref(), limit, offset).await?;
+            if cli.json {
+                print_json(&runs)?;
+            } else {
+                let mut out = io::stdout().lock();
+                writeln!(out, "ID\tREPO\tCREATED\tCOMPLETED\tSTATUS\tREQUEST COUNTS")
+                    .map_err(|e| e.to_string())?;
+                for run in runs {
+                    let counts = run
+                        .counts
+                        .iter()
+                        .map(|(state, count)| format!("{state}={count}"))
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    writeln!(
+                        out,
+                        "{}\t{}\t{}\t{}\t{}\t{}",
+                        run.id,
+                        run.repo_path.display(),
+                        run.created_at,
+                        run.completed_at.as_deref().unwrap_or("-"),
+                        run.status,
+                        counts
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
             }
             Ok(0)
         }

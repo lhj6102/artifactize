@@ -73,6 +73,8 @@ pub async fn verify(
         .into_iter()
         .collect();
     let evals = selection.included_evals(&config, options.recursive)?;
+    let definitions = serde_json::to_value(crate::query::graph(&config, selection)?)
+        .expect("definitions are JSON");
     let state = store::state_dir(state_dir)?;
     let receipts = Receipts::open(&state, &config.root).await?;
     let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
@@ -106,6 +108,8 @@ pub async fn verify(
         created_at: now(),
         completed_at: None,
         selection: serde_json::to_value(selection).expect("selection is JSON"),
+        profile: json!(options.profile),
+        definitions,
         jobs: options.jobs,
         max_executions: options.max_executions,
         executions_started: 0,

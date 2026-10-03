@@ -188,7 +188,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 
   Check: existing tests pass on the new layout; removed fields are rejected.
 - [x] **P2.4** `status` (state plus what `verify` would do: reuse/execute/wait/blocked), `graph` and config output, one output level with `--json`. Check: graph/config queries never run owner code; status prepares current identities without running evals or tools.
-- [ ] **P2.5** Persisted definitions and family membership; `run list`. Check: saved results stay readable after the repository is removed.
+- [x] **P2.5** Persisted definitions and family membership; `run list`. Check: saved results stay readable after the repository is removed.
 
 ### P3 Identity cache
 - [x] **P3.1** Identity commands (`stale: {kind: identity, script, inputs?, timeoutMs?}`; the unused `weight` field is removed) with exact output validation, and the end-of-review recheck. Check: malformed output fails preparation with no fallback; editing input during a review makes it ERROR and unpublished.
@@ -244,7 +244,7 @@ One SQLite database, `user_version = 1`, plain tables.
 
 | Table | Contents |
 |---|---|
-| `runs` | id, repo, selection, policy, status, timestamps |
+| `runs` | id, repo, selection, policy, profile option, closure definitions/families, status, timestamps |
 | `requests` | run, artifact, eval, status, execution, requested profile |
 | `executions` | identity (nullable), owner pid and start time, status, verdict, result JSON, error, actual profile, usage JSON, timestamps |
 | `tool_calls` | execution, order, tool, arguments, result summary, error |
