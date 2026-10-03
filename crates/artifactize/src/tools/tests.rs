@@ -435,17 +435,15 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
     );
     assert_eq!(registry.list().next().unwrap().description, "Inspect a");
     assert!(
-        text(
-            &registry
-                .call(
-                    "read_b",
-                    json!({}),
-                    &fixture.output,
-                    CancellationToken::new()
-                )
-                .await
-        )
-        .contains("not yet implemented")
+        !registry
+            .call(
+                "read_b",
+                json!({"path":"artifactize.json"}),
+                &fixture.output,
+                CancellationToken::new()
+            )
+            .await
+            .is_error
     );
     assert!(
         text(

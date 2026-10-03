@@ -309,7 +309,7 @@ fn validated_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
     Ok(declaration)
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
     pub family: Option<families::FamilyMembership>,

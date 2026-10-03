@@ -272,8 +272,44 @@ instance/schema paths (under 4 KiB), never argument values.
 Descriptions must be nonblank, at most 4000 UTF-16 code units, and support only
 `{artifactName}` interpolation (the canonical Artifact ID). Built-in references
 accept `builtin: "read" | "list" | "glob" | "grep" | "view_image"` and optional
-`description`. They are registered now but calls return a clear **not yet
-implemented** error until P4.3; image results arrive in P4.2.
+`description`. Only explicitly declared tools are listed. `read`, `list`, `glob`
+and `grep` execute in-process without subprocesses or output directories;
+`view_image` and image results arrive together in P4.2.
+
+| Built-in | Arguments | Result |
+|---|---|---|
+| `read` | `{path, offset?, limit?}`; offset is a 1-based line (default 1), limit defaults to 80, max 500 | `lines: [{number, text}]`, `startLine`, nullable `endLine`, `lineCount`, `totalLines` only when EOF is known, `truncated`, nullable `nextOffset` |
+| `list` | `{path?, offset?, limit?}`; offset is 0-based (default 0), limit defaults to/max 200 | Sorted `entries: [{name, path, kind, ...}]`, `totalEntries`, `truncated`, nullable `nextOffset` |
+| `glob` | `{pattern, path?}` | Up to 200 sorted logical `files`, `truncated` |
+| `grep` | `{pattern, path?, glob?, caseInsensitive?, maxResults?}`; case-sensitive by default, maxResults defaults to/max 200 | `matches: [{path, line, text}]` (one per matching line, sorted by path then line), `truncated` |
+
+Paths are relative logical paths from the tool's declaring Artifact, including
+children and mount aliases; omitted paths mean its root. They never accept
+absolute paths, dot components or symlinks. The registry scope remains the eval's
+admitted Artifacts, not other evals' references. Paths are opened read-only through
+pinned directory descriptors with no-follow component checks; special files cannot
+be read. `list` can report `symlink`/`other` entries, but searches skip them.
+Mounts have kind `mount`; family folders have kind `family` and an `instances`
+catalog. Listing a family folder directly pages its logical `instance` entries;
+reading its physical files requires `<family>/<instance>/<path>`.
+
+Read returns at most 64 KiB of **complete original line bytes**, preserving LF,
+CRLF and a UTF-8 BOM in each line's `text`. Only requested lines are decoded;
+invalid UTF-8/NUL is an error, as is an oversized first requested line. An empty
+file returns zero lines and `totalLines: 0`; a page past EOF returns zero lines
+with the actual nonzero total. Concatenating returned `text` values reproduces
+the source range without added line-number prefixes.
+
+Globs use `*` within a component and `**` across directories, relative to `path`.
+Grep uses Rust `regex` syntax; `glob` filters relative file paths (or the basename
+when `path` names a file). Hidden files are included; git ignore rules do not
+filter results. Binary (NUL) and invalid UTF-8 files are skipped in their entirety.
+Search follows logical mounts and family instances without repeating a mount
+cycle. Bounds are 10,000 traversed entries, 8 MiB per grep file, 64 MiB searched,
+and 512 KiB per JSON result. Search limits or skipped oversized files set
+`truncated: true`; narrow the path/pattern to continue. Listing a directory with
+more than 10,000 entries returns an error. Listing can page early at the result
+byte cap. Built-in arguments use the same bounded JSON Schema admission as commands.
 
 The `json` protocol receives exactly one request on stdin:
 
@@ -326,7 +362,7 @@ lookup. Commands containing `/` resolve from the owner through the scope resolve
 as given. JSON-protocol argv may use existing scoped Artifact references, but
 cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
 schema-property placeholders. Commands themselves are never interpolated.
-All calls use the owner folder as cwd, runtime's PATH/LANG-only inheritance and
+Command calls use the owner folder as cwd, runtime's PATH/LANG-only inheritance and
 private external HOME/TMP/output, a default 120000 ms deadline (1–2147483647), and
 process-group cancellation/cleanup. Per-call directories are removed on success,
 failure and cancellation, including dropped call futures; caller-owned output

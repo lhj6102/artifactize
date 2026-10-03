@@ -1,8 +1,13 @@
 //! Mounts, aliases, artifact references, and canonical scoped paths.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::ffi::CString;
+use std::fs::{self, File};
+use std::os::{
+    fd::{AsRawFd, FromRawFd},
+    unix::ffi::OsStrExt,
+};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use thiserror::Error;
@@ -64,6 +69,23 @@ pub struct Scope<'a> {
 impl Scope<'_> {
     /// Pure logical resolution. Each mount or child hop consumes path components.
     pub fn resolve_path(&self, artifact_id: &str, path: &str) -> Result<ScopedPath, ScopeError> {
+        self.resolve_path_inner(artifact_id, path, false)
+    }
+
+    pub(crate) fn resolve_listing(
+        &self,
+        artifact_id: &str,
+        path: &str,
+    ) -> Result<ScopedPath, ScopeError> {
+        self.resolve_path_inner(artifact_id, path, true)
+    }
+
+    fn resolve_path_inner(
+        &self,
+        artifact_id: &str,
+        path: &str,
+        listing: bool,
+    ) -> Result<ScopedPath, ScopeError> {
         logical_path(path)?;
         let mut current = artifact_id;
         let mut remaining = path;
@@ -102,6 +124,9 @@ impl Scope<'_> {
                             .strip_prefix(folder)
                             .is_some_and(|rest| rest.starts_with('/')))
                 {
+                    if listing && remaining == folder {
+                        break;
+                    }
                     return Err(ScopeError(format!(
                         "Artifact path is inside the folder of Artifact family {}; address one of its instances as {folder}/<instance>/<path>.",
                         family.name
@@ -128,6 +153,54 @@ impl Scope<'_> {
         let owner = scoped_path(root, &artifact.path)?;
         scoped_path(&owner, Path::new(&location.path))
     }
+}
+
+/// Open each component relative to its pinned parent, so replacement cannot redirect a read through a link.
+pub(crate) fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, ScopeError> {
+    logical_path(path)?;
+    if !root.is_absolute() || artifact.path.is_absolute() {
+        return Err(ScopeError(
+            "Artifact roots must be absolute and owner paths relative.".into(),
+        ));
+    }
+    let target = root.join(&artifact.path).join(path);
+    let mut directory = File::open("/").map_err(|e| ScopeError(e.to_string()))?;
+    for component in target.components() {
+        let name = match component {
+            Component::RootDir => continue,
+            Component::Normal(name) => name,
+            _ => {
+                return Err(ScopeError(
+                    "Artifact path must not traverse parent directories.".into(),
+                ));
+            }
+        };
+        let name = CString::new(name.as_bytes())
+            .map_err(|_| ScopeError("Invalid Artifact path.".into()))?;
+        // O_NONBLOCK avoids waiting on a FIFO before its type can be rejected.
+        let fd = unsafe {
+            libc::openat(
+                directory.as_raw_fd(),
+                name.as_ptr(),
+                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+            )
+        };
+        if fd < 0 {
+            return Err(ScopeError(
+                "Cannot open Artifact input without symlink traversal.".into(),
+            ));
+        }
+        directory = unsafe { File::from_raw_fd(fd) };
+        let metadata = directory
+            .metadata()
+            .map_err(|e| ScopeError(e.to_string()))?;
+        if !metadata.is_file() && !metadata.is_dir() {
+            return Err(ScopeError(
+                "Artifact input must be a regular file or directory.".into(),
+            ));
+        }
+    }
+    Ok(directory)
 }
 
 /// Composition grants access; a referenced Artifact's Eval instructions do not.

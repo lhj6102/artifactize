@@ -96,7 +96,7 @@ impl AgentTool {
     pub fn input_schema(&self) -> Value {
         match self {
             Self::Command(tool) => tool.input_schema.clone(),
-            Self::Builtin(_) => serde_json::json!({"type":"object"}),
+            Self::Builtin(tool) => crate::tools::builtin::input_schema(tool.builtin),
         }
     }
 }
