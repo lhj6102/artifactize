@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::now;
 use crate::{
-    cache,
+    agent, cache,
     config::{Eval, Profile, RepoConfig},
     process,
     runtime::{self, Outcome, Verdict},
@@ -16,17 +16,48 @@ use crate::{
     store::{Execution, Receipts, Request},
 };
 
+pub(super) enum Prepared {
+    Runtime(runtime::Command),
+    Agent,
+}
+
 pub(super) async fn execute(
     config: Arc<RepoConfig>,
     receipts: Receipts,
     mut request: Request,
     mut execution: Execution,
-    prepared: Result<runtime::Command, String>,
+    prepared: Result<Prepared, String>,
     run_dir: PathBuf,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     let outcome = match prepared {
-        Ok(command) => {
+        Ok(Prepared::Agent) => {
+            let eval = config
+                .evals
+                .iter()
+                .find(|eval| eval.id == request.eval_id)
+                .expect("included eval");
+            let review = agent::execute(&config, eval, &run_dir, cancellation.clone()).await;
+            request.usage = Some(json!(review.attempts));
+            request.tool_calls = review.tool_calls;
+            match review.result {
+                Ok(result) => {
+                    let verdict = if result["verdict"] == "GREEN" {
+                        Verdict::Green
+                    } else {
+                        Verdict::Red
+                    };
+                    request.result = Some(result);
+                    Some(verdict)
+                }
+                Err(error) => {
+                    request.error = Some(error);
+                    request.error_code = Some("AGENT_ERROR".into());
+                    None
+                }
+            }
+        }
+        Ok(Prepared::Runtime(command)) => {
             let receipts = receipts.clone();
             let mut registered = request.clone();
             let (send, mut receive) = tokio::sync::oneshot::channel();
@@ -44,7 +75,7 @@ pub(super) async fn execute(
             if let Ok(child) = receive.try_recv() {
                 request.child = child;
             }
-            Some(outcome)
+            runtime_result(outcome, &mut request)
         }
         Err(error) => {
             request.error = Some(error);
@@ -52,7 +83,7 @@ pub(super) async fn execute(
             None
         }
     };
-    let outcome = if matches!(outcome, Some(Outcome::Completed(_)))
+    let outcome = if outcome.is_some()
         && let Some(expected) = &request.identity
     {
         match cache::identity(&config, &request.target, &run_dir, cancellation.clone()).await {
@@ -80,51 +111,28 @@ pub(super) async fn execute(
         outcome
     };
     let outcome = if cancellation.is_cancelled() {
-        Some(Outcome::OperationalError(runtime::Error::Process(
-            process::Error::Cancelled,
-        )))
+        request.error = Some(process::Error::Cancelled.to_string());
+        request.error_code = Some("CANCELLED".into());
+        None
     } else {
         outcome
     };
-    match outcome {
-        Some(Outcome::Completed(result)) => {
-            request.status = match result.verdict {
-                Verdict::Green => "GREEN",
-                Verdict::Red => "RED",
-            }
-            .into();
-            request.result = Some(json!({
-                "verdict":request.status,
-                "exitCode":result.exit_code,
-                "stdout":String::from_utf8_lossy(&result.output.stdout),
-                "stderr":String::from_utf8_lossy(&result.output.stderr),
-                "durationMs":result.output.duration.as_millis() as u64,
-                "truncated":result.output.truncated,
-            }));
-        }
-        failure => {
-            request.status = "ERROR".into();
-            if let Some(Outcome::OperationalError(error)) = failure {
-                request.error_code = Some(
-                    match &error {
-                        runtime::Error::Process(process::Error::Cancelled) => "CANCELLED",
-                        runtime::Error::Process(process::Error::Timeout) => "TIMEOUT",
-                        runtime::Error::Process(process::Error::Spawn(_)) => "SPAWN_FAILED",
-                        runtime::Error::AbnormalExit { .. } => "ABNORMAL_EXIT",
-                        _ => "RUNTIME_ERROR",
-                    }
-                    .into(),
-                );
-                request.error = Some(error.to_string());
-            }
+    request.status = match outcome {
+        Some(Verdict::Green) => "GREEN",
+        Some(Verdict::Red) => "RED",
+        None => {
+            request.result = None;
+            "ERROR"
         }
     }
+    .into();
     request.completed_at = Some(now());
     execution.status = request.status.clone();
     execution.result = request.result.clone();
     execution.error = request.error.clone();
     execution.error_code = request.error_code.clone();
     execution.usage = request.usage.clone();
+    execution.tool_calls = request.tool_calls.clone();
     execution.completed_at = request.completed_at.clone();
     execution.provenance.completed_at = request.completed_at.clone();
     request.execution_id = Some(execution.id.clone());
@@ -133,12 +141,46 @@ pub(super) async fn execute(
     Ok(request)
 }
 
+fn runtime_result(outcome: Outcome, request: &mut Request) -> Option<Verdict> {
+    match outcome {
+        Outcome::Completed(result) => {
+            request.result = Some(json!({
+                "verdict":if result.verdict == Verdict::Green { "GREEN" } else { "RED" },
+                "exitCode":result.exit_code,
+                "stdout":String::from_utf8_lossy(&result.output.stdout),
+                "stderr":String::from_utf8_lossy(&result.output.stderr),
+                "durationMs":result.output.duration.as_millis() as u64,
+                "truncated":result.output.truncated,
+            }));
+            Some(result.verdict)
+        }
+        Outcome::OperationalError(error) => {
+            request.error_code = Some(
+                match &error {
+                    runtime::Error::Process(process::Error::Cancelled) => "CANCELLED",
+                    runtime::Error::Process(process::Error::Timeout) => "TIMEOUT",
+                    runtime::Error::Process(process::Error::Spawn(_)) => "SPAWN_FAILED",
+                    runtime::Error::AbnormalExit { .. } => "ABNORMAL_EXIT",
+                    _ => "RUNTIME_ERROR",
+                }
+                .into(),
+            );
+            request.error = Some(error.to_string());
+            None
+        }
+    }
+}
+
 pub(super) fn prepare(
     config: &crate::config::RepoConfig,
     eval: &Eval,
     run_dir: &Path,
     request: &mut Request,
-) -> Result<runtime::Command, String> {
+) -> Result<Prepared, String> {
+    if matches!(eval.declaration.profile, Profile::Agent { .. }) {
+        request.run_dir = Some(run_dir.to_path_buf());
+        return Ok(Prepared::Agent);
+    }
     let Profile::Runtime {
         command,
         args,
@@ -164,5 +206,5 @@ pub(super) fn prepare(
     prepared.cwd = cwd;
     request.run_dir = Some(prepared.directory().to_path_buf());
     request.argv = Some(std::iter::once(command.clone()).chain(args).collect());
-    Ok(prepared)
+    Ok(Prepared::Runtime(prepared))
 }

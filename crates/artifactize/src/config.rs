@@ -44,13 +44,44 @@ pub struct Script {
     pub args: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Backend {
+    Openai,
+    Anthropic,
+    Chatgpt,
+    Claude,
+}
+
+impl Backend {
+    pub fn validate_reasoning(self, reasoning: &str) -> Result<(), String> {
+        let supported = match self {
+            Self::Openai | Self::Chatgpt => matches!(
+                reasoning,
+                "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
+            ),
+            Self::Anthropic | Self::Claude => {
+                matches!(reasoning, "low" | "medium" | "high" | "max")
+            }
+        };
+        if supported {
+            Ok(())
+        } else {
+            Err(format!(
+                "Unsupported reasoning {reasoning:?} for {self:?}; effort is never remapped."
+            ))
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Profile {
     Agent {
-        provider: String,
+        backend: Backend,
         model: String,
-        reasoning: String,
+        #[serde(default, deserialize_with = "present")]
+        reasoning: Option<String>,
         #[serde(rename = "timeoutMs", default, deserialize_with = "timeout")]
         timeout_ms: Option<u32>,
         #[serde(
@@ -75,14 +106,16 @@ impl Profile {
     fn validate(&self) -> Result<(), String> {
         match self {
             Self::Agent {
-                provider,
+                backend,
                 model,
                 reasoning,
                 ..
             } => {
-                text(provider, "Agent profile provider")?;
                 text(model, "Agent profile model")?;
-                text(reasoning, "Agent profile reasoning")
+                if let Some(reasoning) = reasoning {
+                    backend.validate_reasoning(reasoning)?;
+                }
+                Ok(())
             }
             Self::Human {} => Ok(()),
             Self::Runtime { command, args, .. } => script(command, args),

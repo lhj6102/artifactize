@@ -312,6 +312,20 @@ fn green_is_reused_across_evals_profiles_and_unselected_sibling_obligations() {
     assert_eq!(hit["requests"][0]["profile"], first["profile"]);
     assert_eq!(hit["requests"][0]["requestedProfile"]["kind"], "human");
     assert_eq!(fixture.count("executions"), 1);
+    let agent_repo = fixture.repo("agent", json!({"name":"agent","stale":identity("shared:green"),"evals":[{"id":"review","title":"Agent","profile":{"kind":"agent","backend":"chatgpt","model":"not-called"},"payload":{"instruction":"Review."}}]}));
+    let agent_hit = fixture.command(&agent_repo, &["verify", "--all"], 0);
+    assert_eq!(
+        agent_hit["requests"][0]["requestedProfile"]["kind"],
+        "agent"
+    );
+    assert_eq!(agent_hit["requests"][0]["profile"], first["profile"]);
+    assert_eq!(
+        agent_hit["requests"][0]["executionId"],
+        first["executionId"]
+    );
+    assert_eq!(agent_hit["requests"][0]["usage"], first["usage"]);
+    assert_eq!(agent_hit["requests"][0]["toolCalls"], first["toolCalls"]);
+    assert_eq!(fixture.count("executions"), 1);
 }
 
 #[test]

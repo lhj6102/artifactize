@@ -73,7 +73,7 @@
       "title": "Review input",
       "profile": {
         "kind": "agent",
-        "provider": "not-called",
+        "backend":"openai",
         "model": "not-called",
         "reasoning": "high"
       },

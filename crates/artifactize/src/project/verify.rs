@@ -75,7 +75,7 @@ pub async fn verify(
     let evals = selection.included_evals(&config, options.recursive)?;
     for eval in &evals {
         let unsupported = match eval.declaration.profile {
-            Profile::Agent { .. } => Some("Agent Evals are not supported yet (P5)"),
+            Profile::Agent { .. } => None,
             Profile::Human { .. } => Some("Human Evals are not supported yet (P6)"),
             Profile::Runtime { .. } => None,
         };
@@ -98,7 +98,7 @@ pub async fn verify(
     )
     .await?;
     for eval in &evals {
-        if !matches!(eval.declaration.profile, Profile::Runtime { .. })
+        if matches!(eval.declaration.profile, Profile::Human { .. })
             && receipts
                 .cached_execution(&identities[eval.target.as_str()])
                 .await?
@@ -156,6 +156,7 @@ pub async fn verify(
             execution_id: None,
             provenance: None,
             usage: None,
+            tool_calls: Vec::new(),
             payload: json!(eval.declaration.payload),
             references: json!(eval.references),
             deps: eval.deps.clone(),

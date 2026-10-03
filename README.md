@@ -137,7 +137,7 @@ timeout, cancellation, missing inputs or cleanup failure abort preparation with
 an operational error, without starting any eval or falling back to an uncached
 review. Stderr is not forwarded as an identity diagnostic.
 
-After each runtime review exits, its identity is recomputed before accepting a
+After each runtime or Agent review completes, its identity is recomputed before accepting a
 GREEN or RED verdict. A changed value records ERROR/INPUT_CHANGED with no semantic
 result; a failed recheck also records ERROR. Force does not skip preparation or
 this recheck. Artifacts without an identity run without either step. There is no
@@ -233,6 +233,64 @@ is never interpolated. `config check` validates reference names and syntax but
 does not open runtime operands or execute programs. Input existence and symlink
 checks happen during argument preparation. Graph closure and runtime CLI execution
 use these same resolvers. The Agent tool registry uses the same admitted scope.
+
+## Agent reviews
+
+Agent evals use one explicit model and backend, with no catalog, aliases, credential
+search or fallback:
+
+```json
+{
+  "kind": "agent",
+  "backend": "openai",
+  "model": "YOUR_EXACT_MODEL_ID",
+  "reasoning": "high",
+  "timeoutMs": 240000
+}
+```
+
+`backend` accepts `openai`, `anthropic`, `chatgpt` or `claude`. The first two use
+only `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, respectively. ChatGPT login is separate;
+ChatGPT inference (P5.5) and the official Claude CLI backend (P5.6) currently return
+an explicit not-yet-implemented ERROR. `provider` and `effort` are not config aliases.
+
+`reasoning` is optional. When present, OpenAI receives exactly `reasoning.effort`
+(`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Anthropic receives
+adaptive thinking and exactly `output_config.effort` (`low`, `medium`, `high`,
+`max`). Other values are rejected, never remapped. A model that does not support
+the requested setting fails at the provider; artifactize does not substitute a
+model or lower effort. If the response reports a model ID, it must match exactly.
+
+The rig-core 0.43.0 adapter uses streaming OpenAI Responses with `store:false`,
+encrypted reasoning replay and parallel tool calls disabled, or Anthropic Messages.
+The latter requires a per-turn output cap (16384 tokens), separate from the review
+budget. One review deadline (default 240 seconds) covers all turns, retries and tools.
+Truncated or incomplete responses are ERROR, even if they contain a JSON verdict.
+At most two transient retries occur before any output, tool call or positive usage;
+authentication and quota failures stop immediately with the provider message.
+Nested HTTP retries and redirects are disabled.
+
+Only tools from the eval's scope are exposed. They run sequentially with private
+runtime environments. Tool results keep text, JSON and validated base64 image blocks rather than flattening
+structured data. PNG/JPEG/WebP results reach both provider wires; unsupported-model
+image requests fail with the provider error. Duplicate provider call IDs fail
+closed. Tool audit and per-request-attempt `usage` are saved on both success and
+ERROR and retained with original execution attribution on cache hits. Counters
+are provider-reported (including reported zero), not inferred totals or costs.
+Anthropic `inputTokens` is its native uncached input; cache read/write counters are
+separate. OpenAI input already includes its cache reads. Never sum every counter.
+Unreported fields stay absent. Assistant messages and reasoning are not persisted.
+
+Agent evals share runtime evals' dependency gates, identity claims, reuse and final
+identity recheck. For this phase, final output must be one JSON object containing
+`"verdict":"GREEN"` or `"verdict":"RED"`. Owner schemas are described in the prompt,
+but strict schema validation and the one repair are P5.3. `maxTokens` and
+`maxToolCalls` parse as positive integers; setting either currently returns an
+explicit P5.2 not-yet-implemented ERROR rather than silently ignoring the budget.
+
+Owner validation before relying on a provider: run one real review with each API-key
+backend and an accessible exact model ID. Automated tests use fake HTTP transports
+and make no real inference requests.
 
 ## Agent tools
 

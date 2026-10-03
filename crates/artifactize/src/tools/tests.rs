@@ -53,7 +53,7 @@ fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
     fs::write(path.join("artifactize.json"), json!({
         "name":name,
         "views":{"agentTools":tools},
-        "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","provider":"test","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}],
+        "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}],
     }).to_string()).unwrap();
 }
 
