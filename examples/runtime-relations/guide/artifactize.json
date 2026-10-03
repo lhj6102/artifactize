@@ -1,0 +1,33 @@
+{
+  "name": "guide",
+  "mounts": {
+    "terms": "glossary"
+  },
+  "stale": {
+    "kind": "identity",
+    "script": {
+      "command": "python3",
+      "args": ["identity.py", ".", "{terms}"]
+    }
+  },
+  "evals": [
+    {
+      "id": "terms",
+      "title": "Every bold term is defined in the glossary",
+      "profile": {
+        "kind": "runtime",
+        "command": "python3",
+        "args": [
+          "check_terms.py",
+          "{terms}/terms.txt",
+          "{guide}/intro/page.md",
+          "{usage}/page.md"
+        ],
+        "timeoutMs": 10000
+      },
+      "payload": {
+        "instruction": "Check that every bold term in {intro} and {usage} is defined in {terms}."
+      }
+    }
+  ]
+}

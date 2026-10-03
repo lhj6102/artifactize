@@ -1,0 +1,176 @@
+{
+  "name": "spec",
+  "mounts": {
+    "reqs": "requirements"
+  },
+  "views": {
+    "agentTools": {
+      "read": {
+        "builtin": "read",
+        "description": "Read lines of a text file in {artifactName}; the requirements are at reqs/requirements.md."
+      },
+      "grep": {
+        "builtin": "grep"
+      },
+      "view_image": {
+        "builtin": "view_image",
+        "description": "View an image in {artifactName}, such as diagram.png."
+      },
+      "section": {
+        "description": "Print one '## ' section of spec.md in {artifactName}, by its exact title.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "title": {"type": "string", "minLength": 1}
+          },
+          "required": ["title"],
+          "additionalProperties": false
+        },
+        "protocol": "plain",
+        "command": "/bin/sh",
+        "args": ["section.sh", "{title}"],
+        "timeoutMs": 10000
+      },
+      "coverage": {
+        "description": "List each requirement for {artifactName} with the spec.md lines that cite its ID. Pass id to see one requirement.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "id": {"type": "string", "pattern": "^R[0-9]+$"}
+          },
+          "additionalProperties": false
+        },
+        "protocol": "json",
+        "command": "python3",
+        "args": ["coverage.py", "{reqs}/requirements.md"],
+        "timeoutMs": 10000
+      }
+    },
+    "humanTools": {
+      "open": {
+        "description": "Open the review notes of {artifactName} in the desktop's default application.",
+        "kind": "launch",
+        "command": "xdg-open",
+        "args": ["{artifactPath}/notes.md"]
+      },
+      "notes": {
+        "description": "Print the review notes of {artifactName}.",
+        "kind": "output",
+        "command": "cat",
+        "args": ["{artifactPath}/notes.md"]
+      }
+    }
+  },
+  "evals": [
+    {
+      "id": "review",
+      "title": "The specification covers every requirement",
+      "profile": {
+        "kind": "agent",
+        "backend": "openai",
+        "model": "YOUR_OPENAI_MODEL_ID",
+        "reasoning": "medium",
+        "timeoutMs": 240000,
+        "maxToolCalls": 20,
+        "maxTokens": 200000
+      },
+      "profileVariants": {
+        "anthropic": {
+          "kind": "agent",
+          "backend": "anthropic",
+          "model": "YOUR_ANTHROPIC_MODEL_ID",
+          "reasoning": "medium",
+          "timeoutMs": 240000,
+          "maxToolCalls": 20,
+          "maxTokens": 200000
+        },
+        "chatgpt": {
+          "kind": "agent",
+          "backend": "chatgpt",
+          "model": "YOUR_CHATGPT_MODEL_SLUG",
+          "reasoning": "medium",
+          "timeoutMs": 240000,
+          "maxToolCalls": 20,
+          "maxTokens": 200000
+        },
+        "claude": {
+          "kind": "agent",
+          "backend": "claude",
+          "model": "YOUR_CLAUDE_MODEL_ID",
+          "reasoning": "medium",
+          "timeoutMs": 240000,
+          "maxToolCalls": 20,
+          "maxTokens": 200000
+        }
+      },
+      "payload": {
+        "instruction": "Review spec.md in {spec} against every requirement in {reqs}. Start with coverage_spec to see which lines cite each requirement ID, then read the cited sections with section_spec or read_spec, and use grep_spec to search for anything the coverage report misses. Use view_image_spec to check that diagram.png matches the Diagram section. Answer GREEN only if each requirement is fully specified and the diagram matches; otherwise answer RED with one finding per problem."
+      },
+      "passSchema": {
+        "type": "object",
+        "properties": {
+          "covered": {
+            "type": "array",
+            "items": {"type": "string", "pattern": "^R[0-9]+$"},
+            "minItems": 1
+          },
+          "diagramMatches": {"const": true},
+          "notes": {"type": "string"}
+        },
+        "required": ["covered", "diagramMatches"],
+        "additionalProperties": false
+      },
+      "failSchema": {
+        "type": "object",
+        "properties": {
+          "findings": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "requirement": {"type": "string", "pattern": "^(R[0-9]+|diagram)$"},
+                "problem": {"type": "string", "minLength": 1}
+              },
+              "required": ["requirement", "problem"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["findings"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "signoff",
+      "title": "A reviewer signs off on the open questions",
+      "profile": {
+        "kind": "human"
+      },
+      "payload": {
+        "instruction": "Read the review notes of {spec} with the notes or open tool. Submit GREEN with approved: true when every open question has an answer that spec.md supports; otherwise submit RED and list the unresolved questions."
+      },
+      "passSchema": {
+        "type": "object",
+        "properties": {
+          "approved": {"const": true},
+          "comment": {"type": "string"}
+        },
+        "required": ["approved"],
+        "additionalProperties": false
+      },
+      "failSchema": {
+        "type": "object",
+        "properties": {
+          "unresolved": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "minItems": 1
+          }
+        },
+        "required": ["unresolved"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+artifact: a folder that an artifactize.json file declares
+eval: one check that returns GREEN or RED for an Artifact
+identity: a short string that names the exact inputs of a review
