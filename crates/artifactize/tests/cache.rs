@@ -125,6 +125,23 @@ impl Fixture {
             .unwrap()
     }
 
+    fn seed_entries(&self, count: usize, bytes: i64) {
+        let mut db = Connection::open(self.state.join("state.sqlite")).unwrap();
+        let transaction = db.transaction().unwrap();
+        for i in 0..count {
+            let identity = format!("seed-{i:05}");
+            transaction.execute(
+                "INSERT INTO executions(id,identity,owner_pid,owner_start_time,status,data) SELECT ?,?,owner_pid,owner_start_time,status,json_set(data,'$.id',?,'$.identity',?) FROM executions LIMIT 1",
+                rusqlite::params![identity, identity, identity, identity],
+            ).unwrap();
+            transaction.execute(
+                "INSERT INTO cache_entries(identity,execution_id,bytes,last_used) VALUES (?,?,?,?)",
+                rusqlite::params![identity, identity, bytes, format!("2000-01-01T00:00:00.{i:09}Z")],
+            ).unwrap();
+        }
+        transaction.commit().unwrap();
+    }
+
     fn entries(&self) -> Vec<(String, String, i64, String, String)> {
         let db = Connection::open(self.state.join("state.sqlite")).unwrap();
         let mut statement = db.prepare("SELECT c.identity,c.execution_id,c.bytes,c.last_used,e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id ORDER BY c.identity").unwrap();
@@ -735,4 +752,382 @@ fn an_identity_waiter_occupies_a_job_slot_without_consuming_execution_budget() {
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(fixture.starts(), 1);
     assert!(target.join("independent/ran").exists());
+}
+
+#[test]
+fn cache_commands_are_inert_for_missing_and_empty_state() {
+    let fixture = Fixture::new();
+    let missing_repo = fixture.root.path().join("missing-repo");
+    for empty in [false, true] {
+        if empty {
+            fs::create_dir(&fixture.state).unwrap();
+            fs::write(fixture.state.join("state.sqlite"), []).unwrap();
+        }
+        assert_eq!(
+            fixture.command(&missing_repo, &["cache", "list"], 0),
+            json!([])
+        );
+        assert_eq!(
+            fixture.command(&missing_repo, &["cache", "show", "missing"], 4),
+            Value::Null
+        );
+        assert_eq!(
+            fixture.command(&missing_repo, &["cache", "rm", "missing"], 0),
+            json!({"removed":false})
+        );
+        assert_eq!(
+            fixture.command(&missing_repo, &["cache", "gc"], 0),
+            json!({"removedEntries":0,"removedBytes":0,"remainingEntries":0,"remainingBytes":0})
+        );
+        if empty {
+            assert_eq!(fs::read_dir(&fixture.state).unwrap().count(), 1);
+            assert_eq!(
+                fs::metadata(fixture.state.join("state.sqlite"))
+                    .unwrap()
+                    .len(),
+                0
+            );
+        } else {
+            assert!(!fixture.state.exists());
+        }
+    }
+    assert!(!missing_repo.exists());
+}
+
+#[test]
+fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo("repo", json!({"name":"original","stale":identity("entry"),"evals":[eval("check","printf original; exit 7")]}));
+    let run = fixture.command(&repo, &["verify", "--all"], 1);
+    fs::remove_dir_all(&repo).unwrap();
+    let before = fixture.entries();
+    let entries = fixture.command(&repo, &["cache", "list"], 0);
+    assert_eq!(entries.as_array().unwrap().len(), 1);
+    let entry = &entries[0];
+    assert_eq!(entry["identity"], "entry");
+    assert_eq!(entry["verdict"], "RED");
+    assert_eq!(entry["repoPath"], run["repoPath"]);
+    assert_eq!(entry["evalId"], "original/check");
+    assert_eq!(entry["bytes"], before[0].2);
+    assert_eq!(entry["lastUsed"], before[0].3);
+    let saved = fixture.command(&repo, &["cache", "show", "entry"], 0);
+    assert_eq!(
+        saved,
+        fixture.execution(run["requests"][0]["executionId"].as_str().unwrap())
+    );
+    for field in ["result", "profile", "provenance", "usage"] {
+        assert_eq!(saved[field], run["requests"][0][field]);
+    }
+    for args in [vec!["cache", "list"], vec!["cache", "show", "entry"]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .arg("--state-dir")
+            .arg(&fixture.state)
+            .args(&args)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        if args[1] == "list" {
+            let text = String::from_utf8(output.stdout).unwrap();
+            assert!(text.contains("IDENTITY\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED"));
+            assert!(text.contains("entry\tRED"));
+        } else {
+            assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+                saved
+            );
+        }
+    }
+    assert_eq!(
+        fixture.entries(),
+        before,
+        "queries do not touch LRU metadata"
+    );
+    assert_eq!(
+        fixture.command(&repo, &["cache", "rm", "entry"], 0),
+        json!({"removed":true})
+    );
+    assert_eq!(
+        fixture.command(&repo, &["cache", "rm", "entry"], 0),
+        json!({"removed":false})
+    );
+    assert_eq!(
+        fixture.command(&repo, &["cache", "show", "entry"], 4),
+        Value::Null
+    );
+    assert_eq!(fixture.count("executions"), 1);
+    assert_eq!(
+        fixture.command(&repo, &["run", "show", run["id"].as_str().unwrap()], 0),
+        run
+    );
+}
+
+#[test]
+fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo(
+        "repo",
+        json!({"name":"test","stale":identity("seed-00000"),"evals":[eval("check","exit 0")]}),
+    );
+    let original = fixture.command(&repo, &["verify", "--all"], 0);
+    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    db.execute("DELETE FROM cache_entries", []).unwrap();
+    fixture.seed_entries(10_000, 1);
+    let hit = fixture.command(&repo, &["verify", "--all"], 0);
+    assert_eq!(hit["requests"][0]["executionId"], "seed-00000");
+    let used: String = db
+        .query_row(
+            "SELECT last_used FROM cache_entries WHERE identity='seed-00000'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(used.as_str() > "2000");
+    write(
+        &repo,
+        "artifactize.json",
+        json!({"name":"test","stale":identity("new"),"evals":[eval("check","exit 0")]}),
+    );
+    fixture.command(&repo, &["verify", "--all"], 0);
+    assert_eq!(fixture.count("cache_entries"), 10_000);
+    assert_eq!(
+        fixture.command(&repo, &["cache", "show", "seed-00001"], 4),
+        Value::Null
+    );
+    assert!(
+        fixture
+            .command(&repo, &["cache", "show", "seed-00000"], 0)
+            .is_object()
+    );
+    assert!(
+        fixture
+            .command(&repo, &["cache", "show", "new"], 0)
+            .is_object()
+    );
+    assert_eq!(fixture.count("executions"), 10_002);
+    assert_eq!(
+        fixture.command(&repo, &["run", "show", original["id"].as_str().unwrap()], 0),
+        original
+    );
+}
+
+#[test]
+fn gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
+    const MIB: i64 = 1024 * 1024;
+    let fixture = Fixture::new();
+    let repo = fixture.repo(
+        "repo",
+        json!({"name":"test","stale":identity("original"),"evals":[eval("check","exit 0")]}),
+    );
+    let original = fixture.command(&repo, &["verify", "--all"], 0);
+    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    db.execute("DELETE FROM cache_entries", []).unwrap();
+    fixture.seed_entries(66, 16 * MIB);
+    db.execute("INSERT INTO executions(id,identity,owner_pid,owner_start_time,status,data) VALUES ('active','seed-00000',1,1,'WAITING_HUMAN','{}')", []).unwrap();
+    db.execute("INSERT INTO requests(id,run_id,execution_id,status,data) VALUES ('waiter',?,'seed-00001','QUEUED','{}')", [original["id"].as_str().unwrap()]).unwrap();
+    for key in ["seed-00000", "seed-00001"] {
+        assert!(
+            fixture.command(&repo, &["cache", "rm", key], 2)["error"]
+                .as_str()
+                .unwrap()
+                .contains("in use")
+        );
+    }
+    let gc = fixture.command(&repo, &["cache", "gc"], 0);
+    assert_eq!(
+        gc,
+        json!({"removedEntries":2,"removedBytes":32*MIB,"remainingEntries":64,"remainingBytes":1024*MIB})
+    );
+    for key in ["seed-00000", "seed-00001", "seed-00004"] {
+        assert!(
+            fixture
+                .command(&repo, &["cache", "show", key], 0)
+                .is_object()
+        );
+    }
+    for key in ["seed-00002", "seed-00003"] {
+        assert_eq!(
+            fixture.command(&repo, &["cache", "show", key], 4),
+            Value::Null
+        );
+    }
+    assert_eq!(fixture.count("executions"), 68);
+    assert_eq!(fixture.count("requests"), 2);
+    assert_eq!(
+        db.query_row::<String, _, _>(
+            "SELECT status FROM executions WHERE id='active'",
+            [],
+            |row| row.get(0)
+        )
+        .unwrap(),
+        "WAITING_HUMAN"
+    );
+    db.execute("UPDATE cache_entries SET bytes=?", [16 * MIB + 1])
+        .unwrap();
+    let gc = fixture.command(&repo, &["cache", "gc"], 0);
+    assert_eq!(
+        gc["remainingEntries"], 2,
+        "protected rows survive even when oversized"
+    );
+    db.execute("UPDATE executions SET status='ERROR' WHERE id='active'", [])
+        .unwrap();
+    db.execute("UPDATE requests SET status='GREEN' WHERE id='waiter'", [])
+        .unwrap();
+    assert_eq!(
+        fixture.command(&repo, &["cache", "gc"], 0)["remainingEntries"],
+        0
+    );
+    assert_eq!(fixture.count("executions"), 68);
+}
+
+#[test]
+fn rm_refuses_an_active_identity_even_without_an_entry() {
+    let fixture = Fixture::new();
+    let repo = fixture.shared_repo("repo", WAIT_SCRIPT);
+    let mut owner = fixture.spawn(&repo, &[]);
+    wait_until(|| fixture.root.path().join("starts").exists());
+    assert!(
+        fixture.command(&repo, &["cache", "rm", "concurrent"], 2)["error"]
+            .as_str()
+            .unwrap()
+            .contains("active execution")
+    );
+    fixture.command(&repo, &["cache", "gc"], 0);
+    assert_eq!(fixture.count("executions"), 1);
+    assert!(owner.try_wait().unwrap().is_none());
+    fixture.release();
+    finish(owner, 0);
+}
+
+#[test]
+fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement() {
+    let fixture = Fixture::new();
+    let source = fixture.shared_repo("source", WAIT_SCRIPT);
+    let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");
+    let owner = fixture.spawn(&source, &[]);
+    wait_until(|| fixture.root.path().join("starts").exists());
+    let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
+    let waiting = fixture.waiting_request();
+    signal(waiter.id(), "-STOP");
+    fixture.release();
+    let original = finish(owner, 0);
+    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    db.execute("DELETE FROM cache_entries", []).unwrap();
+    db.execute("INSERT INTO executions(id,identity,owner_pid,owner_start_time,status,data) SELECT 'replacement',identity,owner_pid,owner_start_time,status,json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?", [waiting["executionId"].as_str().unwrap()]).unwrap();
+    db.execute("INSERT INTO cache_entries(identity,execution_id,bytes,last_used) VALUES ('concurrent','replacement',1,'2000-01-01T00:00:00Z')", []).unwrap();
+    signal(waiter.id(), "-CONT");
+    let joined = finish(waiter, 0);
+    assert_eq!(
+        joined["requests"][0]["result"],
+        original["requests"][0]["result"]
+    );
+    assert_eq!(joined["requests"][0]["executionId"], waiting["executionId"]);
+    assert_eq!(fixture.starts(), 1);
+    assert_eq!(
+        fixture.command(&target, &["cache", "list"], 0)[0]["lastUsed"],
+        "2000-01-01T00:00:00Z"
+    );
+}
+
+#[tokio::test]
+async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained() {
+    use artifactize::store::{Execution, Receipts, Request};
+    let fixture = Fixture::new();
+    let source = fixture.shared_repo("source", WAIT_SCRIPT);
+    let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");
+    let mut owner = fixture.spawn(&source, &[]);
+    wait_until(|| fixture.root.path().join("starts").exists());
+    let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
+    let waiting = fixture.waiting_request();
+    signal(waiter.id(), "-STOP");
+    let mut execution: Execution =
+        serde_json::from_value(fixture.execution(waiting["executionId"].as_str().unwrap()))
+            .unwrap();
+    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    let data: String = db
+        .query_row(
+            "SELECT data FROM requests WHERE id=?",
+            [&execution.provenance.request_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let mut request: Request = serde_json::from_str(&data).unwrap();
+    owner.kill().unwrap();
+    owner.wait().unwrap();
+    let pid = fs::read_to_string(fixture.root.path().join("starts")).unwrap();
+    assert!(
+        Command::new("/bin/kill")
+            .args(["-KILL", "--", &format!("-{}", pid.trim())])
+            .status()
+            .unwrap()
+            .success()
+    );
+    let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
+    execution.status = "GREEN".into();
+    execution.result = Some(json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)}));
+    execution.completed_at = Some("2026-10-04T00:00:00Z".into());
+    execution.provenance.completed_at = execution.completed_at.clone();
+    request.status = execution.status.clone();
+    request.result = execution.result.clone();
+    request.completed_at = execution.completed_at.clone();
+    request.provenance = Some(execution.provenance.clone());
+    receipts
+        .complete_execution(&execution, &request)
+        .await
+        .unwrap();
+    assert_eq!(fixture.count("cache_entries"), 0);
+    assert_eq!(
+        artifactize::store::read_run(&fixture.state, &request.run_id)
+            .await
+            .unwrap()
+            .requests[0]
+            .result,
+        request.result
+    );
+    signal(waiter.id(), "-CONT");
+    // Drain stdout while the large result is written, rather than waiting on a full pipe.
+    let joined = output(waiter.wait_with_output().unwrap(), 0);
+    assert_eq!(
+        joined["requests"][0]["result"],
+        serde_json::to_value(execution.result).unwrap()
+    );
+    assert_eq!(joined["requests"][0]["executionId"], execution.id);
+    assert_eq!(joined["executionsStarted"], 0);
+    assert_eq!(fixture.count("cache_entries"), 0);
+    assert_eq!(fixture.count("executions"), 1);
+    assert_eq!(fixture.starts(), 1);
+    let later = fixture.command(&target, &["verify", "--all"], 0);
+    assert_ne!(later["requests"][0]["executionId"], execution.id);
+    assert_eq!(later["requests"][0]["result"]["stdout"], "unexpected");
+}
+
+#[test]
+fn gc_failure_does_not_replace_a_completed_result() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo(
+        "repo",
+        json!({"name":"test","stale":identity("first"),"evals":[eval("check","exit 0")]}),
+    );
+    fixture.command(&repo, &["verify", "--all"], 0);
+    let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    db.execute("UPDATE cache_entries SET bytes=1073741824", [])
+        .unwrap();
+    db.execute_batch("CREATE TRIGGER fail_gc BEFORE DELETE ON cache_entries BEGIN SELECT RAISE(FAIL,'GC unavailable'); END;").unwrap();
+    write(
+        &repo,
+        "artifactize.json",
+        json!({"name":"test","stale":identity("second"),"evals":[eval("check","exit 0")]}),
+    );
+    let run = fixture.command(&repo, &["verify", "--all"], 0);
+    assert_eq!(run["requests"][0]["status"], "GREEN");
+    assert!(
+        fixture
+            .command(&repo, &["cache", "show", "second"], 0)
+            .is_object()
+    );
+    assert!(
+        fixture.command(&repo, &["cache", "gc"], 2)["error"]
+            .as_str()
+            .unwrap()
+            .contains("GC unavailable")
+    );
 }

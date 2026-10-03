@@ -195,7 +195,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [x] **P3.2** Reuse of completed GREEN/RED results across repositories; no-identity and `--force` bypass. Check: cross-repo RED reuse; force leaves the entry unchanged.
 - [x] **P3.3** Cross-process claim, polling waiters, dead-owner reclaim. Check: two processes execute one identity once; a killed owner is reclaimed.
 - [x] **P3.4** `--jobs N` scheduling and `maxExecutions` counter. Check: concurrency never exceeds N; the budget stops new starts.
-- [ ] **P3.5** `cache list/show/rm` and LRU GC on entries and bytes. Check: GC never removes an active execution.
+- [x] **P3.5** `cache list/show/rm` and LRU GC on entries and bytes. Check: GC never removes an active execution.
 
 ### P4 Tools
 - [x] **P4.1** Agent tool declarations and registry:

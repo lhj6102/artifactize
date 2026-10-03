@@ -7,6 +7,7 @@ use std::{
 
 use crate::workspace::canonical_target;
 
+pub(crate) mod cache_entries;
 mod executions;
 mod receipts;
 pub use executions::{Claim, Execution, Provenance, read_identity_executions};

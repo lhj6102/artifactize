@@ -1,0 +1,157 @@
+use std::{path::Path, time::Duration};
+
+use rusqlite::{OpenFlags, OptionalExtension, params};
+use serde::Serialize;
+use tokio_rusqlite::Connection;
+
+use super::{DATABASE, Execution, STATE_SCHEMA_VERSION, executions, receipts::Error};
+
+pub const MAX_ENTRIES: i64 = 10_000;
+pub const MAX_BYTES: i64 = 1024 * 1024 * 1024;
+pub const MAX_ENTRY_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Entry {
+    pub identity: String,
+    pub execution_id: String,
+    pub verdict: String,
+    pub repo_path: String,
+    pub eval_id: String,
+    pub bytes: i64,
+    pub last_used: String,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GcResult {
+    pub removed_entries: i64,
+    pub removed_bytes: i64,
+    pub remaining_entries: i64,
+    pub remaining_bytes: i64,
+}
+
+async fn open(state: &Path, writable: bool) -> Result<Option<Connection>, String> {
+    let state = crate::workspace::canonical_target(state).map_err(|e| e.to_string())?;
+    super::receipts::check_files(&state)?;
+    let path = state.join(DATABASE);
+    if !path.try_exists().map_err(|e| e.to_string())? {
+        return Ok(None);
+    }
+    let connection = Connection::open_with_flags(
+        path,
+        if writable {
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+        } else {
+            OpenFlags::SQLITE_OPEN_READ_ONLY
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let initialized = connection
+        .call(|db| -> Result<bool, Error> {
+            db.busy_timeout(Duration::from_secs(5))?;
+            let version: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
+            if version == 0
+                && !db.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master)", [], |row| {
+                    row.get::<_, bool>(0)
+                })?
+            {
+                return Ok(false);
+            }
+            if version != STATE_SCHEMA_VERSION {
+                return Err(Error::Invalid(format!(
+                    "Unsupported state schema version: {version}"
+                )));
+            }
+            Ok(true)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(initialized.then_some(connection))
+}
+
+pub async fn list(state: &Path) -> Result<Vec<Entry>, String> {
+    let Some(connection) = open(state, false).await? else {
+        return Ok(Vec::new());
+    };
+    connection.call(|db| -> Result<_, Error> {
+        let mut statement = db.prepare("SELECT c.identity,c.execution_id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),c.bytes,c.last_used,json_extract(e.data,'$.completedAt') FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE e.status IN ('GREEN','RED') ORDER BY c.identity")?;
+        Ok(statement.query_map([], |row| Ok(Entry {
+            identity: row.get(0)?, execution_id: row.get(1)?, verdict: row.get(2)?,
+            repo_path: row.get(3)?, eval_id: row.get(4)?, bytes: row.get(5)?,
+            last_used: row.get(6)?, completed_at: row.get(7)?,
+        }))?.collect::<Result<_, _>>()?)
+    }).await.map_err(|e| e.to_string())
+}
+
+pub async fn show(state: &Path, identity: &str) -> Result<Option<Execution>, String> {
+    let Some(connection) = open(state, false).await? else {
+        return Ok(None);
+    };
+    let identity = identity.to_owned();
+    connection
+        .call(move |db| executions::lookup(db, &identity))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+pub async fn remove(state: &Path, identity: &str) -> Result<bool, String> {
+    let Some(connection) = open(state, true).await? else {
+        return Ok(false);
+    };
+    let identity = identity.to_owned();
+    connection.call(move |db| -> Result<bool, Error> {
+        let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let in_use: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM executions WHERE identity=? AND status IN ('RUNNING','WAITING_HUMAN')) OR EXISTS(SELECT 1 FROM requests q JOIN executions e ON e.id=q.execution_id WHERE e.identity=? AND q.status IN ('QUEUED','RUNNING','WAITING_HUMAN'))",
+            params![identity, identity], |row| row.get(0),
+        )?;
+        if in_use {
+            return Err(Error::Invalid(format!("Identity {identity} is in use by an active execution or waiter.")));
+        }
+        let removed = transaction.execute("DELETE FROM cache_entries WHERE identity=?", [identity])?;
+        transaction.commit()?;
+        Ok(removed != 0)
+    }).await.map_err(|e| e.to_string())
+}
+
+pub async fn gc(state: &Path) -> Result<GcResult, String> {
+    let Some(connection) = open(state, true).await? else {
+        return Ok(GcResult::default());
+    };
+    connection.call(collect).await.map_err(|e| e.to_string())
+}
+
+pub(super) fn collect(db: &mut rusqlite::Connection) -> Result<GcResult, Error> {
+    let mut result = GcResult::default();
+    loop {
+        // Each eviction has its own short transaction; execution and receipt rows stay intact.
+        let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        (result.remaining_entries, result.remaining_bytes) = transaction.query_row(
+            "SELECT count(*),coalesce(sum(bytes),0) FROM cache_entries",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        let over_capacity =
+            result.remaining_entries > MAX_ENTRIES || result.remaining_bytes > MAX_BYTES;
+        let candidate: Option<(String, i64)> = transaction.query_row(
+            "SELECT c.identity,c.bytes FROM cache_entries c JOIN executions e ON e.id=c.execution_id
+             WHERE e.status IN ('GREEN','RED') AND (? OR c.bytes>?)
+             AND NOT EXISTS(SELECT 1 FROM executions a WHERE a.identity=c.identity AND a.status IN ('RUNNING','WAITING_HUMAN'))
+             AND NOT EXISTS(SELECT 1 FROM requests q WHERE q.execution_id=c.execution_id AND q.status IN ('QUEUED','RUNNING','WAITING_HUMAN'))
+             ORDER BY c.last_used,c.identity LIMIT 1",
+            params![over_capacity, MAX_ENTRY_BYTES as i64],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        ).optional()?;
+        let Some((identity, bytes)) = candidate else {
+            transaction.commit()?;
+            return Ok(result);
+        };
+        transaction.execute("DELETE FROM cache_entries WHERE identity=?", [identity])?;
+        transaction.commit()?;
+        result.removed_entries += 1;
+        result.removed_bytes += bytes;
+    }
+}

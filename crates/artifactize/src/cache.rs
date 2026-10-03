@@ -5,6 +5,8 @@ use std::{collections::BTreeMap, path::Path};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
+pub use crate::store::cache_entries::{Entry, GcResult, gc, list, remove, show};
+
 use crate::{
     config::{RepoConfig, Stale},
     process, runtime, scope,
