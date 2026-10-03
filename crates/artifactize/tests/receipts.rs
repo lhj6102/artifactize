@@ -1,6 +1,9 @@
-use std::{fs, os::unix::fs::symlink, process::Command};
+use std::{fs, os::unix::fs::symlink, process::Command, sync::mpsc, thread};
 
-use artifactize::store::{DATABASE, Receipts, read_run};
+use artifactize::store::{
+    DATABASE, Receipts, STATE_SCHEMA_VERSION, read_identity_executions, read_latest_requests,
+    read_request, read_requests, read_run, read_runs,
+};
 use rusqlite::Connection;
 
 #[tokio::test]
@@ -40,6 +43,103 @@ async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
         db.query_row::<i64, _, _>("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))
             .unwrap(),
         before
+    );
+}
+
+async fn assert_empty_reads(state: &std::path::Path, repo: &std::path::Path) {
+    assert!(read_requests(state, None).await.unwrap().is_empty());
+    assert!(read_runs(state, None, 10, 0).await.unwrap().is_empty());
+    assert!(read_latest_requests(state, repo).await.unwrap().is_empty());
+    assert!(
+        read_identity_executions(state, &["missing".into()])
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        read_run(state, "missing")
+            .await
+            .unwrap_err()
+            .contains("Run not found")
+    );
+    assert!(
+        read_request(state, "missing")
+            .await
+            .unwrap_err()
+            .contains("Review request not found")
+    );
+    for args in [["request", "list"], ["run", "list"], ["cache", "list"]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .arg("--state-dir")
+            .arg(state)
+            .args(args)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&output.stdout).unwrap(),
+            serde_json::json!([])
+        );
+    }
+}
+
+#[tokio::test]
+async fn readers_observe_empty_state_until_schema_commits() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let template = root.path().join("template");
+    let state = root.path().join("state");
+    fs::create_dir(&repo).unwrap();
+    let receipts = Receipts::open(&template, &repo).await.unwrap();
+    let db = Connection::open(template.join(DATABASE)).unwrap();
+    let schema = db
+        .prepare("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY rowid")
+        .unwrap()
+        .query_map([], |row| row.get::<_, String>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    drop(db);
+    drop(receipts);
+    fs::create_dir(&state).unwrap();
+    drop(Connection::open(state.join(DATABASE)).unwrap());
+    assert_empty_reads(&state, &repo).await;
+
+    let (ready_tx, ready_rx) = mpsc::channel();
+    let (commit_tx, commit_rx) = mpsc::channel();
+    let path = state.join(DATABASE);
+    let initializer = thread::spawn(move || {
+        let mut db = Connection::open(path).unwrap();
+        db.pragma_update(None, "journal_mode", "WAL").unwrap();
+        let transaction = db
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .unwrap();
+        for sql in schema {
+            transaction.execute_batch(&sql).unwrap();
+        }
+        transaction
+            .pragma_update(None, "user_version", STATE_SCHEMA_VERSION)
+            .unwrap();
+        ready_tx.send(()).unwrap();
+        if commit_rx.recv().is_ok() {
+            transaction.commit().unwrap();
+        }
+    });
+    ready_rx.recv().unwrap();
+    assert_empty_reads(&state, &repo).await;
+    commit_tx.send(()).unwrap();
+    initializer.join().unwrap();
+    assert_empty_reads(&state, &repo).await;
+    let db = Connection::open(state.join(DATABASE)).unwrap();
+    assert_eq!(
+        db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
+            .unwrap(),
+        STATE_SCHEMA_VERSION
     );
 }
 

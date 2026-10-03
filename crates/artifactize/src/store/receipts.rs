@@ -129,6 +129,8 @@ impl Receipts {
             }
             db.pragma_update(None, "journal_mode", "WAL")?;
             let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            schema_initialized(&transaction)?;
+            // Publish the schema and its version together; readers see an empty snapshot until commit.
             transaction.execute_batch("CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS executions(id TEXT PRIMARY KEY, identity TEXT, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE UNIQUE INDEX IF NOT EXISTS active_identity ON executions(identity) WHERE identity IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
@@ -239,6 +241,24 @@ pub(super) fn update_request(db: &rusqlite::Connection, request: &Request) -> Re
     Ok(())
 }
 
+pub(super) fn schema_initialized(transaction: &rusqlite::Transaction<'_>) -> Result<bool, Error> {
+    let version: u32 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    // Check both in one snapshot: initialization may commit between separate reads.
+    if version == 0
+        && !transaction.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master)", [], |row| {
+            row.get::<_, bool>(0)
+        })?
+    {
+        return Ok(false);
+    }
+    if version != STATE_SCHEMA_VERSION {
+        return Err(Error::Invalid(format!(
+            "Unsupported state schema version: {version}"
+        )));
+    }
+    Ok(true)
+}
+
 pub(super) fn check_files(state: &Path) -> Result<(), String> {
     for suffix in ["", "-wal", "-shm"] {
         let path = state.join(format!("{DATABASE}{suffix}"));
@@ -293,12 +313,8 @@ pub async fn read_latest_requests(
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(Duration::from_secs(5))?;
             let transaction = db.transaction()?;
-            let version: u32 =
-                transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-            if version != STATE_SCHEMA_VERSION {
-                return Err(Error::Invalid(format!(
-                    "Unsupported state schema version: {version}"
-                )));
+            if !schema_initialized(&transaction)? {
+                return Ok(Default::default());
             }
             let latest = {
                 let mut statement = transaction.prepare(
@@ -343,9 +359,8 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     connection.call(move |db| -> Result<RunView, Error> {
         db.busy_timeout(Duration::from_secs(5))?;
         let transaction = db.transaction()?;
-        let version: u32 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version != STATE_SCHEMA_VERSION {
-            return Err(Error::Invalid(format!("Unsupported state schema version: {version}")));
+        if !schema_initialized(&transaction)? {
+            return Err(Error::Invalid("Run not found.".into()));
         }
         let saved: Option<(String, String)> = transaction.query_row("SELECT repo,data FROM runs WHERE id=?", [&id], |row| Ok((row.get(0)?, row.get(1)?))).optional()?;
         let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;

@@ -4,7 +4,10 @@ use rusqlite::{OpenFlags, OptionalExtension, params};
 use serde::Serialize;
 use tokio_rusqlite::Connection;
 
-use super::{DATABASE, Execution, STATE_SCHEMA_VERSION, executions, receipts::Error};
+use super::{
+    DATABASE, Execution, executions,
+    receipts::{Error, schema_initialized},
+};
 
 pub const MAX_ENTRIES: i64 = 10_000;
 pub const MAX_BYTES: i64 = 1024 * 1024 * 1024;
@@ -52,20 +55,8 @@ async fn open(state: &Path, writable: bool) -> Result<Option<Connection>, String
     let initialized = connection
         .call(|db| -> Result<bool, Error> {
             db.busy_timeout(Duration::from_secs(5))?;
-            let version: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-            if version == 0
-                && !db.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master)", [], |row| {
-                    row.get::<_, bool>(0)
-                })?
-            {
-                return Ok(false);
-            }
-            if version != STATE_SCHEMA_VERSION {
-                return Err(Error::Invalid(format!(
-                    "Unsupported state schema version: {version}"
-                )));
-            }
-            Ok(true)
+            let transaction = db.transaction()?;
+            schema_initialized(&transaction)
         })
         .await
         .map_err(|e| e.to_string())?;
