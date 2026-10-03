@@ -74,9 +74,10 @@ impl<'a> Registry<'a> {
                 let name = format!("{operation}_{id}");
                 let description = match declaration {
                     AgentTool::Command(tool) => tool.description.clone(),
-                    AgentTool::Builtin(tool) => tool.description.clone().unwrap_or_else(|| {
-                        format!("Built-in {operation} for {{artifactName}} (not yet implemented).")
-                    }),
+                    AgentTool::Builtin(tool) => tool
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| builtin::description(tool.builtin).into()),
                 }
                 .replace("{artifactName}", id);
                 let input_schema = declaration.input_schema();
@@ -120,12 +121,36 @@ impl<'a> Registry<'a> {
         if let Err(message) = schema::validate(&tool.validator, &args) {
             return ToolResult::error(message);
         }
-        let AgentTool::Command(command) = tool.declaration else {
-            return ToolResult::error("This built-in Agent tool is not yet implemented.");
-        };
         if cancellation.is_cancelled() {
             return ToolResult::error("Agent tool call was cancelled.");
         }
+        let command = match tool.declaration {
+            AgentTool::Command(command) => command,
+            AgentTool::Builtin(tool_declaration) => {
+                let builtin = tool_declaration.builtin;
+                let root = self.config.root.clone();
+                let owner = tool.definition.artifact_id.clone();
+                let artifacts: BTreeMap<_, _> = self
+                    .scope
+                    .artifacts
+                    .iter()
+                    .map(|(id, artifact)| ((*id).to_owned(), (*artifact).clone()))
+                    .collect();
+                let cancellation = cancellation.child_token();
+                let _cancel_on_drop = cancellation.clone().drop_guard();
+                return tokio::task::spawn_blocking(move || {
+                    let scope = Scope {
+                        artifacts: artifacts
+                            .iter()
+                            .map(|(id, artifact)| (id.as_str(), artifact))
+                            .collect(),
+                    };
+                    builtin::call(builtin, &root, &scope, &owner, &args, &cancellation)
+                })
+                .await
+                .unwrap_or_else(|_| ToolResult::error("Built-in Agent tool execution failed."));
+            }
+        };
         let invocation = match self.prepare(&tool.definition.artifact_id, command, &args) {
             Ok(invocation) => invocation,
             Err(()) => return ToolResult::error("Agent tool preparation failed."),
