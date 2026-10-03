@@ -126,11 +126,24 @@ fn nonempty(ids: &[String]) -> Result<(), String> {
 }
 
 fn selected_artifacts<'a>(config: &'a RepoConfig, id: &str) -> Result<Vec<&'a str>, String> {
-    config
+    if let Some((id, _)) = config.artifacts.get_key_value(id) {
+        return Ok(vec![id.as_str()]);
+    }
+    let instances: Vec<_> = config
         .artifacts
-        .get_key_value(id)
-        .map(|(id, _)| vec![id.as_str()])
-        .ok_or_else(|| format!("Unknown Artifact: {id}"))
+        .iter()
+        .filter(|(_, artifact)| {
+            artifact
+                .family
+                .as_ref()
+                .is_some_and(|family| family.name == id)
+        })
+        .map(|(id, _)| id.as_str())
+        .collect();
+    if instances.is_empty() {
+        return Err(format!("Unknown Artifact: {id}"));
+    }
+    Ok(instances)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

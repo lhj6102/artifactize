@@ -382,15 +382,24 @@ impl ArtifactDeclaration {
     }
 }
 
-/// Validate declaration data only. No script or declared input is opened here.
+/// Validate an ordinary Artifact declaration without opening scripts or declared inputs.
+/// Family templates require workspace discovery to resolve their instance list and material.
 pub fn parse_declaration(json: &str) -> Result<ArtifactDeclaration, String> {
     let value: Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
-    if value
-        .as_object()
-        .is_some_and(|object| object.contains_key("family"))
+    ordinary_declaration(value)
+}
+
+fn ordinary_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
+    if ["views", "critics"]
+        .iter()
+        .any(|key| value.get(key).is_some_and(families::parameterized))
     {
-        return Err("Artifact families are not supported yet (P2.1).".into());
+        return Err("$param references are allowed only in an Artifact family declaration.".into());
     }
+    validated_declaration(value)
+}
+
+fn validated_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
     let declaration: ArtifactDeclaration =
         serde_json::from_value(value).map_err(|error| error.to_string())?;
     declaration.validate()?;
@@ -399,6 +408,7 @@ pub fn parse_declaration(json: &str) -> Result<ArtifactDeclaration, String> {
 
 #[derive(Debug)]
 pub struct Artifact {
+    pub family: Option<families::FamilyMembership>,
     pub path: PathBuf,
     pub children: BTreeMap<String, String>,
     pub name: String,
@@ -431,6 +441,8 @@ pub enum ReviewRequirement {
 pub struct RepoConfig {
     pub root: PathBuf,
     pub artifacts: BTreeMap<String, Artifact>,
+    /// Reserved family names mapped to shared physical folders; not Artifacts.
+    pub families: BTreeMap<String, PathBuf>,
     pub critics: Vec<Critic>,
     pub relations: Vec<crate::scope::Relation>,
 }
@@ -459,11 +471,12 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
     let mut config = RepoConfig {
         root,
         artifacts: BTreeMap::new(),
+        families: BTreeMap::new(),
         critics: Vec::new(),
         relations: Vec::new(),
     };
-    let mut pending = vec![(PathBuf::new(), None::<String>)];
-    while let Some((relative, mut owner)) = pending.pop() {
+    let mut pending = vec![(PathBuf::new(), None::<String>, None::<String>)];
+    while let Some((relative, mut owner, mut family)) = pending.pop() {
         let directory = config.root.join(&relative);
         let entries = fs::read_dir(&directory)
             .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
@@ -484,73 +497,119 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     "artifactize.json must be a regular file.",
                 ));
             }
-            let json = fs::read_to_string(&file).map_err(|error| ConfigError::new(&file, error))?;
-            let declaration =
-                parse_declaration(&json).map_err(|error| ConfigError::new(&file, error))?;
-            if !relative.as_os_str().is_empty() && declaration.review_policy.is_some() {
+            if let Some(family) = &family {
                 return Err(ConfigError::new(
-                    file,
-                    "reviewPolicy belongs only to the repository root artifactize.json.",
-                ));
-            }
-            let ArtifactDeclaration {
-                name,
-                critics,
-                views,
-                mounts,
-                basis,
-                stale,
-                env_requirements,
-                review_policy,
-            } = declaration;
-            if let Some(previous) = config.artifacts.get(&name) {
-                return Err(ConfigError::new(
-                    file,
+                    &file,
                     format!(
-                        "Duplicate Artifact name: {name} (also declared in {})",
-                        previous.path.join(CONFIG_FILE).display()
+                        "Artifact family {family} cannot contain nested {CONFIG_FILE} markers."
                     ),
                 ));
             }
-            if let Some(parent) = &owner {
-                let parent = config.artifacts.get_mut(parent).unwrap();
-                let child = relative.strip_prefix(&parent.path).unwrap();
-                let child = child
-                    .to_str()
-                    .ok_or_else(|| ConfigError::new(&file, "Artifact paths must be UTF-8."))?;
-                parent.children.insert(child.to_owned(), name.clone());
-            }
-            owner = Some(name.clone());
-            for declaration in critics {
-                config.critics.push(Critic {
-                    id: format!("{name}/{}", declaration.id),
-                    target: name.clone(),
-                    references: BTreeMap::new(),
-                    deps: Vec::new(),
-                    declaration,
-                });
-            }
-            config.artifacts.insert(
-                name.clone(),
-                Artifact {
-                    path: relative.clone(),
-                    children: BTreeMap::new(),
+            let json = fs::read_to_string(&file).map_err(|error| ConfigError::new(&file, error))?;
+            let value: Value =
+                serde_json::from_str(&json).map_err(|error| ConfigError::new(&file, error))?;
+            let members = if value
+                .as_object()
+                .is_some_and(|object| object.contains_key("family"))
+            {
+                let expanded =
+                    families::expand(&config.root, &relative, value.as_object().unwrap().clone())
+                        .map_err(|error| ConfigError::new(&file, error))?;
+                let name = &expanded[0].1.name;
+                if config.artifacts.contains_key(name) || config.families.contains_key(name) {
+                    return Err(ConfigError::new(
+                        &file,
+                        format!("Duplicate Artifact name: {name}"),
+                    ));
+                }
+                config.families.insert(name.clone(), relative.clone());
+                family = Some(name.clone());
+                expanded
+                    .into_iter()
+                    .map(|(declaration, membership)| (declaration, Some(membership)))
+                    .collect()
+            } else {
+                vec![(
+                    ordinary_declaration(value).map_err(|error| ConfigError::new(&file, error))?,
+                    None,
+                )]
+            };
+            let parent = owner.clone();
+            for (declaration, membership) in members {
+                if !relative.as_os_str().is_empty() && declaration.review_policy.is_some() {
+                    return Err(ConfigError::new(
+                        &file,
+                        "reviewPolicy belongs only to the repository root artifactize.json.",
+                    ));
+                }
+                let ArtifactDeclaration {
                     name,
+                    critics,
                     views,
                     mounts,
                     basis,
                     stale,
                     env_requirements,
                     review_policy,
-                },
-            );
+                } = declaration;
+                if config.artifacts.contains_key(&name) || config.families.contains_key(&name) {
+                    return Err(ConfigError::new(
+                        &file,
+                        format!("Duplicate Artifact name: {name}"),
+                    ));
+                }
+                if let Some(parent) = &parent {
+                    let parent = config.artifacts.get_mut(parent).unwrap();
+                    let child = relative.strip_prefix(&parent.path).unwrap();
+                    let child = if membership.is_some() {
+                        child.join(&name)
+                    } else {
+                        child.to_owned()
+                    };
+                    let child = child
+                        .to_str()
+                        .ok_or_else(|| ConfigError::new(&file, "Artifact paths must be UTF-8."))?;
+                    parent.children.insert(child.to_owned(), name.clone());
+                }
+                if membership.is_none() {
+                    owner = Some(name.clone());
+                }
+                for declaration in critics {
+                    config.critics.push(Critic {
+                        id: format!("{name}/{}", declaration.id),
+                        target: name.clone(),
+                        references: BTreeMap::new(),
+                        deps: Vec::new(),
+                        declaration,
+                    });
+                }
+                config.artifacts.insert(
+                    name.clone(),
+                    Artifact {
+                        family: membership,
+                        path: relative.clone(),
+                        children: BTreeMap::new(),
+                        name,
+                        views,
+                        mounts,
+                        basis,
+                        stale,
+                        env_requirements,
+                        review_policy,
+                    },
+                );
+            }
         }
         for entry in entries.into_iter().rev() {
             let kind = entry
                 .file_type()
                 .map_err(|error| ConfigError::new(entry.path(), error))?;
             if kind.is_dir() && entry.file_name() != ".git" && entry.file_name() != "node_modules" {
-                pending.push((relative.join(entry.file_name()), owner.clone()));
+                pending.push((
+                    relative.join(entry.file_name()),
+                    owner.clone(),
+                    family.clone(),
+                ));
             }
         }
     }

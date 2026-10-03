@@ -1,0 +1,53 @@
+{
+  "name": "scenarios",
+  "family": {
+    "instances": "instances.json",
+    "params": {
+      "title": "Check the scenario",
+      "detailIds": ["overview"],
+      "expected": "READY"
+    },
+    "variants": {
+      "searchable": {
+        "detailIds": ["message", "query"],
+        "expected": "SEARCH"
+      }
+    }
+  },
+  "stale": {
+    "kind": "identity",
+    "script": { "command": "identity.sh", "args": [] },
+    "inputs": ["check.sh"]
+  },
+  "views": {
+    "agentTools": {
+      "detail": {
+        "metadata": {
+          "description": "Read a detail of {artifactName}.",
+          "inputSchema": {
+            "type": "object",
+            "properties": { "id": { "enum": { "$param": "/detailIds" } } },
+            "required": ["id"],
+            "additionalProperties": false
+          },
+          "resultKinds": ["text"],
+          "observation": "content"
+        },
+        "script": { "command": "/bin/cat", "args": [{ "$param": "/file" }] }
+      }
+    }
+  },
+  "critics": [
+    {
+      "id": "review",
+      "title": { "$param": "/title" },
+      "profile": {
+        "kind": "runtime",
+        "command": "/bin/sh",
+        "args": ["check.sh", { "$param": "/input" }, { "$param": "/expected" }],
+        "timeoutMs": 5000
+      },
+      "payload": { "instruction": { "$param": "/instruction" } }
+    }
+  ]
+}

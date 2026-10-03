@@ -20,7 +20,9 @@ with duplicates removed at their first occurrence; Artifacts expand to their
 Critics in declaration order. Runtime Critics execute sequentially when their
 dependency gates allow. An Artifact selector runs only that Artifact's Critics;
 an individual Critic selector runs only that Critic. Both retain the full dependency
-closure as a final obligation. Family-name selectors follow the family task P2.1.
+closure as a final obligation. A family name selects every instance, also in
+`--artifacts` and `--artifacts-file`; overlapping family/instance entries are
+deduplicated without selecting the family template itself.
 RED blocks downstream execution; missing/operational evidence waits. Cycle peers
 have no internal gates. Selected GREEN results with missing obligations remain
 recorded in an INCOMPLETE Run. Agent/Human Critics fail clearly before execution.
@@ -84,8 +86,40 @@ Other arguments (including escaped references) remain literal, and the command
 is never interpolated. `config check` validates reference names and syntax but
 does not open runtime operands or execute programs. Input existence and symlink
 checks happen during argument preparation. Graph closure and runtime CLI execution
-use these same resolvers. Family expansion and tool enforcement are delivered by
-later tasks.
+use these same resolvers. Tool enforcement is delivered by later tasks.
+
+## Artifact families
+
+A subfolder's `artifactize.json` can declare a static family with
+`"family": {"instances": "instances.json"}` or an inline instance-name map.
+The family name is reserved, not an Artifact; each of its 1–10000 instances gets
+ordinary Artifact and `instance/critic` identities. Instance names must be globally
+unique and cannot shadow entries in the shared folder. Families cannot be the
+workspace root, contain nested markers, or declare `reviewPolicy`.
+
+An instance accepts `variant`, object `params`, and up to 64 unique existing
+owner-relative `material` paths, resolved without symlink traversal. Parameters
+merge shallowly: family defaults, then the named family variant, then the instance.
+Exact `{"$param":"/pointer"}` objects inside views and Critics copy JSON values
+using RFC 6901 pointers, including arrays and the empty root pointer. No string
+interpolation or parameter substitution occurs in names, mounts, identity hooks,
+basis, or environment requirements. Expanded declarations receive normal validation.
+
+All instance scripts use the shared folder as cwd. A parent addresses material as
+`<family-folder>/<instance>/<path>`; bypassing the instance is rejected. Instance
+material is an ownership declaration, not a sandbox hiding sibling files.
+Discovery keeps each instance's membership, sorted material, and a SHA-256/JCS
+entry digest independent of sibling entries. Material fingerprints arrive in P2.4;
+identity execution and end-of-review rechecks remain P3.3. No workspace monitoring
+or automatic reuse is added.
+
+The runtime-only fixture demonstrates parameterized views, shared Critics,
+independent inputs/results, and an identity hook that remains inert:
+
+```sh
+cargo run -q -p artifactize -- --repo crates/artifactize/tests/fixtures/families config check
+cargo run -q -p artifactize -- --repo crates/artifactize/tests/fixtures/families verify --all
+```
 
 ## Runtime execution library
 
