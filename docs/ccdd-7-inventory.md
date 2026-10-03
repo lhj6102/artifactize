@@ -2,6 +2,8 @@
 
 Baseline: commit `cbf28b4` in `/home/user/code/ccdd`; references below name files **as they exist at that commit**, not necessarily the current working tree. The supplied snapshot was read without modifying either repository. `DROP` retains an explicitly excluded feature in the inventory; `REPLACED` means preserve the capability through the new implementation. Source takes precedence over older prose: notably, current timeout validation allows 2,147,483,647 ms; compact requester DTOs can include usage; and the old remote snapshot-transfer implementation is absent.
 
+P1.5 supplies literal command execution for CFG-09/CFG-30 alongside P1.2 declaration validation; those remain unchecked until P1.7 connects runtime Critics to verify. It also implements the execution portions of EXE-02 (exit-code verdicts and operational failures), EXE-03 (raw capped stdout/stderr, actual exit status and duration), WKS-13 (timeouts, cancellation, group termination/escalation and normal-exit cleanup), and WKS-14 (inert PID/start-time registration before exec; rejection/disconnect cannot start work). Those EXE/WKS items remain unchecked: scope resolution belongs to P1.3, private output/environment and cleaned audit policy to P1.6, and durable child accounting/recovery and lease release to P3.10.
+
 ## CLI and executable interfaces
 
 - [ ] CLI-01 Command entrypoints — `ccdd` and `ccdd-project` dispatch the same Project CLI; no arguments, `help`, command `--help`, or a parsed `--help` display text help and return 0. (`src/cli.ts`, `src/project/cli.ts`, `packages/ccdd/src/cli.ts`) → P1.1, P8.7
