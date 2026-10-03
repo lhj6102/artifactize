@@ -207,7 +207,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [x] **P4.2** Image results (PNG/JPEG/WebP, size cap) through the `json` protocol and the built-in `view_image` (moved from P4.3). Check: wrong signatures, escaping paths and oversized images fail.
 - [x] **P4.3** Built-in Agent tools `read` (line ranges), `list`, `glob`, `grep`; `view_image` moved to P4.2 with image results. They are read-only, scoped to the eval's Artifacts, and available only when declared. Check: scope/symlink escapes are rejected; UTF-8/CRLF/BOM and paging fixtures; bounded glob/grep and binary skipping.
 - [x] **P4.4** Human tools: predefined `launch`/`output` commands with scope placeholders only, run in the reviewer's real environment. Check: `launch` returns once the program starts; `output` captures stdout.
-- [ ] **P4.5** `tools check [--execute]` and the stdio MCP server serving Agent tools, with call audit. Check: MCP text/image calls obey scope and audit.
+- [x] **P4.5** `tools check [--execute]` and the stdio MCP server serving Agent tools, with call audit. Check: MCP text/image calls obey scope and audit.
 
 ### P5 Agents
 - [x] **P5.1** rig OpenAI/Anthropic API-key backends, explicit profiles, multimodal turns, transient retries, per-attempt usage. Check: fake transport asserts model, effort and payloads.

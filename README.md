@@ -482,8 +482,67 @@ under `<name>_<artifactId>`; concatenation collisions are rejected. Human tools
 are never listed. Listing creates no directories and runs no owner code. Calls
 return normalized `ToolResult {content, is_error}` for successful, authored and
 system-error results. Registry calls do not mutate payloads or declarations. The
-Agent loop (P5) and MCP/audit integration (P4.5) will call this API; neither is
-implemented here.
+Agent loop and stdio MCP server both call this registry.
+
+## Tool diagnostics and MCP
+
+```sh
+artifactize tools check                         # every Agent/Human eval's scope
+artifactize tools check app/review              # same as --eval app/review
+artifactize tools check --artifact app --audience agent
+artifactize tools check --execute --artifact app --audience agent --tool read --args '{"path":"README.md"}'
+artifactize tools check --execute --artifact app --audience human --tool inspect
+artifactize mcp --manifest /external/execution/mcp-manifest.json
+```
+
+`tools check` discovers and validates declarations, resolves executable availability,
+scoped argv operands and declared execution paths, and prints JSON scopes, schemas
+and per-tool readiness checks. It is static by default: no owner process, identity
+hook, database or output directory is created. A positional selector or `--eval`
+selects one Agent/Human eval and cannot be combined with `--artifact`, `--audience`,
+`--tool` or `--execute`. Explicit execution requires all three Artifact, audience
+and tool flags; the short operation name or its published name is accepted.
+`--args` is valid only for Agent execution; Human schemas admit only an empty
+object and Human commands take no free arguments. A check never creates a Run,
+verdict or cache entry. Agent calls use isolated temporary output (removed after
+execution); Human calls use the reviewer's real environment. Exit codes are
+0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for
+invalid invocation. `--repo`, `--state-dir` and `--json` are accepted; reports are
+JSON even without `--json`.
+
+The internal async helper `mcp::write_config(config, effective_eval, execution_id,
+state_dir, output_dir)` writes private `mcp-manifest.json` and `mcp-config.json`
+files in an external execution directory and returns the config path. Pass the
+config to the unmodified Claude CLI with `--strict-mcp-config --mcp-config CFG
+--allowedTools 'mcp__artifactize__*'` (full backend controls are in `docs/PLAN.md`).
+The generated stdio server uses the current executable's absolute path. P5.6 owns
+launching Claude, assistant-turn admission and the tools-disabled repair call.
+
+The manifest contains `executionId`, `evalId`, `repo`, `state`, `output` and the
+effective Agent `profile`. The server reloads static declarations and binds that
+execution to its eval, scoped definitions and budget in SQLite; reconnects reject
+changed bindings instead of widening the scope or resetting counters. No snapshots,
+pinned input manifests or provider credentials are involved. One server holds an
+execution-directory lock; calls are serialized. Only Agent tools in the eval's
+admitted scope are exposed, with dynamic JSON Schemas. rmcp 3.5.0 handles newline-
+delimited JSON-RPC initialization (including 2024-11-05), ping, tool listing/calls,
+notifications and protocol errors. Each inbound line is capped at 64 KiB before
+unbounded buffering; oversized input closes the server with exit 1 and a stderr
+diagnostic, including input without a newline. Outgoing image responses retain
+the registry's image/result limits, not the inbound cap. Stdout is protocol-only.
+
+Text and JSON blocks become MCP text (JSON is serialized); validated images remain
+MCP images. Authored and operational tool failures return `isError: true`.
+Cancellation and disconnect propagate to process-group cleanup. Every tool call,
+including rejected names/arguments, cancellation and exhausted budgets, is audited
+before a response. `mcp_sessions.started` is incremented transactionally before
+admitted calls against the effective profile's `maxToolCalls`; denied calls are
+audited without running or incrementing. SQLite `tool_calls` rows contain ordered
+`name`, `arguments`, bounded `result` summary, `isError` and `error` fields.
+Unfinished calls retain an error placeholder after a crash. Sessions may precede
+identity-less execution rows; the caller owns review completion. `run show` combines
+this durable audit with in-process Agent audit through one projection; execution
+completion also copies it into the self-contained execution/cache result.
 
 ## Human tools
 

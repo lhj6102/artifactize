@@ -129,6 +129,8 @@ impl Receipts {
                 CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS active_request_execution ON requests(execution_id) WHERE status IN ('QUEUED','RUNNING','WAITING_HUMAN');
                 CREATE TABLE IF NOT EXISTS human_claims(request_id TEXT PRIMARY KEY REFERENCES requests(id), reviewer TEXT NOT NULL, claimed_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS mcp_sessions(execution_id TEXT PRIMARY KEY, binding TEXT NOT NULL, max_calls INTEGER, started INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS tool_calls(execution_id TEXT NOT NULL REFERENCES mcp_sessions(execution_id), ordinal INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(execution_id,ordinal));
                 CREATE TABLE IF NOT EXISTS run_members(run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), PRIMARY KEY(run_id, eval_id), UNIQUE(run_id, ordinal));")?;
             transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
             transaction.commit()?;
@@ -341,10 +343,13 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
         let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
         outside_workspace(Path::new(&repo), &state).map_err(|e| Error::Invalid(e.to_string()))?;
         let run = serde_json::from_str(&data)?;
-        let requests = {
+        let mut requests = {
             let mut statement = transaction.prepare("SELECT q.data FROM requests q JOIN run_members m ON q.id=m.request_id WHERE m.run_id=? ORDER BY m.ordinal")?;
             statement.query_map([&id], |row| row.get::<_, String>(0))?.map(|row| Ok(serde_json::from_str(&row?)?)).collect::<Result<Vec<Request>, Error>>()?
         };
+        for request in &mut requests {
+            request.tool_calls = super::tool_calls::project(&transaction, request.execution_id.as_deref(), &request.tool_calls)?;
+        }
         transaction.commit()?;
         Ok(RunView { run, requests })
     }).await.map_err(|e| e.to_string())

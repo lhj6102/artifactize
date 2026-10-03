@@ -37,6 +37,16 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
+    /// Check declared tools, optionally invoking exactly one without a review.
+    Tools {
+        #[command(subcommand)]
+        command: ToolsCommand,
+    },
+    /// Serve an execution's scoped Agent tools over stdio MCP.
+    Mcp {
+        #[arg(long, value_name = "PATH")]
+        manifest: PathBuf,
+    },
     /// Sign in with ChatGPT using the system browser.
     Login {
         #[command(subcommand)]
@@ -194,8 +204,40 @@ pub enum CacheCommand {
     Gc,
 }
 
+#[derive(Debug, Subcommand)]
+pub enum ToolsCommand {
+    /// Static preflight by default; --execute opts in to one tool call.
+    Check(crate::diagnostics::ToolCheckOptions),
+}
+
 async fn execute(cli: Cli) -> Result<u8, String> {
     match cli.command {
+        Some(Command::Mcp { manifest }) => {
+            let (cancellation, listener) = cancellation_listener()?;
+            let result = crate::mcp::serve(&manifest, cancellation).await;
+            listener.abort();
+            if let Err(error) = result {
+                writeln!(io::stderr().lock(), "{error}").map_err(|e| e.to_string())?;
+                return Ok(1);
+            }
+            Ok(0)
+        }
+        Some(Command::Tools {
+            command: ToolsCommand::Check(options),
+        }) => {
+            let (cancellation, listener) = cancellation_listener()?;
+            let result = crate::diagnostics::check_tools(
+                &cli.repo.unwrap_or_else(|| PathBuf::from(".")),
+                cli.state_dir.as_deref(),
+                &options,
+                cancellation,
+            )
+            .await;
+            listener.abort();
+            let report = result?;
+            print_json(&report)?;
+            Ok(u8::from(!report.ok))
+        }
         Some(Command::Login {
             provider: AuthProvider::Chatgpt,
         }) => {
