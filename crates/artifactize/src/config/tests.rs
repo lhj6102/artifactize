@@ -208,9 +208,4 @@ fn later_schema_semantics_are_kept_as_inert_objects() {
     );
     declared["failSchema"] = Value::Null;
     assert!(parse(json!({"name": "a", "critics": [declared]})).is_err());
-    assert!(
-        parse(json!({"name": "family", "family": {"instances": {"a": {}}}}))
-            .unwrap_err()
-            .contains("P2.1")
-    );
 }

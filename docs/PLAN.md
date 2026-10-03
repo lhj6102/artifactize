@@ -121,7 +121,7 @@ Each task takes a worker about half a day to a day. It lands as one PR from `tas
 - [x] **P1.7** Receipts store and the end-to-end runtime `verify` plus `run show`. Check: `verify`, then `run show` from a fresh process.
 
 ### P2 Complete project and input
-- [ ] **P2.1** Families: inline/file instances, material, parameter precedence, variants, `$param` pointers, per-instance identities and Critics. Check: the family fixture validates expansion and isolation.
+- [x] **P2.1** Families: inline/file instances, material, parameter precedence, variants, `$param` pointers, per-instance identities and Critics. Check: the family fixture validates expansion and isolation.
 - [x] **P2.2** Selectors (artifact, critic, family, multiple, `--all`), bounded JSON/line selection files, profile variants. Check: JSON and line files select identical ordered sets. Artifact/Critic selectors, files, and profile variants are delivered; family selectors await P2.1 and a follow-up.
 - [ ] **P2.3** Recursion, force, gate policy (`--ignore-gates`), final obligations. Check: selected success with missing evidence stays INCOMPLETE.
 - [ ] **P2.4** Canonical scoped and family fingerprints, mandatory execution inputs. Check: sibling material cannot change another instance's fingerprint.
