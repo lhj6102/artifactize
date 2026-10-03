@@ -926,8 +926,14 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let run = json_output(&output);
-        assert_eq!(run["requests"][0]["status"], "GREEN");
-        assert_eq!(run["requests"][1]["status"], "ERROR");
+        assert_eq!(
+            run["requests"][0]["status"], "GREEN",
+            "backend={backend}: {run}"
+        );
+        assert_eq!(
+            run["requests"][1]["status"], "ERROR",
+            "backend={backend}: {run}"
+        );
         assert!(
             run["requests"][1]["error"]
                 .as_str()
