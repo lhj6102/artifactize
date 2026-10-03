@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use artifactize::config::{Profile, read_workspace_config};
 use artifactize::runtime::{self, Command, Outcome, Verdict};
-use artifactize::scope::{critic_scope, resolve_argv, scoped_path};
+use artifactize::scope::{eval_scope, resolve_argv, scoped_path};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
@@ -30,7 +30,7 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
     let fixture = Fixture(root.canonicalize().unwrap());
     let root = &fixture.0;
     fs::write(root.join("review/artifactize.json"), json!({
-        "name":"review", "mounts":{"source":"input"}, "critics":[{
+        "name":"review", "mounts":{"source":"input"}, "evals":[{
             "id":"read", "title":"Read inputs", "payload":{"instruction":"Inspect inputs."},
             "profile":{"kind":"runtime", "command":"/bin/cat", "args":["local", "{review}/nested/file", "{review}/source/file", "{input}/file"]}
         }]
@@ -46,13 +46,13 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
     fs::write(root.join("data/file"), "input\n").unwrap();
 
     let config = read_workspace_config(root).unwrap();
-    let critic = &config.critics[0];
-    let scope = critic_scope(&config, critic).unwrap();
-    let Profile::Runtime { command, args, .. } = &critic.declaration.profile else {
+    let eval = &config.evals[0];
+    let scope = eval_scope(&config, eval).unwrap();
+    let Profile::Runtime { command, args, .. } = &eval.declaration.profile else {
         panic!()
     };
-    let args = resolve_argv(&config, &scope, &critic.target, args).unwrap();
-    let cwd = scoped_path(root, &config.artifacts[&critic.target].path).unwrap();
+    let args = resolve_argv(&config, &scope, &eval.target, args).unwrap();
+    let cwd = scoped_path(root, &config.artifacts[&eval.target].path).unwrap();
     let output =
         Fixture(root.with_file_name(format!("scope-output-{}-{nonce}", std::process::id())));
     let mut command = Command::prepare(

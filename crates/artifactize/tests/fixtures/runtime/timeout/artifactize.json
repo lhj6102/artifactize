@@ -1,6 +1,6 @@
 {
   "name": "timeout",
-  "critics": [
+  "evals": [
     {
       "id": "check",
       "title": "Check timeout",

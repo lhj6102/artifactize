@@ -1,1 +1,1 @@
-//! Run lifecycle, gate propagation, and ownership fencing.
+//! Run lifecycle, scheduling, cancellation, and budget counters.

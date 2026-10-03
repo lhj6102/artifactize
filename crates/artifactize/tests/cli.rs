@@ -36,3 +36,28 @@ fn help_is_displayed_without_arguments() {
     assert!(text.contains("--state-dir <PATH>"));
     assert!(text.contains("--json"));
 }
+
+#[test]
+fn dropped_commands_and_flags_are_rejected() {
+    for args in [
+        vec!["plan"],
+        vec!["history"],
+        vec!["run", "history"],
+        vec!["verify", "--all", "--full"],
+        vec!["run", "show", "missing", "--full"],
+        vec!["verify", "--critic", "artifact/check"],
+        vec!["verify", "--critics", "artifact/check"],
+        vec!["verify", "--critics-file", "selection.json"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        let error = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            error.contains("unrecognized subcommand") || error.contains("unexpected argument"),
+            "{error}"
+        );
+    }
+}

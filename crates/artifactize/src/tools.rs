@@ -1,3 +1,3 @@
-//! Tool registries, manifests, argument schemas, and script protocols.
+//! Agent and Human tools, argument schemas, and script protocols.
 
-pub mod defaults;
+pub mod builtin;

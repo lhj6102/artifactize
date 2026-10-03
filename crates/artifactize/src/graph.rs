@@ -14,7 +14,7 @@ pub struct GraphError(pub String);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactNode<'a> {
     pub basis: bool,
-    pub critics: Vec<&'a str>,
+    pub evals: Vec<&'a str>,
     pub component: usize,
 }
 
@@ -23,14 +23,14 @@ pub struct Component<'a> {
     pub artifacts: Vec<&'a str>,
     /// Direct condensation dependencies, always earlier in the component list.
     pub dependencies: Vec<usize>,
-    /// External Critic gates shared by every member; never includes SCC peers.
+    /// External Eval gates shared by every member; never includes SCC peers.
     pub gates: Vec<&'a str>,
 }
 
 #[derive(Debug)]
 pub struct Graph<'a> {
     artifacts: BTreeMap<&'a str, ArtifactNode<'a>>,
-    critics: BTreeMap<&'a str, &'a str>,
+    evals: BTreeMap<&'a str, &'a str>,
     components: Vec<Component<'a>>,
 }
 
@@ -51,33 +51,33 @@ impl<'a> Graph<'a> {
                     id.as_str(),
                     ArtifactNode {
                         basis: artifact.basis == Some(true),
-                        critics: Vec::new(),
+                        evals: Vec::new(),
                         component: 0,
                     },
                 )
             })
             .collect();
-        let mut critics = BTreeMap::new();
-        for critic in &config.critics {
+        let mut evals = BTreeMap::new();
+        for eval in &config.evals {
             let artifact = artifacts
-                .get_mut(critic.target.as_str())
-                .ok_or_else(|| GraphError(format!("Unknown Critic target: {}", critic.target)))?;
+                .get_mut(eval.target.as_str())
+                .ok_or_else(|| GraphError(format!("Unknown Eval target: {}", eval.target)))?;
             if artifact.basis {
                 return Err(GraphError(format!(
-                    "Basis Artifact {} cannot own Critics.",
-                    critic.target
+                    "Basis Artifact {} cannot own Evals.",
+                    eval.target
                 )));
             }
-            if critics
-                .insert(critic.id.as_str(), critic.target.as_str())
+            if evals
+                .insert(eval.id.as_str(), eval.target.as_str())
                 .is_some()
             {
-                return Err(GraphError(format!("Duplicate Critic: {}", critic.id)));
+                return Err(GraphError(format!("Duplicate Eval: {}", eval.id)));
             }
-            artifact.critics.push(critic.id.as_str());
+            artifact.evals.push(eval.id.as_str());
         }
         for artifact in artifacts.values_mut() {
-            artifact.critics.sort_unstable();
+            artifact.evals.sort_unstable();
         }
         let mut edges = BTreeSet::new();
         for relation in &config.relations {
@@ -122,7 +122,7 @@ impl<'a> Graph<'a> {
             let mut gates: Vec<_> = dependencies
                 .iter()
                 .flat_map(|&dependency| &components[dependency].artifacts)
-                .flat_map(|id| &artifacts[id].critics)
+                .flat_map(|id| &artifacts[id].evals)
                 .copied()
                 .collect();
             gates.sort_unstable();
@@ -131,7 +131,7 @@ impl<'a> Graph<'a> {
         }
         Ok(Self {
             artifacts,
-            critics,
+            evals,
             components,
         })
     }
@@ -180,20 +180,18 @@ impl<'a> Graph<'a> {
         evidence: &BTreeMap<String, Evidence>,
         ignore_gates: bool,
     ) -> Evaluation<'a> {
-        let mut critics: BTreeMap<&str, CriticEvaluation<'_>> = BTreeMap::new();
+        let mut evals: BTreeMap<&str, EvalEvaluation<'_>> = BTreeMap::new();
         for component in &self.components {
             let unmet_gates: Vec<_> = component
                 .gates
                 .iter()
                 .copied()
-                .filter(|id| !ignore_gates && critics[id].status != CriticStatus::Green)
+                .filter(|id| !ignore_gates && evals[id].status != EvalStatus::Green)
                 .collect();
-            let readiness = if unmet_gates.iter().any(|id| {
-                matches!(
-                    critics[id].status,
-                    CriticStatus::Red | CriticStatus::Blocked
-                )
-            }) {
+            let readiness = if unmet_gates
+                .iter()
+                .any(|id| matches!(evals[id].status, EvalStatus::Red | EvalStatus::Blocked))
+            {
                 Readiness::Blocked
             } else if unmet_gates.is_empty() {
                 Readiness::Ready
@@ -203,23 +201,23 @@ impl<'a> Graph<'a> {
             for id in component
                 .artifacts
                 .iter()
-                .flat_map(|id| &self.artifacts[id].critics)
+                .flat_map(|id| &self.artifacts[id].evals)
             {
                 let evidence = evidence.get(*id).copied();
                 let status = match readiness {
-                    Readiness::Blocked => CriticStatus::Blocked,
-                    Readiness::Wait => CriticStatus::Wait,
+                    Readiness::Blocked => EvalStatus::Blocked,
+                    Readiness::Wait => EvalStatus::Wait,
                     Readiness::Ready => match evidence {
-                        Some(Evidence::Current(Verdict::Green)) => CriticStatus::Green,
-                        Some(Evidence::Current(Verdict::Red)) => CriticStatus::Red,
-                        Some(Evidence::OperationalError) => CriticStatus::Error,
-                        Some(Evidence::Stale) => CriticStatus::Stale,
-                        None => CriticStatus::Unreviewed,
+                        Some(Evidence::Current(Verdict::Green)) => EvalStatus::Green,
+                        Some(Evidence::Current(Verdict::Red)) => EvalStatus::Red,
+                        Some(Evidence::OperationalError) => EvalStatus::Error,
+                        Some(Evidence::Stale) => EvalStatus::Stale,
+                        None => EvalStatus::Unreviewed,
                     },
                 };
-                critics.insert(
+                evals.insert(
                     *id,
-                    CriticEvaluation {
+                    EvalEvaluation {
                         readiness,
                         status,
                         evidence,
@@ -233,11 +231,11 @@ impl<'a> Graph<'a> {
             .iter()
             .map(|(&id, artifact)| {
                 let satisfied = artifact.basis
-                    || (!artifact.critics.is_empty()
+                    || (!artifact.evals.is_empty()
                         && artifact
-                            .critics
+                            .evals
                             .iter()
-                            .all(|id| critics[id].status == CriticStatus::Green));
+                            .all(|id| evals[id].status == EvalStatus::Green));
                 (id, satisfied)
             })
             .collect();
@@ -259,19 +257,19 @@ impl<'a> Graph<'a> {
                     }
                 } else {
                     [
-                        (CriticStatus::Error, ArtifactStatus::Error),
-                        (CriticStatus::Red, ArtifactStatus::Red),
-                        (CriticStatus::Blocked, ArtifactStatus::Blocked),
-                        (CriticStatus::Wait, ArtifactStatus::Wait),
-                        (CriticStatus::Stale, ArtifactStatus::Stale),
-                        (CriticStatus::Unreviewed, ArtifactStatus::Unreviewed),
+                        (EvalStatus::Error, ArtifactStatus::Error),
+                        (EvalStatus::Red, ArtifactStatus::Red),
+                        (EvalStatus::Blocked, ArtifactStatus::Blocked),
+                        (EvalStatus::Wait, ArtifactStatus::Wait),
+                        (EvalStatus::Stale, ArtifactStatus::Stale),
+                        (EvalStatus::Unreviewed, ArtifactStatus::Unreviewed),
                     ]
                     .into_iter()
-                    .find_map(|(critic_status, artifact_status)| {
+                    .find_map(|(eval_status, artifact_status)| {
                         artifact
-                            .critics
+                            .evals
                             .iter()
-                            .any(|id| critics[id].status == critic_status)
+                            .any(|id| evals[id].status == eval_status)
                             .then_some(artifact_status)
                     })
                     .unwrap_or(if own_satisfied[id] {
@@ -287,11 +285,11 @@ impl<'a> Graph<'a> {
                         own_satisfied: own_satisfied[id],
                         satisfied,
                         passed: artifact
-                            .critics
+                            .evals
                             .iter()
-                            .filter(|id| critics[*id].status == CriticStatus::Green)
+                            .filter(|id| evals[*id].status == EvalStatus::Green)
                             .count(),
-                        total: artifact.critics.len(),
+                        total: artifact.evals.len(),
                     },
                 )
             })
@@ -300,9 +298,9 @@ impl<'a> Graph<'a> {
             .into_iter()
             .filter_map(|(id, satisfied)| (!satisfied).then_some(id))
             .collect();
-        let status = if critics.values().any(|c| c.status == CriticStatus::Error) {
+        let status = if evals.values().any(|c| c.status == EvalStatus::Error) {
             FinalStatus::Error
-        } else if critics.values().any(|c| c.status == CriticStatus::Red) {
+        } else if evals.values().any(|c| c.status == EvalStatus::Red) {
             FinalStatus::Red
         } else if obligations.is_empty() {
             FinalStatus::Green
@@ -310,15 +308,15 @@ impl<'a> Graph<'a> {
             FinalStatus::Incomplete
         };
         Evaluation {
-            critics,
+            evals,
             artifacts,
             obligations,
             status,
         }
     }
 
-    pub fn critic_target(&self, id: &str) -> Option<&'a str> {
-        self.critics.get(id).copied()
+    pub fn eval_target(&self, id: &str) -> Option<&'a str> {
+        self.evals.get(id).copied()
     }
 }
 
@@ -339,7 +337,7 @@ pub enum Readiness {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CriticStatus {
+pub enum EvalStatus {
     Green,
     Red,
     Error,
@@ -350,16 +348,16 @@ pub enum CriticStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CriticEvaluation<'a> {
+pub struct EvalEvaluation<'a> {
     /// Gate readiness only; READY never requests re-execution of existing evidence.
     pub readiness: Readiness,
-    pub status: CriticStatus,
+    pub status: EvalStatus,
     /// Retained for audit even when gates mask its effective status.
     pub evidence: Option<Evidence>,
     pub unmet_gates: Vec<&'a str>,
 }
 
-impl CriticEvaluation<'_> {
+impl EvalEvaluation<'_> {
     /// Operational errors require an explicit retry, not automatic redispatch.
     pub fn can_execute(&self) -> bool {
         self.readiness == Readiness::Ready && matches!(self.evidence, None | Some(Evidence::Stale))
@@ -383,13 +381,13 @@ pub enum ArtifactStatus {
 pub struct ArtifactEvaluation {
     pub status: ArtifactStatus,
     pub own_satisfied: bool,
-    /// Includes all required dependencies and SCC peers, even without Critics.
+    /// Includes all required dependencies and SCC peers, even without Evals.
     pub satisfied: bool,
     pub passed: usize,
     pub total: usize,
 }
 
-/// Aggregate validation status, never a fabricated Critic verdict.
+/// Aggregate validation status, never a fabricated Eval verdict.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FinalStatus {
     Green,
@@ -400,7 +398,7 @@ pub enum FinalStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Evaluation<'a> {
-    pub critics: BTreeMap<&'a str, CriticEvaluation<'a>>,
+    pub evals: BTreeMap<&'a str, EvalEvaluation<'a>>,
     pub artifacts: BTreeMap<&'a str, ArtifactEvaluation>,
     /// Artifacts whose own obligations are unmet, not execution gates.
     pub obligations: Vec<&'a str>,

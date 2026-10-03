@@ -9,7 +9,7 @@ use std::{
 };
 
 use super::Error;
-use crate::store::canonical_target;
+use crate::workspace::canonical_target;
 
 pub(super) fn prepare(
     workspace: &Path,
@@ -62,8 +62,5 @@ pub(super) fn prepare(
 }
 
 fn outside_workspace(workspace: &Path, output: &Path) -> Result<(), Error> {
-    if output.starts_with(workspace) {
-        return Err(Error::OutputInsideWorkspace);
-    }
-    Ok(())
+    crate::workspace::outside_workspace(workspace, output).map_err(|_| Error::OutputInsideWorkspace)
 }

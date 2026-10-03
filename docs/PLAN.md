@@ -177,11 +177,11 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [x] **P2.1** Families. Check: the family fixture validates expansion and isolation.
 - [x] **P2.2** Selectors, selection files, profile variants. Check: JSON and line files select identical ordered sets.
 - [x] **P2.3** Recursion, force, `--ignore-gates`, final obligations. Check: selected success with missing evidence stays INCOMPLETE.
-- [ ] **L.1** Lean cleanup:
+- [x] **L.1** Lean cleanup:
   - Remove the `stale` `file-hash`/`always` kinds and `stale.paths`; `stale` accepts only `identity`.
-  - Remove the family entry digest.
+  - Remove the family entry digest and obsolete readiness, result-check, observation and admission config.
   - Delete skeleton modules that left the architecture.
-  - Rename Critic to eval in config (`evals`), CLI (`--eval`, `--evals`, `--evals-file`), types, output and docs.
+  - Rename CCDD’s Critic to eval in config (`evals`), CLI (`--eval`, `--evals`, `--evals-file`), types, output and docs.
   - Drop `plan`, `--full` and `history` where they already exist.
   - Move receipts to the single `state.sqlite` with `--state-dir` moving the whole state.
 

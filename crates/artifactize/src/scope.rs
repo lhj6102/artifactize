@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use thiserror::Error;
 
-use crate::config::{Artifact, CONFIG_FILE, ConfigError, Critic, Profile, RepoConfig};
+use crate::config::{Artifact, CONFIG_FILE, ConfigError, Eval, Profile, RepoConfig};
 
 mod instruction;
 pub use instruction::instruction_references;
@@ -33,11 +33,11 @@ pub enum RelationKind {
         alias: String,
     },
     Instruction {
-        critic_id: String,
+        eval_id: String,
         name: String,
     },
     Argument {
-        critic_id: String,
+        eval_id: String,
         index: usize,
         name: String,
         path: String,
@@ -124,7 +124,7 @@ impl Scope<'_> {
     }
 }
 
-/// Composition grants access; a referenced Artifact's Critic instructions do not.
+/// Composition grants access; a referenced Artifact's Eval instructions do not.
 pub fn artifact_scope<'a>(config: &'a RepoConfig, roots: &[&str]) -> Result<Scope<'a>, ScopeError> {
     let mut artifacts = BTreeMap::new();
     let mut pending = roots.to_vec();
@@ -142,9 +142,9 @@ pub fn artifact_scope<'a>(config: &'a RepoConfig, roots: &[&str]) -> Result<Scop
     Ok(Scope { artifacts })
 }
 
-pub fn critic_scope<'a>(config: &'a RepoConfig, critic: &Critic) -> Result<Scope<'a>, ScopeError> {
-    let roots: Vec<_> = std::iter::once(critic.target.as_str())
-        .chain(critic.deps.iter().map(String::as_str))
+pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, ScopeError> {
+    let roots: Vec<_> = std::iter::once(eval.target.as_str())
+        .chain(eval.deps.iter().map(String::as_str))
         .collect();
     artifact_scope(config, &roots)
 }
@@ -380,48 +380,48 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         }
     }
     let mut resolved = Vec::new();
-    for critic in &config.critics {
+    for eval in &config.evals {
         let error = |failure: ScopeError| {
             ConfigError::new(
                 config
                     .root
-                    .join(&config.artifacts[&critic.target].path)
+                    .join(&config.artifacts[&eval.target].path)
                     .join(CONFIG_FILE),
-                format!("Critic {}: {failure}", critic.id),
+                format!("Eval {}: {failure}", eval.id),
             )
         };
         let mut references = BTreeMap::new();
         let mut deps = BTreeSet::new();
-        let instruction = critic.declaration.payload["instruction"].as_str().unwrap();
+        let instruction = eval.declaration.payload["instruction"].as_str().unwrap();
         for name in instruction_references(instruction) {
-            let source = reference_target(config, &critic.target, name).map_err(error)?;
+            let source = reference_target(config, &eval.target, name).map_err(error)?;
             references.insert(name.to_owned(), source.to_owned());
-            if source != critic.target {
+            if source != eval.target {
                 deps.insert(source.to_owned());
                 relations.push(Relation {
                     source: source.to_owned(),
-                    target: critic.target.clone(),
+                    target: eval.target.clone(),
                     kind: RelationKind::Instruction {
-                        critic_id: critic.id.clone(),
+                        eval_id: eval.id.clone(),
                         name: name.to_owned(),
                     },
                 });
             }
         }
-        if let Profile::Runtime { args, .. } = &critic.declaration.profile {
+        if let Profile::Runtime { args, .. } = &eval.declaration.profile {
             for (index, argument) in args.iter().enumerate() {
                 let Some(reference) = argument_reference(argument).map_err(error)? else {
                     continue;
                 };
                 let source =
-                    reference_target(config, &critic.target, reference.name).map_err(error)?;
-                if source != critic.target {
+                    reference_target(config, &eval.target, reference.name).map_err(error)?;
+                if source != eval.target {
                     deps.insert(source.to_owned());
                     relations.push(Relation {
                         source: source.to_owned(),
-                        target: critic.target.clone(),
+                        target: eval.target.clone(),
                         kind: RelationKind::Argument {
-                            critic_id: critic.id.clone(),
+                            eval_id: eval.id.clone(),
                             index,
                             name: reference.name.to_owned(),
                             path: reference.path.to_owned(),
@@ -432,9 +432,9 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         }
         resolved.push((references, deps.into_iter().collect()));
     }
-    for (critic, (references, deps)) in config.critics.iter_mut().zip(resolved) {
-        critic.references = references;
-        critic.deps = deps;
+    for (eval, (references, deps)) in config.evals.iter_mut().zip(resolved) {
+        eval.references = references;
+        eval.deps = deps;
     }
     config.relations = relations;
     Ok(())

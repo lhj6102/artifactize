@@ -42,7 +42,7 @@ impl Drop for Fixture {
     }
 }
 
-fn critic(instruction: &str) -> Value {
+fn eval(instruction: &str) -> Value {
     json!({"id":"check", "title":"Check", "profile":{"kind":"human"},
         "payload":{"instruction":instruction,"ownerField":{"unchanged":"{unknown}"}}})
 }
@@ -73,8 +73,8 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     let fixture = Fixture::new();
     fixture.artifact(
         "outer",
-        json!({"name":"parent","critics":[critic("Inspect {child}.")],
-            "views":{"agentTools":{"read":{"metadata":{"description":"Read","inputSchema":{},"resultKinds":["text"],"observation":"content"},"script":{"command":"not-run","args":[]}}}}}),
+        json!({"name":"parent","evals":[eval("Inspect {child}.")],
+            "views":{"agentTools":{"read":{"metadata":{"description":"Read","inputSchema":{},"resultKinds":["text"]},"script":{"command":"not-run","args":[]}}}}}),
     );
     fixture.artifact("outer/unmarked/deep", json!({"name":"child"}));
     fixture.artifact(
@@ -99,7 +99,7 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     assert_eq!(config.artifacts["parent"].views.agent_tools.len(), 1);
     assert!(config.artifacts["child"].views.agent_tools.is_empty());
     assert!(config.artifacts["child"].mounts.is_empty());
-    assert_eq!(config.critics.len(), 1);
+    assert_eq!(config.evals.len(), 1);
     let scope = artifact_scope(&config, &["parent"]).unwrap();
     assert_eq!(
         scope
@@ -154,22 +154,22 @@ fn aliases_keep_canonical_identity_and_cycles_consume_components() {
     fixture.artifact(
         "review",
         json!({"name":"review","mounts":{"one":"input","two":"input"},
-        "critics":[critic("Read {one}/file, {two}, {review}; \\{literal} {{literal}}.")]}),
+        "evals":[eval("Read {one}/file, {two}, {review}; \\{literal} {{literal}}.")]}),
     );
     fixture.artifact("data", json!({"name":"input","mounts":{"back":"review"}}));
     fixture.write("data/file", "not instruction text");
     let config = fixture.config();
-    let critic = &config.critics[0];
+    let eval = &config.evals[0];
     assert_eq!(
-        critic.references,
+        eval.references,
         BTreeMap::from([
             ("one".into(), "input".into()),
             ("two".into(), "input".into()),
             ("review".into(), "review".into()),
         ])
     );
-    assert_eq!(critic.deps, ["input"]);
-    let scope = critic_scope(&config, critic).unwrap();
+    assert_eq!(eval.deps, ["input"]);
+    let scope = eval_scope(&config, eval).unwrap();
     assert_eq!(scope.artifacts.len(), 2);
     let location = scope.resolve_path("review", "one/back/two/file").unwrap();
     assert_eq!(
@@ -185,9 +185,9 @@ fn aliases_keep_canonical_identity_and_cycles_consume_components() {
             .unwrap(),
         fixture.0.join("data/file")
     );
-    let source = critic.declaration.payload["instruction"].as_str().unwrap();
+    let source = eval.declaration.payload["instruction"].as_str().unwrap();
     assert_eq!(
-        parse_artifact_instruction(source, &scope, &critic.references),
+        parse_artifact_instruction(source, &scope, &eval.references),
         vec![
             InstructionPart::Text("Read ".into()),
             InstructionPart::Artifact("input".into()),
@@ -199,7 +199,7 @@ fn aliases_keep_canonical_identity_and_cycles_consume_components() {
         ]
     );
     assert_eq!(
-        critic.declaration.payload["ownerField"]["unchanged"],
+        eval.declaration.payload["ownerField"]["unchanged"],
         "{unknown}"
     );
     assert!(!source.contains("not instruction text"));
@@ -207,26 +207,26 @@ fn aliases_keep_canonical_identity_and_cycles_consume_components() {
 }
 
 #[test]
-fn observation_scope_never_follows_other_critics_instructions() {
+fn observation_scope_never_follows_other_evals_instructions() {
     let fixture = Fixture::new();
     fixture.artifact(
         "review",
-        json!({"name":"review","critics":[critic("Read {input}.")]}),
+        json!({"name":"review","evals":[eval("Read {input}.")]}),
     );
     fixture.artifact(
         "data",
-        json!({"name":"input","mounts":{"support":"support"},"critics":[critic("Read {hidden}.")]}),
+        json!({"name":"input","mounts":{"support":"support"},"evals":[eval("Read {hidden}.")]}),
     );
     fixture.artifact("data/child", json!({"name":"child"}));
     fixture.artifact("hidden", json!({"name":"hidden"}));
     fixture.artifact("support", json!({"name":"support"}));
     let config = fixture.config();
-    let critic = config
-        .critics
+    let eval = config
+        .evals
         .iter()
-        .find(|critic| critic.target == "review")
+        .find(|eval| eval.target == "review")
         .unwrap();
-    let scope = critic_scope(&config, critic).unwrap();
+    let scope = eval_scope(&config, eval).unwrap();
     assert_eq!(
         scope.artifacts.keys().copied().collect::<Vec<_>>(),
         ["child", "input", "review", "support"]
@@ -388,31 +388,31 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
         "{{missing}}",
         "${missing}"
     ]);
-    let mut declared = critic("No instruction dependencies.");
+    let mut declared = eval("No instruction dependencies.");
     declared["profile"] = json!({"kind":"runtime","command":"echo","args":args});
     fixture.artifact(
         "review",
-        json!({"name":"review","mounts":{"source":"input"},"critics":[declared]}),
+        json!({"name":"review","mounts":{"source":"input"},"evals":[declared]}),
     );
     fixture.artifact("data", json!({"name":"input"}));
     fixture.artifact("data/nested", json!({"name":"child"}));
     fixture.write("data/nested/file", "input");
     let config = fixture.config();
-    let critic = &config.critics[0];
-    assert!(critic.references.is_empty());
-    assert_eq!(critic.deps, ["input"]);
+    let eval = &config.evals[0];
+    assert!(eval.references.is_empty());
+    assert_eq!(eval.deps, ["input"]);
     assert!(config.relations.contains(&Relation {
         source: "input".into(),
         target: "review".into(),
         kind: RelationKind::Argument {
-            critic_id: "review/check".into(),
+            eval_id: "review/check".into(),
             index: 0,
             name: "input".into(),
             path: "nested/file".into()
         },
     }));
-    let scope = critic_scope(&config, critic).unwrap();
-    let Profile::Runtime { args, command, .. } = &critic.declaration.profile else {
+    let scope = eval_scope(&config, eval).unwrap();
+    let Profile::Runtime { args, command, .. } = &eval.declaration.profile else {
         panic!()
     };
     let resolved = resolve_argv(&config, &scope, "review", args).unwrap();
@@ -435,14 +435,14 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
 #[test]
 fn argument_only_global_reference_is_an_edge_even_without_a_mount() {
     let fixture = Fixture::new();
-    let mut declared = critic("Inspect.");
+    let mut declared = eval("Inspect.");
     declared["profile"] = json!({"kind":"runtime","command":"cat","args":["{input}/file"]});
-    fixture.artifact("review", json!({"name":"review","critics":[declared]}));
+    fixture.artifact("review", json!({"name":"review","evals":[declared]}));
     fixture.artifact("data", json!({"name":"input"}));
     let config = fixture.config();
     assert_eq!(config.relations.len(), 1);
-    assert_eq!(config.critics[0].deps, ["input"]);
-    let scope = critic_scope(&config, &config.critics[0]).unwrap();
+    assert_eq!(config.evals[0].deps, ["input"]);
+    let scope = eval_scope(&config, &config.evals[0]).unwrap();
     assert!(scope.artifacts.contains_key("input"));
     // Config validation does not demand runtime input existence.
     assert!(resolve_argv(&config, &scope, "review", &["{input}/file".into()]).is_err());
@@ -461,14 +461,14 @@ fn invalid_runtime_references_fail_statically_but_literals_stay_literal() {
         "{review}/{review}",
         "--input={review}/a\\b",
     ] {
-        let mut declared = critic("Inspect.");
+        let mut declared = eval("Inspect.");
         declared["profile"] = json!({"kind":"runtime","command":"echo","args":[argument]});
-        fixture.artifact("review", json!({"name":"review","critics":[declared]}));
+        fixture.artifact("review", json!({"name":"review","evals":[declared]}));
         assert!(read_workspace_config(&fixture.0).is_err(), "{argument}");
     }
     fixture.artifact(
         "review",
-        json!({"name":"review","critics":[critic("Unknown {missing}.")]}),
+        json!({"name":"review","evals":[eval("Unknown {missing}.")]}),
     );
     assert!(
         read_workspace_config(&fixture.0)
@@ -476,6 +476,6 @@ fn invalid_runtime_references_fail_statically_but_literals_stay_literal() {
             .to_string()
             .contains("Unknown Artifact reference")
     );
-    fixture.artifact("review", json!({"name":"review","critics":[critic(r"Literal \{missing} {{missing}} ${missing} { unmatched")]}));
+    fixture.artifact("review", json!({"name":"review","evals":[eval(r"Literal \{missing} {{missing}} ${missing} { unmatched")]}));
     fixture.config();
 }

@@ -1,1 +1,1 @@
-//! Readiness, tool checks, and prompt-size diagnostics.
+//! Backend readiness and tool checks.

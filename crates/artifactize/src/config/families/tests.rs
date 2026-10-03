@@ -1,3 +1,5 @@
+use serde_json::json;
+
 use super::*;
 use crate::config::read_workspace_config;
 
@@ -5,7 +7,7 @@ fn family() -> Value {
     json!({
         "name": "scenarios",
         "family": {"instances": {"alpha": {}, "beta": {}}},
-        "critics": [{"id":"review", "title":"Review", "profile":{"kind":"runtime","command":"true","args":[]}, "payload":{"instruction":"Inspect."}}]
+        "evals": [{"id":"review", "title":"Review", "profile":{"kind":"runtime","command":"true","args":[]}, "payload":{"instruction":"Inspect."}}]
     })
 }
 
@@ -28,28 +30,28 @@ fn parameters_merge_shallowly_and_substitute_only_exact_json_values() {
         "variants": {"custom":{"choice":"variant", "object":{"variant":true}}},
         "instances": {"alpha":{"variant":"custom", "params":{"choice":"instance", "object":{"instance":true}}}, "beta":{"variant":"custom"}, "gamma":{}}
     });
-    value["critics"][0]["payload"] = json!({
+    value["evals"][0]["payload"] = json!({
         "instruction":"Inspect literal /choice and $param strings.",
         "root":{"$param":""}, "escaped":{"$param":"/array/1/a~1b/~0key"},
         "selected":[{"$param":"/choice"}], "literal":{"$param":"/literal"}
     });
     let mut config = discover(value).unwrap();
-    let alpha = &config.critics[0].declaration.payload;
+    let alpha = &config.evals[0].declaration.payload;
     assert_eq!(alpha["root"]["object"], json!({"instance":true}));
     assert_eq!(alpha["root"]["default"], true);
     assert_eq!(alpha["escaped"], 42);
     assert_eq!(alpha["selected"], json!(["instance"]));
     assert_eq!(alpha["literal"], json!({"$param":"/not-evaluated"}));
-    let beta = &config.critics[1].declaration.payload;
+    let beta = &config.evals[1].declaration.payload;
     assert_eq!(beta["root"]["object"], json!({"variant":true}));
     assert_eq!(beta["selected"], json!(["variant"]));
     assert_eq!(
-        config.critics[2].declaration.payload["root"]["object"],
+        config.evals[2].declaration.payload["root"]["object"],
         json!({"old":true})
     );
-    config.critics[0].declaration.payload["root"]["array"][0] = json!("changed");
+    config.evals[0].declaration.payload["root"]["array"][0] = json!("changed");
     assert_eq!(
-        config.critics[1].declaration.payload["root"]["array"][0],
+        config.evals[1].declaration.payload["root"]["array"][0],
         "first"
     );
 }
@@ -80,7 +82,7 @@ fn pointers_reject_bad_escapes_noncanonical_array_indices_and_missing_values() {
         );
     }
     let mut value = family();
-    value["critics"][0]["title"] = json!({"$param":"/missing"});
+    value["evals"][0]["title"] = json!({"$param":"/missing"});
     assert!(
         discover(value.clone())
             .unwrap_err()
@@ -92,7 +94,7 @@ fn pointers_reject_bad_escapes_noncanonical_array_indices_and_missing_values() {
         discover(value).is_err(),
         "expanded declarations must be validated"
     );
-    let ordinary = json!({"name":"plain", "critics":[{"id":"review","title":"Review","profile":{"kind":"human"},"payload":{"instruction":"Read", "data":{"$param":""}}}]});
+    let ordinary = json!({"name":"plain", "evals":[{"id":"review","title":"Review","profile":{"kind":"human"},"payload":{"instruction":"Read", "data":{"$param":""}}}]});
     assert!(
         super::super::parse_declaration(&ordinary.to_string())
             .unwrap_err()
@@ -140,7 +142,7 @@ fn shared_fields_remain_literal_and_basis_applies_to_every_instance() {
     value["stale"] =
         json!({"kind":"identity", "script":{"command":"identity.sh", "args":["$param"]}});
     value["basis"] = json!(true);
-    value.as_object_mut().unwrap().remove("critics");
+    value.as_object_mut().unwrap().remove("evals");
     let config = discover(value.clone()).unwrap();
     assert_eq!(
         config.review_requirement("alpha"),
@@ -150,7 +152,7 @@ fn shared_fields_remain_literal_and_basis_applies_to_every_instance() {
         config.review_requirement("beta"),
         Some(crate::config::ReviewRequirement::Basis)
     );
-    assert!(config.critics.is_empty());
+    assert!(config.evals.is_empty());
     assert_eq!(
         config.artifacts["alpha"].family.as_ref().unwrap().instances,
         None
@@ -235,7 +237,7 @@ fn families_have_bounded_static_membership_and_material_lists() {
 }
 
 #[test]
-fn entry_digest_covers_only_merged_params_and_sorted_material() {
+fn membership_keeps_sorted_material_and_is_independent_of_siblings() {
     let root = tempfile::tempdir().unwrap();
     let owner = root.path().join("scenarios");
     fs::create_dir(&owner).unwrap();
@@ -243,36 +245,21 @@ fn entry_digest_covers_only_merged_params_and_sorted_material() {
         fs::write(owner.join(file), file).unwrap();
     }
     let mut value = family();
-    value["family"]["params"] = json!({"n":1.0});
     value["family"]["instances"] =
         json!({"alpha":{"material":["b","a"]}, "beta":{"material":["c"]}});
     fs::write(owner.join(CONFIG_FILE), value.to_string()).unwrap();
     let initial = read_workspace_config(root.path()).unwrap();
-    let entry = &initial.artifacts["alpha"].family.as_ref().unwrap().entry;
-    assert_eq!(entry.len(), 64);
+    let membership = initial.artifacts["alpha"].family.as_ref().unwrap();
+    assert_eq!(membership.name, "scenarios");
+    assert_eq!(membership.instances, None);
+    assert_eq!(membership.material, ["a", "b"]);
     value["family"]["instances"]["beta"]["params"] = json!({"changed":true});
     value["family"]["instances"]["gamma"] = json!({});
-    value["family"]["instances"]["alpha"]["material"] = json!(["a", "b"]);
-    value["family"]["params"]["n"] = json!(1);
     fs::write(owner.join("c"), "changed sibling material").unwrap();
     fs::write(owner.join(CONFIG_FILE), value.to_string()).unwrap();
     let updated = read_workspace_config(root.path()).unwrap();
     assert_eq!(
-        entry,
-        &updated.artifacts["alpha"].family.as_ref().unwrap().entry
-    );
-    assert_ne!(
-        initial.artifacts["beta"].family.as_ref().unwrap().entry,
-        updated.artifacts["beta"].family.as_ref().unwrap().entry
-    );
-    value["family"]["instances"]["alpha"]["params"] = json!({"changed":true});
-    fs::write(owner.join(CONFIG_FILE), value.to_string()).unwrap();
-    assert_ne!(
-        entry,
-        &read_workspace_config(root.path()).unwrap().artifacts["alpha"]
-            .family
-            .as_ref()
-            .unwrap()
-            .entry
+        membership,
+        updated.artifacts["alpha"].family.as_ref().unwrap()
     );
 }

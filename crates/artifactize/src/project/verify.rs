@@ -8,13 +8,14 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::{Critic, DependencyGates, Profile, read_workspace_config},
-    graph::{CriticStatus, Evidence, Graph},
+    config::{DependencyGates, Eval, Profile, read_workspace_config},
+    graph::{EvalStatus, Evidence, Graph},
     process,
     project::selection::{ProfileSelection, Selection, select_profiles},
     runtime::{self, Outcome, Verdict},
     scope,
     store::{self, Receipts, Request, Run, RunView},
+    workspace,
 };
 
 fn now() -> String {
@@ -27,7 +28,7 @@ fn now() -> String {
 pub struct VerifyOptions {
     pub profile: Option<ProfileSelection>,
     pub recursive: bool,
-    /// Force only explicitly selected Critics, never recursive dependencies.
+    /// Force only explicitly selected Evals, never recursive dependencies.
     pub force: bool,
     /// None uses root reviewPolicy; Some(false) explicitly enforces GREEN gates.
     pub ignore_gates: Option<bool>,
@@ -58,34 +59,27 @@ pub async fn verify(
     });
     let graph = Graph::new(&config).map_err(|e| e.to_string())?;
     let selected = selection.resolve(&config)?;
-    let selected_ids: BTreeSet<_> = selected
-        .critics
-        .iter()
-        .map(|critic| critic.id.as_str())
-        .collect();
+    let selected_ids: BTreeSet<_> = selected.evals.iter().map(|eval| eval.id.as_str()).collect();
     let required: BTreeSet<_> = graph
         .dependency_closure(&selected.roots)
         .map_err(|e| e.to_string())?
         .into_iter()
         .collect();
-    let critics = selection.included_critics(&config, options.recursive)?;
-    for critic in &critics {
-        let unsupported = match critic.declaration.profile {
-            Profile::Agent { .. } => Some("Agent Critics are not supported yet (P5)"),
-            Profile::Human { .. } => Some("Human Critics are not supported yet (P6)"),
+    let evals = selection.included_evals(&config, options.recursive)?;
+    for eval in &evals {
+        let unsupported = match eval.declaration.profile {
+            Profile::Agent { .. } => Some("Agent Evals are not supported yet (P5)"),
+            Profile::Human { .. } => Some("Human Evals are not supported yet (P6)"),
             Profile::Runtime { .. } => None,
         };
         if let Some(message) = unsupported {
-            return Err(format!("{}: {message}.", critic.id));
+            return Err(format!("{}: {message}.", eval.id));
         }
     }
-    let state = store::receipts_dir(&config.root, state_dir)?;
-    let home = store::canonical_target(&store::state_home().map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
-    store::outside_workspace(&config.root, &home).map_err(|e| e.to_string())?;
+    let state = store::state_dir(state_dir)?;
     let receipts = Receipts::open(&state, &config.root).await?;
-    let runs =
-        store::prepare_directory(&state.join("runs"), &config.root).map_err(|e| e.to_string())?;
+    let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
+        .map_err(|e| e.to_string())?;
     let directory = tempfile::Builder::new()
         .prefix("run-")
         .tempdir_in(runs)
@@ -111,25 +105,25 @@ pub async fn verify(
         validation: Value::Null,
         error: None,
     };
-    let mut requests: Vec<_> = critics
+    let mut requests: Vec<_> = evals
         .iter()
         .enumerate()
-        .map(|(ordinal, critic)| Request {
+        .map(|(ordinal, eval)| Request {
             id: format!("{}-{}", run.id, ordinal + 1),
             run_id: run.id.clone(),
-            critic_id: critic.id.clone(),
-            target: critic.target.clone(),
-            title: critic.declaration.title.clone(),
-            profile: serde_json::to_value(&critic.declaration.profile).expect("profile is JSON"),
-            payload: json!(critic.declaration.payload),
-            references: json!(critic.references),
-            deps: critic.deps.clone(),
-            force: options.force && selected_ids.contains(critic.id.as_str()),
+            eval_id: eval.id.clone(),
+            target: eval.target.clone(),
+            title: eval.declaration.title.clone(),
+            profile: serde_json::to_value(&eval.declaration.profile).expect("profile is JSON"),
+            payload: json!(eval.declaration.payload),
+            references: json!(eval.references),
+            deps: eval.deps.clone(),
+            force: options.force && selected_ids.contains(eval.id.as_str()),
             status: "QUEUED".into(),
             created_at: run.created_at.clone(),
             started_at: None,
             completed_at: None,
-            cwd: config.root.join(&config.artifacts[&critic.target].path),
+            cwd: config.root.join(&config.artifacts[&eval.target].path),
             run_dir: None,
             argv: None,
             child: None,
@@ -146,18 +140,18 @@ pub async fn verify(
             break;
         }
         let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
-        let Some(index) = critics
+        let Some(index) = evals
             .iter()
-            .position(|critic| evaluation.critics[critic.id.as_str()].can_execute())
+            .position(|eval| evaluation.evals[eval.id.as_str()].can_execute())
         else {
             break;
         };
-        let critic = critics[index];
+        let eval = evals[index];
         let request = &mut requests[index];
         request.status = "RUNNING".into();
         request.started_at = Some(now());
         receipts.save_request(request).await?;
-        let prepared = prepare(&config, critic, &run_dir, request);
+        let prepared = prepare(&config, eval, &run_dir, request);
         let outcome = match prepared {
             Ok(command) => {
                 receipts.save_request(request).await?;
@@ -194,7 +188,7 @@ pub async fn verify(
                     Verdict::Red => "RED",
                 }
                 .into();
-                evidence.insert(critic.id.clone(), Evidence::Current(result.verdict));
+                evidence.insert(eval.id.clone(), Evidence::Current(result.verdict));
                 request.result = Some(json!({
                     "verdict":request.status,
                     "exitCode":result.exit_code,
@@ -206,7 +200,7 @@ pub async fn verify(
             }
             failure => {
                 request.status = "ERROR".into();
-                evidence.insert(critic.id.clone(), Evidence::OperationalError);
+                evidence.insert(eval.id.clone(), Evidence::OperationalError);
                 if let Some(Outcome::OperationalError(error)) = failure {
                     request.error_code = Some(
                         match &error {
@@ -227,45 +221,45 @@ pub async fn verify(
     }
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
-        if evidence.contains_key(&request.critic_id) {
+        if evidence.contains_key(&request.eval_id) {
             continue;
         }
-        let critic = &evaluation.critics[request.critic_id.as_str()];
+        let eval = &evaluation.evals[request.eval_id.as_str()];
         if cancellation.is_cancelled() {
             request.status = "ERROR".into();
             request.error = Some("Run was cancelled.".into());
             request.error_code = Some("CANCELLED".into());
             request.completed_at = Some(now());
-            evidence.insert(request.critic_id.clone(), Evidence::OperationalError);
+            evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
         } else {
-            request.status = status(critic.status).into();
+            request.status = status(eval.status).into();
             request.blocked_reason = Some(format!(
                 "{}: {}",
-                if critic.status == CriticStatus::Blocked {
+                if eval.status == EvalStatus::Blocked {
                     "Dependency verdict RED"
                 } else {
                     "Waiting for current GREEN dependency evidence"
                 },
-                critic.unmet_gates.join(", ")
+                eval.unmet_gates.join(", ")
             ));
         }
     }
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
-    let required_critics: Vec<_> = evaluation
-        .critics
+    let required_evals: Vec<_> = evaluation
+        .evals
         .iter()
-        .filter(|(id, _)| required.contains(&graph.critic_target(id).unwrap()))
+        .filter(|(id, _)| required.contains(&graph.eval_target(id).unwrap()))
         .collect();
     let satisfied = required.iter().all(|id| evaluation.artifacts[id].satisfied);
     run.status = if cancellation.is_cancelled()
-        || required_critics
+        || required_evals
             .iter()
-            .any(|(_, c)| c.status == CriticStatus::Error)
+            .any(|(_, c)| c.status == EvalStatus::Error)
     {
         "ERROR"
-    } else if required_critics
+    } else if required_evals
         .iter()
-        .any(|(_, c)| c.status == CriticStatus::Red)
+        .any(|(_, c)| c.status == EvalStatus::Red)
     {
         "RED"
     } else if satisfied {
@@ -283,15 +277,15 @@ pub async fn verify(
         "recursive":run.recursive,
         "force":run.force,
         "ignoreGates":run.ignore_gates,
-        "selectedCriticIds":selected.critics.iter().map(|critic| &critic.id).collect::<Vec<_>>(),
-        "includedCriticIds":critics.iter().map(|critic| &critic.id).collect::<Vec<_>>(),
+        "selectedEvalIds":selected.evals.iter().map(|eval| &eval.id).collect::<Vec<_>>(),
+        "includedEvalIds":evals.iter().map(|eval| &eval.id).collect::<Vec<_>>(),
         "satisfied":satisfied && !cancellation.is_cancelled(),
         "obligations":evaluation.obligations.iter().filter(|id| required.contains(*id)).collect::<Vec<_>>(),
         "artifacts":required.iter().map(|id| {
             let a = &evaluation.artifacts[id];
             json!({"id":id,"status":format!("{:?}",a.status).to_uppercase(),"passed":a.passed,"total":a.total,"satisfied":a.satisfied})
         }).collect::<Vec<_>>(),
-        "critics":required_critics.iter().map(|(id, critic)| json!({"id":id,"status":status(critic.status),"blockedBy":critic.unmet_gates})).collect::<Vec<_>>(),
+        "evals":required_evals.iter().map(|(id, eval)| json!({"id":id,"status":status(eval.status),"blockedBy":eval.unmet_gates})).collect::<Vec<_>>(),
     });
     receipts.finish(&run, &requests).await?;
     Ok(RunView { run, requests })
@@ -299,7 +293,7 @@ pub async fn verify(
 
 fn prepare(
     config: &crate::config::RepoConfig,
-    critic: &Critic,
+    eval: &Eval,
     run_dir: &Path,
     request: &mut Request,
 ) -> Result<runtime::Command, String> {
@@ -307,15 +301,15 @@ fn prepare(
         command,
         args,
         timeout_ms,
-    } = &critic.declaration.profile
+    } = &eval.declaration.profile
     else {
         unreachable!("profiles checked before submission")
     };
-    let scope = scope::critic_scope(config, critic).map_err(|e| e.to_string())?;
+    let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
     let args =
-        scope::resolve_argv(config, &scope, &critic.target, args).map_err(|e| e.to_string())?;
+        scope::resolve_argv(config, &scope, &eval.target, args).map_err(|e| e.to_string())?;
     let cwd = scope
-        .resolve_input(&config.root, &critic.target, "")
+        .resolve_input(&config.root, &eval.target, "")
         .map_err(|e| e.to_string())?;
     let mut prepared = runtime::Command::prepare(
         command.into(),
@@ -331,14 +325,14 @@ fn prepare(
     Ok(prepared)
 }
 
-fn status(status: CriticStatus) -> &'static str {
+fn status(status: EvalStatus) -> &'static str {
     match status {
-        CriticStatus::Green => "GREEN",
-        CriticStatus::Red => "RED",
-        CriticStatus::Error => "ERROR",
-        CriticStatus::Stale => "STALE",
-        CriticStatus::Unreviewed => "UNREVIEWED",
-        CriticStatus::Wait => "WAIT_DEPENDENCY",
-        CriticStatus::Blocked => "BLOCKED",
+        EvalStatus::Green => "GREEN",
+        EvalStatus::Red => "RED",
+        EvalStatus::Error => "ERROR",
+        EvalStatus::Stale => "STALE",
+        EvalStatus::Unreviewed => "UNREVIEWED",
+        EvalStatus::Wait => "WAIT_DEPENDENCY",
+        EvalStatus::Blocked => "BLOCKED",
     }
 }

@@ -8,7 +8,7 @@ use std::{
 use artifactize::{
     config::{RepoConfig, Stale, read_workspace_config},
     graph::Graph,
-    scope::{RelationKind, artifact_scope, critic_scope},
+    scope::{RelationKind, artifact_scope, eval_scope},
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -87,7 +87,7 @@ fn output_json(output: &Output) -> Value {
 }
 
 #[test]
-fn file_instances_expand_to_ordinary_artifacts_critics_scopes_and_relations() {
+fn file_instances_expand_to_ordinary_artifacts_evals_scopes_and_relations() {
     let fixture = Fixture::new();
     let config = fixture.config();
     assert_eq!(config.artifacts.len(), 3);
@@ -98,9 +98,9 @@ fn file_instances_expand_to_ordinary_artifacts_critics_scopes_and_relations() {
     assert_eq!(parent.children["scenarios/search"], "search");
     assert_eq!(
         config
-            .critics
+            .evals
             .iter()
-            .map(|critic| critic.id.as_str())
+            .map(|eval| eval.id.as_str())
             .collect::<Vec<_>>(),
         ["checkout/review", "search/review"]
     );
@@ -166,7 +166,7 @@ fn file_instances_expand_to_ordinary_artifacts_critics_scopes_and_relations() {
             .resolve_path("project", "scenarios/checkout.txt")
             .is_err()
     );
-    let scope = critic_scope(&config, &config.critics[0]).unwrap();
+    let scope = eval_scope(&config, &config.evals[0]).unwrap();
     assert_eq!(
         scope.artifacts.keys().copied().collect::<Vec<_>>(),
         ["checkout"]
@@ -185,7 +185,7 @@ fn file_instances_expand_to_ordinary_artifacts_critics_scopes_and_relations() {
     list["checkout"]["params"]["instruction"] = json!("Inspect {checkout} using {search}.");
     fixture.write("scenarios/instances.json", list);
     let config = fixture.config();
-    assert_eq!(config.critics[0].deps, ["search"]);
+    assert_eq!(config.evals[0].deps, ["search"]);
     assert!(
         config
             .relations
@@ -207,12 +207,12 @@ fn config_check_and_verify_keep_runtime_verdicts_separate_and_identity_hooks_ine
     assert!(output.status.success());
     assert_eq!(
         output_json(&output),
-        json!({"ok":true,"artifacts":3,"critics":2})
+        json!({"ok":true,"artifacts":3,"evals":2})
     );
     assert!(!fixture.root.path().join("state").exists());
     let output = fixture
         .command()
-        .args(["verify", "--all", "--full"])
+        .args(["verify", "--all", "--json"])
         .output()
         .unwrap();
     let run = output_json(&output);
@@ -222,11 +222,11 @@ fn config_check_and_verify_keep_runtime_verdicts_separate_and_identity_hooks_ine
     assert_eq!(requests.len(), 2);
     let checkout = requests
         .iter()
-        .find(|request| request["criticId"] == "checkout/review")
+        .find(|request| request["evalId"] == "checkout/review")
         .unwrap();
     let search = requests
         .iter()
-        .find(|request| request["criticId"] == "search/review")
+        .find(|request| request["evalId"] == "search/review")
         .unwrap();
     assert_eq!(checkout["result"]["stdout"], "READY\n");
     assert_eq!(search["result"]["stdout"], "SEARCH\n");
@@ -234,7 +234,7 @@ fn config_check_and_verify_keep_runtime_verdicts_separate_and_identity_hooks_ine
     fs::write(fixture.repo.join("scenarios/search.txt"), "BROKEN\n").unwrap();
     let output = fixture
         .command()
-        .args(["verify", "--all", "--full"])
+        .args(["verify", "--all", "--json"])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
@@ -243,14 +243,14 @@ fn config_check_and_verify_keep_runtime_verdicts_separate_and_identity_hooks_ine
     assert_eq!(
         requests
             .iter()
-            .find(|request| request["criticId"] == "checkout/review")
+            .find(|request| request["evalId"] == "checkout/review")
             .unwrap()["result"]["verdict"],
         "GREEN"
     );
     assert_eq!(
         requests
             .iter()
-            .find(|request| request["criticId"] == "search/review")
+            .find(|request| request["evalId"] == "search/review")
             .unwrap()["result"]["verdict"],
         "RED"
     );
@@ -317,7 +317,7 @@ fn family_names_are_reserved_and_templates_cannot_be_targets_or_nested() {
         json!({"name":"project","mounts":{"scenarios":"checkout"}}),
     );
     assert!(fixture.error().contains("Ambiguous mount alias scenarios"));
-    fixture.write("artifactize.json", json!({"name":"project","critics":[{"id":"review","title":"Review","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Inspect {scenarios}."}}]}));
+    fixture.write("artifactize.json", json!({"name":"project","evals":[{"id":"review","title":"Review","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Inspect {scenarios}."}}]}));
     assert!(fixture.error().contains("reference one of its instances"));
 }
 
@@ -407,9 +407,9 @@ fn family_selectors_expand_and_deduplicate_across_positional_csv_and_files() {
     assert_eq!(selected.roots, ["checkout", "search"]);
     assert_eq!(
         selected
-            .critics
+            .evals
             .iter()
-            .map(|critic| critic.id.as_str())
+            .map(|eval| eval.id.as_str())
             .collect::<Vec<_>>(),
         ["checkout/review", "search/review"]
     );
@@ -425,16 +425,16 @@ fn family_selectors_expand_and_deduplicate_across_positional_csv_and_files() {
     assert_eq!(selected.roots, ["search", "checkout"]);
     assert_eq!(
         selected
-            .critics
+            .evals
             .iter()
-            .map(|critic| critic.id.as_str())
+            .map(|eval| eval.id.as_str())
             .collect::<Vec<_>>(),
         ["search/review", "checkout/review"]
     );
 
     let output = fixture
         .command()
-        .args(["verify", "scenarios", "--full"])
+        .args(["verify", "scenarios", "--json"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -450,7 +450,7 @@ fn family_selectors_expand_and_deduplicate_across_positional_csv_and_files() {
             "verify",
             "--artifacts",
             "search,scenarios,checkout",
-            "--full",
+            "--json",
         ])
         .output()
         .unwrap();
@@ -461,7 +461,7 @@ fn family_selectors_expand_and_deduplicate_across_positional_csv_and_files() {
             .command()
             .args(["verify", "--artifacts-file"])
             .arg(path)
-            .arg("--full")
+            .arg("--json")
             .output()
             .unwrap();
         assert!(output.status.success());
@@ -478,7 +478,7 @@ fn family_selectors_expand_and_deduplicate_across_positional_csv_and_files() {
     }
     let output = fixture
         .command()
-        .args(["verify", "--critic", "scenarios/review", "--json"])
+        .args(["verify", "--eval", "scenarios/review", "--json"])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
@@ -486,7 +486,7 @@ fn family_selectors_expand_and_deduplicate_across_positional_csv_and_files() {
         output_json(&output)["error"]
             .as_str()
             .unwrap()
-            .contains("Unknown Critic")
+            .contains("Unknown Eval")
     );
 }
 
@@ -496,7 +496,7 @@ fn family_profile_variants_are_substituted_per_instance_before_selection() {
 
     let fixture = Fixture::new();
     let mut template = fixture.read("scenarios/artifactize.json");
-    template["critics"][0]["profileVariants"] = json!({"echo":{
+    template["evals"][0]["profileVariants"] = json!({"echo":{
         "kind":"runtime", "command":"/bin/echo", "args":[{"$param":"/expected"}]
     }});
     fixture.write("scenarios/artifactize.json", template.clone());
@@ -512,16 +512,16 @@ fn family_profile_variants_are_substituted_per_instance_before_selection() {
     .unwrap();
     let selected = selection.resolve(&config).unwrap();
     assert_eq!(
-        serde_json::to_value(&selected.critics[0].declaration.profile).unwrap()["args"],
+        serde_json::to_value(&selected.evals[0].declaration.profile).unwrap()["args"],
         json!(["READY"])
     );
     assert_eq!(
-        serde_json::to_value(&selected.critics[1].declaration.profile).unwrap()["args"],
+        serde_json::to_value(&selected.evals[1].declaration.profile).unwrap()["args"],
         json!(["SEARCH"])
     );
     let output = fixture
         .command()
-        .args(["verify", "scenarios", "--profile", "echo", "--full"])
+        .args(["verify", "scenarios", "--profile", "echo", "--json"])
         .output()
         .unwrap();
     assert!(output.status.success());
@@ -530,14 +530,14 @@ fn family_profile_variants_are_substituted_per_instance_before_selection() {
     assert_eq!(
         requests
             .iter()
-            .find(|request| request["criticId"] == "checkout/review")
+            .find(|request| request["evalId"] == "checkout/review")
             .unwrap()["result"]["stdout"],
         "READY\n"
     );
     assert_eq!(
         requests
             .iter()
-            .find(|request| request["criticId"] == "search/review")
+            .find(|request| request["evalId"] == "search/review")
             .unwrap()["result"]["stdout"],
         "SEARCH\n"
     );

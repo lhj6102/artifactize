@@ -1,1 +1,1 @@
-//! Agent review loop, verdict validation, repair, and result checks.
+//! Agent review loop, strict verdict validation, and repair.

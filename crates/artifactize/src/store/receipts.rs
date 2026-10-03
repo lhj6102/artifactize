@@ -8,9 +8,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_rusqlite::Connection;
 
-use super::{STATE_SCHEMA_VERSION, canonical_target, outside_workspace};
+use super::STATE_SCHEMA_VERSION;
+use crate::workspace::{canonical_target, outside_workspace, prepare_directory};
 
-pub const DATABASE: &str = "receipts.sqlite";
+pub const DATABASE: &str = "state.sqlite";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -47,7 +48,7 @@ pub struct Run {
 pub struct Request {
     pub id: String,
     pub run_id: String,
-    pub critic_id: String,
+    pub eval_id: String,
     pub target: String,
     pub title: String,
     pub profile: Value,
@@ -84,30 +85,23 @@ pub struct Receipts {
 
 impl Receipts {
     pub async fn open(state: &Path, repo: &Path) -> Result<Self, String> {
-        let state = super::prepare_directory(state, repo).map_err(|e| e.to_string())?;
+        let state = prepare_directory(state, repo).map_err(|e| e.to_string())?;
         check_files(&state)?;
         let connection = Connection::open(state.join(DATABASE))
             .await
             .map_err(|e| e.to_string())?;
-        let repo = repo.to_string_lossy().into_owned();
         connection.call(move |db| -> Result<(), Error> {
             db.busy_timeout(Duration::from_secs(5))?;
             db.pragma_update(None, "foreign_keys", true)?;
             let version: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
             if version != 0 && version != STATE_SCHEMA_VERSION {
-                return Err(Error::Invalid(format!("Unsupported receipts schema version: {version}")));
-            }
-            if version == STATE_SCHEMA_VERSION {
-                check_repo(db, Some(&repo))?;
+                return Err(Error::Invalid(format!("Unsupported state schema version: {version}")));
             }
             db.pragma_update(None, "journal_mode", "WAL")?;
             let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            transaction.execute_batch("CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, status TEXT NOT NULL, data TEXT NOT NULL);
+            transaction.execute_batch("CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS run_members(run_id TEXT NOT NULL REFERENCES runs(id), critic_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), PRIMARY KEY(run_id, critic_id), UNIQUE(run_id, ordinal));")?;
-            transaction.execute("INSERT OR IGNORE INTO metadata(key,value) VALUES ('repo_path',?)", [&repo])?;
-            check_repo(&transaction, Some(&repo))?;
+                CREATE TABLE IF NOT EXISTS run_members(run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), PRIMARY KEY(run_id, eval_id), UNIQUE(run_id, ordinal));")?;
             transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
             transaction.commit()?;
             Ok(())
@@ -120,10 +114,10 @@ impl Receipts {
         let requests = requests.to_vec();
         self.connection.call(move |db| -> Result<(), Error> {
             let transaction = db.transaction()?;
-            transaction.execute("INSERT INTO runs(id,status,data) VALUES (?,?,?)", params![run.id, run.status, serde_json::to_string(&run)?])?;
+            transaction.execute("INSERT INTO runs(id,repo,status,data) VALUES (?,?,?,?)", params![run.id, run.repo_path.to_string_lossy(), run.status, serde_json::to_string(&run)?])?;
             for (ordinal, request) in requests.iter().enumerate() {
                 transaction.execute("INSERT INTO requests(id,run_id,status,data) VALUES (?,?,?,?)", params![request.id, run.id, request.status, serde_json::to_string(request)?])?;
-                transaction.execute("INSERT INTO run_members(run_id,critic_id,ordinal,request_id) VALUES (?,?,?,?)", params![run.id, request.critic_id, ordinal as i64, request.id])?;
+                transaction.execute("INSERT INTO run_members(run_id,eval_id,ordinal,request_id) VALUES (?,?,?,?)", params![run.id, request.eval_id, ordinal as i64, request.id])?;
             }
             transaction.commit()?;
             Ok(())
@@ -170,27 +164,13 @@ fn update_request(db: &rusqlite::Connection, request: &Request) -> Result<(), Er
     Ok(())
 }
 
-fn check_repo(db: &rusqlite::Connection, expected: Option<&str>) -> Result<String, Error> {
-    let repo: String = db.query_row(
-        "SELECT value FROM metadata WHERE key='repo_path'",
-        [],
-        |row| row.get(0),
-    )?;
-    if expected.is_some_and(|expected| repo != expected) {
-        return Err(Error::Invalid(
-            "State directory belongs to a different repository.".into(),
-        ));
-    }
-    Ok(repo)
-}
-
 fn check_files(state: &Path) -> Result<(), String> {
     for suffix in ["", "-wal", "-shm"] {
         let path = state.join(format!("{DATABASE}{suffix}"));
         match path.symlink_metadata() {
             Ok(metadata) if !metadata.is_file() => {
                 return Err(format!(
-                    "Receipt files must be regular files: {}",
+                    "State files must be regular files: {}",
                     path.display()
                 ));
             }
@@ -203,8 +183,8 @@ fn check_files(state: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Existing store only: no discovery, schema creation, or worker reconciliation.
-pub async fn read_run(state: &Path, repo: Option<&Path>, id: &str) -> Result<RunView, String> {
+/// Existing store only: no discovery, schema creation, or execution.
+pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     let state = canonical_target(state).map_err(|e| e.to_string())?;
     check_files(&state)?;
     let connection = Connection::open_with_flags(
@@ -213,19 +193,18 @@ pub async fn read_run(state: &Path, repo: Option<&Path>, id: &str) -> Result<Run
     )
     .await
     .map_err(|e| e.to_string())?;
-    let repo = repo.map(|p| p.to_string_lossy().into_owned());
     let id = id.to_owned();
     connection.call(move |db| -> Result<RunView, Error> {
         db.busy_timeout(Duration::from_secs(5))?;
         let transaction = db.transaction()?;
         let version: u32 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
         if version != STATE_SCHEMA_VERSION {
-            return Err(Error::Invalid(format!("Unsupported receipts schema version: {version}")));
+            return Err(Error::Invalid(format!("Unsupported state schema version: {version}")));
         }
-        let stored_repo = check_repo(&transaction, repo.as_deref())?;
-        outside_workspace(Path::new(&stored_repo), &state).map_err(|e| Error::Invalid(e.to_string()))?;
-        let data: Option<String> = transaction.query_row("SELECT data FROM runs WHERE id=?", [&id], |row| row.get(0)).optional()?;
-        let run = serde_json::from_str(&data.ok_or_else(|| Error::Invalid("Review handle not found.".into()))?)?;
+        let saved: Option<(String, String)> = transaction.query_row("SELECT repo,data FROM runs WHERE id=?", [&id], |row| Ok((row.get(0)?, row.get(1)?))).optional()?;
+        let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
+        outside_workspace(Path::new(&repo), &state).map_err(|e| Error::Invalid(e.to_string()))?;
+        let run = serde_json::from_str(&data)?;
         let requests = {
             let mut statement = transaction.prepare("SELECT q.data FROM requests q JOIN run_members m ON q.id=m.request_id WHERE m.run_id=? ORDER BY m.ordinal")?;
             statement.query_map([&id], |row| row.get::<_, String>(0))?.map(|row| Ok(serde_json::from_str(&row?)?)).collect::<Result<Vec<Request>, Error>>()?

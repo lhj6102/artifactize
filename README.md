@@ -2,27 +2,27 @@
 
 A Rust rebrand of [CCDD](https://github.com/lhj6102/ccdd), ported from CCDD 7.0.0 (`cbf28b4`).
 
-Work in progress. See the [plan](docs/PLAN.md) and the [parity checklist](docs/ccdd-7-inventory.md).
+Work in progress. See the [plan](docs/PLAN.md) and the [capability inventory](docs/ccdd-7-inventory.md).
 
 ## Runtime CLI
 
 ```sh
 cargo run -q -p artifactize -- --repo crates/artifactize/tests/fixtures/runtime verify --all
-cargo run -q -p artifactize -- --repo crates/artifactize/tests/fixtures/runtime run show RUN_ID
+cargo run -q -p artifactize -- run show RUN_ID
 ```
 
 The fixture intentionally includes GREEN, RED, a timeout ERROR, RED-blocked and
 ERROR-waiting dependents, and a two-Artifact cycle. Its overall exit code is 2.
-`verify` requires exactly one selector: positional `ARTIFACT`, `--critic ID`,
-`--critics CSV`, `--artifacts CSV`, `--critics-file PATH`, `--artifacts-file PATH`,
-or `--all`. Critic IDs are qualified (`green/check`). Selection order is preserved,
+`verify` requires exactly one selector: positional `ARTIFACT`, `--eval ID`,
+`--evals CSV`, `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH`,
+or `--all`. Eval IDs are qualified (`green/check`). Selection order is preserved,
 with duplicates removed at their first occurrence; Artifacts expand to their
-Critics in declaration order. Runtime Critics execute sequentially when their
-dependency gates allow. An Artifact selector runs only that Artifact's Critics;
-an individual Critic selector runs only that Critic. Both retain the full dependency
-closure as a final obligation. `--recursive` includes every Critic in that closure,
-including other Critics on the selected Artifact and cycle peers, in configuration
-order. `--all` already includes every Critic and all no-Critic Artifact obligations.
+evals in declaration order. Runtime evals execute sequentially when their
+dependency gates allow. An Artifact selector runs only that Artifact's evals;
+an individual eval selector runs only that eval. Both retain the full dependency
+closure as a final obligation. `--recursive` includes every eval in that closure,
+including other evals on the selected Artifact and cycle peers, in configuration
+order. `--all` already includes every eval and all no-eval Artifact obligations.
 A family name selects every instance, also in
 `--artifacts` and `--artifacts-file`; overlapping family/instance entries are
 deduplicated without selecting the family template itself.
@@ -32,15 +32,15 @@ have no internal gates. `--ignore-gates` bypasses execution gates only: final
 validation still requires actual GREEN evidence or explicit `basis: true` throughout
 the required scope. A basis never waives its dependencies. Selected GREEN results
 with missing obligations remain recorded in an INCOMPLETE Run; both text and JSON
-output identify unmet obligations. Agent/Human Critics fail clearly before execution.
+output identify unmet obligations. Agent/Human evals fail clearly before execution.
 
 Root `reviewPolicy.dependencyGates` defaults to `green`; `ignore` enables bypass.
 The library's `project::VerifyOptions.ignore_gates` can explicitly override either
 policy, including `Some(false)` to enforce gates. `--force` marks only explicitly
-selected Critics for a fresh review, not recursive dependencies; it neither expands
+selected evals for a fresh review, not recursive dependencies; it neither expands
 the execution scope nor bypasses gates. Runs record the resolved policy and each
-request's force flag. Every included Critic currently executes without reuse;
-P3.4 will connect force to cache lookup/join/publication bypass.
+request's force flag. Every included eval currently executes without reuse;
+P3.2 will connect force to cache bypass.
 
 Selection files must be regular files no larger than 4 MiB, containing a JSON
 string array or one trimmed ID per line (UTF-8 BOM and CRLF are accepted). They
@@ -50,33 +50,43 @@ never fall back to line parsing. Relative file paths resolve from the CLI's cwd,
 not `--repo`.
 
 `verify ... --profile NAME` selects a complete declared `profileVariants` entry
-for every included Critic. Each Critic can declare up to 64 safely named variants,
+for every included eval. Each eval can declare up to 64 safely named variants,
 all retaining its default reviewer kind. Unknown variants fail before creating a
 Run, and source declarations are never rewritten. The library accepts
-`project::selection::ProfileSelection::Named` or `ProfileSelection::Critics` (a
-qualified-Critic-to-name map); mappings outside the included scope fail. With
-`--recursive`, variants also apply to dependency Critics. Runtime
+`project::selection::ProfileSelection::Named` or `ProfileSelection::Evals` (a
+qualified-eval-to-name map); mappings outside the included scope fail. With
+`--recursive`, variants also apply to dependency evals. Runtime
 variant arguments rebuild scoped references and dependency gates. Stored request
 profiles and argv describe the variant actually used.
 
-P1 verification is foreground, with or without `--wait`: GREEN exits 0, RED 1,
-ERROR 2, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels the owned child group and records
-ERROR/CANCELLED, never RED. P3.2 will add detached submission and CCDD's non-wait
-acceptance codes; P3.15 adds following/wait timeouts without cancelling execution.
-`--json` prints compact requester results; `--full` includes the runtime audit.
-`run show RUN_ID` always prints full saved JSON and exits 0 on a successful read,
-regardless of the saved verdict. It never discovers declarations or runs code.
+Verification runs in the foreground, with or without `--wait`: GREEN exits 0,
+RED 1, ERROR 2, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels the owned child group and
+records ERROR/CANCELLED, never RED. There is no detached worker. `--json` prints
+full saved results, including payloads, argv, stdout/stderr and runtime details;
+there is no compact projection or `--full` flag. `run show RUN_ID` always prints
+full saved JSON and exits 0 on a successful read, regardless of the saved verdict.
+It never discovers declarations or runs code, and does not need `--repo`.
 
-Default receipts live in `$ARTIFACTIZE_STATE_HOME/<canonical-repo-sha256-prefix>`
-(or the state home fallback), in `receipts.sqlite` (bundled SQLite, WAL, schema 1).
-`--state-dir PATH` moves only Run receipts/history and binds that directory to its
-original canonical repository. Use `--state-dir PATH run show RUN_ID` without
-`--repo` to read even after the original repository is removed. Private run output
-lives below the receipt directory; state/output inside the reviewed repository is
-rejected, including through symlink ancestors. No writer transaction spans a
-subprocess or async suspension. This phase does not reuse earlier Run evidence,
-run identity hooks, or monitor/hash the workspace. End-of-review identity checks
-arrive with identity commands in P3.3.
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 1),
+with the canonical repository path recorded on each Run. The state home is
+`$ARTIFACTIZE_STATE_HOME`, falling back to `$XDG_STATE_HOME/artifactize` or
+`~/.local/state/artifactize`. `--state-dir PATH` moves the whole state, including
+private output directories under `PATH/runs`. The database is a fresh format;
+there is no migration from earlier receipt layouts. Saved Runs stay readable after
+the original repository is removed. State/output inside the reviewed repository
+is rejected, including through symlink ancestors; database files and their WAL
+sidecars must be regular files. No writer transaction spans a subprocess or async
+suspension. This phase does not reuse earlier Run evidence or run identity hooks.
+Identity execution and end-of-review rechecks arrive in P3.1.
+
+Declarations use `evals`, with qualified eval IDs such as `green/check`.
+`stale` accepts only `{"kind":"identity","script":{"command":"identity.sh","args":[]}}`,
+optionally with `inputs`, `timeoutMs` and `weight` (1–100). Discovery validates
+these fields without opening or executing the script or its inputs. There is no
+implicit file-hash or always-stale mode: no identity means no reuse. The old
+`critics`, `stale.paths`, `resultCheck`, `envRequirements`,
+`reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` fields are
+rejected. Tool protocol and audience-specific declaration updates arrive in P4.
 
 ## Scoped input library
 
@@ -87,8 +97,8 @@ an owner's mount alias or a global Artifact name. Backslash-escaped braces, doub
 braces, `${variables}`, nested/JSON groups and unmatched braces stay literal.
 Payloads are never changed and references never expand file content.
 
-`scope::critic_scope` admits the target and explicit references plus their child
-and mount closure, not the referenced Artifacts' Critic instructions.
+`scope::eval_scope` admits the target and explicit references plus their child
+and mount closure, not the referenced Artifacts' eval instructions.
 `Scope::resolve_path` follows logical child/mount paths to canonical Artifact
 identities; `Scope::resolve_input` additionally requires existing files/directories
 without symlink traversal. Logical paths reject absolute paths, traversal, empty
@@ -109,27 +119,27 @@ use these same resolvers. Tool enforcement is delivered by later tasks.
 A subfolder's `artifactize.json` can declare a static family with
 `"family": {"instances": "instances.json"}` or an inline instance-name map.
 The family name is reserved, not an Artifact; each of its 1–10000 instances gets
-ordinary Artifact and `instance/critic` identities. Instance names must be globally
+ordinary Artifact and `instance/eval` identities. Instance names must be globally
 unique and cannot shadow entries in the shared folder. Families cannot be the
 workspace root, contain nested markers, or declare `reviewPolicy`.
 
 An instance accepts `variant`, object `params`, and up to 64 unique existing
 owner-relative `material` paths, resolved without symlink traversal. Parameters
 merge shallowly: family defaults, then the named family variant, then the instance.
-Exact `{"$param":"/pointer"}` objects inside views and Critics copy JSON values
+Exact `{"$param":"/pointer"}` objects inside views and evals copy JSON values
 using RFC 6901 pointers, including arrays and the empty root pointer. No string
 interpolation or parameter substitution occurs in names, mounts, identity hooks,
-basis, or environment requirements. Expanded declarations receive normal validation.
+or basis. Expanded declarations receive normal validation.
 
 All instance scripts use the shared folder as cwd. A parent addresses material as
 `<family-folder>/<instance>/<path>`; bypassing the instance is rejected. Instance
 material is an ownership declaration, not a sandbox hiding sibling files.
-Discovery keeps each instance's membership, sorted material, and a SHA-256/JCS
-entry digest independent of sibling entries. Material fingerprints arrive in P2.4;
-identity execution and end-of-review rechecks remain P3.3. No workspace monitoring
-or automatic reuse is added.
+Discovery keeps each instance's family membership and sorted material, without
+computing any digest or content fingerprint. Only an explicit identity can become
+a reuse key; identity execution and end-of-review rechecks remain P3.1. No
+workspace monitoring or automatic reuse is added.
 
-The runtime-only fixture demonstrates parameterized views, shared Critics,
+The runtime-only fixture demonstrates parameterized views, shared evals,
 independent inputs/results, and an identity hook that remains inert:
 
 ```sh
@@ -172,4 +182,4 @@ leader. Configured programs are trusted local code, **not an OS sandbox**: they
 can use ordinary OS access, must keep reviewed input unchanged, and descendants
 that deliberately detach into another process group can escape cleanup. These
 controls do not promise confinement or detection of every adversarial transient
-write. Durable child accounting and lease release belong to P3.10.
+write.
