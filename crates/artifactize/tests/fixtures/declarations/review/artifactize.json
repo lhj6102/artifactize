@@ -31,21 +31,12 @@
     },
     "humanTools": {
       "read": {
-        "metadata": {
-          "description": "Read {artifactName}",
-          "inputSchema": {
-            "type": "object"
-          },
-          "resultKinds": [
-            "text"
-          ]
-        },
-        "script": {
-          "command": "sh",
-          "args": [
-            "hook.sh"
-          ]
-        }
+        "description": "Read {artifactName}",
+        "kind": "output",
+        "command": "sh",
+        "args": [
+          "hook.sh"
+        ]
       }
     }
   },

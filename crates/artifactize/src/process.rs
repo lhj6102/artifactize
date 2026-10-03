@@ -266,6 +266,35 @@ where
     })
 }
 
+/// Intentional desktop handoff: no owned process group, pipes, or kill-on-drop policy.
+pub(crate) fn launch_detached(
+    program: &std::ffi::OsStr,
+    args: &[String],
+    cwd: &std::path::Path,
+) -> Result<(), Error> {
+    let mut command = tokio::process::Command::new(program);
+    command
+        .args(args)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(false);
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+    let mut child = command.spawn().map_err(Error::Spawn)?;
+    tokio::spawn(async move {
+        let _ = child.wait().await;
+    });
+    Ok(())
+}
+
 pub(crate) fn identity(pid: u32) -> io::Result<ChildIdentity> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
     let start_time = stat

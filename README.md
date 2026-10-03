@@ -106,8 +106,7 @@ these fields without opening or executing the script or its inputs. There is no
 implicit file-hash or always-stale mode: no identity means no reuse. The old
 `critics`, `stale.paths`, `resultCheck`, `envRequirements`,
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` fields are
-rejected. Agent tools use the flat declarations below; Human tools still use their
-existing declaration shape until P4.4.
+rejected. Agent and Human tools use the separate flat declarations below.
 
 ## Owner identity commands
 
@@ -453,6 +452,79 @@ return normalized `ToolResult {content, is_error}` for successful, authored and
 system-error results. Registry calls do not mutate payloads or declarations. The
 Agent loop (P5) and MCP/audit integration (P4.5) will call this API; neither is
 implemented here.
+
+## Human tools
+
+`views.humanTools` is a separate safe-name map of predefined commands. Each entry
+requires exactly `description`, `kind: "launch" | "output"`, `command` and `args`,
+with optional `timeoutMs` (1–2147483647). No `inputSchema`, free call arguments,
+`protocol`, `executionPaths`, `metadata` or `script` wrappers are accepted.
+Descriptions follow the Agent description rules, including `{artifactName}`.
+
+```json
+{
+  "views": {
+    "humanTools": {
+      "open": {
+        "description": "Open {artifactName} for review.",
+        "kind": "launch",
+        "command": "code",
+        "args": ["{artifactPath}"]
+      },
+      "show": {
+        "description": "Show the review notes for {artifactName}.",
+        "kind": "output",
+        "command": "cat",
+        "args": ["{artifactPath}/notes.txt"],
+        "timeoutMs": 120000
+      }
+    }
+  }
+}
+```
+
+Arguments are fixed literal argv, with scope placeholders only: `{artifactPath}`
+is the declaring Artifact's canonical folder; `{name}` names an Artifact or its
+owner's mount alias. Both accept `/path` and `--flag=` forms, resolved by the same
+logical-path and no-symlink checks as runtime argv. Other brace forms are rejected;
+there are no arbitrary string templates or escaped-brace interpolation. Unknown
+names and invalid operand syntax are rejected when loading the workspace. Tool
+operands never add dependencies or expand the review's admitted scope; an existing
+but out-of-scope Artifact, missing input or symlink fails before execution. Input
+metadata is checked at each call, not during inert config discovery.
+
+Executable resolution is identical to Agent tools: bare names use PATH, relative
+names containing `/` are owner-relative scoped paths (`./tool` is accepted), and
+absolute executables run as given. No shell is added; the cwd is the declaring
+Artifact's folder. Human commands inherit the reviewer's **complete real
+environment**, including HOME, DISPLAY/WAYLAND_DISPLAY, XDG settings and config.
+They do not use Agent isolation or create private HOME/TMP/output directories.
+Only declare trusted commands: they have the reviewer's ordinary permissions and
+environment, including any credentials already present there.
+
+- `launch` starts a new session/process group with stdin/stdout/stderr disconnected
+  and returns `{"content":[{"type":"launch","launched":true}],"isError":false}`
+  immediately after spawn succeeds. There is no readiness wait or content capture.
+  Spawn failure is an error; a later exit (even nonzero) does not undo the handoff.
+  The program intentionally survives artifactize exit or later cancellation; the
+  reviewer owns its lifetime. `timeoutMs` does not limit the handed-off program.
+  A launch is neither a verdict nor proof of observation.
+- `output` waits for completion, with a default 120000 ms timeout. Stdout and stderr
+  are each captured up to 128 KiB and cleaned like runtime output. Each becomes a
+  text block capped at 64 KiB with an explicit truncation marker; nonempty stderr
+  has a `stderr:` label. Nonzero/signal exit sets `isError: true`, includes the exit
+  status, and retains the bounded text. Timeout, cancellation and dropped calls
+  use normal process-group cleanup, not intentional handoff.
+
+Internal callers use `tools::human::Registry::new(&config, "artifact/eval")` for a
+Human eval scope or `for_artifact(&config, "artifact")` for its child/mount scope,
+then `list()` and `call(name, cancellation).await`. Names are
+`<operation>_<artifactId>`, with collision rejection. Agent tools are never listed,
+and Agent evals cannot construct a Human eval registry. Listing executes nothing.
+Human results use a separate text/launch type; Agent results cannot include launch
+blocks. These internal operations are not claimant authorization: the claim lock,
+`request tool` CLI and submission checks arrive in P6. No desktop/project launcher
+factory, preparation phase, readiness hook or observation receipt is added.
 
 ## Artifact families
 

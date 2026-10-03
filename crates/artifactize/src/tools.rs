@@ -1,6 +1,7 @@
-//! Scoped Agent declarations and language-neutral command protocols.
+//! Scoped audience-specific tools and language-neutral command protocols.
 
 pub mod builtin;
+pub mod human;
 mod image;
 mod result;
 pub(crate) mod schema;
@@ -173,20 +174,7 @@ impl<'a> Registry<'a> {
             .scope
             .resolve_input(&self.config.root, owner, "")
             .map_err(|_| ())?;
-        let program = if !Path::new(&tool.command).is_absolute() && tool.command.contains('/') {
-            let relative = tool.command.strip_prefix("./").unwrap_or(&tool.command);
-            let program = self
-                .scope
-                .resolve_input(&self.config.root, owner, relative)
-                .map_err(|_| ())?;
-            if !program.is_file() {
-                return Err(());
-            }
-            program.into_os_string()
-        } else {
-            // Bare commands are resolved only through the runtime's inherited PATH.
-            tool.command.clone().into()
-        };
+        let program = executable(&self.config.root, &self.scope, owner, &tool.command)?;
         let argv = match tool.protocol {
             ToolProtocol::Json => {
                 scope::resolve_argv(self.config, &self.scope, owner, &tool.args).map_err(|_| ())?
@@ -243,6 +231,19 @@ impl<'a> Registry<'a> {
             protocol: tool.protocol,
             timeout_ms: tool.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
         })
+    }
+}
+
+fn executable(root: &Path, scope: &Scope<'_>, owner: &str, command: &str) -> Result<OsString, ()> {
+    if !Path::new(command).is_absolute() && command.contains('/') {
+        let relative = command.strip_prefix("./").unwrap_or(command);
+        let program = scope.resolve_input(root, owner, relative).map_err(|_| ())?;
+        if !program.is_file() {
+            return Err(());
+        }
+        Ok(program.into_os_string())
+    } else {
+        Ok(command.into())
     }
 }
 

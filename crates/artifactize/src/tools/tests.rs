@@ -570,7 +570,7 @@ async fn json_scope_contains_mount_children_and_family_material() {
         serde_json::from_str(&fs::read_to_string(fixture.repo.join("artifactize.json")).unwrap())
             .unwrap();
     root["mounts"] = json!({"alias":"leaf"});
-    root["views"]["humanTools"] = json!({"humanOnly":{"metadata":{"description":"Human only","inputSchema":{"type":"object"},"resultKinds":["text"]},"script":{"command":"missing","args":[]}}});
+    root["views"]["humanTools"] = json!({"humanOnly":{"description":"Human only","kind":"output","command":"missing","args":[]}});
     fs::write(fixture.repo.join("artifactize.json"), root.to_string()).unwrap();
     fs::create_dir_all(fixture.repo.join("cases")).unwrap();
     fs::write(
