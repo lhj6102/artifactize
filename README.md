@@ -20,6 +20,49 @@ example projects. Each README lists the exact commands:
   list, parameters and variants, shared and per-instance material, and family
   selectors.
 
+## Command reference
+
+Every command accepts the common options `--repo PATH` (default: the current
+directory), `--state-dir PATH` (default: the state home below) and `--json`, before
+or after the subcommand, at most once each; commands that do not read a repository
+or state ignore them, except `mcp` (which rejects all three) and `monitor` (which
+rejects `--json`). `SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`,
+`--evals CSV`, `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH` or
+`--all`. `help [COMMAND]` and `--help` print help; `--version` prints the version.
+
+| Command | Flags | Output | Exit |
+|---|---|---|---|
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--jobs N` (4), `--max-executions N`, `--wait`, `--timeout-ms MS` (600000, needs `--wait`) | text or JSON | outcome |
+| `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`; default `--all` | text or JSON | 0 satisfied, 1 not |
+| `graph [ARTIFACT\|FAMILY]` | | text or JSON | 0 |
+| `config check` | | text or JSON | 0 |
+| `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | text or JSON | 0 |
+| `run show RUN_ID` | `--wait`, `--timeout-ms MS` (600000, needs `--wait`) | JSON | 0; outcome with `--wait` |
+| `request list` | `--run RUN_ID` | text or JSON | 0 |
+| `request show ID` | | JSON | 0 |
+| `request claim ID` | `--reviewer NAME` (`$USER`) | JSON | 0 |
+| `request tool ID TOOL` | `--reviewer NAME` | text or JSON | 0; 2 tool error |
+| `request submit ID` | `--verdict GREEN\|RED`, `--fields JSON` \| `--fields-file PATH`, `--reviewer NAME` | JSON | 0, also for RED |
+| `cache list` | | text or JSON | 0 |
+| `cache show IDENTITY [EVAL_HASH]` | | JSON | 0; 4 missing |
+| `cache rm IDENTITY [EVAL_HASH]` | | JSON | 0 |
+| `cache gc` | | JSON | 0 |
+| `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 0 ready, 1 not |
+| `mcp --manifest PATH` | | stdio MCP | 0; 1 server failure |
+| `login chatgpt`, `logout chatgpt` | | text or JSON | 0 |
+| `models openai\|anthropic\|chatgpt\|claude` | | text or JSON | 0 |
+| `doctor` | | text or JSON | 0 ready, 1 hard error |
+| `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
+| `monitor` | `--all` (not with `--repo`) | terminal UI | 0 |
+
+Run outcome codes (`verify`, `run show --wait`): 0 GREEN, 1 RED, 2 ERROR or
+cancelled, 3 Human wait timeout, 4 INCOMPLETE. `run show --wait` follows a RUNNING
+Run until it finishes; when its own timeout expires first it prints the current
+Run, exits 3 and leaves the Run running. Every command exits 2 for usage errors
+(unknown, repeated, conflicting or missing options and values) and operational
+errors: text on stderr, or `{"error":"..."}` on stdout with `--json`. There is no
+`plan`, `history`, `run cancel` or `--full`.
+
 ## Runtime CLI
 
 ```sh
@@ -101,7 +144,8 @@ requests, never RED. Previously committed results remain unchanged. There is no
 detached worker. `--json` prints
 full saved results, including payloads, argv, stdout/stderr and runtime details;
 there is no compact projection or `--full` flag. `run show RUN_ID` always prints
-full saved JSON and exits 0 on a successful read, regardless of the saved verdict.
+full saved JSON and exits 0 on a successful read, regardless of the saved verdict;
+`--wait` instead exits with the Run outcome code once it finishes.
 It never discovers declarations or runs code, and does not need `--repo`.
 Each Run saves its selection, effective policy, requested profile option, and
 expanded Artifact/eval definitions for the selected dependency closure, including

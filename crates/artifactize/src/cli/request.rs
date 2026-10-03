@@ -18,6 +18,7 @@ use crate::{
 pub enum RequestCommand {
     /// List saved waiting, claimed, and settled requests.
     List {
+        /// Only requests from this Run.
         #[arg(long, value_name = "RUN_ID")]
         run: Option<String>,
     },
@@ -43,8 +44,10 @@ pub enum RequestCommand {
         id: String,
         #[arg(long, value_parser = ["GREEN", "RED"])]
         verdict: String,
+        /// Owner fields as a JSON object (default {}).
         #[arg(long, value_name = "JSON", conflicts_with = "fields_file")]
         fields: Option<String>,
+        /// Read owner fields from a regular JSON file.
         #[arg(long, value_name = "PATH")]
         fields_file: Option<PathBuf>,
         /// Reviewer name (defaults to USER).
