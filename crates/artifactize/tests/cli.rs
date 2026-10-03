@@ -42,6 +42,10 @@ fn dropped_commands_and_flags_are_rejected() {
     for args in [
         vec!["plan"],
         vec!["history"],
+        vec!["run", "summary", "missing"],
+        vec!["request", "summary", "missing"],
+        vec!["request", "show", "missing", "--full"],
+        vec!["request", "tool", "missing", "inspect", "--args", "{}"],
         vec!["run", "history"],
         vec!["verify", "--all", "--full"],
         vec!["run", "show", "missing", "--full"],

@@ -181,6 +181,26 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
             0,
         );
         assert_eq!(shown, *saved);
+        for request in saved["requests"].as_array().unwrap() {
+            let shown = query(
+                &first,
+                &state,
+                &["request", "show", request["id"].as_str().unwrap()],
+                0,
+            );
+            let eval = saved["definitions"]["evals"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|eval| eval["id"] == request["evalId"])
+                .unwrap();
+            assert_eq!(shown["definition"]["eval"], *eval);
+            assert_eq!(
+                shown["definition"]["artifact"],
+                saved["definitions"]["artifacts"][request["target"].as_str().unwrap()]
+            );
+            assert_eq!(shown["result"], request["result"]);
+        }
     }
     assert_eq!(family["requests"][0]["result"]["stdout"], "saved result\n");
     assert_eq!(query(&second, &state, &["run", "list"], 0), json!([all[1]]));

@@ -14,11 +14,13 @@ pub use human::HumanClaim;
 mod receipts;
 mod runs;
 pub use runs::{RunSummary, read_runs};
+mod requests;
 mod tool_calls;
 pub use executions::{Claim, Execution, Provenance, read_identity_executions};
 pub use receipts::{
     DATABASE, LastRequest, Receipts, Request, Run, RunView, read_latest_requests, read_run,
 };
+pub use requests::{RequestView, read_request, read_requests};
 
 /// Resolve the single state directory without creating it.
 pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {

@@ -219,7 +219,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 
 ### P6 Human
 - [x] **P6.1** WAITING_HUMAN state, claim lock, claimant-only tools, schema-valid submission with the identity recheck, dependents continuing on the next `verify`. Check: a wrong claimant, changed input or duplicate submission fails.
-- [ ] **P6.2** `request list/show/claim/tool/submit` and `verify --wait` for Human results. Check: the CLI completes a waiting request end to end.
+- [x] **P6.2** `request list/show/claim/tool/submit` and `verify --wait` for Human results. Check: the CLI completes a waiting request end to end.
 
 ### P7 Monitor (`artifactize monitor`, ratatui)
 - [ ] **P7.1** TUI shell over read-only state queries with periodic refresh, and the Run list. Check: saved and running Runs appear and update without touching the repository.
