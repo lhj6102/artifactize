@@ -65,6 +65,19 @@ impl Command {
     pub fn timeout(&self) -> Duration {
         self.command.timeout
     }
+
+    /// Protocol callers validate raw stdout rather than cleaned review audit text.
+    pub(crate) async fn output(
+        mut self,
+        input: Vec<u8>,
+        cancellation: CancellationToken,
+    ) -> Result<Output, process::Error> {
+        self.command.cwd = self.cwd;
+        process::run_with_input(self.command, Some(input), cancellation, |_| async {
+            Ok(())
+        })
+        .await
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

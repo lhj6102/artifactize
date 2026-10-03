@@ -8,6 +8,7 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    cache,
     config::{DependencyGates, Eval, Profile, read_workspace_config},
     graph::{EvalStatus, Evidence, Graph},
     process,
@@ -80,6 +81,16 @@ pub async fn verify(
     let receipts = Receipts::open(&state, &config.root).await?;
     let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
         .map_err(|e| e.to_string())?;
+    let mut identities = BTreeMap::new();
+    for id in &required {
+        if config.artifacts[*id].stale.is_some() {
+            let value = cache::identity(&config, id, &runs, cancellation.clone()).await?;
+            identities.insert(*id, value);
+        }
+    }
+    if cancellation.is_cancelled() {
+        return Err("Project preparation was cancelled.".into());
+    }
     let directory = tempfile::Builder::new()
         .prefix("run-")
         .tempdir_in(runs)
@@ -119,6 +130,7 @@ pub async fn verify(
             references: json!(eval.references),
             deps: eval.deps.clone(),
             force: options.force && selected_ids.contains(eval.id.as_str()),
+            identity: identities.get(eval.target.as_str()).cloned(),
             status: "QUEUED".into(),
             created_at: run.created_at.clone(),
             started_at: None,
@@ -180,6 +192,33 @@ pub async fn verify(
                 request.error_code = Some("PREPARATION_FAILED".into());
                 None
             }
+        };
+        let outcome = if matches!(outcome, Some(Outcome::Completed(_)))
+            && let Some(expected) = &request.identity
+        {
+            match cache::identity(&config, &eval.target, &run_dir, cancellation.clone()).await {
+                Ok(value) if &value == expected => outcome,
+                Ok(_) => {
+                    request.error =
+                        Some("Artifact input changed during review (identity differs).".into());
+                    request.error_code = Some("INPUT_CHANGED".into());
+                    None
+                }
+                Err(error) => {
+                    request.error = Some(error);
+                    request.error_code = Some(
+                        if cancellation.is_cancelled() {
+                            "CANCELLED"
+                        } else {
+                            "IDENTITY_RECHECK_FAILED"
+                        }
+                        .into(),
+                    );
+                    None
+                }
+            }
+        } else {
+            outcome
         };
         match outcome {
             Some(Outcome::Completed(result)) => {
@@ -283,7 +322,12 @@ pub async fn verify(
         "obligations":evaluation.obligations.iter().filter(|id| required.contains(*id)).collect::<Vec<_>>(),
         "artifacts":required.iter().map(|id| {
             let a = &evaluation.artifacts[id];
-            json!({"id":id,"status":format!("{:?}",a.status).to_uppercase(),"passed":a.passed,"total":a.total,"satisfied":a.satisfied})
+            let mut artifact = json!({"id":id,"status":format!("{:?}",a.status).to_uppercase(),"passed":a.passed,"total":a.total,"satisfied":a.satisfied});
+            if let Some(value) = identities.get(id) {
+                artifact["identity"] = json!("script");
+                artifact["value"] = json!(value);
+            }
+            artifact
         }).collect::<Vec<_>>(),
         "evals":required_evals.iter().map(|(id, eval)| json!({"id":id,"status":status(eval.status),"blockedBy":eval.unmet_gates})).collect::<Vec<_>>(),
     });

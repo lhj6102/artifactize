@@ -76,17 +76,51 @@ there is no migration from earlier receipt layouts. Saved Runs stay readable aft
 the original repository is removed. State/output inside the reviewed repository
 is rejected, including through symlink ancestors; database files and their WAL
 sidecars must be regular files. No writer transaction spans a subprocess or async
-suspension. This phase does not reuse earlier Run evidence or run identity hooks.
-Identity execution and end-of-review rechecks arrive in P3.1.
+suspension. This phase does not reuse earlier Run evidence; reusable results and
+claims arrive in P3.2/P3.3.
 
 Declarations use `evals`, with qualified eval IDs such as `green/check`.
-`stale` accepts only `{"kind":"identity","script":{"command":"identity.sh","args":[]}}`,
-optionally with `inputs`, `timeoutMs` and `weight` (1–100). Discovery validates
+`stale` accepts only `{"kind":"identity","script":{"command":"/bin/sh","args":["identity.sh"]}}`,
+optionally with `inputs` and `timeoutMs`; `weight` is rejected. Discovery validates
 these fields without opening or executing the script or its inputs. There is no
 implicit file-hash or always-stale mode: no identity means no reuse. The old
 `critics`, `stale.paths`, `resultCheck`, `envRequirements`,
 `reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` fields are
 rejected. Tool protocol and audience-specific declaration updates arrive in P4.
+
+## Owner identity commands
+
+Before executing any eval, `verify` computes each declared identity in the selected
+required dependency closure, including dependencies whose evals are not selected.
+Every eval on an Artifact receives the same literal value, also saved on its
+request and in the Run's Artifact validation. An identity does not contain any
+implicit repository, eval, profile, dependency or content salt.
+
+The command runs from its owner's folder with JSON on stdin:
+`{"version":1,"artifactId":"example"}`. Family instances additionally receive
+`"family":{"name":"family","material":["input.txt"]}`. Bare commands resolve
+through PATH; absolute executables run as given, while relative executable paths
+containing `/` (such as `./identity.sh`) must remain inside the owner without
+symlinks. Arguments stay literal except explicit scoped Artifact references,
+resolved with the same rules as runtime argv. There are no interpreter-specific
+flags, wrappers or entry-file rules.
+
+`inputs` accepts up to 64 unique owner-relative literal file/directory paths.
+Inputs and family material must exist without symlink traversal on every call;
+contents are never hashed. Commands share runtime isolation, cancellation, bounded
+raw output and a 30,000 ms default timeout (1–2,147,483,647 ms allowed). Their private
+external output, HOME and temporary directories are removed after each invocation.
+Stdout must be exactly 1–128 ASCII characters from `[A-Za-z0-9._:-]`, optionally
+followed by one LF. It is not trimmed or cleaned. Nonzero exit, malformed output,
+timeout, cancellation, missing inputs or cleanup failure abort preparation with
+an operational error, without starting any eval or falling back to an uncached
+review. Stderr is not forwarded as an identity diagnostic.
+
+After each runtime review exits, its identity is recomputed before accepting a
+GREEN or RED verdict. A changed value records ERROR/INPUT_CHANGED with no semantic
+result; a failed recheck also records ERROR. Force does not skip preparation or
+this recheck. Artifacts without an identity run without either step. There is no
+workspace monitoring, hashing or fingerprinting.
 
 ## Scoped input library
 
@@ -136,11 +170,12 @@ All instance scripts use the shared folder as cwd. A parent addresses material a
 material is an ownership declaration, not a sandbox hiding sibling files.
 Discovery keeps each instance's family membership and sorted material, without
 computing any digest or content fingerprint. Only an explicit identity can become
-a reuse key; identity execution and end-of-review rechecks remain P3.1. No
-workspace monitoring or automatic reuse is added.
+a reuse key. Identity commands receive each selected instance's family name and
+material paths; each review rechecks its own instance identity. No workspace
+monitoring or automatic reuse is added.
 
 The runtime-only fixture demonstrates parameterized views, shared evals,
-independent inputs/results, and an identity hook that remains inert:
+independent inputs/results, and a shared identity hook (inert during discovery):
 
 ```sh
 cargo run -q -p artifactize -- --repo crates/artifactize/tests/fixtures/families config check
