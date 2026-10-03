@@ -31,7 +31,7 @@ impl Fixture {
     fn artifact(&self, path: &str, name: &str, mounts: Value, instruction: &str) {
         self.write(&format!("{path}/artifactize.json"), json!({
             "name":name,"mounts":mounts,"views":{"agentTools":{
-                "read":{"builtin":"read"},"list":{"builtin":"list"},"glob":{"builtin":"glob"},"grep":{"builtin":"grep"}
+                "read":{"builtin":"read"},"list":{"builtin":"list"},"glob":{"builtin":"glob"},"grep":{"builtin":"grep"},"view_image":{"builtin":"view_image"}
             }},"evals":[{"id":"review","title":"Review","profile":{"kind":"agent","provider":"test","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}]
         }).to_string());
     }
@@ -62,6 +62,78 @@ impl Fixture {
         };
         data.clone()
     }
+}
+
+#[tokio::test]
+async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+
+    let fixture = Fixture::new();
+    fixture.artifact("a", "a", json!({"source":"b"}), "Review.");
+    fixture.artifact("b", "b", json!({}), "Refers to {hidden}.");
+    fixture.artifact("hidden", "hidden", json!({}), "Review.");
+    fixture.write("hidden/secret", &image::tests::fixtures()[0].1);
+    for (mime, bytes) in image::tests::fixtures() {
+        fixture.write("b/image.txt", &bytes);
+        let result = fixture
+            .call("view_image_a", json!({"path":"source/image.txt"}))
+            .await;
+        assert!(!result.is_error, "{result:?}");
+        assert_eq!(
+            result.content,
+            vec![Content::Image {
+                data: STANDARD.encode(&bytes),
+                mime_type: mime.into()
+            }]
+        );
+    }
+    for path in [
+        "../hidden/secret",
+        "hidden/secret",
+        "source/../hidden/secret",
+        "source",
+        "",
+    ] {
+        assert!(
+            fixture
+                .call("view_image_a", json!({"path":path}))
+                .await
+                .is_error,
+            "{path}"
+        );
+    }
+    assert!(
+        fixture
+            .call("view_image_hidden", json!({"path":"secret"}))
+            .await
+            .is_error
+    );
+    for bytes in image::tests::unsupported() {
+        fixture.write("a/invalid.png", bytes);
+        assert!(
+            fixture
+                .call("view_image_a", json!({"path":"invalid.png"}))
+                .await
+                .is_error
+        );
+    }
+    let mut bytes = image::tests::fixtures()[1].1.clone();
+    bytes.resize(image::IMAGE_LIMIT, 0);
+    fixture.write("a/large", &bytes);
+    assert!(
+        !fixture
+            .call("view_image_a", json!({"path":"large"}))
+            .await
+            .is_error
+    );
+    bytes.push(0);
+    fixture.write("a/large", bytes);
+    assert!(
+        fixture
+            .call("view_image_a", json!({"path":"large"}))
+            .await
+            .is_error
+    );
 }
 
 #[tokio::test]
@@ -203,7 +275,7 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
         "socket",
         "fifo",
     ] {
-        for tool in ["read_a", "list_a", "glob_a", "grep_a"] {
+        for tool in ["read_a", "list_a", "glob_a", "grep_a", "view_image_a"] {
             let mut args = json!({"path":path});
             if tool == "glob_a" || tool == "grep_a" {
                 args["pattern"] = json!(".*");
@@ -241,6 +313,8 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
     let fixture = Fixture::new();
     for (tool, args) in [
         ("read_a", json!({})),
+        ("view_image_a", json!({})),
+        ("view_image_a", json!({"path":"x","extra":true})),
         ("read_a", json!({"path":"x","offset":0})),
         ("read_a", json!({"path":"x","limit":501})),
         ("read_a", json!({"path":"x","extra":true})),
@@ -266,7 +340,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
             .list()
             .map(|tool| tool.name.as_str())
             .collect::<Vec<_>>(),
-        ["glob_a", "grep_a", "list_a", "read_a"]
+        ["glob_a", "grep_a", "list_a", "read_a", "view_image_a"]
     );
     for tool in registry.list() {
         assert!(!tool.description.contains("not yet implemented"));

@@ -18,7 +18,7 @@ use crate::{
     scope::{self, Scope, ScopedPath},
 };
 
-use super::{Content, ToolResult};
+use super::{Content, ToolResult, image};
 
 const READ_BYTES: usize = 64 * 1024;
 const RESULT_BYTES: usize = 512 * 1024;
@@ -41,7 +41,9 @@ pub(crate) fn description(builtin: Builtin) -> &'static str {
         Builtin::Grep => {
             "Search UTF-8 files in {artifactName} with a Rust regex, one match per matching line. path is a relative logical file or directory (default root); glob filters paths relative to it. caseInsensitive defaults to false; maxResults defaults to and cannot exceed 200. Returns matches with path, line and text, plus truncated. Skips binary/invalid UTF-8 and symlinks; includes hidden files. Caps: 10,000 traversed entries, 8 MiB per file, 64 MiB searched, 512 KiB result. Skipped oversized files or bounded results set truncated."
         }
-        Builtin::ViewImage => "View an image in {artifactName} (not yet implemented).",
+        Builtin::ViewImage => {
+            "View one image in {artifactName} at a relative logical file path, including child/mount paths. Detects PNG, JPEG or WebP by bytes, not extension; returns an embedded image block. Requires a nonempty regular file up to 4 MiB; no symlinks, GIF, BMP or animated PNG."
+        }
     }
 }
 
@@ -86,7 +88,7 @@ pub(super) fn call(
     let path = args["path"].as_str().unwrap_or("");
     let result = (|| {
         reader.check_cancelled()?;
-        match builtin {
+        let data = match builtin {
             Builtin::Read => {
                 reader.read(path, number(args, "offset", 1), number(args, "limit", 80))
             }
@@ -95,15 +97,18 @@ pub(super) fn call(
             }
             Builtin::Glob => reader.glob(path, args["pattern"].as_str().unwrap()),
             Builtin::Grep => reader.grep(path, args),
-            Builtin::ViewImage => Err("This built-in Agent tool is not yet implemented.".into()),
+            Builtin::ViewImage => return reader.view_image(path),
+        }?;
+        if serde_json::to_vec(&data).unwrap().len() > RESULT_BYTES {
+            return Err("Built-in result exceeds 512 KiB; narrow the path or range.".into());
         }
+        Ok(Content::Json { data })
     })();
     match result {
-        Ok(data) if serde_json::to_vec(&data).unwrap().len() <= RESULT_BYTES => ToolResult {
-            content: vec![Content::Json { data }],
+        Ok(content) => ToolResult {
+            content: vec![content],
             is_error: false,
         },
-        Ok(_) => ToolResult::error("Built-in result exceeds 512 KiB; narrow the path or range."),
         Err(message) => ToolResult::error(message),
     }
 }
@@ -140,6 +145,13 @@ impl Reader<'_> {
     fn open(&self, location: &ScopedPath) -> Result<File, String> {
         let artifact = self.scope.artifacts[location.artifact_id.as_str()];
         scope::open_input(self.root, artifact, &location.path).map_err(|e| e.to_string())
+    }
+
+    fn view_image(&self, path: &str) -> Result<Content, String> {
+        let location = self.location(path, false)?;
+        let bytes = image::read(self.open(&location)?)?;
+        self.check_cancelled()?;
+        image::normalize(&bytes, None)
     }
 
     fn read(&self, path: &str, offset: usize, limit: usize) -> Result<Value, String> {
