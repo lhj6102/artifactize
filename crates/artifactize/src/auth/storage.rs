@@ -14,6 +14,14 @@ pub(super) struct Storage {
 
 impl Storage {
     pub fn new(state: Option<&Path>, repo: Option<&Path>) -> Result<Self, String> {
+        Self::open(state, repo, true)
+    }
+
+    pub fn inspect(state: Option<&Path>, repo: Option<&Path>) -> Result<Self, String> {
+        Self::open(state, repo, false)
+    }
+
+    fn open(state: Option<&Path>, repo: Option<&Path>, create: bool) -> Result<Self, String> {
         let directory = crate::store::state_dir(state)?.join("auth");
         let directory =
             crate::workspace::canonical_target(&directory).map_err(|e| e.to_string())?;
@@ -36,12 +44,20 @@ impl Storage {
                     .map_err(|e| e.to_string())?;
             }
         }
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&directory)
-            .map_err(|e| e.to_string())?;
-        let metadata = directory.metadata().map_err(|e| e.to_string())?;
+        if create {
+            fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(&directory)
+                .map_err(|e| e.to_string())?;
+        }
+        let metadata = match directory.metadata() {
+            Ok(metadata) => metadata,
+            Err(error) if !create && error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Self { directory });
+            }
+            Err(error) => return Err(error.to_string()),
+        };
         // This is an application-owned directory, not the user's state root.
         if metadata.mode() & 0o077 != 0 {
             return Err("ChatGPT auth directory must have owner-only permissions (0700).".into());

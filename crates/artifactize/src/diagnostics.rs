@@ -1,5 +1,8 @@
 //! Backend readiness and tool checks.
 
+mod doctor;
+pub use doctor::{DoctorReport, doctor};
+
 use std::path::Path;
 
 use serde::Serialize;

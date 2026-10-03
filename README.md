@@ -321,7 +321,8 @@ SIWC output cap, sampling, metadata or background parameter. Budgets stay client
 Subscription failures retain the provider code and message; authentication failures
 explain how to sign in again. A usage-limit failure points to ChatGPT Settings > Usage.
 `models chatgpt` uses a fresh GET `/v1/models`, filtering `visibility == "list"` and
-printing `slug` and `display_name`. Model listing for other backends remains P8.1.
+printing `slug` and `display_name`. All backends use the same JSON envelope described
+under [Local diagnostics and maintenance](#local-diagnostics-and-maintenance).
 
 This contract follows the official SIWC [models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference),
 [preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
@@ -366,6 +367,51 @@ backend and an accessible exact model ID. The owner's real ChatGPT review is pen
 sign in, list models, then run an Agent eval with a declared tool using a returned slug.
 Automated tests use fake HTTP transports or local HTTP servers and make no real
 inference requests.
+
+## Local diagnostics and maintenance
+
+```sh
+artifactize doctor [--repo PATH] [--state-dir PATH] [--json]
+artifactize models openai|anthropic|chatgpt|claude [--json]
+artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
+```
+
+`doctor` makes no provider calls and creates no Run, verdict, cache entry or auth
+lock. It reports the resolved state directory and tests writability with a temporary
+directory, removed immediately (in the nearest existing ancestor when state does
+not yet exist). `--repo` additionally runs the same static validation as `config
+check`. API keys are reported only as present/absent, never validated or printed.
+ChatGPT login presence and Unix-second access-token expiry come from protected local
+storage without refreshing. `claude` is located on PATH and only `--version` runs,
+with a five-second timeout and bounded output; Claude credentials are never read.
+Missing keys/login/binary and expired tokens are warnings: optional backends need
+not all be installed. Invalid config, unsafe/unwritable state, invalid auth storage
+or a failing installed CLI are hard errors. Exit is 0 without hard errors, 1 with
+hard errors, and 2 for invocation errors.
+
+`models openai` and `models anthropic` call the provider's models endpoint with the
+corresponding API key through rig; Anthropic pagination is followed. ChatGPT uses
+its existing login/refresh flow. There is no account or backend fallback. Claude
+has no listing API, so its command explains `--model` names/aliases without launching
+inference. Text lists tab-separated slug/name pairs; JSON is consistently
+`{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`,
+with a `note` and empty `models` for Claude. Listings preserve provider order.
+
+`prune` operates on the selected state's Runs across repositories, not the current
+repository. It skips unfinished Runs, nonterminal/waiting requests and live execution
+owners (PID plus process start time). `--older-than` compares Run completion time;
+use a whole-number `s`, `m`, `h`, `d` or `w` duration. With no age filter, every
+eligible Run is considered. `--dry-run` returns `wouldRemove` without deleting;
+normal JSON returns `removed`, and both include `skippedRuns`.
+
+Only known scratch directories below `state/runs/<run-id>` are removed: runtime
+`output`/`tmp`/`home`/`cache`, leftover tool output and Claude invocation directories.
+Run roots, unknown files/directories, database rows, tool audit, results and cache
+entries remain. Symlinks (including nested links), non-directory targets and
+repository content are refused before deletion. Database reads have a five-second
+busy timeout and finish before deletion; prune holds no writer lock. This is plain
+prune, without quarantine, crash-recovery machinery or hostile filesystem-race
+protection. Saved `run show` and `request show` remain readable after pruning.
 
 ## Agent tools
 

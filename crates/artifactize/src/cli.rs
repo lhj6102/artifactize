@@ -60,10 +60,21 @@ pub enum Command {
         #[command(subcommand)]
         provider: AuthProvider,
     },
-    /// List models available to the signed-in ChatGPT account.
+    /// Check local readiness without provider calls or creating a Run.
+    Doctor,
+    /// Remove finished, unowned Run output; preserve database audit and repositories.
+    Prune {
+        /// Minimum age since Run completion (for example 7d, 24h, 30m).
+        #[arg(long, value_name = "DURATION", value_parser = crate::store::prune::parse_duration)]
+        older_than: Option<std::time::Duration>,
+        /// Report eligible paths without deleting anything.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// List provider models, or describe the Claude CLI's model selection.
     Models {
         #[command(subcommand)]
-        provider: AuthProvider,
+        provider: ModelProvider,
     },
     /// Execute selected evals in the foreground.
     #[command(group(clap::ArgGroup::new("required_selection")
@@ -197,6 +208,25 @@ pub enum AuthProvider {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum ModelProvider {
+    Openai,
+    Anthropic,
+    Chatgpt,
+    Claude,
+}
+
+impl ModelProvider {
+    fn backend(self) -> crate::config::Backend {
+        match self {
+            Self::Openai => crate::config::Backend::Openai,
+            Self::Anthropic => crate::config::Backend::Anthropic,
+            Self::Chatgpt => crate::config::Backend::Chatgpt,
+            Self::Claude => crate::config::Backend::Claude,
+        }
+    }
+}
+
+#[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
     /// Validate declarations and unique Artifact/Eval identities.
     Check,
@@ -300,18 +330,67 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             }
             Ok(0)
         }
-        Some(Command::Models {
-            provider: AuthProvider::Chatgpt,
-        }) => {
-            let models =
-                crate::llm::chatgpt_models(cli.state_dir.as_deref(), cli.repo.as_deref()).await?;
+        Some(Command::Doctor) => {
+            let report =
+                crate::diagnostics::doctor(cli.state_dir.as_deref(), cli.repo.as_deref()).await?;
             if cli.json {
-                print_json(&models)?;
+                print_json(&report)?;
             } else {
                 let mut out = io::stdout().lock();
-                for model in models {
+                writeln!(out, "State directory: {}", report.state_dir.display())
+                    .map_err(|e| e.to_string())?;
+                for check in &report.checks {
+                    writeln!(out, "{} {}: {}", check.status, check.name, check.message)
+                        .map_err(|e| e.to_string())?;
+                }
+            }
+            Ok(u8::from(!report.ok))
+        }
+        Some(Command::Prune {
+            older_than,
+            dry_run,
+        }) => {
+            let state = match cli.state_dir {
+                Some(state) => state,
+                None => crate::store::state_home().map_err(|e| e.to_string())?,
+            };
+            let report =
+                crate::store::prune::prune(&state, cli.repo.as_deref(), older_than, dry_run)?;
+            if cli.json {
+                print_json(&report)?;
+            } else {
+                let mut out = io::stdout().lock();
+                for path in &report.removed {
+                    writeln!(out, "Removed {}", path.display()).map_err(|e| e.to_string())?;
+                }
+                for path in &report.would_remove {
+                    writeln!(out, "Would remove {}", path.display()).map_err(|e| e.to_string())?;
+                }
+                for id in &report.skipped_runs {
+                    writeln!(out, "Skipped Run {id}").map_err(|e| e.to_string())?;
+                }
+                writeln!(out, "Database audit and repository files were preserved.")
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(0)
+        }
+        Some(Command::Models { provider }) => {
+            let listing = crate::llm::models::list(
+                provider.backend(),
+                cli.state_dir.as_deref(),
+                cli.repo.as_deref(),
+            )
+            .await?;
+            if cli.json {
+                print_json(&listing)?;
+            } else {
+                let mut out = io::stdout().lock();
+                for model in listing.models {
                     writeln!(out, "{}\t{}", model.slug, model.display_name)
                         .map_err(|e| e.to_string())?;
+                }
+                if let Some(note) = listing.note {
+                    writeln!(out, "{note}").map_err(|e| e.to_string())?;
                 }
             }
             Ok(0)
