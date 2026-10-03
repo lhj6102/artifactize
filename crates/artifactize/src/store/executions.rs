@@ -6,7 +6,7 @@ use serde_json::Value;
 
 use super::{
     Receipts, Request,
-    receipts::{Error, update_request},
+    receipts::{Error, schema_initialized, update_request},
 };
 use crate::{process, runtime::Verdict};
 
@@ -140,12 +140,8 @@ pub async fn read_identity_executions(
         .call(move |db| -> Result<_, Error> {
             db.busy_timeout(std::time::Duration::from_secs(5))?;
             let transaction = db.transaction()?;
-            let version: u32 =
-                transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-            if version != super::STATE_SCHEMA_VERSION {
-                return Err(Error::Invalid(format!(
-                    "Unsupported state schema version: {version}"
-                )));
+            if !schema_initialized(&transaction)? {
+                return Ok(Default::default());
             }
             let mut entries = std::collections::BTreeMap::new();
             for identity in identities {

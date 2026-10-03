@@ -9,8 +9,8 @@ use serde::Serialize;
 use tokio_rusqlite::Connection;
 
 use super::{
-    DATABASE, STATE_SCHEMA_VERSION,
-    receipts::{Error, check_files},
+    DATABASE,
+    receipts::{Error, check_files, schema_initialized},
 };
 use crate::workspace::{canonical_target, outside_workspace};
 
@@ -57,9 +57,8 @@ pub async fn read_runs(
     connection.call(move |db| -> Result<_, Error> {
         db.busy_timeout(Duration::from_secs(5))?;
         let transaction = db.transaction()?;
-        let version: u32 = transaction.pragma_query_value(None, "user_version", |row| row.get(0))?;
-        if version != STATE_SCHEMA_VERSION {
-            return Err(Error::Invalid(format!("Unsupported state schema version: {version}")));
+        if !schema_initialized(&transaction)? {
+            return Ok(Vec::new());
         }
         let mut runs = {
             let mut statement = transaction.prepare(
