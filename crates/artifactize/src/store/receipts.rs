@@ -68,6 +68,8 @@ pub struct Request {
     pub usage: Option<Value>,
     #[serde(default)]
     pub tool_calls: Vec<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub human_definition: Option<Value>,
     pub payload: Value,
     pub references: Value,
     pub deps: Vec<String>,
@@ -126,6 +128,7 @@ impl Receipts {
                 CREATE INDEX IF NOT EXISTS cache_lru ON cache_entries(last_used,identity);
                 CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS active_request_execution ON requests(execution_id) WHERE status IN ('QUEUED','RUNNING','WAITING_HUMAN');
+                CREATE TABLE IF NOT EXISTS human_claims(request_id TEXT PRIMARY KEY REFERENCES requests(id), reviewer TEXT NOT NULL, claimed_at TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS run_members(run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), PRIMARY KEY(run_id, eval_id), UNIQUE(run_id, ordinal));")?;
             transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
             transaction.commit()?;
@@ -192,6 +195,10 @@ impl Receipts {
             .call(move |db| -> Result<(), Error> {
                 let transaction = db.transaction()?;
                 for request in requests {
+                    // A concurrent submission may already have settled this saved request.
+                    if request.status == "WAITING_HUMAN" {
+                        continue;
+                    }
                     update_request(&transaction, &request)?;
                 }
                 transaction.execute(

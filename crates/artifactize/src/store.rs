@@ -9,6 +9,8 @@ use crate::workspace::canonical_target;
 
 pub(crate) mod cache_entries;
 mod executions;
+mod human;
+pub use human::HumanClaim;
 mod receipts;
 pub use executions::{Claim, Execution, Provenance, read_identity_executions};
 pub use receipts::{

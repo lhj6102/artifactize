@@ -396,7 +396,7 @@ fn static_commands_never_execute_hooks_and_status_only_runs_identity() {
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");
     assert_eq!(row(&view, "evals", "review/agent")["action"], "blocked");
-    assert_eq!(row(&view, "evals", "review/human")["action"], "blocked");
+    assert_eq!(row(&view, "evals", "review/human")["action"], "execute");
     assert_eq!(row(&view, "evals", "review/runtime")["action"], "execute");
     assert!(!marker.exists());
     assert!(!fixture.state.join("state.sqlite").exists());

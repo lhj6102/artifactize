@@ -1,0 +1,575 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Command,
+    time::Duration,
+};
+
+use artifactize::{
+    human,
+    project::{self, VerifyOptions, selection::Selection},
+    store::{self, Receipts, RunView},
+};
+use rusqlite::Connection;
+use serde_json::{Value, json};
+use tokio_util::sync::CancellationToken;
+
+struct Fixture {
+    _root: tempfile::TempDir,
+    repo: PathBuf,
+    state: PathBuf,
+}
+
+impl Fixture {
+    fn new(identity: bool) -> Self {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        fs::create_dir(&repo).unwrap();
+        write_human(&repo, identity);
+        Self {
+            repo,
+            state: root.path().join("state"),
+            _root: root,
+        }
+    }
+
+    async fn verify(&self, options: VerifyOptions) -> RunView {
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            project::verify(
+                &self.repo,
+                Some(&self.state),
+                &Selection::All,
+                &options,
+                CancellationToken::new(),
+            ),
+        )
+        .await
+        .expect("verify must exit while Humans wait")
+        .unwrap()
+    }
+
+    async fn receipts(&self) -> Receipts {
+        Receipts::open(&self.state, &self.repo).await.unwrap()
+    }
+
+    fn database(&self) -> Connection {
+        Connection::open(self.state.join(store::DATABASE)).unwrap()
+    }
+
+    fn cli_verify(&self) -> Value {
+        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .arg("--repo")
+            .arg(&self.repo)
+            .arg("--state-dir")
+            .arg(&self.state)
+            .args(["verify", "--all", "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(4),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        serde_json::from_slice(&output.stdout).unwrap()
+    }
+}
+
+fn write_human(path: &Path, identity: bool) {
+    fs::create_dir_all(path).unwrap();
+    fs::write(path.join("identity"), "human-v1\n").unwrap();
+    let mut declaration = json!({
+        "name":"review", "views":{"humanTools":{
+            "inspect":{"description":"Inspect","kind":"output","command":"cat","args":["identity"]},
+            "fail":{"description":"Fail","kind":"output","command":"false","args":[]}
+        },"agentTools":{"read":{"builtin":"read"}}},
+        "evals":[{"id":"check","title":"Human check","profile":{"kind":"human"},"payload":{"instruction":"Review."},
+            "passSchema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
+            "failSchema":{"type":"object","properties":{"reason":{"type":"string","minLength":1}},"required":["reason"],"additionalProperties":false}
+        }]
+    });
+    if identity {
+        declaration["stale"] =
+            json!({"kind":"identity","script":{"command":"cat","args":["identity"]}});
+    }
+    fs::write(path.join("artifactize.json"), declaration.to_string()).unwrap();
+}
+
+fn green() -> Value {
+    json!({"verdict":"GREEN","approved":true})
+}
+
+#[tokio::test]
+async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims() {
+    let fixture = Fixture::new(true);
+    let run = fixture.cli_verify();
+    let id = run["requests"][0]["id"].as_str().unwrap();
+    assert_eq!(run["status"], "INCOMPLETE");
+    assert_eq!(run["requests"][0]["status"], "WAITING_HUMAN");
+    assert_eq!(run["executionsStarted"], 0);
+    let receipts = fixture.receipts().await;
+    let (alice, bob) = tokio::join!(
+        human::claim(&receipts, id, "alice"),
+        human::claim(&receipts, id, "bob")
+    );
+    assert_ne!(alice.is_ok(), bob.is_ok());
+    let claim = alice.or(bob).unwrap();
+    assert_eq!(
+        human::claim(&receipts, id, &claim.reviewer)
+            .await
+            .unwrap()
+            .claimed_at,
+        claim.claimed_at
+    );
+    let follower = fixture
+        .verify(VerifyOptions {
+            max_executions: Some(0),
+            ..Default::default()
+        })
+        .await;
+    assert_eq!(follower.requests[0].status, "WAITING_HUMAN");
+    assert_eq!(
+        follower.requests[0].execution_id.as_deref(),
+        run["requests"][0]["executionId"].as_str()
+    );
+    let default = Fixture::new(false)
+        .verify(VerifyOptions {
+            max_executions: Some(0),
+            ..Default::default()
+        })
+        .await;
+    assert_eq!(default.requests[0].status, "WAITING_HUMAN");
+    assert_eq!(default.run.executions_started, 0);
+}
+
+#[tokio::test]
+async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_submit() {
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(Default::default()).await;
+    let id = &run.requests[0].id;
+    let receipts = fixture.receipts().await;
+    assert!(
+        human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
+            .await
+            .is_err()
+    );
+    human::claim(&receipts, id, "alice").await.unwrap();
+    assert!(
+        human::run_human_tool(
+            &receipts,
+            id,
+            "bob",
+            "inspect_review",
+            CancellationToken::new()
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        human::submit(&receipts, id, "bob", &green(), CancellationToken::new())
+            .await
+            .is_err()
+    );
+    assert!(
+        human::run_human_tool(
+            &receipts,
+            id,
+            "alice",
+            "read_review",
+            CancellationToken::new()
+        )
+        .await
+        .is_err()
+    );
+    let result = human::run_human_tool(
+        &receipts,
+        id,
+        "alice",
+        "inspect_review",
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(!result.is_error);
+    let result = human::run_human_tool(
+        &receipts,
+        id,
+        "alice",
+        "fail_review",
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(result.is_error);
+    for result in [
+        json!({"verdict":"GREEN"}),
+        json!({"verdict":"RED","reason":3}),
+        json!({"verdict":"BLUE"}),
+        json!({"verdict":"GREEN","approved":true,"extra":1}),
+        json!({"verdict":"RED","reason":"x".repeat(256_000)}),
+    ] {
+        assert!(
+            human::submit(&receipts, id, "alice", &result, CancellationToken::new())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            store::read_run(&fixture.state, &run.run.id)
+                .await
+                .unwrap()
+                .requests[0]
+                .status,
+            "WAITING_HUMAN"
+        );
+    }
+    let result = human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(result.status, "GREEN");
+    assert_eq!(result.tool_calls.len(), 2);
+    assert!(
+        human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
+            .await
+            .is_err()
+    );
+    assert!(human::claim(&receipts, id, "alice").await.is_err());
+    assert!(
+        human::run_human_tool(
+            &receipts,
+            id,
+            "alice",
+            "inspect_review",
+            CancellationToken::new()
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        fixture
+            .database()
+            .query_row("SELECT count(*) FROM human_claims", [], |row| row
+                .get::<_, u32>(0))
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        fixture
+            .database()
+            .query_row("SELECT count(*) FROM cache_entries", [], |row| row
+                .get::<_, u32>(0))
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn identity_change_before_submit_or_tool_settles_error_without_publishing() {
+    for tool in [false, true] {
+        let fixture = Fixture::new(true);
+        let run = fixture.verify(Default::default()).await;
+        let id = &run.requests[0].id;
+        let receipts = fixture.receipts().await;
+        human::claim(&receipts, id, "alice").await.unwrap();
+        fs::write(fixture.repo.join("identity"), "human-v2\n").unwrap();
+        let error = if tool {
+            human::run_human_tool(
+                &receipts,
+                id,
+                "alice",
+                "inspect_review",
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap_err()
+        } else {
+            human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
+                .await
+                .unwrap_err()
+        };
+        assert!(error.contains("input changed"), "{error}");
+        let saved = store::read_run(&fixture.state, &run.run.id).await.unwrap();
+        assert_eq!(saved.requests[0].status, "ERROR");
+        assert_eq!(
+            saved.requests[0].error_code.as_deref(),
+            Some("INPUT_CHANGED")
+        );
+        assert!(saved.requests[0].result.is_none());
+        assert_eq!(
+            fixture
+                .database()
+                .query_row(
+                    "SELECT count(*) FROM executions WHERE status='WAITING_HUMAN'",
+                    [],
+                    |row| row.get::<_, u32>(0)
+                )
+                .unwrap(),
+            0
+        );
+        assert!(
+            receipts
+                .cached_execution("human-v1")
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(Default::default()).await;
+    let id = &run.requests[0].id;
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, id, "alice").await.unwrap();
+    fs::create_dir(fixture.repo.join("child")).unwrap();
+    fs::write(
+        fixture.repo.join("child/artifactize.json"),
+        r#"{"name":"child","basis":true}"#,
+    )
+    .unwrap();
+    assert!(
+        human::run_human_tool(
+            &receipts,
+            id,
+            "alice",
+            "inspect_review",
+            CancellationToken::new()
+        )
+        .await
+        .unwrap_err()
+        .contains("declarations changed")
+    );
+    assert!(
+        human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
+            .await
+            .is_err()
+    );
+    fs::remove_file(fixture.repo.join("child/artifactize.json")).unwrap();
+    human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn submitted_identity_unblocks_dependents_on_next_verify() {
+    let fixture = Fixture::new(false);
+    write_human(&fixture.repo.join("child"), true);
+    fs::write(fixture.repo.join("artifactize.json"), json!({"name":"parent","evals":[{"id":"test","title":"Dependent","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Check child."}}]}).to_string()).unwrap();
+    let run = fixture.verify(Default::default()).await;
+    assert_eq!(run.run.status, "INCOMPLETE");
+    let waiting = run
+        .requests
+        .iter()
+        .find(|r| r.status == "WAITING_HUMAN")
+        .unwrap();
+    assert_eq!(
+        run.requests
+            .iter()
+            .find(|r| r.target == "parent")
+            .unwrap()
+            .status,
+        "WAIT_DEPENDENCY"
+    );
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, &waiting.id, "alice").await.unwrap();
+    human::submit(
+        &receipts,
+        &waiting.id,
+        "alice",
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let complete = fixture.verify(Default::default()).await;
+    assert_eq!(complete.run.status, "GREEN");
+    assert_eq!(complete.run.executions_started, 1);
+    assert!(complete.requests.iter().all(|r| r.status == "GREEN"));
+}
+
+#[tokio::test]
+async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
+    let fixture = Fixture::new(true);
+    let original = fixture.cli_verify();
+    let other = Fixture::new(true);
+    let run = project::verify(
+        &other.repo,
+        Some(&fixture.state),
+        &Selection::All,
+        &VerifyOptions::default(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(run.requests[0].status, "WAITING_HUMAN");
+    let receipts = fixture.receipts().await;
+    let follower = &run.requests[0].id;
+    let owner = original["requests"][0]["id"].as_str().unwrap();
+    assert_eq!(
+        human::claim(&receipts, follower, "alice")
+            .await
+            .unwrap()
+            .request_id,
+        owner
+    );
+    assert!(human::claim(&receipts, owner, "bob").await.is_err());
+    fs::write(other.repo.join("identity"), "different-repo-input\n").unwrap();
+    let result = human::run_human_tool(
+        &receipts,
+        follower,
+        "alice",
+        "inspect_review",
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(result).unwrap()["content"][0]["text"],
+        "human-v1\n"
+    );
+    human::submit(
+        &receipts,
+        follower,
+        "alice",
+        &json!({"verdict":"RED","reason":"Needs work"}),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert!(
+        human::submit(
+            &receipts,
+            owner,
+            "alice",
+            &green(),
+            CancellationToken::new()
+        )
+        .await
+        .is_err()
+    );
+    let settled = store::read_run(&fixture.state, &run.run.id).await.unwrap();
+    assert_eq!(settled.requests[0].status, "RED");
+    receipts.finish(&run.run, &run.requests).await.unwrap();
+    assert_eq!(
+        store::read_run(&fixture.state, &run.run.id)
+            .await
+            .unwrap()
+            .requests[0]
+            .status,
+        "RED"
+    );
+    fs::write(other.repo.join("identity"), "human-v1\n").unwrap();
+    let completed = project::verify(
+        &other.repo,
+        Some(&fixture.state),
+        &Selection::All,
+        &VerifyOptions::default(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(completed.run.status, "RED");
+    assert_eq!(
+        completed.requests[0].result.as_ref().unwrap()["reason"],
+        "Needs work"
+    );
+    assert_eq!(
+        completed.requests[0].execution_id.as_deref(),
+        original["requests"][0]["executionId"].as_str()
+    );
+    assert_eq!(
+        fixture
+            .database()
+            .query_row("SELECT count(*) FROM executions", [], |row| row
+                .get::<_, u32>(0))
+            .unwrap(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn concurrent_submissions_commit_only_once() {
+    let fixture = Fixture::new(true);
+    let run = fixture.verify(Default::default()).await;
+    let id = &run.requests[0].id;
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, id, "alice").await.unwrap();
+    let result = green();
+    let (first, second) = tokio::join!(
+        human::submit(&receipts, id, "alice", &result, CancellationToken::new()),
+        human::submit(&receipts, id, "alice", &result, CancellationToken::new()),
+    );
+    assert_ne!(first.is_ok(), second.is_ok());
+}
+
+#[tokio::test]
+async fn forced_human_checks_identity_without_replacing_cache() {
+    let fixture = Fixture::new(true);
+    let run = fixture.verify(Default::default()).await;
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, &run.requests[0].id, "alice")
+        .await
+        .unwrap();
+    human::submit(
+        &receipts,
+        &run.requests[0].id,
+        "alice",
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let forced = fixture
+        .verify(VerifyOptions {
+            force: true,
+            ..Default::default()
+        })
+        .await;
+    assert_eq!(forced.requests[0].status, "WAITING_HUMAN");
+    human::claim(&receipts, &forced.requests[0].id, "alice")
+        .await
+        .unwrap();
+    fs::write(fixture.repo.join("identity"), "changed\n").unwrap();
+    assert!(
+        human::submit(
+            &receipts,
+            &forced.requests[0].id,
+            "alice",
+            &green(),
+            CancellationToken::new()
+        )
+        .await
+        .is_err()
+    );
+    let cached = receipts
+        .cached_execution("human-v1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(cached.provenance.request_id, run.requests[0].id);
+    assert_eq!(cached.status, "GREEN");
+}
+
+#[tokio::test]
+async fn no_identity_results_are_not_reused_by_a_new_verify() {
+    let fixture = Fixture::new(false);
+    let run = fixture.verify(Default::default()).await;
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, &run.requests[0].id, "alice")
+        .await
+        .unwrap();
+    human::submit(
+        &receipts,
+        &run.requests[0].id,
+        "alice",
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let next = fixture.verify(Default::default()).await;
+    assert_eq!(next.requests[0].status, "WAITING_HUMAN");
+    assert_ne!(next.requests[0].execution_id, run.requests[0].execution_id);
+}

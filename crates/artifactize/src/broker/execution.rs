@@ -10,7 +10,7 @@ use super::now;
 use crate::{
     agent, cache,
     config::{Eval, Profile, RepoConfig},
-    process,
+    human, process,
     runtime::{self, Outcome, Verdict},
     scope,
     store::{Execution, Receipts, Request},
@@ -19,6 +19,7 @@ use crate::{
 pub(super) enum Prepared {
     Runtime(runtime::Command),
     Agent,
+    Human,
 }
 
 pub(super) async fn execute(
@@ -30,7 +31,21 @@ pub(super) async fn execute(
     run_dir: PathBuf,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
+    if matches!(prepared, Ok(Prepared::Human)) && !cancellation.is_cancelled() {
+        request.status = "WAITING_HUMAN".into();
+        request.started_at = Some(now());
+        request.execution_id = Some(execution.id.clone());
+        request.provenance = Some(execution.provenance.clone());
+        request.blocked_reason = Some("Waiting for a Human claim and submission.".into());
+        execution.status = request.status.clone();
+        receipts.wait_for_human(&execution, &request).await?;
+        return Ok(request);
+    }
     let outcome = match prepared {
+        Ok(Prepared::Human) => {
+            request.human_definition = None;
+            None
+        }
         Ok(Prepared::Agent) => {
             let eval = config
                 .evals
@@ -78,6 +93,7 @@ pub(super) async fn execute(
             runtime_result(outcome, &mut request)
         }
         Err(error) => {
+            request.human_definition = None;
             request.error = Some(error);
             request.error_code = Some("PREPARATION_FAILED".into());
             None
@@ -177,6 +193,11 @@ pub(super) fn prepare(
     run_dir: &Path,
     request: &mut Request,
 ) -> Result<Prepared, String> {
+    if matches!(eval.declaration.profile, Profile::Human {}) {
+        request.human_definition = Some(human::definition(config, eval)?);
+        request.run_dir = Some(run_dir.to_path_buf());
+        return Ok(Prepared::Human);
+    }
     if matches!(eval.declaration.profile, Profile::Agent { .. }) {
         request.run_dir = Some(run_dir.to_path_buf());
         return Ok(Prepared::Agent);

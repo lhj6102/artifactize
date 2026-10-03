@@ -218,7 +218,7 @@ Each task is one PR from `task/<id>-<slug>`. That PR ticks its box here and the 
 - [ ] **P5.6** Claude backend: launch controls, stream-json parsing, MCP gated by assistant turn, separate repair invocation. Check: a fake CLI asserts flags and env; a real review (owner).
 
 ### P6 Human
-- [ ] **P6.1** WAITING_HUMAN state, claim lock, claimant-only tools, schema-valid submission with the identity recheck, dependents continuing on the next `verify`. Check: a wrong claimant, changed input or duplicate submission fails.
+- [x] **P6.1** WAITING_HUMAN state, claim lock, claimant-only tools, schema-valid submission with the identity recheck, dependents continuing on the next `verify`. Check: a wrong claimant, changed input or duplicate submission fails.
 - [ ] **P6.2** `request list/show/claim/tool/submit` and `verify --wait` for Human results. Check: the CLI completes a waiting request end to end.
 
 ### P7 Monitor (`artifactize monitor`, ratatui)

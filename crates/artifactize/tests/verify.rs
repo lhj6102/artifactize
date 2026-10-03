@@ -331,29 +331,17 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
 }
 
 #[test]
-fn unsupported_profiles_fail_before_any_execution_or_store_creation() {
-    {
-        let profile = json!({"kind":"human"});
-        let fixture = Fixture::new();
-        fixture.runtime("/bin/true", &[]);
-        let path = fixture.repo.join("artifactize.json");
-        let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        declaration["evals"].as_array_mut().unwrap().push(json!({"id":"unsupported","title":"Unsupported","profile":profile,"payload":{"instruction":"Review."}}));
-        fs::write(path, declaration.to_string()).unwrap();
-        let output = fixture
-            .command()
-            .args(["verify", "--all", "--json"])
-            .output()
-            .unwrap();
-        assert_eq!(output.status.code(), Some(2));
-        assert!(
-            json_output(&output)["error"]
-                .as_str()
-                .unwrap()
-                .contains("not supported yet")
-        );
-        assert!(!fixture.state.exists());
-    }
+fn human_waiting_does_not_prevent_runtime_execution() {
+    let fixture = Fixture::new();
+    fixture.runtime("/bin/true", &[]);
+    let path = fixture.repo.join("artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    declaration["evals"].as_array_mut().unwrap().push(json!({"id":"review","title":"Human review","profile":{"kind":"human"},"payload":{"instruction":"Review."}}));
+    fs::write(path, declaration.to_string()).unwrap();
+    let run = fixture.verify(&["--all"], 4);
+    assert_eq!(run["requests"][0]["status"], "GREEN");
+    assert_eq!(run["requests"][1]["status"], "WAITING_HUMAN");
+    assert_eq!(run["executionsStarted"], 1);
 }
 
 fn wait_for(mut child: Child) -> Output {

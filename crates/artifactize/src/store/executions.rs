@@ -15,6 +15,7 @@ pub enum Claim {
     BudgetExhausted,
     Reuse(Box<Execution>),
     Wait(String),
+    WaitHuman(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,11 +74,11 @@ pub(super) fn lookup(
 fn active_owner(
     db: &rusqlite::Connection,
     identity: &str,
-) -> Result<Option<(String, process::ChildIdentity)>, Error> {
+) -> Result<Option<(String, process::ChildIdentity, String)>, Error> {
     db.query_row(
-        "SELECT id,owner_pid,owner_start_time FROM executions WHERE identity=? AND status IN ('RUNNING','WAITING_HUMAN')",
+        "SELECT id,owner_pid,owner_start_time,status FROM executions WHERE identity=? AND status IN ('RUNNING','WAITING_HUMAN')",
         [identity],
-        |row| Ok((row.get(0)?, process::ChildIdentity { pid: row.get(1)?, start_time: row.get::<_, i64>(2)? as u64 })),
+        |row| Ok((row.get(0)?, process::ChildIdentity { pid: row.get(1)?, start_time: row.get::<_, i64>(2)? as u64 }, row.get(3)?)),
     ).optional().map_err(Into::into)
 }
 
@@ -102,10 +103,13 @@ fn available(db: &rusqlite::Connection, identity: &str) -> Result<Option<Claim>,
     if let Some(execution) = lookup(db, identity)? {
         return Ok(Some(Claim::Reuse(Box::new(execution))));
     }
-    if let Some((id, owner)) = active_owner(db, identity)?
-        && process::is_alive(owner).map_err(|e| Error::Invalid(e.to_string()))?
-    {
-        return Ok(Some(Claim::Wait(id)));
+    if let Some((id, owner, status)) = active_owner(db, identity)? {
+        if status == "WAITING_HUMAN" {
+            return Ok(Some(Claim::WaitHuman(id)));
+        }
+        if process::is_alive(owner).map_err(|e| Error::Invalid(e.to_string()))? {
+            return Ok(Some(Claim::Wait(id)));
+        }
     }
     Ok(None)
 }
@@ -199,9 +203,9 @@ impl Receipts {
             if let Some(claim) = available_to_waiter(&transaction, identity, waiting_for.as_deref())? {
                 return Ok(claim);
             }
-            if let Some((id, _)) = active_owner(&transaction, identity)? {
+            if let Some((id, _, _)) = active_owner(&transaction, identity)? {
                 transaction.execute(
-                    "UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Execution owner died.','$.errorCode','OWNER_DIED','$.completedAt',?,'$.provenance.completedAt',?) WHERE id=? AND status IN ('RUNNING','WAITING_HUMAN')",
+                    "UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Execution owner died.','$.errorCode','OWNER_DIED','$.completedAt',?,'$.provenance.completedAt',?) WHERE id=? AND status='RUNNING'",
                     params![execution.started_at, execution.started_at, id],
                 )?;
             }
@@ -243,34 +247,46 @@ impl Receipts {
     ) -> Result<(), String> {
         let execution = execution.clone();
         let request = request.clone();
-        self.connection.call(move |db| -> Result<(), Error> {
-            let data = serde_json::to_string(&execution)?;
-            let transaction = db.transaction()?;
-            if execution.identity.is_some() {
-                if transaction.execute(
+        self.connection
+            .call(move |db| -> Result<(), Error> {
+                let transaction = db.transaction()?;
+                let published = settle(&transaction, &execution, &request)?;
+                transaction.commit()?;
+                if published && let Err(error) = super::cache_entries::collect(db) {
+                    use std::io::Write;
+                    let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
+                }
+                Ok(())
+            })
+            .await
+            .map_err(|e| e.to_string())
+    }
+}
+
+pub(super) fn settle(
+    db: &rusqlite::Connection,
+    execution: &Execution,
+    request: &Request,
+) -> Result<bool, Error> {
+    let data = serde_json::to_string(execution)?;
+    if execution.identity.is_some() || request.human_definition.is_some() {
+        if db.execute(
                     "UPDATE executions SET status=?,data=? WHERE id=? AND owner_pid=? AND owner_start_time=? AND status IN ('RUNNING','WAITING_HUMAN')",
                     params![execution.status, data, execution.id, execution.owner_pid, execution.owner_start_time as i64],
                 )? != 1 {
                     return Err(Error::Invalid("Active execution not found.".into()));
                 }
-            } else {
-                transaction.execute("INSERT INTO executions(id,identity,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?)", params![execution.id, execution.identity, execution.owner_pid, execution.owner_start_time as i64, execution.status, data])?;
-            }
-            let published = if execution.verdict().is_some()
-                && data.len() <= super::cache_entries::MAX_ENTRY_BYTES
-                && let Some(identity) = &execution.identity
-            {
-                transaction.execute("INSERT INTO cache_entries(identity,execution_id,bytes,last_used) VALUES (?,?,?,?) ON CONFLICT(identity) DO NOTHING", params![identity, execution.id, data.len() as i64, execution.completed_at])? != 0
-            } else {
-                false
-            };
-            update_request(&transaction, &request)?;
-            transaction.commit()?;
-            if published && let Err(error) = super::cache_entries::collect(db) {
-                use std::io::Write;
-                let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
-            }
-            Ok(())
-        }).await.map_err(|e| e.to_string())
+    } else {
+        db.execute("INSERT INTO executions(id,identity,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?)", params![execution.id, execution.identity, execution.owner_pid, execution.owner_start_time as i64, execution.status, data])?;
     }
+    let published = if execution.verdict().is_some()
+        && data.len() <= super::cache_entries::MAX_ENTRY_BYTES
+        && let Some(identity) = &execution.identity
+    {
+        db.execute("INSERT INTO cache_entries(identity,execution_id,bytes,last_used) VALUES (?,?,?,?) ON CONFLICT(identity) DO NOTHING", params![identity, execution.id, data.len() as i64, execution.completed_at])? != 0
+    } else {
+        false
+    };
+    update_request(db, request)?;
+    Ok(published)
 }
