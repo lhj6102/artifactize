@@ -191,8 +191,8 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
 }
 
 #[test]
-fn later_schema_semantics_are_kept_as_inert_objects() {
-    let schema = json!({"anyOf": [{"properties": {"ownerField": {"type": "string"}}}], "ownerKeyword": true});
+fn response_schemas_are_validated_without_rewriting_owner_fields() {
+    let schema = json!({"type":"object","properties":{"ownerField":{"anyOf":[{"type":"string"},{"type":"integer"}]}}, "ownerKeyword":true});
     let mut declared = eval(json!({"kind": "human"}));
     declared["passSchema"] = schema.clone();
     let declaration = parse(json!({"name": "a", "evals": [declared.clone()]})).unwrap();
@@ -295,5 +295,48 @@ fn agent_backends_are_explicit_and_optional_reasoning_is_exact() {
         json!({"kind":"agent","backend":"openai","model":"m","effort":"high"}),
     ] {
         assert!(parse(json!({"name":"a","evals":[eval(profile)]})).is_err());
+    }
+}
+
+#[test]
+fn response_schema_contract_rejects_reserved_fields_and_open_envelopes() {
+    let mut schemas = vec![
+        json!({"type":"array"}),
+        json!({"type":"object","properties":{"reason":{"type":"bogus"}}}),
+        json!({"type":"object","additionalProperties":true}),
+        json!({"type":"object","additionalProperties":{}}),
+        json!({"type":"object","required":"reason"}),
+        json!({"type":"object","properties":[]}),
+        json!({"type":"object","$ref":"https://example.invalid/schema"}),
+    ];
+    for keyword in ["allOf", "anyOf", "oneOf", "not"] {
+        schemas.push(json!({"type":"object",keyword:[]}));
+    }
+    for field in [
+        "verdict",
+        "reference",
+        "reusedFrom",
+        "executionProvenance",
+        "attemptId",
+        "provider",
+        "model",
+        "stdout",
+        "stderr",
+        "durationMs",
+        "exitCode",
+        "toolCalls",
+    ] {
+        schemas.push(json!({"type":"object","properties":{field:{}}}));
+        schemas.push(json!({"type":"object","required":[field]}));
+    }
+    for schema in schemas {
+        for branch in ["passSchema", "failSchema"] {
+            let mut declaration = eval(json!({"kind":"human"}));
+            declaration[branch] = schema.clone();
+            assert!(
+                parse(json!({"name":"a","evals":[declaration]})).is_err(),
+                "{schema}"
+            );
+        }
     }
 }

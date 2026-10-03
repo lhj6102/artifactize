@@ -10,6 +10,9 @@ use tempfile::TempDir;
 use super::*;
 use crate::config::{Backend, read_workspace_config};
 
+mod budgets;
+mod repair;
+
 struct Fixture {
     _directory: TempDir,
     config: RepoConfig,
@@ -371,7 +374,7 @@ fn profiles_reject_remapped_effort_and_subscription_backends_are_explicit() {
 }
 
 #[tokio::test]
-async fn deadline_and_pending_budgets_fail_without_extra_requests() {
+async fn deadline_stops_retry_without_extra_requests() {
     let mut fixture = Fixture::new("openai");
     let Profile::Agent { timeout_ms, .. } = &mut fixture.config.evals[0].declaration.profile else {
         unreachable!()
@@ -386,14 +389,6 @@ async fn deadline_and_pending_budgets_fail_without_extra_requests() {
     assert!(review.result.unwrap_err().contains("timed out"));
     assert_eq!(http.requests().len(), 1);
     assert_eq!(review.attempts.len(), 1);
-    let Profile::Agent { max_tool_calls, .. } = &mut fixture.config.evals[0].declaration.profile
-    else {
-        unreachable!()
-    };
-    *max_tool_calls = Some(1);
-    let (review, http) = fixture.run(vec![final_openai()]).await;
-    assert!(review.result.unwrap_err().contains("P5.2"));
-    assert!(http.requests().is_empty());
 }
 
 #[tokio::test]
