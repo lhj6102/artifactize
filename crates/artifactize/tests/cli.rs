@@ -153,7 +153,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Usage:"));
-    for args in [["help", "verify"], ["run", "--help"]] {
+    for args in [["help", "verify"], ["run", "--help"], ["mcp", "--help"]] {
         let output = fixture.command().args(args).output().unwrap();
         assert!(output.status.success());
         assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: artifactize"));
@@ -195,6 +195,12 @@ fn help_is_displayed_without_arguments() {
     assert!(text.contains("--repo <PATH>"));
     assert!(text.contains("--state-dir <PATH>"));
     assert!(text.contains("--json"));
+    assert!(
+        !text
+            .lines()
+            .any(|line| line.trim_start().starts_with("mcp")),
+        "the internal mcp command is hidden: {text}"
+    );
 }
 
 #[test]
