@@ -116,7 +116,8 @@ async fn signal_is_an_operational_error() {
 #[tokio::test]
 async fn timeout_is_an_operational_error_and_reaps_the_leader() {
     let scratch = Scratch::new();
-    let command = scratch.command("/bin/sleep", &["30"], Some(100));
+    // The deadline also covers spawn and registration; leave room for both under load.
+    let command = scratch.command("/bin/sleep", &["30"], Some(1000));
     let pid = Arc::new(AtomicU32::new(0));
     let observed = pid.clone();
     let outcome = runtime::execute(command, CancellationToken::new(), move |child| async move {
