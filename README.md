@@ -697,3 +697,7 @@ at both levels, so keep secrets out of the fields that `passSchema` and
 [docs/reference.md](docs/reference.md) is the detailed reference: every command
 and flag, exact limits, schemas and protocols, internal library APIs, backend wire
 details and the state layout.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE).
