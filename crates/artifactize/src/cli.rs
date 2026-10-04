@@ -116,10 +116,12 @@ pub enum Command {
         #[command(flatten)]
         policy: PolicyArgs,
     },
-    /// Inspect full static definitions, relations, cycles, and families.
+    /// Moved to "artifactize config graph".
+    #[command(hide = true, disable_help_flag = true)]
     Graph {
-        /// Select one Artifact or family and its required closure; defaults to all.
-        artifact: Option<String>,
+        // Any former graph arguments, including --help, get the same hint.
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, hide = true)]
+        args: Vec<String>,
     },
     /// Read recorded Runs without discovering or executing project code.
     Run {
@@ -280,6 +282,11 @@ impl ModelProvider {
 pub enum ConfigCommand {
     /// Validate declarations and unique Artifact/Eval ids.
     Check,
+    /// Inspect full static definitions, relations, cycles, and families.
+    Graph {
+        /// Select one Artifact or family and its required closure; defaults to all.
+        artifact: Option<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -592,7 +599,10 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             }
             Ok(u8::from(!view.satisfied))
         }
-        Some(Command::Graph { artifact }) => {
+        Some(Command::Graph { .. }) => Err(r#"graph moved to "artifactize config graph""#.into()),
+        Some(Command::Config {
+            command: ConfigCommand::Graph { artifact },
+        }) => {
             let config = read_workspace_config(&cli.repo.unwrap_or_else(|| PathBuf::from(".")))
                 .map_err(|error| error.to_string())?;
             let selection = artifact.map_or(Selection::All, |artifact_id| Selection::Artifact {

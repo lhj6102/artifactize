@@ -195,12 +195,56 @@ fn help_is_displayed_without_arguments() {
     assert!(text.contains("--repo <PATH>"));
     assert!(text.contains("--state-dir <PATH>"));
     assert!(text.contains("--json"));
-    assert!(
-        !text
-            .lines()
-            .any(|line| line.trim_start().starts_with("mcp")),
-        "the internal mcp command is hidden: {text}"
+    for hidden in ["mcp", "graph"] {
+        assert!(
+            !text
+                .lines()
+                .any(|line| line.trim_start().starts_with(hidden)),
+            "{hidden} is hidden: {text}"
+        );
+    }
+}
+
+#[test]
+fn graph_moved_under_config() {
+    let fixture = Fixture::new();
+    let output = fixture
+        .command()
+        .args(["config", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let text = String::from_utf8(output.stdout).unwrap();
+    for command in ["check", "graph"] {
+        assert!(
+            text.lines()
+                .any(|line| line.trim_start().starts_with(command)),
+            "{text}"
+        );
+    }
+    assert_eq!(
+        fixture.json(&["config", "graph", "green"], 0)["artifacts"]
+            .as_object()
+            .unwrap()
+            .len(),
+        1
     );
+    let hint = r#"graph moved to "artifactize config graph""#;
+    for args in [
+        vec!["graph"],
+        vec!["graph", "green"],
+        vec!["graph", "--compact"],
+        vec!["graph", "--help"],
+    ] {
+        let output = fixture.command().args(&args).output().unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            String::from_utf8(output.stderr).unwrap(),
+            format!("{hint}\n")
+        );
+    }
+    assert_eq!(fixture.json(&["graph", "green"], 2), json!({"error": hint}));
 }
 
 #[test]

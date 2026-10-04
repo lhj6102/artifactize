@@ -50,7 +50,7 @@ You need `artifactize` on your `PATH` ([Install](../../docs/INSTALL.md):
 ```sh
 cd examples/runtime-relations
 artifactize config check    # static validation; runs no owner code
-artifactize graph           # Artifacts, evals, components and child/mount/instruction/argv relations
+artifactize config graph    # Artifacts, evals, components and child/mount/instruction/argv relations
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
 artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # nothing executes: each line says "(reused from RUN_ID)"
@@ -59,7 +59,7 @@ artifactize run list
 artifactize run show RUN_ID # full saved JSON: argv, stdout, staleKey, provenance
 ```
 
-`graph`, `status` and `verify` also accept `--json`. In the second Run,
+`config graph`, `status` and `verify` also accept `--json`. In the second Run,
 `verify --all --json` reports `"executionsStarted": 0`, and each request's
 `executionId` points to the first Run's execution. State goes to
 `~/.local/state/artifactize` by default. To keep this example's state apart,

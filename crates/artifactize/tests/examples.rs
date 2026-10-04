@@ -155,7 +155,7 @@ fn every_example_passes_static_queries_and_reports_status() {
             json!({"artifacts": artifacts, "evals": evals, "ok": true}),
             "{name}"
         );
-        let graph = session.json(&repo, &["graph", "--json"], 0);
+        let graph = session.json(&repo, &["config", "graph", "--json"], 0);
         assert_eq!(graph["evals"].as_array().unwrap().len(), evals, "{name}");
         let status = session.json(&repo, &["status", "--json"], 1);
         assert_eq!(status["satisfied"], false, "{name}");
@@ -167,7 +167,11 @@ fn every_example_passes_static_queries_and_reports_status() {
         );
     }
 
-    let graph = session.json(&example("runtime-relations"), &["graph", "--json"], 0);
+    let graph = session.json(
+        &example("runtime-relations"),
+        &["config", "graph", "--json"],
+        0,
+    );
     let mut kinds: Vec<_> = graph["relations"]
         .as_array()
         .unwrap()
@@ -183,7 +187,11 @@ fn every_example_passes_static_queries_and_reports_status() {
         json!({"intro": "intro", "usage": "usage"})
     );
 
-    let graph = session.json(&example("family"), &["graph", "posts", "--json"], 0);
+    let graph = session.json(
+        &example("family"),
+        &["config", "graph", "posts", "--json"],
+        0,
+    );
     assert_eq!(
         graph["families"]["posts"]["artifactIds"],
         json!(["release-notes", "tip", "welcome"])
