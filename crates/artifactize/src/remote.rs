@@ -1,6 +1,8 @@
 //! Shared remote review store records: what leaves this machine and how it is mirrored back.
 
+mod push;
 mod session;
+pub use push::{Push, push};
 pub use session::Session;
 
 use std::path::PathBuf;

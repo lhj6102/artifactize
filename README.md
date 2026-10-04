@@ -29,6 +29,90 @@ example projects. Each README lists the exact commands:
 - [Family](examples/family/README.md): one family declaration with an instance
   list, parameters and variants, shared and per-instance material, family
   selectors, and the staleKey script form.
+- [Team walkthrough](docs/team-walkthrough.md): two machines and CI reuse each
+  other's verdicts through one `artifactize server`.
+
+## Team review store
+
+Machines and CI can reuse each other's verdicts through one shared review store,
+`artifactize server` ([design](docs/design/remote-store.md)). Each machine keeps its
+own state. The store holds one immutable record per (staleKey, Eval definition
+hash), and the first writer wins. The [team walkthrough](docs/team-walkthrough.md)
+runs two machines and CI end to end.
+
+**Server.** Run the store on a small host, with its own state directory:
+
+```sh
+artifactize --state-dir /srv/artifactize server token add alice-laptop --scopes read,publish,human
+artifactize --state-dir /srv/artifactize server token add bob-laptop --scopes read,publish
+artifactize --state-dir /srv/artifactize server token add ci --scopes read
+artifactize --state-dir /srv/artifactize server run     # http://127.0.0.1:8417/
+```
+
+`token add` prints each token once. `server run` binds loopback by default. Put a
+TLS reverse proxy or a tunnel in front, because clients require HTTPS except on
+loopback. Back up `review-store.sqlite` with `sqlite3 .backup`. See
+[Review store server](#review-store-server) for the full reference.
+
+**Clients.** Each machine signs in once. The token is read from stdin and is not
+echoed:
+
+```sh
+artifactize remote login https://reviews.example/     # paste the token
+artifactize remote status
+```
+
+From then on:
+
+- `verify` reuses results from the store and publishes its own GREEN/RED results;
+- `status` predicts remote reuse;
+- `request submit` publishes Human sign-offs;
+- `remote push` sends results produced while the store was unreachable.
+
+See [Remote review store client](#remote-review-store-client) for the full reference.
+
+**CI.** Configure CI through the environment only:
+
+```yaml
+- run: artifactize verify --all
+  env:
+    ARTIFACTIZE_REMOTE: https://reviews.example/
+    ARTIFACTIZE_REMOTE_TOKEN: ${{ secrets.ARTIFACTIZE_READ_TOKEN }}
+```
+
+- A read token reuses but never publishes.
+- An outage never turns CI red: `verify` warns once and reviews locally.
+- A rejected token, a TLS failure or an invalid configuration fails the job (exit 2),
+  so a misconfiguration is never skipped silently.
+- `ARTIFACTIZE_REMOTE=off` disables the store for one command.
+
+**Share levels.** `summary`, the default, sends:
+
+- the verdict;
+- the schema-validated owner fields (for runtime evals, only the exit code,
+  duration and truncation flag);
+- the declared profile and usage counters;
+- the producer (`user@host`), the Human reviewer and timestamps.
+
+It never sends argv, stdout/stderr, the tool-call audit or repository paths.
+`full` (`remote login --share full` or `ARTIFACTIZE_REMOTE_SHARE=full`) also sends
+the saved execution as is, including captured output. Owner fields are free text
+at both levels, so keep secrets out of the fields that `passSchema` and
+`failSchema` allow.
+
+**Trust.**
+
+- The server stamps the authenticated `publisher`, the token name. The `producer`
+  and the Human `reviewer` are what the publishing machine claims.
+- Any `publish` token can assert any verdict for any key. Give untrusted CI (fork
+  pull requests) `read` only, and `human` only to people who sign off. If a token
+  leaks or is misused, `server token revoke NAME --purge` also deletes the
+  entries it published.
+- `verify --force` makes no remote call, which bypasses a suspect entry.
+  `cache rm` drops a local mirror, and `server rm` removes the entry from the store.
+- Only `$STATE/remote.json` and the environment configure the store, never
+  `artifactize.json`, so a cloned repository cannot send your token elsewhere.
+  Tokens are stored 0600, bound to the store they were issued for, and never printed.
 
 ## Command reference
 
@@ -63,6 +147,7 @@ rejects `--json`). `SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`,
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
 | `remote logout` | | text or JSON | 0 |
 | `remote status` | | text or JSON | 0 signed in, 1 not |
+| `remote push` | `--dry-run` | text or JSON | 0 |
 | `models openai\|anthropic\|chatgpt\|claude` | | text or JSON | 0 |
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
@@ -662,6 +747,7 @@ normal JSON returns `removed`, and both include `skippedRuns`.
 ```sh
 printf '%s\n' "$TOKEN" | artifactize remote login https://reviews.example/ [--share full]
 artifactize remote status [--json]
+artifactize remote push [--dry-run] [--json]
 artifactize remote logout
 ```
 
@@ -710,6 +796,17 @@ so a read-only CI token only reuses. Human sign-offs also need `human`; with any
 other token they stay local with a warning. Nothing is published for evals without a
 staleKey, and `--force` makes no remote calls at all. `status` looks up read-only,
 without mirroring, so its `reuse` prediction includes remote results.
+
+`remote push` sends the local GREEN/RED results the store lacks: results produced
+while it was unreachable or before `remote login`. It never sends mirrors. A
+token with `read` first looks up which keys the store already has, and those are
+not sent again. A key published in the meantime answers `created: false`. Both
+count as `existing`, so pushing twice is harmless. Human sign-offs without the
+`human` scope, and records over their size limit, are `skipped` with a reason on
+stderr. `--dry-run` sends nothing and reports what would be pushed. The output is
+`Pushed N, already in the store M, skipped K.`, or JSON
+`{"dryRun":false,"pushed":N,"existing":M,"skipped":K}`. Unlike `verify`, `push`
+fails on any remote failure, and it needs the `publish` scope.
 
 Connection errors, timeouts and 5xx answers fail open: one warning, then the process
 reviews locally without the remote. 401/403, TLS failures, other error answers and
