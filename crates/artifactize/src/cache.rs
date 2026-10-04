@@ -108,7 +108,7 @@ async fn compute(
     } else {
         script.command.clone().into()
     };
-    let scope = scope::artifact_scope(config, &[artifact_id]).map_err(|e| e.to_string())?;
+    let scope = scope::argv_scope(config, artifact_id, &script.args).map_err(|e| e.to_string())?;
     let args = scope::resolve_argv(config, &scope, artifact_id, &script.args)
         .map_err(|e| e.to_string())?;
     let mut input = json!({"version":1,"artifactId":artifact_id});

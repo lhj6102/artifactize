@@ -12,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::config::{Artifact, CONFIG_FILE, ConfigError, Eval, Profile, RepoConfig};
+use crate::config::{Artifact, CONFIG_FILE, ConfigError, Eval, Profile, RepoConfig, Stale};
 
 mod human;
 mod instruction;
@@ -238,6 +238,21 @@ pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, 
     artifact_scope(config, &roots)
 }
 
+/// Admit an owner plus the explicit references in its argv, as an Eval's scope admits its deps.
+pub fn argv_scope<'a>(
+    config: &'a RepoConfig,
+    owner: &str,
+    args: &[String],
+) -> Result<Scope<'a>, ScopeError> {
+    let mut roots = vec![owner];
+    for argument in args {
+        if let Some(reference) = argument_reference(argument)? {
+            roots.push(reference_target(config, owner, reference.name)?);
+        }
+    }
+    artifact_scope(config, &roots)
+}
+
 fn logical_path(path: &str) -> Result<(), ScopeError> {
     if path.encode_utf16().count() > 4096
         || path
@@ -429,6 +444,16 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         let error = |message: String| {
             ConfigError::new(config.root.join(&artifact.path).join(CONFIG_FILE), message)
         };
+        if let Some(Stale::Identity { script, .. }) = &artifact.stale {
+            for argument in &script.args {
+                if let Some(reference) = argument_reference(argument)
+                    .map_err(|failure| error(format!("stale.script: {failure}")))?
+                {
+                    reference_target(config, id, reference.name)
+                        .map_err(|failure| error(format!("stale.script: {failure}")))?;
+                }
+            }
+        }
         for (path, source) in &artifact.children {
             relations.push(Relation {
                 source: source.clone(),
