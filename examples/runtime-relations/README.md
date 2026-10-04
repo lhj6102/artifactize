@@ -51,7 +51,7 @@ artifactize config check    # static validation; runs no owner code
 artifactize graph           # Artifacts, evals, components and child/mount/instruction/argv relations
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
 artifactize verify --all    # three GREEN results, exit 0
-artifactize verify --all    # nothing executes: all three results are reused
+artifactize verify --all    # nothing executes: each line says "(reused from RUN_ID)"
 artifactize status          # exit 0: every eval shows "PASS — reuse"
 artifactize run list
 artifactize run show RUN_ID # full saved JSON: argv, stdout, identity, provenance

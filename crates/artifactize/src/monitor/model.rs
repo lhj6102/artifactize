@@ -184,11 +184,7 @@ pub fn run_rows(runs: &[RunSummary], now: OffsetDateTime) -> Vec<RunRow> {
 }
 
 fn reused(view: &RequestView) -> bool {
-    let request = &view.request;
-    request
-        .provenance
-        .as_ref()
-        .is_some_and(|source| source.request_id != request.id)
+    query::reused(&view.request)
 }
 
 fn elapsed(view: &RequestView, now: OffsetDateTime) -> Option<String> {
@@ -219,7 +215,8 @@ fn error(view: &RequestView) -> Option<String> {
 
 pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Progress {
     let run = &view.run;
-    let summary = &query::run_output(view)["summary"];
+    let output = query::run_output(view);
+    let summary = &output["summary"];
     let with = |status: &'static str| {
         requests
             .iter()
@@ -229,6 +226,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         .as_object()
         .map_or(0, |calls| calls.values().filter_map(Value::as_u64).sum());
     let usage = pairs(&summary["usage"]);
+    let saved = pairs(&output["usage"]["saved"]);
     let unmet = join(strs(&run.validation["obligations"]), ", ");
     Progress {
         status: run.status.clone(),
@@ -256,15 +254,22 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             .map(|(status, count)| (status.clone(), count.as_u64().unwrap_or(0)))
             .collect(),
         work: format!(
-            "executions {}/{} · jobs {} · tool calls {tools}{}",
+            "executions {}/{} · jobs {} · executed {} · reused {} · tool calls {tools}{}{}",
             run.executions_started,
             run.max_executions
                 .map_or("unlimited".into(), |max| max.to_string()),
             run.jobs,
+            summary["executed"]["total"],
+            summary["reused"]["total"],
             if usage.is_empty() {
                 usage
             } else {
                 format!(" · usage {usage}")
+            },
+            if saved.is_empty() {
+                saved
+            } else {
+                format!(" · saved {saved}")
             }
         ),
         running: with("RUNNING")
@@ -645,8 +650,12 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     });
     detail.push("Tool calls", join(calls, "\n"));
     let total = pairs(&summary["usage"]);
-    let attempts = request.usage.as_ref().map_or(&Value::Null, |usage| usage);
-    let attempts = attempts.as_array().into_iter().flatten().map(|attempt| {
+    let attempts = request.usage.as_ref().or(request.reused_usage.as_ref());
+    let attempts = attempts
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    let original = attempts.len();
+    let attempts = attempts.iter().map(|attempt| {
         let error = attempt["error"].as_str();
         let error = error.map_or(String::new(), |error| format!(" error: {error}"));
         format!(
@@ -656,16 +665,20 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             pairs(&attempt["usage"])
         )
     });
-    let state = format!(
-        "{} · attempts {}{}",
-        summary["usageState"].as_str().unwrap_or("unreported"),
-        summary["attempts"],
-        if total.is_empty() {
-            total
-        } else {
-            format!(" · total {total}")
-        }
-    );
+    let state = if reused(view) {
+        format!("reused: spent none · original attempts {original}")
+    } else {
+        format!(
+            "{} · attempts {}{}",
+            summary["usageState"].as_str().unwrap_or("unreported"),
+            summary["attempts"],
+            if total.is_empty() {
+                total
+            } else {
+                format!(" · total {total}")
+            }
+        )
+    };
     detail.push("Usage", join(std::iter::once(state).chain(attempts), "\n"));
     detail
 }

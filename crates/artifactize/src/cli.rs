@@ -488,15 +488,42 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 for request in &view.requests {
                     writeln!(
                         stdout,
-                        "  {} [{}]: {}{}",
+                        "  {} [{}]: {}{}{}",
                         request.eval_id,
                         request.id,
                         request.status,
+                        request
+                            .provenance
+                            .as_ref()
+                            .filter(|_| crate::query::reused(request))
+                            .map_or(String::new(), |source| format!(
+                                " (reused from {})",
+                                source.run_id
+                            )),
                         request
                             .error
                             .as_ref()
                             .or(request.blocked_reason.as_ref())
                             .map_or(String::new(), |reason| format!(" — {reason}"))
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
+                let output = crate::query::run_output(&view);
+                let summary = &output["summary"];
+                writeln!(
+                    stdout,
+                    "Summary: executed {}, reused {}",
+                    kinds(&summary["executed"]),
+                    kinds(&summary["reused"])
+                )
+                .map_err(|e| e.to_string())?;
+                let usage = &output["usage"];
+                if *usage != json!({"spent":{},"saved":{}}) {
+                    writeln!(
+                        stdout,
+                        "Usage: spent {}; saved {}",
+                        counters(&usage["spent"]),
+                        counters(&usage["saved"])
                     )
                     .map_err(|e| e.to_string())?;
                 }
@@ -730,6 +757,28 @@ fn cancellation_listener() -> Result<
     Ok((cancellation, listener))
 }
 
+/// `N (runtime R, agent A, human H)` from a summary tally.
+fn kinds(tally: &serde_json::Value) -> String {
+    format!(
+        "{} (runtime {}, agent {}, human {})",
+        tally["total"], tally["runtime"], tally["agent"], tally["human"]
+    )
+}
+
+fn counters(totals: &serde_json::Value) -> String {
+    let pairs: Vec<_> = totals
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(key, value)| format!("{key} {value}"))
+        .collect();
+    if pairs.is_empty() {
+        "none".into()
+    } else {
+        pairs.join(", ")
+    }
+}
+
 fn print_status(view: &crate::project::StatusView) -> io::Result<()> {
     let mut out = io::stdout().lock();
     writeln!(
@@ -782,9 +831,15 @@ fn print_status(view: &crate::project::StatusView) -> io::Result<()> {
     }
     writeln!(
         out,
-        "Verify actions: execute {}, reuse {}, wait {}, blocked {}",
+        "Verify actions: will execute {}, will reuse {}, wait {}, blocked {}",
         view.counts.execute, view.counts.reuse, view.counts.wait, view.counts.blocked
     )?;
+    if view.counts.wait > 0 {
+        writeln!(
+            out,
+            "  wait: needs a result verify has not produced yet (a dependency it executes, or a live execution); status cannot predict it."
+        )?;
+    }
     Ok(())
 }
 

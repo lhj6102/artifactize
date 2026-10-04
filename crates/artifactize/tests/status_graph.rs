@@ -104,6 +104,9 @@ fn runtime_status_separates_current_validation_from_saved_attempts() {
     );
     assert_eq!(fresh["counts"]["execute"], 5);
     assert_eq!(fresh["counts"]["wait"], 2);
+    let text = String::from_utf8(fixture.output(&["status"], 1).stdout).unwrap();
+    assert!(text.contains("Verify actions: will execute 5, will reuse 0, wait 2, blocked 0"));
+    assert!(text.contains("wait: needs a result verify has not produced yet"));
     assert!(!fixture.state.exists());
     let basis = fixture.json(&["status", "input"], 0);
     assert_eq!(basis["satisfied"], true);
