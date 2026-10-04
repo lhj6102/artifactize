@@ -1,8 +1,11 @@
 name: CI
 
+# Changes that touch only the website (built by website.yml) skip the Rust checks.
 on:
   push:
+    paths-ignore: ["website/**", ".github/workflows/website.yml"]
   pull_request:
+    paths-ignore: ["website/**", ".github/workflows/website.yml"]
 
 jobs:
   check:

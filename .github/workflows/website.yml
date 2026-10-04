@@ -12,6 +12,12 @@ concurrency:
   group: website-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Keep MDBOOK_VERSION in sync with website/build.sh. The checksum is the
+  # release asset's SHA-256 published on GitHub.
+  MDBOOK_VERSION: "0.5.4"
+  MDBOOK_SHA256: "3f28de05dafca9d0f2eab99c662116b0e37b89b1d96a08f8f430b9eeae958cd7"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,7 +26,18 @@ jobs:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
-      - run: website/build.sh
+      - name: Install mdBook
+        run: |
+          archive="$RUNNER_TEMP/mdbook.tar.gz"
+          curl -sSfL -o "$archive" \
+            "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          echo "${MDBOOK_SHA256}  ${archive}" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/bin" mdbook
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # build.sh builds the landing page and the docs, then checks every internal link.
+      - name: Build and check links
+        run: website/build.sh
       - name: Deploy to Cloudflare
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         run: |

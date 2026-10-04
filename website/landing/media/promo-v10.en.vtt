@@ -1,0 +1,30 @@
+WEBVTT
+
+NOTE The promo is silent; these cues carry its on-screen text.
+
+00:00.400 --> 00:03.500
+Declare: code, docs, design, images. All Artifacts.
+
+00:03.800 --> 00:06.600
+Verify: Runtime, Agent and Human evals. One layer.
+
+00:06.600 --> 00:08.700
+Five evals, all GREEN.
+
+00:09.300 --> 00:12.600
+Collaborate: build apart, verify apart.
+
+00:12.600 --> 00:15.200
+Each branch executes 3 evals and reuses 2.
+
+00:16.200 --> 00:18.000
+Reuse: still-valid reviews are reused. Pay only for what changed.
+
+00:18.000 --> 00:20.600
+After the merge: 4 reused, 0 Agent tokens, 0 Human sign-offs, 1 executed.
+
+00:21.600 --> 00:24.100
+Artifactize. Declare. Verify. Reuse.
+
+00:24.100 --> 00:27.400
+artifactize.dev. Not just code: manage every artifact together.

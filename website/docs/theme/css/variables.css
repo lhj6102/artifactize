@@ -1,0 +1,182 @@
+/* artifactize brand themes for mdBook 0.5. Replaces mdBook's variables.css:
+   "navy" is the dark default in the promo palette, "light" its light
+   counterpart. The other built-in themes are not offered (see index.hbs). */
+
+:root {
+    --sidebar-target-width: 288px;
+    --sidebar-width: min(var(--sidebar-target-width), 84vw);
+    --sidebar-resize-indicator-width: 8px;
+    --sidebar-resize-indicator-space: 2px;
+    --page-padding: 16px;
+    --content-max-width: 800px;
+    --menu-bar-height: 60px;
+    --sans-font: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --heading-font: "Space Grotesk", "Pretendard Variable", system-ui, sans-serif;
+    --mono-font: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+    --code-font-size: 0.875em;
+    --searchbar-margin-block-start: 8px;
+    --radius: 10px;
+    --radius-sm: 6px;
+}
+
+/* Dark: the promo palette. */
+.navy {
+    --bg: #090B0F;
+    --fg: #D5DEEA;
+    --fg-strong: #EAF0F7;
+    --fg-dim: #8B96A8;
+    --fg-faint: #566072;
+    --panel: #10141B;
+    --panel2: #141A23;
+    --line: #262E3B;
+    --line-soft: #1B222D;
+    --accent: #3EE08F;
+    --accent-soft: rgba(62, 224, 143, 0.12);
+    --accent-line: rgba(62, 224, 143, 0.45);
+    --code-bg: #0D1117;
+
+    --sidebar-bg: #0C0F14;
+    --sidebar-fg: #A3AEC0;
+    --sidebar-non-existant: #566072;
+    --sidebar-active: #3EE08F;
+    --sidebar-spacer: #262E3B;
+
+    --scrollbar: #2F3847;
+
+    --icons: #8B96A8;
+    --icons-hover: #EAF0F7;
+
+    --links: #3EE08F;
+
+    --inline-code-color: #EAF0F7;
+
+    --theme-popup-bg: #10141B;
+    --theme-popup-border: #262E3B;
+    --theme-hover: #141A23;
+
+    --quote-bg: #10141B;
+    --quote-border: #262E3B;
+
+    --warning-border: #F5B84B;
+
+    --table-border-color: #262E3B;
+    --table-header-bg: #141A23;
+    --table-alternate-bg: #0D1016;
+
+    --searchbar-border-color: #262E3B;
+    --searchbar-bg: #10141B;
+    --searchbar-fg: #EAF0F7;
+    --searchbar-shadow-color: rgba(62, 224, 143, 0.35);
+    --searchresults-header-fg: #8B96A8;
+    --searchresults-border-color: #262E3B;
+    --searchresults-li-bg: #141A23;
+    --search-mark-bg: rgba(245, 184, 75, 0.35);
+
+    --color-scheme: dark;
+
+    /* About #8B96A8, and #3EE08F on hover. */
+    --copy-button-filter: invert(64%) sepia(9%) saturate(512%) hue-rotate(179deg) brightness(91%) contrast(86%);
+    --copy-button-filter-hover: invert(76%) sepia(43%) saturate(722%) hue-rotate(90deg) brightness(96%) contrast(88%);
+
+    --footnote-highlight: #3EE08F;
+
+    --overlay-bg: rgba(5, 7, 10, 0.65);
+
+    --blockquote-note-color: #6AA8FF;
+    --blockquote-tip-color: #3EE08F;
+    --blockquote-important-color: #B49CFF;
+    --blockquote-warning-color: #F5B84B;
+    --blockquote-caution-color: #FF5D5D;
+
+    --sidebar-header-border-color: #262E3B;
+
+    --hl-keyword: #B49CFF;
+    --hl-string: #3EE08F;
+    --hl-number: #F5B84B;
+    --hl-attr: #6AA8FF;
+    --hl-title: #5FE0F5;
+    --hl-comment: #6B7689;
+    --hl-meta: #FF8FC7;
+    --hl-deletion: #FF5D5D;
+}
+
+/* Light: the same hues, darkened to keep text contrast on white. */
+.light {
+    --bg: #FFFFFF;
+    --fg: #273041;
+    --fg-strong: #0F141B;
+    --fg-dim: #586276;
+    --fg-faint: #8590A2;
+    --panel: #F5F7FA;
+    --panel2: #EEF1F5;
+    --line: #DFE4EB;
+    --line-soft: #EBEEF3;
+    --accent: #0B7D4A;
+    --accent-soft: rgba(11, 125, 74, 0.09);
+    --accent-line: rgba(11, 125, 74, 0.35);
+    --code-bg: #F6F8FA;
+
+    --sidebar-bg: #FAFBFC;
+    --sidebar-fg: #3A4456;
+    --sidebar-non-existant: #8590A2;
+    --sidebar-active: #0B7D4A;
+    --sidebar-spacer: #DFE4EB;
+
+    --scrollbar: #C9D0DA;
+
+    --icons: #6A7487;
+    --icons-hover: #0F141B;
+
+    --links: #0B7D4A;
+
+    --inline-code-color: #1A2230;
+
+    --theme-popup-bg: #FFFFFF;
+    --theme-popup-border: #DFE4EB;
+    --theme-hover: #F1F4F7;
+
+    --quote-bg: #F5F7FA;
+    --quote-border: #DFE4EB;
+
+    --warning-border: #B7791F;
+
+    --table-border-color: #DFE4EB;
+    --table-header-bg: #F1F4F7;
+    --table-alternate-bg: #FAFBFC;
+
+    --searchbar-border-color: #DFE4EB;
+    --searchbar-bg: #FFFFFF;
+    --searchbar-fg: #0F141B;
+    --searchbar-shadow-color: rgba(11, 125, 74, 0.3);
+    --searchresults-header-fg: #586276;
+    --searchresults-border-color: #DFE4EB;
+    --searchresults-li-bg: #F1F4F7;
+    --search-mark-bg: rgba(245, 184, 75, 0.45);
+
+    --color-scheme: light;
+
+    /* About #6A7487, and #0B7D4A on hover. */
+    --copy-button-filter: invert(47%) sepia(9%) saturate(780%) hue-rotate(182deg) brightness(92%) contrast(86%);
+    --copy-button-filter-hover: invert(30%) sepia(84%) saturate(569%) hue-rotate(111deg) brightness(92%) contrast(93%);
+
+    --footnote-highlight: #0B7D4A;
+
+    --overlay-bg: rgba(15, 20, 27, 0.35);
+
+    --blockquote-note-color: #1F5FD1;
+    --blockquote-tip-color: #0B7D4A;
+    --blockquote-important-color: #6B4FD8;
+    --blockquote-warning-color: #A86A00;
+    --blockquote-caution-color: #C62828;
+
+    --sidebar-header-border-color: #DFE4EB;
+
+    --hl-keyword: #6B4FD8;
+    --hl-string: #0B7D4A;
+    --hl-number: #A86A00;
+    --hl-attr: #1F5FD1;
+    --hl-title: #00788A;
+    --hl-comment: #7A8496;
+    --hl-meta: #B4307A;
+    --hl-deletion: #C62828;
+}

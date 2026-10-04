@@ -6,3 +6,5 @@ routes = [{ pattern = "artifactize.dev", custom_domain = true }]
 
 [assets]
 directory = "./dist"
+# /docs/missing serves dist/docs/404.html (mdBook's), anything else dist/404.html.
+not_found_handling = "404-page"

@@ -48,7 +48,7 @@ What it demonstrates:
 
 ## Check the tools (no model needed)
 
-You need `artifactize` on your `PATH` ([Install](../../docs/INSTALL.md):
+You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/getting-started/install.html):
 `cargo install --path crates/artifactize --locked`), plus `python3`.
 
 ```sh
@@ -92,7 +92,7 @@ present, without calling any provider.
 artifactize never remaps it. Use `--profile` together with
 `--eval spec/review`, because a named profile must exist on every included
 eval and `spec/signoff` is a Human eval. To change the default instead, edit
-`backend` and `model` in `profile`. See [Agent reviews](../../README.md#agent-reviews)
+`backend` and `model` in `profile`. See [Agent reviews](https://artifactize.dev/docs/guides/agent-evals.html#agent-reviews)
 for details on each backend.
 
 ```sh

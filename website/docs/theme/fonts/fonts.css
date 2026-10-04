@@ -1,0 +1,3 @@
+/* The brand fonts load from /fonts/fonts.css, shared with the landing page
+   (see index.hbs). This file only keeps mdBook from bundling its default
+   Open Sans and Source Code Pro. */

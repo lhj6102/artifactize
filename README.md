@@ -15,8 +15,8 @@ through waiting Human sign-offs. It runs on Linux and WSL.
 
 Every non-DROP item in the [CCDD 7.0 capability inventory](docs/ccdd-7-inventory.md)
 is checked off; the [plan](docs/PLAN.md) records the lean scope and what was dropped.
-Start with [Install](docs/INSTALL.md): prerequisites, backend setup, a 5-minute
-quick start, the monitor and cleanup.
+Start with [Install](https://artifactize.dev/docs/getting-started/install.html): prerequisites, backend setup, a 5-minute
+[quick start](https://artifactize.dev/docs/getting-started/quick-start.html), the monitor and cleanup.
 
 ## Get started
 
@@ -33,12 +33,12 @@ artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused
 ```
 
-[Install](docs/INSTALL.md) has the prerequisites, backend setup and the full
-quick start.
+[Install](https://artifactize.dev/docs/getting-started/install.html) has the prerequisites, backend setup and the full
+[quick start](https://artifactize.dev/docs/getting-started/quick-start.html).
 
 ## Examples
 
-Install the binary as described in [Install](docs/INSTALL.md), then try the
+Install the binary as described in [Install](https://artifactize.dev/docs/getting-started/install.html), then try the
 example projects. Each README lists the exact commands:
 
 - [Runtime relations](examples/runtime-relations/README.md): runtime evals over
@@ -52,7 +52,7 @@ example projects. Each README lists the exact commands:
 - [Family](examples/family/README.md): one family declaration with an instance
   list, parameters and variants, shared and per-instance material, family
   selectors, and the fingerprint script form.
-- [Team walkthrough](docs/team-walkthrough.md): two machines and CI reuse each
+- [Team walkthrough](https://artifactize.dev/docs/guides/team-walkthrough.html): two machines and CI reuse each
   other's verdicts through one `artifactize server`.
 
 ## Folder configuration
@@ -109,13 +109,13 @@ Artifact is reviewed again. It takes one of two forms:
   [content fingerprint](#content-fingerprint). Every field is optional and these
   are the defaults, so `"fingerprint": {}` covers the whole owner folder.
 - `{"script":{"command":"/bin/sh","args":["fingerprint.sh"]}}`, an owner-written
-  [fingerprint script](docs/reference.md#fingerprint-scripts), optionally with
+  [fingerprint script](https://artifactize.dev/docs/reference/artifactize-json.html#fingerprint-scripts), optionally with
   `files` (paths that must exist, never hashed) and `timeoutMs`; `weight` is rejected.
 
-One folder can also declare a [family](docs/reference.md#artifact-families) of
+One folder can also declare a [family](https://artifactize.dev/docs/reference/artifactize-json.html#artifact-families) of
 instances, as in the [family example](examples/family/README.md). Discovery rules
 and rejected legacy fields are in
-[Declaration validation](docs/reference.md#declaration-validation).
+[Declaration validation](https://artifactize.dev/docs/reference/artifactize-json.html#declaration-validation).
 
 ### Content fingerprint
 
@@ -147,8 +147,8 @@ the chosen scope.
   shallower one. Explicitly named `files` are never ignored.
 
 How dependency entries are hashed, the walk limits and the recorded manifest are
-in the [reference](docs/reference.md#content-fingerprint); the script form is under
-[fingerprint scripts](docs/reference.md#fingerprint-scripts).
+in the [reference](https://artifactize.dev/docs/reference/artifactize-json.html#content-fingerprint); the script form is under
+[fingerprint scripts](https://artifactize.dev/docs/reference/artifactize-json.html#fingerprint-scripts).
 
 ### Agent reviews
 
@@ -170,7 +170,7 @@ only `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, respectively. ChatGPT uses the sto
 Sign in with ChatGPT credentials, never an API-key fallback. `claude` runs the
 unmodified official `claude` CLI from `PATH`, already signed in, with the eval's
 tools served over MCP by the internal `artifactize mcp` command (see
-[Tool diagnostics and MCP](docs/reference.md#tool-diagnostics-and-mcp)); artifactize never reads
+[Tool diagnostics and MCP](https://artifactize.dev/docs/reference/agent-tools.html#tool-diagnostics-and-mcp)); artifactize never reads
 Claude credentials (launch controls are in `docs/PLAN.md`).
 `provider` and `effort` are not config aliases.
 
@@ -202,7 +202,7 @@ deadline. `maxTokens` and `maxToolCalls` are enforced client-side before further
 execute; neither becomes a ChatGPT request parameter.
 
 The ChatGPT wire contract, the rig adapter, retries, tool results and usage
-counters are in [Agent backends](docs/reference.md#agent-backends).
+counters are in [Agent backends](https://artifactize.dev/docs/guides/agent-evals.html#agent-backends).
 
 ### Agent tools
 
@@ -248,8 +248,8 @@ wrapper on Agent tools.
 ```
 
 Field rules, the built-in tools, the `json` and `plain` protocols and their limits
-are in the [reference](docs/reference.md#agent-tools).
-[`tools check`](docs/reference.md#tool-diagnostics-and-mcp) validates declared
+are in the [reference](https://artifactize.dev/docs/reference/agent-tools.html#agent-tools).
+[`tools check`](https://artifactize.dev/docs/reference/agent-tools.html#tool-diagnostics-and-mcp) validates declared
 tools and runs one without a review.
 
 ### Human tools
@@ -283,7 +283,7 @@ Descriptions follow the Agent description rules, including `{artifactName}`.
 ```
 
 Placeholders, executable resolution and the `launch` and `output` kinds are in the
-[reference](docs/reference.md#human-tools).
+[reference](https://artifactize.dev/docs/reference/human-tools.html#human-tools).
 
 ## Verify and Runs
 
@@ -322,7 +322,7 @@ detached worker.
 
 Text output prints one line per request and marks a result taken from another
 request's execution (a fingerprint hit, or a joined execution) with its source Run
-(results from a [remote review store](docs/reference.md#remote-review-store-client) also name their
+(results from a [remote review store](https://artifactize.dev/docs/reference/review-store.html#remote-review-store-client) also name their
 producer or Human reviewer):
 
 ```text
@@ -361,9 +361,9 @@ create missing state, or require a repository to still exist. There is no
 separate `history` command.
 
 Review policy, `--force`, `--max-executions`, selection files and `--profile`
-variants are in the [reference](docs/reference.md#runtime-cli), with the
-[command table](docs/reference.md#command-reference) and the
-[state layout](docs/reference.md#state).
+variants are in the [reference](https://artifactize.dev/docs/reference/cli.html#runtime-cli), with the
+[command table](https://artifactize.dev/docs/reference/cli.html#command-reference) and the
+[state layout](https://artifactize.dev/docs/reference/state-cache-limits.html#state).
 
 ## Status and static graph
 
@@ -456,8 +456,8 @@ fingerprint has only one entry; multiple definitions require the full hash from
 any active definition for that fingerprint prevents removal).
 
 How reuse keys are built and what a hit returns is in
-[Completed result reuse](docs/reference.md#completed-result-reuse); entry and byte
-limits are in [Cache limits](docs/reference.md#cache-limits).
+[Completed result reuse](https://artifactize.dev/docs/concepts/fingerprints-and-reuse.html#completed-result-reuse); entry and byte
+limits are in [Cache limits](https://artifactize.dev/docs/reference/state-cache-limits.html#cache-limits).
 
 ## Monitor
 
@@ -545,7 +545,7 @@ Ctrl-C/SIGTERM exits 2, cleans owned processes, and ends the Run as cancelled;
 previously created Human requests remain available. Missing non-Human obligations
 without any pending Human request return INCOMPLETE (4) immediately.
 
-The [reference](docs/reference.md#human-reviews) has the library API, the
+The [reference](https://artifactize.dev/docs/reference/human-tools.html#human-reviews) has the library API, the
 `request list` and `request show` fields and Run summaries.
 
 ## Review
@@ -607,14 +607,14 @@ eligible Run is considered. `--dry-run` returns `wouldRemove` without deleting;
 normal JSON returns `removed`, and both include `skippedRuns`.
 
 What `doctor` checks, the `models` output and exactly which directories `prune`
-removes are in the [reference](docs/reference.md#local-diagnostics-and-maintenance).
+removes are in the [reference](https://artifactize.dev/docs/reference/state-cache-limits.html#doctor-models-and-prune).
 
 ## Team review store
 
 Machines and CI can reuse each other's verdicts through one shared review store,
 `artifactize server` ([design](docs/design/remote-store.md)). Each machine keeps its
 own state. The store holds one immutable record per (fingerprint, Eval definition
-hash), and the first writer wins. The [team walkthrough](docs/team-walkthrough.md)
+hash), and the first writer wins. The [team walkthrough](https://artifactize.dev/docs/guides/team-walkthrough.html)
 runs two machines and CI end to end.
 
 **Server.** Run the store on a small host, with its own state directory:
@@ -631,7 +631,7 @@ TLS reverse proxy or a tunnel in front, because clients require HTTPS except on
 loopback. Back up `review-store.sqlite` with `sqlite3 .backup`. Upgrade the server
 before its clients: a 0.4 server keeps serving 0.3 clients, so machines can follow
 one at a time. See
-[Review store server](docs/reference.md#review-store-server) for the full reference.
+[Review store server](https://artifactize.dev/docs/reference/review-store.html#review-store-server) for the full reference.
 
 **Clients.** Each machine signs in once. The token is read from stdin and is not
 echoed:
@@ -648,7 +648,7 @@ From then on:
 - `request submit` publishes Human sign-offs;
 - `remote push` sends results produced while the store was unreachable.
 
-See [Remote review store client](docs/reference.md#remote-review-store-client) for the full reference.
+See [Remote review store client](https://artifactize.dev/docs/reference/review-store.html#remote-review-store-client) for the full reference.
 
 **CI.** Configure CI through the environment only:
 
@@ -695,7 +695,7 @@ at both levels, so keep secrets out of the fields that `passSchema` and
 
 ## Reference
 
-[docs/reference.md](docs/reference.md) is the detailed reference: every command
+[The reference](https://artifactize.dev/docs/reference/overview.html) is the detailed reference: every command
 and flag, exact limits, schemas and protocols, internal library APIs, backend wire
 details and the state layout.
 

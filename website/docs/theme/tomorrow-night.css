@@ -1,0 +1,73 @@
+/* artifactize syntax colors for highlight.js. The colors come from the theme
+   variables in css/variables.css, so the same file serves the light theme
+   (highlight.css) and the dark theme (tomorrow-night.css). */
+
+.hljs {
+    color: var(--fg);
+    background: var(--code-bg);
+}
+
+.hljs-comment,
+.hljs-quote {
+    color: var(--hl-comment);
+    font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-type,
+.hljs-doctag {
+    color: var(--hl-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-template-tag {
+    color: var(--hl-string);
+}
+
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable,
+.hljs-template-variable {
+    color: var(--hl-number);
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-params,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+    color: var(--hl-attr);
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-built_in,
+.hljs-function .hljs-title {
+    color: var(--hl-title);
+}
+
+.hljs-meta,
+.hljs-meta .hljs-keyword,
+.hljs-link {
+    color: var(--hl-meta);
+}
+
+.hljs-deletion {
+    color: var(--hl-deletion);
+}
+
+.hljs-emphasis {
+    font-style: italic;
+}
+
+.hljs-strong {
+    font-weight: 700;
+}

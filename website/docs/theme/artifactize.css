@@ -1,0 +1,737 @@
+/* artifactize docs: brand restyle of mdBook 0.5's chrome and content.
+   Colors come from css/variables.css; fonts from /fonts/fonts.css. */
+
+/* ---------- Base ---------- */
+
+html {
+    font-family: var(--sans-font);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+}
+
+body {
+    font-size: 1.6rem;
+    font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+    background: var(--accent-soft);
+}
+
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+/* ---------- Menu bar ---------- */
+
+#mdbook-menu-bar {
+    align-items: center;
+    min-height: var(--menu-bar-height);
+    gap: 2px;
+    padding: 0 8px;
+    background-color: color-mix(in srgb, var(--bg) 86%, transparent);
+    -webkit-backdrop-filter: saturate(140%) blur(12px);
+    backdrop-filter: saturate(140%) blur(12px);
+    border-block-end-color: transparent;
+}
+
+#mdbook-menu-bar.bordered {
+    border-block-end-color: var(--line);
+}
+
+/* Let the left group's buttons join the bar so they can be reordered:
+   [toc] [wordmark] ... [search] [theme] [Home] [print] [GitHub] */
+#mdbook-menu-bar .left-buttons {
+    display: contents;
+}
+
+#mdbook-sidebar-toggle { order: 1; }
+#mdbook-menu-bar .az-brand { order: 2; }
+#mdbook-menu-bar .menu-title { order: 3; }
+#mdbook-search-toggle { order: 4; }
+#mdbook-theme-toggle { order: 5; }
+#mdbook-menu-bar .right-buttons { order: 6; }
+
+#mdbook-menu-bar .icon-button,
+#mdbook-menu-bar .right-buttons a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+    height: 40px;
+    padding: 0 10px;
+    border-radius: 8px;
+    line-height: 1;
+    color: var(--icons);
+    transition: color 0.15s, background-color 0.15s;
+}
+
+#mdbook-menu-bar .icon-button:hover,
+#mdbook-menu-bar .right-buttons a:hover {
+    color: var(--icons-hover);
+    background-color: var(--theme-hover);
+}
+
+#mdbook-menu-bar .fa-svg {
+    padding: 0;
+    line-height: 1;
+    font-size: 1.7rem;
+}
+
+#mdbook-menu-bar .icon-button .fa-svg,
+#mdbook-menu-bar .right-buttons .fa-svg {
+    color: inherit;
+}
+
+.menu-title {
+    flex: 1;
+    align-self: stretch;
+    min-width: 8px;
+    cursor: default;
+}
+
+.az-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-inline-start: 6px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    color: var(--fg-strong);
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.az-brand:hover {
+    text-decoration: none;
+}
+
+.az-mark {
+    width: 24px;
+    height: 24px;
+    flex: none;
+    color: var(--fg-strong);
+}
+
+.az-word {
+    font-family: var(--heading-font);
+    font-size: 1.9rem;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+}
+
+.az-tag {
+    font-family: var(--mono-font);
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+    padding: 3px 8px;
+    border: 1px solid var(--accent-line);
+    border-radius: 999px;
+    background: var(--accent-soft);
+}
+
+.right-buttons {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin: 0;
+}
+
+#mdbook-menu-bar .right-buttons a.az-link,
+#mdbook-menu-bar .right-buttons a.az-github {
+    gap: 8px;
+    font-size: 1.45rem;
+    font-weight: 500;
+}
+
+@media (max-width: 640px) {
+    .az-github-label,
+    .az-tag {
+        display: none;
+    }
+}
+
+@media (max-width: 420px) {
+    #mdbook-menu-bar {
+        padding: 0 4px;
+    }
+    #mdbook-menu-bar .icon-button,
+    #mdbook-menu-bar .right-buttons a {
+        min-width: 34px;
+        padding: 0 6px;
+    }
+    .az-brand {
+        margin-inline-start: 0;
+        gap: 8px;
+        padding: 6px 4px;
+    }
+    .az-word {
+        font-size: 1.75rem;
+    }
+    #mdbook-menu-bar .print-button {
+        display: none;
+    }
+    #mdbook-menu-bar .right-buttons a[href$="print.html"] {
+        display: none;
+    }
+}
+
+/* Theme popup: it opens from the right side of the bar. */
+.theme-popup {
+    left: auto;
+    right: 120px;
+    top: calc(var(--menu-bar-height) - 6px);
+    min-width: 140px;
+    padding: 6px;
+    font-size: 1.45rem;
+    border-radius: var(--radius);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+}
+
+.theme-popup .theme {
+    padding: 6px 12px 6px 28px;
+    border-radius: var(--radius-sm);
+    line-height: 1.5;
+}
+
+.theme-selected::before {
+    margin-inline-start: -18px;
+    width: 18px;
+    color: var(--accent);
+}
+
+/* ---------- Search ---------- */
+
+#mdbook-searchbar {
+    padding: 12px 16px;
+    border-radius: var(--radius);
+    font-size: 1.6rem;
+    font-family: var(--sans-font);
+}
+
+#mdbook-searchbar:focus,
+#mdbook-searchbar.active {
+    outline: none;
+    border-color: var(--accent-line);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.searchresults-outer {
+    border-block-end-style: solid;
+    border-block-end-color: var(--line);
+}
+
+ul#mdbook-searchresults li {
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+}
+
+ul#mdbook-searchresults li a {
+    font-weight: 600;
+}
+
+ul#mdbook-searchresults span.teaser {
+    color: var(--fg-dim);
+    line-height: 1.55;
+}
+
+/* ---------- Sidebar ---------- */
+
+.sidebar {
+    font-size: 1.45rem;
+    border-inline-end: 1px solid var(--line-soft);
+}
+
+.sidebar .sidebar-scrollbox {
+    padding: 18px 14px 40px;
+}
+
+.chapter {
+    line-height: 1.5;
+}
+
+.chapter li.part-title {
+    margin: 26px 10px 6px;
+    font-family: var(--heading-font);
+    font-size: 1.15rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--fg-faint);
+}
+
+.chapter li.chapter-item {
+    margin-block-start: 2px;
+}
+
+.chapter li a {
+    display: block;
+    flex: 1;
+    padding: 6px 10px;
+    border-radius: 7px;
+    color: var(--sidebar-fg);
+    transition: color 0.12s, background-color 0.12s;
+}
+
+.chapter li a:hover {
+    color: var(--fg-strong);
+    background-color: var(--theme-hover);
+    text-decoration: none;
+}
+
+.chapter li a.active {
+    color: var(--sidebar-active);
+    background-color: var(--accent-soft);
+    font-weight: 600;
+    box-shadow: inset 2px 0 0 var(--sidebar-active);
+}
+
+.chapter li a code {
+    font-size: 0.92em;
+    line-height: 1.4;
+    background: none;
+    border: 0;
+    padding: 0;
+    color: inherit;
+}
+
+.chapter .section {
+    padding-inline-start: 12px;
+    margin: 2px 0 4px;
+}
+
+.chapter .spacer {
+    height: 1px;
+    margin: 14px 10px;
+}
+
+.chapter-fold-toggle {
+    padding: 6px 8px;
+    border-radius: 6px;
+}
+
+/* "On this page": the headings of the current chapter. */
+.on-this-page {
+    margin: 4px 0 8px 14px;
+    padding-inline-start: 8px;
+    border-inline-start: 1px solid var(--line);
+}
+
+.chapter li.header-item {
+    margin: 0;
+    line-height: 1.4;
+}
+
+.chapter li.header-item a {
+    padding: 4px 8px;
+    font-size: 1.32rem;
+    color: var(--fg-dim);
+}
+
+.chapter li.header-item a:hover {
+    color: var(--fg-strong);
+}
+
+.chapter a.current-header {
+    color: var(--sidebar-active);
+    background: none;
+    box-shadow: inset 2px 0 0 var(--sidebar-active);
+    border-radius: 0 6px 6px 0;
+}
+
+.sidebar-resize-handle .sidebar-resize-indicator {
+    color: var(--fg-faint);
+}
+
+/* ---------- Content ---------- */
+
+.content {
+    padding: 0 0 64px;
+}
+
+.content main {
+    padding: 8px 0 0;
+}
+
+.content p,
+.content ol,
+.content ul {
+    line-height: 1.72;
+}
+
+.content li + li {
+    margin-top: 0.3em;
+}
+
+.content strong {
+    color: var(--fg-strong);
+    font-weight: 650;
+}
+
+.content h1,
+.content h2,
+.content h3,
+.content h4,
+.content h5 {
+    font-family: var(--heading-font);
+    color: var(--fg-strong);
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+.content h1 {
+    margin: 36px 0 20px;
+    font-size: 3.6rem;
+    font-weight: 700;
+    letter-spacing: -0.035em;
+}
+
+.content h2 {
+    margin-top: 2.4em;
+    padding-top: 0.2em;
+    font-size: 2.5rem;
+    font-weight: 650;
+}
+
+.content h3 {
+    margin-top: 2em;
+    font-size: 1.95rem;
+    font-weight: 650;
+}
+
+.content h4 {
+    font-size: 1.7rem;
+    font-weight: 650;
+}
+
+.content h1 code,
+.content h2 code,
+.content h3 code {
+    font-size: 0.9em;
+    padding: 0.05em 0.3em;
+}
+
+/* Heading anchors: no "»" marker, just a subtle hover. */
+h1:target::before,
+h2:target::before,
+h3:target::before,
+h4:target::before,
+h5:target::before,
+h6:target::before,
+dt:target::before {
+    content: none;
+}
+
+.content :target {
+    scroll-margin-top: calc(var(--menu-bar-height) + 16px);
+}
+
+.content .header:link,
+.content .header:visited {
+    color: inherit;
+}
+
+.content .header:hover {
+    text-decoration: none;
+}
+
+.content .header:hover::after {
+    content: "#";
+    margin-inline-start: 0.35em;
+    color: var(--fg-faint);
+    font-weight: 400;
+}
+
+.content a:link,
+.content a:visited {
+    color: var(--links);
+    text-decoration: none;
+    background-image: linear-gradient(currentColor, currentColor);
+    background-size: 0 1px;
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+}
+
+.content a:hover {
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+}
+
+.content a.header:hover,
+.content a.az-pager:hover {
+    text-decoration: none;
+}
+
+.content hr {
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 3em 0;
+}
+
+/* Inline code. */
+:not(pre) > code,
+:not(pre) > .hljs {
+    padding: 0.14em 0.4em;
+    border-radius: 5px;
+    background: var(--panel2);
+    border: 1px solid var(--line-soft);
+    color: var(--inline-code-color);
+    font-size: 0.86em;
+    white-space: break-spaces;
+}
+
+a > code,
+a:not(pre) > .hljs {
+    color: inherit;
+}
+
+:not(pre):not(a) > .hljs {
+    color: var(--inline-code-color);
+}
+
+/* Code blocks. */
+pre {
+    margin: 1.4em 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--code-bg);
+}
+
+pre > code,
+pre > code.hljs {
+    padding: 16px 18px;
+    border-radius: var(--radius);
+    font-size: 1.36rem;
+    line-height: 1.65;
+    background: var(--code-bg);
+    overflow-x: auto;
+    tab-size: 4;
+}
+
+code {
+    font-family: var(--mono-font) !important;
+    font-variant-ligatures: none;
+}
+
+pre > .buttons {
+    top: 8px;
+    right: 8px;
+    padding: 0;
+}
+
+pre > .buttons button {
+    margin: 0;
+    padding: 5px 6px 2px;
+    border-radius: 7px;
+    border-color: var(--line);
+    background-color: var(--panel2);
+}
+
+pre > .buttons button.clip-button::before {
+    transform: scale(0.85);
+}
+
+/* Tables. */
+.table-wrapper {
+    margin: 1.6em 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+}
+
+.content table {
+    width: 100%;
+    margin: 0;
+    font-size: 1.42rem;
+    line-height: 1.55;
+    border-collapse: collapse;
+}
+
+.content table thead {
+    background: var(--table-header-bg);
+}
+
+.content table thead tr {
+    border: 0;
+}
+
+.content table th,
+.content table td {
+    padding: 9px 14px;
+    text-align: start;
+    vertical-align: top;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+}
+
+.content table th {
+    font-family: var(--heading-font);
+    font-weight: 650;
+    color: var(--fg-strong);
+    white-space: nowrap;
+}
+
+.content table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.content table tbody tr:nth-child(2n) {
+    background: var(--table-alternate-bg);
+}
+
+.content table code {
+    white-space: nowrap;
+}
+
+/* Blockquotes. */
+blockquote {
+    margin: 1.6em 0;
+    padding: 4px 20px;
+    border: 0;
+    border-inline-start: 3px solid var(--line);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    background: var(--quote-bg);
+    color: var(--fg);
+}
+
+/* Admonitions (GitHub-style "> [!NOTE]" blocks). */
+.blockquote-tag {
+    padding: 12px 18px;
+    border-inline-start-width: 3px;
+    border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.blockquote-tag-note { background: color-mix(in srgb, var(--blockquote-note-color) 9%, transparent); }
+.blockquote-tag-tip { background: color-mix(in srgb, var(--blockquote-tip-color) 9%, transparent); }
+.blockquote-tag-important { background: color-mix(in srgb, var(--blockquote-important-color) 9%, transparent); }
+.blockquote-tag-warning { background: color-mix(in srgb, var(--blockquote-warning-color) 10%, transparent); }
+.blockquote-tag-caution { background: color-mix(in srgb, var(--blockquote-caution-color) 9%, transparent); }
+
+.blockquote-tag-title {
+    margin: 0 0 6px;
+    font-family: var(--heading-font);
+    font-size: 1.4rem;
+    letter-spacing: 0.02em;
+}
+
+.blockquote-tag p {
+    margin: 0.4em 0;
+}
+
+kbd {
+    padding: 3px 6px;
+    border-radius: 5px;
+    background: var(--panel2);
+    border: 1px solid var(--line);
+    box-shadow: inset 0 -1px 0 var(--line);
+    font-family: var(--mono-font);
+    line-height: 1;
+}
+
+/* ---------- Previous / next ---------- */
+
+.nav-wide-wrapper {
+    display: none !important;
+}
+
+.nav-wrapper {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    max-width: var(--content-max-width);
+    margin: 56px auto 0;
+    padding-top: 28px;
+    border-top: 1px solid var(--line);
+}
+
+.az-pager {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    padding: 14px 18px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    text-decoration: none;
+    transition: border-color 0.15s, background-color 0.15s;
+}
+
+.az-pager:hover {
+    border-color: var(--accent-line);
+    background: var(--accent-soft);
+}
+
+.az-next {
+    grid-column: 2;
+    text-align: end;
+    align-items: flex-end;
+}
+
+.az-pager-dir {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--fg-dim);
+}
+
+.az-pager-title {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--heading-font);
+    font-size: 1.7rem;
+    font-weight: 650;
+    color: var(--fg-strong);
+}
+
+@media (max-width: 520px) {
+    .nav-wrapper {
+        grid-template-columns: 1fr;
+    }
+    .az-next {
+        grid-column: 1;
+    }
+}
+
+/* ---------- Help popup ---------- */
+
+#mdbook-help-popup {
+    border-radius: var(--radius);
+    border-color: var(--line);
+    background: var(--panel);
+}
+
+/* ---------- Small screens ---------- */
+
+@media (max-width: 620px) {
+    .content h1 {
+        margin-top: 24px;
+        font-size: 2.9rem;
+    }
+    .content h2 {
+        font-size: 2.2rem;
+    }
+    pre > code,
+    pre > code.hljs {
+        padding: 14px 14px;
+        font-size: 1.28rem;
+    }
+    .content table th,
+    .content table td {
+        padding: 8px 10px;
+    }
+    .content table code {
+        white-space: normal;
+    }
+}
