@@ -86,7 +86,7 @@ impl Session {
         let Some(principal) = self.principal().await? else {
             return Ok(Vec::new());
         };
-        if !principal.scopes.iter().any(|scope| scope == "read") {
+        if !has_scope(principal, "read") {
             return Ok(Vec::new());
         }
         let entries = match self.remote.lookup(keys).await {
@@ -172,27 +172,17 @@ impl Session {
 
     /// Publish a result whose local settle published its cache entry. Nothing is sent while
     /// the remote is unavailable or without the publish scope; Human results need `human`.
-    pub async fn publish(&self, execution: &Execution) -> Result<(), String> {
+    async fn publish(&self, execution: &Execution) -> Result<(), String> {
         let Some(principal) = self.principal().await? else {
             return Ok(());
         };
-        let scope = |name: &str| principal.scopes.iter().any(|scope| scope == name);
-        if !scope("publish") {
+        if !has_scope(principal, "publish") {
             return Ok(());
         }
-        if execution.profile["kind"] == "human" && !scope("human") {
-            warn(&format!(
-                "This Human sign-off stays local: remote token {} lacks the human scope.",
-                principal.principal
-            ));
-            return Ok(());
-        }
-        let record = match Record::new(execution, self.remote.share == Share::Full) {
-            // `.` and `..` cannot be a URL path segment.
-            Ok(record) if !matches!(record.stale_key.as_str(), "." | "..") => record,
-            Ok(_) => return Ok(()),
-            Err(error) => {
-                warn(&format!("This result stays local: {error}"));
+        let record = match record(execution, principal, self.remote.share) {
+            Ok(record) => record,
+            Err(reason) => {
+                warn(&format!("This result stays local: {reason}."));
                 return Ok(());
             }
         };
@@ -201,4 +191,31 @@ impl Session {
             Err(failure) => self.failed(failure),
         }
     }
+}
+
+pub(super) fn has_scope(principal: &Principal, name: &str) -> bool {
+    principal.scopes.iter().any(|scope| scope == name)
+}
+
+/// The record a publishing token may send for a local result, or why it stays local.
+pub(super) fn record(
+    execution: &Execution,
+    principal: &Principal,
+    share: Share,
+) -> Result<Record, String> {
+    if execution.profile["kind"] == "human" && !has_scope(principal, "human") {
+        return Err(format!(
+            "remote token {} lacks the human scope",
+            principal.principal
+        ));
+    }
+    let record = Record::new(execution, share == Share::Full)?;
+    // `.` and `..` cannot be a URL path segment.
+    if matches!(record.stale_key.as_str(), "." | "..") {
+        return Err(format!(
+            "stale key {} cannot be a URL path segment",
+            record.stale_key
+        ));
+    }
+    Ok(record)
 }

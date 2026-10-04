@@ -114,6 +114,31 @@ For a real Agent review, put an exact model ID in the profile you use in
 credentials the review is recorded as ERROR and exits 2. See the
 [agent-tools README](../examples/agent-tools/README.md).
 
+## Team review store (optional)
+
+To share verdicts across machines and CI, run `artifactize server` on one host and
+give each machine a token:
+
+```sh
+artifactize --state-dir /srv/artifactize server token add alice-laptop --scopes read,publish,human
+artifactize --state-dir /srv/artifactize server token add ci --scopes read
+artifactize --state-dir /srv/artifactize server run   # loopback; put a TLS proxy or tunnel in front
+```
+
+On each machine:
+
+```sh
+artifactize remote login https://reviews.example/     # paste the token; it is not echoed
+artifactize remote status
+```
+
+`verify` then reuses verdicts from the store and publishes its own. CI needs
+only `ARTIFACTIZE_REMOTE` and a read-only `ARTIFACTIZE_REMOTE_TOKEN`. If the
+store is unreachable, `verify` warns once and reviews locally. `doctor` checks
+the remote configuration offline. See
+[Team review store](../README.md#team-review-store) and the
+[team walkthrough](team-walkthrough.md).
+
 ## Monitor
 
 ```sh

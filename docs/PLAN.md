@@ -98,6 +98,7 @@ The module boundaries are fixed; later tasks add code inside them. The CLI and t
 | `agent`, `llm`, `auth` | Agent loop, strict verdict and one repair, the four backends, ChatGPT login, transient retries, usage |
 | `human` | Waiting state, claim lock, claimant tools, submission |
 | `diagnostics` | `doctor`, `tools check` |
+| `remote`, `server` | Shared review records, read-through/write-through to a remote review store, `remote push`; the `artifactize server` store (added after 0.1.0) |
 | `monitor` | ratatui TUI over read-only queries |
 | `cli` | Commands, flags, output and exit codes |
 
@@ -179,6 +180,29 @@ L.1 removed CCDD's `file-hash` mode and its fingerprints. This brings back one d
 - Walks are bounded at 10,000 entries and 1 GiB.
 - The execution keeps a bounded manifest (per-file digests and dependency entries, at most 64 KiB) so `status` can say which files or dependencies changed since the newest cached result for the same Eval definition.
 - The script form (`staleKey: {script: {...}}`) is unchanged. No `staleKey` still means no reuse.
+
+## Shared remote review store
+
+Added after 0.1.0 ([#45](https://github.com/lhj6102/artifactize/issues/45)), for the
+same hypothesis: a team on several machines and in CI should reuse each other's
+verdicts, not only one machine's. The owner-approved design is
+[remote-store.md](design/remote-store.md).
+
+- `artifactize server` (axum over its own `review-store.sqlite`) holds one
+  immutable, reduced record per (staleKey, Eval definition hash). The first writer
+  wins, and there are no cross-machine claims: duplicates are accepted.
+- Bearer tokens have the scopes `read`, `publish` and `human`. The server stamps
+  the authenticated publisher, and `token revoke --purge` deletes a token's entries.
+- The local `state.sqlite` stays the source of Runs and acts as a read-through and
+  write-through cache. Remote hits are mirrored as self-contained executions, so
+  reuse, `run show`, `cache`, GC and the monitor are unchanged. `status` looks up
+  read-only.
+- Records default to the `summary` share level (no argv, captured output, tool
+  audit or paths); `full` is opt-in.
+- Outages fail open: one warning, then local reviews. Auth, TLS and
+  configuration errors fail closed.
+- The store is configured only in `$STATE/remote.json` and the environment.
+  `remote push` publishes results produced offline.
 
 ## Phases
 

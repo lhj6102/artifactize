@@ -23,6 +23,12 @@ pub enum RemoteCommand {
     Logout,
     /// Show the URL, share level, token source, reachability, principal and scopes.
     Status,
+    /// Re-send local GREEN/RED results; keys the store already has are no-ops.
+    Push {
+        /// Report what would be sent without publishing.
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 pub(super) async fn execute(
@@ -60,6 +66,23 @@ pub(super) async fn execute(
             } else {
                 writeln!(out, "Signed out of the remote review store. The server keeps the token valid until `artifactize server token revoke`.")
                     .map_err(|e| e.to_string())?;
+            }
+            Ok(0)
+        }
+        RemoteCommand::Push { dry_run } => {
+            let report = crate::remote::push(state, repo, dry_run).await?;
+            if json {
+                print_json(&report)?;
+            } else {
+                writeln!(
+                    out,
+                    "{} {}, already in the store {}, skipped {}.",
+                    if dry_run { "Would push" } else { "Pushed" },
+                    report.pushed,
+                    report.existing,
+                    report.skipped
+                )
+                .map_err(|e| e.to_string())?;
             }
             Ok(0)
         }

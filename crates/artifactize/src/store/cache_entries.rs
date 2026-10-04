@@ -104,6 +104,30 @@ pub async fn show(
         .map_err(|e| e.to_string())
 }
 
+/// Locally produced GREEN/RED entries (never mirrors) in key order after `after`.
+pub async fn local(
+    state: &Path,
+    after: Option<(String, String)>,
+    limit: usize,
+) -> Result<Vec<Execution>, String> {
+    let Some(connection) = open(state, false).await? else {
+        return Ok(Vec::new());
+    };
+    connection
+        .call(move |db| -> Result<_, Error> {
+            let (stale_key, eval_def_hash) = after.unwrap_or_default();
+            let mut statement = db.prepare("SELECT e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE e.status IN ('GREEN','RED') AND json_extract(e.data,'$.origin') IS NULL AND (c.stale_key,c.eval_def_hash)>(?,?) ORDER BY c.stale_key,c.eval_def_hash LIMIT ?")?;
+            statement
+                .query_map(params![stale_key, eval_def_hash, limit as i64], |row| {
+                    row.get::<_, String>(0)
+                })?
+                .map(|row| Ok(serde_json::from_str(&row?)?))
+                .collect()
+        })
+        .await
+        .map_err(|e| e.to_string())
+}
+
 pub async fn remove(
     state: &Path,
     stale_key: &str,

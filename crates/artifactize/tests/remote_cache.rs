@@ -417,3 +417,61 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     let (text, _) = carol.run(&repo, &["verify", "--all"], 0);
     assert!(line(&text, "brand/signoff").contains("Human sign-off by alice"));
 }
+
+#[test]
+fn remote_push_publishes_results_produced_offline_once() {
+    let root = tempfile::tempdir().unwrap();
+    let server = Server::start(root.path());
+    let token = server.token("alice-laptop", "read,publish");
+    let offline = Machine::new(root.path(), "alice", "off", &token);
+    let alice = Machine::new(root.path(), "alice", &server.url, &token);
+    let runtime = runtime_repo(root.path(), "runtime", "v1");
+    let human = human_repo(root.path(), "human");
+    offline.run(&runtime, &["verify", "--all"], 0);
+    let run = offline.json(&human, &["verify", "--all"], 4);
+    offline.sign(&human, &run);
+    assert_eq!(server.entries(), []);
+
+    let push = |machine: &Machine, args: &[&str]| {
+        machine.json(&runtime, &[&["remote", "push"][..], args].concat(), 0)
+    };
+    assert_eq!(
+        push(&alice, &["--dry-run"]),
+        json!({"dryRun":true,"pushed":2,"existing":0,"skipped":1})
+    );
+    assert_eq!(server.entries(), []);
+    let (stdout, stderr) = alice.run(&runtime, &["remote", "push"], 0);
+    assert_eq!(stdout, "Pushed 2, already in the store 0, skipped 1.\n");
+    assert!(
+        stderr.contains("Skipped brand-v1 ") && stderr.contains("lacks the human scope"),
+        "{stderr}"
+    );
+    assert_eq!(server.entries().len(), 2);
+    assert_eq!(
+        push(&alice, &[]),
+        json!({"dryRun":false,"pushed":0,"existing":2,"skipped":1})
+    );
+
+    // Another machine reuses the pushed results; its mirrors are never pushed again.
+    let bob = Machine::new(
+        root.path(),
+        "bob",
+        &server.url,
+        &server.token("bob-laptop", "read,publish"),
+    );
+    assert_eq!(
+        bob.json(&runtime, &["verify", "--all"], 0)["executionsStarted"],
+        0
+    );
+    assert_eq!(
+        push(&bob, &[]),
+        json!({"dryRun":false,"pushed":0,"existing":0,"skipped":0})
+    );
+
+    let ci = Machine::new(root.path(), "ci", &server.url, &server.token("ci", "read"));
+    let (_, stderr) = ci.run(&runtime, &["remote", "push"], 2);
+    assert!(
+        stderr.contains("Remote token ci lacks the publish scope."),
+        "{stderr}"
+    );
+}
