@@ -60,7 +60,7 @@ impl Storage {
         };
         // This is an application-owned directory, not the user's state root.
         if metadata.mode() & 0o077 != 0 {
-            return Err("ChatGPT auth directory must have owner-only permissions (0700).".into());
+            return Err("Auth directory must have owner-only permissions (0700).".into());
         }
         Ok(Self { directory })
     }
@@ -103,11 +103,11 @@ impl Storage {
             .read_to_end(&mut data)
             .map_err(|e| e.to_string())?;
         if data.len() > 1024 * 1024 {
-            return Err("ChatGPT credential file is too large.".into());
+            return Err("Credential file is too large.".into());
         }
         serde_json::from_slice(&data)
             .map(Some)
-            .map_err(|_| "Invalid ChatGPT credential file; run `artifactize login chatgpt`.".into())
+            .map_err(|_| format!("Invalid credential file {name}; sign in again."))
     }
 
     pub fn save(&self, name: &str, value: &impl Serialize) -> Result<(), String> {
@@ -117,7 +117,7 @@ impl Storage {
             .set_permissions(fs::Permissions::from_mode(0o600))
             .map_err(|e| e.to_string())?;
         serde_json::to_writer(&mut file, value)
-            .map_err(|_| "Cannot encode ChatGPT credentials.".to_owned())?;
+            .map_err(|_| "Cannot encode credentials.".to_owned())?;
         file.flush().map_err(|e| e.to_string())?;
         file.as_file().sync_all().map_err(|e| e.to_string())?;
         file.persist(self.directory.join(name))
@@ -125,8 +125,8 @@ impl Storage {
         self.sync()
     }
 
-    pub fn remove_credentials(&self) -> Result<(), String> {
-        match fs::remove_file(self.directory.join(super::CREDENTIALS)) {
+    pub fn remove(&self, name: &str) -> Result<(), String> {
+        match fs::remove_file(self.directory.join(name)) {
             Ok(()) => self.sync(),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error.to_string()),
@@ -143,9 +143,7 @@ impl Storage {
 fn check_private_file(file: &File) -> Result<(), String> {
     let metadata = file.metadata().map_err(|e| e.to_string())?;
     if !metadata.is_file() || metadata.mode() & 0o777 != 0o600 || metadata.nlink() != 1 {
-        return Err(
-            "ChatGPT auth files must be regular, single-link, owner-only files (0600).".into(),
-        );
+        return Err("Auth files must be regular, single-link, owner-only files (0600).".into());
     }
     Ok(())
 }

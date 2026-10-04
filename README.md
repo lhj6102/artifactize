@@ -59,6 +59,9 @@ rejects `--json`). `SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`,
 | `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 0 ready, 1 not |
 | `mcp --manifest PATH` | | stdio MCP | 0; 1 server failure |
 | `login chatgpt`, `logout chatgpt` | | text or JSON | 0 |
+| `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
+| `remote logout` | | text or JSON | 0 |
+| `remote status` | | text or JSON | 0 signed in, 1 not |
 | `models openai\|anthropic\|chatgpt\|claude` | | text or JSON | 0 |
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
@@ -554,7 +557,10 @@ ChatGPT login presence and Unix-second access-token expiry come from protected l
 storage without refreshing. `claude` is located on PATH and only `--version` runs,
 with a five-second timeout and bounded output; Claude credentials are never read.
 Missing keys/login/binary and expired tokens are warnings: optional backends need
-not all be installed. Invalid config, unsafe/unwritable state, invalid auth storage
+not all be installed. The remote review store check is also offline: it reports
+the resolved URL, share level and token source; a missing token is a warning, and
+an invalid configuration (including plain HTTP to a non-loopback host) or an
+unsafe token file is a hard error. Invalid config, unsafe/unwritable state, invalid auth storage
 or a failing installed CLI are hard errors. Exit is 0 without hard errors, 1 with
 hard errors, and 2 for invocation errors.
 
@@ -572,6 +578,33 @@ owners (PID plus process start time). `--older-than` compares Run completion tim
 use a whole-number `s`, `m`, `h`, `d` or `w` duration. With no age filter, every
 eligible Run is considered. `--dry-run` returns `wouldRemove` without deleting;
 normal JSON returns `removed`, and both include `skippedRuns`.
+
+## Remote review store client
+
+```sh
+printf '%s\n' "$TOKEN" | artifactize remote login https://reviews.example/ [--share full]
+artifactize remote status [--json]
+artifactize remote logout
+```
+
+A client is configured only through the state directory and the environment,
+never `artifactize.json`, so a cloned repository cannot redirect a token. `remote
+login URL` reads one token line from stdin (never argv), verifies it with
+`GET /v1/whoami`, then stores it in `$STATE/auth/remote-token.json` (0700 directory,
+0600 single-link file, like the ChatGPT credentials) and writes
+`$STATE/remote.json`: `{"url":"https://reviews.example/","share":"summary"}`.
+URLs must use HTTPS with the system trust store; plain `http://` is accepted only
+for `localhost`, `127.0.0.0/8` and `[::1]`. Credentials, queries and fragments are
+rejected. A stored token is bound to the origin it was issued for.
+
+`ARTIFACTIZE_REMOTE` (a URL, or `off`), `ARTIFACTIZE_REMOTE_TOKEN` (for CI) and
+`ARTIFACTIZE_REMOTE_SHARE` (`summary` or `full`) override `remote.json` and the
+stored token. `remote status` prints the URL, share level, token source
+(`env`, `file` or `none`), reachability, principal and scopes; it exits 0 when the
+store accepts the token. Requests use a 2 s connect and 5 s total timeout and never
+follow redirects. `remote logout` deletes the stored token and `remote.json`; the
+server keeps the token valid until `server token revoke`. Tokens are never printed
+or logged. Verify does not consult the remote yet.
 
 Only known scratch directories below `state/runs/<run-id>` are removed: runtime
 `output`/`tmp`/`home`/`cache`, leftover tool output and Claude invocation directories.
