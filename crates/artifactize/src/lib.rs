@@ -18,6 +18,7 @@ pub mod query;
 pub mod remote;
 pub mod runtime;
 pub mod scope;
+pub mod server;
 pub mod store;
 pub mod tools;
 pub mod workspace;

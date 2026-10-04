@@ -1,7 +1,9 @@
 //! Command-line parsing, projections, and exit codes.
 
 mod request;
+mod server;
 use request::RequestCommand;
+use server::ServerCommand;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -137,6 +139,11 @@ pub enum Command {
         /// Show Runs from every repository in the shared state.
         #[arg(long)]
         all: bool,
+    },
+    /// Serve or administer a shared remote review store (review-store.sqlite).
+    Server {
+        #[command(subcommand)]
+        command: ServerCommand,
     },
 }
 
@@ -666,6 +673,10 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             listener.abort();
             result?;
             Ok(0)
+        }
+        Some(Command::Server { command }) => {
+            let state = crate::store::state_dir(cli.state_dir.as_deref())?;
+            server::execute(&state, command, cli.json).await
         }
         Some(Command::Request { command }) => {
             let state = crate::store::state_dir(cli.state_dir.as_deref())?;
