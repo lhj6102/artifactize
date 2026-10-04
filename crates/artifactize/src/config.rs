@@ -39,13 +39,6 @@ impl ConfigError {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Script {
-    pub command: String,
-    pub args: Vec<String>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
@@ -186,7 +179,7 @@ impl Views {
     }
 }
 
-/// Which dependency Artifacts a content identity covers, one hop by default.
+/// Which dependency Artifacts a content stale key covers, one hop by default.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Dependencies {
@@ -196,11 +189,13 @@ pub enum Dependencies {
     Transitive,
 }
 
+/// The value whose change makes an Artifact's results stale; unchanged values reuse them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
-pub enum Stale {
-    Identity {
-        script: Script,
+#[serde(rename_all = "lowercase", deny_unknown_fields)]
+pub enum StaleKey {
+    Script {
+        command: String,
+        args: Vec<String>,
         #[serde(default)]
         inputs: Vec<String>,
         #[serde(rename = "timeoutMs", default, deserialize_with = "timeout")]
@@ -220,16 +215,17 @@ fn owner_root() -> Vec<String> {
     vec![".".into()]
 }
 
-impl Stale {
+impl StaleKey {
     fn validate(&self) -> Result<(), String> {
         match self {
-            Self::Identity {
-                script: definition,
+            Self::Script {
+                command,
+                args,
                 inputs,
                 ..
             } => {
-                script(&definition.command, &definition.args)?;
-                paths(inputs, "stale.inputs")
+                script(command, args)?;
+                paths(inputs, "staleKey.script.inputs")
             }
             Self::Content { inputs, ignore, .. } => {
                 if inputs.is_empty()
@@ -237,11 +233,12 @@ impl Stale {
                     || inputs.iter().collect::<BTreeSet<_>>().len() != inputs.len()
                 {
                     return Err(
-                        "stale.inputs must contain 1–64 unique owner-relative paths.".into(),
+                        "staleKey.content.inputs must contain 1–64 unique owner-relative paths."
+                            .into(),
                     );
                 }
                 for input in inputs.iter().filter(|input| *input != ".") {
-                    path(input).map_err(|message| format!("stale.inputs: {message}"))?;
+                    path(input).map_err(|message| format!("staleKey.content.inputs: {message}"))?;
                 }
                 crate::cache::ignore_patterns(ignore)
             }
@@ -276,7 +273,7 @@ pub struct ArtifactDeclaration {
     #[serde(default, deserialize_with = "present")]
     pub basis: Option<bool>,
     #[serde(default, deserialize_with = "present")]
-    pub stale: Option<Stale>,
+    pub stale_key: Option<StaleKey>,
     #[serde(default, deserialize_with = "present")]
     pub review_policy: Option<ReviewPolicy>,
 }
@@ -303,8 +300,8 @@ impl ArtifactDeclaration {
             identifier(alias, "Mount alias")?;
             identifier(target, "Mount target")?;
         }
-        if let Some(stale) = &self.stale {
-            stale.validate()?;
+        if let Some(stale_key) = &self.stale_key {
+            stale_key.validate()?;
         }
         Ok(())
     }
@@ -328,6 +325,9 @@ fn ordinary_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
 }
 
 fn validated_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
+    if value.get("stale").is_some() {
+        return Err(r#"stale was renamed to staleKey: use "staleKey": {"content": {"inputs": ["."], "dependencies": "direct", "ignore": []}} or "staleKey": {"script": {"command": "...", "args": [], "inputs": [], "timeoutMs": 30000}}."#.into());
+    }
     let declaration: ArtifactDeclaration =
         serde_json::from_value(value).map_err(|error| error.to_string())?;
     declaration.validate()?;
@@ -344,13 +344,13 @@ pub struct Artifact {
     pub views: Views,
     pub mounts: BTreeMap<String, String>,
     pub basis: Option<bool>,
-    pub stale: Option<Stale>,
+    pub stale_key: Option<StaleKey>,
     pub review_policy: Option<ReviewPolicy>,
 }
 
 #[derive(Debug, Serialize)]
 pub struct Eval {
-    /// Workspace-qualified identity; declaration.id remains the owner's local id.
+    /// Workspace-qualified id; declaration.id remains the owner's local id.
     pub id: String,
     pub target: String,
     pub references: BTreeMap<String, String>,
@@ -472,7 +472,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     views,
                     mounts,
                     basis,
-                    stale,
+                    stale_key,
                     review_policy,
                 } = declaration;
                 if config.artifacts.contains_key(&name) || config.families.contains_key(&name) {
@@ -516,7 +516,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                         views,
                         mounts,
                         basis,
-                        stale,
+                        stale_key,
                         review_policy,
                     },
                 );

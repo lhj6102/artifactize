@@ -26,8 +26,8 @@ fn test_storage(root: &Path) -> Storage {
     Storage { directory }
 }
 
-fn identity() -> Identity {
-    Identity {
+fn account() -> Account {
+    Account {
         issuer: oauth::ISSUER.into(),
         subject: "test-subject".into(),
         email: Some("test@example.invalid".into()),
@@ -38,7 +38,7 @@ fn registered() -> Registration {
     Registration {
         ext_agent_host_id: "urn:uuid:8f7c2c32-4bdf-4eaa-854f-2817ce26540e".into(),
         client_id: Some("oaiapp_test".into()),
-        identity: Some(identity()),
+        account: Some(account()),
     }
 }
 
@@ -76,7 +76,7 @@ fn expired_credentials() -> Credentials {
             .split_whitespace()
             .map(str::to_owned)
             .collect(),
-        identity: identity(),
+        account: account(),
     }
 }
 
@@ -105,7 +105,7 @@ async fn authorize_registration_reauth_and_callback_checks() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut registration = registered();
     registration.client_id = None;
-    registration.identity = None;
+    registration.account = None;
     let mut pending = PendingLogin::new(&listener, &registration).unwrap();
     let url = pending.authorize_url(
         &Url::parse("https://auth.openai.com/api/accounts/authorize").unwrap(),
@@ -245,7 +245,7 @@ fn id_token_signature_and_claims_are_validated() {
     let good = claims();
     let validated =
         oauth::validate_id_token(&sign(&good), &keys(), "oaiapp_test", Some("test-nonce")).unwrap();
-    assert!(validated.matches(&identity()));
+    assert!(validated.matches(&account()));
     for (field, value) in [
         ("aud", json!("oaiapp_wrong")),
         ("nonce", json!("wrong")),
@@ -579,7 +579,7 @@ fn credentials_require_plan_scope_and_keep_new_refresh_response_together() {
         credentials(
             tokens("openid profile"),
             &registered(),
-            identity(),
+            account(),
             now().unwrap(),
             None
         )
@@ -588,7 +588,7 @@ fn credentials_require_plan_scope_and_keep_new_refresh_response_together() {
     let saved = credentials(
         tokens(oauth::SCOPES),
         &registered(),
-        identity(),
+        account(),
         now().unwrap(),
         None,
     )

@@ -1,4 +1,4 @@
-//! Identity preparation, execution ownership, reuse, and end-of-review rechecks.
+//! Stale key preparation, execution ownership, reuse, and end-of-review rechecks.
 
 mod content;
 
@@ -16,7 +16,7 @@ pub use crate::store::cache_entries::{Entry, GcResult, gc, list, remove, show};
 pub(crate) use content::ignore_patterns;
 
 use crate::{
-    config::{EvalDeclaration, RepoConfig, Stale},
+    config::{EvalDeclaration, RepoConfig, StaleKey},
     process, runtime, scope,
     store::{Execution, Request},
     workspace,
@@ -38,15 +38,15 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
     ))
 }
 
-/// A prepared owner identity; a content identity also carries its manifest.
+/// A prepared stale key; a content stale key also carries its manifest.
 #[derive(Debug, Clone)]
-pub struct Identity {
+pub struct PreparedKey {
     pub value: String,
     pub manifest: Option<Manifest>,
 }
 
-/// What a content identity covered, saved with executions to explain later changes.
-/// Maps that would exceed 64 KiB are omitted; the identity still covers them.
+/// What a content stale key covered, saved with executions to explain later changes.
+/// Maps that would exceed 64 KiB are omitted; the stale key still covers them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
     /// SHA-256 over every input path and file digest.
@@ -54,12 +54,12 @@ pub struct Manifest {
     /// Owner-relative path to the first 16 hex digits of its SHA-256.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files: Option<BTreeMap<String, String>>,
-    /// Dependency Artifact to its identity script value or content digest.
+    /// Dependency Artifact to its stale key script value or content digest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<BTreeMap<String, String>>,
 }
 
-/// Why the current identity differs from an earlier cached result for the same Eval definition.
+/// Why the current stale key differs from an earlier cached result for the same Eval definition.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Changes {
@@ -79,18 +79,18 @@ pub async fn prepare<'a>(
     artifacts: impl IntoIterator<Item = &'a str>,
     output_root: &Path,
     cancellation: CancellationToken,
-) -> Result<BTreeMap<&'a str, Identity>, String> {
+) -> Result<BTreeMap<&'a str, PreparedKey>, String> {
     let mut locals = BTreeMap::new();
-    let mut identities = BTreeMap::new();
+    let mut keys = BTreeMap::new();
     for id in artifacts {
-        if config.artifacts[id].stale.is_some() {
-            identities.insert(
+        if config.artifacts[id].stale_key.is_some() {
+            keys.insert(
                 id,
                 compute(config, id, output_root, &cancellation, &mut locals).await?,
             );
         }
     }
-    Ok(identities)
+    Ok(keys)
 }
 
 pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String) {
@@ -106,8 +106,8 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String)
     request.blocked_reason = None;
 }
 
-/// The returned owner value is the whole identity, shared by all of its Evals.
-pub async fn identity(
+/// The returned value is the Artifact's whole stale key, shared by all of its Evals.
+pub async fn stale_key(
     config: &RepoConfig,
     artifact_id: &str,
     output_root: &Path,
@@ -121,7 +121,7 @@ pub async fn identity(
         &mut BTreeMap::new(),
     )
     .await
-    .map(|identity| identity.value)
+    .map(|key| key.value)
 }
 
 /// `locals` memoizes each Artifact's own contribution within one preparation.
@@ -131,16 +131,16 @@ async fn compute(
     output_root: &Path,
     cancellation: &CancellationToken,
     locals: &mut BTreeMap<String, String>,
-) -> Result<Identity, String> {
-    match &config.artifacts[id].stale {
-        Some(Stale::Content { .. }) => content(config, id, output_root, cancellation, locals)
+) -> Result<PreparedKey, String> {
+    match &config.artifacts[id].stale_key {
+        Some(StaleKey::Content { .. }) => content(config, id, output_root, cancellation, locals)
             .await
-            .map_err(|error| format!("Content identity for Artifact {id} failed: {error}")),
-        Some(Stale::Identity { .. }) => Ok(Identity {
+            .map_err(|error| format!("Content stale key for Artifact {id} failed: {error}")),
+        Some(StaleKey::Script { .. }) => Ok(PreparedKey {
             value: local(config, id, output_root, cancellation, locals).await?,
             manifest: None,
         }),
-        None => Err(format!("No identity declared for Artifact {id}.")),
+        None => Err(format!("No stale key declared for Artifact {id}.")),
     }
 }
 
@@ -151,14 +151,14 @@ async fn content(
     output_root: &Path,
     cancellation: &CancellationToken,
     locals: &mut BTreeMap<String, String>,
-) -> Result<Identity, String> {
-    let Some(Stale::Content {
+) -> Result<PreparedKey, String> {
+    let Some(StaleKey::Content {
         inputs,
         dependencies: scope,
         ignore,
-    }) = &config.artifacts[id].stale
+    }) = &config.artifacts[id].stale_key
     else {
-        unreachable!("content identity")
+        unreachable!("content stale key")
     };
     let files = content::files(config, id, inputs, ignore, cancellation).await?;
     locals.insert(id.to_owned(), files.digest.clone());
@@ -197,14 +197,14 @@ async fn content(
     if size(&manifest) > MANIFEST_BYTES {
         manifest.dependencies = None;
     }
-    Ok(Identity {
+    Ok(PreparedKey {
         value: format!("content:{}", content::hex(&digest.finalize())),
         manifest: Some(manifest),
     })
 }
 
-/// A dependency's contribution: its identity script value, or the digest of its own
-/// content inputs (`.` without a declared identity).
+/// A dependency's contribution: its stale key script value, or the digest of its own
+/// content inputs (`.` without a declared stale key).
 async fn local(
     config: &RepoConfig,
     id: &str,
@@ -215,13 +215,13 @@ async fn local(
     if let Some(value) = locals.get(id) {
         return Ok(value.clone());
     }
-    let value = match &config.artifacts[id].stale {
-        Some(Stale::Identity { .. }) => script(config, id, output_root, cancellation.clone())
+    let value = match &config.artifacts[id].stale_key {
+        Some(StaleKey::Script { .. }) => script(config, id, output_root, cancellation.clone())
             .await
-            .map_err(|error| format!("Identity script for Artifact {id} failed: {error}"))?,
-        stale => {
-            let (inputs, ignore) = match stale {
-                Some(Stale::Content { inputs, ignore, .. }) => (inputs.clone(), ignore.clone()),
+            .map_err(|error| format!("Stale key script for Artifact {id} failed: {error}"))?,
+        stale_key => {
+            let (inputs, ignore) = match stale_key {
+                Some(StaleKey::Content { inputs, ignore, .. }) => (inputs.clone(), ignore.clone()),
                 _ => (vec![".".to_owned()], Vec::new()),
             };
             content::files(config, id, &inputs, &ignore, cancellation)
@@ -234,8 +234,8 @@ async fn local(
     Ok(value)
 }
 
-/// Explain a stale identity against the manifest of an earlier cached execution.
-pub fn changes(previous: &Execution, current: &Identity) -> Changes {
+/// Explain a changed stale key against the manifest of an earlier cached execution.
+pub fn changes(previous: &Execution, current: &PreparedKey) -> Changes {
     let compared = previous.manifest.as_ref().zip(current.manifest.as_ref());
     let files = compared.and_then(|(old, new)| {
         if old.inputs == new.inputs {
@@ -280,7 +280,7 @@ pub fn changes(previous: &Execution, current: &Identity) -> Changes {
         });
     }
     if parts.is_empty() {
-        parts.push("identity changed".to_owned());
+        parts.push("stale key changed".to_owned());
     }
     Changes {
         since_run_id: previous.provenance.run_id.clone(),
@@ -314,13 +314,14 @@ async fn script(
         return Err(process::Error::Cancelled.to_string());
     }
     let artifact = &config.artifacts[artifact_id];
-    let Some(Stale::Identity {
-        script,
+    let Some(StaleKey::Script {
+        command,
+        args,
         inputs,
         timeout_ms,
-    }) = &artifact.stale
+    }) = &artifact.stale_key
     else {
-        unreachable!("identity script")
+        unreachable!("stale key script")
     };
     let cwd = scope::scoped_path(&config.root, &artifact.path).map_err(|e| e.to_string())?;
     for input in inputs
@@ -329,19 +330,18 @@ async fn script(
     {
         scope::scoped_path(&cwd, Path::new(input)).map_err(|e| e.to_string())?;
     }
-    let program = if !Path::new(&script.command).is_absolute() && script.command.contains('/') {
-        let relative = script.command.strip_prefix("./").unwrap_or(&script.command);
+    let program = if !Path::new(command).is_absolute() && command.contains('/') {
+        let relative = command.strip_prefix("./").unwrap_or(command);
         let program = scope::scoped_path(&cwd, Path::new(relative)).map_err(|e| e.to_string())?;
         if !program.is_file() {
-            return Err("Identity executable must be a regular file.".into());
+            return Err("Stale key executable must be a regular file.".into());
         }
         program.into_os_string()
     } else {
-        script.command.clone().into()
+        command.clone().into()
     };
-    let scope = scope::argv_scope(config, artifact_id, &script.args).map_err(|e| e.to_string())?;
-    let args = scope::resolve_argv(config, &scope, artifact_id, &script.args)
-        .map_err(|e| e.to_string())?;
+    let scope = scope::argv_scope(config, artifact_id, args).map_err(|e| e.to_string())?;
+    let args = scope::resolve_argv(config, &scope, artifact_id, args).map_err(|e| e.to_string())?;
     let mut input = json!({"version":1,"artifactId":artifact_id});
     if let Some(family) = &artifact.family {
         input["family"] = json!({"name":family.name,"material":family.material});
@@ -349,7 +349,7 @@ async fn script(
     let output_root =
         workspace::prepare_directory(output_root, &config.root).map_err(|e| e.to_string())?;
     let disposable = tempfile::Builder::new()
-        .prefix("identity-")
+        .prefix("stale-key-")
         .tempdir_in(output_root)
         .map_err(|e| e.to_string())?;
     let result = async {
@@ -367,10 +367,10 @@ async fn script(
             .await
             .map_err(|e| e.to_string())?;
         if !output.status.success() {
-            return Err(format!("Identity command exited with {}.", output.status));
+            return Err(format!("Stale key command exited with {}.", output.status));
         }
         if output.truncated {
-            return Err("Identity command output exceeded its limit.".into());
+            return Err("Stale key command output exceeded its limit.".into());
         }
         validate_output(&output.stdout)
     }
@@ -380,7 +380,7 @@ async fn script(
         return Err(process::Error::Cancelled.to_string());
     }
     let value = result?;
-    cleaned.map_err(|_| "Identity validation failed.".to_owned())?;
+    cleaned.map_err(|_| "Stale key validation failed.".to_owned())?;
     Ok(value)
 }
 
@@ -393,7 +393,7 @@ fn validate_output(stdout: &[u8]) -> Result<String, String> {
     {
         return Err("stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF.".into());
     }
-    Ok(String::from_utf8(value.to_vec()).expect("validated ASCII identity"))
+    Ok(String::from_utf8(value.to_vec()).expect("validated ASCII stale key"))
 }
 
 #[cfg(test)]

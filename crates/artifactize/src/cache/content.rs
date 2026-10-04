@@ -1,4 +1,4 @@
-//! Built-in content identity: owner input files plus dependency identities.
+//! Built-in content stale key: owner input files plus dependency entries.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -33,14 +33,14 @@ pub(super) struct Files {
     pub files: BTreeMap<String, [u8; 32]>,
 }
 
-/// Validate declared `stale.ignore` globs, which always exclude like the built-ins.
+/// Validate declared `staleKey.content.ignore` globs, which always exclude like the built-ins.
 pub(crate) fn ignore_patterns(patterns: &[String]) -> Result<(), String> {
     matcher(patterns).map(drop)
 }
 
 fn matcher(patterns: &[String]) -> Result<Gitignore, String> {
     if patterns.len() > 64 || patterns.iter().collect::<BTreeSet<_>>().len() != patterns.len() {
-        return Err("stale.ignore must contain at most 64 unique patterns.".into());
+        return Err("staleKey.content.ignore must contain at most 64 unique patterns.".into());
     }
     let mut builder = GitignoreBuilder::new(".");
     for pattern in BUILTIN_IGNORES {
@@ -52,13 +52,13 @@ fn matcher(patterns: &[String]) -> Result<Gitignore, String> {
             || pattern.bytes().any(|byte| byte.is_ascii_control())
         {
             return Err(
-                "stale.ignore patterns must be nonblank .gitignore globs without negation or comments."
+                "staleKey.content.ignore patterns must be nonblank .gitignore globs without negation or comments."
                     .into(),
             );
         }
         builder
             .add_line(None, pattern)
-            .map_err(|error| format!("stale.ignore: {error}"))?;
+            .map_err(|error| format!("staleKey.content.ignore: {error}"))?;
     }
     builder.build().map_err(|error| error.to_string())
 }
@@ -240,11 +240,12 @@ impl Walk {
             state.entries += 1;
             if state.entries > MAX_ENTRIES {
                 return Err(format!(
-                    "Content inputs exceed {MAX_ENTRIES} entries; narrow stale.inputs or add stale.ignore."
+                    "Content inputs exceed {MAX_ENTRIES} entries; narrow staleKey.content.inputs or add staleKey.content.ignore."
                 ));
             }
-            let entry = scope::open_child(directory, OsStr::new(&name))
-                .map_err(|e| format!("{child}: {e} Add it to stale.ignore to skip it."))?;
+            let entry = scope::open_child(directory, OsStr::new(&name)).map_err(|e| {
+                format!("{child}: {e} Add it to staleKey.content.ignore to skip it.")
+            })?;
             if entry.metadata().map_err(|e| e.to_string())?.is_dir() {
                 self.directory(&entry, &child, gitignores, state, cancellation)?;
             } else {
@@ -337,7 +338,7 @@ fn hash_file(mut file: File, path: &str, state: &mut State) -> Result<(), String
         state.bytes += read as u64;
         if state.bytes > MAX_BYTES {
             return Err(
-                "Content inputs exceed 1 GiB; narrow stale.inputs or add stale.ignore.".into(),
+                "Content inputs exceed 1 GiB; narrow staleKey.content.inputs or add staleKey.content.ignore.".into(),
             );
         }
         digest.update(&buffer[..read]);

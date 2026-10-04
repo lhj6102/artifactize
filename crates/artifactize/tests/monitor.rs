@@ -39,7 +39,7 @@ fn runtime(command: &str, args: &[&str]) -> Value {
 }
 
 impl Fixture {
-    /// Repository alpha has a family, a cycle, a child, a mount, and identity-cached GREEN/RED results;
+    /// Repository alpha has a family, a cycle, a child, a mount, and stale-key-cached GREEN/RED results;
     /// beta has a long-running eval gated on a release file and a Human eval.
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
@@ -56,7 +56,7 @@ impl Fixture {
         fs::write(alpha.join("scenarios/material.txt"), "material").unwrap();
         declare(
             &alpha.join("cycle-a"),
-            json!({"name":"cycle-a","stale":{"kind":"identity","script":{"command":"echo","args":["a-v1"]}},
+            json!({"name":"cycle-a","staleKey":{"script":{"command":"echo","args":["a-v1"]}},
                 "evals":[eval("check", runtime("true", &[]), "Check {cycle-b}.")]}),
         );
         declare(
@@ -66,7 +66,7 @@ impl Fixture {
         );
         declare(
             &alpha.join("red"),
-            json!({"name":"red","stale":{"kind":"identity","script":{"command":"echo","args":["red-v1"]}},
+            json!({"name":"red","staleKey":{"script":{"command":"echo","args":["red-v1"]}},
                 "evals":[eval("check", runtime("sh", &["-c", "echo finding; exit 7"]), "Check {input}.")]}),
         );
         declare(&alpha.join("red/part"), json!({"name":"part","basis":true}));
@@ -115,7 +115,7 @@ impl Fixture {
         serde_json::from_slice(&output.stdout).unwrap()
     }
 
-    /// Two finished alpha Runs; the second reuses the identity-cached results of the first.
+    /// Two finished alpha Runs; the second reuses the stale-key-cached results of the first.
     fn seed(&self) -> (String, String) {
         let first = self.json(&self.alpha, &["verify", "--all"], 1);
         let second = self.json(&self.alpha, &["verify", "--all"], 1);
@@ -399,7 +399,7 @@ async fn saved_tree_details_without_repository_or_writes() {
 
     let red = monitor::detail(&view, &requests, &Target::Eval("red/check".into()), now);
     assert_eq!(red.field("Status"), Some("RED — criteria not met"));
-    assert_eq!(red.field("Identity"), Some("red-v1"));
+    assert_eq!(red.field("Stale key"), Some("red-v1"));
     let source = red.field("Source").unwrap();
     assert!(
         source.starts_with(&format!("reused from Run {first} request {first}-")),

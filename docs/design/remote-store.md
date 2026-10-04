@@ -80,4 +80,4 @@ Every new local execution records its `producer`; a submitted Human execution al
 6. **Publishing:** scoped tokens; untrusted CI gets read-only.
 7. **TLS:** the server binds 127.0.0.1 by default, with a proxy or tunnel in front. Clients require HTTPS except on loopback.
 8. **Remote configuration:** only in the state dir (`$STATE/remote.json`) and env (`ARTIFACTIZE_REMOTE`, `ARTIFACTIZE_REMOTE_TOKEN`, `ARTIFACTIZE_REMOTE_SHARE`). Never in `artifactize.json`.
-9. **Naming:** the owner-computed reuse key formerly called the identity is the **staleKey**. Remote records (`staleKey`), routes (`{staleKey, evalDefHash}` lookup keys, `PUT /v1/entries/{evalDefHash}/{staleKey}`) and `server rm STALE_KEY [EVAL_HASH]` use the new name; the rest of artifactize follows in a separate rename.
+9. **Naming:** the owner-computed reuse key is the **staleKey** throughout: remote records (`staleKey`), routes (`{staleKey, evalDefHash}` lookup keys, `PUT /v1/entries/{evalDefHash}/{staleKey}`) and `server rm STALE_KEY [EVAL_HASH]`, and locally the `staleKey` declaration, `cache show/rm STALE_KEY [EVAL_HASH]` and the state database columns.

@@ -191,7 +191,7 @@ fn every_example_passes_static_queries_and_reports_status() {
 }
 
 #[test]
-fn runtime_relations_reuses_identities_and_turns_red() {
+fn runtime_relations_reuses_stale_keys_and_turns_red() {
     let session = Session::new();
     let repo = example("runtime-relations");
     let before = files(&repo);

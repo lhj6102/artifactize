@@ -95,7 +95,7 @@ pub enum Command {
         selection: SelectionArgs,
         #[command(flatten)]
         policy: PolicyArgs,
-        /// Maximum concurrent evals, including identity waiters.
+        /// Maximum concurrent evals, including stale key waiters.
         #[arg(long, value_name = "N", default_value = "4", value_parser = clap::value_parser!(u32).range(1..))]
         jobs: u32,
         /// Limit executor starts in this Run; cache hits and waiters are free.
@@ -130,7 +130,7 @@ pub enum Command {
         #[command(subcommand)]
         command: RequestCommand,
     },
-    /// Inspect or maintain reusable identities without a repository.
+    /// Inspect or maintain reusable results by stale key without a repository.
     Cache {
         #[command(subcommand)]
         command: CacheCommand,
@@ -265,7 +265,7 @@ impl ModelProvider {
 
 #[derive(Debug, Subcommand)]
 pub enum ConfigCommand {
-    /// Validate declarations and unique Artifact/Eval identities.
+    /// Validate declarations and unique Artifact/Eval ids.
     Check,
 }
 
@@ -300,18 +300,18 @@ pub enum RunCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum CacheCommand {
-    /// List retained identity/Eval-definition pairs and original execution metadata.
+    /// List retained stale key/Eval-definition pairs and original execution metadata.
     List,
     /// Read the full saved result, profile and provenance as JSON.
     Show {
-        identity: String,
-        /// Required when the identity has multiple cached Eval definitions.
+        stale_key: String,
+        /// Required when the stale key has multiple cached Eval definitions.
         eval_hash: Option<String>,
     },
     /// Remove an unused cache entry, preserving saved Runs and executions.
     Rm {
-        identity: String,
-        /// Required when the identity has multiple cached Eval definitions.
+        stale_key: String,
+        /// Required when the stale key has multiple cached Eval definitions.
         eval_hash: Option<String>,
     },
     /// Evict least-recently-used entries above the entry and byte limits.
@@ -708,14 +708,14 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                         let mut out = io::stdout().lock();
                         writeln!(
                             out,
-                            "IDENTITY\tEVAL HASH\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED"
+                            "STALE KEY\tEVAL HASH\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED"
                         )
                         .map_err(|e| e.to_string())?;
                         for entry in entries {
                             writeln!(
                                 out,
                                 "{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                                entry.identity,
+                                entry.stale_key,
                                 entry.eval_def_hash,
                                 entry.verdict,
                                 entry.origin.as_ref().unwrap_or(&entry.repo_path),
@@ -728,19 +728,20 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                     }
                 }
                 CacheCommand::Show {
-                    identity,
+                    stale_key,
                     eval_hash,
                 } => {
-                    let entry = crate::cache::show(&state, &identity, eval_hash.as_deref()).await?;
+                    let entry =
+                        crate::cache::show(&state, &stale_key, eval_hash.as_deref()).await?;
                     print_json(&entry)?;
                     return Ok(if entry.is_some() { 0 } else { 4 });
                 }
                 CacheCommand::Rm {
-                    identity,
+                    stale_key,
                     eval_hash,
                 } => {
                     print_json(
-                        &json!({"removed": crate::cache::remove(&state, &identity, eval_hash.as_deref()).await?}),
+                        &json!({"removed": crate::cache::remove(&state, &stale_key, eval_hash.as_deref()).await?}),
                     )?;
                 }
                 CacheCommand::Gc => print_json(&crate::cache::gc(&state).await?)?,
@@ -847,7 +848,7 @@ fn print_status(view: &crate::project::StatusView) -> io::Result<()> {
         if let Some(changes) = &eval.changes {
             writeln!(
                 out,
-                "    Changed since Run {}: {}",
+                "    Stale key changed since Run {}: {}",
                 changes.since_run_id, changes.summary
             )?;
         }

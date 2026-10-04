@@ -41,7 +41,7 @@ impl Default for VerifyOptions {
     }
 }
 
-/// Executes READY evals in the foreground, reusing completed explicit identities.
+/// Executes READY evals in the foreground, reusing completed results by stale key.
 pub async fn verify(
     repo: &Path,
     state_dir: Option<&Path>,
@@ -88,7 +88,7 @@ pub async fn verify(
     let receipts = Receipts::open(&state, &config.root).await?;
     let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
         .map_err(|e| e.to_string())?;
-    let identities = cache::prepare(
+    let stale_keys = cache::prepare(
         &config,
         required.iter().copied(),
         &runs,
@@ -153,9 +153,9 @@ pub async fn verify(
             references: json!(eval.references),
             deps: eval.deps.clone(),
             force: options.force && selected_ids.contains(eval.id.as_str()),
-            identity: identities
+            stale_key: stale_keys
                 .get(eval.target.as_str())
-                .map(|identity| identity.value.clone()),
+                .map(|stale_key| stale_key.value.clone()),
             status: "QUEUED".into(),
             created_at: run.created_at.clone(),
             started_at: None,
@@ -174,7 +174,7 @@ pub async fn verify(
     let mut evidence = broker::schedule(
         config.clone(),
         &graph,
-        &identities,
+        &stale_keys,
         &mut run,
         &mut requests,
         &receipts,
@@ -259,9 +259,9 @@ pub async fn verify(
         "artifacts":required.iter().map(|id| {
             let a = &evaluation.artifacts[id];
             let mut artifact = json!({"id":id,"status":format!("{:?}",a.status).to_uppercase(),"passed":a.passed,"total":a.total,"satisfied":a.satisfied});
-            if let Some(identity) = identities.get(id) {
-                artifact["identity"] = json!(if identity.manifest.is_some() { "content" } else { "script" });
-                artifact["value"] = json!(identity.value);
+            if let Some(stale_key) = stale_keys.get(id) {
+                artifact["staleKeyKind"] = json!(if stale_key.manifest.is_some() { "content" } else { "script" });
+                artifact["staleKey"] = json!(stale_key.value);
             }
             artifact
         }).collect::<Vec<_>>(),

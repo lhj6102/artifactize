@@ -56,28 +56,24 @@ async fn registration_observes_inert_group_leader_before_exec() {
     let mut command = command("/bin/sh", &["-c", "printf started > started; pwd"]);
     command.cwd = scratch.0.clone();
     let expected_cwd = scratch.0.clone();
-    let output = process::run(
-        command,
-        CancellationToken::new(),
-        move |identity| async move {
-            assert!(!marker.exists());
-            let stat = std::fs::read_to_string(format!("/proc/{}/stat", identity.pid))?;
-            let fields: Vec<_> = stat
-                .rsplit_once(')')
-                .unwrap()
-                .1
-                .split_whitespace()
-                .collect();
-            assert_eq!(fields[2].parse::<u32>().unwrap(), identity.pid);
-            assert_eq!(fields[19].parse::<u64>().unwrap(), identity.start_time);
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            assert!(
-                !marker.exists(),
-                "user code ran before registration finished"
-            );
-            Ok(())
-        },
-    )
+    let output = process::run(command, CancellationToken::new(), move |child| async move {
+        assert!(!marker.exists());
+        let stat = std::fs::read_to_string(format!("/proc/{}/stat", child.pid))?;
+        let fields: Vec<_> = stat
+            .rsplit_once(')')
+            .unwrap()
+            .1
+            .split_whitespace()
+            .collect();
+        assert_eq!(fields[2].parse::<u32>().unwrap(), child.pid);
+        assert_eq!(fields[19].parse::<u64>().unwrap(), child.start_time);
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            !marker.exists(),
+            "user code ran before registration finished"
+        );
+        Ok(())
+    })
     .await
     .unwrap();
     assert!(output.status.success());
@@ -98,14 +94,10 @@ async fn failed_registration_never_executes_and_reaps_the_child() {
     command.cwd = scratch.0.clone();
     let pid = Arc::new(AtomicU32::new(0));
     let observed = pid.clone();
-    let result = process::run(
-        command,
-        CancellationToken::new(),
-        move |identity| async move {
-            observed.store(identity.pid, Ordering::SeqCst);
-            Err(io::Error::other("registration rejected"))
-        },
-    )
+    let result = process::run(command, CancellationToken::new(), move |child| async move {
+        observed.store(child.pid, Ordering::SeqCst);
+        Err(io::Error::other("registration rejected"))
+    })
     .await;
     assert!(matches!(result, Err(process::Error::Registration(_))));
     assert!(!scratch.0.join("started").exists());
@@ -121,15 +113,15 @@ async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
     let running = tokio::spawn(process::run(
         command,
         CancellationToken::new(),
-        |identity| async move {
-            registered.send(identity).unwrap();
+        |child| async move {
+            registered.send(child).unwrap();
             std::future::pending().await
         },
     ));
-    let identity = child.await.unwrap();
+    let child = child.await.unwrap();
     running.abort();
     assert!(running.await.unwrap_err().is_cancelled());
-    assert_gone(identity.pid).await;
+    assert_gone(child.pid).await;
     assert!(!scratch.0.join("started").exists());
 }
 
@@ -141,14 +133,10 @@ async fn registration_is_covered_by_the_deadline() {
     command.timeout = Duration::from_millis(100);
     let pid = Arc::new(AtomicU32::new(0));
     let observed = pid.clone();
-    let result = process::run(
-        command,
-        CancellationToken::new(),
-        move |identity| async move {
-            observed.store(identity.pid, Ordering::SeqCst);
-            std::future::pending().await
-        },
-    )
+    let result = process::run(command, CancellationToken::new(), move |child| async move {
+        observed.store(child.pid, Ordering::SeqCst);
+        std::future::pending().await
+    })
     .await;
     assert!(matches!(result, Err(process::Error::Timeout)));
     assert!(!scratch.0.join("started").exists());

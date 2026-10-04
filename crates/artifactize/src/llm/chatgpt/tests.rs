@@ -23,10 +23,10 @@ pub(crate) fn stored_credentials(state: &Path, token: &str) {
         .mode(0o700)
         .create(&directory)
         .unwrap();
-    let identity =
+    let account =
         json!({"issuer":"https://auth.openai.com", "subject":"test-account", "email":null});
     let registration =
-        json!({"client_id":"oaiapp_test", "ext_agent_host_id":"test-host", "identity":identity});
+        json!({"client_id":"oaiapp_test", "ext_agent_host_id":"test-host", "account":account});
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -35,7 +35,7 @@ pub(crate) fn stored_credentials(state: &Path, token: &str) {
         "access_token":token, "refresh_token":"test-refresh", "id_token":"test-id",
         "token_type":"Bearer", "expires_at":now + 3600, "saved_at":now,
         "client_id":"oaiapp_test", "ext_agent_host_id":"test-host",
-        "scopes":["chatgpt.tokens.use.direct"], "identity":identity,
+        "scopes":["chatgpt.tokens.use.direct"], "account":account,
     });
     for (name, data) in [
         ("chatgpt-registration.json", registration),
@@ -204,7 +204,7 @@ async fn models_errors_keep_codes_and_auth_guidance() {
     for (status, body, expected) in [
         (
             401,
-            json!({"detail":"Identity rejected"}),
+            json!({"detail":"Account rejected"}),
             "artifactize login chatgpt",
         ),
         (

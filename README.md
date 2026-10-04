@@ -5,7 +5,7 @@ A lean Rust port and rebrand of [CCDD](https://github.com/lhj6102/ccdd), from CC
 artifactize 0.1.0 is complete. Folders declare Artifacts and their evals in static
 `artifactize.json` files. artifactize builds the dependency graph and runs runtime,
 Agent (OpenAI or Anthropic API key, ChatGPT sign-in, or the Claude CLI) and Human
-evals, reusing GREEN/RED results by explicit identity. The CLI drives reviews and
+evals, reusing GREEN/RED results while an Artifact's staleKey is unchanged. The CLI drives reviews and
 `artifactize monitor` shows their progress. It runs on Linux and WSL.
 
 Every non-DROP item in the [CCDD 7.0 capability inventory](docs/ccdd-7-inventory.md)
@@ -21,14 +21,14 @@ example projects. Each README lists the exact commands:
 - [Runtime relations](examples/runtime-relations/README.md): runtime evals over
   parent/child folders, a mount alias, `{artifact}` references in instructions
   and argv, a basis Artifact, a RED-able check, and reuse through the built-in
-  content identity, with `status` explaining what changed.
+  content staleKey, with `status` explaining what changed.
 - [Agent tools](examples/agent-tools/README.md): an Agent eval using the built-in
   `read`, `grep` and `view_image` tools, a declared `plain` tool and a declared `json` tool,
   pass/fail schemas, backend and model selection, and a Human sign-off with
   `launch` and `output` tools.
 - [Family](examples/family/README.md): one family declaration with an instance
   list, parameters and variants, shared and per-instance material, family
-  selectors, and the identity script form.
+  selectors, and the staleKey script form.
 
 ## Command reference
 
@@ -54,8 +54,8 @@ rejects `--json`). `SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`,
 | `request tool ID TOOL` | `--reviewer NAME` | text or JSON | 0; 2 tool error |
 | `request submit ID` | `--verdict GREEN\|RED`, `--fields JSON` \| `--fields-file PATH`, `--reviewer NAME` | JSON | 0, also for RED |
 | `cache list` | | text or JSON | 0 |
-| `cache show IDENTITY [EVAL_HASH]` | | JSON | 0; 4 missing |
-| `cache rm IDENTITY [EVAL_HASH]` | | JSON | 0 |
+| `cache show STALE_KEY [EVAL_HASH]` | | JSON | 0; 4 missing |
+| `cache rm STALE_KEY [EVAL_HASH]` | | JSON | 0 |
 | `cache gc` | | JSON | 0 |
 | `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 0 ready, 1 not |
 | `mcp --manifest PATH` | | stdio MCP | 0; 1 server failure |
@@ -96,8 +96,8 @@ with duplicates removed at their first occurrence; Artifacts expand to their
 evals in declaration order. READY runtime evals execute concurrently up to
 `--jobs N` (default 4, minimum 1), with dispatch in that same ordered selection
 then recursive configuration order. The graph is re-evaluated after each result;
-newly READY evals do not wait for an entire batch to finish. Identity
-claim waiters occupy job slots while polling, but cache hits occupy none.
+newly READY evals do not wait for an entire batch to finish. Waiters on a
+staleKey claim occupy job slots while polling, but cache hits occupy none.
 An Artifact selector runs only that Artifact's evals;
 an individual eval selector runs only that eval. Both retain the full dependency
 closure as a final obligation. `--recursive` includes every eval in that closure,
@@ -122,13 +122,13 @@ policy, including `Some(false)` to enforce gates. `--force` marks only explicitl
 selected evals for a fresh review, not recursive dependencies; it neither expands
 the execution scope nor bypasses gates. Runs record the resolved policy and each
 request's force flag. Forced evals never read, join or replace cached results;
-dependencies may still reuse their own identity entries.
+dependencies may still reuse their own cache entries.
 
 `verify --max-executions N` sets a nonnegative, shared per-Run executor-start
 budget (unlimited when omitted); it is not an Artifact declaration field.
 The Run records `jobs`, `maxExecutions` and `executionsStarted`. A prepared
 Runtime or Agent invocation consumes one start, even when it fails to spawn or
-later returns ERROR. Human waiting, claim and tool actions consume no starts. Identity preparation/rechecks, cache hits, and joined waiters
+later returns ERROR. Human waiting, claim and tool actions consume no starts. staleKey preparation/rechecks, cache hits, and joined waiters
 consume none. Preparation failures before invocation consume none. Zero permits
 reuse, joining and Human reviews; a budgeted waiter replacing a failed/dead owner uses
 its own Run's remaining budget. Exhaustion never interrupts running evals, but
@@ -152,7 +152,7 @@ qualified-eval-to-name map); mappings outside the included scope fail. With
 `--recursive`, variants also apply to dependency evals. Runtime
 variant arguments rebuild scoped references and dependency gates. Stored request
 profiles describe the actual execution; `requestedProfile` retains the requested
-variant separately when an identity hit returns another profile.
+variant separately when a staleKey hit returns another profile.
 
 Verification runs in the foreground, with or without `--wait`: GREEN exits 0,
 RED 1, ERROR 2, Human wait timeout 3, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels every owned process
@@ -161,7 +161,7 @@ requests, never RED. Previously committed results remain unchanged. There is no
 detached worker.
 
 Text output prints one line per request and marks a result taken from another
-request's execution (an identity hit, or a joined execution) with its source Run:
+request's execution (a staleKey hit, or a joined execution) with its source Run:
 
 ```text
   web/tests [run-x05qFq-5]: GREEN
@@ -198,40 +198,44 @@ verdict/state (absent states have zero requests). Reads do not run owner code,
 create missing state, or require a repository to still exist. There is no
 separate `history` command.
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 1),
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 2),
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, falling back to `$XDG_STATE_HOME/artifactize` or
 `~/.local/state/artifactize`. `--state-dir PATH` moves the whole state, including
-private output directories under `PATH/runs`. The database is a fresh format;
-there is no migration from earlier receipt layouts. Saved Runs stay readable after
+private output directories under `PATH/runs`. A schema 1 database is upgraded in
+place to schema 2 (the staleKey rename) before any read or write; there is no
+migration from earlier receipt layouts. Saved Runs stay readable after
 the original repository is removed. State/output inside the reviewed repository
 is rejected, including through symlink ancestors; database files and their WAL
 sidecars must be regular files. No writer transaction spans a subprocess or async
-suspension. Completed identity results are shared within this database; cross-process
-claims and polling waiters prevent duplicate identity execution.
+suspension. Completed results with a staleKey are shared within this database; cross-process
+claims and polling waiters prevent duplicate execution for the same staleKey.
 
 Declarations use `evals`, with qualified eval IDs such as `green/check`.
-`stale` declares when an Artifact needs review again, in one of two forms:
+`staleKey` declares the value whose change makes an Artifact's results stale.
+While it is unchanged, the prior verdict is reused; when it changes, the Artifact
+is reviewed again. It takes one of two forms:
 
-- `{"kind":"content","inputs":["."],"dependencies":"direct","ignore":[]}`, the
-  built-in [content identity](#content-identity). Every field is optional and
+- `{"content":{"inputs":["."],"dependencies":"direct","ignore":[]}}`, the
+  built-in [content staleKey](#content-stalekey). Every field is optional and
   these are the defaults.
-- `{"kind":"identity","script":{"command":"/bin/sh","args":["identity.sh"]}}`, an
-  [owner identity command](#owner-identity-commands), optionally with `inputs`
-  and `timeoutMs`; `weight` is rejected.
+- `{"script":{"command":"/bin/sh","args":["stale_key.sh"]}}`, an owner-written
+  [staleKey script](#stalekey-scripts), optionally with `inputs` and
+  `timeoutMs`; `weight` is rejected.
 
 Discovery validates these fields without opening or executing scripts or inputs.
-There is no implicit or always-stale mode: an Artifact without `stale` has no
-identity and no reuse. The old `critics`, `stale.paths`, `resultCheck`,
-`envRequirements`, `reviewPolicy.maxConcurrentExecutors` and tool metadata
-`observation` fields are rejected. Agent and Human tools use the separate flat
+There is no implicit or always-stale mode: an Artifact without `staleKey` has no
+reuse, so every `verify` reviews it again. The former `stale` field is rejected
+with a message showing the `staleKey` shape. The old `critics`, `stale.paths`,
+`resultCheck`, `envRequirements`, `reviewPolicy.maxConcurrentExecutors` and tool
+metadata `observation` fields are rejected. Agent and Human tools use the separate flat
 declarations below.
 
-## Content identity
+## Content staleKey
 
-`{"kind":"content"}` makes review cost follow the size of a change: an Artifact is
+`{"content":{}}` makes review cost follow the size of a change: an Artifact is
 reviewed again only when its own files or its dependencies change, and every other
-result is reused. The identity is `content:` plus a SHA-256 over the Artifact name,
+result is reused. The staleKey is `content:` plus a SHA-256 over the Artifact name,
 each input file's owner-relative path and bytes, and one entry per dependency in
 the chosen scope.
 
@@ -239,7 +243,7 @@ the chosen scope.
   folder). Each must exist and stay inside the Artifact: a path into a child
   Artifact or a mount is rejected, because dependencies come from `dependencies`.
   Directory walks skip child Artifact folders, the owner's `artifactize.json` and
-  a family's instance list. Their effect already reaches the identity through the
+  a family's instance list. Their effect already reaches the staleKey through the
   Eval definition hash and the dependency list.
 - `dependencies`: `none`, `direct` (default) or `transitive`. Dependencies are the
   graph's own: children, mounts and `{artifact}` references in instructions and
@@ -258,9 +262,9 @@ the chosen scope.
 
 Each dependency contributes its own entry, never its dependencies' entries:
 
-- An identity script contributes its output.
+- A staleKey script contributes its output.
 - Any other Artifact contributes the SHA-256 of its own content inputs: its
-  declared `inputs`/`ignore`, or `["."]` when it declares no `stale`.
+  declared `inputs`/`ignore`, or `["."]` when it declares no `staleKey`.
 
 `transitive` therefore lists every Artifact in the closure explicitly. Cycles
 terminate, and SCC peers appear as ordinary dependencies; the owner never lists
@@ -272,30 +276,30 @@ Walks follow the scoped path rules. Symlinks and special files fail closed unles
 they are ignored, nothing is followed out of the owner, and a walk stops with an
 error after 10,000 entries or 1 GiB. Hashing runs on preparation and on each
 end-of-review recheck. Files a review writes into ignored paths, such as Python's
-`__pycache__`, therefore never cause `INPUT_CHANGED`. A content identity records a
+`__pycache__`, therefore never cause `INPUT_CHANGED`. A content staleKey records a
 manifest with the execution: per-file digests (16 hex digits), the inputs digest
 and each dependency's entry. Maps that would exceed 64 KiB are dropped from the
-manifest but still covered by the identity. `status` diffs this manifest against
+manifest but still covered by the staleKey. `status` diffs this manifest against
 the current one.
 
-## Owner identity commands
+## staleKey scripts
 
-Before executing any eval, `verify` computes each declared identity in the selected
+Before executing any eval, `verify` computes each declared staleKey in the selected
 required dependency closure, including dependencies whose evals are not selected.
 Every eval on an Artifact receives the same literal value, also saved on its
-request and in the Run's Artifact validation. A script identity does not contain
+request and in the Run's Artifact validation. A script staleKey does not contain
 any implicit repository, eval, profile, dependency or content salt. A content
-identity failure (a missing input, a link, a limit) aborts preparation the same way.
+staleKey failure (a missing input, a link, a limit) aborts preparation the same way.
 
 The command runs from its owner's folder with JSON on stdin:
 `{"version":1,"artifactId":"example"}`. Family instances additionally receive
 `"family":{"name":"family","material":["input.txt"]}`. Bare commands resolve
 through PATH; absolute executables run as given, while relative executable paths
-containing `/` (such as `./identity.sh`) must remain inside the owner without
+containing `/` (such as `./stale_key.sh`) must remain inside the owner without
 symlinks. Arguments stay literal except explicit scoped Artifact references,
 resolved with the same rules as runtime argv: `{name}` may be a mount alias or a
 global Artifact name, and each referenced Artifact (with its child and mount
-closure) is admitted to the identity's scope without becoming a graph relation.
+closure) is admitted to the script's scope without becoming a graph relation.
 `config check` rejects unknown, family and malformed references, and paths are
 checked for existence and symlinks when the command is prepared. There are no
 interpreter-specific flags, wrappers or entry-file rules.
@@ -309,20 +313,20 @@ Stdout must be exactly 1–128 ASCII characters from `[A-Za-z0-9._:-]`, optional
 followed by one LF. It is not trimmed or cleaned. Nonzero exit, malformed output,
 timeout, cancellation, missing inputs or cleanup failure abort preparation with
 an operational error, without starting any eval or falling back to an uncached
-review. Stderr is not forwarded as an identity diagnostic.
+review. Stderr is not forwarded as a staleKey diagnostic.
 
-After each runtime or Agent review completes, its identity is recomputed before accepting a
+After each runtime or Agent review completes, its staleKey is recomputed before accepting a
 GREEN or RED verdict. A changed value records ERROR/INPUT_CHANGED with no semantic
 result; a failed recheck also records ERROR. Force does not skip preparation or
-this recheck. Artifacts without an identity run without either step. There is no
-workspace monitoring: content identities hash files only at preparation and recheck.
+this recheck. Artifacts without a staleKey run without either step. There is no
+workspace monitoring: content staleKeys hash files only at preparation and recheck.
 
-## Completed identity reuse
+## Completed result reuse
 
-A successful identity recheck publishes either GREEN or RED to `cache_entries`,
+A successful staleKey recheck publishes either GREEN or RED to `cache_entries`,
 pointing to a self-contained `executions` row. Errors and cancellation are never
-published. The key is **(owner identity, Eval definition hash)**, intentionally
-departing from CCDD's identity-only key. The definition hash is lowercase SHA-256
+published. The key is **(staleKey, Eval definition hash)**, intentionally
+departing from CCDD, whose key was the staleKey alone. The definition hash is lowercase SHA-256
 of canonical JSON with recursively sorted keys, containing the effective
 `profile`, `payload` (including instruction), `passSchema` and `failSchema`.
 The profile is the selected variant's full definition when `--profile` is used:
@@ -331,7 +335,7 @@ Human. Eval id/title, repository paths and unused profile variants are excluded.
 Equal definitions still share across evals and repositories; changing criteria,
 schema, args or effective profile requires a separate execution.
 
-A script identity hashes no script or material file contents. Owners must still
+A script staleKey hashes no script or material file contents. Owners must still
 encode input, script and material changes that invalidate results in its output.
 
 A hit returns the original result without running the eval or re-validating it
@@ -345,7 +349,7 @@ Dependencies outside execution selection can supply cached evidence without
 running. Results remain readable after the source repository is deleted; external
 paths embedded in result text are not made portable.
 
-No identity means no cache lookup or publication. `--force` bypasses lookup and
+No staleKey means no cache lookup or publication. `--force` bypasses lookup and
 publication for explicitly selected evals, leaving any existing entry unchanged.
 Forced and uncached results still satisfy their own Run and retain execution audit.
 
@@ -353,13 +357,13 @@ Forced and uncached results still satisfy their own Run and retain execution aud
 
 ```sh
 artifactize cache list --json
-artifactize cache show IDENTITY [EVAL_HASH]
-artifactize cache rm IDENTITY [EVAL_HASH]
+artifactize cache show STALE_KEY [EVAL_HASH]
+artifactize cache rm STALE_KEY [EVAL_HASH]
 artifactize cache gc
 ```
 
 These commands use the shared state home or `--state-dir PATH`, without loading a
-repository. `list` shows identity, Eval definition hash, original verdict/repository/eval, retained JSON
+repository. `list` shows staleKey, Eval definition hash, original verdict/repository/eval, retained JSON
 bytes and last use (a text table, or a JSON array). `show` always prints the full
 saved execution with result, actual profile, provenance, usage and `producer`
 (`user@host` and artifactize version; submitted Human results also record their
@@ -368,15 +372,15 @@ saved execution with result, actual profile, provenance, usage and `producer`
 (store, publisher, publication time), which `list` shows in place of the repository. Reads neither create missing state nor update
 access times. `rm` prints `{"removed":true}` (false if absent), preserving saved
 Runs and execution audit. For `show` and `rm`, the hash may be omitted when the
-identity has only one entry; multiple definitions require the full hash from
+staleKey has only one entry; multiple definitions require the full hash from
 `cache list`. `rm` refuses a key with active executions or waiters (without a hash,
-any active definition for that identity prevents removal).
+any active definition for that staleKey prevents removal).
 
 Publishing a new reusable entry triggers LRU GC: at most 10,000 entries and 1 GiB
 of retained execution JSON, with a 16 MiB per-entry limit. Oversized results still
 reach their Run and existing waiters through the saved execution, but later calls
 execute again. Reuse hits update last use; inspection does not. GC evicts oldest
-eligible entries first, using identity then definition hash to break ties, and skips active executions
+eligible entries first, using staleKey then definition hash to break ties, and skips active executions
 and in-flight waiters. Protected entries can temporarily exceed the caps; a later
 publication or `cache gc` retries collection. Explicit GC prints removed and
 remaining entry/byte counts as JSON. Automatic maintenance failures are reported
@@ -446,15 +450,15 @@ are shown; `selected` and `included` distinguish explicit selection from recursi
 execution. Action counts cover included evals only. Exit 0 means current validation
 is satisfied; 1 means obligations remain; invalid input or state errors exit 2.
 
-Status prepares current owner identities for the selected required closure, using
-the same isolation and validation as verify. Identity failures exit 2; an old
-saved identity is never substituted. It never runs tools or eval commands, creates
+Status prepares current staleKeys for the selected required closure, using
+the same isolation and validation as verify. staleKey failures exit 2; an old
+saved staleKey is never substituted. It never runs tools or eval commands, creates
 Runs, reserves work, creates a missing database or updates cache access times.
-Identity commands use disposable output under the state directory, which may be
+staleKey scripts use disposable output under the state directory, which may be
 created even when no database exists. `graph` and `config check` remain fully
 static and never run owner code.
 
-A current completed identity/Eval-definition entry yields PASS or RED and a `reuse`
+A current completed staleKey/Eval-definition entry yields PASS or RED and a `reuse`
 action. verify attaches cached results before their gates resolve, so the action
 stays `reuse` while a dependency is pending or RED. The state then shows the gate
 (WAIT_DEPENDENCY or BLOCKED) and the reason names it. An eval without a cached
@@ -466,23 +470,23 @@ limit of the prediction: status cannot say whether a `wait` eval will execute. T
 `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on
 a merged checkout answers what verify will re-review there without running it.
 Force still applies only to selected evals. Human execution actions
-record a waiting request; an active Human identity/Eval-definition pair projects WAITING_HUMAN and a
+record a waiting request; an active Human staleKey/Eval-definition pair projects WAITING_HUMAN and a
 `wait` action, even after the original verifier exits. Saved attempts
 are read for this canonical repository only: each eval's optional
-`last: {runId, verdict, identity?}` is historical, not current evidence. Use
+`last: {runId, verdict, staleKey?}` is historical, not current evidence. Use
 `run show RUN_ID` for full attribution. Noncached GREEN/RED satisfies only its own
 Run, so its later status is STALE rather than reuse (ENG-24). Basis-only scopes can
 be satisfied; a basis with unmet dependencies is INCOMPLETE.
 
-When an identity-bearing eval has no current cached result, `status` explains why.
-It compares the current identity with the newest cached GREEN/RED result for the
+When an eval with a staleKey has no current cached result, `status` explains why.
+It compares the current staleKey with the newest cached GREEN/RED result for the
 same eval and Eval definition hash (from any repository in this state), and
 reports `changes: {sinceRunId, files?, dependencies?, summary}`. In text this is a
-`Changed since Run RUN_ID: ...` line, for example
+`Stale key changed since Run RUN_ID: ...` line, for example
 `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`. Files and
 dependencies are listed as `path` (changed), `+path` (added) or `-path` (removed).
-A script identity, or a manifest whose maps were dropped, can only report
-`identity changed` or `inputs changed`. No explanation appears when that eval
+A script staleKey, or a manifest whose maps were dropped, can only report
+`stale key changed` or `inputs changed`. No explanation appears when that eval
 definition has never been cached, or for forced evals.
 
 `graph [ARTIFACT|FAMILY]` defaults to the whole project, or shows the selected
@@ -507,7 +511,7 @@ Payloads are never changed and references never expand file content.
 `scope::eval_scope` admits the target and explicit references plus their child
 and mount closure, not the referenced Artifacts' eval instructions.
 `Scope::resolve_path` follows logical child/mount paths to canonical Artifact
-identities; `Scope::resolve_input` additionally requires existing files/directories
+ids; `Scope::resolve_input` additionally requires existing files/directories
 without symlink traversal. Logical paths reject absolute paths, traversal, empty
 components, backslashes, colons, controls and lengths above 4096 characters.
 
@@ -599,8 +603,8 @@ Anthropic `inputTokens` is its native uncached input; cache read/write counters 
 separate. OpenAI input already includes its cache reads. Never sum every counter.
 Unreported fields stay absent. Assistant messages and reasoning are not persisted.
 
-Agent evals share runtime evals' dependency gates, identity claims, reuse and final
-identity recheck. Final output must be one strict JSON object containing
+Agent evals share runtime evals' dependency gates, staleKey claims, reuse and final
+staleKey recheck. Final output must be one strict JSON object containing
 `"verdict":"GREEN"` or `"verdict":"RED"` and only the permitted owner-schema fields.
 One tools-disabled repair is allowed for invalid final output, within the original
 deadline. `maxTokens` and `maxToolCalls` are enforced client-side before further tools
@@ -861,8 +865,8 @@ artifactize mcp --manifest /external/execution/mcp-manifest.json
 
 `tools check` discovers and validates declarations, resolves executable availability,
 scoped argv operands and declared execution paths, and prints JSON scopes, schemas
-and per-tool readiness checks. It is static by default: no owner process, identity
-hook, database or output directory is created. A positional selector or `--eval`
+and per-tool readiness checks. It is static by default: no owner process, staleKey
+script, database or output directory is created. A positional selector or `--eval`
 selects one Agent/Human eval and cannot be combined with `--artifact`, `--audience`,
 `--tool` or `--execute`. Explicit execution requires all three Artifact, audience
 and tool flags; the short operation name or its published name is accepted.
@@ -905,7 +909,7 @@ admitted calls against the effective profile's `maxToolCalls`; denied calls are
 audited without running or incrementing. SQLite `tool_calls` rows contain ordered
 `name`, `arguments`, bounded `result` summary, `isError` and `error` fields.
 Unfinished calls retain an error placeholder after a crash. Sessions may precede
-identity-less execution rows; the caller owns review completion. `run show` combines
+the execution rows of reviews without a staleKey; the caller owns review completion. `run show` combines
 this durable audit with in-process Agent audit through one projection; execution
 completion also copies it into the self-contained execution/cache result.
 
@@ -988,8 +992,8 @@ or observation receipt is added.
 READY Human evals persist WAITING_HUMAN and release their job slot. They consume
 no `maxExecutions` budget, so even a zero budget admits a Human review. `verify`
 without `--wait` exits INCOMPLETE and lists waiting requests; it does not fabricate
-a verdict or keep a worker alive. Identity-bearing waiting executions retain their exclusive
-identity/Eval-definition claim after the verifier exits. Cross-repository followers refer to that
+a verdict or keep a worker alive. Waiting executions with a staleKey retain their exclusive
+staleKey/Eval-definition claim after the verifier exits. Cross-repository followers refer to that
 same execution and forward Human actions to its original request and repository.
 
 The internal library exposes asynchronous operations with an open `store::Receipts`:
@@ -1000,22 +1004,22 @@ The internal library exposes asynchronous operations with an open `store::Receip
   expiry timers, preparation phases, readiness hooks or alarms.
 - `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation)`
   authorizes the claimant, reopens the recorded Artifact/eval scope and declarations,
-  and checks the identity before invoking a registered Human tool. The tool takes
+  and checks the staleKey before invoking a registered Human tool. The tool takes
   no free arguments and uses the reviewer's real environment. Ordinary tool errors
   are correctable actions, not verdicts. Only tool name and error metadata are saved.
 - `human::submit(receipts, request_id, reviewer, result, cancellation)` accepts
   GREEN/RED with fields matching `passSchema`/`failSchema`, using the Agent result
   validator without repair. Invalid or oversized results (over 256000 JSON bytes)
-  leave the request waiting for correction. A valid submission re-runs the identity
-  command: changed input settles ERROR/INPUT_CHANGED instead of the verdict.
+  leave the request waiting for correction. A valid submission recomputes the
+  staleKey: a changed value settles ERROR/INPUT_CHANGED instead of the verdict.
   Settlement rechecks the claimant and waiting state transactionally, so a second
   submission fails. It releases the reviewer lock, completes saved followers, and
-  publishes only identity-bearing GREEN/RED results to the cache.
+  publishes only GREEN/RED results with a staleKey to the cache.
 
-For an identity-bearing Human eval, the next `verify` reuses the submitted result
-and runs its dependents. **No identity means no reuse**: submission settles only
-that Run, and a later `verify` asks for a new Human review. Continuing no-identity
-Human dependents requires keeping the same Run alive with `verify --wait`.
+For a Human eval with a staleKey, the next `verify` reuses the submitted result
+and runs its dependents. **No staleKey means no reuse**: submission settles only
+that Run, and a later `verify` asks for a new Human review. Continuing the
+dependents of a Human eval without a staleKey requires keeping the same Run alive with `verify --wait`.
 
 ```sh
 artifactize verify --all --wait --timeout-ms 600000
@@ -1030,7 +1034,7 @@ artifactize request submit REQUEST_ID --verdict GREEN --fields '{"approved":true
 
 Claim, tool and submit default the reviewer to `$USER`; `--reviewer NAME` can
 select the same explicit reviewer for each action. Reviewer names are local
-cooperative locks, not authenticated identities. Only the claimant can run tools
+cooperative locks, not authenticated accounts. Only the claimant can run tools
 or submit. Tool names are `<operation>_<artifactId>` and take no free arguments.
 Text output prints captured text or a launch notice; `--json` prints the tool
 result. A tool failure exits 2 and does not invent a verdict.
@@ -1049,7 +1053,7 @@ defaults to 600000, and accepts 1–2147483647. The deadline begins when schedul
 starts and is checked when foreground execution is idle with pending Human work;
 it never interrupts running evals or cancels Human requests. On timeout the Run
 ends INCOMPLETE with `waitTimedOut: true` and exit 3. Claims and submissions remain
-available, but no background worker continues dependents. Without an identity,
+available, but no background worker continues dependents. Without a staleKey,
 use a new waiting verify and submit its new request to complete those dependents.
 Ctrl-C/SIGTERM exits 2, cleans owned processes, and ends the Run as cancelled;
 previously created Human requests remain available. Missing non-Human obligations
@@ -1087,7 +1091,7 @@ Artifact/eval tree built from the saved definitions: families group their
 instances (collapsed until expanded with `l`/→ or Enter), each eval shows its
 status glyph and dependency Artifacts, `⇐` rows show child/mount/reference inputs,
 and `↻` marks cycles. The right pane details the selected Artifact, family or
-request: result, actual and requested profile, identity, reuse source, claim, tool
+request: result, actual and requested profile, staleKey, reuse source, claim, tool
 calls, usage and errors (PgUp/PgDn scroll; Esc returns to the list). The monitor
 only reads the state database (read-only connections): it runs no owner code,
 needs no repository, keeps the last data with an error line if a read fails, and
@@ -1098,7 +1102,7 @@ is not a review console; Human claim and submit stay in `request`.
 A subfolder's `artifactize.json` can declare a static family with
 `"family": {"instances": "instances.json"}` or an inline instance-name map.
 The family name is reserved, not an Artifact; each of its 1–10000 instances gets
-ordinary Artifact and `instance/eval` identities. Instance names must be globally
+ordinary Artifact and `instance/eval` ids. Instance names must be globally
 unique and cannot shadow entries in the shared folder. Families cannot be the
 workspace root, contain nested markers, or declare `reviewPolicy`.
 
@@ -1107,21 +1111,21 @@ owner-relative `material` paths, resolved without symlink traversal. Parameters
 merge shallowly: family defaults, then the named family variant, then the instance.
 Exact `{"$param":"/pointer"}` objects inside views and evals copy JSON values
 using RFC 6901 pointers, including arrays and the empty root pointer. No string
-interpolation or parameter substitution occurs in names, mounts, identity hooks,
+interpolation or parameter substitution occurs in names, mounts, staleKey scripts,
 or basis. Expanded declarations receive normal validation.
 
 All instance scripts use the shared folder as cwd. A parent addresses material as
 `<family-folder>/<instance>/<path>`; bypassing the instance is rejected. Instance
 material is an ownership declaration, not a sandbox hiding sibling files.
 Discovery keeps each instance's family membership and sorted material, without
-computing any digest or content fingerprint. Only a declared `stale` identity can
-become a reuse key. Identity commands receive each selected instance's family name
-and material paths. A content identity hashes the shared folder without any
+computing any digest or content fingerprint. Only a declared `staleKey` can
+become a reuse key. staleKey scripts receive each selected instance's family name
+and material paths. A content staleKey hashes the shared folder without any
 instance's material, plus the instance's own material. Each review rechecks its
-own instance identity. No workspace monitoring or automatic reuse is added.
+own instance's staleKey. No workspace monitoring or automatic reuse is added.
 
 The runtime-only fixture demonstrates parameterized views, shared evals,
-independent inputs/results, and a shared identity hook (inert during discovery):
+independent inputs/results, and a shared staleKey script (inert during discovery):
 
 ```sh
 cargo run -q -p artifactize -- --repo crates/artifactize/tests/fixtures/families config check

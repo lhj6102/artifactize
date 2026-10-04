@@ -234,14 +234,14 @@ async fn failure_after_partial_output_never_retries_and_http_auth_explains_login
         vec![
             MockHttpResponse::error(
                 StatusCode::UNAUTHORIZED,
-                json!({"detail":"Identity rejected"}).to_string(),
+                json!({"detail":"Account rejected"}).to_string(),
             ),
             final_openai(),
         ],
     )
     .await;
     let error = review.result.unwrap_err();
-    assert!(error.contains("Identity rejected"), "{error}");
+    assert!(error.contains("Account rejected"), "{error}");
     assert!(error.contains("artifactize login chatgpt"), "{error}");
     assert_eq!(server.requests().len(), 1);
 }

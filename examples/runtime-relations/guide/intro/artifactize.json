@@ -1,6 +1,6 @@
 {
   "name": "intro",
-  "stale": {"kind": "content"},
+  "staleKey": {"content": {}},
   "evals": [
     {
       "id": "heading",

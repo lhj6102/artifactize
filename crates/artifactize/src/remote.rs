@@ -51,7 +51,7 @@ impl Record {
     /// Project a completed local GREEN/RED result with a stale key; `full` keeps the execution.
     pub fn new(execution: &Execution, full: bool) -> Result<Self, String> {
         let (Some(stale_key), Some(_), Some(completed_at), Some(result)) = (
-            &execution.identity,
+            &execution.stale_key,
             execution.verdict(),
             &execution.completed_at,
             &execution.result,
@@ -106,7 +106,7 @@ impl Record {
             )
             && valid_id(&self.execution_id)
             && self.execution.as_ref().is_none_or(|execution| {
-                execution.identity.as_ref() == Some(&self.stale_key)
+                execution.stale_key.as_ref() == Some(&self.stale_key)
                     && execution.eval_def_hash == self.eval_def_hash
                     && execution.status == self.verdict
                     && execution.profile == self.profile
@@ -137,7 +137,7 @@ impl Record {
             Some(execution) => *execution,
             None => Execution {
                 id: String::new(),
-                identity: Some(self.stale_key),
+                stale_key: Some(self.stale_key),
                 eval_def_hash: self.eval_def_hash.clone(),
                 owner_pid: 0,
                 owner_start_time: 0,

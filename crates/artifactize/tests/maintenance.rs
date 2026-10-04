@@ -94,13 +94,13 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     let auth = state.join("auth");
     fs::create_dir(&auth).unwrap();
     fs::set_permissions(&auth, fs::Permissions::from_mode(0o700)).unwrap();
-    let identity = json!({"issuer":"https://auth.openai.com", "subject":"test", "email":null});
+    let account = json!({"issuer":"https://auth.openai.com", "subject":"test", "email":null});
     let registration =
-        json!({"client_id":"oaiapp_test", "ext_agent_host_id":"test-host", "identity":identity});
+        json!({"client_id":"oaiapp_test", "ext_agent_host_id":"test-host", "account":account});
     let mut credentials = json!({
         "access_token":"private-access", "refresh_token":"private-refresh", "id_token":"private-id",
         "token_type":"Bearer", "expires_at":4_000_000_000_u64, "saved_at":1,
-        "client_id":"oaiapp_test", "ext_agent_host_id":"test-host", "scopes":["chatgpt.tokens.use.direct"], "identity":identity
+        "client_id":"oaiapp_test", "ext_agent_host_id":"test-host", "scopes":["chatgpt.tokens.use.direct"], "account":account
     });
     for (name, data) in [
         ("chatgpt-registration.json", &registration),

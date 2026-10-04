@@ -38,7 +38,7 @@ pub(crate) fn budget_reason(run: &Run) -> String {
 pub(crate) async fn schedule(
     config: Arc<RepoConfig>,
     graph: &Graph<'_>,
-    identities: &BTreeMap<&str, cache::Identity>,
+    stale_keys: &BTreeMap<&str, cache::PreparedKey>,
     run: &mut Run,
     requests: &mut [Request],
     receipts: &Receipts,
@@ -50,7 +50,7 @@ pub(crate) async fn schedule(
     let result = Scheduler {
         config,
         graph,
-        identities,
+        stale_keys,
         run,
         requests,
         receipts,
@@ -69,7 +69,7 @@ pub(crate) async fn schedule(
 struct Scheduler<'a, 'g> {
     config: Arc<RepoConfig>,
     graph: &'a Graph<'g>,
-    identities: &'a BTreeMap<&'g str, cache::Identity>,
+    stale_keys: &'a BTreeMap<&'g str, cache::PreparedKey>,
     run: &'a mut Run,
     requests: &'a mut [Request],
     receipts: &'a Receipts,
@@ -79,14 +79,14 @@ struct Scheduler<'a, 'g> {
 
 impl Scheduler<'_, '_> {
     async fn run(&mut self) -> Result<BTreeMap<String, Evidence>, String> {
-        let owner = process::identity(std::process::id()).map_err(|e| e.to_string())?;
+        let owner = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
         let producer = Producer::current();
         let run_dir = self.run.state_dir.join("runs").join(&self.run.id);
         let eval_hashes: BTreeMap<_, _> = self
             .config
             .evals
             .iter()
-            .filter(|eval| self.identities.contains_key(eval.target.as_str()))
+            .filter(|eval| self.stale_keys.contains_key(eval.target.as_str()))
             .map(|eval| {
                 (
                     eval.id.as_str(),
@@ -145,10 +145,10 @@ impl Scheduler<'_, '_> {
                     }) {
                         continue;
                     }
-                    if let Some(identity) = self.identities.get(eval.target.as_str())
+                    if let Some(stale_key) = self.stale_keys.get(eval.target.as_str())
                         && let Some(execution) = self
                             .receipts
-                            .cached_execution(&identity.value, &eval_hashes[eval.id.as_str()])
+                            .cached_execution(&stale_key.value, &eval_hashes[eval.id.as_str()])
                             .await?
                     {
                         evidence.insert(
@@ -187,7 +187,7 @@ impl Scheduler<'_, '_> {
                     }
                     let mut execution = Execution {
                         id: format!("execution-{}", request.id),
-                        identity: request.identity.clone().filter(|_| !request.force),
+                        stale_key: request.stale_key.clone().filter(|_| !request.force),
                         eval_def_hash: request.eval_def_hash.clone(),
                         owner_pid: owner.pid,
                         owner_start_time: owner.start_time,
@@ -213,9 +213,9 @@ impl Scheduler<'_, '_> {
                         origin: None,
                         manifest: None,
                     };
-                    if execution.identity.is_some() {
+                    if execution.stale_key.is_some() {
                         execution.manifest =
-                            self.identities[request.target.as_str()].manifest.clone();
+                            self.stale_keys[request.target.as_str()].manifest.clone();
                     }
                     let human = matches!(
                         self.config
@@ -257,7 +257,7 @@ impl Scheduler<'_, '_> {
                             request.execution_id = Some(id);
                             request.status = "WAITING_HUMAN".into();
                             request.blocked_reason = Some(
-                                "Waiting for the active Human identity/Eval-definition execution."
+                                "Waiting for the active Human stale key/Eval-definition execution."
                                     .into(),
                             );
                             *request = self.receipts.follow_human(request).await?;
@@ -282,7 +282,7 @@ impl Scheduler<'_, '_> {
                                 request.execution_id = Some(id);
                                 request.status = "QUEUED".into();
                                 request.blocked_reason = Some(
-                                    "Waiting for the active identity/Eval-definition execution."
+                                    "Waiting for the active stale key/Eval-definition execution."
                                         .into(),
                                 );
                                 self.receipts.save_request(request).await?;
@@ -300,7 +300,7 @@ impl Scheduler<'_, '_> {
                     }
                     waiting.remove(&index);
                     request.execution_id =
-                        execution.identity.as_ref().map(|_| execution.id.clone());
+                        execution.stale_key.as_ref().map(|_| execution.id.clone());
                     request.blocked_reason = None;
                     let eval = self
                         .config

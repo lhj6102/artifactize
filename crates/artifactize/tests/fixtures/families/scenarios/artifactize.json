@@ -19,17 +19,16 @@
       }
     }
   },
-  "stale": {
-    "kind": "identity",
+  "staleKey": {
     "script": {
       "command": "/bin/sh",
       "args": [
-        "identity.sh"
+        "stale_key.sh"
+      ],
+      "inputs": [
+        "check.sh"
       ]
-    },
-    "inputs": [
-      "check.sh"
-    ]
+    }
   },
   "views": {
     "agentTools": {
