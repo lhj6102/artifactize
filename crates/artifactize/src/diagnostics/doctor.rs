@@ -120,6 +120,34 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         ),
         Err(error) => report.add("chatgpt", "FAIL", &error, Value::Null),
     }
+    // Offline: configuration and token storage only; `remote status` checks reachability.
+    match auth::remote::remote(Some(&state), repo) {
+        Ok(None) => report.add(
+            "remote",
+            "PASS",
+            "No remote review store is configured.",
+            json!({"configured":false}),
+        ),
+        Ok(Some(remote)) => {
+            let details = json!({"configured":true,"url":remote.url,"share":remote.share,"tokenSource":remote.token_source});
+            if remote.token_source == auth::remote::TokenSource::None {
+                report.add(
+                    "remote",
+                    "WARN",
+                    "No remote token; run `artifactize remote login URL` or set ARTIFACTIZE_REMOTE_TOKEN.",
+                    details,
+                );
+            } else {
+                report.add(
+                    "remote",
+                    "PASS",
+                    "Remote review store is configured; `remote status` checks reachability.",
+                    details,
+                );
+            }
+        }
+        Err(error) => report.add("remote", "FAIL", &error, Value::Null),
+    }
     let binary = env::var_os("PATH").and_then(|path| {
         env::split_paths(&path)
             .map(|path| path.join("claude"))

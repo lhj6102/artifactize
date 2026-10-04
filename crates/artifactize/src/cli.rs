@@ -1,5 +1,6 @@
 //! Command-line parsing, projections, and exit codes.
 
+mod remote;
 mod request;
 use request::RequestCommand;
 
@@ -61,6 +62,11 @@ pub enum Command {
     Logout {
         #[command(subcommand)]
         provider: AuthProvider,
+    },
+    /// Sign in to, sign out of, or check a shared remote review store.
+    Remote {
+        #[command(subcommand)]
+        command: remote::RemoteCommand,
     },
     /// Check local readiness without provider calls or creating a Run.
     Doctor,
@@ -372,6 +378,15 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                     .map_err(|e| e.to_string())?;
             }
             Ok(0)
+        }
+        Some(Command::Remote { command }) => {
+            remote::execute(
+                cli.state_dir.as_deref(),
+                cli.repo.as_deref(),
+                command,
+                cli.json,
+            )
+            .await
         }
         Some(Command::Doctor) => {
             let report =

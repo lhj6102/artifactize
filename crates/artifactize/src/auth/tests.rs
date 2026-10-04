@@ -321,7 +321,7 @@ async fn storage_is_atomic_private_and_preserves_registration() {
         "old-access-secret"
     );
     assert_eq!(fs::read_dir(&storage.directory).unwrap().count(), 3);
-    storage.remove_credentials().unwrap();
+    storage.remove(CREDENTIALS).unwrap();
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
     assert_eq!(
         first.ext_agent_host_id,

@@ -1,6 +1,8 @@
-//! ChatGPT Sign in with ChatGPT, protected credentials, and serialized refresh.
+//! ChatGPT Sign in with ChatGPT, protected credentials, and serialized refresh;
+//! the remote review store's configuration and token.
 
 mod oauth;
+pub mod remote;
 mod storage;
 #[cfg(test)]
 mod tests;
@@ -364,7 +366,7 @@ async fn token_request(
         if let Some(storage) = refresh_storage
             && oauth::terminal_refresh_error(code)
         {
-            storage.remove_credentials()?;
+            storage.remove(CREDENTIALS)?;
         }
         // Never echo response bodies: they may contain credentials or authorization codes.
         return Err(format!(
@@ -387,7 +389,7 @@ pub async fn logout_chatgpt(state: Option<&Path>, repo: Option<&Path>) -> Result
         return Ok(true);
     };
     let revoked = revoke(&stored).await;
-    storage.remove_credentials()?;
+    storage.remove(CREDENTIALS)?;
     Ok(revoked)
 }
 
