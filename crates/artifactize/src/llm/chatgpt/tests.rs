@@ -126,8 +126,13 @@ impl Server {
                     }
                     _ => panic!("unsupported test response"),
                 };
+                // An empty type omits the header, as the real SIWC event stream does.
+                let content_type = match content_type.as_str() {
+                    "" => String::new(),
+                    value => format!("Content-Type: {value}\r\n"),
+                };
                 let header = format!(
-                    "HTTP/1.1 {status} Test\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    "HTTP/1.1 {status} Test\r\n{content_type}Content-Length: {}\r\nConnection: close\r\n\r\n",
                     body.len()
                 );
                 socket.write_all(header.as_bytes()).await.unwrap();
