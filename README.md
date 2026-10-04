@@ -132,8 +132,8 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 |---|---|---|---|
 | `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--jobs N` (4), `--max-executions N`, `--wait`, `--timeout-ms MS` (600000, needs `--wait`) | text or JSON | outcome |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`; default `--all` | text or JSON | 0 satisfied, 1 not |
-| `graph [ARTIFACT\|FAMILY]` | | text or JSON | 0 |
 | `config check` | | text or JSON | 0 |
+| `config graph [ARTIFACT\|FAMILY]` | | text or JSON | 0 |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | text or JSON | 0 |
 | `run show RUN_ID` | `--wait`, `--timeout-ms MS` (600000, needs `--wait`) | JSON | 0; outcome with `--wait` |
 | `request list` | `--run RUN_ID` | text or JSON | 0 |
@@ -527,7 +527,7 @@ use; inserts evict least-recently-used entries above 100,000 entries or 4 GiB.
 ```sh
 artifactize --repo PROJECT status
 artifactize --repo PROJECT status ARTIFACT --recursive --json
-artifactize --repo PROJECT graph FAMILY --json
+artifactize --repo PROJECT config graph FAMILY --json
 artifactize --repo PROJECT config check --json
 ```
 
@@ -544,7 +544,7 @@ the same isolation and validation as verify. staleKey failures exit 2; an old
 saved staleKey is never substituted. It never runs tools or eval commands, creates
 Runs, reserves work, creates a missing database or updates cache access times.
 staleKey scripts use disposable output under the state directory, which may be
-created even when no database exists. `graph` and `config check` remain fully
+created even when no database exists. `config graph` and `config check` remain fully
 static and never run owner code.
 
 A current completed staleKey/Eval-definition entry yields PASS or RED and a `reuse`
@@ -578,7 +578,7 @@ A script staleKey, or a manifest whose maps were dropped, can only report
 `stale key changed` or `inputs changed`. No explanation appears when that eval
 definition has never been cached, or for forced evals.
 
-`graph [ARTIFACT|FAMILY]` defaults to the whole project, or shows the selected
+`config graph [ARTIFACT|FAMILY]` defaults to the whole project, or shows the selected
 required closure including cycle peers. Text lists Artifacts, evals, families,
 components and input-to-consumer relations. Full JSON includes expanded static
 Artifact/eval definitions (including profiles, payloads, schemas and tool views),
@@ -586,7 +586,9 @@ child/mount/instruction/argv relation metadata, cycle markers, dependency-first
 SCCs and family membership. Component IDs refer to the full graph and may be
 noncontiguous in a selected projection. `config check` keeps its static validity
 confirmation and JSON Artifact/eval counts. There is one text or full JSON output
-level, with no `plan`, `--compact` or `--full`.
+level, with no `plan`, `--compact` or `--full`. The former top-level `graph` command
+is hidden from help; it prints `graph moved to "artifactize config graph"` and
+exits 2.
 
 ## Scoped input library
 

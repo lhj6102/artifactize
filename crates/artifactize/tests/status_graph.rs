@@ -204,8 +204,8 @@ fn status_selection_policy_and_final_obligations_match_verify() {
         vec!["status", "--eval", "red/check", "--evals", "red/check"],
         vec!["status", "missing"],
         vec!["status", "--full"],
-        vec!["graph", "--compact"],
-        vec!["graph", "missing"],
+        vec!["config", "graph", "--compact"],
+        vec!["config", "graph", "missing"],
         vec!["verify"],
     ] {
         fixture.json(&args, 2);
@@ -277,7 +277,7 @@ fn families_keep_full_definitions_grouping_and_last_run_pointers() {
     assert!(fixture.repo.join("scenarios/stale_key-ran").exists());
     fs::remove_file(fixture.repo.join("scenarios/stale_key-ran")).unwrap();
     fixture.json(&["config", "check"], 0);
-    let graph = fixture.json(&["graph", "scenarios"], 0);
+    let graph = fixture.json(&["config", "graph", "scenarios"], 0);
     assert_eq!(
         graph["families"]["scenarios"],
         json!({"path":"scenarios","artifactIds":["checkout","search"]})
@@ -292,7 +292,8 @@ fn families_keep_full_definitions_grouping_and_last_run_pointers() {
             ["id"]["enum"],
         json!(["message", "query"])
     );
-    let text = String::from_utf8(fixture.output(&["graph", "scenarios"], 0).stdout).unwrap();
+    let text =
+        String::from_utf8(fixture.output(&["config", "graph", "scenarios"], 0).stdout).unwrap();
     assert!(text.contains("Family scenarios: checkout, search"));
     assert!(!fixture.repo.join("scenarios/stale_key-ran").exists());
 }
@@ -309,7 +310,7 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
         r#"{"name":"project","basis":true}"#,
     )
     .unwrap();
-    let graph = fixture.json(&["graph"], 0);
+    let graph = fixture.json(&["config", "graph"], 0);
     assert_eq!(graph["version"], 1);
     let relations = graph["relations"].as_array().unwrap();
     for (kind, field, value) in [
@@ -334,7 +335,7 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     assert_eq!(edge["source"], "input");
     assert_eq!(edge["target"], "green");
     assert_eq!(edge["cyclic"], false);
-    let cycle = fixture.json(&["graph", "cycle-a"], 0);
+    let cycle = fixture.json(&["config", "graph", "cycle-a"], 0);
     assert_eq!(cycle["artifacts"].as_object().unwrap().len(), 2);
     assert_eq!(cycle["components"].as_array().unwrap().len(), 1);
     assert_eq!(
@@ -354,7 +355,7 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
             assert!(dependency.as_u64().unwrap() < component["id"].as_u64().unwrap());
         }
     }
-    let green = fixture.json(&["graph", "green"], 0);
+    let green = fixture.json(&["config", "graph", "green"], 0);
     assert_eq!(
         green["artifacts"]
             .as_object()
@@ -368,7 +369,8 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
         green["evals"][0]["declaration"]["profile"]["command"],
         "/bin/sh"
     );
-    let text = String::from_utf8(fixture.output(&["graph", "cycle-a"], 0).stdout).unwrap();
+    let text =
+        String::from_utf8(fixture.output(&["config", "graph", "cycle-a"], 0).stdout).unwrap();
     assert!(text.contains("[cycle]"));
     assert!(text.contains("cycle-b -> cycle-a [instruction"));
     assert!(!fixture.state.exists());
@@ -389,7 +391,7 @@ fn static_commands_never_execute_hooks_and_status_only_runs_stale_key() {
     .unwrap();
     fs::set_permissions(hook, fs::Permissions::from_mode(0o755)).unwrap();
     fixture.json(&["config", "check"], 0);
-    fixture.json(&["graph"], 0);
+    fixture.json(&["config", "graph"], 0);
     assert!(!marker.exists());
     assert!(!fixture.state.exists());
     let path = fixture.repo.join("review/artifactize.json");

@@ -71,7 +71,7 @@ export ARTIFACTIZE_STATE_HOME=$(mktemp -d)
 cd examples/runtime-relations
 artifactize config check    # static validation; runs no owner code
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
-artifactize graph           # Artifacts, evals and child/mount/reference relations
+artifactize config graph    # Artifacts, evals and child/mount/reference relations
 artifactize verify --all    # three GREEN results, exit 0; prints "Run: RUN_ID"
 artifactize run show RUN_ID # the saved Run as JSON: argv, stdout, staleKey
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused

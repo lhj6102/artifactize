@@ -54,7 +54,7 @@ You need `artifactize` on your `PATH` ([Install](../../docs/INSTALL.md):
 ```sh
 cd examples/agent-tools
 artifactize config check
-artifactize graph
+artifactize config graph
 artifactize tools check      # static: schemas, executables and scoped paths; runs nothing
 artifactize tools check --execute --artifact spec --audience agent --tool coverage --args '{}'
 artifactize tools check --execute --artifact spec --audience agent --tool coverage --args '{"id":"R9"}'

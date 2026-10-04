@@ -57,8 +57,8 @@ You need `artifactize` on your `PATH` ([Install](../../docs/INSTALL.md):
 ```sh
 cd examples/family
 artifactize config check   # validates the expanded instances; runs no owner code
-artifactize graph          # "Family posts: release-notes, tip, welcome" and each instance's relations
-artifactize graph posts --json
+artifactize config graph   # "Family posts: release-notes, tip, welcome" and each instance's relations
+artifactize config graph posts --json
 artifactize status         # exit 1: all three evals would execute
 artifactize verify --all   # three GREEN results, exit 0
 artifactize verify --all   # nothing executes: each instance reuses its result
@@ -76,7 +76,7 @@ artifactize verify tip                             # one instance
 artifactize verify --artifacts tip,posts          # names mixed; tip is selected once
 artifactize verify --evals welcome/style,tip/style # qualified instance evals
 artifactize status posts
-artifactize graph posts
+artifactize config graph posts
 ```
 
 The same names work in `--artifacts-file` and `--evals-file` (a JSON array or
