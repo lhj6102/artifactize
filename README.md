@@ -250,9 +250,11 @@ the chosen scope.
   downstream. Choose it when a review really reads indirect dependencies.
 - `ignore`: up to 64 `.gitignore`-style globs relative to the owner, without
   negation. They always exclude, like the built-in ignores `.git`,
-  `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files in
-  walked directories exclude more, with git's precedence and negation inside
-  them. Explicitly named `inputs` are never ignored.
+  `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files
+  exclude more, with git semantics: every one from the repository root (`--repo`)
+  down through the Artifact and the walked directories applies, each pattern is
+  relative to its own file's folder, negation works, and a deeper file overrides a
+  shallower one. Explicitly named `inputs` are never ignored.
 
 Each dependency contributes its own entry, never its dependencies' entries:
 

@@ -110,6 +110,44 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
 }
 
 #[tokio::test]
+async fn gitignores_apply_from_the_repository_root_down_with_git_precedence() {
+    let repo = Repo::new();
+    repo.artifact(
+        "pkg/app",
+        json!({"name":"app","stale":{"kind":"content","inputs":["src"],"dependencies":"none"}}),
+    );
+    repo.write(".gitignore", "*.cache\nbuild/\n/pkg/app/src/anchored.txt\n");
+    repo.write("pkg/.gitignore", "!keep.cache\n/app/src/relative.txt\n");
+    repo.write("pkg/app/.gitignore", "local.txt\n");
+    for path in [
+        "a.txt",
+        "x.cache",
+        "keep.cache",
+        "anchored.txt",
+        "relative.txt",
+        "local.txt",
+        "build/out",
+        "sub/anchored.txt",
+        "sub/relative.txt",
+    ] {
+        repo.write(&format!("pkg/app/src/{path}"), "v1");
+    }
+    assert_eq!(
+        repo.files("app").await,
+        [
+            "src/a.txt",
+            "src/keep.cache",
+            "src/sub/anchored.txt",
+            "src/sub/relative.txt"
+        ]
+    );
+    let before = repo.identity("app").await.unwrap().value;
+    repo.write("pkg/app/src/__pycache__/m.pyc", "generated");
+    repo.write("pkg/app/src/other.cache", "generated");
+    assert_eq!(repo.identity("app").await.unwrap().value, before);
+}
+
+#[tokio::test]
 async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_owner() {
     let repo = Repo::new();
     repo.artifact("owner", json!({"name":"owner","stale":{"kind":"content"}}));

@@ -172,7 +172,8 @@ fn generated_and_ignored_review_output_never_changes_the_identity() {
     );
     fixture.file("py/helper.py", "VALUE = 1\n");
     fixture.file("py/check.py", "import helper\nassert helper.VALUE == 1\n");
-    fixture.file("py/.gitignore", "out/\n");
+    // A repository-root .gitignore applies to every Artifact below it.
+    fixture.file(".gitignore", "out/\n");
     let run = fixture.json(&["verify", "--all"], 0);
     assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
     assert!(fixture.repo.join("py/__pycache__").is_dir());

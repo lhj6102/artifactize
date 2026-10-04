@@ -174,7 +174,7 @@ L.1 removed CCDD's `file-hash` mode and its fingerprints. This brings back one d
   - child folders, `artifactize.json` and family instance lists (their effect reaches the identity through the Eval definition hash and the dependency list);
   - the built-ins `.git`, `__pycache__`, `*.pyc`, `target` and `node_modules`;
   - declared `ignore` globs;
-  - `.gitignore` files' rules (the `ignore` crate's matcher only, over our own symlink-free walk).
+  - `.gitignore` rules from the repository root down through the Artifact and its walked folders, with git precedence (the `ignore` crate's matcher only, over our own symlink-free walk).
 - Walks are bounded at 10,000 entries and 1 GiB.
 - The execution keeps a bounded manifest (per-file digests and dependency entries, at most 64 KiB) so `status` can say which files or dependencies changed since the newest cached result for the same Eval definition.
 - The script form (`kind: "identity"`) is unchanged. No `stale` still means no identity and no reuse.

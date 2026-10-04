@@ -104,7 +104,10 @@ pub(super) async fn files(
 }
 
 struct Walk {
+    root: PathBuf,
     owner: PathBuf,
+    /// The owner folder relative to the repository root, where `.gitignore` bases start.
+    prefix: String,
     inputs: Vec<String>,
     /// Child Artifact folders, declaration files and family material, skipped while walking.
     excluded: BTreeSet<String>,
@@ -127,6 +130,11 @@ impl Walk {
     ) -> Result<Self, String> {
         let artifact = &config.artifacts[id];
         let owner = scope::scoped_path(&config.root, &artifact.path).map_err(|e| e.to_string())?;
+        let prefix = artifact
+            .path
+            .to_str()
+            .ok_or("Artifact paths must be UTF-8.")?
+            .to_owned();
         let mut excluded = BTreeSet::from([CONFIG_FILE.to_owned()]);
         for (path, child) in &artifact.children {
             let folder = if config.artifacts[child].family.is_some() {
@@ -158,7 +166,9 @@ impl Walk {
             inputs.extend(family.material.iter().cloned());
         }
         Ok(Self {
+            root: config.root.clone(),
             owner,
+            prefix,
             inputs,
             excluded,
             ignore: matcher(ignore)?,
@@ -172,7 +182,8 @@ impl Walk {
             let file =
                 scope::open_scoped(&self.owner, input).map_err(|e| format!("{label}: {e}"))?;
             if file.metadata().map_err(|e| e.to_string())?.is_dir() {
-                self.directory(&file, input, &mut Vec::new(), &mut state, cancellation)?;
+                let mut gitignores = self.ancestors(input)?;
+                self.directory(&file, input, &mut gitignores, &mut state, cancellation)?;
             } else {
                 hash_file(file, input, &mut state)?;
             }
@@ -212,13 +223,11 @@ impl Walk {
             entries.push((name, kind.is_dir()));
         }
         entries.sort();
-        let pushed = entries
-            .iter()
-            .any(|(name, is_dir)| name == ".gitignore" && !is_dir);
-        if pushed {
-            let gitignore = read_gitignore(directory)
-                .map_err(|e| format!("{}: {e}", join(path, ".gitignore")))?;
-            gitignores.push((path.to_owned(), gitignore));
+        let gitignore =
+            read_gitignore(directory).map_err(|e| format!("{}: {e}", join(path, ".gitignore")))?;
+        let pushed = gitignore.is_some();
+        if let Some(gitignore) = gitignore {
+            gitignores.push((join(&self.prefix, path), gitignore));
         }
         for (name, is_dir) in entries {
             if cancellation.is_cancelled() {
@@ -248,16 +257,35 @@ impl Walk {
         Ok(())
     }
 
-    /// Built-ins and declared globs always exclude; nested `.gitignore` files decide the rest.
+    /// `.gitignore` files from the repository root down to a walked input's parent folder.
+    fn ancestors(&self, input: &str) -> Result<Vec<(String, Gitignore)>, String> {
+        let full = join(&self.prefix, input);
+        let parts: Vec<_> = full.split('/').filter(|part| !part.is_empty()).collect();
+        let mut gitignores = Vec::new();
+        for depth in 0..parts.len() {
+            let base = parts[..depth].join("/");
+            let label = |e: String| format!("{}: {e}", join(&base, ".gitignore"));
+            let directory =
+                scope::open_scoped(&self.root, &base).map_err(|e| label(e.to_string()))?;
+            if let Some(gitignore) = read_gitignore(&directory).map_err(label)? {
+                gitignores.push((base, gitignore));
+            }
+        }
+        Ok(gitignores)
+    }
+
+    /// Built-ins and declared globs always exclude; `.gitignore` files decide the rest,
+    /// each relative to its own folder and the deepest match winning, as in git.
     fn ignored(&self, path: &str, is_dir: bool, gitignores: &[(String, Gitignore)]) -> bool {
         if self.ignore.matched(path, is_dir).is_ignore() {
             return true;
         }
+        let full = join(&self.prefix, path);
         for (base, gitignore) in gitignores.iter().rev() {
             let relative = if base.is_empty() {
-                path
+                &full
             } else {
-                &path[base.len() + 1..]
+                &full[base.len() + 1..]
             };
             match gitignore.matched(relative, is_dir) {
                 Match::Ignore(_) => return true,
@@ -269,8 +297,17 @@ impl Walk {
     }
 }
 
-/// Lines git would reject are skipped, as git skips them.
-fn read_gitignore(directory: &File) -> Result<Gitignore, String> {
+/// A pinned folder's `.gitignore`, if any. Lines git would reject are skipped, as git skips them.
+fn read_gitignore(directory: &File) -> Result<Option<Gitignore>, String> {
+    match fs::symlink_metadata(format!(
+        "/proc/self/fd/{}/.gitignore",
+        directory.as_raw_fd()
+    )) {
+        Ok(metadata) if metadata.is_dir() => return Ok(None),
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    }
     let file = scope::open_child(directory, OsStr::new(".gitignore")).map_err(|e| e.to_string())?;
     let mut text = Vec::new();
     file.take(GITIGNORE_BYTES + 1)
@@ -283,7 +320,7 @@ fn read_gitignore(directory: &File) -> Result<Gitignore, String> {
     for line in String::from_utf8_lossy(&text).lines() {
         let _ = builder.add_line(None, line);
     }
-    builder.build().map_err(|e| e.to_string())
+    builder.build().map(Some).map_err(|e| e.to_string())
 }
 
 fn hash_file(mut file: File, path: &str, state: &mut State) -> Result<(), String> {
