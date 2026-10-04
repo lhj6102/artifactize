@@ -218,6 +218,24 @@
         </li>
       </ol>
       <p class="note center">Real output from the <code>runtime-relations</code> example, trimmed.</p>
+      <figure class="demo">
+        <div class="demo-tabs" role="group" aria-label="Choose a recording">
+          <button type="button" class="demo-tab" aria-pressed="true" data-name="change" data-height="830" data-label="Recording: after one file changes, artifactize status predicts one execution and four reuses and names guide.md; verify then executes one eval and reuses four.">Change one file</button>
+          <button type="button" class="demo-tab" aria-pressed="false" data-name="reuse" data-height="830" data-label="Recording: artifactize status predicts five evals; the first verify executes all five and the second reuses all five.">Run it twice</button>
+        </div>
+        <div class="demo-frame" style="aspect-ratio: 1000 / 830">
+          <video class="demo-video" muted loop playsinline preload="none" width="1000" height="830"
+                 poster="/media/demo/change.webp" aria-label="Recording: after one file changes, artifactize status predicts one execution and four reuses and names guide.md; verify then executes one eval and reuses four.">
+            <source src="/media/demo/change.mp4" type="video/mp4">
+          </video>
+          <button type="button" class="vc demo-play" aria-pressed="false" hidden>
+            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13l10.5-6.5z"/></svg>
+            <span class="vc-label">Pause</span>
+          </button>
+        </div>
+        <figcaption>A real terminal session in the <code>shop</code> demo project, recorded with VHS. The tapes are in <code>website/demo/</code>.</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -257,15 +275,8 @@
         <p><a class="link" href="/docs/guides/human-reviews.html">Human reviews guide <span aria-hidden="true">→</span></a></p>
       </div>
       <div class="panel">
-        <div class="panel-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="panel-title">two terminals, one state</span></div>
-<pre class="code term"><code><span class="t-dim"># waits for Human sign-offs</span>
-<span class="t-prompt">$</span> artifactize verify --all --wait
-
-<span class="t-dim"># in a second terminal: o reviews a waiting eval</span>
-<span class="t-prompt">$</span> artifactize monitor
-<span class="t-dim"># or go straight to the review UI</span>
-<span class="t-prompt">$</span> artifactize review</code></pre>
-        <dl class="keys">
+        <div class="panel-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="panel-title">monitor and review keys</span></div>
+<dl class="keys">
           <div><dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>move</dd></div>
           <div><dt><kbd>Enter</kbd></dt><dd>open a Run, run a tool</dd></div>
           <div><dt><kbd>o</kbd></dt><dd>review a waiting eval</dd></div>
@@ -274,6 +285,22 @@
           <div><dt><kbd>q</kbd></dt><dd>quit</dd></div>
         </dl>
       </div>
+    </div>
+    <div class="wrap">
+      <figure class="demo">
+        <div class="demo-frame" style="aspect-ratio: 1000 / 960">
+          <video class="demo-video" muted loop playsinline preload="none" width="1000" height="960"
+                 poster="/media/demo/human.webp" aria-label="Recording in two terminals: verify --wait waits; in the monitor, o opens review, the notes tool prints the design notes, the GREEN form is filled and submitted, and verify finishes GREEN.">
+            <source src="/media/demo/human.mp4" type="video/mp4">
+          </video>
+          <button type="button" class="vc demo-play" aria-pressed="false" hidden>
+            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13l10.5-6.5z"/></svg>
+            <span class="vc-label">Pause</span>
+          </button>
+        </div>
+        <figcaption>Two terminals, one state: <code>verify --wait</code> above, <code>monitor</code> and <code>review</code> below. Recorded with VHS.</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -302,12 +329,23 @@
             <path class="ro" d="M200 230 L 200 170"/>
           </svg>
         </div>
-        <div class="panel">
-<pre class="code term"><code><span class="t-dim"># on Bob's laptop, after Alice's review</span>
-<span class="t-prompt">$</span> artifactize verify --all
-  guide/terms [run-MxxJJJ-1]: <span class="t-green">GREEN</span> <span class="t-cyan">(reused from remote: alice@laptop, run-FBh4xF)</span></code></pre>
-        </div>
       </div>
+    </div>
+    <div class="wrap">
+      <figure class="demo">
+        <div class="demo-frame" style="aspect-ratio: 1000 / 900">
+          <video class="demo-video" muted loop playsinline preload="none" width="1000" height="900"
+                 poster="/media/demo/team.webp" aria-label="Recording: on Alice's laptop verify executes five evals and publishes them to the review store; on Bob's laptop status predicts five reuses and verify reuses all five from remote: alice@laptop.">
+            <source src="/media/demo/team.mp4" type="video/mp4">
+          </video>
+          <button type="button" class="vc demo-play" aria-pressed="false" hidden>
+            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13l10.5-6.5z"/></svg>
+            <span class="vc-label">Pause</span>
+          </button>
+        </div>
+        <figcaption>Two laptops, one review store: each pane has its own checkout and state. Recorded with VHS.</figcaption>
+      </figure>
     </div>
   </section>
 

@@ -1,0 +1,19 @@
+{
+  "name": "docs",
+  "fingerprint": {},
+  "evals": [
+    {
+      "id": "heading",
+      "title": "The guide has a top-level heading",
+      "profile": {
+        "kind": "runtime",
+        "command": "grep",
+        "args": ["-m", "1", "^# ", "guide.md"],
+        "timeoutMs": 5000
+      },
+      "payload": {
+        "instruction": "Check that {docs}/guide.md starts with a top-level heading."
+      }
+    }
+  ]
+}

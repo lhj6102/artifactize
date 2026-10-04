@@ -1,0 +1,19 @@
+{
+  "name": "api",
+  "fingerprint": {},
+  "evals": [
+    {
+      "id": "schema",
+      "title": "The OpenAPI document parses",
+      "profile": {
+        "kind": "runtime",
+        "command": "python3",
+        "args": ["-m", "json.tool", "openapi.json"],
+        "timeoutMs": 10000
+      },
+      "payload": {
+        "instruction": "Check that {api}/openapi.json is valid JSON."
+      }
+    }
+  ]
+}
