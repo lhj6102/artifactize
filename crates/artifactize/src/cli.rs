@@ -326,8 +326,6 @@ pub enum CacheCommand {
         /// Required when the stale key has multiple cached Eval definitions.
         eval_hash: Option<String>,
     },
-    /// Evict least-recently-used entries above the entry and byte limits.
-    Gc,
 }
 
 #[derive(Debug, Subcommand)]
@@ -777,7 +775,6 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                         &json!({"removed": crate::cache::remove(&state, &stale_key, eval_hash.as_deref()).await?}),
                     )?;
                 }
-                CacheCommand::Gc => print_json(&crate::cache::gc(&state).await?)?,
             }
             Ok(0)
         }

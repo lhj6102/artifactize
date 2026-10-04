@@ -143,6 +143,15 @@ impl Fixture {
         transaction.commit().unwrap();
     }
 
+    /// Verify a new staleKey from its own repository; publishing the entry runs LRU GC.
+    fn publish(&self, key: &str) {
+        let repo = self.repo(
+            key,
+            json!({"name":"publisher","staleKey":stale_key(key),"evals":[eval("check","exit 0")]}),
+        );
+        self.command(&repo, &["verify", "--all"], 0);
+    }
+
     fn entries(&self) -> Vec<(String, String, i64, String, String)> {
         let db = Connection::open(self.state.join("state.sqlite")).unwrap();
         let mut statement = db.prepare("SELECT c.stale_key,c.execution_id,c.bytes,c.last_used,e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id ORDER BY c.stale_key").unwrap();
@@ -795,10 +804,6 @@ fn cache_commands_are_inert_for_missing_and_empty_state() {
             fixture.command(&missing_repo, &["cache", "rm", "missing"], 0),
             json!({"removed":false})
         );
-        assert_eq!(
-            fixture.command(&missing_repo, &["cache", "gc"], 0),
-            json!({"removedEntries":0,"removedBytes":0,"remainingEntries":0,"remainingBytes":0})
-        );
         if empty {
             assert_eq!(fs::read_dir(&fixture.state).unwrap().count(), 1);
             assert_eq!(
@@ -934,7 +939,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
 }
 
 #[test]
-fn gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
+fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     const MIB: i64 = 1024 * 1024;
     let fixture = Fixture::new();
     let repo = fixture.repo(
@@ -944,7 +949,7 @@ fn gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     let original = fixture.command(&repo, &["verify", "--all"], 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute("DELETE FROM cache_entries", []).unwrap();
-    fixture.seed_entries(66, 16 * MIB);
+    fixture.seed_entries(65, 16 * MIB);
     db.execute("INSERT INTO executions(id,stale_key,eval_def_hash,owner_pid,owner_start_time,status,data) SELECT 'active','seed-00000',eval_def_hash,1,1,'WAITING_HUMAN','{}' FROM executions LIMIT 1", []).unwrap();
     db.execute("INSERT INTO requests(id,run_id,execution_id,status,data) VALUES ('waiter',?,'seed-00001','QUEUED','{}')", [original["id"].as_str().unwrap()]).unwrap();
     for key in ["seed-00000", "seed-00001"] {
@@ -955,12 +960,15 @@ fn gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
                 .contains("in use")
         );
     }
-    let gc = fixture.command(&repo, &["cache", "gc"], 0);
-    assert_eq!(
-        gc,
-        json!({"removedEntries":2,"removedBytes":32*MIB,"remainingEntries":64,"remainingBytes":1024*MIB})
+    // The new entry takes 65 seeded 16 MiB entries over 1 GiB.
+    fixture.publish("first");
+    assert_eq!(fixture.count("cache_entries"), 64);
+    assert!(
+        db.query_row::<i64, _, _>("SELECT sum(bytes) FROM cache_entries", [], |row| row.get(0))
+            .unwrap()
+            <= 1024 * MIB
     );
-    for key in ["seed-00000", "seed-00001", "seed-00004"] {
+    for key in ["seed-00000", "seed-00001", "seed-00004", "first"] {
         assert!(
             fixture
                 .command(&repo, &["cache", "show", key], 0)
@@ -974,7 +982,7 @@ fn gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
         );
     }
     assert_eq!(fixture.count("executions"), 68);
-    assert_eq!(fixture.count("requests"), 2);
+    assert_eq!(fixture.count("requests"), 3);
     assert_eq!(
         db.query_row::<String, _, _>(
             "SELECT status FROM executions WHERE id='active'",
@@ -986,20 +994,26 @@ fn gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     );
     db.execute("UPDATE cache_entries SET bytes=?", [16 * MIB + 1])
         .unwrap();
-    let gc = fixture.command(&repo, &["cache", "gc"], 0);
+    fixture.publish("second");
+    let keys = || {
+        fixture
+            .entries()
+            .into_iter()
+            .map(|entry| entry.0)
+            .collect::<Vec<_>>()
+    };
     assert_eq!(
-        gc["remainingEntries"], 2,
+        keys(),
+        ["second", "seed-00000", "seed-00001"],
         "protected rows survive even when oversized"
     );
     db.execute("UPDATE executions SET status='ERROR' WHERE id='active'", [])
         .unwrap();
     db.execute("UPDATE requests SET status='GREEN' WHERE id='waiter'", [])
         .unwrap();
-    assert_eq!(
-        fixture.command(&repo, &["cache", "gc"], 0)["remainingEntries"],
-        0
-    );
-    assert_eq!(fixture.count("executions"), 68);
+    fixture.publish("third");
+    assert_eq!(keys(), ["second", "third"]);
+    assert_eq!(fixture.count("executions"), 70);
 }
 
 #[test]
@@ -1014,8 +1028,8 @@ fn rm_refuses_an_active_stale_key_even_without_an_entry() {
             .unwrap()
             .contains("active execution")
     );
-    fixture.command(&repo, &["cache", "gc"], 0);
-    assert_eq!(fixture.count("executions"), 1);
+    fixture.publish("other");
+    assert_eq!(fixture.count("executions"), 2);
     assert!(owner.try_wait().unwrap().is_none());
     fixture.release();
     finish(owner, 0);
@@ -1140,18 +1154,30 @@ fn gc_failure_does_not_replace_a_completed_result() {
         "artifactize.json",
         json!({"name":"test","staleKey":stale_key("second"),"evals":[eval("check","exit 0")]}),
     );
-    let run = fixture.command(&repo, &["verify", "--all"], 0);
+    let verified = fixture.spawn(&repo, &[]).wait_with_output().unwrap();
+    let stderr = String::from_utf8_lossy(&verified.stderr).into_owned();
+    assert!(
+        stderr.contains("Cache GC failed") && stderr.contains("GC unavailable"),
+        "{stderr}"
+    );
+    let run = output(verified, 0);
     assert_eq!(run["requests"][0]["status"], "GREEN");
     assert!(
         fixture
             .command(&repo, &["cache", "show", "second"], 0)
             .is_object()
     );
+    db.execute_batch("DROP TRIGGER fail_gc").unwrap();
+    fixture.publish("third");
+    assert_eq!(
+        fixture.command(&repo, &["cache", "show", "first"], 4),
+        Value::Null,
+        "the next publication retries collection"
+    );
     assert!(
-        fixture.command(&repo, &["cache", "gc"], 2)["error"]
-            .as_str()
-            .unwrap()
-            .contains("GC unavailable")
+        fixture
+            .command(&repo, &["cache", "show", "second"], 0)
+            .is_object()
     );
 }
 
@@ -1357,11 +1383,15 @@ fn gc_and_removal_protect_only_the_matching_definition() {
     fixture.command(&repo, &["verify", "--eval", "test/fail"], 1);
     db.execute("UPDATE cache_entries SET bytes=16777217", [])
         .unwrap();
-    let gc = fixture.command(&repo, &["cache", "gc"], 0);
-    assert_eq!(gc["removedEntries"], 1);
-    assert_eq!(gc["remainingEntries"], 1);
+    fixture.publish("other");
+    assert_eq!(fixture.count("cache_entries"), 2);
     assert_eq!(
-        fixture.command(&repo, &["cache", "list"], 0)[0]["evalDefHash"],
-        hash
+        fixture.command(&repo, &["cache", "show", "shared", other], 4),
+        Value::Null
+    );
+    assert!(
+        fixture
+            .command(&repo, &["cache", "show", "shared", hash], 0)
+            .is_object()
     );
 }

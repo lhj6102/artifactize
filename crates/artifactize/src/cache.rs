@@ -12,7 +12,7 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
-pub use crate::store::cache_entries::{Entry, GcResult, gc, list, remove, show};
+pub use crate::store::cache_entries::{Entry, list, remove, show};
 pub(crate) use content::ignore_patterns;
 
 use crate::{

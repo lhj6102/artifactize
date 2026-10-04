@@ -145,7 +145,6 @@ or state ignore them, except `mcp` (which rejects all three) and `monitor` and
 | `cache list` | | text or JSON | 0 |
 | `cache show STALE_KEY [EVAL_HASH]` | | JSON | 0; 4 missing |
 | `cache rm STALE_KEY [EVAL_HASH]` | | JSON | 0 |
-| `cache gc` | | JSON | 0 |
 | `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 0 ready, 1 not |
 | `mcp --manifest PATH` | | stdio MCP | 0; 1 server failure |
 | `login chatgpt`, `logout chatgpt` | | text or JSON | 0 |
@@ -452,7 +451,6 @@ Forced and uncached results still satisfy their own Run and retain execution aud
 artifactize cache list --json
 artifactize cache show STALE_KEY [EVAL_HASH]
 artifactize cache rm STALE_KEY [EVAL_HASH]
-artifactize cache gc
 ```
 
 These commands use the shared state home or `--state-dir PATH`, without loading a
@@ -474,10 +472,9 @@ of retained execution JSON, with a 16 MiB per-entry limit. Oversized results sti
 reach their Run and existing waiters through the saved execution, but later calls
 execute again. Reuse hits update last use; inspection does not. GC evicts oldest
 eligible entries first, using staleKey then definition hash to break ties, and skips active executions
-and in-flight waiters. Protected entries can temporarily exceed the caps; a later
-publication or `cache gc` retries collection. Explicit GC prints removed and
-remaining entry/byte counts as JSON. Automatic maintenance failures are reported
-on stderr without replacing an already completed verdict.
+and in-flight waiters. Protected entries can temporarily exceed the caps, and
+automatic maintenance failures are reported on stderr without replacing an already
+completed verdict; the next publication retries collection.
 
 GC and `rm` remove only reuse mappings, never execution or receipt rows or Run
 output. These limits are not a bound on total database size or active scratch

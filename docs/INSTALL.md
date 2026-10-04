@@ -160,7 +160,6 @@ it in the same terminal and returns to the monitor when the review exits.
 ```sh
 artifactize prune --dry-run           # list removable scratch output of finished Runs
 artifactize prune --older-than 7d     # remove it; saved results stay readable
-artifactize cache gc                  # enforce the cache entry/byte limits now
 artifactize logout chatgpt            # if you signed in
 cargo uninstall artifactize
 ```
