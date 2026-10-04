@@ -1,0 +1,8 @@
+# Cloudflare Workers static assets for artifactize.dev.
+# Deployed by .github/workflows/website.yml; see website/README.md.
+name = "artifactize-site"
+compatibility_date = "2026-10-01"
+routes = [{ pattern = "artifactize.dev", custom_domain = true }]
+
+[assets]
+directory = "./dist"
