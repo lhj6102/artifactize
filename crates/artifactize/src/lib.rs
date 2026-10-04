@@ -15,6 +15,7 @@ pub mod monitor;
 pub mod process;
 pub mod project;
 pub mod query;
+pub mod remote;
 pub mod runtime;
 pub mod scope;
 pub mod store;

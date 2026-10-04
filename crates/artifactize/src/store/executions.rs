@@ -48,6 +48,53 @@ pub struct Execution {
     pub provenance: Provenance,
     pub started_at: String,
     pub completed_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer: Option<Producer>,
+    /// The Human claimant who submitted this result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer: Option<String>,
+    /// Set only on executions mirrored from a remote review store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Origin>,
+}
+
+/// Who produced an execution: display metadata, never authentication.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Producer {
+    /// `user@host`.
+    pub name: String,
+    /// The producing artifactize version.
+    pub version: String,
+}
+
+impl Producer {
+    pub fn current() -> Self {
+        let user = ["USER", "LOGNAME"]
+            .into_iter()
+            .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()));
+        let host = std::fs::read_to_string("/proc/sys/kernel/hostname").ok();
+        let name = format!(
+            "{}@{}",
+            user.as_deref().unwrap_or("unknown"),
+            host.as_deref()
+                .map(str::trim)
+                .filter(|host| !host.is_empty())
+                .unwrap_or("unknown")
+        );
+        Self {
+            name: name.chars().filter(|c| !c.is_control()).take(200).collect(),
+            version: env!("CARGO_PKG_VERSION").into(),
+        }
+    }
+}
+
+/// The remote store, authenticated publisher and server clock of a mirrored execution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Origin {
+    pub store: String,
+    pub publisher: String,
+    pub published_at: String,
 }
 
 impl Execution {
@@ -268,6 +315,54 @@ impl Receipts {
                     let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
                 }
                 Ok(())
+            })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Cache a remote result as a self-contained execution; an existing local entry wins.
+    pub async fn mirror_execution(&self, execution: &Execution) -> Result<Execution, String> {
+        let execution = execution.clone();
+        self.connection
+            .call(move |db| -> Result<Execution, Error> {
+                let (Some(stale_key), Some(_), Some(_)) =
+                    (&execution.identity, &execution.origin, execution.verdict())
+                else {
+                    return Err(Error::Invalid(
+                        "Only completed remote GREEN/RED results can be mirrored.".into(),
+                    ));
+                };
+                let data = serde_json::to_string(&execution)?;
+                if data.len() > super::cache_entries::MAX_ENTRY_BYTES {
+                    return Err(Error::Invalid(
+                        "Remote result exceeds the cache entry limit.".into(),
+                    ));
+                }
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                if let Some(existing) = lookup(&transaction, stale_key, &execution.eval_def_hash)? {
+                    return Ok(existing);
+                }
+                // A mirror kept after `cache rm` or GC is reused for the same remote execution.
+                transaction.execute(
+                    "INSERT INTO executions(id,identity,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+                    params![execution.id, stale_key, execution.eval_def_hash, execution.owner_pid, execution.owner_start_time as i64, execution.status, data],
+                )?;
+                let data: String = transaction.query_row(
+                    "SELECT data FROM executions WHERE id=? AND identity=? AND eval_def_hash=? AND status=?",
+                    params![execution.id, stale_key, execution.eval_def_hash, execution.status],
+                    |row| row.get(0),
+                ).optional()?.ok_or_else(|| Error::Invalid("Mirrored execution ID conflicts with another execution.".into()))?;
+                transaction.execute(
+                    "INSERT INTO cache_entries(identity,eval_def_hash,execution_id,bytes,last_used) VALUES (?,?,?,?,?)",
+                    params![stale_key, execution.eval_def_hash, execution.id, data.len() as i64, crate::broker::now()],
+                )?;
+                transaction.commit()?;
+                if let Err(error) = super::cache_entries::collect(db) {
+                    use std::io::Write;
+                    let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
+                }
+                Ok(serde_json::from_str(&data)?)
             })
             .await
             .map_err(|e| e.to_string())
