@@ -176,41 +176,44 @@ pub(crate) fn open_scoped(root: &Path, path: &str) -> Result<File, ScopeError> {
     let target = root.join(path);
     let mut directory = File::open("/").map_err(|e| ScopeError(e.to_string()))?;
     for component in target.components() {
-        let name = match component {
+        directory = match component {
             Component::RootDir => continue,
-            Component::Normal(name) => name,
+            Component::Normal(name) => open_child(&directory, name)?,
             _ => {
                 return Err(ScopeError(
                     "Artifact path must not traverse parent directories.".into(),
                 ));
             }
         };
-        let name = CString::new(name.as_bytes())
-            .map_err(|_| ScopeError("Invalid Artifact path.".into()))?;
-        // O_NONBLOCK avoids waiting on a FIFO before its type can be rejected.
-        let fd = unsafe {
-            libc::openat(
-                directory.as_raw_fd(),
-                name.as_ptr(),
-                libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
-            )
-        };
-        if fd < 0 {
-            return Err(ScopeError(
-                "Cannot open Artifact input without symlink traversal.".into(),
-            ));
-        }
-        directory = unsafe { File::from_raw_fd(fd) };
-        let metadata = directory
-            .metadata()
-            .map_err(|e| ScopeError(e.to_string()))?;
-        if !metadata.is_file() && !metadata.is_dir() {
-            return Err(ScopeError(
-                "Artifact input must be a regular file or directory.".into(),
-            ));
-        }
     }
     Ok(directory)
+}
+
+/// Open one entry of a pinned directory without following a symlink.
+pub(crate) fn open_child(directory: &File, name: &std::ffi::OsStr) -> Result<File, ScopeError> {
+    let name =
+        CString::new(name.as_bytes()).map_err(|_| ScopeError("Invalid Artifact path.".into()))?;
+    // O_NONBLOCK avoids waiting on a FIFO before its type can be rejected.
+    let fd = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            name.as_ptr(),
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(ScopeError(
+            "Cannot open Artifact input without symlink traversal.".into(),
+        ));
+    }
+    let file = unsafe { File::from_raw_fd(fd) };
+    let metadata = file.metadata().map_err(|e| ScopeError(e.to_string()))?;
+    if !metadata.is_file() && !metadata.is_dir() {
+        return Err(ScopeError(
+            "Artifact input must be a regular file or directory.".into(),
+        ));
+    }
+    Ok(file)
 }
 
 /// Composition grants access; a referenced Artifact's Eval instructions do not.
@@ -491,6 +494,29 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     alias: alias.clone(),
                 },
             });
+        }
+    }
+    for (id, artifact) in &config.artifacts {
+        let Some(Stale::Content { inputs, .. }) = &artifact.stale else {
+            continue;
+        };
+        let error = |message: String| {
+            ConfigError::new(
+                config.root.join(&artifact.path).join(CONFIG_FILE),
+                format!("stale.inputs: {message}"),
+            )
+        };
+        let scope = artifact_scope(config, &[id]).map_err(|failure| error(failure.0))?;
+        for input in inputs.iter().filter(|input| *input != ".") {
+            let location = scope
+                .resolve_path(id, input)
+                .map_err(|failure| error(failure.0))?;
+            if location.artifact_id != *id {
+                return Err(error(format!(
+                    "{input} belongs to Artifact {}; dependencies come from children, mounts and references.",
+                    location.artifact_id
+                )));
+            }
         }
     }
     let mut resolved = Vec::new();

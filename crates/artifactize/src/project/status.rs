@@ -63,6 +63,9 @@ pub struct EvalState {
     pub obligations: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last: Option<LastRequest>,
+    /// Why the identity no longer matches the newest cached result for this Eval definition.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub changes: Option<cache::Changes>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -142,7 +145,7 @@ pub async fn status(
                 (
                     eval.id.as_str(),
                     (
-                        identity.clone(),
+                        identity.value.clone(),
                         cache::eval_definition_hash(&eval.declaration),
                     ),
                 )
@@ -152,6 +155,13 @@ pub async fn status(
     let cached =
         store::read_identity_executions(&state, &keys.values().cloned().collect::<Vec<_>>())
             .await?;
+    // Explain stale identities against the newest cached result for the same Eval definition.
+    let stale: Vec<_> = keys
+        .iter()
+        .filter(|(_, key)| !matches!(cached.get(*key), Some(Claim::Reuse(_))))
+        .map(|(id, (_, hash))| ((*id).to_owned(), hash.clone()))
+        .collect();
+    let previous = store::read_latest_cached(&state, &stale).await?;
     for eval in &config.evals {
         if let Some(Claim::Reuse(execution)) =
             keys.get(eval.id.as_str()).and_then(|key| cached.get(key))
@@ -318,6 +328,10 @@ pub async fn status(
                 .collect(),
             obligations: obligations_by_artifact[eval.target.as_str()].clone(),
             last: latest.remove(&eval.id),
+            changes: keys
+                .get(eval.id.as_str())
+                .and_then(|(_, hash)| previous.get(&(eval.id.clone(), hash.clone())))
+                .map(|execution| cache::changes(execution, &identities[eval.target.as_str()])),
         });
     }
     Ok(StatusView {

@@ -17,7 +17,7 @@ pub use tools::{
 };
 
 pub(crate) use validation::identifier;
-use validation::{paths, positive_integer, present, script, text, timeout};
+use validation::{path, paths, positive_integer, present, script, text, timeout};
 
 /// Format version for artifactize configuration documents.
 pub const CONFIG_FORMAT_VERSION: u32 = 1;
@@ -186,6 +186,16 @@ impl Views {
     }
 }
 
+/// Which dependency Artifacts a content identity covers, one hop by default.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Dependencies {
+    None,
+    #[default]
+    Direct,
+    Transitive,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Stale {
@@ -196,6 +206,18 @@ pub enum Stale {
         #[serde(rename = "timeoutMs", default, deserialize_with = "timeout")]
         timeout_ms: Option<u32>,
     },
+    Content {
+        #[serde(default = "owner_root")]
+        inputs: Vec<String>,
+        #[serde(default)]
+        dependencies: Dependencies,
+        #[serde(default)]
+        ignore: Vec<String>,
+    },
+}
+
+fn owner_root() -> Vec<String> {
+    vec![".".into()]
 }
 
 impl Stale {
@@ -208,6 +230,20 @@ impl Stale {
             } => {
                 script(&definition.command, &definition.args)?;
                 paths(inputs, "stale.inputs")
+            }
+            Self::Content { inputs, ignore, .. } => {
+                if inputs.is_empty()
+                    || inputs.len() > 64
+                    || inputs.iter().collect::<BTreeSet<_>>().len() != inputs.len()
+                {
+                    return Err(
+                        "stale.inputs must contain 1–64 unique owner-relative paths.".into(),
+                    );
+                }
+                for input in inputs.iter().filter(|input| *input != ".") {
+                    path(input).map_err(|message| format!("stale.inputs: {message}"))?;
+                }
+                crate::cache::ignore_patterns(ignore)
             }
         }
     }

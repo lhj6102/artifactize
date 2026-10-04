@@ -14,6 +14,7 @@ crossterm = { version = "0.29", features = ["event-stream"] }
 futures-util = "0.3"
 getrandom = "0.4"
 globset = "0.4"
+ignore = "0.4"
 jsonschema = { version = "0.58.4", default-features = false }
 jsonwebtoken = { version = "11.1", default-features = false, features = ["aws_lc_rs"] }
 libc = "0.2"

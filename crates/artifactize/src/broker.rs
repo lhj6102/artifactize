@@ -38,7 +38,7 @@ pub(crate) fn budget_reason(run: &Run) -> String {
 pub(crate) async fn schedule(
     config: Arc<RepoConfig>,
     graph: &Graph<'_>,
-    identities: &BTreeMap<&str, String>,
+    identities: &BTreeMap<&str, cache::Identity>,
     run: &mut Run,
     requests: &mut [Request],
     receipts: &Receipts,
@@ -69,7 +69,7 @@ pub(crate) async fn schedule(
 struct Scheduler<'a, 'g> {
     config: Arc<RepoConfig>,
     graph: &'a Graph<'g>,
-    identities: &'a BTreeMap<&'g str, String>,
+    identities: &'a BTreeMap<&'g str, cache::Identity>,
     run: &'a mut Run,
     requests: &'a mut [Request],
     receipts: &'a Receipts,
@@ -148,7 +148,7 @@ impl Scheduler<'_, '_> {
                     if let Some(identity) = self.identities.get(eval.target.as_str())
                         && let Some(execution) = self
                             .receipts
-                            .cached_execution(identity, &eval_hashes[eval.id.as_str()])
+                            .cached_execution(&identity.value, &eval_hashes[eval.id.as_str()])
                             .await?
                     {
                         evidence.insert(
@@ -211,7 +211,12 @@ impl Scheduler<'_, '_> {
                         producer: Some(producer.clone()),
                         reviewer: None,
                         origin: None,
+                        manifest: None,
                     };
+                    if execution.identity.is_some() {
+                        execution.manifest =
+                            self.identities[request.target.as_str()].manifest.clone();
+                    }
                     let human = matches!(
                         self.config
                             .evals

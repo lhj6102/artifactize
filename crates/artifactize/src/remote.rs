@@ -161,6 +161,7 @@ impl Record {
                 producer: self.producer,
                 reviewer: self.reviewer,
                 origin: None,
+                manifest: None,
             },
         };
         execution.id = id;

@@ -844,6 +844,13 @@ fn print_status(view: &crate::project::StatusView) -> io::Result<()> {
             },
             eval.reason
         )?;
+        if let Some(changes) = &eval.changes {
+            writeln!(
+                out,
+                "    Changed since Run {}: {}",
+                changes.since_run_id, changes.summary
+            )?;
+        }
         if let Some(last) = &eval.last {
             writeln!(
                 out,
