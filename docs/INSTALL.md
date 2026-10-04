@@ -16,7 +16,7 @@
 git clone https://github.com/lhj6102/artifactize
 cd artifactize
 cargo install --path crates/artifactize --locked
-artifactize --version          # artifactize 0.2.0
+artifactize --version          # artifactize 0.3.0
 ```
 
 The binary goes to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs
