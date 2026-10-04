@@ -1,6 +1,7 @@
-// artifactize.dev: play/pause and captions for the promo video. The video
-// pauses while it is off screen and never autoplays under reduced motion
-// (see the inline script next to it in index.html).
+// artifactize.dev: play/pause and captions for the promo video, and the
+// terminal recordings further down. The promo pauses while it is off screen
+// and never autoplays under reduced motion (see the inline script next to it
+// in index.html).
 (function () {
   var video = document.getElementById('promo');
   if (!video) return;
@@ -56,4 +57,72 @@
       }
     }, { threshold: 0.15 }).observe(video);
   }
+})();
+
+// Terminal recordings: they load only when played, play while on screen (never
+// under reduced motion), and a pause button stops them for good.
+(function () {
+  var reduced = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var demos = document.querySelectorAll('.demo');
+  Array.prototype.forEach.call(demos, function (demo) {
+    var video = demo.querySelector('video');
+    var button = demo.querySelector('.demo-play');
+    var label = button.querySelector('.vc-label');
+    var frame = demo.querySelector('.demo-frame');
+    var userPaused = reduced;
+    var visible = false;
+
+    function play() {
+      var p = video.play();
+      if (p && p.catch) p.catch(function () {});
+    }
+    function sync() {
+      var paused = video.paused;
+      button.setAttribute('aria-pressed', paused ? 'true' : 'false');
+      button.setAttribute('aria-label', paused ? 'Play the recording' : 'Pause the recording');
+      label.textContent = paused ? 'Play' : 'Pause';
+    }
+
+    button.hidden = false;
+    button.addEventListener('click', function () {
+      if (video.paused) {
+        userPaused = false;
+        play();
+      } else {
+        userPaused = true;
+        video.pause();
+      }
+    });
+    video.addEventListener('play', sync);
+    video.addEventListener('pause', sync);
+    sync();
+
+    Array.prototype.forEach.call(demo.querySelectorAll('.demo-tab'), function (tab) {
+      tab.addEventListener('click', function () {
+        Array.prototype.forEach.call(demo.querySelectorAll('.demo-tab'), function (t) {
+          t.setAttribute('aria-pressed', t === tab ? 'true' : 'false');
+        });
+        var name = tab.getAttribute('data-name');
+        frame.style.aspectRatio = '1000 / ' + tab.getAttribute('data-height');
+        video.setAttribute('height', tab.getAttribute('data-height'));
+        video.setAttribute('aria-label', tab.getAttribute('data-label'));
+        video.poster = '/media/demo/' + name + '.webp';
+        video.querySelector('source').src = '/media/demo/' + name + '.mp4';
+        video.load();
+        if (visible && !userPaused) play();
+        sync();
+      });
+    });
+
+    if ('IntersectionObserver' in window) {
+      new IntersectionObserver(function (entries) {
+        visible = entries[0].isIntersecting;
+        if (!visible && !video.paused) {
+          video.pause();
+        } else if (visible && video.paused && !userPaused) {
+          play();
+        }
+      }, { threshold: 0.35 }).observe(video);
+    }
+  });
 })();

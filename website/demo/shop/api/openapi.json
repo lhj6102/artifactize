@@ -1,0 +1,18 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "Shop API", "version": "1.2.0"},
+  "paths": {
+    "/products": {
+      "get": {
+        "summary": "List products",
+        "responses": {"200": {"description": "The products, newest first"}}
+      }
+    },
+    "/orders": {
+      "post": {
+        "summary": "Place an order",
+        "responses": {"201": {"description": "The new order"}}
+      }
+    }
+  }
+}

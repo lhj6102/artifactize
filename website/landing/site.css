@@ -495,7 +495,8 @@ kbd {
 }
 
 .vc .i-play,
-.vc[aria-pressed="true"] .i-pause {
+.vc[aria-pressed="true"] .i-pause,
+.vc[hidden] {
   display: none;
 }
 
@@ -1075,6 +1076,75 @@ kbd {
 
 .wires path.ro {
   stroke: rgba(106, 168, 255, 0.55);
+}
+
+/* ---------- Terminal recordings ---------- */
+
+.demo {
+  max-width: 1000px;
+  margin: 56px auto 0;
+}
+
+.demo-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.demo-tab {
+  min-height: 40px;
+  padding: 8px 16px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--dim);
+  font: 600 14px/1 var(--sans);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+
+.demo-tab:hover {
+  color: var(--text);
+}
+
+.demo-tab[aria-pressed="true"] {
+  border-color: rgba(62, 224, 143, 0.6);
+  background: rgba(62, 224, 143, 0.1);
+  color: var(--green);
+}
+
+.demo-frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #090B0F;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+
+.demo-video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.demo-play {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+}
+
+.demo figcaption {
+  margin-top: 14px;
+  color: var(--faint);
+  font-size: 14px;
+  text-align: center;
+}
+
+.demo figcaption code {
+  color: var(--dim);
 }
 
 /* ---------- Get started ---------- */

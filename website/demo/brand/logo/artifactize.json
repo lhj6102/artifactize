@@ -1,0 +1,56 @@
+{
+  "name": "logo",
+  "fingerprint": {},
+  "views": {
+    "humanTools": {
+      "notes": {
+        "description": "Print the design notes for {artifactName}.",
+        "kind": "output",
+        "command": "cat",
+        "args": ["{artifactPath}/notes.md"]
+      }
+    }
+  },
+  "evals": [
+    {
+      "id": "svg",
+      "title": "The logo is well-formed SVG",
+      "profile": {
+        "kind": "runtime",
+        "command": "python3",
+        "args": ["-c", "import sys, xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])", "logo.svg"],
+        "timeoutMs": 10000
+      },
+      "payload": {
+        "instruction": "Check that {logo}/logo.svg parses as XML."
+      }
+    },
+    {
+      "id": "signoff",
+      "title": "A designer signs off on the logo",
+      "profile": {
+        "kind": "human"
+      },
+      "payload": {
+        "instruction": "Read the design notes of {logo} with the notes tool. Submit GREEN when the logo matches them; otherwise submit RED with the changes it needs."
+      },
+      "passSchema": {
+        "type": "object",
+        "properties": {
+          "approved": {"const": true},
+          "comment": {"type": "string", "minLength": 1}
+        },
+        "required": ["approved", "comment"],
+        "additionalProperties": false
+      },
+      "failSchema": {
+        "type": "object",
+        "properties": {
+          "changes": {"type": "string", "minLength": 1}
+        },
+        "required": ["changes"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}
