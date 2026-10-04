@@ -227,6 +227,52 @@ impl Receipts {
     }
 }
 
+/// A completed entry for the key settles a local Human wait, as a submission settles followers;
+/// the never-reviewed waiting execution becomes ERROR (SUPERSEDED).
+pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Result<(), Error> {
+    let waiting: Option<String> = db
+        .query_row(
+            "SELECT data FROM executions WHERE stale_key=? AND eval_def_hash=? AND status='WAITING_HUMAN'",
+            params![entry.stale_key, entry.eval_def_hash],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let Some(waiting) = waiting else {
+        return Ok(());
+    };
+    let mut execution: Execution = serde_json::from_str(&waiting)?;
+    let now = crate::broker::now();
+    execution.status = "ERROR".into();
+    execution.error = Some(format!(
+        "Superseded by the completed result {} for this stale key.",
+        entry.id
+    ));
+    execution.error_code = Some("SUPERSEDED".into());
+    execution.completed_at = Some(now.clone());
+    execution.provenance.completed_at = Some(now);
+    db.execute(
+        "UPDATE executions SET status='ERROR',data=? WHERE id=? AND status='WAITING_HUMAN'",
+        params![serde_json::to_string(&execution)?, execution.id],
+    )?;
+    let followers = {
+        let mut statement = db
+            .prepare("SELECT data FROM requests WHERE execution_id=? AND status='WAITING_HUMAN'")?;
+        statement
+            .query_map([&execution.id], |row| row.get::<_, String>(0))?
+            .map(|row| Ok(serde_json::from_str(&row?)?))
+            .collect::<Result<Vec<Request>, Error>>()?
+    };
+    for mut follower in followers {
+        receive(&mut follower, entry);
+        update_request(db, &follower)?;
+        db.execute(
+            "DELETE FROM human_claims WHERE request_id=?",
+            [&follower.id],
+        )?;
+    }
+    Ok(())
+}
+
 fn receive(request: &mut Request, execution: &Execution) {
     crate::cache::reuse(request, execution, crate::broker::now());
     request.error = execution.error.clone();

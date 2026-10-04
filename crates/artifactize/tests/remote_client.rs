@@ -318,3 +318,52 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     .unwrap();
     assert!(doctor(1)["message"].as_str().unwrap().contains("https://"));
 }
+
+#[test]
+fn login_on_a_terminal_does_not_echo_the_token() {
+    use std::os::fd::{FromRawFd, OwnedFd};
+
+    let root = tempfile::tempdir().unwrap();
+    let token = test_token();
+    let server = Whoami::start(&token);
+    let (mut master, mut slave) = (0, 0);
+    // SAFETY: openpty writes two new descriptors, owned below.
+    let opened = unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null(),
+            std::ptr::null(),
+        )
+    };
+    assert_eq!(opened, 0);
+    // SAFETY: both descriptors were just opened and are owned exactly once.
+    let (mut master, slave) =
+        unsafe { (fs::File::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
+    let mut child = artifactize(&root.path().join("state"))
+        .args(["remote", "login", &server.url])
+        .stdin(slave.try_clone().unwrap())
+        .stdout(slave.try_clone().unwrap())
+        .stderr(slave)
+        .spawn()
+        .unwrap();
+    // Reading the master fails with EIO once the child closed the terminal.
+    fn read(master: &mut fs::File, output: &mut Vec<u8>, until: &str) {
+        let mut buffer = [0; 1024];
+        while !String::from_utf8_lossy(output).contains(until) {
+            match master.read(&mut buffer) {
+                Ok(0) | Err(_) => break,
+                Ok(count) => output.extend_from_slice(&buffer[..count]),
+            }
+        }
+    }
+    let mut output = Vec::new();
+    read(&mut master, &mut output, "Paste the remote token");
+    master.write_all(format!("{token}\n").as_bytes()).unwrap();
+    read(&mut master, &mut output, "Signed in");
+    assert!(child.wait().unwrap().success());
+    let output = String::from_utf8_lossy(&output);
+    assert!(!output.contains(&token));
+    assert!(output.contains("as alice-laptop"), "{output}");
+}

@@ -287,6 +287,50 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
+    /// The keys without a completed local cache entry.
+    pub async fn uncached(
+        &self,
+        keys: Vec<(String, String)>,
+    ) -> Result<Vec<(String, String)>, String> {
+        self.connection
+            .call(move |db| -> Result<_, Error> {
+                let mut statement = db.prepare(
+                    "SELECT EXISTS(SELECT 1 FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE c.stale_key=? AND c.eval_def_hash=? AND e.status IN ('GREEN','RED'))",
+                )?;
+                let mut missing = Vec::new();
+                for (stale_key, eval_def_hash) in keys {
+                    if !statement.query_row(params![stale_key, eval_def_hash], |row| row.get(0))? {
+                        missing.push((stale_key, eval_def_hash));
+                    }
+                }
+                Ok(missing)
+            })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// The saved execution when its own settle published the key's cache entry; never a mirror.
+    pub async fn published_execution(
+        &self,
+        stale_key: &str,
+        eval_def_hash: &str,
+        execution_id: &str,
+    ) -> Result<Option<Execution>, String> {
+        let key = (
+            stale_key.to_owned(),
+            eval_def_hash.to_owned(),
+            execution_id.to_owned(),
+        );
+        self.connection
+            .call(move |db| -> Result<_, Error> {
+                let (stale_key, eval_def_hash, execution_id) = key;
+                Ok(lookup(db, &stale_key, &eval_def_hash)?
+                    .filter(|execution| execution.id == execution_id && execution.origin.is_none()))
+            })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
     pub async fn claim_execution(
         &self,
         execution: &Execution,
@@ -373,6 +417,7 @@ impl Receipts {
     }
 
     /// Cache a remote result as a self-contained execution; an existing local entry wins.
+    /// The winner also settles a local Human wait for the key.
     pub async fn mirror_execution(&self, execution: &Execution) -> Result<Execution, String> {
         let execution = execution.clone();
         self.connection
@@ -393,6 +438,8 @@ impl Receipts {
                 let transaction =
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 if let Some(existing) = lookup(&transaction, stale_key, &execution.eval_def_hash)? {
+                    super::human::settle_waiting(&transaction, &existing)?;
+                    transaction.commit()?;
                     return Ok(existing);
                 }
                 // A mirror kept after `cache rm` or GC is reused for the same remote execution.
@@ -409,12 +456,14 @@ impl Receipts {
                     "INSERT INTO cache_entries(stale_key,eval_def_hash,execution_id,bytes,last_used) VALUES (?,?,?,?,?)",
                     params![stale_key, execution.eval_def_hash, execution.id, data.len() as i64, crate::broker::now()],
                 )?;
+                let mirrored: Execution = serde_json::from_str(&data)?;
+                super::human::settle_waiting(&transaction, &mirrored)?;
                 transaction.commit()?;
                 if let Err(error) = super::cache_entries::collect(db) {
                     use std::io::Write;
                     let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
                 }
-                Ok(serde_json::from_str(&data)?)
+                Ok(mirrored)
             })
             .await
             .map_err(|e| e.to_string())

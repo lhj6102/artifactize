@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 use super::{cancellation_listener, print_json};
 use crate::{
     human, query,
+    remote::Session,
     store::{self, Receipts},
     tools::human::Content,
 };
@@ -92,12 +93,12 @@ pub(super) async fn execute(
         }
         RequestCommand::Claim { id, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let receipts = open_request(state, &id).await?;
+            let (receipts, _) = open_request(state, &id).await?;
             print_json(&human::claim(&receipts, &id, &reviewer).await?)?;
         }
         RequestCommand::Tool { id, tool, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let receipts = open_request(state, &id).await?;
+            let (receipts, _) = open_request(state, &id).await?;
             let (cancellation, listener) = cancellation_listener()?;
             let result =
                 human::run_human_tool(&receipts, &id, &reviewer, &tool, cancellation).await;
@@ -134,11 +135,22 @@ pub(super) async fn execute(
         } => {
             let result = submission(&verdict, fields, fields_file)?;
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let receipts = open_request(state, &id).await?;
+            let (receipts, repo) = open_request(state, &id).await?;
+            let remote = Session::open(Some(state), Some(&repo))?;
             let (cancellation, listener) = cancellation_listener()?;
             let result = human::submit(&receipts, &id, &reviewer, &result, cancellation).await;
             listener.abort();
-            result?;
+            let request = result?;
+            if let Some(remote) = remote {
+                remote
+                    .publish_request(&receipts, &request)
+                    .await
+                    .map_err(|error| {
+                        format!(
+                            "The Human result is saved locally, but publishing it failed: {error}"
+                        )
+                    })?;
+            }
             print_json(&query::request_output(
                 &store::read_request(state, &id).await?,
             ))?;
@@ -147,10 +159,13 @@ pub(super) async fn execute(
     Ok(0)
 }
 
-async fn open_request(state: &Path, id: &str) -> Result<Receipts, String> {
+async fn open_request(state: &Path, id: &str) -> Result<(Receipts, PathBuf), String> {
     let view = store::read_request(state, id).await?;
-    let run = store::read_run(state, &view.request.run_id).await?;
-    Receipts::open(state, &run.run.repo_path).await
+    let repo = store::read_run(state, &view.request.run_id)
+        .await?
+        .run
+        .repo_path;
+    Ok((Receipts::open(state, &repo).await?, repo))
 }
 
 fn submission(

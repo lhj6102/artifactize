@@ -101,6 +101,9 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String)
     request.provenance = Some(execution.provenance.clone());
     request.usage = None;
     request.reused_usage = execution.usage.clone();
+    request.producer = execution.producer.clone();
+    request.reviewer = execution.reviewer.clone();
+    request.origin = execution.origin.clone();
     request.tool_calls = execution.tool_calls.clone();
     request.completed_at = Some(completed_at);
     request.blocked_reason = None;

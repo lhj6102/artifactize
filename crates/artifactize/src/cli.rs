@@ -514,14 +514,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                         request.eval_id,
                         request.id,
                         request.status,
-                        request
-                            .provenance
-                            .as_ref()
-                            .filter(|_| crate::query::reused(request))
-                            .map_or(String::new(), |source| format!(
-                                " (reused from {})",
-                                source.run_id
-                            )),
+                        reuse_marker(request),
                         request
                             .error
                             .as_ref()
@@ -782,6 +775,35 @@ fn cancellation_listener() -> Result<
         token.cancel();
     });
     Ok((cancellation, listener))
+}
+
+/// Where a reused result came from: its source Run, plus the producer for a remote result,
+/// or the reviewer and the authenticated publisher for a remote Human sign-off.
+fn reuse_marker(request: &crate::store::Request) -> String {
+    let Some(source) = request
+        .provenance
+        .as_ref()
+        .filter(|_| crate::query::reused(request))
+    else {
+        return String::new();
+    };
+    match &request.origin {
+        None => format!(" (reused from {})", source.run_id),
+        Some(origin) if request.profile["kind"] == "human" => format!(
+            " (reused from remote: Human sign-off by {}, published by {}, {})",
+            request.reviewer.as_deref().unwrap_or("unknown"),
+            origin.publisher,
+            source.run_id
+        ),
+        Some(_) => format!(
+            " (reused from remote: {}, {})",
+            request
+                .producer
+                .as_ref()
+                .map_or("unknown producer", |producer| producer.name.as_str()),
+            source.run_id
+        ),
+    }
 }
 
 /// `N (runtime R, agent A, human H)` from a summary tally.

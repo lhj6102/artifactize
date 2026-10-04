@@ -18,11 +18,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
+use crate::remote::{MAX_FULL_BYTES, MAX_SUMMARY_BYTES, valid_hash, valid_stale_key};
+
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8417";
-/// JSON byte limit of a summary record.
-pub const MAX_SUMMARY_BYTES: usize = 256 * 1024;
-/// JSON byte limit of a full record (one carrying `execution`).
-pub const MAX_FULL_BYTES: usize = crate::store::cache_entries::MAX_ENTRY_BYTES;
 const MAX_LOOKUP_KEYS: usize = 1000;
 
 struct ApiError(StatusCode, String);
@@ -85,20 +83,6 @@ async fn authenticate(
         ));
     }
     Ok(Principal { name, scopes })
-}
-
-fn valid_stale_key(value: &str) -> bool {
-    (1..=128).contains(&value.len())
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
-}
-
-fn valid_hash(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 fn valid_key(eval_def_hash: &str, stale_key: &str) -> Result<(), ApiError> {

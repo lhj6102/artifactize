@@ -9,6 +9,7 @@ use crate::{
     config::{DependencyGates, read_workspace_config},
     graph::{EvalStatus, Evidence, Graph},
     project::selection::{ProfileSelection, Selection, select_profiles},
+    remote::Session,
     store::{self, Receipts, Request, Run, RunView},
     workspace,
 };
@@ -98,6 +99,27 @@ pub async fn verify(
     if cancellation.is_cancelled() {
         return Err("Project preparation was cancelled.".into());
     }
+    // --force makes no remote calls at all. Local misses are looked up in one batch, and hits
+    // are mirrored into the local cache before the Run claims anything.
+    let remote = if options.force {
+        None
+    } else {
+        Session::open(Some(&state), Some(&config.root))?
+    };
+    if let Some(remote) = &remote {
+        let keys = config
+            .evals
+            .iter()
+            .filter_map(|eval| {
+                let stale_key = stale_keys.get(eval.target.as_str())?;
+                Some((
+                    stale_key.value.clone(),
+                    cache::eval_definition_hash(&eval.declaration),
+                ))
+            })
+            .collect();
+        remote.refresh(&receipts, keys).await?;
+    }
     let directory = tempfile::Builder::new()
         .prefix("run-")
         .tempdir_in(runs)
@@ -147,6 +169,9 @@ pub async fn verify(
             provenance: None,
             usage: None,
             reused_usage: None,
+            producer: None,
+            reviewer: None,
+            origin: None,
             tool_calls: Vec::new(),
             human_definition: None,
             payload: json!(eval.declaration.payload),
@@ -171,16 +196,28 @@ pub async fn verify(
         })
         .collect();
     receipts.create_run(&run, &requests).await?;
-    let mut evidence = broker::schedule(
+    let mut evidence = match broker::schedule(
         config.clone(),
         &graph,
         &stale_keys,
         &mut run,
         &mut requests,
         &receipts,
+        remote,
         cancellation.clone(),
     )
-    .await?;
+    .await
+    {
+        Ok(evidence) => evidence,
+        Err(error) => {
+            // A failing Run, for example on a rejected remote token, does not stay RUNNING.
+            run.status = "ERROR".into();
+            run.error = Some(error.clone());
+            run.completed_at = Some(now());
+            let _ = receipts.save_run(&run).await;
+            return Err(error);
+        }
+    };
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
         if evidence.contains_key(&request.eval_id) || request.status == "WAITING_HUMAN" {
