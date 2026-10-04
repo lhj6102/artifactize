@@ -1,6 +1,6 @@
 # Walkthrough: two machines and CI share verdicts
 
-This walkthrough reuses [examples/runtime-relations](../examples/runtime-relations/README.md).
+This walkthrough reuses [examples/runtime-relations](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations).
 Alice and Bob each have a checkout and their own state directory. CI has a third
 checkout. One `artifactize server` holds the shared verdicts. You can run every
 step on one computer. Each "machine" is just a `--state-dir`, and `USER` sets

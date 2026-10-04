@@ -51,7 +51,7 @@ What it demonstrates:
 
 ## Run it
 
-You need `artifactize` on your `PATH` ([Install](../../docs/INSTALL.md):
+You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/getting-started/install.html):
 `cargo install --path crates/artifactize --locked`), plus `python3`.
 
 ```sh

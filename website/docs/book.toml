@@ -1,0 +1,25 @@
+# The artifactize docs, served at https://artifactize.dev/docs/.
+# Built by website/build.sh with the mdBook version pinned there.
+[book]
+title = "Artifactize docs"
+description = "Declare Artifacts and their evals, verify them, and reuse every review whose fingerprint is unchanged."
+authors = ["Hyukjin LIM"]
+language = "en"
+src = "src"
+
+[build]
+create-missing = false
+
+[output.html]
+site-url = "/docs/"
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/lhj6102/artifactize"
+no-section-label = true
+additional-css = ["theme/artifactize.css"]
+
+[output.html.print]
+enable = true
+
+[output.html.search]
+enable = true
