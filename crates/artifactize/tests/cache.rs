@@ -111,11 +111,10 @@ impl Fixture {
         fs::write(self.root.path().join("release"), "").unwrap();
     }
 
+    /// Started review scripts; the shell creates the file before it writes the line.
     fn starts(&self) -> usize {
         fs::read_to_string(self.root.path().join("starts"))
-            .unwrap()
-            .lines()
-            .count()
+            .map_or(0, |starts| starts.lines().count())
     }
 
     fn count(&self, table: &str) -> u32 {
@@ -510,7 +509,7 @@ fn concurrent_repos_claim_once_and_poll_for_the_original_red_result() {
     let owner = fixture.spawn(&first, &[]);
     let waiter = fixture.spawn(&second, &[]);
     let waiting = fixture.waiting_request();
-    wait_until(|| fixture.root.path().join("starts").exists());
+    wait_until(|| fixture.starts() > 0);
     assert_eq!(fixture.starts(), 1);
     let execution = fixture.execution(waiting["executionId"].as_str().unwrap());
     assert_eq!(execution["status"], "RUNNING");
@@ -550,7 +549,7 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo replacement >> \"$1\"; printf recovered");
     let mut owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.root.path().join("starts").exists());
+    wait_until(|| fixture.starts() > 0);
     let waiter = fixture.spawn(&target, &["--max-executions", "1"]);
     let waiting = fixture.waiting_request();
     owner.kill().unwrap();
@@ -586,7 +585,7 @@ fn owner_error_releases_claim_and_waiter_uses_its_own_profile() {
     let source = fixture.shared_repo("source", &format!("{WAIT_SCRIPT}; kill -TERM $$"));
     let target = fixture.shared_repo("target", "echo retry >> \"$1\"; printf retried");
     let owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.root.path().join("starts").exists());
+    wait_until(|| fixture.starts() > 0);
     let waiter = fixture.spawn(&target, &[]);
     fixture.waiting_request();
     fixture.release();
@@ -609,7 +608,7 @@ fn waiter_ctrl_c_leaves_owner_running_and_owner_ctrl_c_releases_the_claim() {
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo retry >> \"$1\"; printf retried");
     let mut owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.root.path().join("starts").exists());
+    wait_until(|| fixture.starts() > 0);
     let waiter = fixture.spawn(&target, &[]);
     let waiting = fixture.waiting_request();
     signal(waiter.id(), "-INT");
@@ -666,7 +665,7 @@ fn force_bypasses_a_live_claim_and_never_publishes() {
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo forced >> \"$1\"; printf forced");
     let owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.root.path().join("starts").exists());
+    wait_until(|| fixture.starts() > 0);
     let forced = finish(fixture.spawn(&target, &["--force"]), 0);
     let execution = fixture.execution(forced["requests"][0]["executionId"].as_str().unwrap());
     assert!(execution["staleKey"].is_null());
@@ -727,7 +726,7 @@ fn zero_budget_can_join_an_owner_but_cannot_replace_it_after_failure() {
         let source = fixture.shared_repo("source", &script);
         let target = fixture.shared_repo("target", "echo replacement >> \"$1\"");
         let owner = fixture.spawn(&source, &[]);
-        wait_until(|| fixture.root.path().join("starts").exists());
+        wait_until(|| fixture.starts() > 0);
         let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
         fixture.waiting_request();
         fixture.release();
@@ -759,7 +758,7 @@ fn a_stale_key_waiter_occupies_a_job_slot_without_consuming_execution_budget() {
         json!({"name":"z-independent","evals":[eval("check", "touch ran")]}),
     );
     let owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.root.path().join("starts").exists());
+    wait_until(|| fixture.starts() > 0);
     let waiter = fixture.spawn(
         &target,
         &["--jobs", "1", "--max-executions", "1", "--ignore-gates"],
@@ -1008,7 +1007,7 @@ fn rm_refuses_an_active_stale_key_even_without_an_entry() {
     let fixture = Fixture::new();
     let repo = fixture.shared_repo("repo", WAIT_SCRIPT);
     let mut owner = fixture.spawn(&repo, &[]);
-    wait_until(|| fixture.root.path().join("starts").exists());
+    wait_until(|| fixture.starts() > 0);
     assert!(
         fixture.command(&repo, &["cache", "rm", "concurrent"], 2)["error"]
             .as_str()
@@ -1028,7 +1027,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");
     let owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.root.path().join("starts").exists());
+    wait_until(|| fixture.starts() > 0);
     let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
     let waiting = fixture.waiting_request();
     signal(waiter.id(), "-STOP");
@@ -1059,7 +1058,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo unexpected >> \"$1\"; printf unexpected");
     let mut owner = fixture.spawn(&source, &[]);
-    wait_until(|| fixture.root.path().join("starts").exists());
+    wait_until(|| fixture.starts() > 0);
     let waiter = fixture.spawn(&target, &["--max-executions", "0"]);
     let waiting = fixture.waiting_request();
     signal(waiter.id(), "-STOP");
@@ -1302,7 +1301,7 @@ fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
         repos.push(repo);
     }
     let children: Vec<_> = repos.iter().map(|repo| fixture.spawn(repo, &[])).collect();
-    wait_until(|| fixture.root.path().join("starts").exists() && fixture.starts() == 2);
+    wait_until(|| fixture.starts() == 2);
     wait_until(|| {
         let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
         db.query_row::<u32, _, _>(
