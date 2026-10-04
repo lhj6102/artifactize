@@ -1,10 +1,21 @@
 use std::path::{Path, PathBuf};
 
-use rig_core::{Model, providers::openai};
+use bytes::Bytes;
+use futures_util::StreamExt;
+use rig_core::{
+    Model,
+    http_client::{
+        self, HeaderValue, HttpClientExt, LazyBody, MultipartForm, Request, Response, StatusCode,
+        StreamingResponse,
+    },
+    providers::openai,
+    wasm_compat::WasmCompatSend,
+};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Value, json};
 
 const API_BASE: &str = "https://api.openai.com/v1";
+const PEEK_LIMIT: usize = 4096;
 
 pub struct Chatgpt {
     model: String,
@@ -40,8 +51,98 @@ impl Chatgpt {
             .with_system_instructions_placement(
                 openai::responses_api::SystemInstructionsPlacement::AllInstructions,
             )
-            .connect(rig_reqwest::ReqwestClient::from(self.http.clone()))
+            .connect(Transport(rig_reqwest::ReqwestClient::from(
+                self.http.clone(),
+            )))
             .responses(&self.model))
+    }
+}
+
+/// The SIWC route streams without naming a content type, which rig accepts only
+/// for its Codex dialect. Such a reply passes when its body starts as an event
+/// stream; any other 200 reply fails with its status and a bounded body.
+struct Transport(rig_reqwest::ReqwestClient);
+
+impl HttpClientExt for Transport {
+    fn send<T, U>(
+        &self,
+        request: Request<T>,
+    ) -> impl Future<Output = http_client::Result<Response<LazyBody<U>>>> + WasmCompatSend + 'static
+    where
+        T: Into<Bytes> + WasmCompatSend,
+        U: From<Bytes> + WasmCompatSend + 'static,
+    {
+        self.0.send(request)
+    }
+
+    fn send_multipart<U>(
+        &self,
+        request: Request<MultipartForm>,
+    ) -> impl Future<Output = http_client::Result<Response<LazyBody<U>>>> + WasmCompatSend + 'static
+    where
+        U: From<Bytes> + WasmCompatSend + 'static,
+    {
+        self.0.send_multipart(request)
+    }
+
+    fn send_streaming<T>(
+        &self,
+        request: Request<T>,
+    ) -> impl Future<Output = http_client::Result<StreamingResponse>> + WasmCompatSend
+    where
+        T: Into<Bytes> + WasmCompatSend,
+    {
+        let response = self.0.send_streaming(request);
+        async move {
+            let response = response.await?;
+            let content_type = response
+                .headers()
+                .get("content-type")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .trim()
+                .to_ascii_lowercase();
+            if response.status() != StatusCode::OK || content_type.starts_with("text/event-stream")
+            {
+                return Ok(response);
+            }
+            let (mut parts, mut body) = response.into_parts();
+            let mut head = Vec::new();
+            while head.len() < PEEK_LIMIT
+                && let Some(chunk) = body.next().await
+            {
+                head.extend_from_slice(&chunk?);
+                let sse = content_type.is_empty() && {
+                    let start = String::from_utf8_lossy(&head);
+                    let start = start.trim_start_matches(['\u{feff}', '\r', '\n']);
+                    ["event:", "data:", "id:", "retry:", ":"]
+                        .iter()
+                        .any(|field| start.starts_with(field))
+                };
+                if sse {
+                    let head = futures_util::stream::once(async move { Ok(Bytes::from(head)) });
+                    parts.headers.insert(
+                        "content-type",
+                        HeaderValue::from_static("text/event-stream"),
+                    );
+                    return Ok(Response::from_parts(parts, Box::pin(head.chain(body))));
+                }
+            }
+            head.truncate(PEEK_LIMIT);
+            let text = String::from_utf8_lossy(&head);
+            let body = match serde_json::from_str::<Value>(&text) {
+                Ok(body) if body.is_object() => text.into_owned(),
+                _ => json!({"detail": format!(
+                    "Expected an event stream but got content type {content_type:?}: {text}"
+                )})
+                .to_string(),
+            };
+            Err(http_client::Error::non_success_with_details(
+                parts.status,
+                parts.headers,
+                body,
+            ))
+        }
     }
 }
 

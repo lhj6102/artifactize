@@ -247,6 +247,39 @@ async fn failure_after_partial_output_never_retries_and_http_auth_explains_login
 }
 
 #[tokio::test]
+async fn untyped_event_stream_passes_and_other_replies_keep_status_and_code() {
+    let fixture = Fixture::new("chatgpt");
+    // The real SIWC route answers 200 with an event stream and no Content-Type.
+    let MockHttpResponse::SuccessWithHeaders(stream, _) = final_openai() else {
+        unreachable!()
+    };
+    let (review, _) = run(&fixture, vec![MockHttpResponse::success_typed(stream, "")]).await;
+    assert_eq!(review.result.unwrap(), json!({"verdict":"GREEN"}));
+    let refusal =
+        json!({"error":{"code":"subscription_sharing_user_not_eligible","message":"Not eligible"}})
+            .to_string();
+    for (response, expected) in [
+        (
+            MockHttpResponse::error(StatusCode::FORBIDDEN, refusal.clone()),
+            "subscription_sharing_user_not_eligible: Not eligible (HTTP 403)",
+        ),
+        (
+            MockHttpResponse::success_typed(refusal, ""),
+            "subscription_sharing_user_not_eligible: Not eligible (HTTP 200)",
+        ),
+        (
+            MockHttpResponse::success_typed("<html>busy</html>", "text/html"),
+            "content type \"text/html\": <html>busy</html> (HTTP 200)",
+        ),
+    ] {
+        let (review, server) = run(&fixture, vec![response, final_openai()]).await;
+        let error = review.result.unwrap_err();
+        assert!(error.contains(expected), "{error}");
+        assert_eq!(server.requests().len(), 1);
+    }
+}
+
+#[tokio::test]
 async fn each_turn_rereads_auth_and_all_system_messages_become_instructions() {
     let fixture = Fixture::new("chatgpt");
     let state = fixture._directory.path().join("state");
