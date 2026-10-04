@@ -29,8 +29,7 @@ pub struct Entry {
     pub origin: Option<String>,
 }
 
-#[derive(Debug, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Default)]
 pub struct GcResult {
     pub removed_entries: i64,
     pub removed_bytes: i64,
@@ -155,13 +154,6 @@ pub async fn remove(
         transaction.commit()?;
         Ok(removed != 0)
     }).await.map_err(|e| e.to_string())
-}
-
-pub async fn gc(state: &Path) -> Result<GcResult, String> {
-    let Some(connection) = open(state, true).await? else {
-        return Ok(GcResult::default());
-    };
-    connection.call(collect).await.map_err(|e| e.to_string())
 }
 
 pub(super) fn collect(db: &mut rusqlite::Connection) -> Result<GcResult, Error> {
