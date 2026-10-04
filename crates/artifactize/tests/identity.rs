@@ -392,3 +392,78 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         }
     }
 }
+
+#[test]
+fn identity_arguments_resolve_global_names_like_runtime_argv() {
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.repo.join("identity.py"),
+        "import hashlib, json, pathlib, sys\njson.load(sys.stdin)\ndigest = hashlib.sha256()\nfor root in sys.argv[1:]:\n    for path in sorted(pathlib.Path(root).rglob('*')):\n        if path.is_file():\n            digest.update(path.read_bytes())\nprint(digest.hexdigest())\n",
+    )
+    .unwrap();
+    fixture.write("core/artifactize.json", json!({"name":"core","basis":true}));
+    fs::write(fixture.repo.join("core/lib.txt"), "v1").unwrap();
+    // The JSON from issue #48: a global Artifact name in both identity and runtime argv.
+    let api = |reference: &str, mounts: Value| {
+        json!({
+            "name":"api","mounts":mounts,
+            "stale":{"kind":"identity","script":{"command":"python3","args":["../identity.py",".",reference]}},
+            "evals":[{"id":"tests","title":"Tests","profile":{"kind":"runtime","command":"python3","args":["-B","test_api.py",reference]},"payload":{"instruction":"Run the API tests."}}]
+        })
+    };
+    fixture.write("api/artifactize.json", api("{core}", json!({})));
+    fs::write(
+        fixture.repo.join("api/test_api.py"),
+        "import pathlib, sys\nassert (pathlib.Path(sys.argv[1]) / 'lib.txt').is_file()\n",
+    )
+    .unwrap();
+    let run = |args: &[&str]| {
+        let output = fixture.command().args(args).output().unwrap();
+        (
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+        )
+    };
+    assert_eq!(run(&["config", "check"]).0, Some(0));
+    let (code, status, _) = run(&["status", "--json"]);
+    assert_eq!(code, Some(1), "{status}");
+    let status: Value = serde_json::from_str(&status).unwrap();
+    assert_eq!(status["evals"][0]["action"], "execute");
+    let first = fixture.verify(&["--all"], 0);
+    let identity = first["requests"][0]["identity"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(run(&["status"]).0, Some(0));
+    fs::write(fixture.repo.join("core/lib.txt"), "v2").unwrap();
+    let second = fixture.verify(&["--all"], 0);
+    assert_ne!(second["requests"][0]["identity"], identity.as_str());
+    assert_eq!(second["executionsStarted"], 1);
+
+    // Mount aliases keep working.
+    fixture.write("api/artifactize.json", api("{lib}", json!({"lib":"core"})));
+    assert_eq!(run(&["config", "check"]).0, Some(0));
+    fixture.verify(&["--all"], 0);
+
+    // Unknown, family and escaping references fail closed in config check and status alike.
+    fixture.write(
+        "family/artifactize.json",
+        json!({"name":"posts","family":{"instances":{"one":{}}},"basis":true}),
+    );
+    for (reference, message) in [
+        ("{missing}", "Unknown Artifact reference {missing}"),
+        ("{posts}", "names an Artifact family"),
+        ("{core}/../api", "safe relative logical path"),
+    ] {
+        fixture.write("api/artifactize.json", api(reference, json!({})));
+        for command in [&["config", "check"][..], &["status"]] {
+            let (code, _, stderr) = run(command);
+            assert_eq!(code, Some(2), "{command:?} {reference}: {stderr}");
+            assert!(
+                stderr.contains(message),
+                "{command:?} {reference}: {stderr}"
+            );
+        }
+    }
+}

@@ -206,8 +206,12 @@ The command runs from its owner's folder with JSON on stdin:
 through PATH; absolute executables run as given, while relative executable paths
 containing `/` (such as `./identity.sh`) must remain inside the owner without
 symlinks. Arguments stay literal except explicit scoped Artifact references,
-resolved with the same rules as runtime argv. There are no interpreter-specific
-flags, wrappers or entry-file rules.
+resolved with the same rules as runtime argv: `{name}` may be a mount alias or a
+global Artifact name, and each referenced Artifact (with its child and mount
+closure) is admitted to the identity's scope without becoming a graph relation.
+`config check` rejects unknown, family and malformed references, and paths are
+checked for existence and symlinks when the command is prepared. There are no
+interpreter-specific flags, wrappers or entry-file rules.
 
 `inputs` accepts up to 64 unique owner-relative literal file/directory paths.
 Inputs and family material must exist without symlink traversal on every call;
