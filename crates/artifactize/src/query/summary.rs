@@ -8,7 +8,7 @@ use crate::store::{Request, RequestView, RunView};
 pub fn request_output(view: &RequestView) -> Value {
     let mut value = json!(view);
     let request = &view.request;
-    // A reused request spent nothing; its source's audit stays in the request itself.
+    // A reused request spent nothing; the source's attempts and tools stay in its audit.
     let spent = (!reused(request)).then_some(request);
     let (attempts, reported, unreported, usage) = usage_totals(spent);
     value["summary"] = json!({
@@ -47,7 +47,7 @@ pub fn run_output(view: &RunView) -> Value {
         let tally = if reused(request) {
             // Requests saved before reusedUsage existed kept the original attempts in usage.
             let original = request.reused_usage.as_ref().or(request.usage.as_ref());
-            for attempt in original.into_iter().flat_map(attempts_of) {
+            for attempt in original.and_then(Value::as_array).into_iter().flatten() {
                 add_usage(&mut saved, attempt);
             }
             &mut reuses
@@ -139,10 +139,6 @@ fn usage_totals<'a>(
         }
     }
     (attempts, reported, unreported, totals)
-}
-
-fn attempts_of(usage: &Value) -> &[Value] {
-    usage.as_array().map_or(&[], Vec::as_slice)
 }
 
 /// Adds one attempt's reported counters; false when it reported none.
