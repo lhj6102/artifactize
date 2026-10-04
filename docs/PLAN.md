@@ -122,7 +122,7 @@ The module boundaries are fixed; later tasks add code inside them. The CLI and t
 - If the owner process is dead, its row becomes ERROR and the next caller claims the same key again.
 - Only GREEN and RED are published. Hits return the original result and profile.
 - Status prepares current identities for the required closure, then reads completed entries without executing evals or updating saved evidence. Graph and config checks remain static.
-- Reuse is visible, so review cost can be seen to follow the size of a change ([#46](https://github.com/lhj6102/artifactize/issues/46)): verify marks reused results, counts executed vs reused evals per reviewer kind, and reports spent vs saved usage (a reused request spends none). Status predicts reuse through dependencies the way verify takes cached results; an eval behind a not-yet-produced result stays `wait`.
+- Reuse is visible, so review cost can be seen to follow the size of a change ([#46](https://github.com/lhj6102/artifactize/issues/46)): verify marks reused results, counts executed vs reused evals per reviewer kind, and reports spent vs saved usage (a reused request spends none). Status predicts exactly what verify takes from the cache, even behind a pending or RED gate; an uncached eval behind a not-yet-produced result stays `wait`.
 
 **Input changes.** When a review completes (runtime or Agent exit, Human submission), artifactize re-runs the Artifact's identity command. If the output differs from the identity computed at preparation, the review becomes ERROR and nothing is published. A review without an identity function gets no input-change check.
 

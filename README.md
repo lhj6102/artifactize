@@ -341,14 +341,14 @@ created even when no database exists. `graph` and `config check` remain fully
 static and never run owner code.
 
 A current completed identity/Eval-definition entry yields PASS or RED and a `reuse`
-action. Like verify, which takes cached results before their gates resolve, the
-action stays `reuse` while a dependency is still pending (the state is then
-WAIT_DEPENDENCY and the reason names the pending gates); a RED dependency still makes
-it `blocked`. An eval without a cached result runs only once its gates are GREEN:
-it shows `execute` when its dependencies are GREEN through cached results, and
-`wait` when a dependency's result exists only after verify executes it (or after a
-live execution finishes), directly or further upstream. That is the limit of the prediction: status cannot say
-whether a `wait` eval will execute. Text ends with, for example,
+action. verify attaches cached results before their gates resolve, so the action
+stays `reuse` while a dependency is pending or RED. The state then shows the gate
+(WAIT_DEPENDENCY or BLOCKED) and the reason names it. An eval without a cached
+result runs only once its gates are GREEN. It shows `blocked` behind a RED
+dependency and `execute` when its dependencies are GREEN through cached results.
+It shows `wait` when a dependency's result, directly or further upstream, exists
+only after verify executes it (or after a live execution finishes). That is the
+limit of the prediction: status cannot say whether a `wait` eval will execute. Text ends with, for example,
 `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on
 a merged checkout answers what verify will re-review there without running it.
 Force still applies only to selected evals. Human execution actions

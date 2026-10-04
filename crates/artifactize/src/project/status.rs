@@ -223,22 +223,27 @@ pub async fn status(
         let included = included_ids.contains(&eval.id);
         let force = options.force && selected;
         let (action, reason) = match current.readiness {
+            // verify takes cached results before gates resolve, even behind RED; the state keeps the gate.
+            _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
+                "reuse",
+                format!(
+                    "The current identity and Eval definition have a completed cached result{}",
+                    match current.readiness {
+                        Readiness::Ready => ".".into(),
+                        Readiness::Wait => format!(
+                            "; its gates still wait for: {}",
+                            current.unmet_gates.join(", ")
+                        ),
+                        Readiness::Blocked => format!(
+                            "; its gates are blocked by RED: {}",
+                            current.unmet_gates.join(", ")
+                        ),
+                    }
+                ),
+            ),
             Readiness::Blocked => (
                 "blocked",
                 format!("Dependency verdict RED: {}", current.unmet_gates.join(", ")),
-            ),
-            // verify takes cached results before gates resolve; dependents still wait for gates.
-            _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
-                "reuse",
-                if current.unmet_gates.is_empty() {
-                    "The current identity and Eval definition have a completed cached result."
-                        .into()
-                } else {
-                    format!(
-                        "The current identity and Eval definition have a completed cached result; its gates still wait for: {}",
-                        current.unmet_gates.join(", ")
-                    )
-                },
             ),
             Readiness::Wait => (
                 "wait",

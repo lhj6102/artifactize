@@ -1,5 +1,5 @@
 use std::{
-    collections::BTreeSet,
+    collections::BTreeMap,
     fs,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
@@ -29,10 +29,13 @@ impl Fixture {
     fn checkout(&self, name: &str, versions: [&str; 5]) -> PathBuf {
         let repo = self.root.path().join(name);
         let runtime = json!({"kind":"runtime","command":"/bin/true","args":[]});
+        // web/tests is RED when its version says "broken".
+        let web =
+            json!({"kind":"runtime","command":"/bin/sh","args":["-c","! grep -q broken version"]});
         let agent = json!({"kind":"agent","backend":"claude","model":"claude-test-exact","reasoning":"high","timeoutMs":15000});
         let artifacts = [
             ("api", "tests", runtime.clone(), "Run the API tests."),
-            ("web", "tests", runtime.clone(), "Run the web tests."),
+            ("web", "tests", web, "Run the web tests."),
             ("style", "contrast", runtime, "Check {web} colors."),
             ("docs", "review", agent, "Review the docs against {api}."),
             (
@@ -96,6 +99,14 @@ impl Fixture {
     fn text(&self, repo: &Path, args: &[&str], code: i32) -> String {
         String::from_utf8(self.run(repo, args, code).stdout).unwrap()
     }
+
+    /// Submits the Human signoff that `run` recorded, publishing it for reuse.
+    fn sign(&self, repo: &Path, run: &Value) {
+        let id = request(run, "brand/signoff")["id"].as_str().unwrap();
+        self.json(repo, &["request", "claim", id, "--reviewer", "alice"], 0);
+        let submit = ["request", "submit", id, "--verdict", "GREEN"];
+        self.json(repo, &[&submit[..], &["--reviewer", "alice"]].concat(), 0);
+    }
 }
 
 fn write(folder: &Path, declaration: Value) {
@@ -112,18 +123,34 @@ fn request<'a>(run: &'a Value, eval: &str) -> &'a Value {
         .unwrap()
 }
 
-/// Executed and reused eval IDs, told apart by the execution source.
-fn sources(run: &Value) -> (BTreeSet<String>, BTreeSet<String>) {
-    let (mut executed, mut reused) = (BTreeSet::new(), BTreeSet::new());
-    for request in run["requests"].as_array().unwrap() {
-        let id = request["evalId"].as_str().unwrap().to_owned();
-        if request["provenance"]["requestId"] == request["id"] {
-            executed.insert(id);
-        } else {
-            reused.insert(id);
-        }
-    }
-    (executed, reused)
+/// The action status predicts for each included eval.
+fn predicted(status: &Value) -> BTreeMap<String, String> {
+    let evals = status["evals"].as_array().unwrap().iter();
+    evals
+        .filter(|eval| eval["included"] == true)
+        .map(|eval| {
+            (
+                eval["id"].as_str().unwrap().into(),
+                eval["action"].as_str().unwrap().into(),
+            )
+        })
+        .collect()
+}
+
+/// What verify did with each request, in status action terms.
+fn taken(run: &Value) -> BTreeMap<String, String> {
+    let requests = run["requests"].as_array().unwrap().iter();
+    requests
+        .map(|request| {
+            let action = match &request["provenance"]["requestId"] {
+                Value::Null if request["status"] == "BLOCKED" => "blocked",
+                Value::Null => "wait",
+                source if *source == request["id"] => "execute",
+                _ => "reuse",
+            };
+            (request["evalId"].as_str().unwrap().into(), action.into())
+        })
+        .collect()
 }
 
 fn tally(total: u64, runtime: u64, agent: u64, human: u64) -> Value {
@@ -145,21 +172,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     assert_eq!(first["summary"]["executed"], tally(5, 3, 1, 1));
     assert_eq!(first["summary"]["reused"], tally(0, 0, 0, 0));
     assert_eq!(first["usage"]["saved"], json!({}));
-    let signoff = request(&first, "brand/signoff")["id"].as_str().unwrap();
-    fixture.json(&a, &["request", "claim", signoff, "--reviewer", "alice"], 0);
-    fixture.json(
-        &a,
-        &[
-            "request",
-            "submit",
-            signoff,
-            "--verdict",
-            "GREEN",
-            "--reviewer",
-            "alice",
-        ],
-        0,
-    );
+    fixture.sign(&a, &first);
 
     // Branch B changes web and docs; unchanged style and the Human signoff are reused.
     let b = fixture.checkout("b", ["base", "b", "base", "b", "base"]);
@@ -174,15 +187,6 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     // The merge takes api from A and docs from B, and resolves web anew.
     let merge = fixture.checkout("merge", ["a", "merged", "base", "b", "base"]);
     let status = fixture.json(&merge, &["status"], 1);
-    let actions = |action: &str| -> BTreeSet<String> {
-        status["evals"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|eval| eval["included"] == true && eval["action"] == action)
-            .map(|eval| eval["id"].as_str().unwrap().to_owned())
-            .collect()
-    };
     let style = status["evals"]
         .as_array()
         .unwrap()
@@ -204,10 +208,8 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     let text = fixture.text(&merge, &["verify", "--all"], 0);
     let id = line(&text, "Run:").strip_prefix("Run: ").unwrap();
     let run = fixture.json(&merge, &["run", "show", id], 0);
-    let (executed, reused) = sources(&run);
-    assert_eq!(executed, actions("execute"));
-    assert_eq!(reused, actions("reuse"));
-    assert_eq!(executed, BTreeSet::from(["web/tests".to_owned()]));
+    assert_eq!(predicted(&status), taken(&run));
+    assert_eq!(taken(&run)["web/tests"], "execute");
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["summary"]["executed"], tally(1, 1, 0, 0));
     assert_eq!(run["summary"]["reused"], tally(4, 2, 1, 1));
@@ -244,4 +246,62 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     assert_eq!(shown["summary"]["attempts"], 0);
     assert_eq!(shown["summary"]["usage"], json!({}));
     assert_eq!(shown["summary"]["usageState"], "none");
+}
+
+#[test]
+fn status_predicts_cached_results_behind_a_red_dependency_as_reuse() {
+    let fixture = Fixture::new();
+    let base = fixture.checkout("base", ["base"; 5]);
+    let first = fixture.json(&base, &["verify", "--all"], 4);
+    fixture.sign(&base, &first);
+
+    // web turns RED. The first Run executes it; the second finds its RED result cached.
+    let red = fixture.checkout("red", ["base", "broken", "base", "base", "base"]);
+    for executed in [1, 0] {
+        let status = fixture.json(&red, &["status"], 1);
+        let run = fixture.json(&red, &["verify", "--all"], 1);
+        assert_eq!(predicted(&status), taken(&run), "{status}");
+        assert_eq!(run["summary"]["executed"]["total"], executed);
+        assert_eq!(request(&run, "web/tests")["status"], "RED");
+    }
+    // verify attaches cached results behind the RED gate, so status says reuse, not blocked.
+    let status = fixture.json(&red, &["status"], 1);
+    for (eval, gate) in [
+        ("style/contrast", "web/tests"),
+        ("brand/signoff", "style/contrast"),
+    ] {
+        let row = status["evals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == eval);
+        let row = row.unwrap();
+        assert_eq!(
+            (&row["state"], &row["action"]),
+            (&json!("BLOCKED"), &json!("reuse"))
+        );
+        assert!(
+            row["reason"]
+                .as_str()
+                .unwrap()
+                .ends_with(&format!("blocked by RED: {gate}"))
+        );
+    }
+    let text = fixture.text(&red, &["status"], 1);
+    assert!(
+        line(&text, "style/contrast").ends_with("BLOCKED — reuse"),
+        "{text}"
+    );
+    assert_eq!(
+        line(&text, "Verify actions:"),
+        "Verify actions: will execute 0, will reuse 5, wait 0, blocked 0"
+    );
+
+    // An uncached eval behind the RED gate is still blocked; its cached dependent is reused.
+    let blocked = fixture.checkout("blocked", ["base", "broken", "new", "base", "base"]);
+    let status = fixture.json(&blocked, &["status"], 1);
+    let run = fixture.json(&blocked, &["verify", "--all"], 1);
+    assert_eq!(predicted(&status), taken(&run));
+    assert_eq!(taken(&run)["style/contrast"], "blocked");
+    assert_eq!(taken(&run)["brand/signoff"], "reuse");
 }
