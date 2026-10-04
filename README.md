@@ -2,11 +2,14 @@
 
 A lean Rust port and rebrand of [CCDD](https://github.com/lhj6102/ccdd), from CCDD 7.0.0 (`cbf28b4`).
 
-artifactize 0.1.0 is complete. Folders declare Artifacts and their evals in static
-`artifactize.json` files. artifactize builds the dependency graph and runs runtime,
-Agent (OpenAI or Anthropic API key, ChatGPT sign-in, or the Claude CLI) and Human
-evals, reusing GREEN/RED results while an Artifact's staleKey is unchanged. The CLI drives reviews and
-`artifactize monitor` shows their progress. It runs on Linux and WSL.
+Review cost follows the size of a change. Folders declare Artifacts and their evals
+in static `artifactize.json` files. artifactize builds the dependency graph and runs
+runtime, Agent (OpenAI or Anthropic API key, ChatGPT sign-in, or the Claude CLI) and
+Human evals. While an Artifact's staleKey is unchanged it reuses the earlier GREEN/RED
+result, and `verify` shows what it executed, what it reused and the tokens reuse saved.
+`status` predicts what a change will re-review. A team review store
+(`artifactize server`) shares verdicts across machines and CI. The CLI drives reviews
+and `artifactize monitor` shows their progress. It runs on Linux and WSL.
 
 Every non-DROP item in the [CCDD 7.0 capability inventory](docs/ccdd-7-inventory.md)
 is checked off; the [plan](docs/PLAN.md) records the lean scope and what was dropped.
