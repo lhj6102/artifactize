@@ -76,15 +76,15 @@ impl Fixture {
     }
 }
 
-fn artifact(name: &str, stale: Value, mounts: Value, args: &[&str]) -> Value {
+fn artifact(name: &str, fingerprint: Value, mounts: Value, args: &[&str]) -> Value {
     json!({
-        "name": name, "mounts": mounts, "staleKey": stale,
+        "name": name, "mounts": mounts, "fingerprint": fingerprint,
         "evals": [{"id":"check","title":"Check","profile":{"kind":"runtime","command":"/bin/sh","args":args},"payload":{"instruction":"Check."}}]
     })
 }
 
 fn content(dependencies: &str) -> Value {
-    json!({"content":{"dependencies":dependencies}})
+    json!({ "dependencies": dependencies })
 }
 
 const PASS: &[&str] = &["-c", "exit 0"];
@@ -127,7 +127,7 @@ fn direct_scope_stops_after_one_hop_and_transitive_reaches_the_whole_chain() {
 #[test]
 fn a_merge_rereviews_only_the_new_pairing_by_default() {
     let fixture = Fixture::new();
-    let default = json!({"content":{}});
+    let default = json!({});
     for side in ["left", "right"] {
         fixture.artifact(side, artifact(side, default.clone(), json!({}), PASS));
         fixture.file(&format!("{side}/part.txt"), "v1");
@@ -156,13 +156,13 @@ fn a_merge_rereviews_only_the_new_pairing_by_default() {
 }
 
 #[test]
-fn generated_and_ignored_review_output_never_changes_the_stale_key() {
+fn generated_and_ignored_review_output_never_changes_the_fingerprint() {
     let fixture = Fixture::new();
     fixture.artifact(
         "py",
         artifact(
             "py",
-            json!({"content":{}}),
+            json!({}),
             json!({}),
             &[
                 "-c",
@@ -178,14 +178,17 @@ fn generated_and_ignored_review_output_never_changes_the_stale_key() {
     assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
     assert!(fixture.repo.join("py/__pycache__").is_dir());
     assert!(fixture.repo.join("py/out/report.txt").is_file());
-    assert_eq!(run["validation"]["artifacts"][0]["staleKeyKind"], "content");
+    assert_eq!(
+        run["validation"]["artifacts"][0]["fingerprintKind"],
+        "content"
+    );
     assert!(fixture.executed(0).is_empty());
 
     fixture.artifact(
         "py",
         artifact(
             "py",
-            json!({"content":{}}),
+            json!({}),
             json!({}),
             &["-c", "echo stray > stray.txt"],
         ),
@@ -220,7 +223,7 @@ fn status_explains_which_inputs_and_dependencies_changed() {
     fixture.file("core/lib.txt", "v1");
     fixture.artifact(
         "api",
-        artifact("api", json!({"content":{}}), json!({"core":"core"}), PASS),
+        artifact("api", json!({}), json!({"core":"core"}), PASS),
     );
     fixture.file("api/src/a.py", "v1");
     fixture.file("api/old.md", "v1");
@@ -259,16 +262,16 @@ fn status_explains_which_inputs_and_dependencies_changed() {
     );
     assert_eq!(
         status["evals"][1]["changes"],
-        json!({"sinceRunId": run, "summary": "stale key changed"})
+        json!({"sinceRunId": run, "summary": "fingerprint changed"})
     );
     let text = String::from_utf8(fixture.run(&["status"]).stdout).unwrap();
     assert!(
         text.contains(&format!(
-            "Stale key changed since Run {run}: changed: +docs/new.md, -old.md, src/a.py; dependency core changed"
+            "Fingerprint changed since Run {run}: changed: +docs/new.md, -old.md, src/a.py; dependency core changed"
         )),
         "{text}"
     );
     assert!(text.contains(&format!(
-        "Stale key changed since Run {run}: stale key changed"
+        "Fingerprint changed since Run {run}: fingerprint changed"
     )));
 }

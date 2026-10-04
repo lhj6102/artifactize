@@ -43,7 +43,7 @@ pub(crate) fn budget_reason(run: &Run) -> String {
 pub(crate) async fn schedule(
     config: Arc<RepoConfig>,
     graph: &Graph<'_>,
-    stale_keys: &BTreeMap<&str, cache::PreparedKey>,
+    fingerprints: &BTreeMap<&str, cache::PreparedFingerprint>,
     run: &mut Run,
     requests: &mut [Request],
     receipts: &Receipts,
@@ -56,7 +56,7 @@ pub(crate) async fn schedule(
     let result = Scheduler {
         config,
         graph,
-        stale_keys,
+        fingerprints,
         run,
         requests,
         receipts,
@@ -76,7 +76,7 @@ pub(crate) async fn schedule(
 struct Scheduler<'a, 'g> {
     config: Arc<RepoConfig>,
     graph: &'a Graph<'g>,
-    stale_keys: &'a BTreeMap<&'g str, cache::PreparedKey>,
+    fingerprints: &'a BTreeMap<&'g str, cache::PreparedFingerprint>,
     run: &'a mut Run,
     requests: &'a mut [Request],
     receipts: &'a Receipts,
@@ -94,7 +94,7 @@ impl Scheduler<'_, '_> {
             .config
             .evals
             .iter()
-            .filter(|eval| self.stale_keys.contains_key(eval.target.as_str()))
+            .filter(|eval| self.fingerprints.contains_key(eval.target.as_str()))
             .map(|eval| {
                 (
                     eval.id.as_str(),
@@ -120,7 +120,7 @@ impl Scheduler<'_, '_> {
                     .iter()
                     .filter(|request| request.status == "WAITING_HUMAN" && !request.force)
                     .filter_map(|request| {
-                        Some((request.stale_key.clone()?, request.eval_def_hash.clone()))
+                        Some((request.fingerprint.clone()?, request.eval_def_hash.clone()))
                     })
                     .collect();
                 remote.refresh(self.receipts, keys).await?;
@@ -167,10 +167,10 @@ impl Scheduler<'_, '_> {
                     }) {
                         continue;
                     }
-                    if let Some(stale_key) = self.stale_keys.get(eval.target.as_str())
+                    if let Some(fingerprint) = self.fingerprints.get(eval.target.as_str())
                         && let Some(execution) = self
                             .receipts
-                            .cached_execution(&stale_key.value, &eval_hashes[eval.id.as_str()])
+                            .cached_execution(&fingerprint.value, &eval_hashes[eval.id.as_str()])
                             .await?
                     {
                         evidence.insert(
@@ -209,7 +209,7 @@ impl Scheduler<'_, '_> {
                     }
                     let mut execution = Execution {
                         id: format!("execution-{}", request.id),
-                        stale_key: request.stale_key.clone().filter(|_| !request.force),
+                        fingerprint: request.fingerprint.clone().filter(|_| !request.force),
                         eval_def_hash: request.eval_def_hash.clone(),
                         owner_pid: owner.pid,
                         owner_start_time: owner.start_time,
@@ -235,9 +235,9 @@ impl Scheduler<'_, '_> {
                         origin: None,
                         manifest: None,
                     };
-                    if execution.stale_key.is_some() {
+                    if execution.fingerprint.is_some() {
                         execution.manifest =
-                            self.stale_keys[request.target.as_str()].manifest.clone();
+                            self.fingerprints[request.target.as_str()].manifest.clone();
                     }
                     let human = matches!(
                         self.config
@@ -255,11 +255,13 @@ impl Scheduler<'_, '_> {
                             .max_executions
                             .is_none_or(|limit| self.run.executions_started < limit);
                     // Look up the remote again just before claiming; a hit becomes a local entry.
-                    if let (Some(remote), Some(stale_key)) = (&self.remote, &execution.stale_key) {
+                    if let (Some(remote), Some(fingerprint)) =
+                        (&self.remote, &execution.fingerprint)
+                    {
                         remote
                             .refresh(
                                 self.receipts,
-                                vec![(stale_key.clone(), execution.eval_def_hash.clone())],
+                                vec![(fingerprint.clone(), execution.eval_def_hash.clone())],
                             )
                             .await?;
                     }
@@ -288,7 +290,7 @@ impl Scheduler<'_, '_> {
                             request.execution_id = Some(id);
                             request.status = "WAITING_HUMAN".into();
                             request.blocked_reason = Some(
-                                "Waiting for the active Human stale key/Eval-definition execution."
+                                "Waiting for the active Human fingerprint/Eval-definition execution."
                                     .into(),
                             );
                             *request = self.receipts.follow_human(request).await?;
@@ -313,7 +315,7 @@ impl Scheduler<'_, '_> {
                                 request.execution_id = Some(id);
                                 request.status = "QUEUED".into();
                                 request.blocked_reason = Some(
-                                    "Waiting for the active stale key/Eval-definition execution."
+                                    "Waiting for the active fingerprint/Eval-definition execution."
                                         .into(),
                                 );
                                 self.receipts.save_request(request).await?;
@@ -331,7 +333,7 @@ impl Scheduler<'_, '_> {
                     }
                     waiting.remove(&index);
                     request.execution_id =
-                        execution.stale_key.as_ref().map(|_| execution.id.clone());
+                        execution.fingerprint.as_ref().map(|_| execution.id.clone());
                     request.blocked_reason = None;
                     let eval = self
                         .config

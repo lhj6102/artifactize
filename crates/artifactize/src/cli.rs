@@ -96,7 +96,7 @@ pub enum Command {
         selection: SelectionArgs,
         #[command(flatten)]
         policy: PolicyArgs,
-        /// Maximum concurrent evals, including stale key waiters.
+        /// Maximum concurrent evals, including fingerprint waiters.
         #[arg(long, value_name = "N", default_value = "4", value_parser = clap::value_parser!(u32).range(1..))]
         jobs: u32,
         /// Limit executor starts in this Run; cache hits and waiters are free.
@@ -133,7 +133,7 @@ pub enum Command {
         #[command(subcommand)]
         command: RequestCommand,
     },
-    /// Inspect or maintain reusable results by stale key without a repository.
+    /// Inspect or maintain reusable results by fingerprint without a repository.
     Cache {
         #[command(subcommand)]
         command: CacheCommand,
@@ -320,18 +320,18 @@ pub enum RunCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum CacheCommand {
-    /// List retained stale key/Eval-definition pairs and original execution metadata.
+    /// List retained fingerprint/Eval-definition pairs and original execution metadata.
     List,
     /// Read the full saved result, profile and provenance as JSON.
     Show {
-        stale_key: String,
-        /// Required when the stale key has multiple cached Eval definitions.
+        fingerprint: String,
+        /// Required when the fingerprint has multiple cached Eval definitions.
         eval_hash: Option<String>,
     },
     /// Remove an unused cache entry, preserving saved Runs and executions.
     Rm {
-        stale_key: String,
-        /// Required when the stale key has multiple cached Eval definitions.
+        fingerprint: String,
+        /// Required when the fingerprint has multiple cached Eval definitions.
         eval_hash: Option<String>,
     },
 }
@@ -750,14 +750,14 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                         let mut out = io::stdout().lock();
                         writeln!(
                             out,
-                            "STALE KEY\tEVAL HASH\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED"
+                            "FINGERPRINT\tEVAL HASH\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED"
                         )
                         .map_err(|e| e.to_string())?;
                         for entry in entries {
                             writeln!(
                                 out,
                                 "{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                                entry.stale_key,
+                                entry.fingerprint,
                                 entry.eval_def_hash,
                                 entry.verdict,
                                 entry.origin.as_ref().unwrap_or(&entry.repo_path),
@@ -770,20 +770,20 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                     }
                 }
                 CacheCommand::Show {
-                    stale_key,
+                    fingerprint,
                     eval_hash,
                 } => {
                     let entry =
-                        crate::cache::show(&state, &stale_key, eval_hash.as_deref()).await?;
+                        crate::cache::show(&state, &fingerprint, eval_hash.as_deref()).await?;
                     print_json(&entry)?;
                     return Ok(if entry.is_some() { 0 } else { 4 });
                 }
                 CacheCommand::Rm {
-                    stale_key,
+                    fingerprint,
                     eval_hash,
                 } => {
                     print_json(
-                        &json!({"removed": crate::cache::remove(&state, &stale_key, eval_hash.as_deref()).await?}),
+                        &json!({"removed": crate::cache::remove(&state, &fingerprint, eval_hash.as_deref()).await?}),
                     )?;
                 }
             }
@@ -918,7 +918,7 @@ fn print_status(view: &crate::project::StatusView) -> io::Result<()> {
         if let Some(changes) = &eval.changes {
             writeln!(
                 out,
-                "    Stale key changed since Run {}: {}",
+                "    Fingerprint changed since Run {}: {}",
                 changes.since_run_id, changes.summary
             )?;
         }

@@ -23,10 +23,10 @@ pub enum ServerCommand {
         #[command(subcommand)]
         command: TokenCommand,
     },
-    /// Remove stored entries for a stale key.
+    /// Remove stored entries for a fingerprint.
     Rm {
-        stale_key: String,
-        /// Required when the stale key has multiple stored Eval definitions.
+        fingerprint: String,
+        /// Required when the fingerprint has multiple stored Eval definitions.
         eval_hash: Option<String>,
     },
 }
@@ -127,11 +127,11 @@ pub(super) async fn execute(
             command: TokenCommand::Revoke { name, purge },
         } => print_json(&store.revoke(&name, purge).await?)?,
         ServerCommand::Rm {
-            stale_key,
+            fingerprint,
             eval_hash,
-        } => {
-            print_json(&json!({"removed": store.remove(&stale_key, eval_hash.as_deref()).await?}))?
-        }
+        } => print_json(
+            &json!({"removed": store.remove(&fingerprint, eval_hash.as_deref()).await?}),
+        )?,
     }
     Ok(0)
 }

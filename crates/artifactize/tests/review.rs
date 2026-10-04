@@ -33,7 +33,7 @@ impl Fixture {
         fs::write(
             release.join("artifactize.json"),
             json!({
-                "name":"release","staleKey":{"content":{"inputs":["."],"dependencies":"direct"}},
+                "name":"release","fingerprint":{"files":["."],"dependencies":"direct"},
                 "views":{"humanTools":{
                     "notes":{"description":"Print the release notes.","kind":"output","command":"cat","args":["{artifactPath}/notes.md"]},
                     "fail":{"description":"Fail.","kind":"output","command":"false","args":[]},

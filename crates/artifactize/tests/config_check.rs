@@ -112,6 +112,40 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
 }
 
 #[test]
+fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
+    let shape = r#"was renamed to fingerprint: use "fingerprint": {"files": ["."], "dependencies": "direct", "ignore": []} or "fingerprint": {"script": {...}}."#;
+    for (key, value) in [
+        ("staleKey", json!({"content":{"inputs":["."]}})),
+        (
+            "staleKey",
+            json!({"script":{"command":"./hash.sh","args":[]}}),
+        ),
+        ("stale", json!({"kind":"content"})),
+    ] {
+        let fixture = Fixture::new();
+        let mut declaration = json!({"name":"app"});
+        declaration[key] = value;
+        fixture.write("app/artifactize.json", &declaration.to_string());
+        let output = fixture
+            .command()
+            .args(["config", "check", "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let error = json_output(&output)["error"].as_str().unwrap().to_owned();
+        assert!(error.contains("app/artifactize.json"), "{error}");
+        assert!(error.ends_with(&format!(": {key} {shape}")), "{error}");
+        let output = fixture
+            .command()
+            .args(["config", "check"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&output.stderr).contains(&format!("{key} {shape}")));
+    }
+}
+
+#[test]
 fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let fixture = Fixture::new();
     fixture.write(

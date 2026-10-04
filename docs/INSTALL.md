@@ -20,12 +20,16 @@ artifactize --version          # artifactize 0.3.0
 ```
 
 The binary goes to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs
-it under `DIR/bin` instead. Run the same command again to upgrade.
+it under `DIR/bin` instead. Run the same command again to upgrade. The next
+command that opens an older state database upgrades it in place; `artifactize
+doctor` reports its schema without changing it. 0.4 calls the reuse declaration
+`fingerprint`; `config check` shows the new shape for each `artifactize.json` that
+still uses the old field.
 
 ## State
 
 All state lives in one directory: `state.sqlite` (Runs, requests, executions, the
-staleKey cache and Human claims), Run output under `runs/`, and ChatGPT
+fingerprint cache and Human claims), Run output under `runs/`, and ChatGPT
 credentials under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
 `$XDG_STATE_HOME/artifactize`, else `~/.local/state/artifactize`.
 
@@ -54,7 +58,7 @@ revoke the refresh token and deletes the stored tokens. The `claude` backend run
 the CLI found on `PATH`; artifactize never reads Claude credentials.
 
 ```sh
-artifactize doctor                 # state, API-key presence, ChatGPT login, claude --version
+artifactize doctor                 # state and its schema, API-key presence, ChatGPT login, claude --version
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 
@@ -73,7 +77,7 @@ artifactize config check    # static validation; runs no owner code
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
 artifactize config graph    # Artifacts, evals and child/mount/reference relations
 artifactize verify --all    # three GREEN results, exit 0; prints "Run: RUN_ID"
-artifactize run show RUN_ID # the saved Run as JSON: argv, stdout, staleKey
+artifactize run show RUN_ID # the saved Run as JSON: argv, stdout, fingerprint
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused
 artifactize status          # exit 0: every eval shows "PASS — reuse"
 ```

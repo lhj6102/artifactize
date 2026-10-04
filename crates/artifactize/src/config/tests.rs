@@ -41,7 +41,7 @@ fn unknown_fields_and_explicit_nulls_are_not_ignored() {
     assert!(parse(json!({"name": "a", "evals": null})).is_err());
     assert!(parse(json!({"name": "a", "views": null})).is_err());
     assert!(parse(json!({"name": "a", "mounts": null})).is_err());
-    assert!(parse(json!({"name": "a", "staleKey": null})).is_err());
+    assert!(parse(json!({"name": "a", "fingerprint": null})).is_err());
     let mut declared = eval(json!({"kind": "human"}));
     declared["deps"] = json!([]);
     assert!(
@@ -52,7 +52,7 @@ fn unknown_fields_and_explicit_nulls_are_not_ignored() {
     let invalid_human = eval(json!({"kind": "human", "timeoutMs": 100}));
     assert!(parse(json!({"name": "a", "evals": [invalid_human]})).is_err());
     assert!(
-        parse(json!({"name": "a", "staleKey": {"kind": "always", "paths": ["input"]}})).is_err()
+        parse(json!({"name": "a", "fingerprint": {"kind": "always", "paths": ["input"]}})).is_err()
     );
 }
 
@@ -140,20 +140,20 @@ fn fixed_scripts_preserve_literal_args_but_reject_invalid_process_fields() {
     assert!(parse(json!({"name": "a", "evals": [bad_command]})).is_err());
     let bad_arg = eval(json!({"kind": "runtime", "command": "sh", "args": ["\u{0}"]}));
     assert!(parse(json!({"name": "a", "evals": [bad_arg]})).is_err());
-    assert!(parse(json!({"name": "a", "staleKey": {"script":{"command": "stale_key.sh", "args": [], "shell": true}}})).is_err());
+    assert!(parse(json!({"name": "a", "fingerprint": {"script":{"command": "fingerprint.sh", "args": [], "shell": true}}})).is_err());
 }
 
 #[test]
 fn all_hook_timeouts_are_checked_without_opening_scripts() {
     let valid = json!({
         "name": "a",
-        "staleKey": {"script":{"command": "stale_key.sh", "args": [],"timeoutMs": 2147483647}},
+        "fingerprint": {"script":{"command": "fingerprint.sh", "args": [],"timeoutMs": 2147483647}},
         "views": {"agentTools": {"read": {"description": "Read {artifactName}", "inputSchema": {"type": "object"}, "timeoutMs": 1000, "protocol": "json", "command": "sh", "args": ["view.sh"]}}},
         "evals": [{"id": "review", "title": "Review", "profile": {"kind": "agent", "backend":"openai", "model": "m", "reasoning": "high"}, "payload": {"instruction": "Review"}}]
     });
     assert!(parse(valid.clone()).is_ok());
     let mut invalid = valid.clone();
-    invalid["staleKey"]["script"]["timeoutMs"] = json!(null);
+    invalid["fingerprint"]["script"]["timeoutMs"] = json!(null);
     assert!(parse(invalid).is_err());
     let mut invalid = valid.clone();
     invalid["views"]["agentTools"]["read"]["timeoutMs"] = json!(2147483648_u64);
@@ -180,7 +180,7 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
         "a\u{7f}b",
     ] {
         assert!(validation::path(path).is_err(), "{path:?}");
-        assert!(parse(json!({"name":"a","staleKey":{"script":{"command":"entry","args":[],"inputs":[path]}}})).is_err());
+        assert!(parse(json!({"name":"a","fingerprint":{"script":{"command":"entry","args":[],"files":[path]}}})).is_err());
         assert!(parse(json!({"name":"a","views":{"agentTools":{"read":{"description":"Read","inputSchema":{"type":"object"},"protocol":"json","executionPaths":[path],"command":"sh","args":[]}}}})).is_err());
     }
     for path in ["file", "nested/file", "C:relative", "1:/relative", "a:b"] {
@@ -207,102 +207,128 @@ fn response_schemas_are_validated_without_rewriting_owner_fields() {
 }
 
 #[test]
-fn stale_key_scripts_are_inert_declarations() {
-    let script = json!({"script":{"command":"missing.sh","args":["literal"],"inputs":["missing-input"],"timeoutMs":1000}});
-    let declaration = parse(json!({"name":"a","staleKey":script})).unwrap();
-    let Some(StaleKey::Script {
+fn fingerprint_scripts_are_inert_declarations() {
+    let script = json!({"script":{"command":"missing.sh","args":["literal"],"files":["missing-input"],"timeoutMs":1000}});
+    let declaration = parse(json!({"name":"a","fingerprint":script})).unwrap();
+    let Some(Fingerprint::Script {
         command,
         args,
-        inputs,
+        files,
         timeout_ms,
-    }) = declaration.stale_key
+    }) = declaration.fingerprint
     else {
         panic!()
     };
     assert_eq!(command, "missing.sh");
     assert_eq!(args, ["literal"]);
-    assert_eq!(inputs, ["missing-input"]);
+    assert_eq!(files, ["missing-input"]);
     assert_eq!(timeout_ms, Some(1000));
     let minimum = json!({"script":{"command":"missing.sh","args":[]}});
-    let declaration = parse(json!({"name":"a","staleKey":minimum})).unwrap();
-    let Some(StaleKey::Script {
-        inputs, timeout_ms, ..
-    }) = declaration.stale_key
+    let declaration = parse(json!({"name":"a","fingerprint":minimum})).unwrap();
+    let fingerprint = declaration.fingerprint.unwrap();
+    let Fingerprint::Script {
+        files, timeout_ms, ..
+    } = &fingerprint
     else {
         panic!()
     };
-    assert!(inputs.is_empty());
-    assert_eq!(timeout_ms, None);
-    for stale_key in [
+    assert!(files.is_empty());
+    assert_eq!(*timeout_ms, None);
+    // Saved definitions keep the declared shape, with every field present.
+    assert_eq!(
+        serde_json::to_value(&fingerprint).unwrap(),
+        json!({"script":{"command":"missing.sh","args":[],"files":[],"timeoutMs":null}})
+    );
+    for fingerprint in [
         json!({"kind":"always"}),
         json!({"kind":"file-hash"}),
         json!({"kind":"file-hash","paths":["input"]}),
+        json!({"script":"missing.sh"}),
+        json!({"script":{"command":"x","args":[]},"files":["."]}),
         json!({"script":{"command":"x","args":[]},"content":{}}),
     ] {
-        assert!(parse(json!({"name":"a","staleKey":stale_key})).is_err());
+        assert!(parse(json!({"name":"a","fingerprint":fingerprint})).is_err());
     }
-    let renamed = parse(json!({"name":"a","stale":{"kind":"content"}})).unwrap_err();
-    assert!(
-        renamed.contains("stale was renamed to staleKey")
-            && renamed.contains(r#""staleKey": {"content""#),
-        "{renamed}"
-    );
     for (key, value) in [
         ("paths", json!(["input"])),
         ("weight", json!(1)),
         ("weight", json!(101)),
         ("weight", json!(null)),
-        ("inputs", json!(null)),
+        ("files", json!(null)),
+        ("inputs", json!(["input"])),
     ] {
-        let mut stale_key = minimum.clone();
-        stale_key["script"][key] = value;
-        assert!(parse(json!({"name":"a","staleKey":stale_key})).is_err());
+        let mut fingerprint = minimum.clone();
+        fingerprint["script"][key] = value;
+        assert!(parse(json!({"name":"a","fingerprint":fingerprint})).is_err());
     }
 }
 
 #[test]
-fn content_stale_defaults_to_the_owner_folder_and_direct_dependencies() {
-    let declaration = parse(json!({"name":"a","staleKey":{"content":{}}})).unwrap();
-    let Some(StaleKey::Content {
-        inputs,
+fn renamed_fingerprint_keys_fail_with_the_new_shape() {
+    let shape = r#"use "fingerprint": {"files": ["."], "dependencies": "direct", "ignore": []} or "fingerprint": {"script": {...}}."#;
+    for (key, value) in [
+        ("staleKey", json!({"content":{}})),
+        ("staleKey", json!({"script":{"command":"x","args":[]}})),
+        ("stale", json!({"kind":"content"})),
+    ] {
+        let mut declaration = json!({"name":"a"});
+        declaration[key] = value;
+        assert_eq!(
+            parse(declaration).unwrap_err(),
+            format!("{key} was renamed to fingerprint: {shape}")
+        );
+    }
+}
+
+#[test]
+fn content_fingerprint_defaults_to_the_owner_folder_and_direct_dependencies() {
+    let declaration = parse(json!({"name":"a","fingerprint":{}})).unwrap();
+    let fingerprint = declaration.fingerprint.unwrap();
+    let Fingerprint::Content {
+        files,
         dependencies,
         ignore,
-    }) = declaration.stale_key
+    } = &fingerprint
     else {
         panic!()
     };
-    assert_eq!(inputs, ["."]);
-    assert_eq!(dependencies, Dependencies::Direct);
+    assert_eq!(files, &["."]);
+    assert_eq!(*dependencies, Dependencies::Direct);
     assert!(ignore.is_empty());
-    let declared = json!({"content":{"inputs":["src","docs/a.md"],"dependencies":"transitive","ignore":["*.log","build/"]}});
-    let Some(StaleKey::Content {
-        inputs,
+    assert_eq!(
+        serde_json::to_value(&fingerprint).unwrap(),
+        json!({"files":["."],"dependencies":"direct","ignore":[]})
+    );
+    let declared = json!({"files":["src","docs/a.md"],"dependencies":"transitive","ignore":["*.log","build/"]});
+    let Some(Fingerprint::Content {
+        files,
         dependencies,
         ignore,
-    }) = parse(json!({"name":"a","staleKey":declared}))
+    }) = parse(json!({"name":"a","fingerprint":declared}))
         .unwrap()
-        .stale_key
+        .fingerprint
     else {
         panic!()
     };
-    assert_eq!(inputs, ["src", "docs/a.md"]);
+    assert_eq!(files, ["src", "docs/a.md"]);
     assert_eq!(dependencies, Dependencies::Transitive);
     assert_eq!(ignore, ["*.log", "build/"]);
     for (key, value) in [
         ("dependencies", json!("all")),
-        ("inputs", json!([])),
-        ("inputs", json!(["/abs"])),
-        ("inputs", json!(["a/../b"])),
-        ("inputs", json!(["a", "a"])),
+        ("files", json!([])),
+        ("files", json!(["/abs"])),
+        ("files", json!(["a/../b"])),
+        ("files", json!(["a", "a"])),
         ("ignore", json!(["!keep"])),
         ("ignore", json!(["x", "x"])),
-        ("script", json!({"command":"x","args":[]})),
+        ("inputs", json!(["."])),
+        ("content", json!({})),
         ("paths", json!(["input"])),
     ] {
-        let mut stale_key = json!({"content":{}});
-        stale_key["content"][key] = value;
+        let mut fingerprint = json!({});
+        fingerprint[key] = value;
         assert!(
-            parse(json!({"name":"a","staleKey":stale_key})).is_err(),
+            parse(json!({"name":"a","fingerprint":fingerprint})).is_err(),
             "{key}"
         );
     }

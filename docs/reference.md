@@ -9,8 +9,8 @@ covers setup.
 - [Runtime CLI](#runtime-cli)
 - [State](#state)
 - [Declaration validation](#declaration-validation)
-- [Content staleKey](#content-stalekey)
-- [staleKey scripts](#stalekey-scripts)
+- [Content fingerprint](#content-fingerprint)
+- [Fingerprint scripts](#fingerprint-scripts)
 - [Completed result reuse](#completed-result-reuse)
 - [Cache limits](#cache-limits)
 - [Artifact families](#artifact-families)
@@ -50,8 +50,8 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `request tool ID TOOL` | `--reviewer NAME` | text or JSON | 0; 2 tool error |
 | `request submit ID` | `--verdict GREEN\|RED`, `--fields JSON` \| `--fields-file PATH`, `--reviewer NAME` | JSON | 0, also for RED |
 | `cache list` | | text or JSON | 0 |
-| `cache show STALE_KEY [EVAL_HASH]` | | JSON | 0; 4 missing |
-| `cache rm STALE_KEY [EVAL_HASH]` | | JSON | 0 |
+| `cache show FINGERPRINT [EVAL_HASH]` | | JSON | 0; 4 missing |
+| `cache rm FINGERPRINT [EVAL_HASH]` | | JSON | 0 |
 | `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 0 ready, 1 not |
 | `login chatgpt`, `logout chatgpt` | | text or JSON | 0 |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
@@ -66,7 +66,7 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `server run` | `--listen ADDR` (`127.0.0.1:8417`) | listening address | 0 |
 | `server token add NAME` | `--scopes read,publish,human` | the token, once | 0 |
 | `server token list`, `server token revoke NAME` | `--purge` (revoke) | text or JSON | 0 |
-| `server rm STALE_KEY [EVAL_HASH]` | | JSON | 0 |
+| `server rm FINGERPRINT [EVAL_HASH]` | | JSON | 0 |
 
 Run outcome codes (`verify`, `run show --wait`): 0 GREEN, 1 RED, 2 ERROR or
 cancelled, 3 Human wait timeout, 4 INCOMPLETE. `run show --wait` follows a RUNNING
@@ -100,7 +100,7 @@ dependencies may still reuse their own cache entries.
 budget (unlimited when omitted); it is not an Artifact declaration field.
 The Run records `jobs`, `maxExecutions` and `executionsStarted`. A prepared
 Runtime or Agent invocation consumes one start, even when it fails to spawn or
-later returns ERROR. Human waiting, claim and tool actions consume no starts. staleKey preparation/rechecks, cache hits, and joined waiters
+later returns ERROR. Human waiting, claim and tool actions consume no starts. Fingerprint preparation/rechecks, cache hits, and joined waiters
 consume none. Preparation failures before invocation consume none. Zero permits
 reuse, joining and Human reviews; a budgeted waiter replacing a failed/dead owner uses
 its own Run's remaining budget. Exhaustion never interrupts running evals, but
@@ -124,45 +124,49 @@ qualified-eval-to-name map); mappings outside the included scope fail. With
 `--recursive`, variants also apply to dependency evals. Runtime
 variant arguments rebuild scoped references and dependency gates. Stored request
 profiles describe the actual execution; `requestedProfile` retains the requested
-variant separately when a staleKey hit returns another profile.
+variant separately when a fingerprint hit returns another profile.
 
 ## State
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 2),
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 3),
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, falling back to `$XDG_STATE_HOME/artifactize` or
 `~/.local/state/artifactize`. `--state-dir PATH` moves the whole state, including
-private output directories under `PATH/runs`. A schema 1 database is upgraded in
-place to schema 2 (the staleKey rename) before any read or write; there is no
-migration from earlier receipt layouts. Saved Runs stay readable after
+private output directories under `PATH/runs`. A schema 1 or 2 database
+(artifactize 0.1 to 0.3) is upgraded in place to schema 3 (the fingerprint rename)
+before any read or write: columns, the active index and saved JSON fields take the
+new name, and saved declarations take the fingerprint shape. Cache entries and
+waiting Human requests survive, so unchanged fingerprints keep reusing their
+results. There is no migration from earlier receipt layouts. Saved Runs stay readable after
 the original repository is removed. State/output inside the reviewed repository
 is rejected, including through symlink ancestors; database files and their WAL
 sidecars must be regular files. No writer transaction spans a subprocess or async
-suspension. Completed results with a staleKey are shared within this database; cross-process
-claims and polling waiters prevent duplicate execution for the same staleKey.
+suspension. Completed results with a fingerprint are shared within this database; cross-process
+claims and polling waiters prevent duplicate execution for the same fingerprint.
 
 ## Declaration validation
 
 The README describes the [declaration](../README.md#folder-configuration) and the
-two `staleKey` forms.
+two `fingerprint` forms.
 
 Discovery validates these fields without opening or executing scripts or inputs.
-There is no implicit or always-stale mode: an Artifact without `staleKey` has no
-reuse, so every `verify` reviews it again. The former `stale` field is rejected
-with a message showing the `staleKey` shape. The old `critics`, `stale.paths`,
+There is no implicit or always-stale mode: an Artifact without `fingerprint` has no
+reuse, so every `verify` reviews it again. The former `staleKey` (0.2 and 0.3) and
+`stale` (0.1) fields fail `config check` with a message showing the `fingerprint`
+shape. The old `critics`, `stale.paths`,
 `resultCheck`, `envRequirements`, `reviewPolicy.maxConcurrentExecutors` and tool
 metadata `observation` fields are rejected. Agent and Human tools use the separate flat
 declarations below.
 
-## Content staleKey
+## Content fingerprint
 
-The README describes [`inputs`, `dependencies` and `ignore`](../README.md#content-stalekey).
+The README describes [`files`, `dependencies` and `ignore`](../README.md#content-fingerprint).
 
 Each dependency contributes its own entry, never its dependencies' entries:
 
-- A staleKey script contributes its output.
+- A fingerprint script contributes its output.
 - Any other Artifact contributes the SHA-256 of its own content inputs: its
-  declared `inputs`/`ignore`, or `["."]` when it declares no `staleKey`.
+  declared `files`/`ignore`, or `["."]` when it declares no `fingerprint`.
 
 `transitive` therefore lists every Artifact in the closure explicitly. Cycles
 terminate, and SCC peers appear as ordinary dependencies; the owner never lists
@@ -174,26 +178,26 @@ Walks follow the scoped path rules. Symlinks and special files fail closed unles
 they are ignored, nothing is followed out of the owner, and a walk stops with an
 error after 10,000 entries or 1 GiB. Hashing runs on preparation and on each
 end-of-review recheck. Files a review writes into ignored paths, such as Python's
-`__pycache__`, therefore never cause `INPUT_CHANGED`. A content staleKey records a
+`__pycache__`, therefore never cause `INPUT_CHANGED`. A content fingerprint records a
 manifest with the execution: per-file digests (16 hex digits), the inputs digest
 and each dependency's entry. Maps that would exceed 64 KiB are dropped from the
-manifest but still covered by the staleKey. `status` diffs this manifest against
+manifest but still covered by the fingerprint. `status` diffs this manifest against
 the current one.
 
-## staleKey scripts
+## Fingerprint scripts
 
-Before executing any eval, `verify` computes each declared staleKey in the selected
+Before executing any eval, `verify` computes each declared fingerprint in the selected
 required dependency closure, including dependencies whose evals are not selected.
 Every eval on an Artifact receives the same literal value, also saved on its
-request and in the Run's Artifact validation. A script staleKey does not contain
+request and in the Run's Artifact validation. A script fingerprint does not contain
 any implicit repository, eval, profile, dependency or content salt. A content
-staleKey failure (a missing input, a link, a limit) aborts preparation the same way.
+fingerprint failure (a missing input, a link, a limit) aborts preparation the same way.
 
 The command runs from its owner's folder with JSON on stdin:
 `{"version":1,"artifactId":"example"}`. Family instances additionally receive
 `"family":{"name":"family","material":["input.txt"]}`. Bare commands resolve
 through PATH; absolute executables run as given, while relative executable paths
-containing `/` (such as `./stale_key.sh`) must remain inside the owner without
+containing `/` (such as `./fingerprint.sh`) must remain inside the owner without
 symlinks. Arguments stay literal except explicit scoped Artifact references,
 resolved with the same rules as runtime argv: `{name}` may be a mount alias or a
 global Artifact name, and each referenced Artifact (with its child and mount
@@ -202,29 +206,29 @@ closure) is admitted to the script's scope without becoming a graph relation.
 checked for existence and symlinks when the command is prepared. There are no
 interpreter-specific flags, wrappers or entry-file rules.
 
-`inputs` accepts up to 64 unique owner-relative literal file/directory paths.
-Inputs and family material must exist without symlink traversal on every call;
+`files` accepts up to 64 unique owner-relative literal file/directory paths.
+These paths and family material must exist without symlink traversal on every call;
 contents are never hashed. Commands share runtime isolation, cancellation, bounded
 raw output and a 30,000 ms default timeout (1–2,147,483,647 ms allowed). Their private
 external output, HOME and temporary directories are removed after each invocation.
 Stdout must be exactly 1–128 ASCII characters from `[A-Za-z0-9._:-]`, optionally
 followed by one LF. It is not trimmed or cleaned. Nonzero exit, malformed output,
-timeout, cancellation, missing inputs or cleanup failure abort preparation with
+timeout, cancellation, missing files or cleanup failure abort preparation with
 an operational error, without starting any eval or falling back to an uncached
-review. Stderr is not forwarded as a staleKey diagnostic.
+review. Stderr is not forwarded as a fingerprint diagnostic.
 
-After each runtime or Agent review completes, its staleKey is recomputed before accepting a
+After each runtime or Agent review completes, its fingerprint is recomputed before accepting a
 GREEN or RED verdict. A changed value records ERROR/INPUT_CHANGED with no semantic
 result; a failed recheck also records ERROR. Force does not skip preparation or
-this recheck. Artifacts without a staleKey run without either step. There is no
-workspace monitoring: content staleKeys hash files only at preparation and recheck.
+this recheck. Artifacts without a fingerprint run without either step. There is no
+workspace monitoring: content fingerprints hash files only at preparation and recheck.
 
 ## Completed result reuse
 
-A successful staleKey recheck publishes either GREEN or RED to `cache_entries`,
+A successful fingerprint recheck publishes either GREEN or RED to `cache_entries`,
 pointing to a self-contained `executions` row. Errors and cancellation are never
-published. The key is **(staleKey, Eval definition hash)**, intentionally
-departing from CCDD, whose key was the staleKey alone. The definition hash is lowercase SHA-256
+published. The key is **(fingerprint, Eval definition hash)**, intentionally
+departing from CCDD, whose key was its identity alone. The definition hash is lowercase SHA-256
 of canonical JSON with recursively sorted keys, containing the effective
 `profile`, `payload` (including instruction), `passSchema` and `failSchema`.
 The profile is the selected variant's full definition when `--profile` is used:
@@ -233,7 +237,7 @@ Human. Eval id/title, repository paths and unused profile variants are excluded.
 Equal definitions still share across evals and repositories; changing criteria,
 schema, args or effective profile requires a separate execution.
 
-A script staleKey hashes no script or material file contents. Owners must still
+A script fingerprint hashes no script or material file contents. Owners must still
 encode input, script and material changes that invalidate results in its output.
 
 A hit returns the original result without running the eval or re-validating it
@@ -247,7 +251,7 @@ Dependencies outside execution selection can supply cached evidence without
 running. Results remain readable after the source repository is deleted; external
 paths embedded in result text are not made portable.
 
-No staleKey means no cache lookup or publication. `--force` bypasses lookup and
+No fingerprint means no cache lookup or publication. `--force` bypasses lookup and
 publication for explicitly selected evals, leaving any existing entry unchanged.
 Forced and uncached results still satisfy their own Run and retain execution audit.
 
@@ -257,7 +261,7 @@ Publishing a new reusable entry triggers LRU GC: at most 10,000 entries and 1 Gi
 of retained execution JSON, with a 16 MiB per-entry limit. Oversized results still
 reach their Run and existing waiters through the saved execution, but later calls
 execute again. Reuse hits update last use; inspection does not. GC evicts oldest
-eligible entries first, using staleKey then definition hash to break ties, and skips active executions
+eligible entries first, using fingerprint then definition hash to break ties, and skips active executions
 and in-flight waiters. Protected entries can temporarily exceed the caps, and
 automatic maintenance failures are reported on stderr without replacing an already
 completed verdict; the next publication retries collection.
@@ -280,21 +284,20 @@ owner-relative `material` paths, resolved without symlink traversal. Parameters
 merge shallowly: family defaults, then the named family variant, then the instance.
 Exact `{"$param":"/pointer"}` objects inside views and evals copy JSON values
 using RFC 6901 pointers, including arrays and the empty root pointer. No string
-interpolation or parameter substitution occurs in names, mounts, staleKey scripts,
+interpolation or parameter substitution occurs in names, mounts, fingerprint scripts,
 or basis. Expanded declarations receive normal validation.
 
 All instance scripts use the shared folder as cwd. A parent addresses material as
 `<family-folder>/<instance>/<path>`; bypassing the instance is rejected. Instance
 material is an ownership declaration, not a sandbox hiding sibling files.
 Discovery keeps each instance's family membership and sorted material, without
-computing any digest or content fingerprint. Only a declared `staleKey` can
-become a reuse key. staleKey scripts receive each selected instance's family name
-and material paths. A content staleKey hashes the shared folder without any
+computing any digest. Only a declared `fingerprint` can become a reuse key.
+Fingerprint scripts receive each selected instance's family name and material paths. A content fingerprint hashes the shared folder without any
 instance's material, plus the instance's own material. Each review rechecks its
-own instance's staleKey. No workspace monitoring or automatic reuse is added.
+own instance's fingerprint. No workspace monitoring or automatic reuse is added.
 
 The runtime-only fixture demonstrates parameterized views, shared evals,
-independent inputs/results, and a shared staleKey script (inert during discovery):
+independent inputs/results, and a shared fingerprint script (inert during discovery):
 
 ```sh
 cargo run -q -p artifactize -- --repo crates/artifactize/tests/fixtures/families config check
@@ -546,7 +549,7 @@ artifactize tools check --execute --artifact app --audience human --tool inspect
 
 `tools check` discovers and validates declarations, resolves executable availability,
 scoped argv operands and declared execution paths, and prints JSON scopes, schemas
-and per-tool readiness checks. It is static by default: no owner process, staleKey
+and per-tool readiness checks. It is static by default: no owner process, fingerprint
 script, database or output directory is created. A positional selector or `--eval`
 selects one Agent/Human eval and cannot be combined with `--artifact`, `--audience`,
 `--tool` or `--execute`. Explicit execution requires all three Artifact, audience
@@ -593,7 +596,7 @@ admitted calls against the effective profile's `maxToolCalls`; denied calls are
 audited without running or incrementing. SQLite `tool_calls` rows contain ordered
 `name`, `arguments`, bounded `result` summary, `isError` and `error` fields.
 Unfinished calls retain an error placeholder after a crash. Sessions may precede
-the execution rows of reviews without a staleKey; the caller owns review completion. `run show` combines
+the execution rows of reviews without a fingerprint; the caller owns review completion. `run show` combines
 this durable audit with in-process Agent audit through one projection; execution
 completion also copies it into the self-contained execution/cache result.
 
@@ -662,7 +665,7 @@ The internal library exposes asynchronous operations with an open `store::Receip
   and only while the request still waits; tool calls already recorded are kept.
 - `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation)`
   authorizes the claimant, reopens the recorded Artifact/eval scope and declarations,
-  and checks the staleKey before invoking a registered Human tool. The tool takes
+  and checks the fingerprint before invoking a registered Human tool. The tool takes
   no free arguments and uses the reviewer's real environment. Ordinary tool errors
   are correctable actions, not verdicts. Only tool name and error metadata are saved.
 - `human::tool_command(receipts, request_id, tool)` resolves what that tool would
@@ -672,10 +675,10 @@ The internal library exposes asynchronous operations with an open `store::Receip
   validator without repair. Invalid or oversized results (over 256000 JSON bytes)
   leave the request waiting for correction; schema errors list up to five failing
   instance paths. A valid submission recomputes the
-  staleKey: a changed value settles ERROR/INPUT_CHANGED instead of the verdict.
+  fingerprint: a changed value settles ERROR/INPUT_CHANGED instead of the verdict.
   Settlement rechecks the claimant and waiting state transactionally, so a second
   submission fails. It releases the reviewer lock, completes saved followers, and
-  publishes only GREEN/RED results with a staleKey to the cache.
+  publishes only GREEN/RED results with a fingerprint to the cache.
 
 The `artifactize review` terminal UI
 calls `human::claim`, `run_human_tool`, `unclaim` and `submit` in-process, and
@@ -703,8 +706,10 @@ The README lists the [commands](../README.md#local-diagnostics-and-maintenance).
 `doctor` makes no provider calls and creates no Run, verdict, cache entry or auth
 lock. It reports the resolved state directory and tests writability with a temporary
 directory, removed immediately (in the nearest existing ancestor when state does
-not yet exist). `--repo` additionally runs the same static validation as `config
-check`. API keys are reported only as present/absent, never validated or printed.
+not yet exist). It reads the state database's schema without changing the file:
+an older schema (1 or 2) passes with a note that the next artifactize command
+upgrades it, and a database written by a newer artifactize is a hard error. `--repo`
+additionally runs the same static validation as `config check`. API keys are reported only as present/absent, never validated or printed.
 ChatGPT login presence and Unix-second access-token expiry come from protected local
 storage without refreshing. `claude` is located on PATH and only `--version` runs,
 with a five-second timeout and bounded output; Claude credentials are never read.
@@ -741,12 +746,12 @@ artifactize server token add ci --scopes read
 artifactize server run [--listen 127.0.0.1:8417]
 artifactize server token list
 artifactize server token revoke alice-laptop [--purge]
-artifactize server rm STALE_KEY [EVAL_HASH]
+artifactize server rm FINGERPRINT [EVAL_HASH]
 ```
 
 `artifactize server` keeps a [shared remote review store](design/remote-store.md)
 in its own `review-store.sqlite` under `--state-dir`, separate from `state.sqlite`.
-It holds one immutable record per (Eval definition hash, staleKey); the first
+It holds one immutable record per (Eval definition hash, fingerprint); the first
 writer wins. `server run` serves plain HTTP on loopback by default (it warns when
 bound elsewhere) and stops on Ctrl-C/SIGTERM; put a TLS proxy or tunnel in front,
 because clients require HTTPS except on loopback. Token commands work on the same
@@ -758,8 +763,8 @@ Scopes are `read` (look up), `publish` (publish runtime and Agent records) and
 untrusted CI `read` only. `token list` shows names, scopes and creation/revocation
 times, never tokens. `token revoke NAME` rejects the token at once; `--purge`
 also deletes every entry it published, and may be repeated later. Names of revoked
-tokens are never reused. `rm` deletes a staleKey's entry, requiring the hash when
-the staleKey has several definitions.
+tokens are never reused. `rm` deletes a fingerprint's entry, requiring the hash when
+the fingerprint has several definitions.
 
 The API takes `Authorization: Bearer TOKEN` and answers JSON (`{"error":...}` on
 failure; 401 for a missing, unknown or revoked token, 403 for a missing scope):
@@ -767,14 +772,22 @@ failure; 401 for a missing, unknown or revoked token, 403 for a missing scope):
 | Route | Scope | Result |
 |---|---|---|
 | `GET /v1/whoami` | any | `{"principal":NAME,"scopes":[...]}` |
-| `POST /v1/lookup` with `{"keys":[{"staleKey","evalDefHash"}]}` (at most 1000) | `read` | `{"entries":[record,...]}` for the found keys |
-| `PUT /v1/entries/{evalDefHash}/{staleKey}` with a record | `publish` (+ `human` for Human records) | 201 `{"created":true}`, or 200 `{"created":false}` when the key exists |
+| `POST /v1/lookup` with `{"keys":[{"fingerprint","evalDefHash"}]}` (at most 1000) | `read` | `{"entries":[record,...]}` for the found keys |
+| `PUT /v1/entries/{evalDefHash}/{fingerprint}` with a record | `publish` (+ `human` for Human records) | 201 `{"created":true}`, or 200 `{"created":false}` when the key exists |
 
-The server checks a record's envelope (schema 1, the path's staleKey and hash,
+The server checks a record's envelope (schema 1, the path's fingerprint and hash,
 a GREEN/RED verdict and a profile kind) and size: 256 KiB for a summary, 16 MiB
 for a full record carrying `execution`. It stamps `publisher` (the token name) and
 `publishedAt` (server clock), replacing any client values. Lookups update last
 use; inserts evict least-recently-used entries above 100,000 entries or 4 GiB.
+
+A 0.3 client calls the fingerprint `staleKey`. Throughout 0.4.x the server accepts
+that name as an alias in published records (also inside a full record's
+`execution`) and in lookup keys, stores records under `fingerprint`, and answers a
+lookup whose keys use `staleKey` with records in the 0.3 shape. A mixed team can
+therefore upgrade the server first and then one machine at a time; a 0.4 client
+needs a 0.4 server. The alias is removed in 0.5.0. A schema 1 `review-store.sqlite`
+is upgraded in place to schema 2 when the server opens it.
 
 ## Remote review store client
 
@@ -822,13 +835,13 @@ becomes ERROR (`SUPERSEDED`). Text output names the source:
 
 The producer (`user@host`) and the Human reviewer are what the publishing machine
 recorded; the publisher is the server-authenticated token name. Once the local settle
-publishes a GREEN/RED with a staleKey to the local cache (after the staleKey
+publishes a GREEN/RED with a fingerprint to the local cache (after the fingerprint
 recheck), verify sends its summary record, or the full record with share `full`,
 outside any database transaction. `request submit` publishes Human sign-offs.
 A token without `read` looks nothing up and one without `publish` publishes nothing,
 so a read-only CI token only reuses. Human sign-offs also need `human`; with any
 other token they stay local with a warning. Nothing is published for evals without a
-staleKey, and `--force` makes no remote calls at all. `status` looks up read-only,
+fingerprint, and `--force` makes no remote calls at all. `status` looks up read-only,
 without mirroring, so its `reuse` prediction includes remote results.
 
 `remote push` sends the local GREEN/RED results the store lacks: results produced

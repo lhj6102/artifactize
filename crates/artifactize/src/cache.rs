@@ -1,4 +1,4 @@
-//! Stale key preparation, execution ownership, reuse, and end-of-review rechecks.
+//! Fingerprint preparation, execution ownership, reuse, and end-of-review rechecks.
 
 mod content;
 
@@ -16,7 +16,7 @@ pub use crate::store::cache_entries::{Entry, list, remove, show};
 pub(crate) use content::ignore_patterns;
 
 use crate::{
-    config::{EvalDeclaration, RepoConfig, StaleKey},
+    config::{EvalDeclaration, Fingerprint, RepoConfig},
     process, runtime, scope,
     store::{Execution, Request},
     workspace,
@@ -24,7 +24,7 @@ use crate::{
 
 const MANIFEST_BYTES: usize = 64 * 1024;
 
-/// Hash the effective declaration after profile selection, without file fingerprints.
+/// Hash the effective declaration after profile selection, without file digests.
 pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
     let mut definition = json!({
         "profile": eval.profile,
@@ -38,15 +38,15 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
     ))
 }
 
-/// A prepared stale key; a content stale key also carries its manifest.
+/// A prepared fingerprint; a content fingerprint also carries its manifest.
 #[derive(Debug, Clone)]
-pub struct PreparedKey {
+pub struct PreparedFingerprint {
     pub value: String,
     pub manifest: Option<Manifest>,
 }
 
-/// What a content stale key covered, saved with executions to explain later changes.
-/// Maps that would exceed 64 KiB are omitted; the stale key still covers them.
+/// What a content fingerprint covered, saved with executions to explain later changes.
+/// Maps that would exceed 64 KiB are omitted; the fingerprint still covers them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
     /// SHA-256 over every input path and file digest.
@@ -54,12 +54,12 @@ pub struct Manifest {
     /// Owner-relative path to the first 16 hex digits of its SHA-256.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files: Option<BTreeMap<String, String>>,
-    /// Dependency Artifact to its stale key script value or content digest.
+    /// Dependency Artifact to its fingerprint script value or content digest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<BTreeMap<String, String>>,
 }
 
-/// Why the current stale key differs from an earlier cached result for the same Eval definition.
+/// Why the current fingerprint differs from an earlier cached result for the same Eval definition.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Changes {
@@ -79,11 +79,11 @@ pub async fn prepare<'a>(
     artifacts: impl IntoIterator<Item = &'a str>,
     output_root: &Path,
     cancellation: CancellationToken,
-) -> Result<BTreeMap<&'a str, PreparedKey>, String> {
+) -> Result<BTreeMap<&'a str, PreparedFingerprint>, String> {
     let mut locals = BTreeMap::new();
     let mut keys = BTreeMap::new();
     for id in artifacts {
-        if config.artifacts[id].stale_key.is_some() {
+        if config.artifacts[id].fingerprint.is_some() {
             keys.insert(
                 id,
                 compute(config, id, output_root, &cancellation, &mut locals).await?,
@@ -109,8 +109,8 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String)
     request.blocked_reason = None;
 }
 
-/// The returned value is the Artifact's whole stale key, shared by all of its Evals.
-pub async fn stale_key(
+/// The returned value is the Artifact's whole fingerprint, shared by all of its Evals.
+pub async fn fingerprint(
     config: &RepoConfig,
     artifact_id: &str,
     output_root: &Path,
@@ -134,16 +134,16 @@ async fn compute(
     output_root: &Path,
     cancellation: &CancellationToken,
     locals: &mut BTreeMap<String, String>,
-) -> Result<PreparedKey, String> {
-    match &config.artifacts[id].stale_key {
-        Some(StaleKey::Content { .. }) => content(config, id, output_root, cancellation, locals)
+) -> Result<PreparedFingerprint, String> {
+    match &config.artifacts[id].fingerprint {
+        Some(Fingerprint::Content { .. }) => content(config, id, output_root, cancellation, locals)
             .await
-            .map_err(|error| format!("Content stale key for Artifact {id} failed: {error}")),
-        Some(StaleKey::Script { .. }) => Ok(PreparedKey {
+            .map_err(|error| format!("Content fingerprint for Artifact {id} failed: {error}")),
+        Some(Fingerprint::Script { .. }) => Ok(PreparedFingerprint {
             value: local(config, id, output_root, cancellation, locals).await?,
             manifest: None,
         }),
-        None => Err(format!("No stale key declared for Artifact {id}.")),
+        None => Err(format!("No fingerprint declared for Artifact {id}.")),
     }
 }
 
@@ -154,14 +154,14 @@ async fn content(
     output_root: &Path,
     cancellation: &CancellationToken,
     locals: &mut BTreeMap<String, String>,
-) -> Result<PreparedKey, String> {
-    let Some(StaleKey::Content {
-        inputs,
+) -> Result<PreparedFingerprint, String> {
+    let Some(Fingerprint::Content {
+        files: inputs,
         dependencies: scope,
         ignore,
-    }) = &config.artifacts[id].stale_key
+    }) = &config.artifacts[id].fingerprint
     else {
-        unreachable!("content stale key")
+        unreachable!("content fingerprint")
     };
     let files = content::files(config, id, inputs, ignore, cancellation).await?;
     locals.insert(id.to_owned(), files.digest.clone());
@@ -200,14 +200,14 @@ async fn content(
     if size(&manifest) > MANIFEST_BYTES {
         manifest.dependencies = None;
     }
-    Ok(PreparedKey {
+    Ok(PreparedFingerprint {
         value: format!("content:{}", content::hex(&digest.finalize())),
         manifest: Some(manifest),
     })
 }
 
-/// A dependency's contribution: its stale key script value, or the digest of its own
-/// content inputs (`.` without a declared stale key).
+/// A dependency's contribution: its fingerprint script value, or the digest of its own
+/// content inputs (`.` without a declared fingerprint).
 async fn local(
     config: &RepoConfig,
     id: &str,
@@ -218,13 +218,13 @@ async fn local(
     if let Some(value) = locals.get(id) {
         return Ok(value.clone());
     }
-    let value = match &config.artifacts[id].stale_key {
-        Some(StaleKey::Script { .. }) => script(config, id, output_root, cancellation.clone())
+    let value = match &config.artifacts[id].fingerprint {
+        Some(Fingerprint::Script { .. }) => script(config, id, output_root, cancellation.clone())
             .await
-            .map_err(|error| format!("Stale key script for Artifact {id} failed: {error}"))?,
-        stale_key => {
-            let (inputs, ignore) = match stale_key {
-                Some(StaleKey::Content { inputs, ignore, .. }) => (inputs.clone(), ignore.clone()),
+            .map_err(|error| format!("Fingerprint script for Artifact {id} failed: {error}"))?,
+        fingerprint => {
+            let (inputs, ignore) = match fingerprint {
+                Some(Fingerprint::Content { files, ignore, .. }) => (files.clone(), ignore.clone()),
                 _ => (vec![".".to_owned()], Vec::new()),
             };
             content::files(config, id, &inputs, &ignore, cancellation)
@@ -237,8 +237,8 @@ async fn local(
     Ok(value)
 }
 
-/// Explain a changed stale key against the manifest of an earlier cached execution.
-pub fn changes(previous: &Execution, current: &PreparedKey) -> Changes {
+/// Explain a changed fingerprint against the manifest of an earlier cached execution.
+pub fn changes(previous: &Execution, current: &PreparedFingerprint) -> Changes {
     let compared = previous.manifest.as_ref().zip(current.manifest.as_ref());
     let files = compared.and_then(|(old, new)| {
         if old.inputs == new.inputs {
@@ -283,7 +283,7 @@ pub fn changes(previous: &Execution, current: &PreparedKey) -> Changes {
         });
     }
     if parts.is_empty() {
-        parts.push("stale key changed".to_owned());
+        parts.push("fingerprint changed".to_owned());
     }
     Changes {
         since_run_id: previous.provenance.run_id.clone(),
@@ -317,17 +317,17 @@ async fn script(
         return Err(process::Error::Cancelled.to_string());
     }
     let artifact = &config.artifacts[artifact_id];
-    let Some(StaleKey::Script {
+    let Some(Fingerprint::Script {
         command,
         args,
-        inputs,
+        files,
         timeout_ms,
-    }) = &artifact.stale_key
+    }) = &artifact.fingerprint
     else {
-        unreachable!("stale key script")
+        unreachable!("fingerprint script")
     };
     let cwd = scope::scoped_path(&config.root, &artifact.path).map_err(|e| e.to_string())?;
-    for input in inputs
+    for input in files
         .iter()
         .chain(artifact.family.iter().flat_map(|family| &family.material))
     {
@@ -337,7 +337,7 @@ async fn script(
         let relative = command.strip_prefix("./").unwrap_or(command);
         let program = scope::scoped_path(&cwd, Path::new(relative)).map_err(|e| e.to_string())?;
         if !program.is_file() {
-            return Err("Stale key executable must be a regular file.".into());
+            return Err("Fingerprint executable must be a regular file.".into());
         }
         program.into_os_string()
     } else {
@@ -352,7 +352,7 @@ async fn script(
     let output_root =
         workspace::prepare_directory(output_root, &config.root).map_err(|e| e.to_string())?;
     let disposable = tempfile::Builder::new()
-        .prefix("stale-key-")
+        .prefix("fingerprint-")
         .tempdir_in(output_root)
         .map_err(|e| e.to_string())?;
     let result = async {
@@ -370,10 +370,13 @@ async fn script(
             .await
             .map_err(|e| e.to_string())?;
         if !output.status.success() {
-            return Err(format!("Stale key command exited with {}.", output.status));
+            return Err(format!(
+                "Fingerprint command exited with {}.",
+                output.status
+            ));
         }
         if output.truncated {
-            return Err("Stale key command output exceeded its limit.".into());
+            return Err("Fingerprint command output exceeded its limit.".into());
         }
         validate_output(&output.stdout)
     }
@@ -383,7 +386,7 @@ async fn script(
         return Err(process::Error::Cancelled.to_string());
     }
     let value = result?;
-    cleaned.map_err(|_| "Stale key validation failed.".to_owned())?;
+    cleaned.map_err(|_| "Fingerprint validation failed.".to_owned())?;
     Ok(value)
 }
 
@@ -396,7 +399,7 @@ fn validate_output(stdout: &[u8]) -> Result<String, String> {
     {
         return Err("stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF.".into());
     }
-    Ok(String::from_utf8(value.to_vec()).expect("validated ASCII stale key"))
+    Ok(String::from_utf8(value.to_vec()).expect("validated ASCII fingerprint"))
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 # An Artifact family
 
-Three blog posts share one declaration, one check script and one staleKey
+Three blog posts share one declaration, one check script and one fingerprint
 script. Each post is still its own Artifact, with its own eval, result and
 place in the graph.
 
@@ -11,7 +11,7 @@ family/
     ├── artifactize.json  one declaration for every instance
     ├── instances.json    the instance list: welcome, release-notes, tip
     ├── check.py          shared material: the check every instance runs
-    ├── stale_key.py      shared material: the staleKey every instance computes
+    ├── fingerprint.py    shared material: the fingerprint every instance computes
     ├── welcome.md        material of the welcome instance
     ├── release-notes.md  material of the release-notes instance
     └── tip.md            material of the tip instance
@@ -32,17 +32,17 @@ What it demonstrates:
   title), then the instance's own `params` (`file`, a reference to its post).
   Nothing is interpolated inside strings.
 - **Shared and per-instance material.** Each instance lists its own post as
-  `material`. The material must exist and is passed to the staleKey script.
+  `material`. The material must exist and is passed to the fingerprint script.
   Every instance runs the shared `check.py` from the `posts` folder.
-  `stale_key.py` hashes the shared files, the banned-word list, the instance's
+  `fingerprint.py` hashes the shared files, the banned-word list, the instance's
   own entry in `instances.json` and its own material. Editing `tip.md`
   therefore re-runs only `tip/style`, while editing `check.py` or
   `house-style/banned.txt` re-runs every instance.
-- **The staleKey script form.** This example keeps an owner-written
-  `"staleKey": {"script": {...}}` to show the script protocol: the stdin
+- **The fingerprint script form.** This example keeps an owner-written
+  `"fingerprint": {"script": {...}}` to show the script protocol: the stdin
   context with the instance's family material, and an argv reference
-  (`{style}/banned.txt`). The built-in `"staleKey": {"content": {}}` gives the
-  same per-instance reuse without a script: it hashes the shared folder minus
+  (`{style}/banned.txt`). The built-in content form, `"fingerprint": {}`, gives
+  the same per-instance reuse without a script: it hashes the shared folder minus
   every instance's material, adds the instance's own material, and covers the
   mounted `house-style` as a direct dependency. The runtime-relations example
   uses it.
@@ -94,4 +94,4 @@ artifactize verify posts   # exit 1: tip/style is RED ("banned word: leverage")
 ```
 
 Only `tip/style` runs. `welcome/style` and `release-notes/style` reuse their
-earlier results, because their staleKeys did not change.
+earlier results, because their fingerprints are unchanged.

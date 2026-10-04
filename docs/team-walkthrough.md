@@ -43,7 +43,7 @@ artifactize verify --all
 Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0, human 0)
 ```
 
-Each GREEN result passed its staleKey recheck, so `verify` published its summary
+Each GREEN result passed its fingerprint recheck, so `verify` published its summary
 record: verdict, owner fields, profile, usage counters, producer and timestamps.
 It sent no argv, stdout/stderr or paths.
 
@@ -65,7 +65,7 @@ Verify actions: will execute 0, will reuse 3, wait 0, blocked 0
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 
-Bob's checkout has the same content, so the content staleKeys and the Eval
+Bob's checkout has the same content, so the content fingerprints and the Eval
 definition hashes match. Paths do not matter. `status` asked the store without
 changing anything. `verify` mirrored the three records into Bob's local cache:
 `artifactize cache list` shows them with the store as their origin. A later
@@ -127,13 +127,13 @@ A rejected token, by contrast, fails the job with exit 2.
 
 ## Human sign-offs
 
-A Human verdict is reused only when its Artifact has a staleKey. Here is a
+A Human verdict is reused only when its Artifact has a fingerprint. Here is a
 one-file project with a Human sign-off, with a copy for Bob:
 
 ```sh
 mkdir "$WALK/brand" && cd "$WALK/brand"
 echo 'logo v1' > logo.txt
-echo '{"name":"brand","staleKey":{"content":{}},"evals":[{"id":"signoff","title":"Sign off","profile":{"kind":"human"},"payload":{"instruction":"Approve the logo."}}]}' > artifactize.json
+echo '{"name":"brand","fingerprint":{},"evals":[{"id":"signoff","title":"Sign off","profile":{"kind":"human"},"payload":{"instruction":"Approve the logo."}}]}' > artifactize.json
 cp -r "$WALK/brand" "$WALK/brand-bob"
 ```
 

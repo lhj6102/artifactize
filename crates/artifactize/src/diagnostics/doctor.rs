@@ -86,6 +86,43 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             json!({"writable":false}),
         ),
     }
+    // Read-only: an older database is upgraded by the next command that opens it, never here.
+    let current = store::STATE_SCHEMA_VERSION;
+    match store::state_schema(&state) {
+        Ok(None) => report.add(
+            "schema",
+            "PASS",
+            "No state database yet.",
+            json!({"schema":null}),
+        ),
+        Ok(Some(0)) => report.add(
+            "schema",
+            "PASS",
+            "The state database is not initialized yet.",
+            json!({"schema":0}),
+        ),
+        Ok(Some(found)) if found > current => report.add(
+            "schema",
+            "FAIL",
+            &format!("Unsupported state schema version: {found}; a newer artifactize wrote it."),
+            json!({"schema":found}),
+        ),
+        Ok(Some(found)) if found < current => report.add(
+            "schema",
+            "PASS",
+            &format!(
+                "State database schema {found}; the next artifactize command upgrades it to {current}."
+            ),
+            json!({"schema":found,"upgradeTo":current}),
+        ),
+        Ok(Some(_)) => report.add(
+            "schema",
+            "PASS",
+            &format!("State database schema {current}."),
+            json!({"schema":current}),
+        ),
+        Err(error) => report.add("schema", "FAIL", &error, Value::Null),
+    }
     for (backend, variable) in [
         ("openai", "OPENAI_API_KEY"),
         ("anthropic", "ANTHROPIC_API_KEY"),

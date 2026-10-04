@@ -25,7 +25,7 @@ impl Fixture {
         Self { root }
     }
 
-    /// `versions` are the api, web, style, docs and brand contents; each one is its stale_key.
+    /// `versions` are the api, web, style, docs and brand contents; each one is its fingerprint.
     fn checkout(&self, name: &str, versions: [&str; 5]) -> PathBuf {
         let repo = self.root.path().join(name);
         let runtime = json!({"kind":"runtime","command":"/bin/true","args":[]});
@@ -56,7 +56,7 @@ impl Fixture {
             write(
                 &folder,
                 json!({"name":artifact,"evals":[declaration],
-                    "staleKey":{"script":{"command":"cat","args":["version"]}}}),
+                    "fingerprint":{"script":{"command":"cat","args":["version"]}}}),
             );
             fs::write(folder.join("version"), format!("{artifact}-{version}\n")).unwrap();
         }

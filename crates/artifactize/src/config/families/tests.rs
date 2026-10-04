@@ -139,7 +139,7 @@ fn family_and_instance_fields_are_strict_and_variants_must_exist() {
 fn shared_fields_remain_literal_and_basis_applies_to_every_instance() {
     let mut value = family();
     value["family"]["params"] = json!({"command":"changed.sh"});
-    value["staleKey"] = json!({"script":{"command":"stale_key.sh", "args":["$param"]}});
+    value["fingerprint"] = json!({"script":{"command":"fingerprint.sh", "args":["$param"]}});
     value["basis"] = json!(true);
     value.as_object_mut().unwrap().remove("evals");
     let config = discover(value.clone()).unwrap();
@@ -156,14 +156,14 @@ fn shared_fields_remain_literal_and_basis_applies_to_every_instance() {
         config.artifacts["alpha"].family.as_ref().unwrap().instances,
         None
     );
-    let Some(crate::config::StaleKey::Script { command, args, .. }) =
-        &config.artifacts["alpha"].stale_key
+    let Some(crate::config::Fingerprint::Script { command, args, .. }) =
+        &config.artifacts["alpha"].fingerprint
     else {
         panic!()
     };
-    assert_eq!(command, "stale_key.sh");
+    assert_eq!(command, "fingerprint.sh");
     assert_eq!(args, &["$param"]);
-    value["staleKey"]["script"]["command"] = json!({"$param":"/command"});
+    value["fingerprint"]["script"]["command"] = json!({"$param":"/command"});
     assert!(discover(value).is_err());
     let mut value = family();
     value["unknown"] = json!(true);

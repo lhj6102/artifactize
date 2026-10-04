@@ -238,7 +238,7 @@ where
                 _ = cancellation.cancelled() => {},
                 _ = sleep_until(deadline) => {},
                 result = stdin.write_all(&input) => {
-                    // Stale key scripts may intentionally ignore their context.
+                    // Fingerprint scripts may intentionally ignore their context.
                     if let Err(error) = result && error.kind() != io::ErrorKind::BrokenPipe {
                         return Err(Error::Io(error));
                     }

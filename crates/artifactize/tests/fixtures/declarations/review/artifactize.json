@@ -3,11 +3,11 @@
   "mounts": {
     "source": "input"
   },
-  "staleKey": {
+  "fingerprint": {
     "script": {
       "command": "hook.sh",
       "args": [],
-      "inputs": [
+      "files": [
         "hook.sh"
       ],
       "timeoutMs": 1000

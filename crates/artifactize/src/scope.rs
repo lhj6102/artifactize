@@ -12,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::config::{Artifact, CONFIG_FILE, ConfigError, Eval, Profile, RepoConfig, StaleKey};
+use crate::config::{Artifact, CONFIG_FILE, ConfigError, Eval, Fingerprint, Profile, RepoConfig};
 
 mod human;
 mod instruction;
@@ -447,13 +447,13 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         let error = |message: String| {
             ConfigError::new(config.root.join(&artifact.path).join(CONFIG_FILE), message)
         };
-        if let Some(StaleKey::Script { args, .. }) = &artifact.stale_key {
+        if let Some(Fingerprint::Script { args, .. }) = &artifact.fingerprint {
             for argument in args {
                 if let Some(reference) = argument_reference(argument)
-                    .map_err(|failure| error(format!("staleKey.script: {failure}")))?
+                    .map_err(|failure| error(format!("fingerprint.script: {failure}")))?
                 {
                     reference_target(config, id, reference.name)
-                        .map_err(|failure| error(format!("staleKey.script: {failure}")))?;
+                        .map_err(|failure| error(format!("fingerprint.script: {failure}")))?;
                 }
             }
         }
@@ -497,13 +497,13 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         }
     }
     for (id, artifact) in &config.artifacts {
-        let Some(StaleKey::Content { inputs, .. }) = &artifact.stale_key else {
+        let Some(Fingerprint::Content { files: inputs, .. }) = &artifact.fingerprint else {
             continue;
         };
         let error = |message: String| {
             ConfigError::new(
                 config.root.join(&artifact.path).join(CONFIG_FILE),
-                format!("staleKey.content.inputs: {message}"),
+                format!("fingerprint.files: {message}"),
             )
         };
         let scope = artifact_scope(config, &[id]).map_err(|failure| error(failure.0))?;

@@ -103,7 +103,7 @@ pub async fn tool_command(
     Registry::new(&config, &request.eval_id)?.command(tool)
 }
 
-/// Invalid results remain correctable; only a valid submission performs the final stale key check.
+/// Invalid results remain correctable; only a valid submission performs the final fingerprint check.
 pub async fn submit(
     receipts: &Receipts,
     request: &str,
@@ -190,7 +190,7 @@ async fn recheck(
     if cancellation.is_cancelled() {
         return Err("Human action was cancelled.".into());
     }
-    let Some(expected) = &request.stale_key else {
+    let Some(expected) = &request.fingerprint else {
         return Ok(());
     };
     let output = request
@@ -198,11 +198,11 @@ async fn recheck(
         .as_deref()
         .ok_or("Human request has no output directory.")?;
     let (code, error) =
-        match cache::stale_key(config, &request.target, output, cancellation.clone()).await {
+        match cache::fingerprint(config, &request.target, output, cancellation.clone()).await {
             Ok(actual) if &actual == expected => return Ok(()),
-            Ok(_) => ("INPUT_CHANGED", "Stale key changed during review.".into()),
+            Ok(_) => ("INPUT_CHANGED", "Fingerprint changed during review.".into()),
             Err(error) if cancellation.is_cancelled() => return Err(error),
-            Err(error) => ("STALE_KEY_RECHECK_FAILED", error),
+            Err(error) => ("FINGERPRINT_RECHECK_FAILED", error),
         };
     request.status = "ERROR".into();
     request.error = Some(error.clone());

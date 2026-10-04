@@ -9,7 +9,7 @@ use tokio_rusqlite::Connection;
 use crate::broker::now;
 
 pub const DATABASE: &str = "review-store.sqlite";
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 pub const MAX_ENTRIES: i64 = 100_000;
 pub const MAX_BYTES: i64 = 4 * 1024 * 1024 * 1024;
 
@@ -75,6 +75,20 @@ fn digest(token: &str) -> String {
         .collect()
 }
 
+/// Version 2 renames the version 1 staleKey to fingerprint in the key column and in stored
+/// records, including a full record's execution, inside SQLite without loading every record.
+fn fingerprints(db: &rusqlite::Transaction<'_>) -> Result<(), Error> {
+    db.execute_batch(
+        "ALTER TABLE entries RENAME COLUMN stale_key TO fingerprint;
+        UPDATE entries SET data=json_remove(json_set(data,'$.fingerprint',json_extract(data,'$.staleKey')),'$.staleKey')
+            WHERE json_type(data,'$.staleKey') IS NOT NULL;
+        UPDATE entries SET data=json_remove(json_set(data,'$.execution.fingerprint',json_extract(data,'$.execution.staleKey')),'$.execution.staleKey')
+            WHERE json_type(data,'$.execution.staleKey') IS NOT NULL;
+        UPDATE entries SET bytes=length(CAST(data AS BLOB));",
+    )?;
+    Ok(())
+}
+
 impl Store {
     /// Open or create `review-store.sqlite`, separate from the local `state.sqlite`.
     pub async fn open(state: &Path) -> Result<Self, String> {
@@ -103,17 +117,23 @@ impl Store {
             .call(|db| -> Result<(), Error> {
                 db.busy_timeout(Duration::from_secs(5))?;
                 let version: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-                if version != 0 && version != SCHEMA_VERSION {
+                if version > SCHEMA_VERSION {
                     return Err(Error::Invalid(format!(
                         "Unsupported review store schema version: {version}"
                     )));
                 }
                 db.pragma_update(None, "journal_mode", "WAL")?;
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                // Another process may have upgraded between the two reads.
+                if transaction.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?
+                    == 1
+                {
+                    fingerprints(&transaction)?;
+                }
                 transaction.execute_batch(
                     "CREATE TABLE IF NOT EXISTS tokens(name TEXT PRIMARY KEY, hash TEXT NOT NULL UNIQUE, scopes TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);
-                    CREATE TABLE IF NOT EXISTS entries(eval_def_hash TEXT NOT NULL, stale_key TEXT NOT NULL, publisher TEXT NOT NULL, bytes INTEGER NOT NULL, last_used TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(eval_def_hash, stale_key));
-                    CREATE INDEX IF NOT EXISTS entries_lru ON entries(last_used, eval_def_hash, stale_key);
+                    CREATE TABLE IF NOT EXISTS entries(eval_def_hash TEXT NOT NULL, fingerprint TEXT NOT NULL, publisher TEXT NOT NULL, bytes INTEGER NOT NULL, last_used TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(eval_def_hash, fingerprint));
+                    CREATE INDEX IF NOT EXISTS entries_lru ON entries(last_used, eval_def_hash, fingerprint);
                     CREATE INDEX IF NOT EXISTS entries_publisher ON entries(publisher);",
                 )?;
                 transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -234,30 +254,30 @@ impl Store {
             .map_err(|e| e.to_string())
     }
 
-    /// Remove a stale key's entry; the hash may be omitted when only one definition exists.
+    /// Remove a fingerprint's entry; the hash may be omitted when only one definition exists.
     pub async fn remove(
         &self,
-        stale_key: &str,
+        fingerprint: &str,
         eval_def_hash: Option<&str>,
     ) -> Result<bool, String> {
-        let stale_key = stale_key.to_owned();
+        let fingerprint = fingerprint.to_owned();
         let eval_def_hash = eval_def_hash.map(str::to_owned);
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 let count: i64 = transaction.query_row(
-                    "SELECT count(*) FROM entries WHERE stale_key=?1 AND (?2 IS NULL OR eval_def_hash=?2)",
-                    params![stale_key, eval_def_hash],
+                    "SELECT count(*) FROM entries WHERE fingerprint=?1 AND (?2 IS NULL OR eval_def_hash=?2)",
+                    params![fingerprint, eval_def_hash],
                     |row| row.get(0),
                 )?;
                 if count > 1 {
                     return Err(Error::Invalid(format!(
-                        "Stale key {stale_key} has multiple Eval definitions; specify the eval hash."
+                        "Fingerprint {fingerprint} has multiple Eval definitions; specify the eval hash."
                     )));
                 }
                 let removed = transaction.execute(
-                    "DELETE FROM entries WHERE stale_key=?1 AND (?2 IS NULL OR eval_def_hash=?2)",
-                    params![stale_key, eval_def_hash],
+                    "DELETE FROM entries WHERE fingerprint=?1 AND (?2 IS NULL OR eval_def_hash=?2)",
+                    params![fingerprint, eval_def_hash],
                 )?;
                 transaction.commit()?;
                 Ok(removed != 0)
@@ -295,11 +315,11 @@ impl Store {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 let used = now();
                 let mut found = Vec::new();
-                for (eval_def_hash, stale_key) in keys {
+                for (eval_def_hash, fingerprint) in keys {
                     let data: Option<String> = transaction
                         .query_row(
-                            "UPDATE entries SET last_used=? WHERE eval_def_hash=? AND stale_key=? RETURNING data",
-                            params![used, eval_def_hash, stale_key],
+                            "UPDATE entries SET last_used=? WHERE eval_def_hash=? AND fingerprint=? RETURNING data",
+                            params![used, eval_def_hash, fingerprint],
                             |row| row.get(0),
                         )
                         .optional()?;
@@ -316,23 +336,23 @@ impl Store {
     pub(super) async fn insert(
         &self,
         eval_def_hash: &str,
-        stale_key: &str,
+        fingerprint: &str,
         publisher: &str,
         data: String,
     ) -> Result<bool, String> {
         let key = (
             eval_def_hash.to_owned(),
-            stale_key.to_owned(),
+            fingerprint.to_owned(),
             publisher.to_owned(),
         );
         self.connection
             .call(move |db| -> Result<_, Error> {
-                let (eval_def_hash, stale_key, publisher) = key;
+                let (eval_def_hash, fingerprint, publisher) = key;
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 let used = now();
                 let created = transaction.execute(
-                    "INSERT INTO entries(eval_def_hash,stale_key,publisher,bytes,last_used,data) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING",
-                    params![eval_def_hash, stale_key, publisher, data.len() as i64, used, data],
+                    "INSERT INTO entries(eval_def_hash,fingerprint,publisher,bytes,last_used,data) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+                    params![eval_def_hash, fingerprint, publisher, data.len() as i64, used, data],
                 )? == 1;
                 // Evict least-recently-used entries above the caps, never the new one.
                 loop {
@@ -345,8 +365,8 @@ impl Store {
                         break;
                     }
                     if transaction.execute(
-                        "DELETE FROM entries WHERE rowid=(SELECT rowid FROM entries WHERE NOT (eval_def_hash=?1 AND stale_key=?2) ORDER BY last_used,eval_def_hash,stale_key LIMIT 1)",
-                        params![eval_def_hash, stale_key],
+                        "DELETE FROM entries WHERE rowid=(SELECT rowid FROM entries WHERE NOT (eval_def_hash=?1 AND fingerprint=?2) ORDER BY last_used,eval_def_hash,fingerprint LIMIT 1)",
+                        params![eval_def_hash, fingerprint],
                     )? == 0
                     {
                         break;

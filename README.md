@@ -5,8 +5,9 @@ A lean Rust port and rebrand of [CCDD](https://github.com/lhj6102/ccdd), from CC
 Review cost follows the size of a change. Folders declare Artifacts and their evals
 in static `artifactize.json` files. artifactize builds the dependency graph and runs
 runtime, Agent (OpenAI or Anthropic API key, ChatGPT sign-in, or the Claude CLI) and
-Human evals. While an Artifact's staleKey is unchanged it reuses the earlier GREEN/RED
-result, and `verify` shows what it executed, what it reused and the tokens reuse saved.
+Human evals. While an Artifact's fingerprint (what its review depends on) is
+unchanged it reuses the earlier GREEN/RED result, and `verify` shows what it executed,
+what it reused and the tokens reuse saved.
 `status` predicts what a change will re-review. A team review store
 (`artifactize server`) shares verdicts across machines and CI. The CLI drives reviews,
 `artifactize monitor` shows their progress and `artifactize review` works
@@ -43,21 +44,21 @@ example projects. Each README lists the exact commands:
 - [Runtime relations](examples/runtime-relations/README.md): runtime evals over
   parent/child folders, a mount alias, `{artifact}` references in instructions
   and argv, a basis Artifact, a RED-able check, and reuse through the built-in
-  content staleKey, with `status` explaining what changed.
+  content fingerprint, with `status` explaining what changed.
 - [Agent tools](examples/agent-tools/README.md): an Agent eval using the built-in
   `read`, `grep` and `view_image` tools, a declared `plain` tool and a declared `json` tool,
   pass/fail schemas, backend and model selection, and a Human sign-off with
   `launch` and `output` tools.
 - [Family](examples/family/README.md): one family declaration with an instance
   list, parameters and variants, shared and per-instance material, family
-  selectors, and the staleKey script form.
+  selectors, and the fingerprint script form.
 - [Team walkthrough](docs/team-walkthrough.md): two machines and CI reuse each
   other's verdicts through one `artifactize server`.
 
 ## Folder configuration
 
 A folder with an `artifactize.json` is an Artifact. It has a `name` and usually
-`evals`; `mounts`, `basis`, `views`, `staleKey` and, at the root, `reviewPolicy`
+`evals`; `mounts`, `basis`, `views`, `fingerprint` and, at the root, `reviewPolicy`
 are optional. Each eval has an `id`, a `title`, a `profile` whose `kind` is
 `runtime`, `agent` or `human`, and a `payload` with an `instruction`;
 `passSchema`, `failSchema` and `profileVariants` are optional. A runtime eval's
@@ -72,11 +73,9 @@ explains children, mounts, `{artifact}` references and basis Artifacts:
   "mounts": {
     "terms": "glossary"
   },
-  "staleKey": {
-    "content": {
-      "inputs": ["."],
-      "dependencies": "direct"
-    }
+  "fingerprint": {
+    "files": ["."],
+    "dependencies": "direct"
   },
   "evals": [
     {
@@ -102,35 +101,35 @@ explains children, mounts, `{artifact}` references and basis Artifacts:
 ```
 
 Declarations use `evals`, with qualified eval IDs such as `green/check`.
-`staleKey` declares the value whose change makes an Artifact's results stale.
-While it is unchanged, the prior verdict is reused; when it changes, the Artifact
-is reviewed again. It takes one of two forms:
+`fingerprint` declares what a review depends on. artifactize hashes it: while
+the fingerprint is unchanged, the prior verdict is reused; when it changes, the
+Artifact is reviewed again. It takes one of two forms:
 
-- `{"content":{"inputs":["."],"dependencies":"direct","ignore":[]}}`, the
-  built-in [content staleKey](#content-stalekey). Every field is optional and
-  these are the defaults.
-- `{"script":{"command":"/bin/sh","args":["stale_key.sh"]}}`, an owner-written
-  [staleKey script](docs/reference.md#stalekey-scripts), optionally with `inputs` and
-  `timeoutMs`; `weight` is rejected.
+- `{"files":["."],"dependencies":"direct","ignore":[]}`, the built-in
+  [content fingerprint](#content-fingerprint). Every field is optional and these
+  are the defaults, so `"fingerprint": {}` covers the whole owner folder.
+- `{"script":{"command":"/bin/sh","args":["fingerprint.sh"]}}`, an owner-written
+  [fingerprint script](docs/reference.md#fingerprint-scripts), optionally with
+  `files` (paths that must exist, never hashed) and `timeoutMs`; `weight` is rejected.
 
 One folder can also declare a [family](docs/reference.md#artifact-families) of
 instances, as in the [family example](examples/family/README.md). Discovery rules
 and rejected legacy fields are in
 [Declaration validation](docs/reference.md#declaration-validation).
 
-### Content staleKey
+### Content fingerprint
 
-`{"content":{}}` makes review cost follow the size of a change: an Artifact is
+`"fingerprint": {}` makes review cost follow the size of a change: an Artifact is
 reviewed again only when its own files or its dependencies change, and every other
-result is reused. The staleKey is `content:` plus a SHA-256 over the Artifact name,
+result is reused. The fingerprint is `content:` plus a SHA-256 over the Artifact name,
 each input file's owner-relative path and bytes, and one entry per dependency in
 the chosen scope.
 
-- `inputs`: 1–64 unique owner-relative paths, default `["."]` (the whole owner
+- `files`: 1–64 unique owner-relative paths, default `["."]` (the whole owner
   folder). Each must exist and stay inside the Artifact: a path into a child
   Artifact or a mount is rejected, because dependencies come from `dependencies`.
   Directory walks skip child Artifact folders, the owner's `artifactize.json` and
-  a family's instance list. Their effect already reaches the staleKey through the
+  a family's instance list. Their effect already reaches the fingerprint through the
   Eval definition hash and the dependency list.
 - `dependencies`: `none`, `direct` (default) or `transitive`. Dependencies are the
   graph's own: children, mounts and `{artifact}` references in instructions and
@@ -145,11 +144,11 @@ the chosen scope.
   exclude more, with git semantics: every one from the repository root (`--repo`)
   down through the Artifact and the walked directories applies, each pattern is
   relative to its own file's folder, negation works, and a deeper file overrides a
-  shallower one. Explicitly named `inputs` are never ignored.
+  shallower one. Explicitly named `files` are never ignored.
 
 How dependency entries are hashed, the walk limits and the recorded manifest are
-in the [reference](docs/reference.md#content-stalekey); the script form is under
-[staleKey scripts](docs/reference.md#stalekey-scripts).
+in the [reference](docs/reference.md#content-fingerprint); the script form is under
+[fingerprint scripts](docs/reference.md#fingerprint-scripts).
 
 ### Agent reviews
 
@@ -195,8 +194,8 @@ adaptive thinking and exactly `output_config.effort` (`low`, `medium`, `high`,
 the requested setting fails at the provider; artifactize does not substitute a
 model or lower effort. If the response reports a model ID, it must match exactly.
 
-Agent evals share runtime evals' dependency gates, staleKey claims, reuse and final
-staleKey recheck. Final output must be one strict JSON object containing
+Agent evals share runtime evals' dependency gates, fingerprint claims, reuse and final
+fingerprint recheck. Final output must be one strict JSON object containing
 `"verdict":"GREEN"` or `"verdict":"RED"` and only the permitted owner-schema fields.
 One tools-disabled repair is allowed for invalid final output, within the original
 deadline. `maxTokens` and `maxToolCalls` are enforced client-side before further tools
@@ -296,7 +295,7 @@ evals in declaration order. READY runtime evals execute concurrently up to
 `--jobs N` (default 4, minimum 1), with dispatch in that same ordered selection
 then recursive configuration order. The graph is re-evaluated after each result;
 newly READY evals do not wait for an entire batch to finish. Waiters on a
-staleKey claim occupy job slots while polling, but cache hits occupy none.
+fingerprint claim occupy job slots while polling, but cache hits occupy none.
 An Artifact selector runs only that Artifact's evals;
 an individual eval selector runs only that eval. Both retain the full dependency
 closure as a final obligation. `--recursive` includes every eval in that closure,
@@ -322,7 +321,7 @@ requests, never RED. Previously committed results remain unchanged. There is no
 detached worker.
 
 Text output prints one line per request and marks a result taken from another
-request's execution (a staleKey hit, or a joined execution) with its source Run
+request's execution (a fingerprint hit, or a joined execution) with its source Run
 (results from a [remote review store](docs/reference.md#remote-review-store-client) also name their
 producer or Human reviewer):
 
@@ -383,15 +382,15 @@ are shown; `selected` and `included` distinguish explicit selection from recursi
 execution. Action counts cover included evals only. Exit 0 means current validation
 is satisfied; 1 means obligations remain; invalid input or state errors exit 2.
 
-Status prepares current staleKeys for the selected required closure, using
-the same isolation and validation as verify. staleKey failures exit 2; an old
-saved staleKey is never substituted. It never runs tools or eval commands, creates
+Status prepares current fingerprints for the selected required closure, using
+the same isolation and validation as verify. Fingerprint failures exit 2; an old
+saved fingerprint is never substituted. It never runs tools or eval commands, creates
 Runs, reserves work, creates a missing database or updates cache access times.
-staleKey scripts use disposable output under the state directory, which may be
+Fingerprint scripts use disposable output under the state directory, which may be
 created even when no database exists. `config graph` and `config check` remain fully
 static and never run owner code.
 
-A current completed staleKey/Eval-definition entry yields PASS or RED and a `reuse`
+A current completed fingerprint/Eval-definition entry yields PASS or RED and a `reuse`
 action. verify attaches cached results before their gates resolve, so the action
 stays `reuse` while a dependency is pending or RED. The state then shows the gate
 (WAIT_DEPENDENCY or BLOCKED) and the reason names it. An eval without a cached
@@ -403,23 +402,23 @@ limit of the prediction: status cannot say whether a `wait` eval will execute. T
 `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on
 a merged checkout answers what verify will re-review there without running it.
 Force still applies only to selected evals. Human execution actions
-record a waiting request; an active Human staleKey/Eval-definition pair projects WAITING_HUMAN and a
+record a waiting request; an active Human fingerprint/Eval-definition pair projects WAITING_HUMAN and a
 `wait` action, even after the original verifier exits. Saved attempts
 are read for this canonical repository only: each eval's optional
-`last: {runId, verdict, staleKey?}` is historical, not current evidence. Use
+`last: {runId, verdict, fingerprint?}` is historical, not current evidence. Use
 `run show RUN_ID` for full attribution. Noncached GREEN/RED satisfies only its own
 Run, so its later status is STALE rather than reuse (ENG-24). Basis-only scopes can
 be satisfied; a basis with unmet dependencies is INCOMPLETE.
 
-When an eval with a staleKey has no current cached result, `status` explains why.
-It compares the current staleKey with the newest cached GREEN/RED result for the
+When an eval with a fingerprint has no current cached result, `status` explains why.
+It compares the current fingerprint with the newest cached GREEN/RED result for the
 same eval and Eval definition hash (from any repository in this state), and
 reports `changes: {sinceRunId, files?, dependencies?, summary}`. In text this is a
-`Stale key changed since Run RUN_ID: ...` line, for example
+`Fingerprint changed since Run RUN_ID: ...` line, for example
 `changed: +docs/new.md, -old.md, src/a.py; dependency core changed`. Files and
 dependencies are listed as `path` (changed), `+path` (added) or `-path` (removed).
-A script staleKey, or a manifest whose maps were dropped, can only report
-`stale key changed` or `inputs changed`. No explanation appears when that eval
+A script fingerprint, or a manifest whose maps were dropped, can only report
+`fingerprint changed` or `inputs changed`. No explanation appears when that eval
 definition has never been cached, or for forced evals.
 
 `config graph [ARTIFACT|FAMILY]` defaults to the whole project, or shows the selected
@@ -438,12 +437,12 @@ exits 2.
 
 ```sh
 artifactize cache list --json
-artifactize cache show STALE_KEY [EVAL_HASH]
-artifactize cache rm STALE_KEY [EVAL_HASH]
+artifactize cache show FINGERPRINT [EVAL_HASH]
+artifactize cache rm FINGERPRINT [EVAL_HASH]
 ```
 
 These commands use the shared state home or `--state-dir PATH`, without loading a
-repository. `list` shows staleKey, Eval definition hash, original verdict/repository/eval, retained JSON
+repository. `list` shows fingerprint, Eval definition hash, original verdict/repository/eval, retained JSON
 bytes and last use (a text table, or a JSON array). `show` always prints the full
 saved execution with result, actual profile, provenance, usage and `producer`
 (`user@host` and artifactize version; submitted Human results also record their
@@ -452,9 +451,9 @@ saved execution with result, actual profile, provenance, usage and `producer`
 (store, publisher, publication time), which `list` shows in place of the repository. Reads neither create missing state nor update
 access times. `rm` prints `{"removed":true}` (false if absent), preserving saved
 Runs and execution audit. For `show` and `rm`, the hash may be omitted when the
-staleKey has only one entry; multiple definitions require the full hash from
+fingerprint has only one entry; multiple definitions require the full hash from
 `cache list`. `rm` refuses a key with active executions or waiters (without a hash,
-any active definition for that staleKey prevents removal).
+any active definition for that fingerprint prevents removal).
 
 How reuse keys are built and what a hit returns is in
 [Completed result reuse](docs/reference.md#completed-result-reuse); entry and byte
@@ -477,7 +476,7 @@ Artifact/eval tree built from the saved definitions: families group their
 instances (collapsed until expanded with `l`/→ or Enter), each eval shows its
 status glyph and dependency Artifacts, `⇐` rows show child/mount/reference inputs,
 and `↻` marks cycles. The right pane details the selected Artifact, family or
-request: result, actual and requested profile, staleKey, reuse source, claim, tool
+request: result, actual and requested profile, fingerprint, reuse source, claim, tool
 calls, usage and errors (PgUp/PgDn scroll; Esc returns to the list). The monitor
 only reads the state database (read-only connections): it runs no owner code,
 needs no repository, and keeps the last data with an error line if a read fails.
@@ -494,14 +493,14 @@ that separate process; the monitor itself keeps only read-only connections.
 READY Human evals persist WAITING_HUMAN and release their job slot. They consume
 no `maxExecutions` budget, so even a zero budget admits a Human review. `verify`
 without `--wait` exits INCOMPLETE and lists waiting requests; it does not fabricate
-a verdict or keep a worker alive. Waiting executions with a staleKey retain their exclusive
-staleKey/Eval-definition claim after the verifier exits. Cross-repository followers refer to that
+a verdict or keep a worker alive. Waiting executions with a fingerprint retain their exclusive
+fingerprint/Eval-definition claim after the verifier exits. Cross-repository followers refer to that
 same execution and forward Human actions to its original request and repository.
 
-For a Human eval with a staleKey, the next `verify` reuses the submitted result
-and runs its dependents. **No staleKey means no reuse**: submission settles only
+For a Human eval with a fingerprint, the next `verify` reuses the submitted result
+and runs its dependents. **No fingerprint means no reuse**: submission settles only
 that Run, and a later `verify` asks for a new Human review. Continuing the
-dependents of a Human eval without a staleKey requires keeping the same Run alive with `verify --wait`.
+dependents of a Human eval without a fingerprint requires keeping the same Run alive with `verify --wait`.
 
 ```sh
 artifactize verify --all --wait --timeout-ms 600000
@@ -540,7 +539,7 @@ defaults to 600000, and accepts 1–2147483647. The deadline begins when schedul
 starts and is checked when foreground execution is idle with pending Human work;
 it never interrupts running evals or cancels Human requests. On timeout the Run
 ends INCOMPLETE with `waitTimedOut: true` and exit 3. Claims and submissions remain
-available, but no background worker continues dependents. Without a staleKey,
+available, but no background worker continues dependents. Without a fingerprint,
 use a new waiting verify and submit its new request to complete those dependents.
 Ctrl-C/SIGTERM exits 2, cleans owned processes, and ends the Run as cancelled;
 previously created Human requests remain available. Missing non-Human obligations
@@ -614,7 +613,7 @@ removes are in the [reference](docs/reference.md#local-diagnostics-and-maintenan
 
 Machines and CI can reuse each other's verdicts through one shared review store,
 `artifactize server` ([design](docs/design/remote-store.md)). Each machine keeps its
-own state. The store holds one immutable record per (staleKey, Eval definition
+own state. The store holds one immutable record per (fingerprint, Eval definition
 hash), and the first writer wins. The [team walkthrough](docs/team-walkthrough.md)
 runs two machines and CI end to end.
 
@@ -629,7 +628,9 @@ artifactize --state-dir /srv/artifactize server run     # http://127.0.0.1:8417/
 
 `token add` prints each token once. `server run` binds loopback by default. Put a
 TLS reverse proxy or a tunnel in front, because clients require HTTPS except on
-loopback. Back up `review-store.sqlite` with `sqlite3 .backup`. See
+loopback. Back up `review-store.sqlite` with `sqlite3 .backup`. Upgrade the server
+before its clients: a 0.4 server keeps serving 0.3 clients, so machines can follow
+one at a time. See
 [Review store server](docs/reference.md#review-store-server) for the full reference.
 
 **Clients.** Each machine signs in once. The token is read from stdin and is not

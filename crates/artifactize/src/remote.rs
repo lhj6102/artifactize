@@ -19,7 +19,7 @@ pub const MAX_SUMMARY_BYTES: usize = 256 * 1024;
 /// JSON byte limit of a full record, the local per-entry cache limit.
 pub const MAX_FULL_BYTES: usize = crate::store::cache_entries::MAX_ENTRY_BYTES;
 
-/// One immutable remote entry per (staleKey, Eval definition hash).
+/// One immutable remote entry per (fingerprint, Eval definition hash).
 ///
 /// A summary carries no argv, captured output, tool-call audit or repository path. A full
 /// record additionally carries the saved `execution` as is. The server stamps `publisher`
@@ -28,7 +28,7 @@ pub const MAX_FULL_BYTES: usize = crate::store::cache_entries::MAX_ENTRY_BYTES;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Record {
     pub schema: u32,
-    pub stale_key: String,
+    pub fingerprint: String,
     pub eval_def_hash: String,
     pub verdict: String,
     pub eval_id: String,
@@ -53,15 +53,15 @@ pub struct Record {
 }
 
 impl Record {
-    /// Project a completed local GREEN/RED result with a stale key; `full` keeps the execution.
+    /// Project a completed local GREEN/RED result with a fingerprint; `full` keeps the execution.
     pub fn new(execution: &Execution, full: bool) -> Result<Self, String> {
-        let (Some(stale_key), Some(_), Some(completed_at), Some(result)) = (
-            &execution.stale_key,
+        let (Some(fingerprint), Some(_), Some(completed_at), Some(result)) = (
+            &execution.fingerprint,
             execution.verdict(),
             &execution.completed_at,
             &execution.result,
         ) else {
-            return Err("Only completed GREEN/RED results with a stale key are shared.".into());
+            return Err("Only completed GREEN/RED results with a fingerprint are shared.".into());
         };
         if execution.origin.is_some() {
             return Err("Mirrored results are never published again.".into());
@@ -76,7 +76,7 @@ impl Record {
         };
         let record = Self {
             schema: SCHEMA,
-            stale_key: stale_key.clone(),
+            fingerprint: fingerprint.clone(),
             eval_def_hash: execution.eval_def_hash.clone(),
             verdict: execution.status.clone(),
             eval_id: execution.provenance.eval_id.clone(),
@@ -101,7 +101,7 @@ impl Record {
     /// Check shape and size limits; never trusts the record's verdict.
     pub fn validate(&self) -> Result<(), String> {
         let valid = self.schema == SCHEMA
-            && valid_stale_key(&self.stale_key)
+            && valid_fingerprint(&self.fingerprint)
             && valid_hash(&self.eval_def_hash)
             && matches!(self.verdict.as_str(), "GREEN" | "RED")
             && self.result["verdict"] == self.verdict.as_str()
@@ -111,7 +111,7 @@ impl Record {
             )
             && valid_id(&self.execution_id)
             && self.execution.as_ref().is_none_or(|execution| {
-                execution.stale_key.as_ref() == Some(&self.stale_key)
+                execution.fingerprint.as_ref() == Some(&self.fingerprint)
                     && execution.eval_def_hash == self.eval_def_hash
                     && execution.status == self.verdict
                     && execution.profile == self.profile
@@ -142,7 +142,7 @@ impl Record {
             Some(execution) => *execution,
             None => Execution {
                 id: String::new(),
-                stale_key: Some(self.stale_key),
+                fingerprint: Some(self.fingerprint),
                 eval_def_hash: self.eval_def_hash.clone(),
                 owner_pid: 0,
                 owner_start_time: 0,
@@ -204,7 +204,7 @@ fn summary_usage(usage: Option<&Value>) -> Option<Value> {
     )
 }
 
-pub(crate) fn valid_stale_key(value: &str) -> bool {
+pub(crate) fn valid_fingerprint(value: &str) -> bool {
     (1..=128).contains(&value.len())
         && value
             .bytes()

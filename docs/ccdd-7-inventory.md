@@ -2,6 +2,8 @@
 
 Baseline: commit `cbf28b4` in `/home/user/code/ccdd`; references below name files **as they exist at that commit**, not necessarily the current working tree. The supplied snapshot was read without modifying either repository. Annotations follow the lean scope in `PLAN.md`: a task ID keeps the capability, `SIMPLIFIED` names what remains, and `DROP` identifies an exclusion. Item text and checkbox states preserve the original inventory, including its historical `REPLACED` wording; annotations, not that wording, define the current scope. Existing DROP annotations are retained verbatim. New DROP reasons cite the corresponding row in the plan's Drops and replacements table by its opening terms. Source takes precedence over older prose: notably, current timeout validation allows 2,147,483,647 ms; compact requester DTOs can include usage; and the old remote snapshot-transfer implementation is absent.
 
+Since 0.4 the staleKey named in these annotations is the **fingerprint** ([#72](https://github.com/lhj6102/artifactize/issues/72)); the annotations keep their wording.
+
 P1.7 closes the runtime loop: discovery and scoped literal argv feed SCC gates and foreground runtime execution, then durable SQLite receipts feed a fresh-process `run show`. CFG-09, CFG-30, CFG-47, ENG-16, EXE-02, EXE-03, WKS-01, WKS-05, WKS-13 and WKS-16 are now observable end to end. Runtime output is caller-owned and persists for receipts/pruning; configured programs remain trusted code, not a sandbox.
 
 P2.2 adds required exclusive Artifact/Critic/CSV/file/all selectors and profile variants to `verify`; CFG-12, CFG-13 and CFG-43 are now observable. P2.1 completes family selectors and static expansion (CFG-01/02/04/37–42, ENG-05/08/09).

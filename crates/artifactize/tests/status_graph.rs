@@ -256,7 +256,7 @@ fn families_keep_full_definitions_grouping_and_last_run_pointers() {
     assert_eq!(run["validation"]["satisfied"], true);
     let view = fixture.json(&["status", "scenarios"], 0);
     assert_eq!(view["counts"]["reuse"], 2);
-    for (id, stale_key) in [
+    for (id, fingerprint) in [
         ("checkout/review", "checkout:READY"),
         ("search/review", "search:SEARCH"),
     ] {
@@ -264,18 +264,18 @@ fn families_keep_full_definitions_grouping_and_last_run_pointers() {
         assert_eq!(row(&view, "evals", id)["action"], "reuse");
         assert_eq!(
             row(&view, "evals", id)["last"],
-            json!({"runId":run["id"],"verdict":"GREEN","staleKey":stale_key})
+            json!({"runId":run["id"],"verdict":"GREEN","fingerprint":fingerprint})
         );
     }
     fs::write(
-        fixture.repo.join("scenarios/stale_key.sh"),
-        "#!/bin/sh\ntouch stale_key-ran\nexit 91\n",
+        fixture.repo.join("scenarios/fingerprint.sh"),
+        "#!/bin/sh\ntouch fingerprint-ran\nexit 91\n",
     )
     .unwrap();
     let error = fixture.json(&["status", "scenarios"], 2);
     assert!(error["error"].as_str().unwrap().contains("exited with"));
-    assert!(fixture.repo.join("scenarios/stale_key-ran").exists());
-    fs::remove_file(fixture.repo.join("scenarios/stale_key-ran")).unwrap();
+    assert!(fixture.repo.join("scenarios/fingerprint-ran").exists());
+    fs::remove_file(fixture.repo.join("scenarios/fingerprint-ran")).unwrap();
     fixture.json(&["config", "check"], 0);
     let graph = fixture.json(&["config", "graph", "scenarios"], 0);
     assert_eq!(
@@ -295,7 +295,7 @@ fn families_keep_full_definitions_grouping_and_last_run_pointers() {
     let text =
         String::from_utf8(fixture.output(&["config", "graph", "scenarios"], 0).stdout).unwrap();
     assert!(text.contains("Family scenarios: checkout, search"));
-    assert!(!fixture.repo.join("scenarios/stale_key-ran").exists());
+    assert!(!fixture.repo.join("scenarios/fingerprint-ran").exists());
 }
 
 #[test]
@@ -377,7 +377,7 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
 }
 
 #[test]
-fn static_commands_never_execute_hooks_and_status_only_runs_stale_key() {
+fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let fixture = Fixture::new("declarations");
     let marker = fixture.root.path().join("hook-executed");
     let hook = fixture.repo.join("review/hook.sh");
@@ -396,7 +396,8 @@ fn static_commands_never_execute_hooks_and_status_only_runs_stale_key() {
     assert!(!fixture.state.exists());
     let path = fixture.repo.join("review/artifactize.json");
     let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    declaration["staleKey"]["script"] = json!({"command":"/bin/echo","args":["current-stale_key"]});
+    declaration["fingerprint"]["script"] =
+        json!({"command":"/bin/echo","args":["current-fingerprint"]});
     fs::write(path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");
