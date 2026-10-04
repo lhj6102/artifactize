@@ -1,5 +1,8 @@
 //! Shared remote review store records: what leaves this machine and how it is mirrored back.
 
+mod session;
+pub use session::Session;
+
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -199,14 +202,14 @@ fn summary_usage(usage: Option<&Value>) -> Option<Value> {
     )
 }
 
-fn valid_stale_key(value: &str) -> bool {
+pub(crate) fn valid_stale_key(value: &str) -> bool {
     (1..=128).contains(&value.len())
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
 }
 
-fn valid_hash(value: &str) -> bool {
+pub(crate) fn valid_hash(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()

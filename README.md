@@ -161,7 +161,9 @@ requests, never RED. Previously committed results remain unchanged. There is no
 detached worker.
 
 Text output prints one line per request and marks a result taken from another
-request's execution (a staleKey hit, or a joined execution) with its source Run:
+request's execution (a staleKey hit, or a joined execution) with its source Run
+(results from a [remote review store](#remote-review-store-client) also name their
+producer or Human reviewer):
 
 ```text
   web/tests [run-x05qFq-5]: GREEN
@@ -665,8 +667,9 @@ artifactize remote logout
 
 A client is configured only through the state directory and the environment,
 never `artifactize.json`, so a cloned repository cannot redirect a token. `remote
-login URL` reads one token line from stdin (never argv), verifies it with
-`GET /v1/whoami`, then stores it in `$STATE/auth/remote-token.json` (0700 directory,
+login URL` reads one token line from stdin (never argv; a terminal does not echo
+it), verifies it with `GET /v1/whoami`, then stores it in
+`$STATE/auth/remote-token.json` (0700 directory,
 0600 single-link file, like the ChatGPT credentials) and writes
 `$STATE/remote.json`: `{"url":"https://reviews.example/","share":"summary"}`.
 URLs must use HTTPS with the system trust store; plain `http://` is accepted only
@@ -680,7 +683,39 @@ stored token. `remote status` prints the URL, share level, token source
 store accepts the token. Requests use a 2 s connect and 5 s total timeout and never
 follow redirects. `remote logout` deletes the stored token and `remote.json`; the
 server keeps the token valid until `server token revoke`. Tokens are never printed
-or logged. Verify does not consult the remote yet.
+or logged.
+
+With a store configured, `verify` reads and writes through it. It checks the local
+cache first and looks up the keys that missed in one batched `POST /v1/lookup`
+before the Run claims anything. A hit is mirrored into the local cache (a
+self-contained `remote-<executionId>` execution with an `origin`) and reused like a
+local entry, so `run show`, `cache`, GC, the monitor and the Run summary count it as
+reuse. Each key is looked up again just before a local claim and on each
+`verify --wait` poll, at most once per second. A remote result for a key that waits
+for a Human settles the waiting requests; their never-reviewed waiting execution
+becomes ERROR (`SUPERSEDED`). Text output names the source:
+
+```text
+  app/check [run-Hq2b9X-1]: GREEN (reused from remote: alice@laptop, run-x05qFq)
+  brand/signoff [run-Hq2b9X-2]: GREEN (reused from remote: Human sign-off by alice, published by alice-signoff, run-Ksl1Qr)
+```
+
+The producer (`user@host`) and the Human reviewer are what the publishing machine
+recorded; the publisher is the server-authenticated token name. Once the local settle
+publishes a GREEN/RED with a staleKey to the local cache (after the staleKey
+recheck), verify sends its summary record, or the full record with share `full`,
+outside any database transaction. `request submit` publishes Human sign-offs.
+A token without `read` looks nothing up and one without `publish` publishes nothing,
+so a read-only CI token only reuses. Human sign-offs also need `human`; with any
+other token they stay local with a warning. Nothing is published for evals without a
+staleKey, and `--force` makes no remote calls at all. `status` looks up read-only,
+without mirroring, so its `reuse` prediction includes remote results.
+
+Connection errors, timeouts and 5xx answers fail open: one warning, then the process
+reviews locally without the remote. 401/403, TLS failures, other error answers and
+invalid configuration fail closed (exit 2). A lookup that fails before the Run
+starts leaves no Run; a later failure records the Run as ERROR. A record that does
+not validate is ignored with a warning, and its eval is reviewed locally.
 
 Only known scratch directories below `state/runs/<run-id>` are removed: runtime
 `output`/`tmp`/`home`/`cache`, leftover tool output and Claude invocation directories.

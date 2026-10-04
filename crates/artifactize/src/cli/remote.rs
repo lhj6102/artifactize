@@ -117,19 +117,57 @@ pub(super) async fn execute(
     }
 }
 
+/// Turns terminal echo off until dropped, so a pasted token is not shown.
+struct HiddenInput(libc::termios);
+
+impl HiddenInput {
+    fn new() -> Result<Self, String> {
+        let mut termios = std::mem::MaybeUninit::uninit();
+        // SAFETY: tcgetattr fills the struct on success; it is read only then.
+        let saved = unsafe {
+            if libc::tcgetattr(libc::STDIN_FILENO, termios.as_mut_ptr()) != 0 {
+                return Err(io::Error::last_os_error().to_string());
+            }
+            termios.assume_init()
+        };
+        let mut hidden = saved;
+        hidden.c_lflag &= !libc::ECHO;
+        // SAFETY: a valid termios for the same descriptor.
+        if unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &hidden) } != 0 {
+            return Err(io::Error::last_os_error().to_string());
+        }
+        Ok(Self(saved))
+    }
+}
+
+impl Drop for HiddenInput {
+    fn drop(&mut self) {
+        // SAFETY: restores the attributes read in `new`.
+        unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &self.0) };
+    }
+}
+
 fn read_token() -> Result<String, String> {
     let stdin = io::stdin().lock();
-    if stdin.is_terminal() {
+    let hidden = if stdin.is_terminal() {
+        // Echo goes off before the prompt invites a paste.
+        let hidden = HiddenInput::new()?;
         write!(
             io::stderr().lock(),
             "Paste the remote token, then press Enter: "
         )
         .map_err(|e| e.to_string())?;
-    }
+        Some(hidden)
+    } else {
+        None
+    };
     let mut token = String::new();
-    stdin
-        .take(8192)
-        .read_line(&mut token)
-        .map_err(|_| "Cannot read the remote token from stdin.".to_owned())?;
+    let read = stdin.take(8192).read_line(&mut token);
+    if hidden.is_some() {
+        drop(hidden);
+        // The Enter key was not echoed either.
+        let _ = writeln!(io::stderr().lock());
+    }
+    read.map_err(|_| "Cannot read the remote token from stdin.".to_owned())?;
     Ok(token.trim().to_owned())
 }

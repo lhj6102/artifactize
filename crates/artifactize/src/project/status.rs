@@ -11,6 +11,7 @@ use crate::{
     config::{DependencyGates, Profile, read_workspace_config},
     graph::{ArtifactStatus, EvalStatus, Evidence, Graph, Readiness},
     project::{VerifyOptions, selection::select_profiles},
+    remote::Session,
     store::{self, Claim, LastRequest},
 };
 
@@ -152,9 +153,29 @@ pub async fn status(
             })
         })
         .collect();
-    let cached =
+    let mut cached =
         store::read_stale_key_executions(&state, &keys.values().cloned().collect::<Vec<_>>())
             .await?;
+    // Read-only: remote results count as reuse without being mirrored, as verify would take
+    // them before claiming. --force makes no remote calls, so its prediction has none.
+    if !options.force
+        && let Some(remote) = Session::open(Some(&state), Some(&config.root))?
+    {
+        let missing: Vec<_> = keys
+            .values()
+            .filter(|key| !matches!(cached.get(*key), Some(Claim::Reuse(_))))
+            .cloned()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        for execution in remote.lookup(&missing).await? {
+            let key = (
+                execution.stale_key.clone().expect("remote stale key"),
+                execution.eval_def_hash.clone(),
+            );
+            cached.insert(key, Claim::Reuse(Box::new(execution)));
+        }
+    }
     // Explain changed stale keys against the newest cached result for the same Eval definition.
     let stale: Vec<_> = keys
         .iter()
@@ -237,7 +258,17 @@ pub async fn status(
             _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
                 "reuse",
                 format!(
-                    "The current stale key and Eval definition have a completed cached result{}",
+                    "The current stale key and Eval definition have a completed {}{}",
+                    match keys.get(eval.id.as_str()).and_then(|key| cached.get(key)) {
+                        Some(Claim::Reuse(execution)) if execution.origin.is_some() => format!(
+                            "result in the remote review store, from {}",
+                            execution
+                                .producer
+                                .as_ref()
+                                .map_or("an unknown producer", |producer| producer.name.as_str())
+                        ),
+                        _ => "cached result".into(),
+                    },
                     match current.readiness {
                         Readiness::Ready => ".".into(),
                         Readiness::Wait => format!(

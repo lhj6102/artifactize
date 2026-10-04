@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_rusqlite::Connection;
 
-use super::{Provenance, STATE_SCHEMA_VERSION};
+use super::{Origin, Producer, Provenance, STATE_SCHEMA_VERSION};
 use crate::workspace::{canonical_target, outside_workspace, prepare_directory};
 
 pub const DATABASE: &str = "state.sqlite";
@@ -79,6 +79,15 @@ pub struct Request {
     /// The reused execution's original usage, never counted as spent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reused_usage: Option<Value>,
+    /// Who produced a reused result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub producer: Option<Producer>,
+    /// The Human claimant who submitted a reused result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer: Option<String>,
+    /// The remote store, publisher and publication time of a result reused from a mirror.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Origin>,
     #[serde(default)]
     pub tool_calls: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

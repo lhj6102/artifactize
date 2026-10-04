@@ -9,13 +9,16 @@ use std::{
     net::IpAddr,
     os::unix::fs::OpenOptionsExt,
     path::Path,
+    sync::OnceLock,
     time::Duration,
 };
 
-use reqwest::{StatusCode, Url};
+use reqwest::{Method, Response, StatusCode, Url};
 use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 
 use super::storage::Storage;
+use crate::remote::Record;
 
 pub const CONFIG: &str = "remote.json";
 const TOKEN: &str = "remote-token.json";
@@ -60,6 +63,7 @@ pub struct Remote {
     pub share: Share,
     pub token_source: TokenSource,
     token: Option<String>,
+    client: OnceLock<reqwest::Client>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -177,6 +181,7 @@ pub fn remote(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<Remote
         share,
         token_source,
         token,
+        client: OnceLock::new(),
     }))
 }
 
@@ -225,40 +230,102 @@ fn transport(error: reqwest::Error) -> Failure {
 }
 
 impl Remote {
-    /// Ask the server who this token is; works without a token to test reachability.
-    pub async fn whoami(&self) -> Result<Principal, Failure> {
-        let url = self.url.join("v1/whoami").expect("relative route");
-        let mut request = client()?.get(url);
+    fn request(&self, method: Method, route: &str) -> Result<reqwest::RequestBuilder, Failure> {
+        // One client per process reuses connections and the loaded trust store.
+        let client = match self.client.get() {
+            Some(client) => client,
+            None => {
+                let built = client()?;
+                self.client.get_or_init(|| built)
+            }
+        };
+        let mut request = client.request(method, self.url.join(route).expect("relative route"));
         if let Some(token) = &self.token {
             request = request.bearer_auth(token);
         }
+        Ok(request)
+    }
+
+    /// 401/403 and other client errors fail closed; 5xx and transport outages are unavailable.
+    async fn send(&self, request: reqwest::RequestBuilder) -> Result<Response, Failure> {
         let response = request.send().await.map_err(transport)?;
         let status = response.status();
+        if status.is_success() {
+            return Ok(response);
+        }
         let failure = |unavailable, message: String| Failure {
             unavailable,
             responded: true,
             message,
         };
-        match status {
-            _ if status.is_success() => response
-                .json()
-                .await
-                .map_err(|_| failure(false, "Invalid remote whoami response.".into())),
+        Err(match status {
             StatusCode::UNAUTHORIZED if self.token.is_none() => {
-                Err(failure(false, format!("No remote token; {LOGIN}.")))
+                failure(false, format!("No remote token; {LOGIN}."))
             }
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => Err(failure(
+            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => failure(
                 false,
                 format!(
                     "The remote store rejected the token (HTTP {}).",
                     status.as_u16()
                 ),
-            )),
-            _ => Err(failure(
+            ),
+            _ => failure(
                 status.is_server_error(),
                 format!("The remote store answered HTTP {}.", status.as_u16()),
-            )),
+            ),
+        })
+    }
+
+    async fn json<T: serde::de::DeserializeOwned>(
+        response: Response,
+        route: &str,
+    ) -> Result<T, Failure> {
+        response.json().await.map_err(|_| Failure {
+            unavailable: false,
+            responded: true,
+            message: format!("Invalid remote {route} response."),
+        })
+    }
+
+    /// Ask the server who this token is; works without a token to test reachability.
+    pub async fn whoami(&self) -> Result<Principal, Failure> {
+        let response = self.send(self.request(Method::GET, "v1/whoami")?).await?;
+        Self::json(response, "whoami").await
+    }
+
+    /// Stored records for the found keys, unvalidated; at most 1000 keys per request.
+    pub async fn lookup(&self, keys: &[(String, String)]) -> Result<Vec<Value>, Failure> {
+        #[derive(Deserialize)]
+        struct Found {
+            entries: Vec<Value>,
         }
+        let mut entries = Vec::new();
+        for chunk in keys.chunks(1000) {
+            let keys: Vec<_> = chunk
+                .iter()
+                .map(|(stale_key, eval_def_hash)| {
+                    json!({"staleKey": stale_key, "evalDefHash": eval_def_hash})
+                })
+                .collect();
+            let request = self
+                .request(Method::POST, "v1/lookup")?
+                .json(&json!({ "keys": keys }));
+            let found: Found = Self::json(self.send(request).await?, "lookup").await?;
+            entries.extend(found.entries);
+        }
+        Ok(entries)
+    }
+
+    /// Publish an immutable record; `false` when the key already exists (the first writer wins).
+    pub async fn publish(&self, record: &Record) -> Result<bool, Failure> {
+        #[derive(Deserialize)]
+        struct Published {
+            created: bool,
+        }
+        let route = format!("v1/entries/{}/{}", record.eval_def_hash, record.stale_key);
+        let request = self.request(Method::PUT, &route)?.json(record);
+        let published: Published = Self::json(self.send(request).await?, "publish").await?;
+        Ok(published.created)
     }
 }
 
@@ -277,6 +344,7 @@ pub async fn login(
         share,
         token_source: TokenSource::File,
         token: Some(token),
+        client: OnceLock::new(),
     };
     let principal = remote.whoami().await.map_err(|failure| failure.message)?;
     let storage = Storage::new(state, repo)?;

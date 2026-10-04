@@ -17,6 +17,7 @@ use crate::{
     config::{Profile, RepoConfig},
     graph::{Evidence, Graph},
     process,
+    remote::Session,
     runtime::Verdict,
     store::{Claim, Execution, Producer, Provenance, Receipts, Request, Run},
 };
@@ -35,6 +36,10 @@ pub(crate) fn budget_reason(run: &Run) -> String {
     )
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the Run's inputs, its local and remote stores, and cancellation"
+)]
 pub(crate) async fn schedule(
     config: Arc<RepoConfig>,
     graph: &Graph<'_>,
@@ -42,6 +47,7 @@ pub(crate) async fn schedule(
     run: &mut Run,
     requests: &mut [Request],
     receipts: &Receipts,
+    remote: Option<Arc<Session>>,
     cancellation: CancellationToken,
 ) -> Result<BTreeMap<String, Evidence>, String> {
     let cancellation = cancellation.child_token();
@@ -54,6 +60,7 @@ pub(crate) async fn schedule(
         run,
         requests,
         receipts,
+        remote,
         cancellation: cancellation.clone(),
         tasks: &mut tasks,
     }
@@ -73,6 +80,7 @@ struct Scheduler<'a, 'g> {
     run: &'a mut Run,
     requests: &'a mut [Request],
     receipts: &'a Receipts,
+    remote: Option<Arc<Session>>,
     cancellation: CancellationToken,
     tasks: &'a mut JoinSet<Result<(usize, Request), String>>,
 }
@@ -103,6 +111,20 @@ impl Scheduler<'_, '_> {
             .map(|ms| tokio::time::Instant::now() + Duration::from_millis(u64::from(ms)));
         loop {
             let completed = evidence.len();
+            // A remote result for a waiting Human key settles it locally (each verify --wait poll).
+            if let Some(remote) = &self.remote
+                && !self.cancellation.is_cancelled()
+            {
+                let keys = self
+                    .requests
+                    .iter()
+                    .filter(|request| request.status == "WAITING_HUMAN" && !request.force)
+                    .filter_map(|request| {
+                        Some((request.stale_key.clone()?, request.eval_def_hash.clone()))
+                    })
+                    .collect();
+                remote.refresh(self.receipts, keys).await?;
+            }
             let human_ids: Vec<_> = self
                 .requests
                 .iter()
@@ -232,6 +254,15 @@ impl Scheduler<'_, '_> {
                             .run
                             .max_executions
                             .is_none_or(|limit| self.run.executions_started < limit);
+                    // Look up the remote again just before claiming; a hit becomes a local entry.
+                    if let (Some(remote), Some(stale_key)) = (&self.remote, &execution.stale_key) {
+                        remote
+                            .refresh(
+                                self.receipts,
+                                vec![(stale_key.clone(), execution.eval_def_hash.clone())],
+                            )
+                            .await?;
+                    }
                     match self
                         .receipts
                         .claim_execution(&execution, request.execution_id.as_deref(), allow_start)
@@ -326,21 +357,26 @@ impl Scheduler<'_, '_> {
                     let config = self.config.clone();
                     let receipts = self.receipts.clone();
                     let request = request.clone();
+                    let remote = self.remote.clone();
                     let cancellation = self.cancellation.clone();
                     let run_dir = run_dir.clone();
                     running.insert(index);
                     self.tasks.spawn(async move {
-                        execution::execute(
+                        let request = execution::execute(
                             config,
-                            receipts,
+                            receipts.clone(),
                             request,
                             execution,
                             prepared,
                             run_dir,
                             cancellation,
                         )
-                        .await
-                        .map(|request| (index, request))
+                        .await?;
+                        // Publication runs after the local commit, outside any transaction.
+                        if let Some(remote) = remote {
+                            remote.publish_request(&receipts, &request).await?;
+                        }
+                        Ok((index, request))
                     });
                 }
             }
