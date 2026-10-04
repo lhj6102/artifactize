@@ -123,10 +123,10 @@ at both levels, so keep secrets out of the fields that `passSchema` and
 Every command accepts the common options `--repo PATH` (default: the current
 directory), `--state-dir PATH` (default: the state home below) and `--json`, before
 or after the subcommand, at most once each; commands that do not read a repository
-or state ignore them, except `mcp` (which rejects all three) and `monitor` and
-`review` (which reject `--json`). `SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`,
-`--evals CSV`, `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH` or
-`--all`. `help [COMMAND]` and `--help` print help; `--version` prints the version.
+or state ignore them, except `monitor` and `review` (which reject `--json`).
+`SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`, `--evals CSV`,
+`--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH` or `--all`.
+`help [COMMAND]` and `--help` print help; `--version` prints the version.
 
 | Command | Flags | Output | Exit |
 |---|---|---|---|
@@ -146,7 +146,6 @@ or state ignore them, except `mcp` (which rejects all three) and `monitor` and
 | `cache show STALE_KEY [EVAL_HASH]` | | JSON | 0; 4 missing |
 | `cache rm STALE_KEY [EVAL_HASH]` | | JSON | 0 |
 | `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 0 ready, 1 not |
-| `mcp --manifest PATH` | | stdio MCP | 0; 1 server failure |
 | `login chatgpt`, `logout chatgpt` | | text or JSON | 0 |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
 | `remote logout` | | text or JSON | 0 |
@@ -634,8 +633,9 @@ credential search or fallback:
 only `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, respectively. ChatGPT uses the stored
 Sign in with ChatGPT credentials, never an API-key fallback. `claude` runs the
 unmodified official `claude` CLI from `PATH`, already signed in, with the eval's
-tools served over MCP; artifactize never reads Claude credentials (launch controls
-are in `docs/PLAN.md`).
+tools served over MCP by the internal `artifactize mcp` command (see
+[Tool diagnostics and MCP](#tool-diagnostics-and-mcp)); artifactize never reads
+Claude credentials (launch controls are in `docs/PLAN.md`).
 `provider` and `effort` are not config aliases.
 
 For an eligible ChatGPT subscription:
@@ -995,7 +995,6 @@ artifactize tools check app/review              # same as --eval app/review
 artifactize tools check --artifact app --audience agent
 artifactize tools check --execute --artifact app --audience agent --tool read --args '{"path":"README.md"}'
 artifactize tools check --execute --artifact app --audience human --tool inspect
-artifactize mcp --manifest /external/execution/mcp-manifest.json
 ```
 
 `tools check` discovers and validates declarations, resolves executable availability,
@@ -1018,7 +1017,10 @@ state_dir, output_dir)` writes private `mcp-manifest.json` and `mcp-config.json`
 files in an external execution directory and returns the config path. Pass the
 config to the unmodified Claude CLI with `--strict-mcp-config --mcp-config CFG
 --allowedTools 'mcp__artifactize__*'` (full backend controls are in `docs/PLAN.md`).
-The generated stdio server uses the current executable's absolute path. The Claude
+The generated stdio server is the internal `artifactize mcp --manifest PATH`
+command at the current executable's absolute path. It is hidden from `--help` and
+not meant to be run by hand: it speaks only MCP on stdio, rejects `--repo`,
+`--state-dir` and `--json`, and exits 0, or 1 on a server failure. The Claude
 backend launches the CLI with this config and runs the tools-disabled repair as a
 second invocation with an empty MCP config.
 

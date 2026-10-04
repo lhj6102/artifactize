@@ -50,6 +50,7 @@ pub enum Command {
         command: ToolsCommand,
     },
     /// Serve an execution's scoped Agent tools over stdio MCP.
+    #[command(hide = true)]
     Mcp {
         /// Execution manifest written for one Agent review.
         #[arg(long, value_name = "PATH")]
