@@ -4,11 +4,9 @@
     "terms": "glossary"
   },
   "stale": {
-    "kind": "identity",
-    "script": {
-      "command": "python3",
-      "args": ["identity.py", ".", "{terms}"]
-    }
+    "kind": "content",
+    "inputs": ["."],
+    "dependencies": "direct"
   },
   "evals": [
     {

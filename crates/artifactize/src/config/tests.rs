@@ -254,6 +254,49 @@ fn stale_accepts_only_inert_identity_declarations() {
 }
 
 #[test]
+fn content_stale_defaults_to_the_owner_folder_and_direct_dependencies() {
+    let declaration = parse(json!({"name":"a","stale":{"kind":"content"}})).unwrap();
+    let Some(Stale::Content {
+        inputs,
+        dependencies,
+        ignore,
+    }) = declaration.stale
+    else {
+        panic!()
+    };
+    assert_eq!(inputs, ["."]);
+    assert_eq!(dependencies, Dependencies::Direct);
+    assert!(ignore.is_empty());
+    let declared = json!({"kind":"content","inputs":["src","docs/a.md"],"dependencies":"transitive","ignore":["*.log","build/"]});
+    let Some(Stale::Content {
+        inputs,
+        dependencies,
+        ignore,
+    }) = parse(json!({"name":"a","stale":declared})).unwrap().stale
+    else {
+        panic!()
+    };
+    assert_eq!(inputs, ["src", "docs/a.md"]);
+    assert_eq!(dependencies, Dependencies::Transitive);
+    assert_eq!(ignore, ["*.log", "build/"]);
+    for (key, value) in [
+        ("dependencies", json!("all")),
+        ("inputs", json!([])),
+        ("inputs", json!(["/abs"])),
+        ("inputs", json!(["a/../b"])),
+        ("inputs", json!(["a", "a"])),
+        ("ignore", json!(["!keep"])),
+        ("ignore", json!(["x", "x"])),
+        ("script", json!({"command":"x","args":[]})),
+        ("paths", json!(["input"])),
+    ] {
+        let mut stale = json!({"kind":"content"});
+        stale[key] = value;
+        assert!(parse(json!({"name":"a","stale":stale})).is_err(), "{key}");
+    }
+}
+
+#[test]
 fn dropped_configuration_fields_are_rejected() {
     for declaration in [
         json!({"name":"a","critics":[]}),

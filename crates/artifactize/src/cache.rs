@@ -1,12 +1,19 @@
 //! Identity preparation, execution ownership, reuse, and end-of-review rechecks.
 
-use std::{collections::BTreeMap, path::Path};
+mod content;
 
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+};
+
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 pub use crate::store::cache_entries::{Entry, GcResult, gc, list, remove, show};
+pub(crate) use content::ignore_patterns;
 
 use crate::{
     config::{EvalDeclaration, RepoConfig, Stale},
@@ -14,6 +21,8 @@ use crate::{
     store::{Execution, Request},
     workspace,
 };
+
+const MANIFEST_BYTES: usize = 64 * 1024;
 
 /// Hash the effective declaration after profile selection, without file fingerprints.
 pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
@@ -24,10 +33,44 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
         "failSchema": eval.fail_schema,
     });
     definition.sort_all_objects();
-    Sha256::digest(serde_json::to_vec(&definition).expect("eval definition is JSON"))
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect()
+    content::hex(&Sha256::digest(
+        serde_json::to_vec(&definition).expect("eval definition is JSON"),
+    ))
+}
+
+/// A prepared owner identity; a content identity also carries its manifest.
+#[derive(Debug, Clone)]
+pub struct Identity {
+    pub value: String,
+    pub manifest: Option<Manifest>,
+}
+
+/// What a content identity covered, saved with executions to explain later changes.
+/// Maps that would exceed 64 KiB are omitted; the identity still covers them.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Manifest {
+    /// SHA-256 over every input path and file digest.
+    pub inputs: String,
+    /// Owner-relative path to the first 16 hex digits of its SHA-256.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<BTreeMap<String, String>>,
+    /// Dependency Artifact to its identity script value or content digest.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<BTreeMap<String, String>>,
+}
+
+/// Why the current identity differs from an earlier cached result for the same Eval definition.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Changes {
+    pub since_run_id: String,
+    /// `path` changed, `+path` added, `-path` removed; absent when not comparable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub files: Option<Vec<String>>,
+    /// `id` changed, `+id` added, `-id` removed; absent when not comparable.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<Vec<String>>,
+    pub summary: String,
 }
 
 /// Prepare only the selected dependency closure, once per Artifact.
@@ -36,13 +79,14 @@ pub async fn prepare<'a>(
     artifacts: impl IntoIterator<Item = &'a str>,
     output_root: &Path,
     cancellation: CancellationToken,
-) -> Result<BTreeMap<&'a str, String>, String> {
+) -> Result<BTreeMap<&'a str, Identity>, String> {
+    let mut locals = BTreeMap::new();
     let mut identities = BTreeMap::new();
     for id in artifacts {
         if config.artifacts[id].stale.is_some() {
             identities.insert(
                 id,
-                identity(config, id, output_root, cancellation.clone()).await?,
+                compute(config, id, output_root, &cancellation, &mut locals).await?,
             );
         }
     }
@@ -69,12 +113,198 @@ pub async fn identity(
     output_root: &Path,
     cancellation: CancellationToken,
 ) -> Result<String, String> {
-    compute(config, artifact_id, output_root, cancellation)
-        .await
-        .map_err(|error| format!("Identity script for Artifact {artifact_id} failed: {error}"))
+    compute(
+        config,
+        artifact_id,
+        output_root,
+        &cancellation,
+        &mut BTreeMap::new(),
+    )
+    .await
+    .map(|identity| identity.value)
 }
 
+/// `locals` memoizes each Artifact's own contribution within one preparation.
 async fn compute(
+    config: &RepoConfig,
+    id: &str,
+    output_root: &Path,
+    cancellation: &CancellationToken,
+    locals: &mut BTreeMap<String, String>,
+) -> Result<Identity, String> {
+    match &config.artifacts[id].stale {
+        Some(Stale::Content { .. }) => content(config, id, output_root, cancellation, locals)
+            .await
+            .map_err(|error| format!("Content identity for Artifact {id} failed: {error}")),
+        Some(Stale::Identity { .. }) => Ok(Identity {
+            value: local(config, id, output_root, cancellation, locals).await?,
+            manifest: None,
+        }),
+        None => Err(format!("No identity declared for Artifact {id}.")),
+    }
+}
+
+/// Own input files plus each dependency's own contribution, never a dependency's dependencies.
+async fn content(
+    config: &RepoConfig,
+    id: &str,
+    output_root: &Path,
+    cancellation: &CancellationToken,
+    locals: &mut BTreeMap<String, String>,
+) -> Result<Identity, String> {
+    let Some(Stale::Content {
+        inputs,
+        dependencies: scope,
+        ignore,
+    }) = &config.artifacts[id].stale
+    else {
+        unreachable!("content identity")
+    };
+    let files = content::files(config, id, inputs, ignore, cancellation).await?;
+    locals.insert(id.to_owned(), files.digest.clone());
+    let mut dependencies = BTreeMap::new();
+    for dependency in content::dependencies(config, id, *scope) {
+        let value = local(config, dependency, output_root, cancellation, locals).await?;
+        dependencies.insert(dependency.to_owned(), value);
+    }
+    let mut digest = Sha256::new();
+    digest.update(format!(
+        "artifactize-content-v1\nartifact {id}\nfiles {}\n",
+        files.digest
+    ));
+    for (dependency, value) in &dependencies {
+        digest.update(format!("dependency {dependency} {value}\n"));
+    }
+    let mut manifest = Manifest {
+        inputs: files.digest,
+        files: Some(
+            files
+                .files
+                .iter()
+                .map(|(path, file)| (path.clone(), content::hex(&file[..8])))
+                .collect(),
+        ),
+        dependencies: Some(dependencies),
+    };
+    let size = |manifest: &Manifest| {
+        serde_json::to_vec(manifest)
+            .expect("manifest is JSON")
+            .len()
+    };
+    if size(&manifest) > MANIFEST_BYTES {
+        manifest.files = None;
+    }
+    if size(&manifest) > MANIFEST_BYTES {
+        manifest.dependencies = None;
+    }
+    Ok(Identity {
+        value: format!("content:{}", content::hex(&digest.finalize())),
+        manifest: Some(manifest),
+    })
+}
+
+/// A dependency's contribution: its identity script value, or the digest of its own
+/// content inputs (`.` without a declared identity).
+async fn local(
+    config: &RepoConfig,
+    id: &str,
+    output_root: &Path,
+    cancellation: &CancellationToken,
+    locals: &mut BTreeMap<String, String>,
+) -> Result<String, String> {
+    if let Some(value) = locals.get(id) {
+        return Ok(value.clone());
+    }
+    let value = match &config.artifacts[id].stale {
+        Some(Stale::Identity { .. }) => script(config, id, output_root, cancellation.clone())
+            .await
+            .map_err(|error| format!("Identity script for Artifact {id} failed: {error}"))?,
+        stale => {
+            let (inputs, ignore) = match stale {
+                Some(Stale::Content { inputs, ignore, .. }) => (inputs.clone(), ignore.clone()),
+                _ => (vec![".".to_owned()], Vec::new()),
+            };
+            content::files(config, id, &inputs, &ignore, cancellation)
+                .await
+                .map_err(|error| format!("Content of Artifact {id} failed: {error}"))?
+                .digest
+        }
+    };
+    locals.insert(id.to_owned(), value.clone());
+    Ok(value)
+}
+
+/// Explain a stale identity against the manifest of an earlier cached execution.
+pub fn changes(previous: &Execution, current: &Identity) -> Changes {
+    let compared = previous.manifest.as_ref().zip(current.manifest.as_ref());
+    let files = compared.and_then(|(old, new)| {
+        if old.inputs == new.inputs {
+            Some(Vec::new())
+        } else {
+            old.files
+                .as_ref()
+                .zip(new.files.as_ref())
+                .map(|(old, new)| diff(old, new))
+        }
+    });
+    let dependencies = compared.and_then(|(old, new)| {
+        old.dependencies
+            .as_ref()
+            .zip(new.dependencies.as_ref())
+            .map(|(old, new)| diff(old, new))
+    });
+    let mut parts = Vec::new();
+    match &files {
+        Some(files) if !files.is_empty() => {
+            let shown = files
+                .iter()
+                .take(10)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ");
+            parts.push(match files.len() {
+                0..=10 => format!("changed: {shown}"),
+                total => format!("changed: {shown} and {} more", total - 10),
+            });
+        }
+        None if compared.is_some() => parts.push("inputs changed".to_owned()),
+        _ => {}
+    }
+    for dependency in dependencies.iter().flatten() {
+        parts.push(if let Some(id) = dependency.strip_prefix('+') {
+            format!("dependency {id} added")
+        } else if let Some(id) = dependency.strip_prefix('-') {
+            format!("dependency {id} removed")
+        } else {
+            format!("dependency {dependency} changed")
+        });
+    }
+    if parts.is_empty() {
+        parts.push("identity changed".to_owned());
+    }
+    Changes {
+        since_run_id: previous.provenance.run_id.clone(),
+        files,
+        dependencies,
+        summary: parts.join("; "),
+    }
+}
+
+fn diff(old: &BTreeMap<String, String>, new: &BTreeMap<String, String>) -> Vec<String> {
+    old.keys()
+        .chain(new.keys())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|key| match (old.get(key), new.get(key)) {
+            (Some(old), Some(new)) if old != new => Some(key.clone()),
+            (None, Some(_)) => Some(format!("+{key}")),
+            (Some(_), None) => Some(format!("-{key}")),
+            _ => None,
+        })
+        .collect()
+}
+
+async fn script(
     config: &RepoConfig,
     artifact_id: &str,
     output_root: &Path,
@@ -90,7 +320,7 @@ async fn compute(
         timeout_ms,
     }) = &artifact.stale
     else {
-        return Err("No identity command declared.".into());
+        unreachable!("identity script")
     };
     let cwd = scope::scoped_path(&config.root, &artifact.path).map_err(|e| e.to_string())?;
     for input in inputs
@@ -165,3 +395,6 @@ fn validate_output(stdout: &[u8]) -> Result<String, String> {
     }
     Ok(String::from_utf8(value.to_vec()).expect("validated ASCII identity"))
 }
+
+#[cfg(test)]
+mod tests;

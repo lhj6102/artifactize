@@ -20,14 +20,15 @@ example projects. Each README lists the exact commands:
 
 - [Runtime relations](examples/runtime-relations/README.md): runtime evals over
   parent/child folders, a mount alias, `{artifact}` references in instructions
-  and argv, a basis Artifact, a RED-able check and identity reuse.
+  and argv, a basis Artifact, a RED-able check, and reuse through the built-in
+  content identity, with `status` explaining what changed.
 - [Agent tools](examples/agent-tools/README.md): an Agent eval using the built-in
   `read`, `grep` and `view_image` tools, a declared `plain` tool and a declared `json` tool,
   pass/fail schemas, backend and model selection, and a Human sign-off with
   `launch` and `output` tools.
 - [Family](examples/family/README.md): one family declaration with an instance
-  list, parameters and variants, shared and per-instance material, and family
-  selectors.
+  list, parameters and variants, shared and per-instance material, family
+  selectors, and the identity script form.
 
 ## Command reference
 
@@ -210,21 +211,79 @@ suspension. Completed identity results are shared within this database; cross-pr
 claims and polling waiters prevent duplicate identity execution.
 
 Declarations use `evals`, with qualified eval IDs such as `green/check`.
-`stale` accepts only `{"kind":"identity","script":{"command":"/bin/sh","args":["identity.sh"]}}`,
-optionally with `inputs` and `timeoutMs`; `weight` is rejected. Discovery validates
-these fields without opening or executing the script or its inputs. There is no
-implicit file-hash or always-stale mode: no identity means no reuse. The old
-`critics`, `stale.paths`, `resultCheck`, `envRequirements`,
-`reviewPolicy.maxConcurrentExecutors` and tool metadata `observation` fields are
-rejected. Agent and Human tools use the separate flat declarations below.
+`stale` declares when an Artifact needs review again, in one of two forms:
+
+- `{"kind":"content","inputs":["."],"dependencies":"direct","ignore":[]}`, the
+  built-in [content identity](#content-identity). Every field is optional and
+  these are the defaults.
+- `{"kind":"identity","script":{"command":"/bin/sh","args":["identity.sh"]}}`, an
+  [owner identity command](#owner-identity-commands), optionally with `inputs`
+  and `timeoutMs`; `weight` is rejected.
+
+Discovery validates these fields without opening or executing scripts or inputs.
+There is no implicit or always-stale mode: an Artifact without `stale` has no
+identity and no reuse. The old `critics`, `stale.paths`, `resultCheck`,
+`envRequirements`, `reviewPolicy.maxConcurrentExecutors` and tool metadata
+`observation` fields are rejected. Agent and Human tools use the separate flat
+declarations below.
+
+## Content identity
+
+`{"kind":"content"}` makes review cost follow the size of a change: an Artifact is
+reviewed again only when its own files or its dependencies change, and every other
+result is reused. The identity is `content:` plus a SHA-256 over the Artifact name,
+each input file's owner-relative path and bytes, and one entry per dependency in
+the chosen scope.
+
+- `inputs`: 1–64 unique owner-relative paths, default `["."]` (the whole owner
+  folder). Each must exist and stay inside the Artifact: a path into a child
+  Artifact or a mount is rejected, because dependencies come from `dependencies`.
+  Directory walks skip child Artifact folders, the owner's `artifactize.json` and
+  a family's instance list. Their effect already reaches the identity through the
+  Eval definition hash and the dependency list.
+- `dependencies`: `none`, `direct` (default) or `transitive`. Dependencies are the
+  graph's own: children, mounts and `{artifact}` references in instructions and
+  runtime argv. With `direct`, merging a change into `core` re-reviews `core` and
+  the Artifacts that use it directly, and only those: the new pairing. Artifacts
+  further downstream keep their results, because `direct` never looks past one
+  hop. `transitive` covers the whole dependency closure and re-reviews everything
+  downstream. Choose it when a review really reads indirect dependencies.
+- `ignore`: up to 64 `.gitignore`-style globs relative to the owner, without
+  negation. They always exclude, like the built-in ignores `.git`,
+  `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files in
+  walked directories exclude more, with git's precedence and negation inside
+  them. Explicitly named `inputs` are never ignored.
+
+Each dependency contributes its own entry, never its dependencies' entries:
+
+- An identity script contributes its output.
+- Any other Artifact contributes the SHA-256 of its own content inputs: its
+  declared `inputs`/`ignore`, or `["."]` when it declares no `stale`.
+
+`transitive` therefore lists every Artifact in the closure explicitly. Cycles
+terminate, and SCC peers appear as ordinary dependencies; the owner never lists
+itself. A family instance hashes the shared folder without any instance's
+material, plus its own material. Editing one instance's material re-reviews only
+that instance.
+
+Walks follow the scoped path rules. Symlinks and special files fail closed unless
+they are ignored, nothing is followed out of the owner, and a walk stops with an
+error after 10,000 entries or 1 GiB. Hashing runs on preparation and on each
+end-of-review recheck. Files a review writes into ignored paths, such as Python's
+`__pycache__`, therefore never cause `INPUT_CHANGED`. A content identity records a
+manifest with the execution: per-file digests (16 hex digits), the inputs digest
+and each dependency's entry. Maps that would exceed 64 KiB are dropped from the
+manifest but still covered by the identity. `status` diffs this manifest against
+the current one.
 
 ## Owner identity commands
 
 Before executing any eval, `verify` computes each declared identity in the selected
 required dependency closure, including dependencies whose evals are not selected.
 Every eval on an Artifact receives the same literal value, also saved on its
-request and in the Run's Artifact validation. An identity does not contain any
-implicit repository, eval, profile, dependency or content salt.
+request and in the Run's Artifact validation. A script identity does not contain
+any implicit repository, eval, profile, dependency or content salt. A content
+identity failure (a missing input, a link, a limit) aborts preparation the same way.
 
 The command runs from its owner's folder with JSON on stdin:
 `{"version":1,"artifactId":"example"}`. Family instances additionally receive
@@ -254,7 +313,7 @@ After each runtime or Agent review completes, its identity is recomputed before 
 GREEN or RED verdict. A changed value records ERROR/INPUT_CHANGED with no semantic
 result; a failed recheck also records ERROR. Force does not skip preparation or
 this recheck. Artifacts without an identity run without either step. There is no
-workspace monitoring or file-content fingerprinting.
+workspace monitoring: content identities hash files only at preparation and recheck.
 
 ## Completed identity reuse
 
@@ -270,8 +329,8 @@ Human. Eval id/title, repository paths and unused profile variants are excluded.
 Equal definitions still share across evals and repositories; changing criteria,
 schema, args or effective profile requires a separate execution.
 
-No script or material file contents are hashed. Owners must still encode input,
-script and material changes that invalidate results in their identity output.
+A script identity hashes no script or material file contents. Owners must still
+encode input, script and material changes that invalidate results in its output.
 
 A hit returns the original result without running the eval or re-validating it
 against the requested profile/schema. The request saves the original execution ID,
@@ -412,6 +471,17 @@ are read for this canonical repository only: each eval's optional
 `run show RUN_ID` for full attribution. Noncached GREEN/RED satisfies only its own
 Run, so its later status is STALE rather than reuse (ENG-24). Basis-only scopes can
 be satisfied; a basis with unmet dependencies is INCOMPLETE.
+
+When an identity-bearing eval has no current cached result, `status` explains why.
+It compares the current identity with the newest cached GREEN/RED result for the
+same eval and Eval definition hash (from any repository in this state), and
+reports `changes: {sinceRunId, files?, dependencies?, summary}`. In text this is a
+`Changed since Run RUN_ID: ...` line, for example
+`changed: +docs/new.md, -old.md, src/a.py; dependency core changed`. Files and
+dependencies are listed as `path` (changed), `+path` (added) or `-path` (removed).
+A script identity, or a manifest whose maps were dropped, can only report
+`identity changed` or `inputs changed`. No explanation appears when that eval
+definition has never been cached, or for forced evals.
 
 `graph [ARTIFACT|FAMILY]` defaults to the whole project, or shows the selected
 required closure including cycle peers. Text lists Artifacts, evals, families,
@@ -1042,10 +1112,11 @@ All instance scripts use the shared folder as cwd. A parent addresses material a
 `<family-folder>/<instance>/<path>`; bypassing the instance is rejected. Instance
 material is an ownership declaration, not a sandbox hiding sibling files.
 Discovery keeps each instance's family membership and sorted material, without
-computing any digest or content fingerprint. Only an explicit identity can become
-a reuse key. Identity commands receive each selected instance's family name and
-material paths; each review rechecks its own instance identity. No workspace
-monitoring or automatic reuse is added.
+computing any digest or content fingerprint. Only a declared `stale` identity can
+become a reuse key. Identity commands receive each selected instance's family name
+and material paths. A content identity hashes the shared folder without any
+instance's material, plus the instance's own material. Each review rechecks its
+own instance identity. No workspace monitoring or automatic reuse is added.
 
 The runtime-only fixture demonstrates parameterized views, shared evals,
 independent inputs/results, and a shared identity hook (inert during discovery):

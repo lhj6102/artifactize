@@ -217,6 +217,20 @@ fn runtime_relations_reuses_identities_and_turns_red() {
     let copy = session.copy("runtime-relations");
     let page = copy.join("guide/usage/page.md");
     append(&page, "Results live in the **cache**.\n");
+    let status = session.json(&copy, &["status", "--json"], 1);
+    let summaries: BTreeMap<_, _> = status["evals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|eval| Some((eval["id"].as_str()?, eval["changes"]["summary"].as_str()?)))
+        .collect();
+    assert_eq!(
+        summaries,
+        BTreeMap::from([
+            ("guide/terms", "dependency usage changed"),
+            ("usage/heading", "changed: page.md"),
+        ])
+    );
     let red = session.json(&copy, &["verify", "--all", "--json"], 1);
     assert_eq!(
         statuses(&red),

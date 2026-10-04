@@ -1,12 +1,6 @@
 {
   "name": "intro",
-  "stale": {
-    "kind": "identity",
-    "script": {
-      "command": "python3",
-      "args": ["../identity.py", "."]
-    }
-  },
+  "stale": {"kind": "content"},
   "evals": [
     {
       "id": "heading",

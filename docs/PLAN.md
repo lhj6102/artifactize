@@ -27,7 +27,7 @@ Version 0.1.0 ships when every non-DROP item is checked off. Lean means no proce
   - **Agent tools:** take free arguments validated by JSON Schema. They are declared CLI commands or the built-ins `read`, `list`, `glob`, `grep` and `view_image`, and are also served over MCP.
   - **Human tools:** predefined commands that launch a program for the reviewer or show a command's output.
 - The identity cache:
-  - An explicit identity maps to a completed GREEN/RED result.
+  - An explicit identity maps to a completed GREEN/RED result: the built-in content identity or an owner script.
   - No identity means no reuse.
   - The same identity/Eval-definition pair runs only once at a time.
   - Each review ends with an identity recheck.
@@ -44,7 +44,7 @@ Version 0.1.0 ships when every non-DROP item is checked off. Lean means no proce
 | Pi catalog and auth adapters, Pi re-exports | rig-core `=0.43.0` (OpenAI/Anthropic API keys), ChatGPT via official Sign in with ChatGPT, Claude via the unmodified official `claude` CLI |
 | CCDD config/state/cache compatibility | New format only: `artifactize.json`, fresh state |
 | Continuous workspace monitoring | End-of-review identity recheck ([ccdd#104](https://github.com/lhj6102/ccdd/issues/104)) |
-| Content fingerprints, runtime pinning, canonical object store and record authentication | The identity is the only input key; plain SQLite rows |
+| Content fingerprints, runtime pinning, canonical object store and record authentication | The identity is the only input key; plain SQLite rows. A declarative content identity was re-added after 0.1.0 ([Content identity](#content-identity)) |
 | Separate receipt and global databases with copy-on-settle | One state database |
 | Detached `__worker`, resume, owner handoff and fencing generations, prepared submission handles | Foreground `verify`; Ctrl-C cancels |
 | Admission pools, weighted identity FIFO, `resources.json`, caller caps, custom admission, budget reservation ledger | `--jobs N` and plain `maxExecutions`/`maxToolCalls` counters |
@@ -74,7 +74,7 @@ CCDD 7.0 has no remote snapshot-transfer review (inventory HUM-20); none is adde
   - Anthropic wire `is_error` is dropped; the local audit flag is kept.
   - Model strings are explicit, with no catalog.
   - There is never a model or account fallback.
-- An identity is the owner script's literal bounded string. Nothing else ever becomes part of a reuse key.
+- An identity is the owner script's literal bounded string, or the built-in content identity's `content:<sha256>` (see [Content identity](#content-identity)). Nothing else ever becomes part of a reuse key.
 - Never hold a SQLite writer transaction across a subprocess, a filesystem deletion, or an `.await`.
 - Background reading: [LLM providers](research/research-llm-providers.md), [core stack](research/research-core-stack.md), [subscription feasibility](research/research-subscription-feasibility.md). When they disagree with this plan, this plan wins.
 
@@ -116,7 +116,7 @@ The module boundaries are fixed; later tasks add code inside them. The CLI and t
   - `output` runs a command and shows its output to the reviewer.
 
 **Identity cache.**
-- The key is (owner identity, Eval definition hash), intentionally departing from CCDD's identity-only key. SHA-256 hashes canonical JSON (sorted keys) of the effective profile after variant selection, payload/instruction and pass/fail schemas, excluding Eval id/title and unused variants. Equal definitions share across evals and repositories; no script/material file contents are hashed, so those remain the identity script's responsibility.
+- The key is (owner identity, Eval definition hash), intentionally departing from CCDD's identity-only key. SHA-256 hashes canonical JSON (sorted keys) of the effective profile after variant selection, payload/instruction and pass/fail schemas, excluding Eval id/title and unused variants. Equal definitions share across evals and repositories. A script identity hashes no script/material file contents, so those remain the script's responsibility.
 - A process claims a key by inserting the single active execution row for that pair, holding its pid and start time.
 - Other processes poll and take the published result.
 - If the owner process is dead, its row becomes ERROR and the next caller claims the same key again.
@@ -124,7 +124,7 @@ The module boundaries are fixed; later tasks add code inside them. The CLI and t
 - Status prepares current identities for the required closure, then reads completed entries without executing evals or updating saved evidence. Graph and config checks remain static.
 - Reuse is visible, so review cost can be seen to follow the size of a change ([#46](https://github.com/lhj6102/artifactize/issues/46)): verify marks reused results, counts executed vs reused evals per reviewer kind, and reports spent vs saved usage (a reused request spends none). Status predicts exactly what verify takes from the cache, even behind a pending or RED gate; an uncached eval behind a not-yet-produced result stays `wait`.
 
-**Input changes.** When a review completes (runtime or Agent exit, Human submission), artifactize re-runs the Artifact's identity command. If the output differs from the identity computed at preparation, the review becomes ERROR and nothing is published. A review without an identity function gets no input-change check.
+**Input changes.** When a review completes (runtime or Agent exit, Human submission), artifactize recomputes the Artifact's identity (script or content). If the output differs from the identity computed at preparation, the review becomes ERROR and nothing is published. A review without an identity function gets no input-change check.
 
 **State.**
 - There is one SQLite database, `state.sqlite`, in `$ARTIFACTIZE_STATE_HOME` (default `~/.local/state/artifactize`). It holds Runs, requests, executions, cache entries and Human claims.
@@ -153,6 +153,31 @@ The module boundaries are fixed; later tasks add code inside them. The CLI and t
   - Init tools must equal the registered artifactize MCP set, except for optional `EndConversation` when that set is nonempty: current official docs say this control-only tool cannot be removed even with `--disallowedTools`. Empty-tool repair permits no tools. No other builtin, connector or undeclared MCP tool is accepted.
   - Claude retries and non-streaming fallback are disabled (`CLAUDE_CODE_MAX_RETRIES=0`, `CLAUDE_CODE_NONSTREAMING_TIMEOUT_RETRIES=0`, `CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK=1`); artifactize does not replay CLI invocations. Usage is deduplicated by assistant message ID, including cache tokens, with terminal invocation totals kept separately. Token checks are best effort at each received event, across repair too. Cleanup allows MCP two seconds to cancel its separate tool groups before SIGKILL; this cleanup grace does not admit new review work.
 - A transient provider failure is retried at most twice, and only before any output or tool call. Auth and quota failures are ERROR with the provider's message.
+
+## Content identity
+
+Re-added deliberately after 0.1.0 ([#47](https://github.com/lhj6102/artifactize/issues/47)). The product hypothesis is that **review cost should follow the size of a change**: re-review only what a change touched and reuse everything else. With only owner scripts, every project rewrote the same folder hash and got the details wrong by hand:
+- dependency scope;
+- files written during a review (`__pycache__`);
+- non-code material.
+
+L.1 removed CCDD's `file-hash` mode and its fingerprints. This brings back one declarative form. It replaces none of the dropped integrity machinery (pinning, object store, record authentication).
+
+- `stale: {kind: "content", inputs: ["."], dependencies: "direct", ignore: []}`. The value is `content:` + SHA-256 over:
+  - the Artifact name;
+  - each input file's owner-relative path and bytes;
+  - one entry per dependency in scope.
+- Dependencies are the graph's children, mounts and `{artifact}` references.
+  - Each one contributes its own entry, never its dependencies' entries: a script value, or the digest of its own content inputs (`.` without `stale`).
+  - `direct` (the default) re-reviews only the new pairing after a merge. `transitive` lists the whole closure explicitly and re-reviews everything downstream. Cycles terminate because nothing recurses.
+- Walks skip:
+  - child folders, `artifactize.json` and family instance lists (their effect reaches the identity through the Eval definition hash and the dependency list);
+  - the built-ins `.git`, `__pycache__`, `*.pyc`, `target` and `node_modules`;
+  - declared `ignore` globs;
+  - `.gitignore` files' rules (the `ignore` crate's matcher only, over our own symlink-free walk).
+- Walks are bounded at 10,000 entries and 1 GiB.
+- The execution keeps a bounded manifest (per-file digests and dependency entries, at most 64 KiB) so `status` can say which files or dependencies changed since the newest cached result for the same Eval definition.
+- The script form (`kind: "identity"`) is unchanged. No `stale` still means no identity and no reuse.
 
 ## Phases
 
@@ -252,7 +277,7 @@ One SQLite database, `user_version = 1`, plain tables.
 |---|---|
 | `runs` | id, repo, selection, policy, profile option, closure definitions/families, status, timestamps |
 | `requests` | run, artifact, eval, status, execution, requested profile |
-| `executions` | identity (nullable), owner pid and start time, status, verdict, result JSON, error, actual profile, usage JSON, timestamps |
+| `executions` | identity (nullable), owner pid and start time, status, verdict, result JSON, error, actual profile, usage JSON, timestamps, content identity manifest (inside the JSON data, so no schema change) |
 | `tool_calls` | execution, order, tool, arguments, result summary, error |
 | `cache_entries` | identity → completed execution, bytes, last used |
 | `human_claims` | request, reviewer, claimed at |

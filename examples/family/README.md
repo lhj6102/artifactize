@@ -38,6 +38,14 @@ What it demonstrates:
   own entry in `instances.json` and its own material. Editing `tip.md`
   therefore re-runs only `tip/style`, while editing `check.py` or
   `house-style/banned.txt` re-runs every instance.
+- **The identity script form.** This example keeps an owner-written
+  `"stale": {"kind": "identity", ...}` to show the script protocol: the stdin
+  context with the instance's family material, and an argv reference
+  (`{style}/banned.txt`). The built-in `"stale": {"kind": "content"}` gives the
+  same per-instance reuse without a script: it hashes the shared folder minus
+  every instance's material, adds the instance's own material, and covers the
+  mounted `house-style` as a direct dependency. The runtime-relations example
+  uses it.
 - **A mount in a family.** Every instance mounts `house-style` as `style`,
   depends on it, and passes `{style}/banned.txt` to the check.
 

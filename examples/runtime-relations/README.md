@@ -1,15 +1,14 @@
 # Runtime evals with children, mounts and references
 
 This example is a two-page guide checked by runtime evals. It shows how
-Artifacts relate to each other and how an identity lets a second `verify`
-reuse earlier results.
+Artifacts relate to each other and how a content identity lets a second
+`verify` reuse earlier results and re-review only what a change touched.
 
 ```
 runtime-relations/
 ├── glossary/            basis Artifact: terms.txt is accepted as is
 └── guide/               parent Artifact: eval guide/terms, mounts glossary as "terms"
     ├── check_terms.py   runtime check used by guide/terms
-    ├── identity.py      identity script shared by guide, intro and usage
     ├── intro/           child Artifact: eval intro/heading
     └── usage/           child Artifact: eval usage/heading
 ```
@@ -33,12 +32,15 @@ What it demonstrates:
   `intro/heading` and `usage/heading` run `grep`, and `guide/terms` runs
   `python3 check_terms.py`. Each command runs from its owner's folder with only
   `PATH` and `LANG` inherited.
-- **Identity and reuse.** Each evaluated Artifact declares
-  `"stale": {"kind": "identity", ...}`. `identity.py` prints the Artifact ID
-  plus a SHA-256 of the folders named in its arguments. For `guide` these are
-  its own folder (which includes the child folders) and the mounted glossary.
-  When the printed value matches a saved GREEN or RED result, `verify` reuses
-  that result without running the eval.
+- **Content identity and reuse.** Each evaluated Artifact declares a built-in
+  `"stale": {"kind": "content"}`. Its identity hashes the Artifact's own files
+  (child folders, `artifactize.json`, `__pycache__` and `.gitignore`d files
+  excluded) plus one entry per direct dependency. `guide` spells out the
+  defaults, `"inputs": ["."]` and `"dependencies": "direct"`, so its dependencies
+  are `intro`, `usage` (children) and `glossary` (the mount). When the identity
+  matches a saved GREEN or RED result, `verify` reuses that result without
+  running the eval, and `status` lists the files and dependencies that changed
+  since the last cached result.
 
 ## Run it
 
@@ -76,14 +78,15 @@ artifactize verify --all    # reuses the results from the original folder: ident
 
    ```sh
    printf 'Results live in the **cache**.\n' >> guide/usage/page.md
+   artifactize status        # usage/heading: "changed: page.md"; guide/terms: "dependency usage changed"
    artifactize verify --all  # exit 1
    ```
 
    `usage/heading` runs again because its folder changed, and stays GREEN.
-   `guide/terms` runs again and is RED, with `cache: NOT DEFINED` in its stdout.
-   `intro/heading` is reused. Adding `cache: ...` to `glossary/terms.txt`
-   changes `guide`'s identity, so the next `verify` runs `guide/terms` again
-   and it turns GREEN.
+   `guide/terms` runs again because its direct dependency `usage` changed, and
+   is RED, with `cache: NOT DEFINED` in its stdout. `intro/heading` is reused.
+   Adding `cache: ...` to `glossary/terms.txt` changes `guide`'s identity, so
+   the next `verify` runs `guide/terms` again and it turns GREEN.
 
 2. Remove the `# Usage` heading from `guide/usage/page.md`. `usage/heading` is
    RED, and `guide/terms` is BLOCKED: a RED dependency blocks its dependents,

@@ -56,6 +56,8 @@ pub struct Execution {
     /// Set only on executions mirrored from a remote review store.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Origin>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest: Option<crate::cache::Manifest>,
 }
 
 /// Who produced an execution: display metadata, never authentication.
@@ -207,6 +209,56 @@ pub async fn read_identity_executions(
             }
             transaction.commit()?;
             Ok(entries)
+        })
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// The most recently published result per (Eval id, Eval definition hash), read-only.
+pub async fn read_latest_cached(
+    state: &std::path::Path,
+    keys: &[(String, String)],
+) -> Result<std::collections::BTreeMap<(String, String), Execution>, String> {
+    let state = crate::workspace::canonical_target(state).map_err(|e| e.to_string())?;
+    super::receipts::check_files(&state)?;
+    if keys.is_empty()
+        || !state
+            .join(super::DATABASE)
+            .try_exists()
+            .map_err(|e| e.to_string())?
+    {
+        return Ok(Default::default());
+    }
+    let connection = tokio_rusqlite::Connection::open_with_flags(
+        state.join(super::DATABASE),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+    let keys = keys.to_vec();
+    connection
+        .call(move |db| -> Result<_, Error> {
+            db.busy_timeout(std::time::Duration::from_secs(5))?;
+            let transaction = db.transaction()?;
+            if !schema_initialized(&transaction)? {
+                return Ok(Default::default());
+            }
+            let mut latest = std::collections::BTreeMap::new();
+            {
+                let mut statement = transaction.prepare(
+                    "SELECT e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE c.eval_def_hash=? AND json_extract(e.data,'$.provenance.evalId')=? AND e.status IN ('GREEN','RED') ORDER BY c.rowid DESC LIMIT 1",
+                )?;
+                for (eval_id, eval_def_hash) in keys {
+                    let data: Option<String> = statement
+                        .query_row(params![eval_def_hash, eval_id], |row| row.get(0))
+                        .optional()?;
+                    if let Some(data) = data {
+                        latest.insert((eval_id, eval_def_hash), serde_json::from_str(&data)?);
+                    }
+                }
+            }
+            transaction.commit()?;
+            Ok(latest)
         })
         .await
         .map_err(|e| e.to_string())

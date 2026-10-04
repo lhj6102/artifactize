@@ -153,7 +153,9 @@ pub async fn verify(
             references: json!(eval.references),
             deps: eval.deps.clone(),
             force: options.force && selected_ids.contains(eval.id.as_str()),
-            identity: identities.get(eval.target.as_str()).cloned(),
+            identity: identities
+                .get(eval.target.as_str())
+                .map(|identity| identity.value.clone()),
             status: "QUEUED".into(),
             created_at: run.created_at.clone(),
             started_at: None,
@@ -257,9 +259,9 @@ pub async fn verify(
         "artifacts":required.iter().map(|id| {
             let a = &evaluation.artifacts[id];
             let mut artifact = json!({"id":id,"status":format!("{:?}",a.status).to_uppercase(),"passed":a.passed,"total":a.total,"satisfied":a.satisfied});
-            if let Some(value) = identities.get(id) {
-                artifact["identity"] = json!("script");
-                artifact["value"] = json!(value);
+            if let Some(identity) = identities.get(id) {
+                artifact["identity"] = json!(if identity.manifest.is_some() { "content" } else { "script" });
+                artifact["value"] = json!(identity.value);
             }
             artifact
         }).collect::<Vec<_>>(),
