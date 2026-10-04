@@ -36,6 +36,20 @@ fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), 
     Ok((request, execution))
 }
 
+fn claim(db: &rusqlite::Connection, request: &str) -> Result<HumanClaim, Error> {
+    Ok(db.query_row(
+        "SELECT request_id,reviewer,claimed_at FROM human_claims WHERE request_id=?",
+        [request],
+        |row| {
+            Ok(HumanClaim {
+                request_id: row.get(0)?,
+                reviewer: row.get(1)?,
+                claimed_at: row.get(2)?,
+            })
+        },
+    )?)
+}
+
 fn claimant(db: &rusqlite::Connection, request: &str, reviewer: &str) -> Result<(), Error> {
     let owner: Option<String> = db
         .query_row(
@@ -122,10 +136,34 @@ impl Receipts {
             let (request, _) = waiting(&transaction, &id)?;
             transaction.execute("INSERT INTO human_claims(request_id,reviewer,claimed_at) VALUES (?,?,?) ON CONFLICT(request_id) DO NOTHING", params![request.id, reviewer, crate::broker::now()])?;
             claimant(&transaction, &request.id, &reviewer)?;
-            let claim = transaction.query_row("SELECT request_id,reviewer,claimed_at FROM human_claims WHERE request_id=?", [&request.id], |row| Ok(HumanClaim {request_id: row.get(0)?, reviewer: row.get(1)?, claimed_at: row.get(2)?}))?;
+            let claim = claim(&transaction, &request.id)?;
             transaction.commit()?;
             Ok(claim)
         }).await.map_err(|e| e.to_string())
+    }
+
+    /// Only the claimant releases, and only while the original request still waits.
+    pub(crate) async fn release_human(
+        &self,
+        id: &str,
+        reviewer: &str,
+    ) -> Result<HumanClaim, String> {
+        let id = id.to_owned();
+        let reviewer = reviewer.to_owned();
+        self.connection
+            .call(move |db| -> Result<_, Error> {
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                let (request, _) = waiting(&transaction, &id)?;
+                claimant(&transaction, &request.id, &reviewer)?;
+                let claim = claim(&transaction, &request.id)?;
+                transaction
+                    .execute("DELETE FROM human_claims WHERE request_id=?", [&request.id])?;
+                transaction.commit()?;
+                Ok(claim)
+            })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub(crate) async fn human_request(

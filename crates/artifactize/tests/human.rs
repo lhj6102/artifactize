@@ -489,6 +489,80 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
 }
 
 #[tokio::test]
+async fn only_the_claimant_unclaims_a_waiting_request_including_through_followers() {
+    let fixture = Fixture::new(true);
+    let original = fixture.cli_verify();
+    let owner = original["requests"][0]["id"].as_str().unwrap();
+    let other = Fixture::new(true);
+    let run = project::verify(
+        &other.repo,
+        Some(&fixture.state),
+        &Selection::All,
+        &VerifyOptions::default(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let follower = &run.requests[0].id;
+    let receipts = fixture.receipts().await;
+    assert!(
+        human::unclaim(&receipts, owner, "alice")
+            .await
+            .unwrap_err()
+            .contains("claimant")
+    );
+    let claim = human::claim(&receipts, owner, "alice").await.unwrap();
+    for (id, reviewer) in [(owner, "bob"), (follower.as_str(), "bob"), (owner, "")] {
+        assert!(human::unclaim(&receipts, id, reviewer).await.is_err());
+    }
+    // A follower forwards the release to its original request, like a claim.
+    let released = human::unclaim(&receipts, follower, "alice").await.unwrap();
+    assert_eq!(
+        (released.request_id.as_str(), released.claimed_at.as_str()),
+        (owner, claim.claimed_at.as_str())
+    );
+    assert!(human::unclaim(&receipts, owner, "alice").await.is_err());
+    assert!(
+        human::submit(
+            &receipts,
+            owner,
+            "alice",
+            &green(),
+            CancellationToken::new()
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        human::claim(&receipts, follower, "bob")
+            .await
+            .unwrap()
+            .request_id,
+        owner
+    );
+    assert_eq!(
+        store::read_request(&fixture.state, owner)
+            .await
+            .unwrap()
+            .claim
+            .unwrap()
+            .reviewer,
+        "bob"
+    );
+    human::submit(&receipts, owner, "bob", &green(), CancellationToken::new())
+        .await
+        .unwrap();
+    for id in [owner, follower.as_str()] {
+        assert!(
+            human::unclaim(&receipts, id, "bob")
+                .await
+                .unwrap_err()
+                .contains("not waiting")
+        );
+    }
+}
+
+#[tokio::test]
 async fn concurrent_submissions_commit_only_once() {
     let fixture = Fixture::new(true);
     let run = fixture.verify(Default::default()).await;

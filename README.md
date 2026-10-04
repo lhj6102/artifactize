@@ -138,6 +138,7 @@ rejects `--json`). `SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`,
 | `request list` | `--run RUN_ID` | text or JSON | 0 |
 | `request show ID` | | JSON | 0 |
 | `request claim ID` | `--reviewer NAME` (`$USER`) | JSON | 0 |
+| `request unclaim ID` | `--reviewer NAME` (`$USER`) | JSON | 0 |
 | `request tool ID TOOL` | `--reviewer NAME` | text or JSON | 0; 2 tool error |
 | `request submit ID` | `--verdict GREEN\|RED`, `--fields JSON` \| `--fields-file PATH`, `--reviewer NAME` | JSON | 0, also for RED |
 | `cache list` | | text or JSON | 0 |
@@ -1137,6 +1138,9 @@ The internal library exposes asynchronous operations with an open `store::Receip
   Repeating the same reviewer is idempotent; another reviewer is refused.
   `human::default_reviewer()` reads `$USER`. There are no reservations, renewals,
   expiry timers, preparation phases, readiness hooks or alarms.
+- `human::unclaim(receipts, request_id, reviewer)` releases that lock without a
+  verdict, so another reviewer can claim the request. Only the claimant can release,
+  and only while the request still waits; tool calls already recorded are kept.
 - `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation)`
   authorizes the claimant, reopens the recorded Artifact/eval scope and declarations,
   and checks the staleKey before invoking a registered Human tool. The tool takes
@@ -1162,15 +1166,18 @@ artifactize verify --all --wait --timeout-ms 600000
 artifactize request list [--run RUN_ID] [--json]
 artifactize request show REQUEST_ID
 artifactize request claim REQUEST_ID [--reviewer NAME]
+artifactize request unclaim REQUEST_ID [--reviewer NAME]   # release without a verdict
 artifactize request tool REQUEST_ID inspect_child [--reviewer NAME]
 artifactize request submit REQUEST_ID --verdict GREEN --fields '{"approved":true}'
 # Alternatively: --fields-file /path/to/fields.json
 ```
 
-Claim, tool and submit default the reviewer to `$USER`; `--reviewer NAME` can
-select the same explicit reviewer for each action. Reviewer names are local
-cooperative locks, not authenticated accounts. Only the claimant can run tools
-or submit. Tool names are `<operation>_<artifactId>` and take no free arguments.
+Claim, unclaim, tool and submit default the reviewer to `$USER`; `--reviewer NAME`
+can select the same explicit reviewer for each action. Reviewer names are local
+cooperative locks, not authenticated accounts. Only the claimant can run tools,
+submit or unclaim. `request claim` prints the claim and `request unclaim` the
+released claim; unclaiming a request someone else holds, or one that no longer
+waits, exits 2. Tool names are `<operation>_<artifactId>` and take no free arguments.
 Text output prints captured text or a launch notice; `--json` prints the tool
 result. A tool failure exits 2 and does not invent a verdict.
 
