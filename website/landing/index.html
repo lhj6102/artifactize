@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artifactize</title>
+<meta name="description" content="Review cost follows the size of a change. Declare, verify and reuse reviews of every artifact.">
+<style>
+  :root { color-scheme: dark; --bg: #090B0F; --panel: #10141B; --line: #262E3B; --text: #EAF0F7; --dim: #8B96A8; --green: #3EE08F; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+         background: radial-gradient(ellipse at 50% 40%, #0f2a1f 0%, var(--bg) 60%); color: var(--text);
+         font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 640px; text-align: center; }
+  .mark { display: inline-flex; align-items: center; gap: 14px; font-size: clamp(36px, 8vw, 56px); font-weight: 700; letter-spacing: -0.02em; }
+  .mark svg { width: 1em; height: 1em; }
+  .tag { margin: 20px 0 8px; font-size: clamp(20px, 4.5vw, 28px); font-weight: 600; }
+  .tag em { font-style: normal; color: var(--green); }
+  p { color: var(--dim); margin: 8px 0; }
+  .soon { display: inline-block; margin-top: 28px; padding: 10px 18px; border: 1px solid var(--line); border-radius: 10px;
+          background: var(--panel); font-family: ui-monospace, "JetBrains Mono", monospace; font-size: 15px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mark" role="img" aria-label="Artifactize">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#3EE08F" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="19" height="19" rx="4"/><path d="M7 12.5l3.2 3.2L17 8.8"/>
+    </svg>
+    <span>Artifactize</span>
+  </div>
+  <div class="tag">Declare. <em>Verify.</em> Reuse.</div>
+  <p>Review cost follows the size of a change: still-valid reviews are reused, and only what changed is reviewed again.</p>
+  <span class="soon">artifactize.dev — docs and launch coming soon</span>
+</main>
+</body>
+</html>
