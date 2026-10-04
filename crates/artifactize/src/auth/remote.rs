@@ -303,8 +303,8 @@ impl Remote {
         for chunk in keys.chunks(1000) {
             let keys: Vec<_> = chunk
                 .iter()
-                .map(|(stale_key, eval_def_hash)| {
-                    json!({"staleKey": stale_key, "evalDefHash": eval_def_hash})
+                .map(|(fingerprint, eval_def_hash)| {
+                    json!({"fingerprint": fingerprint, "evalDefHash": eval_def_hash})
                 })
                 .collect();
             let request = self
@@ -322,7 +322,7 @@ impl Remote {
         struct Published {
             created: bool,
         }
-        let route = format!("v1/entries/{}/{}", record.eval_def_hash, record.stale_key);
+        let route = format!("v1/entries/{}/{}", record.eval_def_hash, record.fingerprint);
         let request = self.request(Method::PUT, &route)?.json(record);
         let published: Published = Self::json(self.send(request).await?, "publish").await?;
         Ok(published.created)

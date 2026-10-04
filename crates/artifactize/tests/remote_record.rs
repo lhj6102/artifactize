@@ -28,7 +28,7 @@ fn cli(state: &Path, args: &[&str]) -> Value {
 
 fn write_repo(repo: &Path, profile: Value) {
     fs::create_dir_all(repo).unwrap();
-    fs::write(repo.join("stale_key"), "remote-v1\n").unwrap();
+    fs::write(repo.join("fingerprint"), "remote-v1\n").unwrap();
     fs::write(
         repo.join("check.sh"),
         "echo stdout-marker\necho stderr-marker >&2\n",
@@ -36,7 +36,7 @@ fn write_repo(repo: &Path, profile: Value) {
     .unwrap();
     fs::write(
         repo.join("artifactize.json"),
-        json!({"name":"app","staleKey":{"script":{"command":"cat","args":["stale_key"]}},
+        json!({"name":"app","fingerprint":{"script":{"command":"cat","args":["fingerprint"]}},
             "evals":[{"id":"check","title":"Check","profile":profile,"payload":{"instruction":"Review."},
                 "passSchema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false}}]})
         .to_string(),

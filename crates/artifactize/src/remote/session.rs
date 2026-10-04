@@ -95,7 +95,7 @@ impl Session {
         };
         let requested: BTreeSet<_> = keys
             .iter()
-            .map(|(stale_key, hash)| (stale_key.as_str(), hash.as_str()))
+            .map(|(fingerprint, hash)| (fingerprint.as_str(), hash.as_str()))
             .collect();
         let mut executions = Vec::new();
         for entry in entries {
@@ -103,7 +103,7 @@ impl Session {
             let mirrored = serde_json::from_value::<Record>(entry)
                 .map_err(|e| e.to_string())
                 .and_then(|record| {
-                    if !requested.contains(&(&*record.stale_key, &*record.eval_def_hash)) {
+                    if !requested.contains(&(&*record.fingerprint, &*record.eval_def_hash)) {
                         return Err("the store returned an unrequested key".into());
                     }
                     record.mirror(self.remote.url.as_str())
@@ -151,18 +151,18 @@ impl Session {
     }
 
     /// Publish a request's result when its own settle just published the local cache entry:
-    /// a GREEN/RED with a stale key, never a mirror, an error or a forced review.
+    /// a GREEN/RED with a fingerprint, never a mirror, an error or a forced review.
     pub async fn publish_request(
         &self,
         receipts: &Receipts,
         request: &Request,
     ) -> Result<(), String> {
-        let (Some(stale_key), Some(execution_id)) = (&request.stale_key, &request.execution_id)
+        let (Some(fingerprint), Some(execution_id)) = (&request.fingerprint, &request.execution_id)
         else {
             return Ok(());
         };
         match receipts
-            .published_execution(stale_key, &request.eval_def_hash, execution_id)
+            .published_execution(fingerprint, &request.eval_def_hash, execution_id)
             .await?
         {
             Some(execution) => self.publish(&execution).await,
@@ -211,10 +211,10 @@ pub(super) fn record(
     }
     let record = Record::new(execution, share == Share::Full)?;
     // `.` and `..` cannot be a URL path segment.
-    if matches!(record.stale_key.as_str(), "." | "..") {
+    if matches!(record.fingerprint.as_str(), "." | "..") {
         return Err(format!(
-            "stale key {} cannot be a URL path segment",
-            record.stale_key
+            "fingerprint {} cannot be a URL path segment",
+            record.fingerprint
         ));
     }
     Ok(record)

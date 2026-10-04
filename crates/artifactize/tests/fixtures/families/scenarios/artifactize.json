@@ -19,13 +19,13 @@
       }
     }
   },
-  "staleKey": {
+  "fingerprint": {
     "script": {
       "command": "/bin/sh",
       "args": [
-        "stale_key.sh"
+        "fingerprint.sh"
       ],
-      "inputs": [
+      "files": [
         "check.sh"
       ]
     }

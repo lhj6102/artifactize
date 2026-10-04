@@ -215,8 +215,10 @@ fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
             }
         } else if [
             "runtime-",
+            "fingerprint-",
+            // Fingerprint script scratch in Run folders written before state version 3
+            // (stale-key-) and before version 2 (identity-).
             "stale-key-",
-            // staleKey script scratch in Run folders written before state version 2.
             "identity-",
         ]
         .iter()

@@ -15,7 +15,7 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new(stale_key: bool) -> Self {
+    fn new(fingerprint: bool) -> Self {
         let root = tempfile::tempdir().unwrap();
         let repo = root.path().join("repo");
         let child = repo.join("child");
@@ -32,7 +32,7 @@ impl Fixture {
         .unwrap();
         let mut declaration = json!({
             "name":"child","views":{"humanTools":{
-                "inspect":{"description":"Inspect","kind":"output","command":"cat","args":["stale_key"]},
+                "inspect":{"description":"Inspect","kind":"output","command":"cat","args":["fingerprint"]},
                 "open":{"description":"Launch","kind":"launch","command":"true","args":[]}
             }},
             "evals":[{"id":"review","title":"Human review","profile":{"kind":"human"},
@@ -40,10 +40,10 @@ impl Fixture {
                 "passSchema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
                 "failSchema":{"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"],"additionalProperties":false}}]
         });
-        if stale_key {
-            declaration["staleKey"] = json!({"script":{"command":"cat","args":["stale_key"]}});
+        if fingerprint {
+            declaration["fingerprint"] = json!({"script":{"command":"cat","args":["fingerprint"]}});
         }
-        fs::write(child.join("stale_key"), "review-v1\n").unwrap();
+        fs::write(child.join("fingerprint"), "review-v1\n").unwrap();
         fs::write(child.join("artifactize.json"), declaration.to_string()).unwrap();
         Self {
             repo,
@@ -142,7 +142,7 @@ fn finish(mut child: Child, code: i32) -> Value {
 }
 
 #[test]
-fn stale_key_cli_claim_tool_correctable_submission_and_next_verify() {
+fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     let fixture = Fixture::new(true);
     assert_eq!(fixture.json(&["request", "list"], 0), json!([]));
     assert!(!fixture.state.exists());
@@ -355,7 +355,7 @@ fn unclaim_releases_the_claimants_lock_for_another_reviewer() {
 }
 
 #[test]
-fn no_stale_key_submission_from_another_process_continues_the_same_run() {
+fn no_fingerprint_submission_from_another_process_continues_the_same_run() {
     let fixture = Fixture::new(false);
     let sibling = fixture.repo.join("sibling");
     fs::create_dir(&sibling).unwrap();
@@ -462,7 +462,7 @@ fn wait_timeout_leaves_human_claim_and_submission_available() {
 }
 
 #[test]
-fn wait_observes_red_and_stale_key_errors_and_ctrl_c_stops_cleanly() {
+fn wait_observes_red_and_fingerprint_errors_and_ctrl_c_stops_cleanly() {
     let fixture = Fixture::new(false);
     let child = fixture.start();
     let waiting = fixture.waiting();
@@ -495,7 +495,7 @@ fn wait_observes_red_and_stale_key_errors_and_ctrl_c_stops_cleanly() {
     let waiting = fixture.waiting();
     let id = waiting["id"].as_str().unwrap();
     fixture.json(&["request", "claim", id], 0);
-    fs::write(fixture.repo.join("child/stale_key"), "changed\n").unwrap();
+    fs::write(fixture.repo.join("child/fingerprint"), "changed\n").unwrap();
     fixture.json(
         &[
             "request",

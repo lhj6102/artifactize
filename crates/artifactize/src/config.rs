@@ -179,7 +179,7 @@ impl Views {
     }
 }
 
-/// Which dependency Artifacts a content stale key covers, one hop by default.
+/// Which dependency Artifacts a content fingerprint covers, one hop by default.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Dependencies {
@@ -189,56 +189,138 @@ pub enum Dependencies {
     Transitive,
 }
 
-/// The value whose change makes an Artifact's results stale; unchanged values reuse them.
+/// What a review depends on. artifactize hashes it, and while the fingerprint is unchanged
+/// it reuses the earlier verdict. The content form is the plain object; the script form
+/// keeps its `script` wrapper.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase", deny_unknown_fields)]
-pub enum StaleKey {
+#[serde(try_from = "Map<String, Value>", into = "Value")]
+pub enum Fingerprint {
     Script {
         command: String,
         args: Vec<String>,
-        #[serde(default)]
-        inputs: Vec<String>,
-        #[serde(rename = "timeoutMs", default, deserialize_with = "timeout")]
+        /// Owner-relative paths that must exist on every call; never hashed.
+        files: Vec<String>,
         timeout_ms: Option<u32>,
     },
     Content {
-        #[serde(default = "owner_root")]
-        inputs: Vec<String>,
-        #[serde(default)]
+        files: Vec<String>,
         dependencies: Dependencies,
-        #[serde(default)]
         ignore: Vec<String>,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScriptForm {
+    script: ScriptFields,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ScriptFields {
+    command: String,
+    args: Vec<String>,
+    #[serde(default)]
+    files: Vec<String>,
+    #[serde(default, deserialize_with = "timeout")]
+    timeout_ms: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ContentForm {
+    #[serde(default = "owner_root")]
+    files: Vec<String>,
+    #[serde(default)]
+    dependencies: Dependencies,
+    #[serde(default)]
+    ignore: Vec<String>,
 }
 
 fn owner_root() -> Vec<String> {
     vec![".".into()]
 }
 
-impl StaleKey {
+impl TryFrom<Map<String, Value>> for Fingerprint {
+    type Error = serde_json::Error;
+
+    fn try_from(object: Map<String, Value>) -> Result<Self, Self::Error> {
+        Ok(if object.contains_key("script") {
+            let ScriptForm {
+                script:
+                    ScriptFields {
+                        command,
+                        args,
+                        files,
+                        timeout_ms,
+                    },
+            } = serde_json::from_value(Value::Object(object))?;
+            Self::Script {
+                command,
+                args,
+                files,
+                timeout_ms,
+            }
+        } else {
+            let ContentForm {
+                files,
+                dependencies,
+                ignore,
+            } = serde_json::from_value(Value::Object(object))?;
+            Self::Content {
+                files,
+                dependencies,
+                ignore,
+            }
+        })
+    }
+}
+
+impl From<Fingerprint> for Value {
+    fn from(fingerprint: Fingerprint) -> Self {
+        match fingerprint {
+            Fingerprint::Script {
+                command,
+                args,
+                files,
+                timeout_ms,
+            } => serde_json::json!({"script": {
+                "command": command, "args": args, "files": files, "timeoutMs": timeout_ms,
+            }}),
+            Fingerprint::Content {
+                files,
+                dependencies,
+                ignore,
+            } => {
+                serde_json::json!({"files": files, "dependencies": dependencies, "ignore": ignore})
+            }
+        }
+    }
+}
+
+impl Fingerprint {
     fn validate(&self) -> Result<(), String> {
         match self {
             Self::Script {
                 command,
                 args,
-                inputs,
+                files,
                 ..
             } => {
                 script(command, args)?;
-                paths(inputs, "staleKey.script.inputs")
+                paths(files, "fingerprint.script.files")
             }
-            Self::Content { inputs, ignore, .. } => {
-                if inputs.is_empty()
-                    || inputs.len() > 64
-                    || inputs.iter().collect::<BTreeSet<_>>().len() != inputs.len()
+            Self::Content { files, ignore, .. } => {
+                if files.is_empty()
+                    || files.len() > 64
+                    || files.iter().collect::<BTreeSet<_>>().len() != files.len()
                 {
                     return Err(
-                        "staleKey.content.inputs must contain 1–64 unique owner-relative paths."
-                            .into(),
+                        "fingerprint.files must contain 1–64 unique owner-relative paths.".into(),
                     );
                 }
-                for input in inputs.iter().filter(|input| *input != ".") {
-                    path(input).map_err(|message| format!("staleKey.content.inputs: {message}"))?;
+                for file in files.iter().filter(|file| *file != ".") {
+                    path(file).map_err(|message| format!("fingerprint.files: {message}"))?;
                 }
                 crate::cache::ignore_patterns(ignore)
             }
@@ -273,7 +355,7 @@ pub struct ArtifactDeclaration {
     #[serde(default, deserialize_with = "present")]
     pub basis: Option<bool>,
     #[serde(default, deserialize_with = "present")]
-    pub stale_key: Option<StaleKey>,
+    pub fingerprint: Option<Fingerprint>,
     #[serde(default, deserialize_with = "present")]
     pub review_policy: Option<ReviewPolicy>,
 }
@@ -300,8 +382,8 @@ impl ArtifactDeclaration {
             identifier(alias, "Mount alias")?;
             identifier(target, "Mount target")?;
         }
-        if let Some(stale_key) = &self.stale_key {
-            stale_key.validate()?;
+        if let Some(fingerprint) = &self.fingerprint {
+            fingerprint.validate()?;
         }
         Ok(())
     }
@@ -325,8 +407,13 @@ fn ordinary_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
 }
 
 fn validated_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
-    if value.get("stale").is_some() {
-        return Err(r#"stale was renamed to staleKey: use "staleKey": {"content": {"inputs": ["."], "dependencies": "direct", "ignore": []}} or "staleKey": {"script": {"command": "...", "args": [], "inputs": [], "timeoutMs": 30000}}."#.into());
+    // Both earlier names fail with the new shape instead of an unknown-field error.
+    for key in ["staleKey", "stale"] {
+        if value.get(key).is_some() {
+            return Err(format!(
+                r#"{key} was renamed to fingerprint: use "fingerprint": {{"files": ["."], "dependencies": "direct", "ignore": []}} or "fingerprint": {{"script": {{...}}}}."#
+            ));
+        }
     }
     let declaration: ArtifactDeclaration =
         serde_json::from_value(value).map_err(|error| error.to_string())?;
@@ -344,7 +431,7 @@ pub struct Artifact {
     pub views: Views,
     pub mounts: BTreeMap<String, String>,
     pub basis: Option<bool>,
-    pub stale_key: Option<StaleKey>,
+    pub fingerprint: Option<Fingerprint>,
     pub review_policy: Option<ReviewPolicy>,
 }
 
@@ -472,7 +559,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     views,
                     mounts,
                     basis,
-                    stale_key,
+                    fingerprint,
                     review_policy,
                 } = declaration;
                 if config.artifacts.contains_key(&name) || config.families.contains_key(&name) {
@@ -516,7 +603,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                         views,
                         mounts,
                         basis,
-                        stale_key,
+                        fingerprint,
                         review_policy,
                     },
                 );

@@ -42,7 +42,7 @@ impl Default for VerifyOptions {
     }
 }
 
-/// Executes READY evals in the foreground, reusing completed results by stale key.
+/// Executes READY evals in the foreground, reusing completed results by fingerprint.
 pub async fn verify(
     repo: &Path,
     state_dir: Option<&Path>,
@@ -89,7 +89,7 @@ pub async fn verify(
     let receipts = Receipts::open(&state, &config.root).await?;
     let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
         .map_err(|e| e.to_string())?;
-    let stale_keys = cache::prepare(
+    let fingerprints = cache::prepare(
         &config,
         required.iter().copied(),
         &runs,
@@ -111,9 +111,9 @@ pub async fn verify(
             .evals
             .iter()
             .filter_map(|eval| {
-                let stale_key = stale_keys.get(eval.target.as_str())?;
+                let fingerprint = fingerprints.get(eval.target.as_str())?;
                 Some((
-                    stale_key.value.clone(),
+                    fingerprint.value.clone(),
                     cache::eval_definition_hash(&eval.declaration),
                 ))
             })
@@ -178,9 +178,9 @@ pub async fn verify(
             references: json!(eval.references),
             deps: eval.deps.clone(),
             force: options.force && selected_ids.contains(eval.id.as_str()),
-            stale_key: stale_keys
+            fingerprint: fingerprints
                 .get(eval.target.as_str())
-                .map(|stale_key| stale_key.value.clone()),
+                .map(|fingerprint| fingerprint.value.clone()),
             status: "QUEUED".into(),
             created_at: run.created_at.clone(),
             started_at: None,
@@ -199,7 +199,7 @@ pub async fn verify(
     let mut evidence = match broker::schedule(
         config.clone(),
         &graph,
-        &stale_keys,
+        &fingerprints,
         &mut run,
         &mut requests,
         &receipts,
@@ -296,9 +296,9 @@ pub async fn verify(
         "artifacts":required.iter().map(|id| {
             let a = &evaluation.artifacts[id];
             let mut artifact = json!({"id":id,"status":format!("{:?}",a.status).to_uppercase(),"passed":a.passed,"total":a.total,"satisfied":a.satisfied});
-            if let Some(stale_key) = stale_keys.get(id) {
-                artifact["staleKeyKind"] = json!(if stale_key.manifest.is_some() { "content" } else { "script" });
-                artifact["staleKey"] = json!(stale_key.value);
+            if let Some(fingerprint) = fingerprints.get(id) {
+                artifact["fingerprintKind"] = json!(if fingerprint.manifest.is_some() { "content" } else { "script" });
+                artifact["fingerprint"] = json!(fingerprint.value);
             }
             artifact
         }).collect::<Vec<_>>(),

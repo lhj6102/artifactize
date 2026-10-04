@@ -64,7 +64,7 @@ impl Server {
     fn entries(&self) -> Vec<(String, Value)> {
         let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
         let mut statement = db
-            .prepare("SELECT publisher,data FROM entries ORDER BY publisher,stale_key")
+            .prepare("SELECT publisher,data FROM entries ORDER BY publisher,fingerprint")
             .unwrap();
         statement
             .query_map([], |row| {
@@ -162,7 +162,7 @@ fn checked(output: Output, code: i32, token: &str) -> (String, String) {
     (stdout, stderr)
 }
 
-/// Artifacts `app` and `docs`, each with a runtime eval and a script staleKey from `version`.
+/// Artifacts `app` and `docs`, each with a runtime eval and a script fingerprint from `version`.
 fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
     let repo = root.join(name);
     write(&repo, json!({"name":"root","basis":true}));
@@ -170,7 +170,7 @@ fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
         let folder = repo.join(artifact);
         write(
             &folder,
-            json!({"name":artifact,"staleKey":{"script":{"command":"cat","args":["version"]}},
+            json!({"name":artifact,"fingerprint":{"script":{"command":"cat","args":["version"]}},
                 "evals":[{"id":"check","title":"Check","profile":{"kind":"runtime","command":"/bin/true","args":[]},
                     "payload":{"instruction":"Check."}}]}),
         );
@@ -183,7 +183,7 @@ fn human_repo(root: &Path, name: &str) -> PathBuf {
     let repo = root.join(name);
     write(
         &repo,
-        json!({"name":"brand","staleKey":{"script":{"command":"cat","args":["version"]}},
+        json!({"name":"brand","fingerprint":{"script":{"command":"cat","args":["version"]}},
             "evals":[{"id":"signoff","title":"Sign off","profile":{"kind":"human"},"payload":{"instruction":"Sign off."}}]}),
     );
     fs::write(repo.join("version"), "brand-v1\n").unwrap();

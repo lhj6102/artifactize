@@ -1,10 +1,10 @@
-"""Print the staleKey of one post instance.
+"""Print the fingerprint of one post instance.
 
 artifactize runs this from the shared posts folder with this on stdin:
   {"version": 1, "artifactId": "tip", "family": {"name": "posts", "material": ["tip.md"]}}
 argv[1] is the banned-word list, resolved from {style}/banned.txt.
 
-The shared files and the banned list change every instance's staleKey. An
+The shared files and the banned list change every instance's fingerprint. An
 instance's own entry in instances.json and its own material change only that
 instance, so editing tip.md re-runs tip/style and reuses the other results.
 """
@@ -22,7 +22,7 @@ def add(label, data):
     digest.update(label.encode() + b"\0" + data + b"\0")
 
 
-for shared in ["artifactize.json", "check.py", "stale_key.py"]:
+for shared in ["artifactize.json", "check.py", "fingerprint.py"]:
     with open(shared, "rb") as handle:
         add(shared, handle.read())
 with open(sys.argv[1], "rb") as handle:

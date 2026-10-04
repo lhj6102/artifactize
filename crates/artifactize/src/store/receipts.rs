@@ -98,7 +98,7 @@ pub struct Request {
     #[serde(default)]
     pub force: bool,
     #[serde(default)]
-    pub stale_key: Option<String>,
+    pub fingerprint: Option<String>,
     pub status: String,
     pub created_at: String,
     pub started_at: Option<String>,
@@ -146,10 +146,10 @@ impl Receipts {
             schema_initialized(&transaction)?;
             // Publish the schema and its version together; readers see an empty snapshot until commit.
             transaction.execute_batch("CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS executions(id TEXT PRIMARY KEY, stale_key TEXT, eval_def_hash TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE UNIQUE INDEX IF NOT EXISTS active_stale_key ON executions(stale_key,eval_def_hash) WHERE stale_key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
-                CREATE TABLE IF NOT EXISTS cache_entries(stale_key TEXT NOT NULL, eval_def_hash TEXT NOT NULL, execution_id TEXT NOT NULL REFERENCES executions(id), bytes INTEGER NOT NULL, last_used TEXT NOT NULL, PRIMARY KEY(stale_key,eval_def_hash));
-                CREATE INDEX IF NOT EXISTS cache_lru ON cache_entries(last_used,stale_key,eval_def_hash);
+                CREATE TABLE IF NOT EXISTS executions(id TEXT PRIMARY KEY, fingerprint TEXT, eval_def_hash TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+                CREATE UNIQUE INDEX IF NOT EXISTS active_fingerprint ON executions(fingerprint,eval_def_hash) WHERE fingerprint IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
+                CREATE TABLE IF NOT EXISTS cache_entries(fingerprint TEXT NOT NULL, eval_def_hash TEXT NOT NULL, execution_id TEXT NOT NULL REFERENCES executions(id), bytes INTEGER NOT NULL, last_used TEXT NOT NULL, PRIMARY KEY(fingerprint,eval_def_hash));
+                CREATE INDEX IF NOT EXISTS cache_lru ON cache_entries(last_used,fingerprint,eval_def_hash);
                 CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS active_request_execution ON requests(execution_id) WHERE status IN ('QUEUED','RUNNING','WAITING_HUMAN');
                 CREATE TABLE IF NOT EXISTS human_claims(request_id TEXT PRIMARY KEY REFERENCES requests(id), reviewer TEXT NOT NULL, claimed_at TEXT NOT NULL);
@@ -275,6 +275,31 @@ pub(super) fn schema_initialized(transaction: &rusqlite::Transaction<'_>) -> Res
 
 /// Reject non-regular state files, then upgrade an older schema before any read or write.
 pub(super) fn check_files(state: &Path) -> Result<(), String> {
+    regular_files(state)?;
+    super::migrate::upgrade(&state.join(DATABASE)).map_err(|e| e.to_string())
+}
+
+/// The state database's schema version, read without upgrading or creating it; `None`
+/// without a database. `doctor` reports it.
+pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
+    let state = canonical_target(state).map_err(|e| e.to_string())?;
+    regular_files(&state)?;
+    let database = state.join(DATABASE);
+    if !database.try_exists().map_err(|e| e.to_string())? {
+        return Ok(None);
+    }
+    let read = || -> Result<u32, rusqlite::Error> {
+        let db = rusqlite::Connection::open_with_flags(
+            &database,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?;
+        db.busy_timeout(Duration::from_secs(5))?;
+        db.pragma_query_value(None, "user_version", |row| row.get(0))
+    };
+    read().map(Some).map_err(|e| e.to_string())
+}
+
+fn regular_files(state: &Path) -> Result<(), String> {
     for suffix in ["", "-wal", "-shm"] {
         let path = state.join(format!("{DATABASE}{suffix}"));
         match path.symlink_metadata() {
@@ -290,7 +315,7 @@ pub(super) fn check_files(state: &Path) -> Result<(), String> {
             _ => {}
         }
     }
-    super::migrate::upgrade(&state.join(DATABASE)).map_err(|e| e.to_string())
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]
@@ -299,7 +324,7 @@ pub struct LastRequest {
     pub run_id: String,
     pub verdict: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub stale_key: Option<String>,
+    pub fingerprint: Option<String>,
 }
 
 /// Last attempts are audit pointers, never evidence for a new current-input query.
@@ -333,8 +358,8 @@ pub async fn read_latest_requests(
             }
             let latest = {
                 let mut statement = transaction.prepare(
-                    "SELECT eval_id,run_id,status,stale_key FROM (
-                SELECT m.eval_id,q.run_id,q.status,json_extract(q.data, '$.staleKey') AS stale_key,
+                    "SELECT eval_id,run_id,status,fingerprint FROM (
+                SELECT m.eval_id,q.run_id,q.status,json_extract(q.data, '$.fingerprint') AS fingerprint,
                     row_number() OVER (PARTITION BY m.eval_id ORDER BY r.rowid DESC) AS rank
                 FROM run_members m JOIN requests q ON q.id=m.request_id JOIN runs r ON r.id=m.run_id
                 WHERE r.repo=?
@@ -347,7 +372,7 @@ pub async fn read_latest_requests(
                             LastRequest {
                                 run_id: row.get(1)?,
                                 verdict: row.get(2)?,
-                                stale_key: row.get(3)?,
+                                fingerprint: row.get(3)?,
                             },
                         ))
                     })?

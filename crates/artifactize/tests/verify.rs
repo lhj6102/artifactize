@@ -881,7 +881,7 @@ fn recursive_family_selection_includes_external_evals_without_forcing_them() {
             .iter()
             .all(|r| r["status"] == "GREEN" && r["profile"]["command"] == "/bin/echo")
     );
-    assert!(!fixture.repo.join("scenarios/stale_key-ran").exists());
+    assert!(!fixture.repo.join("scenarios/fingerprint-ran").exists());
 }
 
 #[test]

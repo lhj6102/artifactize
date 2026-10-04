@@ -6,6 +6,7 @@ artifactize is a Rust port and rebrand of [CCDD](https://github.com/lhj6102/ccdd
 
 **Language.** CCDD's *Critic* is an **eval** in artifactize: the config field is `evals`, the CLI uses `--eval`/`--evals`/`--evals-file`, and the type is `Eval`.
 CCDD's owner identity is the **staleKey** in artifactize: the config field is `staleKey`, and while it is unchanged the prior verdict is reused. The inventory keeps CCDD's original terms.
+Since 0.4 the staleKey is the **fingerprint** (config field `fingerprint`, [#72](https://github.com/lhj6102/artifactize/issues/72)); this plan keeps its historical wording.
 
  artifactize keeps what makes CCDD useful and drops the machinery around it.
 

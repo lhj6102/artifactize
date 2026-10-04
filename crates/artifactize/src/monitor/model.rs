@@ -579,8 +579,8 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
         detail.push("Requested", profile(&request.requested_profile));
     }
     detail.push(
-        "Stale key",
-        request.stale_key.as_deref().unwrap_or("none (no reuse)"),
+        "Fingerprint",
+        request.fingerprint.as_deref().unwrap_or("none (no reuse)"),
     );
     if let Some(source) = &request.provenance {
         detail.push(
@@ -734,8 +734,8 @@ pub fn detail(
             );
             detail.push("Family", saved.family(id).unwrap_or_default());
             detail.push(
-                "Stale key",
-                saved.validation(id)["staleKey"]
+                "Fingerprint",
+                saved.validation(id)["fingerprint"]
                     .as_str()
                     .unwrap_or_default(),
             );

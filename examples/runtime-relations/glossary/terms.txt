@@ -1,3 +1,3 @@
 artifact: a folder that an artifactize.json file declares
 eval: one check that returns GREEN or RED for an Artifact
-stale key: a short string; while it stays the same, earlier review results are reused
+fingerprint: a hash of what a review depends on; while it stays the same, earlier review results are reused

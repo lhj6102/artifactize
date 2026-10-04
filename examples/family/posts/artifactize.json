@@ -16,10 +16,10 @@
   "mounts": {
     "style": "house-style"
   },
-  "staleKey": {
+  "fingerprint": {
     "script": {
       "command": "python3",
-      "args": ["stale_key.py", "{style}/banned.txt"]
+      "args": ["fingerprint.py", "{style}/banned.txt"]
     }
   },
   "evals": [

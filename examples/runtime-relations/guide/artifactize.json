@@ -3,11 +3,9 @@
   "mounts": {
     "terms": "glossary"
   },
-  "staleKey": {
-    "content": {
-      "inputs": ["."],
-      "dependencies": "direct"
-    }
+  "fingerprint": {
+    "files": ["."],
+    "dependencies": "direct"
   },
   "evals": [
     {

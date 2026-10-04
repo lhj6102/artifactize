@@ -28,7 +28,8 @@ impl Fixture {
             let mut declaration = json!({"name": name, "evals": [{"id": "check", "title": name,
                 "profile": profile, "payload": {"instruction": "Check."}}]});
             if name == "green" {
-                declaration["staleKey"] = json!({"script":{"command": "printf", "args": ["v1"]}});
+                declaration["fingerprint"] =
+                    json!({"script":{"command": "printf", "args": ["v1"]}});
             }
             fs::create_dir_all(repo.join(name)).unwrap();
             fs::write(

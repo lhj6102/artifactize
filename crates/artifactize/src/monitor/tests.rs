@@ -183,7 +183,7 @@ fn live_progress_tree_and_details_are_pure_projections() {
             .unwrap()
             .starts_with("claimed by alice")
     );
-    assert_eq!(human.field("Stale key"), Some("none (no reuse)"));
+    assert_eq!(human.field("Fingerprint"), Some("none (no reuse)"));
     let failed = detail(&view, &requests, &Target::Eval("p2/check".into()), now());
     assert_eq!(failed.field("Error"), Some("[SPAWN] spawn failed"));
     let app = detail(&view, &requests, &Target::Artifact("app".into()), now());

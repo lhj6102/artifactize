@@ -51,7 +51,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 children: BTreeMap::new(),
                 mounts: declaration.mounts,
                 views: declaration.views,
-                stale_key: declaration.stale_key,
+                fingerprint: declaration.fingerprint,
                 review_policy: declaration.review_policy,
             },
         );

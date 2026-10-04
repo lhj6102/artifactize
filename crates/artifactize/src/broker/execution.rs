@@ -108,12 +108,12 @@ pub(super) async fn execute(
         }
     };
     let outcome = if outcome.is_some()
-        && let Some(expected) = &request.stale_key
+        && let Some(expected) = &request.fingerprint
     {
-        match cache::stale_key(&config, &request.target, &run_dir, cancellation.clone()).await {
+        match cache::fingerprint(&config, &request.target, &run_dir, cancellation.clone()).await {
             Ok(value) if &value == expected => outcome,
             Ok(_) => {
-                request.error = Some("Stale key changed during review.".into());
+                request.error = Some("Fingerprint changed during review.".into());
                 request.error_code = Some("INPUT_CHANGED".into());
                 None
             }
@@ -123,7 +123,7 @@ pub(super) async fn execute(
                     if cancellation.is_cancelled() {
                         "CANCELLED"
                     } else {
-                        "STALE_KEY_RECHECK_FAILED"
+                        "FINGERPRINT_RECHECK_FAILED"
                     }
                     .into(),
                 );

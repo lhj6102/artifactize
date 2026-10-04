@@ -21,11 +21,11 @@ struct Fixture {
 }
 
 impl Fixture {
-    fn new(stale_key: bool) -> Self {
+    fn new(fingerprint: bool) -> Self {
         let root = tempfile::tempdir().unwrap();
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
-        write_human(&repo, stale_key);
+        write_human(&repo, fingerprint);
         Self {
             repo,
             state: root.path().join("state"),
@@ -76,12 +76,12 @@ impl Fixture {
     }
 }
 
-fn write_human(path: &Path, stale_key: bool) {
+fn write_human(path: &Path, fingerprint: bool) {
     fs::create_dir_all(path).unwrap();
-    fs::write(path.join("stale_key"), "human-v1\n").unwrap();
+    fs::write(path.join("fingerprint"), "human-v1\n").unwrap();
     let mut declaration = json!({
         "name":"review", "views":{"humanTools":{
-            "inspect":{"description":"Inspect","kind":"output","command":"cat","args":["stale_key"]},
+            "inspect":{"description":"Inspect","kind":"output","command":"cat","args":["fingerprint"]},
             "fail":{"description":"Fail","kind":"output","command":"false","args":[]}
         },"agentTools":{"read":{"builtin":"read"}}},
         "evals":[{"id":"check","title":"Human check","profile":{"kind":"human"},"payload":{"instruction":"Review."},
@@ -89,8 +89,8 @@ fn write_human(path: &Path, stale_key: bool) {
             "failSchema":{"type":"object","properties":{"reason":{"type":"string","minLength":1}},"required":["reason"],"additionalProperties":false}
         }]
     });
-    if stale_key {
-        declaration["staleKey"] = json!({"script":{"command":"cat","args":["stale_key"]}});
+    if fingerprint {
+        declaration["fingerprint"] = json!({"script":{"command":"cat","args":["fingerprint"]}});
     }
     fs::write(path.join("artifactize.json"), declaration.to_string()).unwrap();
 }
@@ -263,14 +263,14 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
 }
 
 #[tokio::test]
-async fn stale_key_change_before_submit_or_tool_settles_error_without_publishing() {
+async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishing() {
     for tool in [false, true] {
         let fixture = Fixture::new(true);
         let run = fixture.verify(Default::default()).await;
         let id = &run.requests[0].id;
         let receipts = fixture.receipts().await;
         human::claim(&receipts, id, "alice").await.unwrap();
-        fs::write(fixture.repo.join("stale_key"), "human-v2\n").unwrap();
+        fs::write(fixture.repo.join("fingerprint"), "human-v2\n").unwrap();
         let error = if tool {
             human::run_human_tool(
                 &receipts,
@@ -286,7 +286,10 @@ async fn stale_key_change_before_submit_or_tool_settles_error_without_publishing
                 .await
                 .unwrap_err()
         };
-        assert!(error.contains("Stale key changed during review"), "{error}");
+        assert!(
+            error.contains("Fingerprint changed during review"),
+            "{error}"
+        );
         let saved = store::read_run(&fixture.state, &run.run.id).await.unwrap();
         assert_eq!(saved.requests[0].status, "ERROR");
         assert_eq!(
@@ -352,7 +355,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
 }
 
 #[tokio::test]
-async fn submitted_stale_key_unblocks_dependents_on_next_verify() {
+async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     let fixture = Fixture::new(false);
     write_human(&fixture.repo.join("child"), true);
     fs::write(fixture.repo.join("artifactize.json"), json!({"name":"parent","evals":[{"id":"test","title":"Dependent","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Check child."}}]}).to_string()).unwrap();
@@ -414,7 +417,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         owner
     );
     assert!(human::claim(&receipts, owner, "bob").await.is_err());
-    fs::write(other.repo.join("stale_key"), "different-repo-input\n").unwrap();
+    fs::write(other.repo.join("fingerprint"), "different-repo-input\n").unwrap();
     let result = human::run_human_tool(
         &receipts,
         follower,
@@ -459,7 +462,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
             .status,
         "RED"
     );
-    fs::write(other.repo.join("stale_key"), "human-v1\n").unwrap();
+    fs::write(other.repo.join("fingerprint"), "human-v1\n").unwrap();
     let completed = project::verify(
         &other.repo,
         Some(&fixture.state),
@@ -578,7 +581,7 @@ async fn concurrent_submissions_commit_only_once() {
 }
 
 #[tokio::test]
-async fn forced_human_checks_stale_key_without_replacing_cache() {
+async fn forced_human_checks_fingerprint_without_replacing_cache() {
     let fixture = Fixture::new(true);
     let run = fixture.verify(Default::default()).await;
     let receipts = fixture.receipts().await;
@@ -604,7 +607,7 @@ async fn forced_human_checks_stale_key_without_replacing_cache() {
     human::claim(&receipts, &forced.requests[0].id, "alice")
         .await
         .unwrap();
-    fs::write(fixture.repo.join("stale_key"), "changed\n").unwrap();
+    fs::write(fixture.repo.join("fingerprint"), "changed\n").unwrap();
     assert!(
         human::submit(
             &receipts,
@@ -626,7 +629,7 @@ async fn forced_human_checks_stale_key_without_replacing_cache() {
 }
 
 #[tokio::test]
-async fn no_stale_key_results_are_not_reused_by_a_new_verify() {
+async fn no_fingerprint_results_are_not_reused_by_a_new_verify() {
     let fixture = Fixture::new(false);
     let run = fixture.verify(Default::default()).await;
     let receipts = fixture.receipts().await;

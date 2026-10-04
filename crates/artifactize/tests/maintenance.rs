@@ -83,6 +83,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         assert_eq!(check(&absent, name)["details"]["present"], false);
     }
     assert_eq!(check(&absent, "state")["details"]["writable"], true);
+    assert_eq!(check(&absent, "schema")["details"], json!({"schema":null}));
     assert!(!state.exists());
     assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
 
@@ -118,7 +119,18 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         0,
     );
     assert_eq!(present["ok"], true);
-    for name in ["openai", "anthropic", "chatgpt", "claude", "config"] {
+    assert_eq!(
+        check(&present, "schema")["details"],
+        json!({"schema":artifactize::store::STATE_SCHEMA_VERSION})
+    );
+    for name in [
+        "openai",
+        "anthropic",
+        "chatgpt",
+        "claude",
+        "config",
+        "schema",
+    ] {
         assert_eq!(check(&present, name)["status"], "PASS");
     }
     assert_eq!(
@@ -147,6 +159,42 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     );
     assert!(!auth.join("chatgpt.lock").exists());
     assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
+
+    // A database written by a newer artifactize is a hard error and stays as it is.
+    rusqlite::Connection::open(state.join("state.sqlite"))
+        .unwrap()
+        .pragma_update(None, "user_version", 99)
+        .unwrap();
+    let before = fs::read(state.join("state.sqlite")).unwrap();
+    let newer = result(&mut doctor(&state, &bin), 1);
+    assert_eq!(check(&newer, "schema")["status"], "FAIL");
+    assert_eq!(check(&newer, "schema")["details"], json!({"schema":99}));
+    assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
+
+    // An older database is only reported; the next command that opens it upgrades it.
+    let older = root.path().join("older");
+    fs::create_dir(&older).unwrap();
+    rusqlite::Connection::open(older.join("state.sqlite"))
+        .unwrap()
+        .execute_batch(
+            &include_str!("fixtures/state-v2.sql").replace("@ROOT@", root.path().to_str().unwrap()),
+        )
+        .unwrap();
+    let before = fs::read(older.join("state.sqlite")).unwrap();
+    let report = result(&mut doctor(&older, &bin), 0);
+    assert_eq!(check(&report, "schema")["status"], "PASS");
+    assert_eq!(
+        check(&report, "schema")["details"],
+        json!({"schema":2,"upgradeTo":artifactize::store::STATE_SCHEMA_VERSION})
+    );
+    assert!(
+        check(&report, "schema")["message"]
+            .as_str()
+            .unwrap()
+            .contains("the next artifactize command upgrades it")
+    );
+    assert_eq!(fs::read(older.join("state.sqlite")).unwrap(), before);
+    assert!(!older.join("state.sqlite-wal").exists());
 }
 
 #[test]

@@ -64,7 +64,7 @@ pub struct EvalState {
     pub obligations: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last: Option<LastRequest>,
-    /// Why the stale key no longer matches the newest cached result for this Eval definition.
+    /// Why the fingerprint no longer matches the newest cached result for this Eval definition.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub changes: Option<cache::Changes>,
 }
@@ -79,7 +79,7 @@ pub struct Counts {
     pub blocked: usize,
 }
 
-/// Prepare current stale keys without executing evals or changing saved evidence.
+/// Prepare current fingerprints without executing evals or changing saved evidence.
 pub async fn status(
     repo: &Path,
     state_dir: Option<&Path>,
@@ -130,7 +130,7 @@ pub async fn status(
     }
     let selected_ids: BTreeSet<_> = selected_eval_ids.iter().collect();
     let included_ids: BTreeSet<_> = included_eval_ids.iter().collect();
-    let stale_keys = cache::prepare(
+    let fingerprints = cache::prepare(
         &config,
         required.iter().copied(),
         &state,
@@ -142,11 +142,11 @@ pub async fn status(
         .iter()
         .filter(|eval| !(options.force && selected_ids.contains(&eval.id)))
         .filter_map(|eval| {
-            stale_keys.get(eval.target.as_str()).map(|stale_key| {
+            fingerprints.get(eval.target.as_str()).map(|fingerprint| {
                 (
                     eval.id.as_str(),
                     (
-                        stale_key.value.clone(),
+                        fingerprint.value.clone(),
                         cache::eval_definition_hash(&eval.declaration),
                     ),
                 )
@@ -154,7 +154,7 @@ pub async fn status(
         })
         .collect();
     let mut cached =
-        store::read_stale_key_executions(&state, &keys.values().cloned().collect::<Vec<_>>())
+        store::read_fingerprint_executions(&state, &keys.values().cloned().collect::<Vec<_>>())
             .await?;
     // Read-only: remote results count as reuse without being mirrored, as verify would take
     // them before claiming. --force makes no remote calls, so its prediction has none.
@@ -170,13 +170,13 @@ pub async fn status(
             .collect();
         for execution in remote.lookup(&missing).await? {
             let key = (
-                execution.stale_key.clone().expect("remote stale key"),
+                execution.fingerprint.clone().expect("remote fingerprint"),
                 execution.eval_def_hash.clone(),
             );
             cached.insert(key, Claim::Reuse(Box::new(execution)));
         }
     }
-    // Explain changed stale keys against the newest cached result for the same Eval definition.
+    // Explain changed fingerprints against the newest cached result for the same Eval definition.
     let stale: Vec<_> = keys
         .iter()
         .filter(|(_, key)| !matches!(cached.get(*key), Some(Claim::Reuse(_))))
@@ -258,7 +258,7 @@ pub async fn status(
             _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
                 "reuse",
                 format!(
-                    "The current stale key and Eval definition have a completed {}{}",
+                    "The current fingerprint and Eval definition have a completed {}{}",
                     match keys.get(eval.id.as_str()).and_then(|key| cached.get(key)) {
                         Some(Claim::Reuse(execution)) if execution.origin.is_some() => format!(
                             "result in the remote review store, from {}",
@@ -302,7 +302,7 @@ pub async fn status(
             {
                 (
                     "wait",
-                    "The current stale key and Eval definition have a live execution.".into(),
+                    "The current fingerprint and Eval definition have a live execution.".into(),
                 )
             }
             Readiness::Ready => match eval.declaration.profile {
@@ -314,11 +314,11 @@ pub async fn status(
                     "execute",
                     if force {
                         "An explicitly forced Eval requires a new execution.".into()
-                    } else if config.artifacts[&eval.target].stale_key.is_some() {
-                        "The current stale key and Eval definition have no completed cached result."
+                    } else if config.artifacts[&eval.target].fingerprint.is_some() {
+                        "The current fingerprint and Eval definition have no completed cached result."
                             .into()
                     } else {
-                        "No stale key is declared; saved noncached results satisfy only their own Run.".into()
+                        "No fingerprint is declared; saved noncached results satisfy only their own Run.".into()
                     },
                 ),
             },
@@ -362,7 +362,7 @@ pub async fn status(
             changes: keys
                 .get(eval.id.as_str())
                 .and_then(|(_, hash)| previous.get(&(eval.id.clone(), hash.clone())))
-                .map(|execution| cache::changes(execution, &stale_keys[eval.target.as_str()])),
+                .map(|execution| cache::changes(execution, &fingerprints[eval.target.as_str()])),
         });
     }
     Ok(StatusView {

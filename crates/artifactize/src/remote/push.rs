@@ -45,7 +45,7 @@ pub async fn push(
             break;
         };
         after = Some((
-            last.stale_key.clone().expect("cached stale key"),
+            last.fingerprint.clone().expect("cached fingerprint"),
             last.eval_def_hash.clone(),
         ));
         let mut records = Vec::new();
@@ -57,7 +57,7 @@ pub async fn push(
                     let _ = writeln!(
                         std::io::stderr().lock(),
                         "Skipped {} {}: {reason}.",
-                        execution.stale_key.as_deref().unwrap_or_default(),
+                        execution.fingerprint.as_deref().unwrap_or_default(),
                         execution.eval_def_hash
                     );
                 }
@@ -67,7 +67,7 @@ pub async fn push(
         let existing: BTreeSet<_> = if has_scope(&principal, "read") {
             let keys: Vec<_> = records
                 .iter()
-                .map(|record| (record.stale_key.clone(), record.eval_def_hash.clone()))
+                .map(|record| (record.fingerprint.clone(), record.eval_def_hash.clone()))
                 .collect();
             remote
                 .lookup(&keys)
@@ -76,7 +76,7 @@ pub async fn push(
                 .into_iter()
                 .filter_map(|entry| {
                     Some((
-                        entry["staleKey"].as_str()?.to_owned(),
+                        entry["fingerprint"].as_str()?.to_owned(),
                         entry["evalDefHash"].as_str()?.to_owned(),
                     ))
                 })
@@ -87,7 +87,7 @@ pub async fn push(
         for record in records {
             // A key published meanwhile answers `created: false`; the first writer wins.
             let created = !existing
-                .contains(&(record.stale_key.clone(), record.eval_def_hash.clone()))
+                .contains(&(record.fingerprint.clone(), record.eval_def_hash.clone()))
                 && (dry_run
                     || remote
                         .publish(&record)

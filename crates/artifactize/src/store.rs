@@ -19,10 +19,11 @@ pub use runs::{RunSummary, read_runs};
 mod requests;
 mod tool_calls;
 pub use executions::{
-    Claim, Execution, Origin, Producer, Provenance, read_latest_cached, read_stale_key_executions,
+    Claim, Execution, Origin, Producer, Provenance, read_fingerprint_executions, read_latest_cached,
 };
 pub use receipts::{
     DATABASE, LastRequest, Receipts, Request, Run, RunView, read_latest_requests, read_run,
+    state_schema,
 };
 pub use requests::{RequestView, read_request, read_requests, read_waiting};
 
@@ -36,7 +37,7 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
 }
 
 /// SQLite `user_version` for artifactize state databases.
-pub const STATE_SCHEMA_VERSION: u32 = 2;
+pub const STATE_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot resolve state home: set ARTIFACTIZE_STATE_HOME, XDG_STATE_HOME, or HOME")]

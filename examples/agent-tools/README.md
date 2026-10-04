@@ -44,7 +44,7 @@ What it demonstrates:
   the notes in the terminal. Human tools take no arguments and run in your real
   environment.
 
-`spec` declares no staleKey, so every `verify` asks for a fresh review.
+`spec` declares no fingerprint, so every `verify` asks for a fresh review.
 
 ## Check the tools (no model needed)
 
@@ -124,5 +124,5 @@ stays open. A RED sign-off looks like
 `--verdict RED --fields '{"unresolved":["Which files count as old?"]}'`.
 The Run stays INCOMPLETE while `spec/review` has no result, because an
 Artifact is satisfied only when every one of its evals is GREEN. Without a
-staleKey, a submission settles only its own Run, and a later `verify` asks for
+fingerprint, a submission settles only its own Run, and a later `verify` asks for
 a new sign-off.
