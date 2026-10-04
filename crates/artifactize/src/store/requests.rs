@@ -11,7 +11,7 @@ use super::{
 };
 use crate::workspace::{canonical_target, outside_workspace};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RequestView {
     #[serde(flatten)]
     pub request: Request,
@@ -20,23 +20,61 @@ pub struct RequestView {
     pub definition: Option<Value>,
 }
 
+#[derive(Default)]
+struct Filter<'a> {
+    run: Option<&'a str>,
+    id: Option<&'a str>,
+    repo: Option<&'a Path>,
+    waiting: bool,
+}
+
 pub async fn read_requests(state: &Path, run: Option<&str>) -> Result<Vec<RequestView>, String> {
-    read(state, run, None).await
+    read(
+        state,
+        Filter {
+            run,
+            ..Filter::default()
+        },
+    )
+    .await
 }
 
 pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String> {
-    read(state, None, Some(id))
-        .await?
-        .pop()
-        .ok_or_else(|| "Review request not found.".into())
+    read(
+        state,
+        Filter {
+            id: Some(id),
+            ..Filter::default()
+        },
+    )
+    .await?
+    .pop()
+    .ok_or_else(|| "Review request not found.".into())
 }
 
-async fn read(
-    state: &Path,
-    run: Option<&str>,
-    id: Option<&str>,
-) -> Result<Vec<RequestView>, String> {
+/// WAITING_HUMAN requests, newest Run first, from the canonical `repo`'s Runs or every Run.
+pub async fn read_waiting(state: &Path, repo: Option<&Path>) -> Result<Vec<RequestView>, String> {
+    read(
+        state,
+        Filter {
+            repo,
+            waiting: true,
+            ..Filter::default()
+        },
+    )
+    .await
+}
+
+async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, String> {
     let state = canonical_target(state).map_err(|e| e.to_string())?;
+    let repo = filter
+        .repo
+        .map(canonical_target)
+        .transpose()
+        .map_err(|e| e.to_string())?;
+    if let Some(repo) = &repo {
+        outside_workspace(repo, &state).map_err(|e| e.to_string())?;
+    }
     check_files(&state)?;
     if !state
         .join(DATABASE)
@@ -51,8 +89,10 @@ async fn read(
     )
     .await
     .map_err(|e| e.to_string())?;
-    let run = run.map(str::to_owned);
-    let id = id.map(str::to_owned);
+    let run = filter.run.map(str::to_owned);
+    let id = filter.id.map(str::to_owned);
+    let repo = repo.map(|repo| repo.to_string_lossy().into_owned());
+    let waiting = filter.waiting;
     connection.call(move |db| -> Result<_, Error> {
         db.busy_timeout(Duration::from_secs(5))?;
         let transaction = db.transaction()?;
@@ -68,8 +108,9 @@ async fn read(
                 LEFT JOIN executions e ON e.id=q.execution_id
                 LEFT JOIN human_claims h ON h.request_id=json_extract(e.data,'$.provenance.requestId')
                 WHERE (?1 IS NULL OR q.run_id=?1) AND (?2 IS NULL OR q.id=?2)
+                AND (?3 IS NULL OR r.repo=?3) AND (NOT ?4 OR q.status='WAITING_HUMAN')
                 ORDER BY r.rowid DESC,m.ordinal")?;
-            statement.query_map(params![run, id], |row| {
+            statement.query_map(params![run, id, repo, waiting], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?,
                     row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, Option<String>>(5)?,
                     row.get::<_, Option<String>>(6)?, row.get::<_, Option<String>>(7)?))

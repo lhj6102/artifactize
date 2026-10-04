@@ -12,7 +12,7 @@ use tui_tree_widget::{Tree, TreeItem};
 
 use super::{Monitor, model};
 
-pub(super) fn clock(time: OffsetDateTime) -> String {
+pub(crate) fn clock(time: OffsetDateTime) -> String {
     format!(
         "{:02}:{:02}:{:02} UTC",
         time.hour(),
@@ -59,7 +59,7 @@ impl Monitor {
         let [header, body, error, keys] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Fill(1),
-            Constraint::Length(u16::from(self.error.is_some())),
+            Constraint::Length(u16::from(self.error.is_some() || self.notice.is_some())),
             Constraint::Length(1),
         ])
         .areas(frame.area());
@@ -79,11 +79,11 @@ impl Monitor {
             ]),
             header,
         );
-        if let Some(message) = &self.error {
+        if let Some(message) = self.error.as_ref().or(self.notice.as_ref()) {
             frame.render_widget(Line::from(message.as_str()).red(), error);
         }
         let help = if self.open.is_some() {
-            "j/k ↑/↓ move · h/l ←/→ collapse/expand · Enter toggle · PgUp/PgDn scroll detail · r refresh · Esc back · q quit"
+            "j/k ↑/↓ move · h/l ←/→ collapse/expand · Enter toggle · o review waiting Human · PgUp/PgDn scroll detail · r refresh · Esc back · q quit"
         } else {
             "j/k ↑/↓ move · Enter open Run · r refresh · q/Esc quit"
         };

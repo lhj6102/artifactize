@@ -16,6 +16,7 @@ pub mod process;
 pub mod project;
 pub mod query;
 pub mod remote;
+pub mod review;
 pub mod runtime;
 pub mod scope;
 pub mod server;

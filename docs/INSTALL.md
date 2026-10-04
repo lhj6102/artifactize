@@ -104,7 +104,10 @@ artifactize run show RUN_ID
 ```
 
 `claim`, `tool` and `submit` use `$USER` as the reviewer unless you pass
-`--reviewer NAME`. `verify --all --wait` keeps one Run alive until Human results
+`--reviewer NAME`; `request unclaim REQUEST_ID` gives a claim back. `artifactize
+review` does the same in a terminal UI: it lists waiting requests, claims on the
+first tool run or submission, asks before a tool's first run and fills the owner
+fields in a form. `verify --all --wait` keeps one Run alive until Human results
 arrive, so dependents continue in the same Run.
 
 For a real Agent review, put an exact model ID in the profile you use in
@@ -149,7 +152,8 @@ artifactize monitor --all   # Runs of every repository in this state
 The monitor reads the state database only. Start it in a second terminal while
 `verify` runs to watch progress. Keys: `j`/`k` move, Enter opens a Run, `h`/`l`
 collapse and expand families, PgUp/PgDn scroll details, Esc goes back, `r`
-refreshes, `q` quits.
+refreshes, `q` quits. On a WAITING_HUMAN eval, `o` opens `artifactize review` for
+it in the same terminal and returns to the monitor when the review exits.
 
 ## Cleanup and uninstall
 

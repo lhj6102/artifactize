@@ -310,3 +310,31 @@ fn run_screen_renders_progress_tree_and_detail() {
     }
     assert_eq!(monitor.target(), Some(Target::Artifact("lib".into())));
 }
+
+#[test]
+fn review_key_hands_off_only_waiting_human_requests() {
+    let (view, requests) = live();
+    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    let review = KeyEvent::from(KeyCode::Char('o'));
+    assert_eq!(monitor.key(review), Action::None, "no Run is open");
+    monitor.open = Some("run-1".into());
+    monitor.set_run(view, requests);
+    for (path, action) in [
+        (vec!["a:app", "e:app/check"], Action::None),
+        (vec!["a:app"], Action::None),
+        (
+            vec!["a:app", "e:app/review"],
+            Action::Review("run-1-app/review".into()),
+        ),
+    ] {
+        monitor
+            .tree
+            .select(path.iter().map(|id| (*id).to_owned()).collect());
+        assert_eq!(monitor.key(review), action, "{path:?}");
+    }
+    assert!(screen(&mut monitor).contains("o review waiting Human"));
+    monitor.notice = Some("review exited with exit status: 2: Review request not found.".into());
+    assert!(screen(&mut monitor).contains("review exited with exit status: 2"));
+    monitor.key(KeyEvent::from(KeyCode::Char('j')));
+    assert!(!screen(&mut monitor).contains("review exited"));
+}

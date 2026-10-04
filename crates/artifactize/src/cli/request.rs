@@ -8,12 +8,7 @@ use clap::Subcommand;
 use serde_json::{Value, json};
 
 use super::{cancellation_listener, print_json};
-use crate::{
-    human, query,
-    remote::Session,
-    store::{self, Receipts},
-    tools::human::Content,
-};
+use crate::{human, query, store, tools::human::Content};
 
 #[derive(Debug, Subcommand)]
 pub enum RequestCommand {
@@ -100,17 +95,17 @@ pub(super) async fn execute(
         }
         RequestCommand::Claim { id, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let (receipts, _) = open_request(state, &id).await?;
+            let (receipts, _) = human::open(state, &id).await?;
             print_json(&human::claim(&receipts, &id, &reviewer).await?)?;
         }
         RequestCommand::Unclaim { id, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let (receipts, _) = open_request(state, &id).await?;
+            let (receipts, _) = human::open(state, &id).await?;
             print_json(&human::unclaim(&receipts, &id, &reviewer).await?)?;
         }
         RequestCommand::Tool { id, tool, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let (receipts, _) = open_request(state, &id).await?;
+            let (receipts, _) = human::open(state, &id).await?;
             let (cancellation, listener) = cancellation_listener()?;
             let result =
                 human::run_human_tool(&receipts, &id, &reviewer, &tool, cancellation).await;
@@ -147,37 +142,17 @@ pub(super) async fn execute(
         } => {
             let result = submission(&verdict, fields, fields_file)?;
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
-            let (receipts, repo) = open_request(state, &id).await?;
-            let remote = Session::open(Some(state), Some(&repo))?;
             let (cancellation, listener) = cancellation_listener()?;
-            let result = human::submit(&receipts, &id, &reviewer, &result, cancellation).await;
+            let result =
+                human::submit_and_publish(state, &id, &reviewer, &result, cancellation).await;
             listener.abort();
-            let request = result?;
-            if let Some(remote) = remote {
-                remote
-                    .publish_request(&receipts, &request)
-                    .await
-                    .map_err(|error| {
-                        format!(
-                            "The Human result is saved locally, but publishing it failed: {error}"
-                        )
-                    })?;
-            }
+            result?;
             print_json(&query::request_output(
                 &store::read_request(state, &id).await?,
             ))?;
         }
     }
     Ok(0)
-}
-
-async fn open_request(state: &Path, id: &str) -> Result<(Receipts, PathBuf), String> {
-    let view = store::read_request(state, id).await?;
-    let repo = store::read_run(state, &view.request.run_id)
-        .await?
-        .run
-        .repo_path;
-    Ok((Receipts::open(state, &repo).await?, repo))
 }
 
 fn submission(

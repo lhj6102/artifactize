@@ -166,6 +166,20 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
+    /// The original waiting request that a request or follower forwards Human actions to.
+    pub(crate) async fn waiting_human(&self, id: &str) -> Result<Request, String> {
+        let id = id.to_owned();
+        self.connection
+            .call(move |db| -> Result<_, Error> {
+                let transaction = db.transaction()?;
+                let (request, _) = waiting(&transaction, &id)?;
+                transaction.commit()?;
+                Ok(request)
+            })
+            .await
+            .map_err(|e| e.to_string())
+    }
+
     pub(crate) async fn human_request(
         &self,
         id: &str,
