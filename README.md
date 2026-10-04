@@ -63,6 +63,10 @@ rejects `--json`). `SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`,
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
 | `monitor` | `--all` (not with `--repo`) | terminal UI | 0 |
+| `server run` | `--listen ADDR` (`127.0.0.1:8417`) | listening address | 0 |
+| `server token add NAME` | `--scopes read,publish,human` | the token, once | 0 |
+| `server token list`, `server token revoke NAME` | `--purge` (revoke) | text or JSON | 0 |
+| `server rm STALE_KEY [EVAL_HASH]` | | JSON | 0 |
 
 Run outcome codes (`verify`, `run show --wait`): 0 GREEN, 1 RED, 2 ERROR or
 cancelled, 3 Human wait timeout, 4 INCOMPLETE. `run show --wait` follows a RUNNING
@@ -314,6 +318,49 @@ on stderr without replacing an already completed verdict.
 GC and `rm` remove only reuse mappings, never execution or receipt rows or Run
 output. These limits are not a bound on total database size or active scratch
 space, and there is no semantic TTL, protected-reader registry or scratch cleanup.
+
+## Review store server
+
+```sh
+artifactize server token add alice-laptop --scopes read,publish
+artifactize server token add ci --scopes read
+artifactize server run [--listen 127.0.0.1:8417]
+artifactize server token list
+artifactize server token revoke alice-laptop [--purge]
+artifactize server rm STALE_KEY [EVAL_HASH]
+```
+
+`artifactize server` keeps a [shared remote review store](docs/design/remote-store.md)
+in its own `review-store.sqlite` under `--state-dir`, separate from `state.sqlite`.
+It holds one immutable record per (Eval definition hash, staleKey); the first
+writer wins. `server run` serves plain HTTP on loopback by default (it warns when
+bound elsewhere) and stops on Ctrl-C/SIGTERM; put a TLS proxy or tunnel in front,
+because clients require HTTPS except on loopback. Token commands work on the same
+file while the server runs, and take effect immediately.
+
+`token add` prints a random bearer token once; the store keeps only its SHA-256.
+Scopes are `read` (look up), `publish` (publish runtime and Agent records) and
+`human` (additionally publish Human sign-offs, together with `publish`). Give
+untrusted CI `read` only. `token list` shows names, scopes and creation/revocation
+times, never tokens. `token revoke NAME` rejects the token at once; `--purge`
+also deletes every entry it published, and may be repeated later. Names of revoked
+tokens are never reused. `rm` deletes a staleKey's entry, requiring the hash when
+the staleKey has several definitions.
+
+The API takes `Authorization: Bearer TOKEN` and answers JSON (`{"error":...}` on
+failure; 401 for a missing, unknown or revoked token, 403 for a missing scope):
+
+| Route | Scope | Result |
+|---|---|---|
+| `GET /v1/whoami` | any | `{"principal":NAME,"scopes":[...]}` |
+| `POST /v1/lookup` with `{"keys":[{"staleKey","evalDefHash"}]}` (at most 1000) | `read` | `{"entries":[record,...]}` for the found keys |
+| `PUT /v1/entries/{evalDefHash}/{staleKey}` with a record | `publish` (+ `human` for Human records) | 201 `{"created":true}`, or 200 `{"created":false}` when the key exists |
+
+The server checks a record's envelope (schema 1, the path's staleKey and hash,
+a GREEN/RED verdict and a profile kind) and size: 256 KiB for a summary, 16 MiB
+for a full record carrying `execution`. It stamps `publisher` (the token name) and
+`publishedAt` (server clock), replacing any client values. Lookups update last
+use; inserts evict least-recently-used entries above 100,000 entries or 4 GiB.
 
 ## Status and static graph
 
