@@ -108,13 +108,12 @@ pub(super) async fn execute(
         }
     };
     let outcome = if outcome.is_some()
-        && let Some(expected) = &request.identity
+        && let Some(expected) = &request.stale_key
     {
-        match cache::identity(&config, &request.target, &run_dir, cancellation.clone()).await {
+        match cache::stale_key(&config, &request.target, &run_dir, cancellation.clone()).await {
             Ok(value) if &value == expected => outcome,
             Ok(_) => {
-                request.error =
-                    Some("Artifact input changed during review (identity differs).".into());
+                request.error = Some("Stale key changed during review.".into());
                 request.error_code = Some("INPUT_CHANGED".into());
                 None
             }
@@ -124,7 +123,7 @@ pub(super) async fn execute(
                     if cancellation.is_cancelled() {
                         "CANCELLED"
                     } else {
-                        "IDENTITY_RECHECK_FAILED"
+                        "STALE_KEY_RECHECK_FAILED"
                     }
                     .into(),
                 );

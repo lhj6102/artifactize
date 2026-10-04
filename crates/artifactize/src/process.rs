@@ -34,7 +34,7 @@ pub struct Command {
     pub timeout: Duration,
 }
 
-/// Linux process identity, captured while the group leader is still inert.
+/// Linux process id and start time, captured while the group leader is still inert.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChildIdentity {
     pub pid: u32,
@@ -196,8 +196,8 @@ where
         _ = sleep_until(deadline) => Err(Error::Timeout),
         result = async {
             let pid = gate.pid().await?;
-            let identity = identity(pid).map_err(Error::Registration)?;
-            register(identity).await.map_err(Error::Registration)?;
+            let child = child_identity(pid).map_err(Error::Registration)?;
+            register(child).await.map_err(Error::Registration)?;
             Ok::<_, Error>(())
         } => result,
     };
@@ -238,7 +238,7 @@ where
                 _ = cancellation.cancelled() => {},
                 _ = sleep_until(deadline) => {},
                 result = stdin.write_all(&input) => {
-                    // Identity scripts may intentionally ignore their context.
+                    // Stale key scripts may intentionally ignore their context.
                     if let Err(error) = result && error.kind() != io::ErrorKind::BrokenPipe {
                         return Err(Error::Io(error));
                     }
@@ -330,18 +330,18 @@ pub(crate) fn launch_detached(
     Ok(())
 }
 
-pub(crate) fn identity(pid: u32) -> io::Result<ChildIdentity> {
+pub(crate) fn child_identity(pid: u32) -> io::Result<ChildIdentity> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
     let start_time = stat
         .rsplit_once(')')
         .and_then(|(_, fields)| fields.split_whitespace().nth(19))
         .and_then(|value| value.parse().ok())
-        .ok_or_else(|| io::Error::other("invalid child process identity"))?;
+        .ok_or_else(|| io::Error::other("invalid child process start time"))?;
     Ok(ChildIdentity { pid, start_time })
 }
 
 pub(crate) fn is_alive(owner: ChildIdentity) -> io::Result<bool> {
-    match identity(owner.pid) {
+    match child_identity(owner.pid) {
         Ok(current) => Ok(current == owner),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),

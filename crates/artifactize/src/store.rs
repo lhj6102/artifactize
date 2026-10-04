@@ -10,6 +10,7 @@ use crate::workspace::canonical_target;
 pub(crate) mod cache_entries;
 mod executions;
 mod human;
+mod migrate;
 pub use human::HumanClaim;
 pub mod prune;
 mod receipts;
@@ -18,7 +19,7 @@ pub use runs::{RunSummary, read_runs};
 mod requests;
 mod tool_calls;
 pub use executions::{
-    Claim, Execution, Origin, Producer, Provenance, read_identity_executions, read_latest_cached,
+    Claim, Execution, Origin, Producer, Provenance, read_latest_cached, read_stale_key_executions,
 };
 pub use receipts::{
     DATABASE, LastRequest, Receipts, Request, Run, RunView, read_latest_requests, read_run,
@@ -35,7 +36,7 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
 }
 
 /// SQLite `user_version` for artifactize state databases.
-pub const STATE_SCHEMA_VERSION: u32 = 1;
+pub const STATE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, thiserror::Error)]
 #[error("cannot resolve state home: set ARTIFACTIZE_STATE_HOME, XDG_STATE_HOME, or HOME")]

@@ -31,16 +31,16 @@ impl Repo {
         self.write(path.to_str().unwrap(), &value.to_string());
     }
 
-    async fn identity(&self, id: &str) -> Result<Identity, String> {
+    async fn stale_key(&self, id: &str) -> Result<PreparedKey, String> {
         let config = read_workspace_config(self.root.path()).map_err(|e| e.to_string())?;
-        let mut identities =
+        let mut stale_keys =
             prepare(&config, [id], self.output.path(), CancellationToken::new()).await?;
-        Ok(identities.remove(id).unwrap())
+        Ok(stale_keys.remove(id).unwrap())
     }
 
     async fn files(&self, id: &str) -> Vec<String> {
-        let identity = self.identity(id).await.unwrap();
-        identity
+        let stale_key = self.stale_key(id).await.unwrap();
+        stale_key
             .manifest
             .unwrap()
             .files
@@ -55,7 +55,7 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
     let repo = Repo::new();
     repo.artifact(
         "",
-        json!({"name":"root","stale":{"kind":"content","dependencies":"none","ignore":["*.log","/data/raw"]}}),
+        json!({"name":"root","staleKey":{"content":{"dependencies":"none","ignore":["*.log","/data/raw"]}}}),
     );
     for path in [
         "a.txt",
@@ -87,7 +87,7 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
             "sub/keep.tmp"
         ]
     );
-    let before = repo.identity("root").await.unwrap().value;
+    let before = repo.stale_key("root").await.unwrap().value;
     assert!(before.starts_with("content:") && before.len() == 72);
     for path in [
         "notes.log",
@@ -103,10 +103,14 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
         "build/new/file",
     ] {
         repo.write(path, "v2");
-        assert_eq!(repo.identity("root").await.unwrap().value, before, "{path}");
+        assert_eq!(
+            repo.stale_key("root").await.unwrap().value,
+            before,
+            "{path}"
+        );
     }
     repo.write("sub/keep.tmp", "v2");
-    assert_ne!(repo.identity("root").await.unwrap().value, before);
+    assert_ne!(repo.stale_key("root").await.unwrap().value, before);
 }
 
 #[tokio::test]
@@ -114,7 +118,7 @@ async fn gitignores_apply_from_the_repository_root_down_with_git_precedence() {
     let repo = Repo::new();
     repo.artifact(
         "pkg/app",
-        json!({"name":"app","stale":{"kind":"content","inputs":["src"],"dependencies":"none"}}),
+        json!({"name":"app","staleKey":{"content":{"inputs":["src"],"dependencies":"none"}}}),
     );
     repo.write(".gitignore", "*.cache\nbuild/\n/pkg/app/src/anchored.txt\n");
     repo.write("pkg/.gitignore", "!keep.cache\n/app/src/relative.txt\n");
@@ -141,29 +145,29 @@ async fn gitignores_apply_from_the_repository_root_down_with_git_precedence() {
             "src/sub/relative.txt"
         ]
     );
-    let before = repo.identity("app").await.unwrap().value;
+    let before = repo.stale_key("app").await.unwrap().value;
     repo.write("pkg/app/src/__pycache__/m.pyc", "generated");
     repo.write("pkg/app/src/other.cache", "generated");
-    assert_eq!(repo.identity("app").await.unwrap().value, before);
+    assert_eq!(repo.stale_key("app").await.unwrap().value, before);
 }
 
 #[tokio::test]
 async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_owner() {
     let repo = Repo::new();
-    repo.artifact("owner", json!({"name":"owner","stale":{"kind":"content"}}));
+    repo.artifact("owner", json!({"name":"owner","staleKey":{"content":{}}}));
     repo.write("owner/a.txt", "a");
     symlink("a.txt", repo.root.path().join("owner/link")).unwrap();
-    let error = repo.identity("owner").await.unwrap_err();
+    let error = repo.stale_key("owner").await.unwrap_err();
     assert!(
-        error.contains("Content identity for Artifact owner failed: link:"),
+        error.contains("Content stale key for Artifact owner failed: link:"),
         "{error}"
     );
-    assert!(error.contains("stale.ignore"), "{error}");
+    assert!(error.contains("staleKey.content.ignore"), "{error}");
     repo.artifact(
         "owner",
-        json!({"name":"owner","stale":{"kind":"content","inputs":["a.txt","docs"],"ignore":["link"]}}),
+        json!({"name":"owner","staleKey":{"content":{"inputs":["a.txt","docs"],"ignore":["link"]}}}),
     );
-    let error = repo.identity("owner").await.unwrap_err();
+    let error = repo.stale_key("owner").await.unwrap_err();
     assert!(error.contains("docs:"), "{error}");
     repo.write("owner/docs/guide.md", "guide");
     assert_eq!(repo.files("owner").await, ["a.txt", "docs/guide.md"]);
@@ -176,14 +180,14 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
     ] {
         repo.artifact(
             "owner",
-            json!({"name":"owner","stale":{"kind":"content","inputs":inputs}}),
+            json!({"name":"owner","staleKey":{"content":{"inputs":inputs}}}),
         );
         assert!(read_workspace_config(repo.root.path()).is_err(), "{inputs}");
     }
     for ignore in [json!(["!keep"]), json!([""]), json!(["#x"])] {
         repo.artifact(
             "owner",
-            json!({"name":"owner","stale":{"kind":"content","ignore":ignore}}),
+            json!({"name":"owner","staleKey":{"content":{"ignore":ignore}}}),
         );
         assert!(read_workspace_config(repo.root.path()).is_err(), "{ignore}");
     }
@@ -194,7 +198,7 @@ async fn family_instances_hash_shared_files_and_only_their_own_material() {
     let repo = Repo::new();
     repo.artifact(
         "posts",
-        json!({"name":"posts","family":{"instances":"instances.json"},"stale":{"kind":"content"}}),
+        json!({"name":"posts","family":{"instances":"instances.json"},"staleKey":{"content":{}}}),
     );
     repo.write(
         "posts/instances.json",
@@ -204,11 +208,11 @@ async fn family_instances_hash_shared_files_and_only_their_own_material() {
         repo.write(path, "v1");
     }
     assert_eq!(repo.files("one").await, ["check.py", "one.md"]);
-    let one = repo.identity("one").await.unwrap().value;
+    let one = repo.stale_key("one").await.unwrap().value;
     repo.write("posts/two.md", "v2");
-    assert_eq!(repo.identity("one").await.unwrap().value, one);
+    assert_eq!(repo.stale_key("one").await.unwrap().value, one);
     repo.write("posts/check.py", "v2");
-    assert_ne!(repo.identity("one").await.unwrap().value, one);
+    assert_ne!(repo.stale_key("one").await.unwrap().value, one);
 }
 
 #[test]
@@ -230,7 +234,7 @@ fn dependency_scopes_terminate_on_cycles_and_exclude_the_owner() {
 }
 
 #[test]
-fn changes_list_files_and_dependencies_or_fall_back_to_the_identity() {
+fn changes_list_files_and_dependencies_or_fall_back_to_the_stale_key() {
     let manifest = |files: &[(&str, &str)], dependencies: &[(&str, &str)]| Manifest {
         inputs: format!("{files:?}"),
         files: Some(
@@ -248,7 +252,7 @@ fn changes_list_files_and_dependencies_or_fall_back_to_the_identity() {
     };
     let execution = |manifest: Option<Manifest>| -> Execution {
         serde_json::from_value(json!({
-            "id":"execution-1","identity":"old","evalDefHash":"hash","ownerPid":1,"ownerStartTime":1,
+            "id":"execution-1","staleKey":"old","evalDefHash":"hash","ownerPid":1,"ownerStartTime":1,
             "status":"GREEN","result":null,"error":null,"errorCode":null,"profile":null,"usage":null,
             "provenance":{"repoPath":"/repo","runId":"run-1","requestId":"run-1-1","evalId":"a/check","evalDefHash":"hash","completedAt":null},
             "startedAt":"now","completedAt":"now","manifest":manifest
@@ -259,7 +263,7 @@ fn changes_list_files_and_dependencies_or_fall_back_to_the_identity() {
         &[("src/a.py", "1"), ("old.md", "1"), ("same", "1")],
         &[("core", "x"), ("gone", "x")],
     );
-    let new = Identity {
+    let new = PreparedKey {
         value: "new".into(),
         manifest: Some(manifest(
             &[("src/a.py", "2"), ("docs/new.md", "1"), ("same", "1")],
@@ -284,11 +288,11 @@ fn changes_list_files_and_dependencies_or_fall_back_to_the_identity() {
         super::changes(&execution(Some(bounded)), &new).summary,
         "inputs changed"
     );
-    let script = Identity {
+    let script = PreparedKey {
         value: "new".into(),
         manifest: None,
     };
     let changes = super::changes(&execution(None), &script);
-    assert_eq!(changes.summary, "identity changed");
+    assert_eq!(changes.summary, "stale key changed");
     assert!(changes.files.is_none() && changes.dependencies.is_none());
 }

@@ -94,8 +94,8 @@ impl Server {
         (response.status(), response.json().await.unwrap())
     }
 
-    async fn lookup(&self, token: &str, identities: &[&str]) -> (StatusCode, Value) {
-        let keys: Vec<_> = identities
+    async fn lookup(&self, token: &str, stale_keys: &[&str]) -> (StatusCode, Value) {
+        let keys: Vec<_> = stale_keys
             .iter()
             .map(|stale_key| json!({"staleKey":stale_key,"evalDefHash":HASH}))
             .collect();

@@ -10,7 +10,7 @@ use tokio::{
     net::TcpListener,
 };
 
-use super::{Identity, Registration, now};
+use super::{Account, Registration, now};
 
 pub(super) const ISSUER: &str = "https://auth.openai.com";
 pub(super) const DISCOVERY: &str = "https://auth.openai.com/.well-known/openid-configuration";
@@ -265,7 +265,7 @@ pub(super) fn validate_id_token(
     keys: &JwkSet,
     client_id: &str,
     nonce: Option<&str>,
-) -> Result<Identity, String> {
+) -> Result<Account, String> {
     let invalid = || "ChatGPT ID token failed signature or claims validation.".to_owned();
     let header = decode_header(token).map_err(|_| invalid())?;
     if header.alg != Algorithm::RS256 {
@@ -296,7 +296,7 @@ pub(super) fn validate_id_token(
     {
         return Err(invalid());
     }
-    Ok(Identity {
+    Ok(Account {
         issuer: claims.iss,
         subject: claims.sub,
         email: claims.email,

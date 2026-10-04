@@ -28,13 +28,13 @@ const REFRESH_MARGIN: u64 = 60;
 const LOGIN_REQUIRED: &str = "ChatGPT is not signed in; run `artifactize login chatgpt`.";
 
 #[derive(Clone, Deserialize, Serialize)]
-struct Identity {
+struct Account {
     issuer: String,
     subject: String,
     email: Option<String>,
 }
 
-impl Identity {
+impl Account {
     fn matches(&self, other: &Self) -> bool {
         self.issuer == other.issuer && self.subject == other.subject
     }
@@ -44,7 +44,8 @@ impl Identity {
 struct Registration {
     ext_agent_host_id: String,
     client_id: Option<String>,
-    identity: Option<Identity>,
+    #[serde(alias = "identity")]
+    account: Option<Account>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -58,7 +59,8 @@ struct Credentials {
     client_id: String,
     ext_agent_host_id: String,
     scopes: Vec<String>,
-    identity: Identity,
+    #[serde(alias = "identity")]
+    account: Account,
 }
 
 #[derive(Deserialize)]
@@ -92,7 +94,7 @@ fn registration(storage: &Storage) -> Result<Registration, String> {
     let registration = Registration {
         ext_agent_host_id: oauth::host_id()?,
         client_id: None,
-        identity: None,
+        account: None,
     };
     storage.save(REGISTRATION, &registration)?;
     Ok(registration)
@@ -127,16 +129,16 @@ pub async fn login_chatgpt(state: Option<&Path>, repo: Option<&Path>) -> Result<
         .id_token
         .as_deref()
         .ok_or("ChatGPT did not return an ID token.")?;
-    let identity = oauth::validate_id_token(id_token, &keys, &client_id, Some(&pending.nonce))?;
+    let account = oauth::validate_id_token(id_token, &keys, &client_id, Some(&pending.nonce))?;
     if registration
-        .identity
+        .account
         .as_ref()
-        .is_some_and(|saved| !saved.matches(&identity))
+        .is_some_and(|saved| !saved.matches(&account))
     {
-        return Err("ChatGPT identity does not match this client registration; credentials were not replaced.".into());
+        return Err("ChatGPT account binding does not match this client registration; credentials were not replaced.".into());
     }
-    let credentials = credentials(tokens, &registration, identity.clone(), saved_at, None)?;
-    registration.identity = Some(identity);
+    let credentials = credentials(tokens, &registration, account.clone(), saved_at, None)?;
+    registration.account = Some(account);
     storage.save(REGISTRATION, &registration)?;
     storage.save(CREDENTIALS, &credentials)
 }
@@ -237,9 +239,9 @@ fn read_credentials(storage: &Storage) -> Result<Option<Credentials>, String> {
     if registration.client_id.as_deref() != Some(&stored.client_id)
         || registration.ext_agent_host_id != stored.ext_agent_host_id
         || !registration
-            .identity
+            .account
             .as_ref()
-            .is_some_and(|identity| identity.matches(&stored.identity))
+            .is_some_and(|account| account.matches(&stored.account))
         || !stored.scopes.iter().any(|scope| scope == DIRECT_SCOPE)
         || !stored.token_type.eq_ignore_ascii_case("Bearer")
         || stored.access_token.is_empty()
@@ -273,22 +275,22 @@ async fn refresh(
     )
     .await?;
     let saved_at = now()?;
-    let identity = if let Some(token) = &tokens.id_token {
+    let account = if let Some(token) = &tokens.id_token {
         let keys: JwkSet = oauth::get_json(client, discovery.jwks_uri.as_str()).await?;
-        let identity = oauth::validate_id_token(token, &keys, &stored.client_id, None)?;
-        if !identity.matches(&stored.identity) {
-            return Err("Refreshed ChatGPT identity does not match this registration; run `artifactize login chatgpt`.".into());
+        let account = oauth::validate_id_token(token, &keys, &stored.client_id, None)?;
+        if !account.matches(&stored.account) {
+            return Err("Refreshed ChatGPT account binding does not match this registration; run `artifactize login chatgpt`.".into());
         }
-        identity
+        account
     } else {
-        stored.identity.clone()
+        stored.account.clone()
     };
     let registration = Registration {
         ext_agent_host_id: stored.ext_agent_host_id.clone(),
         client_id: Some(stored.client_id.clone()),
-        identity: Some(identity.clone()),
+        account: Some(account.clone()),
     };
-    let credentials = credentials(tokens, &registration, identity, saved_at, Some(&stored))?;
+    let credentials = credentials(tokens, &registration, account, saved_at, Some(&stored))?;
     storage.save(CREDENTIALS, &credentials)?;
     Ok(credentials.access_token)
 }
@@ -296,7 +298,7 @@ async fn refresh(
 fn credentials(
     tokens: TokenResponse,
     registration: &Registration,
-    identity: Identity,
+    account: Account,
     saved_at: u64,
     previous: Option<&Credentials>,
 ) -> Result<Credentials, String> {
@@ -333,7 +335,7 @@ fn credentials(
         expires_at,
         saved_at,
         scopes,
-        identity,
+        account,
         client_id: registration
             .client_id
             .clone()

@@ -1,7 +1,7 @@
 # Runtime evals with children, mounts and references
 
 This example is a two-page guide checked by runtime evals. It shows how
-Artifacts relate to each other and how a content identity lets a second
+Artifacts relate to each other and how a content staleKey lets a second
 `verify` reuse earlier results and re-review only what a change touched.
 
 ```
@@ -32,12 +32,12 @@ What it demonstrates:
   `intro/heading` and `usage/heading` run `grep`, and `guide/terms` runs
   `python3 check_terms.py`. Each command runs from its owner's folder with only
   `PATH` and `LANG` inherited.
-- **Content identity and reuse.** Each evaluated Artifact declares a built-in
-  `"stale": {"kind": "content"}`. Its identity hashes the Artifact's own files
+- **Content staleKey and reuse.** Each evaluated Artifact declares a built-in
+  `"staleKey": {"content": {}}`. Its staleKey hashes the Artifact's own files
   (child folders, `artifactize.json`, `__pycache__` and `.gitignore`d files
   excluded) plus one entry per direct dependency. `guide` spells out the
   defaults, `"inputs": ["."]` and `"dependencies": "direct"`, so its dependencies
-  are `intro`, `usage` (children) and `glossary` (the mount). When the identity
+  are `intro`, `usage` (children) and `glossary` (the mount). When the staleKey
   matches a saved GREEN or RED result, `verify` reuses that result without
   running the eval, and `status` lists the files and dependencies that changed
   since the last cached result.
@@ -56,7 +56,7 @@ artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # nothing executes: each line says "(reused from RUN_ID)"
 artifactize status          # exit 0: every eval shows "PASS — reuse"
 artifactize run list
-artifactize run show RUN_ID # full saved JSON: argv, stdout, identity, provenance
+artifactize run show RUN_ID # full saved JSON: argv, stdout, staleKey, provenance
 ```
 
 `graph`, `status` and `verify` also accept `--json`. In the second Run,
@@ -71,7 +71,7 @@ Edit a copy so the repository stays clean. From the repository root:
 
 ```sh
 cp -r examples/runtime-relations /tmp/runtime-relations && cd /tmp/runtime-relations
-artifactize verify --all    # reuses the results from the original folder: identities name content, not paths
+artifactize verify --all    # reuses the results from the original folder: staleKeys name content, not paths
 ```
 
 1. Use a term the glossary does not define:
@@ -85,7 +85,7 @@ artifactize verify --all    # reuses the results from the original folder: ident
    `usage/heading` runs again because its folder changed, and stays GREEN.
    `guide/terms` runs again because its direct dependency `usage` changed, and
    is RED, with `cache: NOT DEFINED` in its stdout. `intro/heading` is reused.
-   Adding `cache: ...` to `glossary/terms.txt` changes `guide`'s identity, so
+   Adding `cache: ...` to `glossary/terms.txt` changes `guide`'s staleKey, so
    the next `verify` runs `guide/terms` again and it turns GREEN.
 
 2. Remove the `# Usage` heading from `guide/usage/page.md`. `usage/heading` is

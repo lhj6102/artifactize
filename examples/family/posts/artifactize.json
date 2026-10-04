@@ -16,11 +16,10 @@
   "mounts": {
     "style": "house-style"
   },
-  "stale": {
-    "kind": "identity",
+  "staleKey": {
     "script": {
       "command": "python3",
-      "args": ["identity.py", "{style}/banned.txt"]
+      "args": ["stale_key.py", "{style}/banned.txt"]
     }
   },
   "evals": [

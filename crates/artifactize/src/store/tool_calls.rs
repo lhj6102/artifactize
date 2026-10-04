@@ -5,7 +5,7 @@ use super::{Receipts, receipts::Error};
 use crate::tools::ToolResult;
 
 impl Receipts {
-    /// A session may precede the execution row (identity-less reviews insert it at completion).
+    /// A session may precede the execution row (keyless reviews insert it at completion).
     pub async fn register_mcp(
         &self,
         execution: &str,

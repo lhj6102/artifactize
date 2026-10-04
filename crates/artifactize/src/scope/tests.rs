@@ -149,7 +149,7 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
 }
 
 #[test]
-fn aliases_keep_canonical_identity_and_cycles_consume_components() {
+fn aliases_keep_canonical_ids_and_cycles_consume_components() {
     let fixture = Fixture::new();
     fixture.artifact(
         "review",

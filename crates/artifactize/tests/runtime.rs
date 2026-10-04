@@ -140,14 +140,14 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     let running = tokio::spawn(runtime::execute(
         scratch.command("/bin/sleep", &["30"], None),
         cancellation.clone(),
-        |identity| async move {
-            registered.send(identity).unwrap();
+        |child| async move {
+            registered.send(child).unwrap();
             Ok(())
         },
     ));
-    let identity = child.await.unwrap();
+    let child = child.await.unwrap();
     wait_for(|| {
-        std::fs::read_to_string(format!("/proc/{}/comm", identity.pid))
+        std::fs::read_to_string(format!("/proc/{}/comm", child.pid))
             .is_ok_and(|comm| comm.trim() == "sleep")
     })
     .await;
@@ -156,7 +156,7 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
         timeout(TEST_TIMEOUT, running).await.unwrap().unwrap(),
         Outcome::OperationalError(Error::Process(process::Error::Cancelled))
     ));
-    assert_gone(identity.pid).await;
+    assert_gone(child.pid).await;
 }
 
 #[tokio::test]
@@ -436,12 +436,12 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
     let running = tokio::spawn(runtime::execute(
         command,
         CancellationToken::new(),
-        |identity| async move {
-            registered.send(identity).unwrap();
+        |child| async move {
+            registered.send(child).unwrap();
             Ok(())
         },
     ));
-    let identity = child.await.unwrap();
+    let child = child.await.unwrap();
     wait_for(|| {
         std::fs::read_to_string(&marker).is_ok_and(|text| text.trim().parse::<u32>().is_ok())
     })
@@ -453,7 +453,7 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
         .unwrap();
     running.abort();
     assert!(running.await.unwrap_err().is_cancelled());
-    assert_gone(identity.pid).await;
+    assert_gone(child.pid).await;
     assert_gone(pid).await;
 }
 

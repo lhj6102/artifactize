@@ -63,7 +63,7 @@ pub struct EvalState {
     pub obligations: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last: Option<LastRequest>,
-    /// Why the identity no longer matches the newest cached result for this Eval definition.
+    /// Why the stale key no longer matches the newest cached result for this Eval definition.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub changes: Option<cache::Changes>,
 }
@@ -78,7 +78,7 @@ pub struct Counts {
     pub blocked: usize,
 }
 
-/// Prepare current identities without executing evals or changing saved evidence.
+/// Prepare current stale keys without executing evals or changing saved evidence.
 pub async fn status(
     repo: &Path,
     state_dir: Option<&Path>,
@@ -129,7 +129,7 @@ pub async fn status(
     }
     let selected_ids: BTreeSet<_> = selected_eval_ids.iter().collect();
     let included_ids: BTreeSet<_> = included_eval_ids.iter().collect();
-    let identities = cache::prepare(
+    let stale_keys = cache::prepare(
         &config,
         required.iter().copied(),
         &state,
@@ -141,11 +141,11 @@ pub async fn status(
         .iter()
         .filter(|eval| !(options.force && selected_ids.contains(&eval.id)))
         .filter_map(|eval| {
-            identities.get(eval.target.as_str()).map(|identity| {
+            stale_keys.get(eval.target.as_str()).map(|stale_key| {
                 (
                     eval.id.as_str(),
                     (
-                        identity.value.clone(),
+                        stale_key.value.clone(),
                         cache::eval_definition_hash(&eval.declaration),
                     ),
                 )
@@ -153,9 +153,9 @@ pub async fn status(
         })
         .collect();
     let cached =
-        store::read_identity_executions(&state, &keys.values().cloned().collect::<Vec<_>>())
+        store::read_stale_key_executions(&state, &keys.values().cloned().collect::<Vec<_>>())
             .await?;
-    // Explain stale identities against the newest cached result for the same Eval definition.
+    // Explain changed stale keys against the newest cached result for the same Eval definition.
     let stale: Vec<_> = keys
         .iter()
         .filter(|(_, key)| !matches!(cached.get(*key), Some(Claim::Reuse(_))))
@@ -237,7 +237,7 @@ pub async fn status(
             _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
                 "reuse",
                 format!(
-                    "The current identity and Eval definition have a completed cached result{}",
+                    "The current stale key and Eval definition have a completed cached result{}",
                     match current.readiness {
                         Readiness::Ready => ".".into(),
                         Readiness::Wait => format!(
@@ -271,7 +271,7 @@ pub async fn status(
             {
                 (
                     "wait",
-                    "The current identity and Eval definition have a live execution.".into(),
+                    "The current stale key and Eval definition have a live execution.".into(),
                 )
             }
             Readiness::Ready => match eval.declaration.profile {
@@ -283,11 +283,11 @@ pub async fn status(
                     "execute",
                     if force {
                         "An explicitly forced Eval requires a new execution.".into()
-                    } else if config.artifacts[&eval.target].stale.is_some() {
-                        "The current identity and Eval definition have no completed cached result."
+                    } else if config.artifacts[&eval.target].stale_key.is_some() {
+                        "The current stale key and Eval definition have no completed cached result."
                             .into()
                     } else {
-                        "No identity is declared; saved noncached results satisfy only their own Run.".into()
+                        "No stale key is declared; saved noncached results satisfy only their own Run.".into()
                     },
                 ),
             },
@@ -331,7 +331,7 @@ pub async fn status(
             changes: keys
                 .get(eval.id.as_str())
                 .and_then(|(_, hash)| previous.get(&(eval.id.clone(), hash.clone())))
-                .map(|execution| cache::changes(execution, &identities[eval.target.as_str()])),
+                .map(|execution| cache::changes(execution, &stale_keys[eval.target.as_str()])),
         });
     }
     Ok(StatusView {

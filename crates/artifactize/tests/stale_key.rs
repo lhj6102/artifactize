@@ -42,7 +42,7 @@ impl Fixture {
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state)
-            .env("IDENTITY_SECRET", "must-not-leak");
+            .env("STALE_KEY_SECRET", "must-not-leak");
         command
     }
 
@@ -83,8 +83,8 @@ fn eval(id: &str, script: &str) -> Value {
     json!({"id":id,"title":"Check", "profile":{"kind":"runtime","command":"/bin/sh","args":["-c",script]},"payload":{"instruction":"Check input."}})
 }
 
-fn identity(script: &str) -> Value {
-    json!({"kind":"identity","script":{"command":"/bin/sh","args":["-c",script]}})
+fn stale_key(script: &str) -> Value {
+    json!({"script":{"command":"/bin/sh","args":["-c",script]}})
 }
 
 #[test]
@@ -105,7 +105,7 @@ fn exact_output_is_validated_before_any_review_can_start() {
         &[b'x'; 129],
     ] {
         fs::write(fixture.repo.join("key"), bytes).unwrap();
-        fixture.write("artifactize.json", json!({"name":"test","stale":identity("cat key"),"evals":[eval("check", "touch executed")]}));
+        fixture.write("artifactize.json", json!({"name":"test","staleKey":stale_key("cat key"),"evals":[eval("check", "touch executed")]}));
         let error = fixture.verify(&["--all"], 2);
         assert!(
             error["error"].as_str().unwrap().contains("Artifact test"),
@@ -121,7 +121,7 @@ fn exact_output_is_validated_before_any_review_can_start() {
         fs::write(fixture.repo.join("key"), bytes).unwrap();
         let run = fixture.verify(&["--all"], 0);
         assert_eq!(
-            run["requests"][0]["identity"],
+            run["requests"][0]["staleKey"],
             String::from_utf8(bytes.to_vec())
                 .unwrap()
                 .trim_end_matches('\n')
@@ -130,49 +130,46 @@ fn exact_output_is_validated_before_any_review_can_start() {
 }
 
 #[test]
-fn identity_process_failures_missing_inputs_and_links_never_fall_back() {
+fn stale_key_process_failures_missing_inputs_and_links_never_fall_back() {
     let fixture = Fixture::new();
     fs::write(fixture.repo.join("key"), "valid").unwrap();
     symlink("key", fixture.repo.join("link")).unwrap();
     symlink(&fixture.repo, fixture.repo.join("dir-link")).unwrap();
     for (stale, message) in [
         (
-            identity("printf valid; printf private-diagnostic >&2; exit 7"),
+            stale_key("printf valid; printf private-diagnostic >&2; exit 7"),
             "exited with",
         ),
-        (identity("kill -TERM $$"), "exited with"),
+        (stale_key("kill -TERM $$"), "exited with"),
         (
-            json!({"timeoutMs":50,"kind":"identity","script":{"command":"/bin/sleep","args":["30"]}}),
+            json!({"script":{"command":"/bin/sleep","args":["30"],"timeoutMs":50}}),
             "timed out",
         ),
         (
-            json!({"kind":"identity","script":{"command":"missing-identity-executable","args":[]}}),
+            json!({"script":{"command":"missing-stale_key-executable","args":[]}}),
             "spawned",
         ),
         (
-            json!({"kind":"identity","script":{"command":"/bin/true","args":[]},"inputs":["missing"]}),
+            json!({"script":{"command":"/bin/true","args":[],"inputs":["missing"]}}),
             "missing",
         ),
         (
-            json!({"kind":"identity","script":{"command":"/bin/true","args":[]},"inputs":["link"]}),
+            json!({"script":{"command":"/bin/true","args":[],"inputs":["link"]}}),
             "symlinks",
         ),
         (
-            json!({"kind":"identity","script":{"command":"/bin/true","args":[]},"inputs":["dir-link/key"]}),
+            json!({"script":{"command":"/bin/true","args":[],"inputs":["dir-link/key"]}}),
             "symlinks",
         ),
+        (json!({"script":{"command":"./link","args":[]}}), "symlinks"),
         (
-            json!({"kind":"identity","script":{"command":"./link","args":[]}}),
-            "symlinks",
-        ),
-        (
-            json!({"kind":"identity","script":{"command":"../outside","args":[]}}),
+            json!({"script":{"command":"../outside","args":[]}}),
             "relative",
         ),
     ] {
         fixture.write(
             "artifactize.json",
-            json!({"name":"test","stale":stale,"evals":[eval("check","touch executed")]}),
+            json!({"name":"test","staleKey":stale,"evals":[eval("check","touch executed")]}),
         );
         let error = fixture.verify(&["--all"], 2);
         let error = error["error"].as_str().unwrap();
@@ -191,7 +188,7 @@ import json, os, pathlib, stat, sys
 context = json.load(sys.stdin)
 assert context == {'version': 1, 'artifactId': 'test'}
 assert pathlib.Path.cwd().name == 'owner'
-assert 'IDENTITY_SECRET' not in os.environ
+assert 'STALE_KEY_SECRET' not in os.environ
 assert sys.argv[2] == '$HOME; ../literal $(touch executed)'
 assert sys.argv[3] == str(pathlib.Path.cwd() / 'key')
 for key in ['HOME', 'TMPDIR', 'XDG_CACHE_HOME', 'ARTIFACTIZE_OUTPUT_DIR']:
@@ -203,14 +200,14 @@ with open(sys.argv[1], 'a') as log:
     log.write(os.environ['ARTIFACTIZE_OUTPUT_DIR'] + '\n')
 print('protocol:v1')
 "#;
-    fixture.write("owner/artifactize.json", json!({"name":"test","stale":{"kind":"identity","inputs":["key"],"script":{"command":"./identity.py","args":[probe,"$HOME; ../literal $(touch executed)","{test}/key"]}},"evals":[eval("one","exit 0"),eval("two","exit 3")]}));
+    fixture.write("owner/artifactize.json", json!({"name":"test","staleKey":{"script":{"command":"./stale_key.py","args":[probe,"$HOME; ../literal $(touch executed)","{test}/key"],"inputs":["key"]}},"evals":[eval("one","exit 0"),eval("two","exit 3")]}));
     fs::write(fixture.repo.join("owner/key"), "material").unwrap();
-    let path = fixture.repo.join("owner/identity.py");
+    let path = fixture.repo.join("owner/stale_key.py");
     fs::write(&path, script).unwrap();
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
     let run = fixture.verify(&["--all", "--force"], 1);
-    assert_eq!(run["requests"][0]["identity"], "protocol:v1");
-    assert_eq!(run["requests"][1]["identity"], "protocol:v1");
+    assert_eq!(run["requests"][0]["staleKey"], "protocol:v1");
+    assert_eq!(run["requests"][1]["staleKey"], "protocol:v1");
     assert_eq!(run["requests"][0]["status"], "GREEN");
     assert_eq!(run["requests"][1]["status"], "RED");
     let paths = fs::read_to_string(&probe).unwrap();
@@ -220,8 +217,8 @@ print('protocol:v1')
         "one preparation, one recheck per eval"
     );
     assert!(paths.lines().all(|path| !Path::new(path).exists()));
-    assert_eq!(run["validation"]["artifacts"][0]["identity"], "script");
-    assert_eq!(run["validation"]["artifacts"][0]["value"], "protocol:v1");
+    assert_eq!(run["validation"]["artifacts"][0]["staleKeyKind"], "script");
+    assert_eq!(run["validation"]["artifacts"][0]["staleKey"], "protocol:v1");
     fs::remove_dir_all(&fixture.repo).unwrap();
     let output = fixture
         .command()
@@ -242,22 +239,22 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
     for (review, code) in [
         ("printf after > key; exit 0", "INPUT_CHANGED"),
         ("printf after > key; exit 1", "INPUT_CHANGED"),
-        ("printf 'bad value' > key", "IDENTITY_RECHECK_FAILED"),
-        ("rm key", "IDENTITY_RECHECK_FAILED"),
+        ("printf 'bad value' > key", "STALE_KEY_RECHECK_FAILED"),
+        ("rm key", "STALE_KEY_RECHECK_FAILED"),
     ] {
         fs::write(fixture.repo.join("key"), "before").unwrap();
-        let mut stale = identity("cat key");
-        stale["inputs"] = json!(["key"]);
+        let mut stale = stale_key("cat key");
+        stale["script"]["inputs"] = json!(["key"]);
         fixture.write(
             "artifactize.json",
-            json!({"name":"test","stale":stale,"evals":[eval("check",review)]}),
+            json!({"name":"test","staleKey":stale,"evals":[eval("check",review)]}),
         );
         let run = fixture.verify(&["--all"], 2);
         let request = &run["requests"][0];
         assert_eq!(run["status"], "ERROR");
         assert_eq!(request["status"], "ERROR");
         assert_eq!(request["errorCode"], code);
-        assert_eq!(request["identity"], "before");
+        assert_eq!(request["staleKey"], "before");
         assert!(
             request["result"].is_null(),
             "must not persist a semantic verdict"
@@ -275,7 +272,7 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
         json!({"name":"test","evals":[eval("check","printf after > key")]}),
     );
     let run = fixture.verify(&["--all"], 0);
-    assert!(run["requests"][0]["identity"].is_null());
+    assert!(run["requests"][0]["staleKey"].is_null());
     assert_eq!(run["requests"][0]["status"], "GREEN");
 }
 
@@ -290,21 +287,21 @@ fn preparation_covers_only_required_artifacts_but_includes_unselected_dependenci
     );
     fixture.write(
         "b/artifactize.json",
-        json!({"name":"dependency","basis":true,"stale":identity("printf dependency:v1")}),
+        json!({"name":"dependency","basis":true,"staleKey":stale_key("printf dependency:v1")}),
     );
-    fixture.write("c/artifactize.json", json!({"name":"unrelated","stale":identity("exit 9"),"evals":[eval("check","touch executed")]}));
+    fixture.write("c/artifactize.json", json!({"name":"unrelated","staleKey":stale_key("exit 9"),"evals":[eval("check","touch executed")]}));
     let run = fixture.verify(&["--eval", "selected/check"], 0);
     assert_eq!(run["requests"].as_array().unwrap().len(), 1);
-    assert!(run["requests"][0]["identity"].is_null());
+    assert!(run["requests"][0]["staleKey"].is_null());
     let artifacts = run["validation"]["artifacts"].as_array().unwrap();
     assert_eq!(artifacts.len(), 2);
     assert_eq!(
-        artifacts.iter().find(|a| a["id"] == "dependency").unwrap()["value"],
+        artifacts.iter().find(|a| a["id"] == "dependency").unwrap()["staleKey"],
         "dependency:v1"
     );
     fixture.write(
         "b/artifactize.json",
-        json!({"name":"dependency","basis":true,"stale":identity("exit 9")}),
+        json!({"name":"dependency","basis":true,"staleKey":stale_key("exit 9")}),
     );
     let error = fixture.verify(&["--eval", "selected/check"], 2);
     assert!(
@@ -316,15 +313,15 @@ fn preparation_covers_only_required_artifacts_but_includes_unselected_dependenci
 }
 
 #[test]
-fn family_context_is_per_instance_and_identity_material_is_rechecked() {
+fn family_context_is_per_instance_and_stale_key_material_is_rechecked() {
     let fixture = Fixture::new();
     fixture.write("artifactize.json", json!({"name":"root","basis":true}));
     fixture.write("family/artifactize.json", json!({
         "name":"family","family":{"instances":{"first":{"material":["first.txt"]},"second":{"material":["second.txt"]}}},
-        "stale":{"kind":"identity","script":{"command":"python3","args":["identity.py"]}},
+        "staleKey":{"script":{"command":"python3","args":["stale_key.py"]}},
         "evals":[eval("check","exit 0")]
     }));
-    fs::write(fixture.repo.join("family/identity.py"), "import json, sys\nx = json.load(sys.stdin)\nassert x == {'version': 1, 'artifactId': x['artifactId'], 'family': {'name': 'family', 'material': [x['artifactId'] + '.txt']}}\nprint(open(x['family']['material'][0]).read(), end='')\n").unwrap();
+    fs::write(fixture.repo.join("family/stale_key.py"), "import json, sys\nx = json.load(sys.stdin)\nassert x == {'version': 1, 'artifactId': x['artifactId'], 'family': {'name': 'family', 'material': [x['artifactId'] + '.txt']}}\nprint(open(x['family']['material'][0]).read(), end='')\n").unwrap();
     fs::write(
         fixture.repo.join("family/python3"),
         "not executable and must not shadow PATH",
@@ -333,15 +330,15 @@ fn family_context_is_per_instance_and_identity_material_is_rechecked() {
     fs::write(fixture.repo.join("family/first.txt"), "first:v1").unwrap();
     fs::write(fixture.repo.join("family/second.txt"), "second:v2").unwrap();
     let run = fixture.verify(&["family"], 0);
-    assert_eq!(run["requests"][0]["identity"], "first:v1");
-    assert_eq!(run["requests"][1]["identity"], "second:v2");
+    assert_eq!(run["requests"][0]["staleKey"], "first:v1");
+    assert_eq!(run["requests"][1]["staleKey"], "second:v2");
     let mut declaration: Value =
         serde_json::from_slice(&fs::read(fixture.repo.join("family/artifactize.json")).unwrap())
             .unwrap();
     declaration["evals"] = json!([eval("check", "rm first.txt")]);
     fixture.write("family/artifactize.json", declaration);
     let run = fixture.verify(&["first", "--force"], 2);
-    assert_eq!(run["requests"][0]["errorCode"], "IDENTITY_RECHECK_FAILED");
+    assert_eq!(run["requests"][0]["errorCode"], "STALE_KEY_RECHECK_FAILED");
 }
 
 #[test]
@@ -354,7 +351,7 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
             if recheck { "test -e executed" } else { "true" },
             marker.display()
         );
-        fixture.write("artifactize.json", json!({"name":"test","stale":identity(&source),"evals":[eval("check","touch executed")]}));
+        fixture.write("artifactize.json", json!({"name":"test","staleKey":stale_key(&source),"evals":[eval("check","touch executed")]}));
         let child = fixture
             .command()
             .args(["verify", "--all", "--json"])
@@ -363,7 +360,7 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
             .unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         while fs::read_to_string(&marker).is_err() {
-            assert!(Instant::now() < deadline, "identity never started");
+            assert!(Instant::now() < deadline, "stale_key never started");
             thread::sleep(Duration::from_millis(10));
         }
         let marker = fs::read_to_string(marker).unwrap();
@@ -394,20 +391,20 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
 }
 
 #[test]
-fn identity_arguments_resolve_global_names_like_runtime_argv() {
+fn stale_key_arguments_resolve_global_names_like_runtime_argv() {
     let fixture = Fixture::new();
     fs::write(
-        fixture.repo.join("identity.py"),
+        fixture.repo.join("stale_key.py"),
         "import hashlib, json, pathlib, sys\njson.load(sys.stdin)\ndigest = hashlib.sha256()\nfor root in sys.argv[1:]:\n    for path in sorted(pathlib.Path(root).rglob('*')):\n        if path.is_file():\n            digest.update(path.read_bytes())\nprint(digest.hexdigest())\n",
     )
     .unwrap();
     fixture.write("core/artifactize.json", json!({"name":"core","basis":true}));
     fs::write(fixture.repo.join("core/lib.txt"), "v1").unwrap();
-    // The JSON from issue #48: a global Artifact name in both identity and runtime argv.
+    // The JSON from issue #48: a global Artifact name in both stale_key and runtime argv.
     let api = |reference: &str, mounts: Value| {
         json!({
             "name":"api","mounts":mounts,
-            "stale":{"kind":"identity","script":{"command":"python3","args":["../identity.py",".",reference]}},
+            "staleKey":{"script":{"command":"python3","args":["../stale_key.py",".",reference]}},
             "evals":[{"id":"tests","title":"Tests","profile":{"kind":"runtime","command":"python3","args":["-B","test_api.py",reference]},"payload":{"instruction":"Run the API tests."}}]
         })
     };
@@ -431,14 +428,14 @@ fn identity_arguments_resolve_global_names_like_runtime_argv() {
     let status: Value = serde_json::from_str(&status).unwrap();
     assert_eq!(status["evals"][0]["action"], "execute");
     let first = fixture.verify(&["--all"], 0);
-    let identity = first["requests"][0]["identity"]
+    let stale_key = first["requests"][0]["staleKey"]
         .as_str()
         .unwrap()
         .to_owned();
     assert_eq!(run(&["status"]).0, Some(0));
     fs::write(fixture.repo.join("core/lib.txt"), "v2").unwrap();
     let second = fixture.verify(&["--all"], 0);
-    assert_ne!(second["requests"][0]["identity"], identity.as_str());
+    assert_ne!(second["requests"][0]["staleKey"], stale_key.as_str());
     assert_eq!(second["executionsStarted"], 1);
 
     // Mount aliases keep working.

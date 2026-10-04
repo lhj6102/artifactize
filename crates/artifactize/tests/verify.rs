@@ -186,7 +186,7 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
         database
             .pragma_query_value::<u32, _>(None, "user_version", |r| r.get(0))
             .unwrap(),
-        1
+        artifactize::store::STATE_SCHEMA_VERSION
     );
     assert_eq!(
         database
@@ -881,7 +881,7 @@ fn recursive_family_selection_includes_external_evals_without_forcing_them() {
             .iter()
             .all(|r| r["status"] == "GREEN" && r["profile"]["command"] == "/bin/echo")
     );
-    assert!(!fixture.repo.join("scenarios/identity-ran").exists());
+    assert!(!fixture.repo.join("scenarios/stale_key-ran").exists());
 }
 
 #[test]

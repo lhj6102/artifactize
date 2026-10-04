@@ -6,7 +6,7 @@ use std::{
 };
 
 use artifactize::{
-    config::{RepoConfig, Stale, read_workspace_config},
+    config::{RepoConfig, StaleKey, read_workspace_config},
     graph::Graph,
     scope::{RelationKind, artifact_scope, eval_scope},
 };
@@ -27,7 +27,7 @@ impl Fixture {
             &repo,
         );
         fs::set_permissions(
-            repo.join("scenarios/identity.sh"),
+            repo.join("scenarios/stale_key.sh"),
             fs::Permissions::from_mode(0o755),
         )
         .unwrap();
@@ -124,11 +124,17 @@ fn file_instances_expand_to_ordinary_artifacts_evals_scopes_and_relations() {
         assert_eq!(family.instances.as_deref(), Some("instances.json"));
         assert_eq!(family.material, [format!("{id}.txt")]);
         assert!(artifact.children.is_empty());
-        let Some(Stale::Identity { script, inputs, .. }) = &artifact.stale else {
+        let Some(StaleKey::Script {
+            command,
+            args,
+            inputs,
+            ..
+        }) = &artifact.stale_key
+        else {
             panic!()
         };
-        assert_eq!(script.command, "/bin/sh");
-        assert_eq!(script.args, ["identity.sh"]);
+        assert_eq!(command, "/bin/sh");
+        assert_eq!(args, &["stale_key.sh"]);
         assert_eq!(inputs, &["check.sh"]);
     }
     assert_eq!(
@@ -170,13 +176,13 @@ fn file_instances_expand_to_ordinary_artifacts_evals_scopes_and_relations() {
         ["checkout"]
     );
     assert!(scope.resolve_path("search", "search.txt").is_err());
-    // Material marks identity ownership, not a filesystem sandbox inside the shared folder.
+    // Material marks stale_key ownership, not a filesystem sandbox inside the shared folder.
     assert!(
         scope
             .resolve_input(&fixture.repo, "checkout", "search.txt")
             .is_ok()
     );
-    assert!(!fixture.repo.join("scenarios/identity-ran").exists());
+    assert!(!fixture.repo.join("scenarios/stale_key-ran").exists());
     assert!(!fixture.root.path().join("state").exists());
 
     let mut list = fixture.read("scenarios/instances.json");
@@ -197,8 +203,8 @@ fn file_instances_expand_to_ordinary_artifacts_evals_scopes_and_relations() {
 #[test]
 fn config_check_is_inert_and_verify_keeps_runtime_verdicts_separate() {
     let fixture = Fixture::new();
-    let identity = fixture.repo.join("scenarios/identity.sh");
-    fs::write(&identity, "#!/bin/sh\ntouch identity-ran\nexit 1\n").unwrap();
+    let stale_key = fixture.repo.join("scenarios/stale_key.sh");
+    fs::write(&stale_key, "#!/bin/sh\ntouch stale_key-ran\nexit 1\n").unwrap();
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
@@ -210,10 +216,10 @@ fn config_check_is_inert_and_verify_keeps_runtime_verdicts_separate() {
         json!({"ok":true,"artifacts":3,"evals":2})
     );
     assert!(!fixture.root.path().join("state").exists());
-    assert!(!fixture.repo.join("scenarios/identity-ran").exists());
+    assert!(!fixture.repo.join("scenarios/stale_key-ran").exists());
     fs::write(
-        identity,
-        include_str!("fixtures/families/scenarios/identity.sh"),
+        stale_key,
+        include_str!("fixtures/families/scenarios/stale_key.sh"),
     )
     .unwrap();
     let output = fixture
@@ -234,8 +240,8 @@ fn config_check_is_inert_and_verify_keeps_runtime_verdicts_separate() {
         .iter()
         .find(|request| request["evalId"] == "search/review")
         .unwrap();
-    assert_eq!(checkout["identity"], "checkout:READY");
-    assert_eq!(search["identity"], "search:SEARCH");
+    assert_eq!(checkout["staleKey"], "checkout:READY");
+    assert_eq!(search["staleKey"], "search:SEARCH");
     assert_eq!(checkout["result"]["stdout"], "READY\n");
     assert_eq!(search["result"]["stdout"], "SEARCH\n");
     assert_ne!(checkout["runDir"], search["runDir"]);
@@ -262,7 +268,7 @@ fn config_check_is_inert_and_verify_keeps_runtime_verdicts_separate() {
             .unwrap()["result"]["verdict"],
         "RED"
     );
-    assert!(!fixture.repo.join("scenarios/identity-ran").exists());
+    assert!(!fixture.repo.join("scenarios/stale_key-ran").exists());
 }
 
 #[test]

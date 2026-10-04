@@ -1,8 +1,8 @@
 use std::{fs, os::unix::fs::symlink, process::Command, sync::mpsc, thread};
 
 use artifactize::store::{
-    DATABASE, Receipts, STATE_SCHEMA_VERSION, read_identity_executions, read_latest_requests,
-    read_request, read_requests, read_run, read_runs,
+    DATABASE, Receipts, STATE_SCHEMA_VERSION, read_latest_requests, read_request, read_requests,
+    read_run, read_runs, read_stale_key_executions,
 };
 use rusqlite::Connection;
 
@@ -51,7 +51,7 @@ async fn assert_empty_reads(state: &std::path::Path, repo: &std::path::Path) {
     assert!(read_runs(state, None, 10, 0).await.unwrap().is_empty());
     assert!(read_latest_requests(state, repo).await.unwrap().is_empty());
     assert!(
-        read_identity_executions(state, &[("missing".into(), "definition".into())])
+        read_stale_key_executions(state, &[("missing".into(), "definition".into())])
             .await
             .unwrap()
             .is_empty()
@@ -214,20 +214,20 @@ async fn repositories_share_one_state_database() {
 }
 
 #[tokio::test]
-async fn schema_allows_only_one_active_execution_per_identity_and_definition() {
+async fn schema_allows_only_one_active_execution_per_stale_key_and_definition() {
     let root = tempfile::tempdir().unwrap();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
     let _receipts = Receipts::open(&state, &repo).await.unwrap();
     let db = Connection::open(state.join(DATABASE)).unwrap();
-    let insert = "INSERT INTO executions(id,identity,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?, ?, 'definition', 1, 1, ?, '{}')";
+    let insert = "INSERT INTO executions(id,stale_key,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?, ?, 'definition', 1, 1, ?, '{}')";
     db.execute(insert, ["first", "shared", "RUNNING"]).unwrap();
     assert!(
         db.execute(insert, ["second", "shared", "WAITING_HUMAN"])
             .is_err()
     );
-    db.execute("INSERT INTO executions(id,identity,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES ('different','shared','other',1,1,'WAITING_HUMAN','{}')", []).unwrap();
+    db.execute("INSERT INTO executions(id,stale_key,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES ('different','shared','other',1,1,'WAITING_HUMAN','{}')", []).unwrap();
     db.execute(insert, ["completed", "shared", "GREEN"])
         .unwrap();
     db.execute("UPDATE executions SET status='ERROR' WHERE id='first'", [])

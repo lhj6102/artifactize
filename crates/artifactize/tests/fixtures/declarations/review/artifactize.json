@@ -3,16 +3,15 @@
   "mounts": {
     "source": "input"
   },
-  "stale": {
-    "kind": "identity",
+  "staleKey": {
     "script": {
       "command": "hook.sh",
-      "args": []
-    },
-    "inputs": [
-      "hook.sh"
-    ],
-    "timeoutMs": 1000
+      "args": [],
+      "inputs": [
+        "hook.sh"
+      ],
+      "timeoutMs": 1000
+    }
   },
   "views": {
     "agentTools": {

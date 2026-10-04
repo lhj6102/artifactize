@@ -98,7 +98,7 @@ impl Fixture {
     }
 
     fn shared_repo(&self, name: &str, script: &str) -> PathBuf {
-        let repo = self.repo(name, json!({"name":name,"stale":identity("concurrent"),"evals":[{
+        let repo = self.repo(name, json!({"name":name,"staleKey":stale_key("concurrent"),"evals":[{
             "id":"check","title":"Review","profile":{"kind":"runtime","command":"/bin/sh",
                 "args":["review.sh",self.root.path().join("starts"),self.root.path().join("release")],"timeoutMs":10000},
             "payload":{"instruction":"Review."}
@@ -131,14 +131,14 @@ impl Fixture {
         let mut db = Connection::open(self.state.join("state.sqlite")).unwrap();
         let transaction = db.transaction().unwrap();
         for i in 0..count {
-            let identity = format!("seed-{i:05}");
+            let stale_key = format!("seed-{i:05}");
             transaction.execute(
-                "INSERT INTO executions(id,identity,eval_def_hash,owner_pid,owner_start_time,status,data) SELECT ?,?,eval_def_hash,owner_pid,owner_start_time,status,json_set(data,'$.id',?,'$.identity',?) FROM executions LIMIT 1",
-                rusqlite::params![identity, identity, identity, identity],
+                "INSERT INTO executions(id,stale_key,eval_def_hash,owner_pid,owner_start_time,status,data) SELECT ?,?,eval_def_hash,owner_pid,owner_start_time,status,json_set(data,'$.id',?,'$.stale_key',?) FROM executions LIMIT 1",
+                rusqlite::params![stale_key, stale_key, stale_key, stale_key],
             ).unwrap();
             transaction.execute(
-                "INSERT INTO cache_entries(identity,eval_def_hash,execution_id,bytes,last_used) VALUES (?,(SELECT eval_def_hash FROM executions LIMIT 1),?,?,?)",
-                rusqlite::params![identity, identity, bytes, format!("2000-01-01T00:00:00.{i:09}Z")],
+                "INSERT INTO cache_entries(stale_key,eval_def_hash,execution_id,bytes,last_used) VALUES (?,(SELECT eval_def_hash FROM executions LIMIT 1),?,?,?)",
+                rusqlite::params![stale_key, stale_key, bytes, format!("2000-01-01T00:00:00.{i:09}Z")],
             ).unwrap();
         }
         transaction.commit().unwrap();
@@ -146,7 +146,7 @@ impl Fixture {
 
     fn entries(&self) -> Vec<(String, String, i64, String, String)> {
         let db = Connection::open(self.state.join("state.sqlite")).unwrap();
-        let mut statement = db.prepare("SELECT c.identity,c.execution_id,c.bytes,c.last_used,e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id ORDER BY c.identity").unwrap();
+        let mut statement = db.prepare("SELECT c.stale_key,c.execution_id,c.bytes,c.last_used,e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id ORDER BY c.stale_key").unwrap();
         statement
             .query_map([], |row| {
                 Ok((
@@ -209,8 +209,8 @@ fn eval(id: &str, script: &str) -> Value {
     json!({"id":id,"title":"Review","profile":{"kind":"runtime","command":"/bin/sh","args":["-c",script]},"payload":{"instruction":"Review."}})
 }
 
-fn identity(key: &str) -> Value {
-    json!({"kind":"identity","script":{"command":"/bin/echo","args":[key]}})
+fn stale_key(key: &str) -> Value {
+    json!({"script":{"command":"/bin/echo","args":[key]}})
 }
 
 fn request<'a>(view: &'a Value, id: &str) -> &'a Value {
@@ -225,7 +225,7 @@ fn request<'a>(view: &'a Value, id: &str) -> &'a Value {
 #[test]
 fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_deletion() {
     let fixture = Fixture::new();
-    let source = fixture.repo("source", json!({"name":"original","stale":identity("shared:red"),"evals":[eval("first","printf original; exit 7")]}));
+    let source = fixture.repo("source", json!({"name":"original","staleKey":stale_key("shared:red"),"evals":[eval("first","printf original; exit 7")]}));
     let original = fixture.command(&source, &["verify", "--all"], 1);
     let original_request = &original["requests"][0];
     assert!(original_request["child"]["pid"].is_number());
@@ -239,7 +239,7 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     write(
         &target,
         "dependency/artifactize.json",
-        json!({"name":"dependency","stale":identity("shared:red"),"evals":[same]}),
+        json!({"name":"dependency","staleKey":stale_key("shared:red"),"evals":[same]}),
     );
     let mut consumer = eval("check", "touch must-not-run");
     consumer["payload"]["instruction"] = json!("Check {dependency}.");
@@ -309,9 +309,9 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
 }
 
 #[test]
-fn distinct_evals_on_one_identity_execute_and_status_reuses_each_definition() {
+fn distinct_evals_on_one_stale_key_execute_and_status_reuses_each_definition() {
     let fixture = Fixture::new();
-    let repo = fixture.repo("repo", json!({"name":"test","stale":identity("shared"),"evals":[
+    let repo = fixture.repo("repo", json!({"name":"test","staleKey":stale_key("shared"),"evals":[
         {"id":"pass","title":"Pass","profile":{"kind":"runtime","command":"/bin/true","args":[]},"payload":{"instruction":"Review."}},
         {"id":"fail","title":"Fail","profile":{"kind":"runtime","command":"/bin/false","args":[]},"payload":{"instruction":"Review."}}
     ]}));
@@ -370,11 +370,11 @@ fn distinct_evals_on_one_identity_execute_and_status_reuses_each_definition() {
 }
 
 #[test]
-fn no_identity_executes_each_time_and_never_reads_or_publishes_cache() {
+fn no_stale_key_executes_each_time_and_never_reads_or_publishes_cache() {
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","stale":identity("cached"),"evals":[eval("check","exit 0")]}),
+        json!({"name":"test","staleKey":stale_key("cached"),"evals":[eval("check","exit 0")]}),
     );
     fixture.command(&repo, &["verify", "--all"], 0);
     let before = fixture.entries();
@@ -385,7 +385,7 @@ fn no_identity_executes_each_time_and_never_reads_or_publishes_cache() {
     );
     for _ in 0..2 {
         let run = fixture.command(&repo, &["verify", "--all"], 1);
-        assert!(run["requests"][0]["identity"].is_null());
+        assert!(run["requests"][0]["staleKey"].is_null());
         assert!(run["requests"][0]["child"]["pid"].is_number());
     }
     assert_eq!(
@@ -401,7 +401,7 @@ fn no_identity_executes_each_time_and_never_reads_or_publishes_cache() {
 #[test]
 fn errors_are_audited_but_never_published() {
     let fixture = Fixture::new();
-    let repo = fixture.repo("repo",json!({"name":"test","stale":identity("retryable"),"evals":[eval("check","kill -TERM $$")]}));
+    let repo = fixture.repo("repo",json!({"name":"test","staleKey":stale_key("retryable"),"evals":[eval("check","kill -TERM $$")]}));
     for _ in 0..2 {
         let run = fixture.command(&repo, &["verify", "--all"], 2);
         assert_eq!(run["requests"][0]["errorCode"], "ABNORMAL_EXIT");
@@ -412,7 +412,7 @@ fn errors_are_audited_but_never_published() {
     write(
         &repo,
         "artifactize.json",
-        json!({"name":"test","stale":identity("retryable"),"evals":[eval("check","exit 0")]}),
+        json!({"name":"test","staleKey":stale_key("retryable"),"evals":[eval("check","exit 0")]}),
     );
     fixture.command(&repo, &["verify", "--all"], 0);
     assert_eq!(fixture.count("cache_entries"), 1);
@@ -423,7 +423,7 @@ fn force_executes_without_reading_or_replacing_an_entry_but_dependencies_reuse()
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","stale":identity("forced"),"evals":[eval("check","sh review.sh")]}),
+        json!({"name":"test","staleKey":stale_key("forced"),"evals":[eval("check","sh review.sh")]}),
     );
     fs::write(repo.join("review.sh"), "exit 7").unwrap();
     let original = fixture.command(&repo, &["verify", "--all"], 1);
@@ -447,13 +447,13 @@ fn force_executes_without_reading_or_replacing_an_entry_but_dependencies_reuse()
 
     let dependency = fixture.repo(
         "dep",
-        json!({"name":"dep","stale":identity("dependency"),"evals":[eval("check","exit 0")]}),
+        json!({"name":"dep","staleKey":stale_key("dependency"),"evals":[eval("check","exit 0")]}),
     );
     fixture.command(&dependency, &["verify", "--all"], 0);
     write(
         &repo,
         "dependency/artifactize.json",
-        json!({"name":"dep","stale":identity("dependency"),"evals":[eval("check","exit 0")]}),
+        json!({"name":"dep","staleKey":stale_key("dependency"),"evals":[eval("check","exit 0")]}),
     );
     let forced = fixture.command(&repo, &["verify", "test", "--recursive", "--force"], 0);
     assert_eq!(request(&forced, "test/check")["force"], true);
@@ -461,16 +461,16 @@ fn force_executes_without_reading_or_replacing_an_entry_but_dependencies_reuse()
     assert!(request(&forced, "dep/check")["child"].is_null());
     assert!(!repo.join("dependency/must-not-run").exists());
 
-    let absent = fixture.repo("absent",json!({"name":"absent","stale":identity("never-published"),"evals":[eval("check","exit 0")]}));
+    let absent = fixture.repo("absent",json!({"name":"absent","staleKey":stale_key("never-published"),"evals":[eval("check","exit 0")]}));
     let entries = fixture.entries();
     fixture.command(&absent, &["verify", "--all", "--force"], 0);
     assert_eq!(fixture.entries(), entries);
 }
 
 #[test]
-fn status_uses_current_identity_and_only_prepares_the_selected_closure() {
+fn status_uses_current_stale_key_and_only_prepares_the_selected_closure() {
     let fixture = Fixture::new();
-    let repo = fixture.repo("repo",json!({"name":"test","stale":{"kind":"identity","script":{"command":"/bin/cat","args":["key"]}},"evals":[eval("check","touch executed")]}));
+    let repo = fixture.repo("repo",json!({"name":"test","staleKey":{"script":{"command":"/bin/cat","args":["key"]}},"evals":[eval("check","touch executed")]}));
     fs::write(repo.join("key"), "first").unwrap();
     fixture.command(&repo, &["verify", "--all"], 0);
     fs::remove_file(repo.join("executed")).unwrap();
@@ -488,13 +488,13 @@ fn status_uses_current_identity_and_only_prepares_the_selected_closure() {
         fixture.command(&repo, &["status"], 2)["error"]
             .as_str()
             .unwrap()
-            .contains("Identity script")
+            .contains("Stale key script")
     );
     assert!(!repo.join("executed").exists());
     write(
         &repo,
         "selected/artifactize.json",
-        json!({"name":"selected","stale":identity("isolated"),"evals":[eval("check","touch must-not-run")]}),
+        json!({"name":"selected","staleKey":stale_key("isolated"),"evals":[eval("check","touch must-not-run")]}),
     );
     let selected = fixture.command(&repo, &["status", "selected"], 1);
     assert_eq!(selected["evals"].as_array().unwrap().len(), 1);
@@ -669,7 +669,7 @@ fn force_bypasses_a_live_claim_and_never_publishes() {
     wait_until(|| fixture.root.path().join("starts").exists());
     let forced = finish(fixture.spawn(&target, &["--force"]), 0);
     let execution = fixture.execution(forced["requests"][0]["executionId"].as_str().unwrap());
-    assert!(execution["identity"].is_null());
+    assert!(execution["staleKey"].is_null());
     assert_eq!(fixture.count("cache_entries"), 0);
     assert_eq!(fixture.starts(), 2);
     fixture.release();
@@ -687,7 +687,7 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","stale":identity("one-start"),"evals":[
+        json!({"name":"test","staleKey":stale_key("one-start"),"evals":[
             eval("first", "echo first >> starts; sleep 0.1"),
             eval("second", "echo first >> starts; sleep 0.1"),
             eval("third", "echo first >> starts; sleep 0.1")
@@ -749,7 +749,7 @@ fn zero_budget_can_join_an_owner_but_cannot_replace_it_after_failure() {
 }
 
 #[test]
-fn an_identity_waiter_occupies_a_job_slot_without_consuming_execution_budget() {
+fn a_stale_key_waiter_occupies_a_job_slot_without_consuming_execution_budget() {
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("a-target", "touch must-not-run");
@@ -818,14 +818,14 @@ fn cache_commands_are_inert_for_missing_and_empty_state() {
 #[test]
 fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
     let fixture = Fixture::new();
-    let repo = fixture.repo("repo", json!({"name":"original","stale":identity("entry"),"evals":[eval("check","printf original; exit 7")]}));
+    let repo = fixture.repo("repo", json!({"name":"original","staleKey":stale_key("entry"),"evals":[eval("check","printf original; exit 7")]}));
     let run = fixture.command(&repo, &["verify", "--all"], 1);
     fs::remove_dir_all(&repo).unwrap();
     let before = fixture.entries();
     let entries = fixture.command(&repo, &["cache", "list"], 0);
     assert_eq!(entries.as_array().unwrap().len(), 1);
     let entry = &entries[0];
-    assert_eq!(entry["identity"], "entry");
+    assert_eq!(entry["staleKey"], "entry");
     assert_eq!(entry["verdict"], "RED");
     assert_eq!(entry["repoPath"], run["repoPath"]);
     assert_eq!(entry["evalId"], "original/check");
@@ -849,7 +849,7 @@ fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
         assert!(output.status.success());
         if args[1] == "list" {
             let text = String::from_utf8(output.stdout).unwrap();
-            assert!(text.contains("IDENTITY\tEVAL HASH\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED"));
+            assert!(text.contains("STALE KEY\tEVAL HASH\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED"));
             assert!(text.contains(&format!(
                 "entry\t{}\tRED",
                 entry["evalDefHash"].as_str().unwrap()
@@ -890,7 +890,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","stale":identity("seed-00000"),"evals":[eval("check","exit 0")]}),
+        json!({"name":"test","staleKey":stale_key("seed-00000"),"evals":[eval("check","exit 0")]}),
     );
     let original = fixture.command(&repo, &["verify", "--all"], 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
@@ -900,7 +900,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     assert_eq!(hit["requests"][0]["executionId"], "seed-00000");
     let used: String = db
         .query_row(
-            "SELECT last_used FROM cache_entries WHERE identity='seed-00000'",
+            "SELECT last_used FROM cache_entries WHERE stale_key='seed-00000'",
             [],
             |row| row.get(0),
         )
@@ -909,7 +909,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     write(
         &repo,
         "artifactize.json",
-        json!({"name":"test","stale":identity("new"),"evals":[eval("check","exit 0")]}),
+        json!({"name":"test","staleKey":stale_key("new"),"evals":[eval("check","exit 0")]}),
     );
     fixture.command(&repo, &["verify", "--all"], 0);
     assert_eq!(fixture.count("cache_entries"), 10_000);
@@ -940,13 +940,13 @@ fn gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","stale":identity("original"),"evals":[eval("check","exit 0")]}),
+        json!({"name":"test","staleKey":stale_key("original"),"evals":[eval("check","exit 0")]}),
     );
     let original = fixture.command(&repo, &["verify", "--all"], 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute("DELETE FROM cache_entries", []).unwrap();
     fixture.seed_entries(66, 16 * MIB);
-    db.execute("INSERT INTO executions(id,identity,eval_def_hash,owner_pid,owner_start_time,status,data) SELECT 'active','seed-00000',eval_def_hash,1,1,'WAITING_HUMAN','{}' FROM executions LIMIT 1", []).unwrap();
+    db.execute("INSERT INTO executions(id,stale_key,eval_def_hash,owner_pid,owner_start_time,status,data) SELECT 'active','seed-00000',eval_def_hash,1,1,'WAITING_HUMAN','{}' FROM executions LIMIT 1", []).unwrap();
     db.execute("INSERT INTO requests(id,run_id,execution_id,status,data) VALUES ('waiter',?,'seed-00001','QUEUED','{}')", [original["id"].as_str().unwrap()]).unwrap();
     for key in ["seed-00000", "seed-00001"] {
         assert!(
@@ -1004,7 +1004,7 @@ fn gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
 }
 
 #[test]
-fn rm_refuses_an_active_identity_even_without_an_entry() {
+fn rm_refuses_an_active_stale_key_even_without_an_entry() {
     let fixture = Fixture::new();
     let repo = fixture.shared_repo("repo", WAIT_SCRIPT);
     let mut owner = fixture.spawn(&repo, &[]);
@@ -1036,8 +1036,8 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     let original = finish(owner, 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute("DELETE FROM cache_entries", []).unwrap();
-    db.execute("INSERT INTO executions(id,identity,eval_def_hash,owner_pid,owner_start_time,status,data) SELECT 'replacement',identity,eval_def_hash,owner_pid,owner_start_time,status,json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?", [waiting["executionId"].as_str().unwrap()]).unwrap();
-    db.execute("INSERT INTO cache_entries(identity,eval_def_hash,execution_id,bytes,last_used) SELECT 'concurrent',eval_def_hash,'replacement',1,'2000-01-01T00:00:00Z' FROM executions WHERE id='replacement'", []).unwrap();
+    db.execute("INSERT INTO executions(id,stale_key,eval_def_hash,owner_pid,owner_start_time,status,data) SELECT 'replacement',stale_key,eval_def_hash,owner_pid,owner_start_time,status,json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?", [waiting["executionId"].as_str().unwrap()]).unwrap();
+    db.execute("INSERT INTO cache_entries(stale_key,eval_def_hash,execution_id,bytes,last_used) SELECT 'concurrent',eval_def_hash,'replacement',1,'2000-01-01T00:00:00Z' FROM executions WHERE id='replacement'", []).unwrap();
     signal(waiter.id(), "-CONT");
     let joined = finish(waiter, 0);
     assert_eq!(
@@ -1129,7 +1129,7 @@ fn gc_failure_does_not_replace_a_completed_result() {
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","stale":identity("first"),"evals":[eval("check","exit 0")]}),
+        json!({"name":"test","staleKey":stale_key("first"),"evals":[eval("check","exit 0")]}),
     );
     fixture.command(&repo, &["verify", "--all"], 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
@@ -1139,7 +1139,7 @@ fn gc_failure_does_not_replace_a_completed_result() {
     write(
         &repo,
         "artifactize.json",
-        json!({"name":"test","stale":identity("second"),"evals":[eval("check","exit 0")]}),
+        json!({"name":"test","staleKey":stale_key("second"),"evals":[eval("check","exit 0")]}),
     );
     let run = fixture.command(&repo, &["verify", "--all"], 0);
     assert_eq!(run["requests"][0]["status"], "GREEN");
@@ -1162,7 +1162,7 @@ fn changed_schema_profile_args_and_payload_require_new_executions() {
     let base = json!({"id":"check","title":"Review","profile":{"kind":"runtime","command":"/bin/true","args":[]},"payload":{"instruction":"Review."}});
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","stale":identity("unchanged"),"evals":[base]}),
+        json!({"name":"test","staleKey":stale_key("unchanged"),"evals":[base]}),
     );
     let original = fixture.command(&repo, &["verify", "--all"], 0);
     for (pointer, value, code) in [
@@ -1188,7 +1188,7 @@ fn changed_schema_profile_args_and_payload_require_new_executions() {
         write(
             &repo,
             "artifactize.json",
-            json!({"name":"test","stale":identity("unchanged"),"evals":[changed]}),
+            json!({"name":"test","staleKey":stale_key("unchanged"),"evals":[changed]}),
         );
         assert_eq!(
             fixture.command(&repo, &["status"], 1)["evals"][0]["action"],
@@ -1220,7 +1220,7 @@ fn only_the_effective_profile_variant_partitions_reuse() {
     });
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","stale":identity("variants"),"evals":[declaration]}),
+        json!({"name":"test","staleKey":stale_key("variants"),"evals":[declaration]}),
     );
     let original = fixture.command(&repo, &["verify", "--all"], 0);
     let same = fixture.command(&repo, &["verify", "--all", "--profile", "same"], 0);
@@ -1242,7 +1242,7 @@ fn only_the_effective_profile_variant_partitions_reuse() {
     write(
         &repo,
         "artifactize.json",
-        json!({"name":"test","stale":identity("variants"),"evals":[declaration]}),
+        json!({"name":"test","staleKey":stale_key("variants"),"evals":[declaration]}),
     );
     assert_eq!(
         fixture.command(&repo, &["verify", "--all"], 0)["requests"][0]["executionId"],
@@ -1339,11 +1339,11 @@ fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
 #[test]
 fn gc_and_removal_protect_only_the_matching_definition() {
     let fixture = Fixture::new();
-    let repo = fixture.repo("repo", json!({"name":"test","stale":identity("shared"),"evals":[eval("pass","exit 0"),eval("fail","exit 1")]}));
+    let repo = fixture.repo("repo", json!({"name":"test","staleKey":stale_key("shared"),"evals":[eval("pass","exit 0"),eval("fail","exit 1")]}));
     let run = fixture.command(&repo, &["verify", "--all"], 1);
     let hash = run["requests"][0]["evalDefHash"].as_str().unwrap();
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.execute("INSERT INTO executions(id,identity,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES ('active','shared',?,1,1,'WAITING_HUMAN','{}')", [hash]).unwrap();
+    db.execute("INSERT INTO executions(id,stale_key,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES ('active','shared',?,1,1,'WAITING_HUMAN','{}')", [hash]).unwrap();
     let other = run["requests"][1]["evalDefHash"].as_str().unwrap();
     assert_eq!(
         fixture.command(&repo, &["cache", "rm", "shared", other], 0),

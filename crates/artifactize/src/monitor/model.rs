@@ -579,8 +579,8 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
         detail.push("Requested", profile(&request.requested_profile));
     }
     detail.push(
-        "Identity",
-        request.identity.as_deref().unwrap_or("none (no reuse)"),
+        "Stale key",
+        request.stale_key.as_deref().unwrap_or("none (no reuse)"),
     );
     if let Some(source) = &request.provenance {
         detail.push(
@@ -734,8 +734,10 @@ pub fn detail(
             );
             detail.push("Family", saved.family(id).unwrap_or_default());
             detail.push(
-                "Identity",
-                saved.validation(id)["value"].as_str().unwrap_or_default(),
+                "Stale key",
+                saved.validation(id)["staleKey"]
+                    .as_str()
+                    .unwrap_or_default(),
             );
             let component = saved.component(id);
             if component["cyclic"] == true {

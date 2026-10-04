@@ -3,10 +3,11 @@
   "mounts": {
     "terms": "glossary"
   },
-  "stale": {
-    "kind": "content",
-    "inputs": ["."],
-    "dependencies": "direct"
+  "staleKey": {
+    "content": {
+      "inputs": ["."],
+      "dependencies": "direct"
+    }
   },
   "evals": [
     {

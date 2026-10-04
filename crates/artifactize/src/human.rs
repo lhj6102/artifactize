@@ -69,7 +69,7 @@ pub async fn run_human_tool(
     Ok(result)
 }
 
-/// Invalid results remain correctable; only a valid submission performs the final identity check.
+/// Invalid results remain correctable; only a valid submission performs the final stale key check.
 pub async fn submit(
     receipts: &Receipts,
     request: &str,
@@ -134,7 +134,7 @@ async fn recheck(
     if cancellation.is_cancelled() {
         return Err("Human action was cancelled.".into());
     }
-    let Some(expected) = &request.identity else {
+    let Some(expected) = &request.stale_key else {
         return Ok(());
     };
     let output = request
@@ -142,14 +142,11 @@ async fn recheck(
         .as_deref()
         .ok_or("Human request has no output directory.")?;
     let (code, error) =
-        match cache::identity(config, &request.target, output, cancellation.clone()).await {
+        match cache::stale_key(config, &request.target, output, cancellation.clone()).await {
             Ok(actual) if &actual == expected => return Ok(()),
-            Ok(_) => (
-                "INPUT_CHANGED",
-                "Artifact input changed during review (identity differs).".into(),
-            ),
+            Ok(_) => ("INPUT_CHANGED", "Stale key changed during review.".into()),
             Err(error) if cancellation.is_cancelled() => return Err(error),
-            Err(error) => ("IDENTITY_RECHECK_FAILED", error),
+            Err(error) => ("STALE_KEY_RECHECK_FAILED", error),
         };
     request.status = "ERROR".into();
     request.error = Some(error.clone());

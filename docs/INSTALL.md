@@ -25,7 +25,7 @@ it under `DIR/bin` instead. Run the same command again to upgrade.
 ## State
 
 All state lives in one directory: `state.sqlite` (Runs, requests, executions, the
-identity cache and Human claims), Run output under `runs/`, and ChatGPT
+staleKey cache and Human claims), Run output under `runs/`, and ChatGPT
 credentials under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
 `$XDG_STATE_HOME/artifactize`, else `~/.local/state/artifactize`.
 
@@ -73,7 +73,7 @@ artifactize config check    # static validation; runs no owner code
 artifactize status          # exit 1: two evals would execute, guide/terms waits for them
 artifactize graph           # Artifacts, evals and child/mount/reference relations
 artifactize verify --all    # three GREEN results, exit 0; prints "Run: RUN_ID"
-artifactize run show RUN_ID # the saved Run as JSON: argv, stdout, identity
+artifactize run show RUN_ID # the saved Run as JSON: argv, stdout, staleKey
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused
 artifactize status          # exit 0: every eval shows "PASS — reuse"
 ```

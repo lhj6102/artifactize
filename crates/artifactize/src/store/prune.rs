@@ -213,9 +213,14 @@ fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
             if directory(&path)? {
                 targets.push(path);
             }
-        } else if ["runtime-", "identity-"]
-            .iter()
-            .any(|prefix| prefixed(name, prefix))
+        } else if [
+            "runtime-",
+            "stale-key-",
+            // staleKey script scratch in Run folders written before state version 2.
+            "identity-",
+        ]
+        .iter()
+        .any(|prefix| prefixed(name, prefix))
             && directory(&path)?
         {
             collect(&path, targets)?;
