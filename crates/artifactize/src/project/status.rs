@@ -227,16 +227,25 @@ pub async fn status(
                 "blocked",
                 format!("Dependency verdict RED: {}", current.unmet_gates.join(", ")),
             ),
+            // verify takes cached results before gates resolve; dependents still wait for gates.
+            _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
+                "reuse",
+                if current.unmet_gates.is_empty() {
+                    "The current identity and Eval definition have a completed cached result."
+                        .into()
+                } else {
+                    format!(
+                        "The current identity and Eval definition have a completed cached result; its gates still wait for: {}",
+                        current.unmet_gates.join(", ")
+                    )
+                },
+            ),
             Readiness::Wait => (
                 "wait",
                 format!(
                     "Waiting for current GREEN dependency evidence: {}",
                     current.unmet_gates.join(", ")
                 ),
-            ),
-            Readiness::Ready if matches!(current.evidence, Some(Evidence::Current(_))) => (
-                "reuse",
-                "The current identity and Eval definition have a completed cached result.".into(),
             ),
             Readiness::Ready
                 if !force

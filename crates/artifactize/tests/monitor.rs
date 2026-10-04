@@ -328,6 +328,19 @@ async fn saved_tree_details_without_repository_or_writes() {
 
     let now = OffsetDateTime::now_utc();
     let (view, requests) = fixture.load(&second).await;
+    let reused = view.requests.iter().filter(|request| {
+        let source = request.provenance.as_ref();
+        source.is_some_and(|source| source.request_id != request.id)
+    });
+    let work = monitor::progress(&view, &requests, now).work;
+    assert!(
+        work.contains(&format!(
+            "executed {} · reused {}",
+            view.run.executions_started,
+            reused.count()
+        )),
+        "{work}"
+    );
     let nodes = monitor::tree(&view, &requests, now);
     let mut all = Vec::new();
     flatten(&nodes, &mut all);
@@ -400,7 +413,11 @@ async fn saved_tree_details_without_repository_or_writes() {
         red.field("Profile"),
         Some("runtime sh -c echo finding; exit 7")
     );
-    assert!(red.field("Usage").unwrap().starts_with("unreported"));
+    assert!(
+        red.field("Usage")
+            .unwrap()
+            .starts_with("reused: spent none")
+    );
     let reused = monitor::detail(&view, &requests, &Target::Eval("cycle-a/check".into()), now);
     assert_eq!(reused.field("Status"), Some("GREEN — criteria met"));
     assert!(

@@ -150,7 +150,26 @@ Verification runs in the foreground, with or without `--wait`: GREEN exits 0,
 RED 1, ERROR 2, Human wait timeout 3, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels every owned process
 group, waits for cleanup, and records ERROR/CANCELLED for running and queued
 requests, never RED. Previously committed results remain unchanged. There is no
-detached worker. `--json` prints
+detached worker.
+
+Text output prints one line per request and marks a result taken from another
+request's execution (an identity hit, or a joined execution) with its source Run:
+
+```text
+  web/tests [run-x05qFq-5]: GREEN
+  docs/review [run-x05qFq-3]: GREEN (reused from run-Ksl1Qr)
+Summary: executed 1 (runtime 1, agent 0, human 0), reused 4 (runtime 2, agent 1, human 1)
+Usage: spent none; saved inputTokens 10, outputTokens 5, totalTokens 20
+```
+
+`executed` counts the Run's own executions, including ERROR results and Human
+requests it recorded; `reused` counts the rest that have a source. `Usage` (printed
+only when some usage was reported) separates counters spent in this Run from
+`saved`, the sum of the reused executions' original counters. JSON verify and
+`run show` carry the same numbers as `summary.executed`, `summary.reused` and the
+Run-level `usage: {spent, saved}`; `summary.usage` stays equal to `usage.spent`.
+
+`--json` prints
 full saved results, including payloads, argv, stdout/stderr and runtime details;
 there is no compact projection or `--full` flag. `run show RUN_ID` always prints
 full saved JSON and exits 0 on a successful read, regardless of the saved verdict;
@@ -251,8 +270,9 @@ A hit returns the original result without running the eval or re-validating it
 against the requested profile/schema. The request saves the original execution ID,
 actual `profile`, `evalDefHash`, `provenance` (repository, Run, request, eval,
 definition hash and completion time)
-and `usage` when reported, alongside `requestedProfile`. Runtime usage is null,
-not an invented zero. Cached RED remains RED for gates and final obligations.
+and the original attempts as `reusedUsage` when reported, alongside
+`requestedProfile`. Its own `usage` is null: a reused request spent nothing.
+Runtime usage is null, not an invented zero. Cached RED remains RED for gates and final obligations.
 Dependencies outside execution selection can supply cached evidence without
 running. Results remain readable after the source repository is deleted; external
 paths embedded in result text are not made portable.
@@ -320,8 +340,18 @@ Identity commands use disposable output under the state directory, which may be
 created even when no database exists. `graph` and `config check` remain fully
 static and never run owner code.
 
-A current completed identity/Eval-definition entry yields PASS or RED and a `reuse` action when
-gates allow. Force still applies only to selected evals. Human execution actions
+A current completed identity/Eval-definition entry yields PASS or RED and a `reuse`
+action. Like verify, which takes cached results before their gates resolve, the
+action stays `reuse` while a dependency is still pending (the state is then
+WAIT_DEPENDENCY and the reason names the pending gates); a RED dependency still makes
+it `blocked`. An eval without a cached result runs only once its gates are GREEN:
+it shows `execute` when its dependencies are GREEN through cached results, and
+`wait` when a dependency's result exists only after verify executes it (or after a
+live execution finishes), directly or further upstream. That is the limit of the prediction: status cannot say
+whether a `wait` eval will execute. Text ends with, for example,
+`Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on
+a merged checkout answers what verify will re-review there without running it.
+Force still applies only to selected evals. Human execution actions
 record a waiting request; an active Human identity/Eval-definition pair projects WAITING_HUMAN and a
 `wait` action, even after the original verifier exits. Saved attempts
 are read for this canonical repository only: each eval's optional
@@ -437,7 +467,8 @@ runtime environments. Tool results keep text, JSON and validated base64 image bl
 structured data. PNG/JPEG/WebP results reach both provider wires; unsupported-model
 image requests fail with the provider error. Duplicate provider call IDs fail
 closed. Tool audit and per-request-attempt `usage` are saved on both success and
-ERROR and retained with original execution attribution on cache hits. Counters
+ERROR; on cache hits the tool audit is retained with original execution attribution
+and the attempts move to `reusedUsage`, never counted as spent. Counters
 are provider-reported (including reported zero), not inferred totals or costs.
 Anthropic `inputTokens` is its native uncached input; cache read/write counters are
 separate. OpenAI input already includes its cache reads. Never sum every counter.
@@ -876,9 +907,11 @@ shared-execution followers), source execution and summary. The `definition` fiel
 joins the saved eval and its owning Artifact (including family membership) from
 the Run; older Runs without saved definitions return null. These queries need no
 repository and run no owner code. `run show` and JSON verify include a Run summary:
-status counts, wall time, actual executor starts, attempts, tool counts and usage
-reporting completeness. Run totals exclude reused source executions; request
-summaries retain source attribution and raw per-provider attempts in `usage`.
+status counts, executed and reused requests by reviewer kind, wall time, actual
+executor starts, attempts, tool counts and usage reporting completeness. Run totals
+exclude reused source executions; the Run-level `usage.saved` sums their original
+counters. Reused requests keep source attribution and the raw per-provider attempts
+in `reusedUsage`; their own summaries report no attempts or tool calls (`usageState: "none"`).
 Unreported usage is never represented as a known zero token count. There are no
 separate summary commands or `--full` mode.
 
@@ -893,7 +926,8 @@ A terminal UI for review progress. Like `run list`, it shows the canonical
 The Run list (newest first: ID, repository, status, request counts, age) refreshes
 every second and on `r`; `j`/`k` or arrows move (moving past the end loads older
 Runs), Enter opens a Run, `q` quits. A Run shows state counts, validation,
-durations, budgets, running evals, waiting Human requests and errors above an
+durations, budgets, executed and reused counts, spent and saved usage, running
+evals, waiting Human requests and errors above an
 Artifact/eval tree built from the saved definitions: families group their
 instances (collapsed until expanded with `l`/→ or Enter), each eval shows its
 status glyph and dependency Artifacts, `⇐` rows show child/mount/reference inputs,

@@ -74,7 +74,11 @@ pub struct Request {
     pub eval_def_hash: String,
     pub execution_id: Option<String>,
     pub provenance: Option<Provenance>,
+    /// Usage spent by this request; a reused request spent none.
     pub usage: Option<Value>,
+    /// The reused execution's original usage, never counted as spent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reused_usage: Option<Value>,
     #[serde(default)]
     pub tool_calls: Vec<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

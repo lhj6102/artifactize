@@ -8,13 +8,15 @@ use crate::store::{Request, RequestView, RunView};
 pub fn request_output(view: &RequestView) -> Value {
     let mut value = json!(view);
     let request = &view.request;
-    let (attempts, reported, unreported, usage) = usage_totals([request]);
+    // A reused request spent nothing; its source's audit stays in the request itself.
+    let spent = (!reused(request)).then_some(request);
+    let (attempts, reported, unreported, usage) = usage_totals(spent);
     value["summary"] = json!({
         "status":request.status,
         "wallMs":wall_ms(&request.created_at, request.completed_at.as_deref()),
         "executorStarts":u64::from(local_execution(request) && request.started_at.is_some() && request.profile["kind"] != "human"),
         "attempts":attempts,
-        "toolCalls":tool_totals([request]),
+        "toolCalls":tool_totals(spent),
         "usageState":usage_state(reported, unreported),
         "reportedAttempts":reported,"unreportedAttempts":unreported,"usage":usage,
         "executionSource":request.provenance,
@@ -39,14 +41,40 @@ pub fn run_output(view: &RunView) -> Value {
         })
         .collect();
     let (attempts, reported, unreported, usage) = usage_totals(local.iter().copied());
+    let kinds = || BTreeMap::from([("total", 0u64), ("runtime", 0), ("agent", 0), ("human", 0)]);
+    let (mut executed, mut reuses, mut saved) = (kinds(), kinds(), BTreeMap::new());
+    for request in &view.requests {
+        let tally = if reused(request) {
+            // Requests saved before reusedUsage existed kept the original attempts in usage.
+            let original = request.reused_usage.as_ref().or(request.usage.as_ref());
+            for attempt in original.into_iter().flat_map(attempts_of) {
+                add_usage(&mut saved, attempt);
+            }
+            &mut reuses
+        } else if local_execution(request) {
+            &mut executed
+        } else {
+            continue;
+        };
+        for kind in [
+            "total",
+            request.profile["kind"].as_str().unwrap_or_default(),
+        ] {
+            if let Some(count) = tally.get_mut(kind) {
+                *count += 1;
+            }
+        }
+    }
     value["summary"] = json!({
         "counts":counts,
+        "executed":executed,"reused":reuses,
         "wallMs":wall_ms(&view.run.created_at, view.run.completed_at.as_deref()),
         "executorStarts":view.run.executions_started,
         "attempts":attempts,"toolCalls":tool_totals(local.iter().copied()),
         "usageState":usage_state(reported, unreported),
         "reportedAttempts":reported,"unreportedAttempts":unreported,"usage":usage,
     });
+    value["usage"] = json!({"spent":value["summary"]["usage"],"saved":saved});
     value
 }
 
@@ -55,6 +83,14 @@ fn local_execution(request: &Request) -> bool {
         .provenance
         .as_ref()
         .is_some_and(|source| source.request_id == request.id)
+}
+
+/// The result came from another request's execution, possibly in this Run.
+pub fn reused(request: &Request) -> bool {
+    request
+        .provenance
+        .as_ref()
+        .is_some_and(|source| source.request_id != request.id)
 }
 
 fn wall_ms(start: &str, end: Option<&str>) -> Option<u64> {
@@ -91,17 +127,7 @@ fn usage_totals<'a>(
             }
             for attempt in entries {
                 attempts += 1;
-                let mut has_usage = false;
-                if let Some(usage) = attempt["usage"].as_object() {
-                    for (key, value) in usage {
-                        if let Some(value) = value.as_u64() {
-                            has_usage = true;
-                            let total = totals.entry(key.clone()).or_default();
-                            *total = total.saturating_add(value);
-                        }
-                    }
-                }
-                if has_usage {
+                if add_usage(&mut totals, attempt) {
                     reported += 1;
                 } else {
                     unreported += 1;
@@ -115,8 +141,26 @@ fn usage_totals<'a>(
     (attempts, reported, unreported, totals)
 }
 
+fn attempts_of(usage: &Value) -> &[Value] {
+    usage.as_array().map_or(&[], Vec::as_slice)
+}
+
+/// Adds one attempt's reported counters; false when it reported none.
+fn add_usage(totals: &mut BTreeMap<String, u64>, attempt: &Value) -> bool {
+    let mut has_usage = false;
+    for (key, value) in attempt["usage"].as_object().into_iter().flatten() {
+        if let Some(value) = value.as_u64() {
+            has_usage = true;
+            let total = totals.entry(key.clone()).or_default();
+            *total = total.saturating_add(value);
+        }
+    }
+    has_usage
+}
+
 fn usage_state(reported: u64, unreported: u64) -> &'static str {
     match (reported, unreported) {
+        (0, 0) => "none",
         (0, _) => "unreported",
         (_, 0) => "reported",
         _ => "partial",

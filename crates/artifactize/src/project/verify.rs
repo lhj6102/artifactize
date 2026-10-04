@@ -146,6 +146,7 @@ pub async fn verify(
             execution_id: None,
             provenance: None,
             usage: None,
+            reused_usage: None,
             tool_calls: Vec::new(),
             human_definition: None,
             payload: json!(eval.declaration.payload),
