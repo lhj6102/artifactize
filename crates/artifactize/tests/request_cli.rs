@@ -306,6 +306,55 @@ fn stale_key_cli_claim_tool_correctable_submission_and_next_verify() {
 }
 
 #[test]
+fn unclaim_releases_the_claimants_lock_for_another_reviewer() {
+    let fixture = Fixture::new(true);
+    let run = fixture.json(&["verify", "--all"], 4);
+    let id = run["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["status"] == "WAITING_HUMAN")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    let error = |args: &[&str]| fixture.json(args, 2)["error"].as_str().unwrap().to_owned();
+    assert!(error(&["request", "unclaim", id]).contains("claimant"));
+    let claim = fixture.json(&["request", "claim", id], 0);
+    assert!(error(&["request", "unclaim", id, "--reviewer", "bob"]).contains("claimant"));
+    assert_eq!(fixture.json(&["request", "unclaim", id], 0), claim);
+    assert!(fixture.json(&["request", "show", id], 0)["claim"].is_null());
+    assert_eq!(
+        fixture.json(&["request", "claim", id, "--reviewer", "bob"], 0)["reviewer"],
+        "bob"
+    );
+    fixture.json(
+        &[
+            "request",
+            "submit",
+            id,
+            "--reviewer",
+            "bob",
+            "--verdict",
+            "RED",
+            "--fields",
+            r#"{"reason":"Needs work"}"#,
+        ],
+        0,
+    );
+    assert!(
+        error(&["request", "unclaim", id, "--reviewer", "bob"])
+            .contains("not waiting for a Human review")
+    );
+    let text = fixture
+        .command()
+        .args(["request", "unclaim", "missing"])
+        .output()
+        .unwrap();
+    assert_eq!(text.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&text.stderr).contains("not found"));
+}
+
+#[test]
 fn no_stale_key_submission_from_another_process_continues_the_same_run() {
     let fixture = Fixture::new(false);
     let sibling = fixture.repo.join("sibling");

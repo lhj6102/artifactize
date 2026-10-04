@@ -35,6 +35,16 @@ pub async fn claim(
     receipts.claim_human(request, reviewer).await
 }
 
+/// Release the reviewer lock without a verdict, so another reviewer can claim the request.
+pub async fn unclaim(
+    receipts: &Receipts,
+    request: &str,
+    reviewer: &str,
+) -> Result<HumanClaim, String> {
+    validate_reviewer(reviewer)?;
+    receipts.release_human(request, reviewer).await
+}
+
 pub async fn run_human_tool(
     receipts: &Receipts,
     request: &str,

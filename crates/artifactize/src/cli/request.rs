@@ -32,6 +32,13 @@ pub enum RequestCommand {
         #[arg(long, value_name = "NAME")]
         reviewer: Option<String>,
     },
+    /// Release your Human reviewer lock while the request still waits.
+    Unclaim {
+        id: String,
+        /// Reviewer name (defaults to USER).
+        #[arg(long, value_name = "NAME")]
+        reviewer: Option<String>,
+    },
     /// Run a predefined Human tool as the claimant.
     Tool {
         id: String,
@@ -95,6 +102,11 @@ pub(super) async fn execute(
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
             let (receipts, _) = open_request(state, &id).await?;
             print_json(&human::claim(&receipts, &id, &reviewer).await?)?;
+        }
+        RequestCommand::Unclaim { id, reviewer } => {
+            let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
+            let (receipts, _) = open_request(state, &id).await?;
+            print_json(&human::unclaim(&receipts, &id, &reviewer).await?)?;
         }
         RequestCommand::Tool { id, tool, reviewer } => {
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
