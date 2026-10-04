@@ -57,7 +57,7 @@ Version 0.1.0 ships when every non-DROP item is checked off. Lean means no proce
 | Default tools package (text/files/image readers, desktop/project openers, factories, author helpers, `view` CLI) | Built-in Agent tools `read`, `list`, `glob`, `grep`, `view_image`, available when an Artifact declares them; Human tools are declared `launch`/`output` commands |
 | Observation receipts and required-observation checks | Dropped |
 | CCDD's restricted JSON Schema subset and diagnostic budgets | `jsonschema` validation with a size limit |
-| Web monitor (Kanban, worker overlays, current-input inspection, multi-project registry, Human review UI) | `artifactize monitor` TUI (ratatui): live Run progress, Artifact/eval tree with status and dependencies, request details; Human review stays in the CLI |
+| Web monitor (Kanban, worker overlays, current-input inspection, multi-project registry, Human review UI) | `artifactize monitor` TUI (ratatui): live Run progress, Artifact/eval tree with status and dependencies, request details; Human review in `request` or the `artifactize review` TUI, which the monitor opens with `o` |
 | Separate `status`/`plan` commands, compact vs `--full` projections, `history`, `run cancel` | `status` shows state and what `verify` would do; one output level (text, or full `--json`); `run list`; Ctrl-C |
 | Cache GC protected readers and scratch retirement | LRU cap on entries and bytes |
 
@@ -100,6 +100,7 @@ The module boundaries are fixed; later tasks add code inside them. The CLI and t
 | `diagnostics` | `doctor`, `tools check` |
 | `remote`, `server` | Shared review records, read-through/write-through to a remote review store, `remote push`; the `artifactize server` store (added after 0.1.0) |
 | `monitor` | ratatui TUI over read-only queries |
+| `review` | ratatui Human review TUI over the `human` lifecycle API |
 | `cli` | Commands, flags, output and exit codes |
 
 **Execution.**

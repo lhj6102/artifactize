@@ -8,8 +8,9 @@ runtime, Agent (OpenAI or Anthropic API key, ChatGPT sign-in, or the Claude CLI)
 Human evals. While an Artifact's staleKey is unchanged it reuses the earlier GREEN/RED
 result, and `verify` shows what it executed, what it reused and the tokens reuse saved.
 `status` predicts what a change will re-review. A team review store
-(`artifactize server`) shares verdicts across machines and CI. The CLI drives reviews
-and `artifactize monitor` shows their progress. It runs on Linux and WSL.
+(`artifactize server`) shares verdicts across machines and CI. The CLI drives reviews,
+`artifactize monitor` shows their progress and `artifactize review` works
+through waiting Human sign-offs. It runs on Linux and WSL.
 
 Every non-DROP item in the [CCDD 7.0 capability inventory](docs/ccdd-7-inventory.md)
 is checked off; the [plan](docs/PLAN.md) records the lean scope and what was dropped.
@@ -122,8 +123,8 @@ at both levels, so keep secrets out of the fields that `passSchema` and
 Every command accepts the common options `--repo PATH` (default: the current
 directory), `--state-dir PATH` (default: the state home below) and `--json`, before
 or after the subcommand, at most once each; commands that do not read a repository
-or state ignore them, except `mcp` (which rejects all three) and `monitor` (which
-rejects `--json`). `SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`,
+or state ignore them, except `mcp` (which rejects all three) and `monitor` and
+`review` (which reject `--json`). `SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`,
 `--evals CSV`, `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH` or
 `--all`. `help [COMMAND]` and `--help` print help; `--version` prints the version.
 
@@ -156,6 +157,7 @@ rejects `--json`). `SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`,
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
 | `monitor` | `--all` (not with `--repo`) | terminal UI | 0 |
+| `review [REQUEST_ID]` | `--all` (not with `--repo`), `--reviewer NAME` (`$USER`) | terminal UI | 0 |
 | `server run` | `--listen ADDR` (`127.0.0.1:8417`) | listening address | 0 |
 | `server token add NAME` | `--scopes read,publish,human` | the token, once | 0 |
 | `server token list`, `server token revoke NAME` | `--purge` (revoke) | text or JSON | 0 |
@@ -1114,12 +1116,13 @@ environment, including any credentials already present there.
 
 Internal callers use `tools::human::Registry::new(&config, "artifact/eval")` for a
 Human eval scope or `for_artifact(&config, "artifact")` for its child/mount scope,
-then `list()` and `call(name, cancellation).await`. Names are
+then `list()`, `command(name)` (the resolved program, argv and directory, without
+running it) and `call(name, cancellation).await`. Names are
 `<operation>_<artifactId>`, with collision rejection. Agent tools are never listed,
 and Agent evals cannot construct a Human eval registry. Listing executes nothing.
 Human results use a separate text/launch type; Agent results cannot include launch
 blocks. These low-level registry operations do not authorize a claimant; use the
-`human` lifecycle API or `request tool` below for recorded requests.
+`human` lifecycle API, `request tool` or `review` below for recorded requests.
 No desktop/project launcher factory, preparation phase, readiness hook
 or observation receipt is added.
 
@@ -1146,10 +1149,13 @@ The internal library exposes asynchronous operations with an open `store::Receip
   and checks the staleKey before invoking a registered Human tool. The tool takes
   no free arguments and uses the reviewer's real environment. Ordinary tool errors
   are correctable actions, not verdicts. Only tool name and error metadata are saved.
+- `human::tool_command(receipts, request_id, tool)` resolves what that tool would
+  run (repository, program, argv and directory) without claiming or running it.
 - `human::submit(receipts, request_id, reviewer, result, cancellation)` accepts
   GREEN/RED with fields matching `passSchema`/`failSchema`, using the Agent result
   validator without repair. Invalid or oversized results (over 256000 JSON bytes)
-  leave the request waiting for correction. A valid submission recomputes the
+  leave the request waiting for correction; schema errors list up to five failing
+  instance paths. A valid submission recomputes the
   staleKey: a changed value settles ERROR/INPUT_CHANGED instead of the verdict.
   Settlement rechecks the claimant and waiting state transactionally, so a second
   submission fails. It releases the reviewer lock, completes saved followers, and
@@ -1170,6 +1176,8 @@ artifactize request unclaim REQUEST_ID [--reviewer NAME]   # release without a v
 artifactize request tool REQUEST_ID inspect_child [--reviewer NAME]
 artifactize request submit REQUEST_ID --verdict GREEN --fields '{"approved":true}'
 # Alternatively: --fields-file /path/to/fields.json
+# Or claim, run tools and submit in a terminal UI (see Review):
+artifactize review [REQUEST_ID]
 ```
 
 Claim, unclaim, tool and submit default the reviewer to `$USER`; `--reviewer NAME`
@@ -1216,6 +1224,49 @@ in `reusedUsage`; their own summaries report no attempts or tool calls (`usageSt
 Unreported usage is never represented as a known zero token count. There are no
 separate summary commands or `--full` mode.
 
+## Review
+
+```sh
+artifactize review [REQUEST_ID] [--repo PATH | --all] [--state-dir PATH] [--reviewer NAME]
+```
+
+A terminal UI for waiting Human reviews with the same lifecycle as `request`: it
+calls `human::claim`, `run_human_tool`, `unclaim` and `submit` in-process, and
+publishes a submission to the remote review store exactly like `request submit`.
+Without an ID it lists the WAITING_HUMAN requests of the canonical `--repo`
+(default: the current directory) or, with `--all`, of every repository (newest
+Run first: eval, request, claim, waiting time, repository); Enter opens one. With
+an ID it opens that request in any repository. It also runs on its own, for example
+in a second terminal or tmux pane.
+
+The request screen shows the request, Run, repository, status, claim, instruction,
+GREEN and RED owner schemas and the declared Human tools with their commands and
+args. Opening a request claims nothing.
+
+- **Claim on first action.** Running a tool or submitting claims the request for
+  the reviewer (`$USER` unless `--reviewer`) if it is unclaimed. A request claimed
+  by someone else, or no longer waiting, is read-only. `u` releases your claim. On
+  quit, claims this session took without submitting are listed: `k` keeps them,
+  `u` releases them.
+- **Tools.** `j`/`k` select a tool and Enter runs it. Before the first run of a
+  command line in a session, a confirmation shows the resolved command, its
+  directory and the repository it comes from (with `--all` it may be another
+  repository); `y` runs it. A `launch` tool reports "launched" and the UI
+  continues. An `output` tool runs with a spinner (Esc cancels) and its stdout and
+  stderr fill the output pane (PgUp/PgDn scroll). A nonzero exit is shown as a tool
+  error, not a verdict.
+- **Submit.** `s`, then `g` (GREEN) or `r` (RED). A form opens when the verdict's
+  owner schema is a flat object whose properties are `const`, `boolean`, `string`
+  (with `minLength`, `maxLength` or `enum`), `integer` or `number`; `const` fields
+  are prefilled and fixed. Tab or ↑/↓ move, Space or ←/→ choose, typing edits,
+  Enter submits. Any other schema (nested objects, arrays, composition, `$ref`),
+  or Ctrl-E in the form, opens `$EDITOR` (default `vi`) on a JSON template of the
+  owner fields; saving submits it, and an empty file submits nothing. A validation
+  error keeps the request waiting and returns to the form with the failing paths.
+- After a submission the list returns if more requests wait; otherwise `review`
+  exits, which returns to the monitor when the monitor opened it. Esc goes back
+  and `q` quits.
+
 ## Monitor
 
 ```sh
@@ -1236,8 +1287,14 @@ and `↻` marks cycles. The right pane details the selected Artifact, family or
 request: result, actual and requested profile, staleKey, reuse source, claim, tool
 calls, usage and errors (PgUp/PgDn scroll; Esc returns to the list). The monitor
 only reads the state database (read-only connections): it runs no owner code,
-needs no repository, keeps the last data with an error line if a read fails, and
-is not a review console; Human claim and submit stay in `request`.
+needs no repository, and keeps the last data with an error line if a read fails.
+
+On a WAITING_HUMAN eval, `o` hands the terminal to
+[`artifactize review REQUEST_ID`](#review) with the monitor's state directory and
+its `--repo` or `--all` scope. The monitor leaves the alternate screen, waits for
+the review to exit, then restores the screen and refreshes; a failed review leaves
+its last error line until the next key. Claims, tools and submissions happen in
+that separate process; the monitor itself keeps only read-only connections.
 
 ## Artifact families
 

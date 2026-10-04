@@ -39,7 +39,7 @@ pub(super) fn validate(validator: &Validator, args: &Value) -> Result<(), String
     Err(message)
 }
 
-fn quoted(value: &str) -> String {
+pub(crate) fn quoted(value: &str) -> String {
     let mut value = serde_json::to_string(value).expect("string is JSON");
     if value.len() > 320 {
         let mut end = 300;

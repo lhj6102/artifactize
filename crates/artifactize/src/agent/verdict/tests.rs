@@ -117,3 +117,42 @@ fn parsed_human_submission_uses_same_validation_without_repair() {
         assert!(validate_result(&eval, &invalid).is_err());
     }
 }
+
+#[test]
+fn human_submission_errors_list_bounded_failing_paths() {
+    let eval: EvalDeclaration = serde_json::from_value(json!({
+        "id":"human", "title":"Review", "profile":{"kind":"human"},
+        "payload":{"instruction":"Review."},
+        "passSchema":{"properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
+        "failSchema":{"properties":{"reason":{"type":"string","minLength":1}},"patternProperties":{"^x":{}},"required":["reason"]}
+    }))
+    .unwrap();
+    let error = |value| validate_result(&eval, &value).unwrap_err();
+    let missing = error(json!({"verdict":"GREEN"}));
+    assert!(
+        missing.starts_with("schema_mismatch: result must match"),
+        "{missing}"
+    );
+    assert!(
+        missing.contains(r#"- instancePath "": "approved" is a required property"#),
+        "{missing}"
+    );
+    let empty = error(json!({"verdict":"RED","reason":""}));
+    assert!(empty.contains(r#"- instancePath "/reason": "#), "{empty}");
+    let undeclared = error(json!({"verdict":"RED","reason":"r","x1":1}));
+    assert!(
+        undeclared.ends_with(r#"- field "x1" is not declared."#),
+        "{undeclared}"
+    );
+    let long = error(json!({"verdict":"RED","reason":["y".repeat(10_000)]}));
+    assert!(long.len() < 1_000 && long.contains("(truncated)"), "{long}");
+    let many: Map<String, Value> = (0..20).map(|n| (format!("x{n}"), json!(n))).collect();
+    let mut many = Value::Object(many);
+    many["verdict"] = json!("RED");
+    many["reason"] = json!("r");
+    assert_eq!(error(many).lines().count(), 6);
+    assert_eq!(
+        error(json!({"verdict":"BLUE"})),
+        "schema_mismatch: verdict must be GREEN or RED"
+    );
+}

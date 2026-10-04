@@ -1,12 +1,15 @@
 use jsonschema::Validator;
 use serde_json::{Map, Value, json};
 
-use crate::config::EvalDeclaration;
+use crate::{config::EvalDeclaration, tools::schema::quoted};
 
 /// Validate a parsed Agent or Human result without repair or owner-field rewriting.
+/// Errors list at most five failing instance paths, so a reviewer can correct the fields.
 pub fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<Value, String> {
     let schema = VerdictSchema::new(eval.pass_schema.as_ref(), eval.fail_schema.as_ref())?;
-    schema.validate(value).map_err(str::to_owned)?;
+    schema
+        .validate(value)
+        .map_err(|error| schema.explain(error, value))?;
     Ok(value.clone())
 }
 
@@ -102,12 +105,48 @@ impl VerdictSchema {
         Ok(value)
     }
 
-    fn validate(&self, value: &Value) -> Result<(), &'static str> {
-        let (validator, branch) = match value.get("verdict").and_then(Value::as_str) {
-            Some("GREEN") => (&self.green, &self.schema["GREEN"]),
-            Some("RED") => (&self.red, &self.schema["RED"]),
-            _ => return Err("schema_mismatch: verdict must be GREEN or RED"),
+    fn branch(&self, value: &Value) -> Option<(&Validator, &Value)> {
+        match value.get("verdict").and_then(Value::as_str) {
+            Some("GREEN") => Some((&self.green, &self.schema["GREEN"])),
+            Some("RED") => Some((&self.red, &self.schema["RED"])),
+            _ => None,
+        }
+    }
+
+    /// The error followed by bounded failing paths; undeclared fields when the schema passes.
+    fn explain(&self, error: &str, value: &Value) -> String {
+        let Some((validator, branch)) = self.branch(value) else {
+            return error.into();
         };
+        let mut paths: Vec<_> = validator
+            .iter_errors(value)
+            .map(|error| {
+                format!(
+                    "- instancePath {}: {}",
+                    quoted(&error.instance_path().to_string()),
+                    bounded(error.to_string())
+                )
+            })
+            .take(5)
+            .collect();
+        if paths.is_empty() {
+            let fields = value.as_object().into_iter().flatten();
+            paths = fields
+                .filter(|(key, _)| branch["properties"].get(key.as_str()).is_none())
+                .map(|(key, _)| format!("- field {} is not declared.", quoted(key)))
+                .take(5)
+                .collect();
+        }
+        std::iter::once(error.to_owned())
+            .chain(paths)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn validate(&self, value: &Value) -> Result<(), &'static str> {
+        let (validator, branch) = self
+            .branch(value)
+            .ok_or("schema_mismatch: verdict must be GREEN or RED")?;
         // Owner schemas cannot open the result envelope through patternProperties or $ref.
         if !value.as_object().is_some_and(|object| {
             object
@@ -128,6 +167,13 @@ impl VerdictSchema {
         }
         Ok(())
     }
+}
+
+fn bounded(mut text: String) -> String {
+    if text.chars().count() > 200 {
+        text = text.chars().take(200).collect::<String>() + "… (truncated)";
+    }
+    text
 }
 
 fn branch(verdict: &str, owner: Option<&Map<String, Value>>) -> Result<Value, String> {

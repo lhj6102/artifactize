@@ -8,8 +8,9 @@ mod view;
 pub use model::{
     Detail, Node, Progress, RunRow, Target, detail, duration, glyph, progress, run_rows, tree,
 };
+pub(crate) use view::clock;
 
-use std::{path::PathBuf, time::Duration};
+use std::{future::Future, path::PathBuf, process::Stdio, time::Duration};
 
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures_util::StreamExt;
@@ -23,11 +24,13 @@ use crate::store::{self, RequestView, RunSummary, RunView};
 const REFRESH: Duration = Duration::from_secs(1);
 const PAGE: u32 = 100;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     None,
     Refresh,
     Quit,
+    /// Hand the terminal to `artifactize review` for this waiting request.
+    Review(String),
 }
 
 /// Screen state over saved data; every load opens the state database read-only.
@@ -44,6 +47,8 @@ pub struct Monitor {
     scroll: u16,
     refreshed: Option<OffsetDateTime>,
     error: Option<String>,
+    /// How the last review handoff ended, until the next key.
+    notice: Option<String>,
 }
 
 impl Monitor {
@@ -61,6 +66,7 @@ impl Monitor {
             scroll: 0,
             refreshed: None,
             error: None,
+            notice: None,
         }
     }
 
@@ -133,7 +139,18 @@ impl Monitor {
         self.tree.selected().last().and_then(|id| Target::parse(id))
     }
 
+    /// The waiting Human request behind the selected eval node, if any.
+    pub fn waiting(&self) -> Option<&str> {
+        let Some(Target::Eval(eval)) = self.target() else {
+            return None;
+        };
+        let (_, requests) = self.run.as_ref()?;
+        let view = requests.iter().find(|view| view.request.eval_id == eval)?;
+        (view.request.status == "WAITING_HUMAN").then_some(view.request.id.as_str())
+    }
+
     pub fn key(&mut self, key: KeyEvent) -> Action {
+        self.notice = None;
         if key.code == KeyCode::Char('q')
             || key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c')
         {
@@ -177,6 +194,11 @@ impl Monitor {
             KeyCode::Left | KeyCode::Char('h') => self.tree.key_left(),
             KeyCode::Right | KeyCode::Char('l') => self.tree.key_right(),
             KeyCode::Enter | KeyCode::Char(' ') => self.tree.toggle_selected(),
+            KeyCode::Char('o') => {
+                return self
+                    .waiting()
+                    .map_or(Action::None, |id| Action::Review(id.to_owned()));
+            }
             KeyCode::PageDown => {
                 self.scroll = self.scroll.saturating_add(10);
                 false
@@ -192,6 +214,73 @@ impl Monitor {
         }
         Action::None
     }
+
+    /// `artifactize review` for one request in this terminal, scoped like the monitor.
+    /// The child is the writer; the monitor itself keeps its read-only connections.
+    fn review(&self, id: &str) -> impl Future<Output = Result<(), String>> + 'static {
+        let mut command = tokio::process::Command::new(
+            std::env::current_exe().unwrap_or_else(|_| "artifactize".into()),
+        );
+        command
+            .arg("review")
+            .arg(id)
+            .arg("--state-dir")
+            .arg(&self.state);
+        match &self.repo {
+            Some(repo) => command.arg("--repo").arg(repo),
+            None => command.arg("--all"),
+        };
+        // The review draws on this terminal; only its stderr is kept for the notice.
+        // (`Command::output` would pipe stdout too.)
+        command
+            .stdin(Stdio::inherit())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::piped());
+        async move {
+            let output = async { command.spawn()?.wait_with_output().await }
+                .await
+                .map_err(|e| format!("cannot start the review: {e}"))?;
+            if output.status.success() {
+                return Ok(());
+            }
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let reason = stderr.lines().rfind(|line| !line.trim().is_empty());
+            Err(format!(
+                "review exited with {}{}",
+                output.status,
+                reason.map_or(String::new(), |reason| format!(": {reason}"))
+            ))
+        }
+    }
+}
+
+/// Leave the alternate screen for a foreground child, then restore it and repaint every cell.
+/// Callers drop their event stream first, so the child alone reads the terminal.
+pub(crate) async fn suspend<T>(
+    terminal: &mut ratatui::DefaultTerminal,
+    child: impl Future<Output = T>,
+) -> Result<T, String> {
+    terminal.show_cursor().map_err(|e| e.to_string())?;
+    ratatui::try_restore().map_err(|e| e.to_string())?;
+    let result = child.await;
+    crossterm::terminal::enable_raw_mode().map_err(|e| e.to_string())?;
+    crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)
+        .map_err(|e| e.to_string())?;
+    repaint(terminal)?;
+    Ok(result)
+}
+
+/// Clear the screen and forget the last frame, so the next draw writes every cell.
+/// Unlike `Terminal::clear`, this sends no cursor position query.
+pub(crate) fn repaint(terminal: &mut ratatui::DefaultTerminal) -> Result<(), String> {
+    crossterm::execute!(
+        std::io::stdout(),
+        crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
+    )
+    .map_err(|e| e.to_string())?;
+    // Both buffers are now blank: the last frame is reset and the next one starts empty.
+    terminal.swap_buffers();
+    Ok(())
 }
 
 /// Run the terminal UI until q, Esc on the Run list, Ctrl-C, or a signal.
@@ -223,22 +312,32 @@ async fn watch(
         terminal
             .draw(|frame| monitor.draw(frame))
             .map_err(|e| e.to_string())?;
-        tokio::select! {
-            _ = cancellation.cancelled() => return Ok(()),
-            _ = tick.tick() => monitor.refresh().await,
+        let action = tokio::select! {
+            _ = cancellation.cancelled() => Action::Quit,
+            _ = tick.tick() => Action::Refresh,
             event = events.next() => match event {
-                Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => match monitor.key(key) {
-                    Action::Quit => return Ok(()),
-                    Action::Refresh => {
-                        monitor.refresh().await;
-                        tick.reset();
-                    }
-                    Action::None => {}
-                },
-                Some(Ok(_)) => {}
+                Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => monitor.key(key),
+                Some(Ok(_)) => Action::None,
                 Some(Err(error)) => return Err(error.to_string()),
-                None => return Ok(()),
+                None => Action::Quit,
             },
+        };
+        match action {
+            Action::Quit => return Ok(()),
+            Action::Refresh => {
+                monitor.refresh().await;
+                tick.reset();
+            }
+            Action::Review(id) => {
+                // The review process owns the terminal until it exits.
+                drop(events);
+                let result = suspend(terminal, monitor.review(&id)).await?;
+                events = EventStream::new();
+                monitor.refresh().await;
+                tick.reset();
+                monitor.notice = result.err();
+            }
+            Action::None => {}
         }
     }
 }

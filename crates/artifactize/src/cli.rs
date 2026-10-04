@@ -146,6 +146,18 @@ pub enum Command {
         #[arg(long)]
         all: bool,
     },
+    /// Claim, run tools for and submit waiting Human reviews in a terminal UI; defaults to the current repository.
+    Review {
+        /// Open this request instead of the waiting list.
+        #[arg(value_name = "REQUEST_ID")]
+        request: Option<String>,
+        /// List waiting requests from every repository in the shared state.
+        #[arg(long)]
+        all: bool,
+        /// Reviewer name (defaults to USER).
+        #[arg(long, value_name = "NAME")]
+        reviewer: Option<String>,
+    },
     /// Serve or administer a shared remote review store (review-store.sqlite).
     Server {
         #[command(subcommand)]
@@ -678,6 +690,34 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             let repo = (!all).then(|| cli.repo.unwrap_or_else(|| PathBuf::from(".")));
             let (cancellation, listener) = cancellation_listener()?;
             let result = crate::monitor::run(state, repo, cancellation).await;
+            listener.abort();
+            result?;
+            Ok(0)
+        }
+        Some(Command::Review {
+            request,
+            all,
+            reviewer,
+        }) => {
+            if cli.json {
+                return Err(
+                    "review is an interactive terminal UI; --json is not supported.".into(),
+                );
+            }
+            if all && cli.repo.is_some() {
+                return Err("review accepts --repo or --all, not both.".into());
+            }
+            let reviewer = match reviewer {
+                Some(reviewer) => crate::human::validate_reviewer(&reviewer).map(|()| reviewer),
+                None => crate::human::default_reviewer(),
+            }?;
+            let state = crate::store::state_dir(cli.state_dir.as_deref())?;
+            if let Some(id) = &request {
+                crate::store::read_request(&state, id).await?;
+            }
+            let repo = (!all).then(|| cli.repo.unwrap_or_else(|| PathBuf::from(".")));
+            let (cancellation, listener) = cancellation_listener()?;
+            let result = crate::review::run(state, repo, reviewer, request, cancellation).await;
             listener.abort();
             result?;
             Ok(0)

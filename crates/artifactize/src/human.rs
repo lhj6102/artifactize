@@ -1,5 +1,7 @@
 //! Human waiting, claim locks, tools, and submission.
 
+use std::path::{Path, PathBuf};
+
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -7,9 +9,10 @@ use crate::{
     agent::verdict::validate_result,
     cache,
     config::{Eval, RepoConfig, read_workspace_config},
+    remote::Session,
     scope,
-    store::{HumanClaim, Receipts, Request},
-    tools::human::{Registry, ToolResult},
+    store::{self, HumanClaim, Receipts, Request},
+    tools::human::{CommandLine, Registry, ToolResult},
 };
 
 pub fn default_reviewer() -> Result<String, String> {
@@ -18,12 +21,22 @@ pub fn default_reviewer() -> Result<String, String> {
     Ok(reviewer)
 }
 
-fn validate_reviewer(reviewer: &str) -> Result<(), String> {
+pub(crate) fn validate_reviewer(reviewer: &str) -> Result<(), String> {
     if reviewer.trim().is_empty() || reviewer.len() > 200 || reviewer.chars().any(char::is_control)
     {
         return Err("A reviewer id of 1–200 bytes without control characters is required.".into());
     }
     Ok(())
+}
+
+/// The saved request's Run repository and its receipts, where its Human actions are recorded.
+pub async fn open(state: &Path, request: &str) -> Result<(Receipts, PathBuf), String> {
+    let view = store::read_request(state, request).await?;
+    let repo = store::read_run(state, &view.request.run_id)
+        .await?
+        .run
+        .repo_path;
+    Ok((Receipts::open(state, &repo).await?, repo))
 }
 
 pub async fn claim(
@@ -79,6 +92,17 @@ pub async fn run_human_tool(
     Ok(result)
 }
 
+/// What a registered Human tool of a waiting request would run; needs no claim and runs nothing.
+pub async fn tool_command(
+    receipts: &Receipts,
+    request: &str,
+    tool: &str,
+) -> Result<CommandLine, String> {
+    let request = receipts.waiting_human(request).await?;
+    let config = reconnect(&request)?;
+    Registry::new(&config, &request.eval_id)?.command(tool)
+}
+
 /// Invalid results remain correctable; only a valid submission performs the final stale key check.
 pub async fn submit(
     receipts: &Receipts,
@@ -106,6 +130,28 @@ pub async fn submit(
         .into();
     request.result = Some(result);
     receipts.settle_human(&request, reviewer).await
+}
+
+/// `submit`, then publish the settled result to the configured remote review store.
+pub async fn submit_and_publish(
+    state: &Path,
+    request: &str,
+    reviewer: &str,
+    result: &Value,
+    cancellation: CancellationToken,
+) -> Result<Request, String> {
+    let (receipts, repo) = open(state, request).await?;
+    let remote = Session::open(Some(state), Some(&repo))?;
+    let request = submit(&receipts, request, reviewer, result, cancellation).await?;
+    if let Some(remote) = remote {
+        remote
+            .publish_request(&receipts, &request)
+            .await
+            .map_err(|error| {
+                format!("The Human result is saved locally, but publishing it failed: {error}")
+            })?;
+    }
+    Ok(request)
 }
 
 pub(crate) fn definition(config: &RepoConfig, eval: &Eval) -> Result<Value, String> {

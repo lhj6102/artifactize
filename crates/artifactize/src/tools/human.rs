@@ -1,6 +1,6 @@
 //! Predefined reviewer commands, deliberately outside Agent runtime isolation.
 
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, ffi::OsString, path::PathBuf, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -47,6 +47,16 @@ impl ToolResult {
             is_error: true,
         }
     }
+}
+
+/// What a registered tool runs: the repository, resolved program, argv and working directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandLine {
+    pub repo: PathBuf,
+    pub kind: HumanToolKind,
+    pub program: OsString,
+    pub args: Vec<String>,
+    pub cwd: PathBuf,
 }
 
 struct RegisteredTool<'a> {
@@ -134,6 +144,31 @@ impl<'a> Registry<'a> {
         Ok(())
     }
 
+    /// Resolve the command line a call would run, without running it.
+    pub fn command(&self, name: &str) -> Result<CommandLine, String> {
+        let tool = self
+            .tools
+            .get(name)
+            .ok_or("Unknown registered Human tool.")?;
+        let owner = &tool.definition.artifact_id;
+        let declaration = tool.declaration;
+        let cwd = self
+            .scope
+            .resolve_input(&self.config.root, owner, "")
+            .map_err(|e| e.to_string())?;
+        let program = executable(&self.config.root, &self.scope, owner, &declaration.command)
+            .map_err(|()| "Tool executable path is unavailable or outside scope.".to_owned())?;
+        let args = scope::resolve_human_argv(self.config, &self.scope, owner, &declaration.args)
+            .map_err(|e| e.to_string())?;
+        Ok(CommandLine {
+            repo: self.config.root.clone(),
+            kind: declaration.kind,
+            program,
+            args,
+            cwd,
+        })
+    }
+
     pub async fn call(&self, name: &str, cancellation: CancellationToken) -> ToolResult {
         let Some(tool) = self.tools.get(name) else {
             return ToolResult::error("Unknown registered Human tool.");
@@ -141,20 +176,11 @@ impl<'a> Registry<'a> {
         if cancellation.is_cancelled() {
             return ToolResult::error("Human tool call was cancelled.");
         }
-        let owner = &tool.definition.artifact_id;
         let declaration = tool.declaration;
-        let prepare = || {
-            let cwd = self
-                .scope
-                .resolve_input(&self.config.root, owner, "")
-                .map_err(|_| ())?;
-            let program = executable(&self.config.root, &self.scope, owner, &declaration.command)?;
-            let args =
-                scope::resolve_human_argv(self.config, &self.scope, owner, &declaration.args)
-                    .map_err(|_| ())?;
-            Ok::<_, ()>((cwd, program, args))
-        };
-        let Ok((cwd, program, args)) = prepare() else {
+        let Ok(CommandLine {
+            program, args, cwd, ..
+        }) = self.command(name)
+        else {
             return ToolResult::error("Human tool preparation failed.");
         };
         if cancellation.is_cancelled() {
