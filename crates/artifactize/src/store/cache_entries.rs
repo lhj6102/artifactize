@@ -25,6 +25,8 @@ pub struct Entry {
     pub bytes: i64,
     pub last_used: String,
     pub completed_at: Option<String>,
+    /// The remote store URL of a mirrored entry.
+    pub origin: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize)]
@@ -69,11 +71,12 @@ pub async fn list(state: &Path) -> Result<Vec<Entry>, String> {
         return Ok(Vec::new());
     };
     connection.call(|db| -> Result<_, Error> {
-        let mut statement = db.prepare("SELECT c.identity,c.execution_id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),c.bytes,c.last_used,json_extract(e.data,'$.completedAt'),c.eval_def_hash FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE e.status IN ('GREEN','RED') ORDER BY c.identity,c.eval_def_hash")?;
+        let mut statement = db.prepare("SELECT c.identity,c.execution_id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),c.bytes,c.last_used,json_extract(e.data,'$.completedAt'),c.eval_def_hash,json_extract(e.data,'$.origin.store') FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE e.status IN ('GREEN','RED') ORDER BY c.identity,c.eval_def_hash")?;
         Ok(statement.query_map([], |row| Ok(Entry {
             identity: row.get(0)?, execution_id: row.get(1)?, verdict: row.get(2)?,
             repo_path: row.get(3)?, eval_id: row.get(4)?, bytes: row.get(5)?,
             last_used: row.get(6)?, completed_at: row.get(7)?, eval_def_hash: row.get(8)?,
+            origin: row.get(9)?,
         }))?.collect::<Result<_, _>>()?)
     }).await.map_err(|e| e.to_string())
 }

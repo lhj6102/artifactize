@@ -195,6 +195,7 @@ impl Receipts {
                 execution.result = request.result.clone();
                 execution.error = request.error.clone();
                 execution.error_code = request.error_code.clone();
+                execution.reviewer = Some(reviewer.clone());
                 execution.completed_at = request.completed_at.clone();
                 execution.provenance.completed_at = request.completed_at.clone();
                 request.provenance = Some(execution.provenance.clone());

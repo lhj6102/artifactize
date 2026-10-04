@@ -18,7 +18,7 @@ use crate::{
     graph::{Evidence, Graph},
     process,
     runtime::Verdict,
-    store::{Claim, Execution, Provenance, Receipts, Request, Run},
+    store::{Claim, Execution, Producer, Provenance, Receipts, Request, Run},
 };
 
 pub(crate) fn now() -> String {
@@ -80,6 +80,7 @@ struct Scheduler<'a, 'g> {
 impl Scheduler<'_, '_> {
     async fn run(&mut self) -> Result<BTreeMap<String, Evidence>, String> {
         let owner = process::identity(std::process::id()).map_err(|e| e.to_string())?;
+        let producer = Producer::current();
         let run_dir = self.run.state_dir.join("runs").join(&self.run.id);
         let eval_hashes: BTreeMap<_, _> = self
             .config
@@ -207,6 +208,9 @@ impl Scheduler<'_, '_> {
                         },
                         started_at: now(),
                         completed_at: None,
+                        producer: Some(producer.clone()),
+                        reviewer: None,
+                        origin: None,
                     };
                     let human = matches!(
                         self.config

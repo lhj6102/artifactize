@@ -293,8 +293,11 @@ artifactize cache gc
 These commands use the shared state home or `--state-dir PATH`, without loading a
 repository. `list` shows identity, Eval definition hash, original verdict/repository/eval, retained JSON
 bytes and last use (a text table, or a JSON array). `show` always prints the full
-saved execution with result, actual profile, provenance and usage; a missing
-entry prints `null` and exits 4. Reads neither create missing state nor update
+saved execution with result, actual profile, provenance, usage and `producer`
+(`user@host` and artifactize version; submitted Human results also record their
+`reviewer`); a missing entry prints `null` and exits 4. Entries mirrored from a
+[shared remote review store](docs/design/remote-store.md) carry an `origin`
+(store, publisher, publication time), which `list` shows in place of the repository. Reads neither create missing state nor update
 access times. `rm` prints `{"removed":true}` (false if absent), preserving saved
 Runs and execution audit. For `show` and `rm`, the hash may be omitted when the
 identity has only one entry; multiple definitions require the full hash from

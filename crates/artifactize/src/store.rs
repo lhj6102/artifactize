@@ -17,7 +17,7 @@ mod runs;
 pub use runs::{RunSummary, read_runs};
 mod requests;
 mod tool_calls;
-pub use executions::{Claim, Execution, Provenance, read_identity_executions};
+pub use executions::{Claim, Execution, Origin, Producer, Provenance, read_identity_executions};
 pub use receipts::{
     DATABASE, LastRequest, Receipts, Request, Run, RunView, read_latest_requests, read_run,
 };

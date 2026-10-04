@@ -692,7 +692,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                                 entry.identity,
                                 entry.eval_def_hash,
                                 entry.verdict,
-                                entry.repo_path,
+                                entry.origin.as_ref().unwrap_or(&entry.repo_path),
                                 entry.eval_id,
                                 entry.bytes,
                                 entry.last_used
