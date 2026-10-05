@@ -66,6 +66,7 @@ pub(crate) async fn schedule(
     graph: &Graph<'_>,
     fingerprints: &BTreeMap<&str, cache::PreparedFingerprint>,
     keys: &BTreeMap<&str, cache::Key>,
+    parallelism: &cache::Parallelism,
     run: &mut Run,
     requests: &mut [Request],
     receipts: &Receipts,
@@ -80,6 +81,7 @@ pub(crate) async fn schedule(
         graph,
         fingerprints,
         keys,
+        parallelism,
         run,
         requests,
         receipts,
@@ -101,6 +103,7 @@ struct Scheduler<'a, 'g> {
     graph: &'a Graph<'g>,
     fingerprints: &'a BTreeMap<&'g str, cache::PreparedFingerprint>,
     keys: &'a BTreeMap<&'g str, cache::Key>,
+    parallelism: &'a cache::Parallelism,
     run: &'a mut Run,
     requests: &'a mut [Request],
     receipts: &'a Receipts,
@@ -379,6 +382,7 @@ impl Scheduler<'_, '_> {
                     let remote = self.remote.clone();
                     let cancellation = self.cancellation.clone();
                     let run_dir = run_dir.clone();
+                    let parallelism = self.parallelism.clone();
                     running.insert(index);
                     self.tasks.spawn(async move {
                         let request = execution::execute(
@@ -388,6 +392,7 @@ impl Scheduler<'_, '_> {
                             execution,
                             prepared,
                             run_dir,
+                            &parallelism,
                             cancellation,
                         )
                         .await?;

@@ -22,6 +22,10 @@ pub(super) enum Prepared {
     Human,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the request with its execution and preparation, and the Run's output, fingerprint bound and cancellation"
+)]
 pub(super) async fn execute(
     config: Arc<RepoConfig>,
     receipts: Receipts,
@@ -29,6 +33,7 @@ pub(super) async fn execute(
     mut execution: Execution,
     prepared: Result<Prepared, String>,
     run_dir: PathBuf,
+    parallelism: &cache::Parallelism,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     if matches!(prepared, Ok(Prepared::Human)) && !cancellation.is_cancelled() {
@@ -107,7 +112,7 @@ pub(super) async fn execute(
             .iter()
             .find(|eval| eval.id == request.eval_id)
             .expect("included eval");
-        match cache::recheck(&config, eval, &run_dir, cancellation.clone()).await {
+        match cache::recheck(&config, eval, &run_dir, parallelism, cancellation.clone()).await {
             Ok(Some(value)) if &value == expected => outcome,
             Ok(_) => {
                 request.error = Some("Fingerprint changed during review.".into());

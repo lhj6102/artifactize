@@ -5,11 +5,14 @@ mod content;
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
+    sync::Arc,
 };
 
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
 pub use crate::store::cache_entries::{Entry, list, remove, show};
@@ -164,23 +167,86 @@ pub fn eval_keys<'a>(
         .collect()
 }
 
-/// Prepare only the selected dependency closure, once per Artifact.
+/// How many fingerprints a process computes at once: one bound shared by a Run's
+/// preparation and its end-of-review rechecks, or by `status`.
+#[derive(Debug, Clone)]
+pub struct Parallelism {
+    slots: Arc<Semaphore>,
+    limit: usize,
+}
+
+impl Parallelism {
+    /// At most `limit` fingerprints at a time; at least one.
+    pub fn new(limit: usize) -> Self {
+        let limit = limit.max(1);
+        Self {
+            slots: Arc::new(Semaphore::new(limit)),
+            limit,
+        }
+    }
+
+    /// The default bound: the CPUs available to this process.
+    pub fn available() -> usize {
+        std::thread::available_parallelism().map_or(1, usize::from)
+    }
+
+    pub fn limit(&self) -> usize {
+        self.limit
+    }
+}
+
+/// Prepare only the selected dependency closure, once per Artifact, computing up to the
+/// parallelism's limit of fingerprints at a time. The result does not depend on completion
+/// order: a failure reports the first failing Artifact in input order, and fingerprints after
+/// it are cancelled because they cannot change which failure that is.
 pub async fn prepare<'a>(
     config: &RepoConfig,
     artifacts: impl IntoIterator<Item = &'a str>,
     output_root: &Path,
+    parallelism: &Parallelism,
     cancellation: CancellationToken,
 ) -> Result<BTreeMap<&'a str, PreparedFingerprint>, String> {
+    let mut seen = BTreeSet::new();
+    let ids: Vec<&'a str> = artifacts
+        .into_iter()
+        .filter(|id| config.artifacts[*id].fingerprint.is_some() && seen.insert(*id))
+        .collect();
+    let tokens: Vec<_> = ids.iter().map(|_| cancellation.child_token()).collect();
+    let mut running: FuturesUnordered<_> = ids
+        .iter()
+        .zip(&tokens)
+        .enumerate()
+        .map(|(index, (id, token))| async move {
+            let result = match parallelism.slots.acquire().await {
+                // A slot can be waited for long; a cancelled fingerprint never starts.
+                Ok(_slot) if !token.is_cancelled() => {
+                    compute(config, id, output_root, token.clone()).await
+                }
+                _ => Err(process::Error::Cancelled.to_string()),
+            };
+            (index, result)
+        })
+        .collect();
     let mut prepared = BTreeMap::new();
-    for id in artifacts {
-        if config.artifacts[id].fingerprint.is_some() && !prepared.contains_key(id) {
-            prepared.insert(
-                id,
-                compute(config, id, output_root, cancellation.clone()).await?,
-            );
+    let mut failure: Option<(usize, String)> = None;
+    while let Some((index, result)) = running.next().await {
+        match result {
+            Ok(fingerprint) => {
+                prepared.insert(ids[index], fingerprint);
+            }
+            Err(error) if failure.as_ref().is_none_or(|(first, _)| index < *first) => {
+                for token in &tokens[index + 1..] {
+                    token.cancel();
+                }
+                failure = Some((index, error));
+            }
+            Err(_) => {}
         }
     }
-    Ok(prepared)
+    match failure {
+        Some((_, error)) => Err(error),
+        None => Ok(prepared),
+    }
 }
 
 pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String) {
@@ -206,12 +272,14 @@ pub async fn recheck(
     config: &RepoConfig,
     eval: &Eval,
     output_root: &Path,
+    parallelism: &Parallelism,
     cancellation: CancellationToken,
 ) -> Result<Option<String>, String> {
     let fingerprints = prepare(
         config,
         dependencies(config, eval),
         output_root,
+        parallelism,
         cancellation,
     )
     .await?;

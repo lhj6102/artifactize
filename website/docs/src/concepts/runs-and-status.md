@@ -104,7 +104,7 @@ execution. Action counts cover included evals only. Exit 0 means current validat
 is satisfied; 1 means obligations remain; invalid input or state errors exit 2.
 
 Status prepares current fingerprints for the selected required closure, using
-the same isolation and validation as verify. Fingerprint failures exit 2; an old
+the same isolation, validation and `--fingerprint-jobs` bound as verify. Fingerprint failures exit 2; an old
 saved fingerprint is never substituted. It never runs tools or eval commands, creates
 Runs, reserves work, creates a missing database or updates cache access times.
 Fingerprint scripts use disposable output under the state directory, which may be

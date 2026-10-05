@@ -213,9 +213,15 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     // The record the `fast` variant produced elsewhere, keyed like this repository's eval.
     let config = read_workspace_config(&repo).unwrap();
     let state = root.path().join("state");
-    let fingerprints = cache::prepare(&config, ["app"], &state, CancellationToken::new())
-        .await
-        .unwrap();
+    let fingerprints = cache::prepare(
+        &config,
+        ["app"],
+        &state,
+        &cache::Parallelism::new(2),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
     let key = cache::eval_keys(&config, &fingerprints)["app/check"].clone();
     let variant: Profile = serde_json::from_value(fast.clone()).unwrap();
     let completed = "2026-10-04T00:00:01Z".to_owned();
