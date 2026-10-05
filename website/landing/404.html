@@ -6,7 +6,15 @@
 <title>Page not found · Artifactize</title>
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#090B0F">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
+<script>
+  (function () {
+    var theme = null;
+    try { theme = localStorage.getItem('mdbook-theme'); } catch (e) {}
+    if (theme && theme.charAt(0) === '"') theme = theme.slice(1, -1);
+    document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
+  })();
+</script>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.png" type="image/png" sizes="48x48">
 <link rel="stylesheet" href="/fonts/fonts.css">

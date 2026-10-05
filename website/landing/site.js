@@ -1,7 +1,31 @@
-// artifactize.dev: play/pause and captions for the promo video, and the
-// terminal recordings further down. The promo pauses while it is off screen
-// and never autoplays under reduced motion (see the inline script next to it
-// in index.html).
+// artifactize.dev: the theme toggle, and play/pause and captions for the
+// promo video and the terminal recordings on pages that have them. The promo
+// pauses while it is off screen and never autoplays under reduced motion.
+
+// Theme toggle: dark (the docs' "navy") or light. It writes the docs'
+// localStorage key, so the choice carries across the site.
+(function () {
+  var button = document.querySelector('.theme-toggle');
+  if (!button) return;
+  var root = document.documentElement;
+  function sync() {
+    var light = root.getAttribute('data-theme') === 'light';
+    button.setAttribute('aria-label', light ? 'Use the dark theme' : 'Use the light theme');
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', light ? '#FFFFFF' : '#090B0F');
+  }
+  button.hidden = false;
+  button.addEventListener('click', function () {
+    var light = root.getAttribute('data-theme') !== 'light';
+    root.setAttribute('data-theme', light ? 'light' : 'dark');
+    try {
+      localStorage.setItem('mdbook-theme', light ? 'light' : 'navy');
+    } catch (e) {}
+    sync();
+  });
+  sync();
+})();
+
 (function () {
   var video = document.getElementById('promo');
   if (!video) return;
