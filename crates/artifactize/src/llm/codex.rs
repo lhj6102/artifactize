@@ -89,7 +89,7 @@ impl Codex {
     /// Callers must never print or log the token it carries.
     pub(super) async fn model(
         &self,
-    ) -> Result<Model<openai::responses_api::wire::Responses>, String> {
+    ) -> Result<Model<openai::responses_api::wire::Responses>, auth::TokenError> {
         let token = auth::access_token(Some(&self.state), Some(&self.repo)).await?;
         let mut dialect = chatgpt::DIALECT;
         dialect.quirks.hooks = Some(&HOOKS);
@@ -114,7 +114,9 @@ pub(super) async fn models(
     state: Option<&Path>,
     repo: Option<&Path>,
 ) -> Result<Vec<super::models::ListedModel>, String> {
-    let token = auth::access_token(state, repo).await?;
+    let token = auth::access_token(state, repo)
+        .await
+        .map_err(|error| error.message)?;
     let response = super::http_client()?
         .get(format!("{base}/models?client_version={CLIENT_VERSION}"))
         .bearer_auth(&token.access_token)
@@ -167,21 +169,17 @@ fn error_code(body: &Value) -> Option<&str> {
         .filter(|code| !code.is_empty())
 }
 
-fn usage_limit(status: Option<u16>, code: Option<&str>) -> bool {
-    status == Some(429)
-        || code.is_some_and(|code| {
-            matches!(
-                code,
-                "usage_limit_reached" | "usage_not_included" | "rate_limit_exceeded"
-            )
-        })
+/// A plan usage limit: a usage code, or a 429 that says when the limit resets. A plain
+/// 429 is a rate limit.
+fn usage_limit(status: Option<u16>, body: &Value) -> bool {
+    error_code(body)
+        .is_some_and(|code| matches!(code, "usage_limit_reached" | "usage_not_included"))
+        || (status == Some(429) && error_object(body)["resets_at"].is_u64())
 }
 
-/// Usage limits and rejected credentials never succeed on a retry.
-pub(super) fn permanent(error: &ProviderError) -> bool {
-    let status = error.report().http_status;
-    let body = body(error);
-    matches!(status, Some(401 | 403)) || usage_limit(status, error_code(&body))
+/// A plan usage limit, which no retry within a review outlasts.
+pub(super) fn usage_limited(error: &ProviderError) -> bool {
+    usage_limit(error.report().http_status, &body(error))
 }
 
 fn body(error: &ProviderError) -> Value {
@@ -205,7 +203,7 @@ pub(super) fn diagnostic(error: &ProviderError) -> String {
 pub(super) fn describe(status: Option<u16>, body: &Value, fallback: &str) -> String {
     let error = error_object(body);
     let code = error_code(body);
-    let mut message = if usage_limit(status, code) {
+    let mut message = if usage_limit(status, body) {
         let plan = error["plan_type"]
             .as_str()
             .map(|plan| format!(" ({} plan)", plan.to_lowercase()))

@@ -164,6 +164,7 @@ pub async fn verify(
         ignore_gates,
         validation: Value::Null,
         error: None,
+        stopped_backends: Vec::new(),
     };
     let mut requests: Vec<_> = evals
         .iter()

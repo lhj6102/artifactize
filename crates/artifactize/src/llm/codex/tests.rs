@@ -12,8 +12,22 @@ fn usage_limits_name_the_plan_and_reset_and_never_retry() {
         "{message}"
     );
     assert!(message.ends_with("(HTTP 429)"), "{message}");
-    assert!(usage_limit(None, Some("usage_not_included")));
-    assert!(!usage_limit(Some(500), Some("server_error")));
+    assert!(usage_limit(
+        None,
+        &json!({"error":{"code":"usage_not_included"}})
+    ));
+    assert!(usage_limit(Some(429), &json!({"error":{"resets_at":1}})));
+    // A plain 429 is a rate limit, worded by the provider.
+    let plain = json!({"error":{"code":"rate_limit_exceeded","message":"Slow down"}});
+    assert!(!usage_limit(Some(429), &plain));
+    assert_eq!(
+        describe(Some(429), &plain, "fallback"),
+        "rate_limit_exceeded: Slow down (HTTP 429)"
+    );
+    assert!(!usage_limit(
+        Some(500),
+        &json!({"error":{"code":"server_error"}})
+    ));
 }
 
 #[test]

@@ -24,8 +24,8 @@ pub use executions::{
     read_latest_cached,
 };
 pub use receipts::{
-    DATABASE, LastRequest, Receipts, Request, Run, RunView, read_latest_requests, read_run,
-    state_schema,
+    DATABASE, LastRequest, Receipts, Request, Run, RunView, StoppedBackend, read_latest_requests,
+    read_run, state_schema,
 };
 pub use requests::{RequestView, read_request, read_requests, read_waiting};
 

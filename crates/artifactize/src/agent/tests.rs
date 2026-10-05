@@ -8,7 +8,10 @@ use rig_core::{
 use tempfile::TempDir;
 
 use super::*;
-use crate::config::{Backend, read_workspace_config};
+use crate::{
+    agent::error::{Code, Failure},
+    config::{Backend, read_workspace_config},
+};
 
 mod budgets;
 mod repair;
@@ -281,7 +284,7 @@ async fn incomplete_wrong_model_and_duplicate_calls_fail_before_tools() {
     let (review, _) = Fixture::new("anthropic")
         .run(vec![anthropic_response(false, "max_tokens")])
         .await;
-    assert!(review.result.unwrap_err().contains("incomplete"));
+    assert!(review.result.unwrap_err().message.contains("incomplete"));
 }
 
 #[tokio::test]
@@ -300,8 +303,9 @@ async fn retries_are_bounded_and_auth_quota_are_permanent() {
     let (review, http) = fixture
         .run(vec![transient(), transient(), transient(), final_openai()])
         .await;
-    assert!(review.result.is_err());
+    assert_eq!(review.result.unwrap_err().code, Code::Transient);
     assert_eq!(http.requests().len(), 3);
+    assert_eq!(review.attempts[2].error_code.as_deref(), Some("TRANSIENT"));
     for status in [StatusCode::UNAUTHORIZED, StatusCode::TOO_MANY_REQUESTS] {
         let error = json!({"error":{"code":"insufficient_quota","message":"Your account quota is exhausted."}});
         let (review, http) = fixture
@@ -312,14 +316,14 @@ async fn retries_are_bounded_and_auth_quota_are_permanent() {
             .await;
         assert_eq!(
             review.result.unwrap_err(),
-            "Your account quota is exhausted."
+            Failure::new(Code::Quota, "Your account quota is exhausted.")
         );
         assert_eq!(http.requests().len(), 1);
     }
 }
 
 #[tokio::test]
-async fn partial_text_usage_or_prior_tools_prevent_replay() {
+async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
     let fixture = Fixture::new("openai");
     let partial = sse(vec![
         json!({"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"in_progress","content":[]}}),
@@ -340,9 +344,22 @@ async fn partial_text_usage_or_prior_tools_prevent_replay() {
             final_openai(),
         ])
         .await;
-    assert!(review.result.is_err());
+    // A failed turn after tool calls replays the whole conversation, so it retries too.
+    assert_eq!(review.result.unwrap(), json!({"verdict":"GREEN"}));
     assert_eq!(review.tool_calls.len(), 1);
-    assert_eq!(http.requests().len(), 2);
+    assert_eq!(http.requests().len(), 3);
+    let turns: Vec<_> = review
+        .attempts
+        .iter()
+        .map(|attempt| (attempt.turn, attempt.attempt, attempt.error_code.as_deref()))
+        .collect();
+    assert_eq!(
+        turns,
+        [(1, 1, None), (2, 1, Some("TRANSIENT")), (2, 2, None)]
+    );
+    let second: Value = serde_json::from_slice(&http.requests()[1].body).unwrap();
+    let third: Value = serde_json::from_slice(&http.requests()[2].body).unwrap();
+    assert_eq!(second["input"], third["input"]);
     let partial_usage = sse(vec![
         json!({"type":"message_start","message":{"id":"msg","type":"message","role":"assistant","model":"exact-model","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0}}}),
     ]);
@@ -388,7 +405,7 @@ async fn deadline_stops_retry_without_extra_requests() {
             final_openai(),
         ])
         .await;
-    assert!(review.result.unwrap_err().contains("timed out"));
+    assert!(review.result.unwrap_err().message.contains("timed out"));
     assert_eq!(http.requests().len(), 1);
     assert_eq!(review.attempts.len(), 1);
 }

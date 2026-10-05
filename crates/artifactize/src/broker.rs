@@ -13,6 +13,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    agent::error::{self as agent_error, Code},
     cache,
     config::{Profile, RepoConfig},
     graph::{Evidence, Graph},
@@ -20,7 +21,7 @@ use crate::{
     process,
     remote::Session,
     runtime::Verdict,
-    store::{Claim, Execution, Producer, Provenance, Receipts, Request, Run},
+    store::{Claim, Execution, Producer, Provenance, Receipts, Request, Run, StoppedBackend},
     tools,
 };
 
@@ -49,6 +50,32 @@ pub(crate) fn sortable(value: &str) -> Option<String> {
         .ok()
         .filter(|time| (0..=9999).contains(&time.to_offset(time::UtcOffset::UTC).year()))
         .map(timestamp)
+}
+
+/// The backend this Run stopped admitting the request's Agent reviews on, if any.
+fn stopped<'r>(run: &'r Run, request: &Request) -> Option<&'r StoppedBackend> {
+    let backend = request.options.backend.as_deref()?;
+    run.stopped_backends
+        .iter()
+        .find(|stopped| stopped.backend == backend)
+}
+
+/// Stop admitting a backend after a failure every later review on it would repeat.
+fn stop_backend(run: &mut Run, request: &Request) -> bool {
+    let (Some(backend), Some(code)) = (&request.options.backend, &request.error_code) else {
+        return false;
+    };
+    if !Code::stops_backend(code) || stopped(run, request).is_some() {
+        return false;
+    }
+    run.stopped_backends.push(StoppedBackend {
+        backend: backend.clone(),
+        error_code: code.clone(),
+        eval_id: request.eval_id.clone(),
+        request_id: request.id.clone(),
+        error: request.error.clone().unwrap_or_default(),
+    });
+    true
 }
 
 pub(crate) fn budget_reason(run: &Run) -> String {
@@ -274,11 +301,15 @@ impl Scheduler<'_, '_> {
                             .profile,
                         Profile::Human {}
                     );
-                    let allow_start = human
-                        || self
-                            .run
-                            .max_executions
-                            .is_none_or(|limit| self.run.executions_started < limit);
+                    // A backend this Run stopped admits no new reviews and takes no slot; reuse and
+                    // joining a live execution of the key still work.
+                    let backend_stopped = stopped(self.run, request).cloned();
+                    let allow_start = backend_stopped.is_none()
+                        && (human
+                            || self
+                                .run
+                                .max_executions
+                                .is_none_or(|limit| self.run.executions_started < limit));
                     // An Agent review of a backend with a machine-wide limit (limits.json) also
                     // needs one of its slots. The claim is probed first, so a request that would
                     // reuse or join takes no slot; one that would start waits for a slot without
@@ -380,6 +411,24 @@ impl Scheduler<'_, '_> {
                                 );
                                 self.receipts.save_request(request).await?;
                             }
+                            continue;
+                        }
+                        Claim::BudgetExhausted if let Some(cause) = backend_stopped => {
+                            waiting.remove(&index);
+                            request.status = "ERROR".into();
+                            // A request waiting for a slot stops waiting.
+                            request.blocked_reason = None;
+                            request.error_code = Some(agent_error::BACKEND_STOPPED.into());
+                            request.error = Some(format!(
+                                "Not started: this Run stopped admitting {} reviews after {} in {}: {}",
+                                cause.backend, cause.error_code, cause.eval_id, cause.error
+                            ));
+                            request.completed_at = Some(now());
+                            self.receipts.save_request(request).await?;
+                            evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
+                            evaluation = self
+                                .graph
+                                .evaluate_with_policy(&evidence, self.run.ignore_gates);
                             continue;
                         }
                         Claim::BudgetExhausted => {
@@ -501,6 +550,9 @@ impl Scheduler<'_, '_> {
                 result = self.tasks.join_next(), if !self.tasks.is_empty() => {
                     let (index, request) = result.expect("active tasks").map_err(|e| e.to_string())??;
                     running.remove(&index);
+                    if stop_backend(self.run, &request) {
+                        self.receipts.save_run(self.run).await?;
+                    }
                     if request.status != "WAITING_HUMAN" {
                         evidence.insert(request.eval_id.clone(), match request.status.as_str() {
                             "GREEN" => Evidence::Current(Verdict::Green),

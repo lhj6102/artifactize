@@ -121,9 +121,53 @@ encrypted reasoning replay and parallel tool calls disabled, or Anthropic Messag
 The latter requires a per-turn output cap (16384 tokens), separate from the review
 budget. One review deadline (default 240 seconds) covers all turns, retries and tools.
 Truncated or incomplete responses are ERROR, even if they contain a JSON verdict.
-At most two transient retries occur before any output, tool call or positive usage;
-authentication and quota failures stop immediately with the provider message.
-Nested HTTP retries and redirects are disabled.
+Nested HTTP retries and redirects are disabled; artifactize retries turns itself, as
+described next.
+
+### Retries and error codes
+
+Every request replays the whole conversation (no server-side state), so any turn can
+be retried. A turn is retried, up to three attempts in all, when an attempt fails
+with a rate limit or a transient error before it produced any output or reported any
+usage. A retry waits as long as the provider asks with `retry-after-ms` or
+`Retry-After` (seconds or an HTTP date), else 250 ms and then 500 ms. When the
+provider asks for a wait that ends past the review's deadline, the review fails at
+once with `RATE_LIMIT`. A failure after output or usage is never retried, so nothing
+is paid for twice. Each attempt is saved in `usage` with its counters, `error` and
+`errorCode`.
+
+A failed Agent review records one of these `errorCode` values:
+
+| `errorCode` | Cause | Retried |
+|---|---|---|
+| `AUTHENTICATION` | Missing, expired or rejected credentials: HTTP 401/403, no API key, no Codex sign-in or an expired auth file | no; stops the backend |
+| `QUOTA` | A billing, credit or plan usage limit (`insufficient_quota`, a Codex usage limit) | no; stops the backend |
+| `RATE_LIMIT` | HTTP 429 without a quota cause, after the retries or when `Retry-After` passes the deadline | yes |
+| `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream | yes, before output |
+| `TIMEOUT` | The review's `timeoutMs` deadline | no |
+| `CANCELLED` | Ctrl-C or a cancelled Run | no |
+| `PROVIDER_BUDGET_EXCEEDED` | `maxTokens` or `maxToolCalls` was exceeded | no |
+| `INVALID_RESULT` | No valid verdict after the one format repair | no |
+| `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
+| `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
+| `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
+
+### Stopping a backend
+
+An `AUTHENTICATION` or `QUOTA` failure would repeat for every review on the same
+backend, so the Run stops admitting new reviews on it. Each later review of that
+backend in the Run is ERROR with `BACKEND_STOPPED`, never started, and its error
+names the failure. A review waiting for a free slot of that backend
+([backend capacity](../reference/state-cache-limits.md#backend-capacity)) stops waiting
+the same way, and a stopped backend takes no slot. Reviews that were already running
+finish, results that can be reused are still reused, and other backends carry on. The Run lists the stop under
+`stoppedBackends` (in `verify --json` and `run show`), and `verify` prints it:
+
+```text
+Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not started.
+```
+
+The next Run admits the backend again.
 
 Only tools from the eval's scope are exposed. They run sequentially with private
 runtime environments. Tool results keep text, JSON and validated base64 image blocks rather than flattening
@@ -179,8 +223,10 @@ artifactize logout codex    # revoke and delete artifactize's tokens
   headers name the bearer token, `ChatGPT-Account-Id`, `originator: artifactize`,
   `OpenAI-Beta: responses=experimental` and a fresh `session_id`. Retries, budgets,
   tool results and usage work as for `openai`.
-- **Errors.** A usage limit names the plan and when it resets, and is never retried.
-  HTTP 401 and 403 say how to sign in again.
+- **Errors.** A usage limit is `QUOTA`: it names the plan and when it resets, and
+  stops `codex` for the Run. A plain HTTP 429 is a `RATE_LIMIT`, retried. HTTP 401
+  and 403 are `AUTHENTICATION` and say how to sign in again. A token endpoint that is
+  unreachable or failing during a refresh is `TRANSIENT`.
 - **Reuse.** Like any backend, `codex` records its backend, model, reasoning and
   limits on each result, outside the reuse key: a `codex` result and an `openai` or
   `anthropic` result for the same eval and fingerprints reuse each other.

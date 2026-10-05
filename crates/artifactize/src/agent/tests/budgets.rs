@@ -31,7 +31,7 @@ async fn tool_budget_counts_unknown_and_invalid_calls_before_validation() {
                 final_openai(),
             ])
             .await;
-        assert!(review.result.unwrap_err().contains("maxToolCalls"));
+        assert!(review.result.unwrap_err().message.contains("maxToolCalls"));
         assert_eq!(http.requests().len(), 1);
         assert_eq!(review.tool_calls.len(), 2);
         assert!(review.tool_calls[0]["result"].is_string());
@@ -68,7 +68,7 @@ async fn tool_budget_and_duplicate_ids_span_turns() {
                 final_openai(),
             ])
             .await;
-        let error = review.result.unwrap_err();
+        let error = review.result.unwrap_err().message;
         assert!(
             error.contains(if duplicate {
                 "tool-call ID"
@@ -108,7 +108,7 @@ async fn token_budget_is_cumulative_and_crosses_before_tools() {
             final_openai(),
         ])
         .await;
-    assert!(review.result.unwrap_err().contains("maxTokens"));
+    assert!(review.result.unwrap_err().message.contains("maxTokens"));
     assert_eq!(http.requests().len(), 2);
     assert_eq!(review.tool_calls.len(), 1);
     assert_eq!(review.attempts[1].usage["totalTokens"], 8);
@@ -140,7 +140,7 @@ async fn token_budget_includes_anthropic_cache_reads_and_writes() {
     let (review, http) = fixture
         .run(vec![anthropic_response(true, "tool_use")])
         .await;
-    assert!(review.result.unwrap_err().contains("maxTokens"));
+    assert!(review.result.unwrap_err().message.contains("maxTokens"));
     assert!(review.tool_calls.is_empty());
     assert_eq!(http.requests().len(), 1);
     assert_eq!(review.attempts[0].usage["cacheReadTokens"], 2);
@@ -165,7 +165,7 @@ async fn repair_tokens_can_exceed_budget_even_with_a_valid_verdict() {
             final_openai(),
         ])
         .await;
-    assert!(review.result.unwrap_err().contains("maxTokens"));
+    assert!(review.result.unwrap_err().message.contains("maxTokens"));
     assert_eq!(http.requests().len(), 2);
     assert_eq!(review.attempts[1].usage["totalTokens"], 14);
 }

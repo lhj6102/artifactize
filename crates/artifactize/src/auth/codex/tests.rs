@@ -330,20 +330,27 @@ async fn refresh_failures_keep_or_drop_the_sign_in() {
     ])
     .await;
     stored(&storage, "old-access", 1);
+    // A failing token endpoint is transient, so a review may retry it.
     let transient = stored_token(&storage, &root(&server)).await.err().unwrap();
+    assert!(transient.transient);
+    let transient = transient.message;
     assert!(
         transient.contains("HTTP 500") && transient.contains("kept"),
         "{transient}"
     );
     let mismatch = stored_token(&storage, &root(&server)).await.err().unwrap();
+    assert!(!mismatch.transient);
+    let mismatch = mismatch.message;
     assert!(mismatch.contains("another ChatGPT account"), "{mismatch}");
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_some());
     let terminal = stored_token(&storage, &root(&server)).await.err().unwrap();
+    assert!(!terminal.transient);
+    let terminal = terminal.message;
     assert!(terminal.contains("refresh_token_reused"), "{terminal}");
     assert!(terminal.contains("artifactize login codex"), "{terminal}");
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
     let missing = stored_token(&storage, &root(&server)).await.err().unwrap();
-    assert_eq!(missing, LOGIN_REQUIRED);
+    assert_eq!(missing.message, LOGIN_REQUIRED);
 }
 
 #[test]
