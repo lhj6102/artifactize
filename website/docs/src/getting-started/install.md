@@ -21,7 +21,7 @@ Install the latest release from crates.io (releases are published there from
 
 ```sh
 cargo install artifactize --locked
-artifactize --version          # artifactize 0.5.0
+artifactize --version          # artifactize 0.5.1
 ```
 
 `--locked` builds with the dependency versions the release was tested with. Every
@@ -29,7 +29,7 @@ release is also tagged on GitHub, and `cargo install` can build a tag (or `main`
 without `--tag`) from there:
 
 ```sh
-cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.0 --locked artifactize
+cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.1 --locked artifactize
 ```
 
 To build from source instead, install from a checkout; its `rust-toolchain.toml`
