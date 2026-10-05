@@ -39,6 +39,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
                 references: BTreeMap::new(),
                 deps: Vec::new(),
                 declaration: eval,
+                variant: None,
             });
         }
         config.artifacts.insert(

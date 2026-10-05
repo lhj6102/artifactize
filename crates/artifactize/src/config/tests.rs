@@ -265,7 +265,8 @@ fn fingerprint_scripts_are_inert_declarations() {
 
 #[test]
 fn renamed_fingerprint_keys_fail_with_the_new_shape() {
-    let shape = r#"use "fingerprint": {"files": ["."], "dependencies": "direct", "ignore": []} or "fingerprint": {"script": {...}}."#;
+    let shape =
+        r#"use "fingerprint": {"files": ["."], "ignore": []} or "fingerprint": {"script": {...}}."#;
     for (key, value) in [
         ("staleKey", json!({"content":{}})),
         ("staleKey", json!({"script":{"command":"x","args":[]}})),
@@ -281,38 +282,36 @@ fn renamed_fingerprint_keys_fail_with_the_new_shape() {
 }
 
 #[test]
-fn content_fingerprint_defaults_to_the_owner_folder_and_direct_dependencies() {
+fn content_fingerprint_defaults_to_the_owner_folder() {
     let declaration = parse(json!({"name":"a","fingerprint":{}})).unwrap();
     let fingerprint = declaration.fingerprint.unwrap();
-    let Fingerprint::Content {
-        files,
-        dependencies,
-        ignore,
-    } = &fingerprint
-    else {
+    let Fingerprint::Content { files, ignore } = &fingerprint else {
         panic!()
     };
     assert_eq!(files, &["."]);
-    assert_eq!(*dependencies, Dependencies::Direct);
     assert!(ignore.is_empty());
     assert_eq!(
         serde_json::to_value(&fingerprint).unwrap(),
-        json!({"files":["."],"dependencies":"direct","ignore":[]})
+        json!({"files":["."],"ignore":[]})
     );
-    let declared = json!({"files":["src","docs/a.md"],"dependencies":"transitive","ignore":["*.log","build/"]});
-    let Some(Fingerprint::Content {
-        files,
-        dependencies,
-        ignore,
-    }) = parse(json!({"name":"a","fingerprint":declared}))
-        .unwrap()
-        .fingerprint
+    let declared = json!({"files":["src","docs/a.md"],"ignore":["*.log","build/"]});
+    let Some(Fingerprint::Content { files, ignore }) =
+        parse(json!({"name":"a","fingerprint":declared}))
+            .unwrap()
+            .fingerprint
     else {
         panic!()
     };
     assert_eq!(files, ["src", "docs/a.md"]);
-    assert_eq!(dependencies, Dependencies::Transitive);
     assert_eq!(ignore, ["*.log", "build/"]);
+    // The 0.4 dependency scope is gone in every form, with a message that says why.
+    for scope in ["none", "direct", "transitive"] {
+        let error = parse(json!({"name":"a","fingerprint":{"dependencies":scope}})).unwrap_err();
+        assert!(
+            error.contains("fingerprint.dependencies was removed in 0.5"),
+            "{error}"
+        );
+    }
     for (key, value) in [
         ("dependencies", json!("all")),
         ("files", json!([])),

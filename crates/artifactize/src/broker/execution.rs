@@ -100,10 +100,15 @@ pub(super) async fn execute(
         }
     };
     let outcome = if outcome.is_some()
-        && let Some(expected) = &request.fingerprint
+        && let Some(expected) = &request.key
     {
-        match cache::fingerprint(&config, &request.target, &run_dir, cancellation.clone()).await {
-            Ok(value) if &value == expected => outcome,
+        let eval = config
+            .evals
+            .iter()
+            .find(|eval| eval.id == request.eval_id)
+            .expect("included eval");
+        match cache::recheck(&config, eval, &run_dir, cancellation.clone()).await {
+            Ok(Some(value)) if &value == expected => outcome,
             Ok(_) => {
                 request.error = Some("Fingerprint changed during review.".into());
                 request.error_code = Some("INPUT_CHANGED".into());

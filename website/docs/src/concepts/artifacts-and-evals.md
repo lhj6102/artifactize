@@ -23,8 +23,7 @@ explains children, mounts, `{artifact}` references and basis Artifacts:
     "terms": "glossary"
   },
   "fingerprint": {
-    "files": ["."],
-    "dependencies": "direct"
+    "files": ["."]
   },
   "evals": [
     {
@@ -53,13 +52,16 @@ Declarations use `evals`, with qualified eval IDs such as `green/check`.
 
 ## The fingerprint field
 
-`fingerprint` declares what a review depends on. artifactize hashes it: while
-the fingerprint is unchanged, the prior verdict is reused; when it changes, the
-Artifact is reviewed again. It takes one of two forms:
+`fingerprint` declares what a review of this Artifact depends on, and artifactize
+uses its value as it is. While the fingerprints of an eval's Artifacts (its target,
+the target's mounts and children, and the Artifacts it names) are unchanged, the
+prior verdict is reused; when one changes, the eval is reviewed again. See
+[Fingerprints and reuse](fingerprints-and-reuse.md). It takes one of two forms:
 
-- `{"files":["."],"dependencies":"direct","ignore":[]}`, the built-in
-  [content fingerprint](fingerprints-and-reuse.md#content-fingerprint). Every field is optional and these
-  are the defaults, so `"fingerprint": {}` covers the whole owner folder.
+- `{"files":["."],"ignore":[]}`, the built-in
+  [content fingerprint](fingerprints-and-reuse.md#content-fingerprint) of the Artifact's own files.
+  Every field is optional and these are the defaults, so `"fingerprint": {}` covers
+  the whole owner folder.
 - `{"script":{"command":"/bin/sh","args":["fingerprint.sh"]}}`, an owner-written
   [fingerprint script](../reference/artifactize-json.md#fingerprint-scripts), optionally with
   `files` (paths that must exist, never hashed) and `timeoutMs`; `weight` is rejected.

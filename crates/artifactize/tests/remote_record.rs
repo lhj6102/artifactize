@@ -65,11 +65,19 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
         json!({"kind":"runtime","command":"/bin/sh","args":["check.sh"]}),
     );
     let producer_state = root.path().join("producer");
-    assert_eq!(verify(&repo, &producer_state).await.run.status, "GREEN");
-    let execution = cache::show(&producer_state, "remote-v1", None)
+    let produced = verify(&repo, &producer_state).await;
+    assert_eq!(produced.run.status, "GREEN");
+    let key = produced.requests[0].key.clone().unwrap();
+    let execution = cache::show(&producer_state, &key, false)
         .await
         .unwrap()
+        .pop()
         .unwrap();
+    assert_eq!(execution.fingerprint.as_deref(), Some("remote-v1"));
+    assert_eq!(
+        execution.fingerprints,
+        [("app".to_owned(), "remote-v1".to_owned())].into()
+    );
     let producer = execution.producer.clone().unwrap();
     assert_eq!(producer.version, env!("CARGO_PKG_VERSION"));
     assert!(producer.name.contains('@'));
@@ -106,15 +114,20 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     let consumer_state = root.path().join("consumer");
     let receipts = Receipts::open(&consumer_state, &repo).await.unwrap();
     let mirror = stored.mirror("https://reviews.example/").unwrap();
-    let mirrored = receipts.mirror_execution(&mirror).await.unwrap();
+    let mirrored = receipts.mirror_execution(&mirror).await.unwrap().unwrap();
     assert_eq!(mirrored.id, format!("remote-{}", execution.id));
+    // The same record again is not newer than the local latest, which is now itself.
+    assert!(receipts.mirror_execution(&mirror).await.unwrap().is_none());
     assert_eq!(
-        receipts.mirror_execution(&mirror).await.unwrap().id,
-        mirrored.id
+        cli(&consumer_state, &["cache", "list", "--history"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1
     );
     assert!(Record::new(&mirrored, false).is_err());
 
-    let shown = cli(&consumer_state, &["cache", "show", "remote-v1"]);
+    let shown = cli(&consumer_state, &["cache", "show", &key]);
     assert_eq!(
         shown["origin"],
         json!({"store":"https://reviews.example/","publisher":"alice-laptop","publishedAt":"2026-10-04T00:00:00Z"})
@@ -141,7 +154,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
         )
         .unwrap();
     assert!(
-        cli(&producer_state, &["cache", "show", "remote-v1"])
+        cli(&producer_state, &["cache", "show", &key])
             .get("producer")
             .is_none()
     );
@@ -167,12 +180,111 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
     )
     .await
     .unwrap();
-    let execution = cache::show(&state, "remote-v1", None)
+    let execution = cache::show(&state, request.key.as_deref().unwrap(), false)
         .await
         .unwrap()
+        .pop()
         .unwrap();
     assert_eq!(execution.reviewer.as_deref(), Some("alice"));
     let summary = Record::new(&execution, false).unwrap();
     assert_eq!(summary.reviewer.as_deref(), Some("alice"));
     assert_eq!(summary.result, json!({"verdict":"GREEN","approved":true}));
+}
+
+/// Agent evals share results across backends, models, reasoning levels and limits: a result
+/// another profile produced (here received from a review store) is reused without any
+/// Agent call, and the request and the record show which profile produced it.
+#[tokio::test]
+async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
+    use artifactize::{
+        config::{Profile, read_workspace_config},
+        store::{Execution, ExecutionOptions, Producer, Provenance},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let declared = json!({"kind":"agent","backend":"openai","model":"model-a","reasoning":"high","timeoutMs":60000});
+    let fast = json!({"kind":"agent","backend":"anthropic","model":"model-b","reasoning":"low","maxTokens":500});
+    write_repo(&repo, declared.clone());
+    let path = repo.join("artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    declaration["evals"][0]["profileVariants"] = json!({ "fast": fast });
+    fs::write(&path, declaration.to_string()).unwrap();
+
+    // The record the `fast` variant produced elsewhere, keyed like this repository's eval.
+    let config = read_workspace_config(&repo).unwrap();
+    let state = root.path().join("state");
+    let fingerprints = cache::prepare(&config, ["app"], &state, CancellationToken::new())
+        .await
+        .unwrap();
+    let key = cache::eval_keys(&config, &fingerprints)["app/check"].clone();
+    let variant: Profile = serde_json::from_value(fast.clone()).unwrap();
+    let completed = "2026-10-04T00:00:01Z".to_owned();
+    let produced = Execution {
+        id: "execution-run-elsewhere-1".into(),
+        key: Some(key.value.clone()),
+        fingerprint: Some("remote-v1".into()),
+        fingerprints: key.fingerprints.clone(),
+        eval_def_hash: key.eval_def_hash.clone(),
+        owner_pid: 1,
+        owner_start_time: 1,
+        status: "GREEN".into(),
+        result: Some(json!({"verdict":"GREEN","approved":true})),
+        error: None,
+        error_code: None,
+        profile: fast.clone(),
+        options: ExecutionOptions::new(&variant, Some("fast")),
+        usage: Some(json!([{"turn":1,"attempt":1,"usage":{"inputTokens":10}}])),
+        tool_calls: Vec::new(),
+        provenance: Provenance {
+            repo_path: "/elsewhere".into(),
+            run_id: "run-elsewhere".into(),
+            request_id: "run-elsewhere-1".into(),
+            eval_id: "app/check".into(),
+            eval_def_hash: key.eval_def_hash.clone(),
+            completed_at: Some(completed.clone()),
+        },
+        started_at: "2026-10-04T00:00:00Z".into(),
+        completed_at: Some(completed),
+        producer: Some(Producer {
+            name: "bob@laptop".into(),
+            version: "0.5.0".into(),
+        }),
+        reviewer: None,
+        origin: None,
+        manifest: None,
+    };
+    let mut record = Record::new(&produced, false).unwrap();
+    assert_eq!(record.options.model.as_deref(), Some("model-b"));
+    record.publisher = Some("bob-laptop".into());
+    record.published_at = Some("2026-10-04T00:00:02Z".into());
+    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    receipts
+        .mirror_execution(&record.mirror("https://reviews.example/").unwrap())
+        .await
+        .unwrap();
+
+    // The declared profile (another backend, model, reasoning and timeout) reuses it.
+    let reused = verify(&repo, &state).await;
+    assert_eq!(reused.run.status, "GREEN");
+    assert_eq!(reused.run.executions_started, 0);
+    let request = &reused.requests[0];
+    assert_eq!(request.profile, fast);
+    assert_eq!(request.requested_profile["model"], declared["model"]);
+    assert_eq!(request.requested_profile["backend"], declared["backend"]);
+    assert_eq!(request.options.variant.as_deref(), Some("fast"));
+    assert_eq!(request.options.backend.as_deref(), Some("anthropic"));
+    assert_eq!(request.options.max_tokens, Some(500));
+    let shown = cli(&state, &["cache", "show", &key.value]);
+    assert_eq!(
+        shown["options"],
+        json!({"backend":"anthropic","model":"model-b","reasoning":"low","maxTokens":500,"variant":"fast"})
+    );
+
+    // A model, reasoning or limit change alone keeps reusing it.
+    declaration["evals"][0]["profile"] = json!({"kind":"agent","backend":"openai","model":"model-c","maxToolCalls":3,"timeoutMs":1000});
+    fs::write(&path, declaration.to_string()).unwrap();
+    let again = verify(&repo, &state).await;
+    assert_eq!(again.run.executions_started, 0);
+    assert_eq!(again.requests[0].key.as_deref(), Some(key.value.as_str()));
+    assert_eq!(again.requests[0].execution_id, request.execution_id);
 }

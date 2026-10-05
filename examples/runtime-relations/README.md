@@ -32,15 +32,17 @@ What it demonstrates:
   `intro/heading` and `usage/heading` run `grep`, and `guide/terms` runs
   `python3 check_terms.py`. Each command runs from its owner's folder with only
   `PATH` and `LANG` inherited.
-- **Content fingerprint and reuse.** Each evaluated Artifact declares the
-  built-in content fingerprint, `"fingerprint": {}`, which hashes the Artifact's own files
-  (child folders, `artifactize.json`, `__pycache__` and `.gitignore`d files
-  excluded) plus one entry per direct dependency. `guide` spells out the
-  defaults, `"files": ["."]` and `"dependencies": "direct"`, so its dependencies
-  are `intro`, `usage` (children) and `glossary` (the mount). While the
-  fingerprint is unchanged since a saved GREEN or RED result, `verify` reuses
-  that result without running the eval, and `status` lists the files and dependencies that changed
-  since the last cached result.
+- **Content fingerprint and reuse.** Each Artifact declares the built-in content
+  fingerprint, `"fingerprint": {}`, which hashes the Artifact's own files (child
+  folders, `artifactize.json`, `__pycache__` and `.gitignore`d files excluded).
+  `guide` spells out the default, `"files": ["."]`. An eval's reuse key adds the
+  fingerprints of the Artifacts it depends on: `guide/terms` depends on `intro` and
+  `usage` (children) and `glossary` (the mount, also named as `{terms}`). That is
+  why the `glossary` basis declares a fingerprint too: without one, `guide/terms`
+  would have no reuse key and would be reviewed on every `verify`. While the eval
+  and those fingerprints are unchanged since a saved GREEN or RED result, `verify`
+  reuses that result without running the eval, and `status` lists the files and
+  dependencies that changed since the last cached result.
 
 ## Run it
 
@@ -71,7 +73,7 @@ Edit a copy so the repository stays clean. From the repository root:
 
 ```sh
 cp -r examples/runtime-relations /tmp/runtime-relations && cd /tmp/runtime-relations
-artifactize verify --all    # reuses the results from the original folder: fingerprints name content, not paths
+artifactize verify --all    # reuses the results from the original folder: keys name Artifacts and content, not paths
 ```
 
 1. Use a term the glossary does not define:
@@ -83,10 +85,11 @@ artifactize verify --all    # reuses the results from the original folder: finge
    ```
 
    `usage/heading` runs again because its folder changed, and stays GREEN.
-   `guide/terms` runs again because its direct dependency `usage` changed, and
-   is RED, with `cache: NOT DEFINED` in its stdout. `intro/heading` is reused.
-   Adding `cache: ...` to `glossary/terms.txt` changes `guide`'s fingerprint, so
-   the next `verify` runs `guide/terms` again and it turns GREEN.
+   `guide/terms` runs again because the fingerprint of its child `usage` changed,
+   and is RED, with `cache: NOT DEFINED` in its stdout. `intro/heading` is reused.
+   Adding `cache: ...` to `glossary/terms.txt` changes `glossary`'s fingerprint,
+   which `guide/terms`'s key covers, so the next `verify` runs `guide/terms` again
+   and it turns GREEN.
 
 2. Remove the `# Usage` heading from `guide/usage/page.md`. `usage/heading` is
    RED, and `guide/terms` is BLOCKED: a RED dependency blocks its dependents,

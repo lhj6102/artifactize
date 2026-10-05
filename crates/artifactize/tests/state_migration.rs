@@ -1,5 +1,6 @@
-//! Version 1 and version 2 state databases, written before the staleKey and fingerprint renames,
-//! upgrade in place.
+//! State databases of versions 1 to 3 (artifactize 0.1 to 0.4) upgrade in place to version 4.
+//! Their reuse mappings cannot be mapped to the 0.5 reuse key, so they are dropped and the
+//! first verify after the upgrade reviews again, once; Runs and waiting Human requests survive.
 
 use std::{fs, path::Path, process::Command};
 
@@ -13,6 +14,10 @@ const VERSION_ONE: &str = include_str!("fixtures/state-v1.sql");
 /// (content key with inputs, no dependencies and an ignore glob) are GREEN and cached; doc
 /// (script key, Human, mounting and referencing notes) is WAITING_HUMAN.
 const VERSION_TWO: &str = include_str!("fixtures/state-v2.sql");
+/// Recorded by artifactize 0.4.0: app (script fingerprint with files and a timeout) and notes
+/// (content fingerprint with files, direct dependencies and an ignore glob) are GREEN and
+/// cached; doc (script fingerprint, Human, mounting and referencing notes) is WAITING_HUMAN.
+const VERSION_THREE: &str = include_str!("fixtures/state-v3.sql");
 
 /// A recorded state and the same Artifacts declared in the current shape.
 struct Recorded {
@@ -86,7 +91,7 @@ fn names(db: &Connection, query: &str) -> Vec<String> {
         .unwrap()
 }
 
-fn upgrades_and_keeps_reuse_and_waiting_human_reviews(recorded: Recorded) {
+fn upgrades_keeps_history_and_reviews_again_once(recorded: Recorded) {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().canonicalize().unwrap();
     let runtime = json!({"kind":"runtime","command":"true","args":[]});
@@ -123,6 +128,7 @@ fn upgrades_and_keeps_reuse_and_waiting_human_reviews(recorded: Recorded) {
 
     // doctor reports the older schema without changing the file.
     let current = artifactize::store::STATE_SCHEMA_VERSION;
+    assert_eq!(current, 4);
     let recorded_bytes = fs::read(&database).unwrap();
     let schema = doctor(&root);
     assert_eq!(schema["status"], "PASS", "{schema}");
@@ -132,41 +138,34 @@ fn upgrades_and_keeps_reuse_and_waiting_human_reviews(recorded: Recorded) {
     );
     assert_eq!(fs::read(&database).unwrap(), recorded_bytes);
 
-    // A read-only command upgrades the schema before reading.
-    let entries = json(&root, &["cache", "list"], 0);
+    // A read-only command upgrades the schema before reading. The earlier reuse mappings
+    // cannot be mapped to the new key and are gone.
+    assert_eq!(json(&root, &["cache", "list"], 0), json!([]));
     assert_eq!(doctor(&root)["details"], json!({"schema":current}));
-    let keys: Vec<_> = entries
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|entry| entry["fingerprint"].as_str().unwrap())
-        .collect();
-    assert_eq!(keys.len(), 2, "{entries}");
-    assert!(keys.contains(&app_key) && keys.iter().any(|key| key.starts_with("content:")));
     let db = Connection::open(&database).unwrap();
     assert_eq!(
         db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
             .unwrap(),
-        artifactize::store::STATE_SCHEMA_VERSION
+        current
     );
-    for table in ["executions", "cache_entries"] {
-        let columns = names(
+    let columns = |table: &str| {
+        names(
             &db,
             &format!("SELECT name FROM pragma_table_info('{table}')"),
-        );
-        assert!(columns.contains(&"fingerprint".to_owned()), "{columns:?}");
-    }
+        )
+    };
+    assert!(columns("executions").contains(&"key".to_owned()));
+    assert!(!columns("executions").contains(&"fingerprint".to_owned()));
+    assert!(!columns("executions").contains(&"eval_def_hash".to_owned()));
+    assert!(columns("cache_entries").contains(&"key".to_owned()));
     let indexes = names(
         &db,
         "SELECT name FROM sqlite_master WHERE type='index' AND sql IS NOT NULL",
     );
-    assert!(
-        indexes.contains(&"active_fingerprint".to_owned()),
-        "{indexes:?}"
-    );
+    assert!(indexes.contains(&"active_key".to_owned()), "{indexes:?}");
     let schema = names(&db, "SELECT sql FROM sqlite_master WHERE sql IS NOT NULL").join("\n");
     assert!(
-        !schema.contains("ident") && !schema.contains("stale"),
+        !schema.contains("ident") && !schema.contains("stale") && !schema.contains("fingerprint"),
         "{schema}"
     );
     let saved = names(
@@ -178,13 +177,15 @@ fn upgrades_and_keeps_reuse_and_waiting_human_reviews(recorded: Recorded) {
         !saved.contains("\"identity\"") && !saved.contains("staleKey"),
         "{saved}"
     );
-
     assert_eq!(
-        json(&root, &["cache", "show", app_key], 0)["fingerprint"],
-        app_key
+        names(&db, "SELECT CAST(count(*) AS TEXT) FROM executions"),
+        ["3"]
     );
+
+    // Runs stay readable, with their saved declarations in the current shape.
     let saved = json(&root, &["run", "show", recorded.run], 0);
     assert_eq!(saved["requests"][0]["fingerprint"], app_key);
+    assert_eq!(saved["requests"][0]["status"], "GREEN");
     let validation = &saved["validation"]["artifacts"];
     assert_eq!(validation[0]["fingerprint"], app_key);
     assert_eq!(validation[0]["fingerprintKind"], "script");
@@ -193,12 +194,18 @@ fn upgrades_and_keeps_reuse_and_waiting_human_reviews(recorded: Recorded) {
     assert_eq!(definitions["app"]["fingerprint"], recorded.definitions.0);
     assert_eq!(definitions["notes"]["fingerprint"], recorded.definitions.1);
 
-    // Before the Human submission, status predicts reuse for both cached results.
+    // Every eval reviews again: the key is built differently.
     let status = json(&root, &["status", "--all"], 1);
-    assert_eq!(status["counts"]["reuse"], 2, "{status}");
-    assert_eq!(status["counts"]["execute"], 0, "{status}");
+    let counts = &status["counts"];
+    assert_eq!(counts["reuse"], 0, "{status}");
+    // doc waits for notes where it names it.
+    assert_eq!(
+        counts["execute"].as_u64().unwrap() + counts["wait"].as_u64().unwrap(),
+        3,
+        "{status}"
+    );
 
-    // The recorded Human scope still matches the current declarations.
+    // The recorded Human request still matches the current declarations and settles its Run.
     json(&root, &["request", "claim", recorded.waiting], 0);
     let submitted = json(
         &root,
@@ -214,23 +221,26 @@ fn upgrades_and_keeps_reuse_and_waiting_human_reviews(recorded: Recorded) {
         0,
     );
     assert_eq!(submitted["status"], "GREEN");
-    // Both recorded cache entries and the submitted Human result are reused.
-    let next = json(&root, &["verify", "--all"], 0);
-    assert_eq!(next["executionsStarted"], 0, "{next}");
-    assert!(
-        next["requests"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|request| request["provenance"]["runId"] == recorded.run),
-        "{next}"
-    );
+    assert_eq!(json(&root, &["cache", "list"], 0), json!([]));
+
+    // The first verify reviews again and asks for a new sign-off; the next one reuses.
+    let next = json(&root, &["verify", "--all"], 4);
+    assert_eq!(next["executionsStarted"], 2, "{next}");
+    let again = json(&root, &["verify", "--all"], 4);
+    assert_eq!(again["executionsStarted"], 0, "{again}");
+    for request in again["requests"].as_array().unwrap() {
+        if request["evalId"] == "doc/check" {
+            assert_eq!(request["status"], "WAITING_HUMAN");
+        } else {
+            assert_eq!(request["provenance"]["runId"], next["id"], "{request}");
+        }
+    }
 }
 
 #[test]
-fn version_one_state_upgrades_and_keeps_reuse_and_waiting_human_reviews() {
+fn version_one_state_upgrades_and_reviews_again_once() {
     let script = json!({"script":{"command":"cat","args":["key"]}});
-    upgrades_and_keeps_reuse_and_waiting_human_reviews(Recorded {
+    upgrades_keeps_history_and_reviews_again_once(Recorded {
         sql: VERSION_ONE,
         version: 1,
         run: "run-3aNTur",
@@ -240,16 +250,16 @@ fn version_one_state_upgrades_and_keeps_reuse_and_waiting_human_reviews() {
         doc: ("doc-v1", script, json!({}), "Check."),
         definitions: (
             json!({"script":{"command":"cat","args":["key"],"files":[],"timeoutMs":null}}),
-            json!({"files":["."],"dependencies":"direct","ignore":[]}),
+            json!({"files":["."],"ignore":[]}),
         ),
     });
 }
 
 #[test]
-fn version_two_state_upgrades_and_keeps_reuse_and_waiting_human_reviews() {
+fn version_two_state_upgrades_and_reviews_again_once() {
     let app = json!({"script":{"command":"cat","args":["key"],"files":["key"],"timeoutMs":5000}});
-    let notes = json!({"files":["key"],"dependencies":"none","ignore":["*.log"]});
-    upgrades_and_keeps_reuse_and_waiting_human_reviews(Recorded {
+    let notes = json!({"files":["key"],"ignore":["*.log"]});
+    upgrades_keeps_history_and_reviews_again_once(Recorded {
         sql: VERSION_TWO,
         version: 2,
         run: "run-CTxYkO",
@@ -258,6 +268,27 @@ fn version_two_state_upgrades_and_keeps_reuse_and_waiting_human_reviews() {
         notes: ("notes-v2", notes.clone()),
         doc: (
             "doc-v2",
+            json!({"script":{"command":"cat","args":["key"]}}),
+            json!({"notes":"notes"}),
+            "Check {notes}.",
+        ),
+        definitions: (app, notes),
+    });
+}
+
+#[test]
+fn version_three_state_upgrades_and_reviews_again_once() {
+    let app = json!({"script":{"command":"cat","args":["key"],"files":["key"],"timeoutMs":5000}});
+    let notes = json!({"files":["key"],"ignore":["*.log"]});
+    upgrades_keeps_history_and_reviews_again_once(Recorded {
+        sql: VERSION_THREE,
+        version: 3,
+        run: "run-9c3gzy",
+        waiting: "run-9c3gzy-2",
+        app: ("app-v3", app.clone()),
+        notes: ("notes-v3", notes.clone()),
+        doc: (
+            "doc-v3",
             json!({"script":{"command":"cat","args":["key"]}}),
             json!({"notes":"notes"}),
             "Check {notes}.",

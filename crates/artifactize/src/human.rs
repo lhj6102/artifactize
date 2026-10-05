@@ -190,20 +190,24 @@ async fn recheck(
     if cancellation.is_cancelled() {
         return Err("Human action was cancelled.".into());
     }
-    let Some(expected) = &request.fingerprint else {
+    let Some(expected) = &request.key else {
         return Ok(());
     };
     let output = request
         .run_dir
         .as_deref()
         .ok_or("Human request has no output directory.")?;
-    let (code, error) =
-        match cache::fingerprint(config, &request.target, output, cancellation.clone()).await {
-            Ok(actual) if &actual == expected => return Ok(()),
-            Ok(_) => ("INPUT_CHANGED", "Fingerprint changed during review.".into()),
-            Err(error) if cancellation.is_cancelled() => return Err(error),
-            Err(error) => ("FINGERPRINT_RECHECK_FAILED", error),
-        };
+    let eval = config
+        .evals
+        .iter()
+        .find(|eval| eval.id == request.eval_id)
+        .ok_or("Recorded Human eval no longer exists.")?;
+    let (code, error) = match cache::recheck(config, eval, output, cancellation.clone()).await {
+        Ok(Some(actual)) if &actual == expected => return Ok(()),
+        Ok(_) => ("INPUT_CHANGED", "Fingerprint changed during review.".into()),
+        Err(error) if cancellation.is_cancelled() => return Err(error),
+        Err(error) => ("FINGERPRINT_RECHECK_FAILED", error),
+    };
     request.status = "ERROR".into();
     request.error = Some(error.clone());
     request.error_code = Some(code.into());

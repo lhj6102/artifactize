@@ -2,8 +2,9 @@
 
 Machines and CI can reuse each other's verdicts through one shared review store,
 `artifactize server` ([design](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)). Each machine keeps its
-own state. The store holds one immutable record per (fingerprint, Eval definition
-hash), and the first writer wins. The [team walkthrough](team-walkthrough.md)
+own state. The store keeps every record of each reuse key and returns the latest
+one, so a review done later (a forced re-review, say) replaces an earlier verdict
+for everyone. The [team walkthrough](team-walkthrough.md)
 runs two machines and CI end to end.
 
 **Server.** Run the store on a small host, with its own state directory:
@@ -17,9 +18,9 @@ artifactize --state-dir /srv/artifactize server run     # http://127.0.0.1:8417/
 
 `token add` prints each token once. `server run` binds loopback by default. Put a
 TLS reverse proxy or a tunnel in front, because clients require HTTPS except on
-loopback. Back up `review-store.sqlite` with `sqlite3 .backup`. Upgrade the server
-before its clients: a 0.4 server keeps serving 0.3 clients, so machines can follow
-one at a time. See
+loopback. Back up `review-store.sqlite` with `sqlite3 .backup`. Upgrade the server and its
+clients together: a 0.5 server drops the records 0.4 stored, whose keys no 0.5
+client computes, and tells older clients to upgrade. See
 [Review store server](../reference/review-store.md#review-store-server) for the full reference.
 
 **Clients.** Each machine signs in once. The token is read from stdin and is not
@@ -46,7 +47,10 @@ See [Remote review store client](../reference/review-store.md#remote-review-stor
 - the verdict;
 - the schema-validated owner fields (for runtime evals, only the exit code,
   duration and truncation flag);
-- the declared profile and usage counters;
+- the reuse key, the Eval definition hash and the fingerprint of each Artifact
+  the key covers;
+- the profile, its execution options (backend, model, reasoning, limits, variant)
+  and usage counters;
 - the producer (`user@host`), the Human reviewer and timestamps.
 
 It never sends argv, stdout/stderr, the tool-call audit or repository paths.
@@ -63,8 +67,10 @@ at both levels, so keep secrets out of the fields that `passSchema` and
   pull requests) `read` only, and `human` only to people who sign off. If a token
   leaks or is misused, `server token revoke NAME --purge` also deletes the
   entries it published.
-- `verify --force` makes no remote call, which bypasses a suspect entry.
-  `cache rm` drops a local mirror, and `server rm` removes the entry from the store.
+- `verify --force` reads nothing from the store, which bypasses a suspect record,
+  and publishes its fresh result, which becomes the store's latest.
+  `cache rm` drops a local key's records, and `server rm` removes a key's records
+  from the store.
 - Only `$STATE/remote.json` and the environment configure the store, never
   `artifactize.json`, so a cloned repository cannot send your token elsewhere.
   Tokens are stored 0600, bound to the store they were issued for, and never printed.

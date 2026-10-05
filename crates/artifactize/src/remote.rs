@@ -5,21 +5,21 @@ mod session;
 pub use push::{Push, push};
 pub use session::Session;
 
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::store::{Execution, Origin, Producer, Provenance};
+use crate::store::{Execution, ExecutionOptions, Origin, Producer, Provenance};
 
-/// Record schema version.
-pub const SCHEMA: u32 = 1;
+/// Record schema version: 2 since records carry the 0.5 reuse key.
+pub const SCHEMA: u32 = 2;
 /// JSON byte limit of a summary record.
 pub const MAX_SUMMARY_BYTES: usize = 256 * 1024;
 /// JSON byte limit of a full record, the local per-entry cache limit.
 pub const MAX_FULL_BYTES: usize = crate::store::cache_entries::MAX_ENTRY_BYTES;
 
-/// One immutable remote entry per (fingerprint, Eval definition hash).
+/// One record of a reuse key's history; the store keeps every record and returns the latest.
 ///
 /// A summary carries no argv, captured output, tool-call audit or repository path. A full
 /// record additionally carries the saved `execution` as is. The server stamps `publisher`
@@ -28,14 +28,18 @@ pub const MAX_FULL_BYTES: usize = crate::store::cache_entries::MAX_ENTRY_BYTES;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Record {
     pub schema: u32,
-    pub fingerprint: String,
+    pub key: String,
     pub eval_def_hash: String,
+    /// Each Artifact the key covers, with its fingerprint.
+    pub fingerprints: BTreeMap<String, String>,
     pub verdict: String,
     pub eval_id: String,
     pub run_id: String,
     pub request_id: String,
     pub execution_id: String,
     pub profile: Value,
+    #[serde(default)]
+    pub options: ExecutionOptions,
     pub result: Value,
     pub usage: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -53,15 +57,15 @@ pub struct Record {
 }
 
 impl Record {
-    /// Project a completed local GREEN/RED result with a fingerprint; `full` keeps the execution.
+    /// Project a completed local GREEN/RED result with a key; `full` keeps the execution.
     pub fn new(execution: &Execution, full: bool) -> Result<Self, String> {
-        let (Some(fingerprint), Some(_), Some(completed_at), Some(result)) = (
-            &execution.fingerprint,
+        let (Some(key), Some(_), Some(completed_at), Some(result)) = (
+            &execution.key,
             execution.verdict(),
             &execution.completed_at,
             &execution.result,
         ) else {
-            return Err("Only completed GREEN/RED results with a fingerprint are shared.".into());
+            return Err("Only completed GREEN/RED results with a reuse key are shared.".into());
         };
         if execution.origin.is_some() {
             return Err("Mirrored results are never published again.".into());
@@ -76,14 +80,16 @@ impl Record {
         };
         let record = Self {
             schema: SCHEMA,
-            fingerprint: fingerprint.clone(),
+            key: key.clone(),
             eval_def_hash: execution.eval_def_hash.clone(),
+            fingerprints: execution.fingerprints.clone(),
             verdict: execution.status.clone(),
             eval_id: execution.provenance.eval_id.clone(),
             run_id: execution.provenance.run_id.clone(),
             request_id: execution.provenance.request_id.clone(),
             execution_id: execution.id.clone(),
             profile: execution.profile.clone(),
+            options: execution.options.clone(),
             result,
             usage,
             reviewer: execution.reviewer.clone(),
@@ -98,11 +104,18 @@ impl Record {
         Ok(record)
     }
 
-    /// Check shape and size limits; never trusts the record's verdict.
+    /// Check shape, the key against its fingerprints, and size limits; never trusts the
+    /// record's verdict.
     pub fn validate(&self) -> Result<(), String> {
         let valid = self.schema == SCHEMA
-            && valid_fingerprint(&self.fingerprint)
+            && valid_hash(&self.key)
             && valid_hash(&self.eval_def_hash)
+            && !self.fingerprints.is_empty()
+            && self.fingerprints.iter().all(|(name, fingerprint)| {
+                crate::config::identifier(name, "Artifact name").is_ok()
+                    && valid_fingerprint(fingerprint)
+            })
+            && crate::cache::key(&self.eval_def_hash, &self.fingerprints) == self.key
             && matches!(self.verdict.as_str(), "GREEN" | "RED")
             && self.result["verdict"] == self.verdict.as_str()
             && matches!(
@@ -110,9 +123,11 @@ impl Record {
                 Some("runtime" | "agent" | "human")
             )
             && valid_id(&self.execution_id)
+            && crate::broker::sortable(&self.completed_at).is_some()
             && self.execution.as_ref().is_none_or(|execution| {
-                execution.fingerprint.as_ref() == Some(&self.fingerprint)
+                execution.key.as_ref() == Some(&self.key)
                     && execution.eval_def_hash == self.eval_def_hash
+                    && execution.fingerprints == self.fingerprints
                     && execution.status == self.verdict
                     && execution.profile == self.profile
                     && execution.origin.is_none()
@@ -142,7 +157,14 @@ impl Record {
             Some(execution) => *execution,
             None => Execution {
                 id: String::new(),
-                fingerprint: Some(self.fingerprint),
+                key: Some(self.key),
+                // The target is the eval id's Artifact part.
+                fingerprint: self
+                    .eval_id
+                    .rsplit_once('/')
+                    .and_then(|(target, _)| self.fingerprints.get(target))
+                    .cloned(),
+                fingerprints: self.fingerprints,
                 eval_def_hash: self.eval_def_hash.clone(),
                 owner_pid: 0,
                 owner_start_time: 0,
@@ -151,6 +173,7 @@ impl Record {
                 error: None,
                 error_code: None,
                 profile: self.profile,
+                options: self.options,
                 usage: self.usage,
                 tool_calls: Vec::new(),
                 provenance: Provenance {

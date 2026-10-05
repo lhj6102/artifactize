@@ -27,10 +27,11 @@ re-reviews only that Artifact.
 
 ## Why artifactize
 
-- **Reuse every review that still holds.** A fingerprint is what a review depends
-  on; the built-in one hashes the Artifact's own files and its direct dependencies.
-  While it is unchanged, `verify` reuses the earlier verdict and reports what it executed, what
-  it reused and the tokens reuse saved.
+- **Reuse every review that still holds.** You define each Artifact's fingerprint;
+  the built-in one hashes the Artifact's own files. While the eval and the
+  fingerprints of the Artifacts it depends on are unchanged, `verify` reuses the
+  earlier verdict, from any profile, and reports what it executed, what it reused
+  and the tokens reuse saved.
 - **Know what a change will cost before you run it.** `status` predicts what
   `verify` will execute, reuse or wait for, and names the files and dependencies
   that changed.
@@ -106,8 +107,8 @@ continues with `status`, a family of Artifacts and a Human sign-off.
 
 ## Reuse
 
-`verify` reviews once; the next `verify` reuses every result whose fingerprint is
-unchanged and says where each came from.
+`verify` reviews once; the next `verify` reuses every result whose eval and
+fingerprints are unchanged and says where each came from.
 
 <img src="website/demo/media/reuse.gif" width="800"
      alt="artifactize status predicts five evals; the first verify executes all five, the second reuses all five and its summary reads executed 0, reused 5.">
@@ -128,9 +129,9 @@ submit the verdict through a form, and the Run finishes.
 
 ## Team review store
 
-Each machine keeps its own checkout and state. One `artifactize server` holds one
-record per fingerprint and Eval definition, so a review done on one laptop is reused
-on the next and in CI. A read-only CI token reuses but never publishes.
+Each machine keeps its own checkout and state. One `artifactize server` keeps the
+verdicts by reuse key and returns the latest, so a review done on one laptop is
+reused on the next and in CI. A read-only CI token reuses but never publishes.
 
 <img src="website/demo/media/team.gif" width="800"
      alt="Alice's verify executes five evals and publishes them; on Bob's laptop status predicts five reuses and verify reuses all five from remote: alice@laptop.">

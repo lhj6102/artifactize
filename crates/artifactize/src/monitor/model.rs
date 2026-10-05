@@ -549,6 +549,25 @@ fn profile(profile: &Value) -> String {
     }
 }
 
+/// Execution options that are set, such as `variant fast · timeoutMs 60000`.
+fn options(options: &crate::store::ExecutionOptions) -> String {
+    let value = serde_json::to_value(options).unwrap_or_default();
+    let set: Vec<_> = value
+        .as_object()
+        .into_iter()
+        .flatten()
+        .map(|(key, value)| match value.as_str() {
+            Some(text) => format!("{key} {text}"),
+            None => format!("{key} {value}"),
+        })
+        .collect();
+    if set.is_empty() {
+        "declared defaults".into()
+    } else {
+        set.join(" · ")
+    }
+}
+
 fn truncate(text: String, limit: usize) -> String {
     if text.chars().count() <= limit {
         return text;
@@ -578,21 +597,37 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     if request.requested_profile != request.profile {
         detail.push("Requested", profile(&request.requested_profile));
     }
+    detail.push("Options", options(&request.options));
     detail.push(
         "Fingerprint",
-        request.fingerprint.as_deref().unwrap_or("none (no reuse)"),
+        request.fingerprint.as_deref().unwrap_or("none"),
+    );
+    detail.push("Key", request.key.as_deref().unwrap_or("none (no reuse)"));
+    detail.push(
+        "Key covers",
+        join(
+            request
+                .fingerprints
+                .iter()
+                .map(|(name, fingerprint)| format!("{name} {fingerprint}")),
+            "\n",
+        ),
     );
     if let Some(source) = &request.provenance {
         detail.push(
             "Source",
             if reused(view) {
                 format!(
-                    "reused from Run {} request {} ({}, {}) completed {}",
+                    "reused from Run {} request {} ({}, {}) completed {}{}",
                     source.run_id,
                     source.request_id,
                     source.eval_id,
                     source.repo_path.display(),
-                    source.completed_at.as_deref().unwrap_or("?")
+                    source.completed_at.as_deref().unwrap_or("?"),
+                    request
+                        .producer
+                        .as_ref()
+                        .map_or(String::new(), |producer| format!(" by {}", producer.name))
                 )
             } else {
                 "executed in this Run".into()

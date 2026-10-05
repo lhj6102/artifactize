@@ -64,7 +64,8 @@ pub struct EvalState {
     pub obligations: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last: Option<LastRequest>,
-    /// Why the fingerprint no longer matches the newest cached result for this Eval definition.
+    /// Why the key no longer matches the newest cached result for this Eval definition: the
+    /// target's changed files and the dependency Artifacts whose fingerprints changed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub changes: Option<cache::Changes>,
 }
@@ -137,56 +138,55 @@ pub async fn status(
         cancellation.clone(),
     )
     .await?;
-    let keys: BTreeMap<_, _> = config
-        .evals
+    let all_keys = cache::eval_keys(&config, &fingerprints);
+    let keys: BTreeMap<_, _> = all_keys
         .iter()
-        .filter(|eval| !(options.force && selected_ids.contains(&eval.id)))
-        .filter_map(|eval| {
-            fingerprints.get(eval.target.as_str()).map(|fingerprint| {
-                (
-                    eval.id.as_str(),
-                    (
-                        fingerprint.value.clone(),
-                        cache::eval_definition_hash(&eval.declaration),
-                    ),
-                )
-            })
-        })
+        .filter(|(id, _)| !(options.force && selected_ids.contains(&id.to_string())))
+        .map(|(id, key)| (*id, key))
         .collect();
-    let mut cached =
-        store::read_fingerprint_executions(&state, &keys.values().cloned().collect::<Vec<_>>())
-            .await?;
-    // Read-only: remote results count as reuse without being mirrored, as verify would take
-    // them before claiming. --force makes no remote calls, so its prediction has none.
+    let mut cached = store::read_keyed_executions(
+        &state,
+        &keys
+            .values()
+            .map(|key| key.value.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>(),
+    )
+    .await?;
+    // Read-only: a store record that completed after the local latest counts as reuse without
+    // being mirrored, as verify would take it before claiming. --force reads nothing from the
+    // store, so its prediction has none.
     if !options.force
         && let Some(remote) = Session::open(Some(&state), Some(&config.root))?
     {
-        let missing: Vec<_> = keys
+        let all: Vec<_> = keys
             .values()
-            .filter(|key| !matches!(cached.get(*key), Some(Claim::Reuse(_))))
-            .cloned()
+            .map(|key| key.value.clone())
             .collect::<BTreeSet<_>>()
             .into_iter()
             .collect();
-        for execution in remote.lookup(&missing).await? {
-            let key = (
-                execution.fingerprint.clone().expect("remote fingerprint"),
-                execution.eval_def_hash.clone(),
-            );
-            cached.insert(key, Claim::Reuse(Box::new(execution)));
+        for execution in remote.lookup(&all).await? {
+            let key = execution.key.clone().expect("remote key");
+            let newer = match cached.get(&key) {
+                Some(Claim::Reuse(local)) => execution.completed_after(local),
+                _ => true,
+            };
+            if newer {
+                cached.insert(key, Claim::Reuse(Box::new(execution)));
+            }
         }
     }
-    // Explain changed fingerprints against the newest cached result for the same Eval definition.
+    let claim = |id: &str| keys.get(id).and_then(|key| cached.get(&key.value));
+    // Explain changed keys against the newest cached result for the same Eval definition.
     let stale: Vec<_> = keys
         .iter()
-        .filter(|(_, key)| !matches!(cached.get(*key), Some(Claim::Reuse(_))))
-        .map(|(id, (_, hash))| ((*id).to_owned(), hash.clone()))
+        .filter(|(id, _)| !matches!(claim(id), Some(Claim::Reuse(_))))
+        .map(|(id, key)| ((*id).to_owned(), key.eval_def_hash.clone()))
         .collect();
     let previous = store::read_latest_cached(&state, &stale).await?;
     for eval in &config.evals {
-        if let Some(Claim::Reuse(execution)) =
-            keys.get(eval.id.as_str()).and_then(|key| cached.get(key))
-        {
+        if let Some(Claim::Reuse(execution)) = claim(&eval.id) {
             evidence.insert(
                 eval.id.clone(),
                 Evidence::Current(execution.verdict().expect("completed cache entry")),
@@ -258,8 +258,8 @@ pub async fn status(
             _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
                 "reuse",
                 format!(
-                    "The current fingerprint and Eval definition have a completed {}{}",
-                    match keys.get(eval.id.as_str()).and_then(|key| cached.get(key)) {
+                    "The current eval and fingerprints have a completed {}{}{}",
+                    match claim(&eval.id) {
                         Some(Claim::Reuse(execution)) if execution.origin.is_some() => format!(
                             "result in the remote review store, from {}",
                             execution
@@ -268,6 +268,18 @@ pub async fn status(
                                 .map_or("an unknown producer", |producer| producer.name.as_str())
                         ),
                         _ => "cached result".into(),
+                    },
+                    match claim(&eval.id) {
+                        Some(Claim::Reuse(execution))
+                            if Some(&execution.profile)
+                                != serde_json::to_value(&eval.declaration.profile)
+                                    .ok()
+                                    .as_ref() =>
+                            format!(
+                                " produced by profile {}",
+                                crate::query::profile_name(&execution.profile, &execution.options)
+                            ),
+                        _ => String::new(),
                     },
                     match current.readiness {
                         Readiness::Ready => ".".into(),
@@ -295,14 +307,11 @@ pub async fn status(
             ),
             Readiness::Ready
                 if !force
-                    && matches!(
-                        keys.get(eval.id.as_str()).and_then(|key| cached.get(key)),
-                        Some(Claim::Wait(_) | Claim::WaitHuman(_))
-                    ) =>
+                    && matches!(claim(&eval.id), Some(Claim::Wait(_) | Claim::WaitHuman(_))) =>
             {
                 (
                     "wait",
-                    "The current fingerprint and Eval definition have a live execution.".into(),
+                    "The current eval and fingerprints have a live execution.".into(),
                 )
             }
             Readiness::Ready => match eval.declaration.profile {
@@ -314,20 +323,17 @@ pub async fn status(
                     "execute",
                     if force {
                         "An explicitly forced Eval requires a new execution.".into()
-                    } else if config.artifacts[&eval.target].fingerprint.is_some() {
-                        "The current fingerprint and Eval definition have no completed cached result."
-                            .into()
                     } else {
-                        "No fingerprint is declared; saved noncached results satisfy only their own Run.".into()
+                        match cache::eval_key(&config, eval, &fingerprints) {
+                            Ok(_) => "The current eval and fingerprints have no completed cached result.".into(),
+                            Err(cache::Unkeyed::Target) => "No fingerprint is declared; saved noncached results satisfy only their own Run.".into(),
+                            Err(cache::Unkeyed::Dependency(id)) => format!("Dependency {id} declares no fingerprint, so this eval has no reuse key; saved noncached results satisfy only their own Run."),
+                        }
                     },
                 ),
             },
         };
-        let status = if !force
-            && matches!(
-                keys.get(eval.id.as_str()).and_then(|key| cached.get(key)),
-                Some(Claim::WaitHuman(_))
-            ) {
+        let status = if !force && matches!(claim(&eval.id), Some(Claim::WaitHuman(_))) {
             "WAITING_HUMAN"
         } else {
             eval_status(current.status)
@@ -359,10 +365,18 @@ pub async fn status(
                 .collect(),
             obligations: obligations_by_artifact[eval.target.as_str()].clone(),
             last: latest.remove(&eval.id),
-            changes: keys
-                .get(eval.id.as_str())
-                .and_then(|(_, hash)| previous.get(&(eval.id.clone(), hash.clone())))
-                .map(|execution| cache::changes(execution, &fingerprints[eval.target.as_str()])),
+            changes: keys.get(eval.id.as_str()).and_then(|key| {
+                previous
+                    .get(&(eval.id.clone(), key.eval_def_hash.clone()))
+                    .map(|execution| {
+                        cache::changes(
+                            execution,
+                            &eval.target,
+                            key,
+                            fingerprints[eval.target.as_str()].manifest.as_ref(),
+                        )
+                    })
+            }),
         });
     }
     Ok(StatusView {

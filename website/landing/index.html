@@ -187,7 +187,7 @@
           <div class="step-copy">
             <span class="step-n">2</span>
             <h3>The fingerprint decides</h3>
-            <p>The built-in content fingerprint, <code>{}</code>, hashes the Artifact's own files and its direct dependencies. Edit one page and <code>status</code> predicts what the next <code>verify</code> will execute, reuse or wait for, and why, without running anything.</p>
+            <p>The built-in content fingerprint, <code>{}</code>, hashes the Artifact's own files; an eval is reviewed again when its Artifact or one it mounts, contains or names changes. Edit one page and <code>status</code> predicts what the next <code>verify</code> will execute, reuse or wait for, and why, without running anything.</p>
           </div>
           <div class="panel">
             <div class="panel-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="panel-title">after editing guide/usage/page.md</span></div>
@@ -309,7 +309,7 @@
       <div class="copy">
         <p class="kicker">Team review store</p>
         <h2 id="team-title">Centralize the reviews, not the repo.</h2>
-        <p>Every machine keeps its own checkout and state. One <code>artifactize server</code> holds the verdicts, one record per fingerprint and eval definition, so a change reviewed on Alice's laptop is reused on Bob's and in CI.</p>
+        <p>Every machine keeps its own checkout and state. One <code>artifactize server</code> keeps the verdicts by reuse key and returns the latest, so a change reviewed on Alice's laptop is reused on Bob's and in CI.</p>
         <ul class="ticks">
           <li>CI gets a read-only token: it reuses verdicts and never publishes.</li>
           <li>An outage never turns CI red: <code>verify</code> warns once and reviews locally.</li>

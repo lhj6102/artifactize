@@ -27,9 +27,9 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `request unclaim ID` | `--reviewer NAME` (`$USER`) | JSON | 0 |
 | `request tool ID TOOL` | `--reviewer NAME` | text or JSON | 0; 2 tool error |
 | `request submit ID` | `--verdict GREEN\|RED`, `--fields JSON` \| `--fields-file PATH`, `--reviewer NAME` | JSON | 0, also for RED |
-| `cache list` | | text or JSON | 0 |
-| `cache show FINGERPRINT [EVAL_HASH]` | | JSON | 0; 4 missing |
-| `cache rm FINGERPRINT [EVAL_HASH]` | | JSON | 0 |
+| `cache list` | `--history` | text or JSON | 0 |
+| `cache show KEY` | `--history` | JSON | 0; 4 missing |
+| `cache rm KEY` | | JSON | 0 |
 | `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 0 ready, 1 not |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
 | `remote logout` | | text or JSON | 0 |
@@ -43,7 +43,7 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `server run` | `--listen ADDR` (`127.0.0.1:8417`) | listening address | 0 |
 | `server token add NAME` | `--scopes read,publish,human` | the token, once | 0 |
 | `server token list`, `server token revoke NAME` | `--purge` (revoke) | text or JSON | 0 |
-| `server rm FINGERPRINT [EVAL_HASH]` | | JSON | 0 |
+| `server rm KEY` | | JSON | 0 |
 
 Run outcome codes (`verify`, `run show --wait`): 0 GREEN, 1 RED, 2 ERROR or
 cancelled, 3 Human wait timeout, 4 INCOMPLETE. `run show --wait` follows a RUNNING
@@ -70,8 +70,10 @@ The library's `project::VerifyOptions.ignore_gates` can explicitly override eith
 policy, including `Some(false)` to enforce gates. `--force` marks only explicitly
 selected evals for a fresh review, not recursive dependencies; it neither expands
 the execution scope nor bypasses gates. Runs record the resolved policy and each
-request's force flag. Forced evals never read, join or replace cached results;
-dependencies may still reuse their own cache entries.
+request's force flag. Forced evals never read or join cached results or live
+executions; a forced GREEN or RED is added as the key's newest record, and
+published to a configured review store, which later runs reuse. Dependencies may
+still reuse their own local records, but a forced Run reads nothing from the store.
 
 `verify --max-executions N` sets a nonnegative, shared per-Run executor-start
 budget (unlimited when omitted); it is not an Artifact declaration field.
@@ -99,6 +101,10 @@ Run, and source declarations are never rewritten. The library accepts
 `project::selection::ProfileSelection::Named` or `ProfileSelection::Evals` (a
 qualified-eval-to-name map); mappings outside the included scope fail. With
 `--recursive`, variants also apply to dependency evals. Runtime
-variant arguments rebuild scoped references and dependency gates. Stored request
-profiles describe the actual execution; `requestedProfile` retains the requested
-variant separately when a fingerprint hit returns another profile.
+variant arguments rebuild scoped references and dependency gates. The selected
+variant is an execution option: it is not part of the reuse key, so results of
+different variants (and of the declared profile) reuse each other unless a runtime
+variant changes the command or args. Stored request `profile` and `options`
+describe the execution that produced the result; `requestedProfile` retains the
+requested profile when a hit returns another one, and text output then adds
+`profile NAME` to the reuse marker.

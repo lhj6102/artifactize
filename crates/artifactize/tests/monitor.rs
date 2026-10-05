@@ -46,7 +46,10 @@ impl Fixture {
         let alpha = root.path().join("alpha");
         let beta = root.path().join("beta");
         let release = root.path().join("release");
-        declare(&alpha.join("input"), json!({"name":"input","basis":true}));
+        declare(
+            &alpha.join("input"),
+            json!({"name":"input","basis":true,"fingerprint":{}}),
+        );
         declare(
             &alpha.join("scenarios"),
             json!({"name":"scenarios",
@@ -62,6 +65,7 @@ impl Fixture {
         declare(
             &alpha.join("cycle-b"),
             json!({"name":"cycle-b","mounts":{"base":"input"},
+                "fingerprint":{"script":{"command":"echo","args":["b-v1"]}},
                 "evals":[eval("check", runtime("true", &[]), "Check {cycle-a}.")]}),
         );
         declare(
@@ -69,7 +73,10 @@ impl Fixture {
             json!({"name":"red","fingerprint":{"script":{"command":"echo","args":["red-v1"]}},
                 "evals":[eval("check", runtime("sh", &["-c", "echo finding; exit 7"]), "Check {input}.")]}),
         );
-        declare(&alpha.join("red/part"), json!({"name":"part","basis":true}));
+        declare(
+            &alpha.join("red/part"),
+            json!({"name":"part","basis":true,"fingerprint":{}}),
+        );
         let wait = format!("while [ ! -e {} ]; do sleep 0.05; done", release.display());
         declare(
             &beta.join("slow"),
@@ -400,6 +407,13 @@ async fn saved_tree_details_without_repository_or_writes() {
     let red = monitor::detail(&view, &requests, &Target::Eval("red/check".into()), now);
     assert_eq!(red.field("Status"), Some("RED — criteria not met"));
     assert_eq!(red.field("Fingerprint"), Some("red-v1"));
+    let covers = red.field("Key covers").unwrap();
+    assert!(
+        covers.starts_with("input content:") && covers.contains("\npart content:"),
+        "{covers}"
+    );
+    assert!(covers.ends_with("\nred red-v1"), "{covers}");
+    assert_eq!(red.field("Options"), Some("timeoutMs 20000"));
     let source = red.field("Source").unwrap();
     assert!(
         source.starts_with(&format!("reused from Run {first} request {first}-")),

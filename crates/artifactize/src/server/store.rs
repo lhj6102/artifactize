@@ -9,7 +9,7 @@ use tokio_rusqlite::Connection;
 use crate::broker::now;
 
 pub const DATABASE: &str = "review-store.sqlite";
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 pub const MAX_ENTRIES: i64 = 100_000;
 pub const MAX_BYTES: i64 = 4 * 1024 * 1024 * 1024;
 
@@ -75,17 +75,11 @@ fn digest(token: &str) -> String {
         .collect()
 }
 
-/// Version 2 renames the version 1 staleKey to fingerprint in the key column and in stored
-/// records, including a full record's execution, inside SQLite without loading every record.
-fn fingerprints(db: &rusqlite::Transaction<'_>) -> Result<(), Error> {
-    db.execute_batch(
-        "ALTER TABLE entries RENAME COLUMN stale_key TO fingerprint;
-        UPDATE entries SET data=json_remove(json_set(data,'$.fingerprint',json_extract(data,'$.staleKey')),'$.staleKey')
-            WHERE json_type(data,'$.staleKey') IS NOT NULL;
-        UPDATE entries SET data=json_remove(json_set(data,'$.execution.fingerprint',json_extract(data,'$.execution.staleKey')),'$.execution.staleKey')
-            WHERE json_type(data,'$.execution.staleKey') IS NOT NULL;
-        UPDATE entries SET bytes=length(CAST(data AS BLOB));",
-    )?;
+/// Version 3 keeps every record of a 0.5 reuse key. Records of versions 1 and 2, keyed by
+/// (Eval definition hash, fingerprint) as 0.3 and 0.4 computed them, cannot be mapped to the new
+/// key and are dropped; tokens are kept.
+fn reuse_keys(db: &rusqlite::Transaction<'_>) -> Result<(), Error> {
+    db.execute_batch("DROP TABLE IF EXISTS entries;")?;
     Ok(())
 }
 
@@ -125,15 +119,17 @@ impl Store {
                 db.pragma_update(None, "journal_mode", "WAL")?;
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 // Another process may have upgraded between the two reads.
-                if transaction.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?
-                    == 1
-                {
-                    fingerprints(&transaction)?;
+                if matches!(
+                    transaction.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?,
+                    1 | 2
+                ) {
+                    reuse_keys(&transaction)?;
                 }
                 transaction.execute_batch(
                     "CREATE TABLE IF NOT EXISTS tokens(name TEXT PRIMARY KEY, hash TEXT NOT NULL UNIQUE, scopes TEXT NOT NULL, created_at TEXT NOT NULL, revoked_at TEXT);
-                    CREATE TABLE IF NOT EXISTS entries(eval_def_hash TEXT NOT NULL, fingerprint TEXT NOT NULL, publisher TEXT NOT NULL, bytes INTEGER NOT NULL, last_used TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(eval_def_hash, fingerprint));
-                    CREATE INDEX IF NOT EXISTS entries_lru ON entries(last_used, eval_def_hash, fingerprint);
+                    CREATE TABLE IF NOT EXISTS entries(key TEXT NOT NULL, execution_id TEXT NOT NULL, publisher TEXT NOT NULL, completed_at TEXT NOT NULL, bytes INTEGER NOT NULL, last_used TEXT NOT NULL, data TEXT NOT NULL, UNIQUE(key, execution_id));
+                    CREATE INDEX IF NOT EXISTS entries_key ON entries(key, completed_at);
+                    CREATE INDEX IF NOT EXISTS entries_lru ON entries(last_used, key);
                     CREATE INDEX IF NOT EXISTS entries_publisher ON entries(publisher);",
                 )?;
                 transaction.pragma_update(None, "user_version", SCHEMA_VERSION)?;
@@ -254,33 +250,12 @@ impl Store {
             .map_err(|e| e.to_string())
     }
 
-    /// Remove a fingerprint's entry; the hash may be omitted when only one definition exists.
-    pub async fn remove(
-        &self,
-        fingerprint: &str,
-        eval_def_hash: Option<&str>,
-    ) -> Result<bool, String> {
-        let fingerprint = fingerprint.to_owned();
-        let eval_def_hash = eval_def_hash.map(str::to_owned);
+    /// Remove every record of a key.
+    pub async fn remove(&self, key: &str) -> Result<bool, String> {
+        let key = key.to_owned();
         self.connection
             .call(move |db| -> Result<_, Error> {
-                let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
-                let count: i64 = transaction.query_row(
-                    "SELECT count(*) FROM entries WHERE fingerprint=?1 AND (?2 IS NULL OR eval_def_hash=?2)",
-                    params![fingerprint, eval_def_hash],
-                    |row| row.get(0),
-                )?;
-                if count > 1 {
-                    return Err(Error::Invalid(format!(
-                        "Fingerprint {fingerprint} has multiple Eval definitions; specify the eval hash."
-                    )));
-                }
-                let removed = transaction.execute(
-                    "DELETE FROM entries WHERE fingerprint=?1 AND (?2 IS NULL OR eval_def_hash=?2)",
-                    params![fingerprint, eval_def_hash],
-                )?;
-                transaction.commit()?;
-                Ok(removed != 0)
+                Ok(db.execute("DELETE FROM entries WHERE key=?", [key])? != 0)
             })
             .await
             .map_err(|e| e.to_string())
@@ -308,18 +283,18 @@ impl Store {
             .map_err(|e| e.to_string())
     }
 
-    /// Stored records for the found keys; hits update their last use.
-    pub(super) async fn lookup(&self, keys: Vec<(String, String)>) -> Result<Vec<String>, String> {
+    /// The latest record of each found key; hits update that record's last use.
+    pub(super) async fn lookup(&self, keys: Vec<String>) -> Result<Vec<String>, String> {
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 let used = now();
                 let mut found = Vec::new();
-                for (eval_def_hash, fingerprint) in keys {
+                for key in keys {
                     let data: Option<String> = transaction
                         .query_row(
-                            "UPDATE entries SET last_used=? WHERE eval_def_hash=? AND fingerprint=? RETURNING data",
-                            params![used, eval_def_hash, fingerprint],
+                            "UPDATE entries SET last_used=? WHERE rowid=(SELECT rowid FROM entries WHERE key=? ORDER BY completed_at DESC, rowid DESC LIMIT 1) RETURNING data",
+                            params![used, key],
                             |row| row.get(0),
                         )
                         .optional()?;
@@ -332,29 +307,31 @@ impl Store {
             .map_err(|e| e.to_string())
     }
 
-    /// Insert an immutable entry; a later writer of the same key gets `false`.
+    /// Append a record to its key's history; `false` when this execution is already stored.
     pub(super) async fn insert(
         &self,
-        eval_def_hash: &str,
-        fingerprint: &str,
+        key: &str,
+        execution_id: &str,
         publisher: &str,
+        completed_at: &str,
         data: String,
     ) -> Result<bool, String> {
-        let key = (
-            eval_def_hash.to_owned(),
-            fingerprint.to_owned(),
+        let record = (
+            key.to_owned(),
+            execution_id.to_owned(),
             publisher.to_owned(),
+            completed_at.to_owned(),
         );
         self.connection
             .call(move |db| -> Result<_, Error> {
-                let (eval_def_hash, fingerprint, publisher) = key;
+                let (key, execution_id, publisher, completed_at) = record;
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 let used = now();
                 let created = transaction.execute(
-                    "INSERT INTO entries(eval_def_hash,fingerprint,publisher,bytes,last_used,data) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING",
-                    params![eval_def_hash, fingerprint, publisher, data.len() as i64, used, data],
+                    "INSERT INTO entries(key,execution_id,publisher,completed_at,bytes,last_used,data) VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+                    params![key, execution_id, publisher, completed_at, data.len() as i64, used, data],
                 )? == 1;
-                // Evict least-recently-used entries above the caps, never the new one.
+                // Evict least-recently-used records above the caps, never the new one.
                 loop {
                     let (count, bytes): (i64, i64) = transaction.query_row(
                         "SELECT count(*),coalesce(sum(bytes),0) FROM entries",
@@ -365,8 +342,8 @@ impl Store {
                         break;
                     }
                     if transaction.execute(
-                        "DELETE FROM entries WHERE rowid=(SELECT rowid FROM entries WHERE NOT (eval_def_hash=?1 AND fingerprint=?2) ORDER BY last_used,eval_def_hash,fingerprint LIMIT 1)",
-                        params![eval_def_hash, fingerprint],
+                        "DELETE FROM entries WHERE rowid=(SELECT rowid FROM entries WHERE NOT (key=?1 AND execution_id=?2) ORDER BY last_used,key,completed_at LIMIT 1)",
+                        params![key, execution_id],
                     )? == 0
                     {
                         break;

@@ -28,7 +28,7 @@ pub struct Session {
     remote: Remote,
     principal: OnceCell<Option<Principal>>,
     offline: AtomicBool,
-    looked_up: Mutex<HashMap<(String, String), Instant>>,
+    looked_up: Mutex<HashMap<String, Instant>>,
 }
 
 fn warn(message: &str) {
@@ -78,8 +78,9 @@ impl Session {
         Ok(principal.as_ref())
     }
 
-    /// Read-only: remote results for these keys as self-contained executions, not yet stored.
-    pub async fn lookup(&self, keys: &[(String, String)]) -> Result<Vec<Execution>, String> {
+    /// Read-only: the latest remote record of each key as a self-contained execution, not yet
+    /// stored.
+    pub async fn lookup(&self, keys: &[String]) -> Result<Vec<Execution>, String> {
         if keys.is_empty() {
             return Ok(Vec::new());
         }
@@ -93,17 +94,14 @@ impl Session {
             Ok(entries) => entries,
             Err(failure) => return self.failed(failure),
         };
-        let requested: BTreeSet<_> = keys
-            .iter()
-            .map(|(fingerprint, hash)| (fingerprint.as_str(), hash.as_str()))
-            .collect();
+        let requested: BTreeSet<_> = keys.iter().map(String::as_str).collect();
         let mut executions = Vec::new();
         for entry in entries {
             // A record that does not validate is skipped; reviewing locally is always correct.
             let mirrored = serde_json::from_value::<Record>(entry)
                 .map_err(|e| e.to_string())
                 .and_then(|record| {
-                    if !requested.contains(&(&*record.fingerprint, &*record.eval_def_hash)) {
+                    if !requested.contains(record.key.as_str()) {
                         return Err("the store returned an unrequested key".into());
                     }
                     record.mirror(self.remote.url.as_str())
@@ -118,13 +116,10 @@ impl Session {
         Ok(executions)
     }
 
-    /// Mirror remote results for keys without a local entry into the local cache, where the
-    /// normal reuse path finds them. Each key is looked up at most once per second.
-    pub async fn refresh(
-        &self,
-        receipts: &Receipts,
-        keys: Vec<(String, String)>,
-    ) -> Result<(), String> {
+    /// Look up the store's latest record of each key and mirror it into the local history when
+    /// it completed after the key's latest local record, so the normal reuse path takes the
+    /// newer of the two. Each key is looked up at most once per second.
+    pub async fn refresh(&self, receipts: &Receipts, keys: Vec<String>) -> Result<(), String> {
         let now = Instant::now();
         let keys: Vec<_> = {
             let mut looked_up = self.looked_up.lock().expect("lookup times");
@@ -143,28 +138,23 @@ impl Session {
         if keys.is_empty() || self.offline.load(Ordering::SeqCst) {
             return Ok(());
         }
-        let missing = receipts.uncached(keys).await?;
-        for execution in self.lookup(&missing).await? {
+        for execution in self.lookup(&keys).await? {
             receipts.mirror_execution(&execution).await?;
         }
         Ok(())
     }
 
-    /// Publish a request's result when its own settle just published the local cache entry:
-    /// a GREEN/RED with a fingerprint, never a mirror, an error or a forced review.
+    /// Publish a request's result when its own settle just appended it to the local history:
+    /// a GREEN/RED with a key, forced or not, never a mirror or an error.
     pub async fn publish_request(
         &self,
         receipts: &Receipts,
         request: &Request,
     ) -> Result<(), String> {
-        let (Some(fingerprint), Some(execution_id)) = (&request.fingerprint, &request.execution_id)
-        else {
+        let (Some(_), Some(execution_id)) = (&request.key, &request.execution_id) else {
             return Ok(());
         };
-        match receipts
-            .published_execution(fingerprint, &request.eval_def_hash, execution_id)
-            .await?
-        {
+        match receipts.published_execution(execution_id).await? {
             Some(execution) => self.publish(&execution).await,
             None => Ok(()),
         }
@@ -209,13 +199,5 @@ pub(super) fn record(
             principal.principal
         ));
     }
-    let record = Record::new(execution, share == Share::Full)?;
-    // `.` and `..` cannot be a URL path segment.
-    if matches!(record.fingerprint.as_str(), "." | "..") {
-        return Err(format!(
-            "fingerprint {} cannot be a URL path segment",
-            record.fingerprint
-        ));
-    }
-    Ok(record)
+    Record::new(execution, share == Share::Full)
 }

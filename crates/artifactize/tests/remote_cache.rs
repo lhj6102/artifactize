@@ -64,7 +64,7 @@ impl Server {
     fn entries(&self) -> Vec<(String, Value)> {
         let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
         let mut statement = db
-            .prepare("SELECT publisher,data FROM entries ORDER BY publisher,fingerprint")
+            .prepare("SELECT publisher,data FROM entries ORDER BY publisher,key,completed_at")
             .unwrap();
         statement
             .query_map([], |row| {
@@ -73,6 +73,20 @@ impl Server {
                     serde_json::from_str(&row.get::<_, String>(1)?).unwrap(),
                 ))
             })
+            .unwrap()
+            .map(Result::unwrap)
+            .collect()
+    }
+
+    /// The last use of each stored record, by execution ID; a lookup updates the record it
+    /// returns.
+    fn last_used(&self) -> Vec<(String, String)> {
+        let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
+        let mut statement = db
+            .prepare("SELECT execution_id,last_used FROM entries ORDER BY execution_id")
+            .unwrap();
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .unwrap()
             .map(Result::unwrap)
             .collect()
@@ -271,7 +285,8 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
     let run = bob.json(&repo_b, &["run", "show", id], 0);
     assert_eq!(run["executionsStarted"], 0);
     assert_eq!(run["requests"][0]["origin"]["publisher"], "alice-laptop");
-    let shown = bob.json(&repo_b, &["cache", "show", "app-v1"], 0);
+    let key = run["requests"][0]["key"].as_str().unwrap();
+    let shown = bob.json(&repo_b, &["cache", "show", key], 0);
     assert_eq!(shown["origin"]["store"], server.url.as_str());
     assert!(
         shown["producer"]["name"]
@@ -292,7 +307,7 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
 }
 
 #[test]
-fn an_unreachable_store_falls_back_to_local_reviews_with_one_warning() {
+fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
     let root = tempfile::tempdir().unwrap();
     let mut server = Server::start(root.path());
     let bob = Machine::new(
@@ -311,13 +326,18 @@ fn an_unreachable_store_falls_back_to_local_reviews_with_one_warning() {
     );
     assert_eq!(stderr.matches(OFFLINE).count(), 1, "{stderr}");
     assert!(stderr.contains("unreachable"), "{stderr}");
-    // The local result is reused next time without any remote call.
-    let (_, stderr) = bob.run(&repo, &["verify", "--all"], 0);
-    assert!(stderr.is_empty(), "{stderr}");
+    // The store is asked again next time; while it is down, the local latest is reused.
+    let (text, stderr) = bob.run(&repo, &["verify", "--all"], 0);
+    assert_eq!(
+        line(&text, "Summary:"),
+        "Summary: executed 0 (runtime 0, agent 0, human 0), reused 2 (runtime 2, agent 0, human 0)"
+    );
+    assert_eq!(stderr.matches(OFFLINE).count(), 1, "{stderr}");
+    let status = bob.json(&repo, &["status"], 0);
+    assert_eq!(status["counts"]["reuse"], 2);
 }
-
 #[test]
-fn force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
+fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
     let root = tempfile::tempdir().unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -325,8 +345,7 @@ fn force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
     let machine = Machine::new(root.path(), "bob", &url, "azt_unused");
     let repo = runtime_repo(root.path(), "repo", "v1");
 
-    let (_, stderr) = machine.run(&repo, &["verify", "--all", "--force"], 0);
-    machine.run(&repo, &["status", "--force"], 1);
+    let (_, stderr) = machine.run(&repo, &["status", "--force"], 1);
     assert!(stderr.is_empty(), "{stderr}");
     assert_eq!(
         listener.accept().unwrap_err().kind(),
@@ -340,7 +359,6 @@ fn force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
     assert!(stderr.contains("rejected the token (HTTP 401)"), "{stderr}");
     assert_eq!(rejected.json(&repo, &["run", "list"], 0), json!([]));
 }
-
 #[test]
 fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify() {
     let root = tempfile::tempdir().unwrap();
@@ -443,7 +461,7 @@ fn remote_push_publishes_results_produced_offline_once() {
     let (stdout, stderr) = alice.run(&runtime, &["remote", "push"], 0);
     assert_eq!(stdout, "Pushed 2, already in the store 0, skipped 1.\n");
     assert!(
-        stderr.contains("Skipped brand-v1 ") && stderr.contains("lacks the human scope"),
+        stderr.contains("(brand/signoff): remote token alice-laptop lacks the human scope"),
         "{stderr}"
     );
     assert_eq!(server.entries().len(), 2);
@@ -474,4 +492,101 @@ fn remote_push_publishes_results_produced_offline_once() {
         stderr.contains("Remote token ci lacks the publish scope."),
         "{stderr}"
     );
+}
+
+#[test]
+fn the_newer_record_wins_across_local_history_and_the_store() {
+    let root = tempfile::tempdir().unwrap();
+    let server = Server::start(root.path());
+    let alice_token = server.token("alice-laptop", "read,publish");
+    let alice = Machine::new(root.path(), "alice", &server.url, &alice_token);
+    let offline = Machine::new(root.path(), "alice", "off", &alice_token);
+    let bob = Machine::new(
+        root.path(),
+        "bob",
+        &server.url,
+        &server.token("bob-laptop", "read,publish"),
+    );
+    let carol = Machine::new(
+        root.path(),
+        "carol",
+        &server.url,
+        &server.token("carol-ci", "read"),
+    );
+    // The eval fails when a `broken` file exists, which the fingerprint does not cover.
+    let repo = |name: &str| {
+        let repo = root.path().join(name);
+        write(
+            &repo,
+            json!({"name":"app","fingerprint":{"script":{"command":"cat","args":["version"]}},
+                "evals":[{"id":"check","title":"Check","profile":{"kind":"runtime","command":"/bin/sh","args":["-c","test ! -e broken"]},
+                    "payload":{"instruction":"Check."}}]}),
+        );
+        fs::write(repo.join("version"), "app-v1\n").unwrap();
+        repo
+    };
+    let (repo_a, repo_b, repo_c) = (repo("a"), repo("b"), repo("c"));
+    let first = alice.json(&repo_a, &["verify", "--all"], 0);
+    let key = first["requests"][0]["key"].as_str().unwrap().to_owned();
+    assert_eq!(server.entries().len(), 1);
+    let used = server.last_used();
+
+    // Bob reviews again by force: it reads nothing from the store, so no record's last use
+    // changes, and its RED is published as a newer record without `remote push`.
+    fs::write(repo_b.join("broken"), "").unwrap();
+    let forced = bob.json(&repo_b, &["verify", "--all", "--force"], 1);
+    assert_eq!(forced["requests"][0]["key"], key.as_str());
+    let entries = server.entries();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[1].0, "bob-laptop");
+    assert_eq!(entries[1].1["verdict"], "RED");
+    let alice_record = first["requests"][0]["executionId"].as_str().unwrap();
+    let last_use = |used: &[(String, String)]| {
+        used.iter()
+            .find(|(id, _)| id == alice_record)
+            .unwrap()
+            .1
+            .clone()
+    };
+    assert_eq!(last_use(&server.last_used()), last_use(&used));
+    assert_eq!(
+        bob.json(&repo_b, &["remote", "push"], 0),
+        json!({"dryRun":false,"pushed":0,"existing":1,"skipped":0})
+    );
+
+    // A machine without a local record reuses the store's latest: bob's RED.
+    let reused = carol.json(&repo_c, &["verify", "--all"], 1);
+    assert_eq!(reused["executionsStarted"], 0);
+    assert_eq!(reused["requests"][0]["provenance"]["runId"], forced["id"]);
+
+    // A newer store record beats an older local one. status predicts it read-only.
+    let status = alice.json(&repo_a, &["status"], 1);
+    assert_eq!(status["evals"][0]["action"], "reuse");
+    assert_eq!(status["evals"][0]["state"], "RED");
+    assert!(
+        status["evals"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("result in the remote review store, from bob@"),
+        "{status}"
+    );
+    let history = || alice.json(&repo_a, &["cache", "show", &key, "--history"], 0);
+    assert_eq!(history().as_array().unwrap().len(), 1);
+    let newer = alice.json(&repo_a, &["verify", "--all"], 1);
+    assert_eq!(newer["requests"][0]["provenance"]["runId"], forced["id"]);
+    assert_eq!(newer["requests"][0]["origin"]["publisher"], "bob-laptop");
+    assert_eq!(history().as_array().unwrap().len(), 2);
+
+    // A newer local record beats an older store one: alice reviews again offline.
+    let local = offline.json(&repo_a, &["verify", "--all", "--force"], 0);
+    assert_eq!(server.entries().len(), 2);
+    let status = alice.json(&repo_a, &["status"], 0);
+    assert_eq!(status["evals"][0]["state"], "PASS");
+    let again = alice.json(&repo_a, &["verify", "--all"], 0);
+    assert_eq!(
+        again["requests"][0]["executionId"],
+        local["requests"][0]["executionId"]
+    );
+    assert!(again["requests"][0]["origin"].is_null());
+    assert_eq!(history().as_array().unwrap().len(), 3);
 }

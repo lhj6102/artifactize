@@ -4,8 +4,7 @@
     "terms": "glossary"
   },
   "fingerprint": {
-    "files": ["."],
-    "dependencies": "direct"
+    "files": ["."]
   },
   "evals": [
     {

@@ -23,9 +23,30 @@ use crate::{
 };
 
 pub(crate) fn now() -> String {
-    OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .expect("UTC timestamp is representable")
+    timestamp(OffsetDateTime::now_utc())
+}
+
+/// RFC 3339 in UTC with nine fractional digits, so that timestamps also sort as text.
+fn timestamp(time: OffsetDateTime) -> String {
+    let time = time.to_offset(time::UtcOffset::UTC);
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:09}Z",
+        time.year(),
+        u8::from(time.month()),
+        time.day(),
+        time.hour(),
+        time.minute(),
+        time.second(),
+        time.nanosecond()
+    )
+}
+
+/// Any RFC 3339 time in the sortable form of [`now`]; `None` when it does not parse.
+pub(crate) fn sortable(value: &str) -> Option<String> {
+    OffsetDateTime::parse(value, &Rfc3339)
+        .ok()
+        .filter(|time| (0..=9999).contains(&time.to_offset(time::UtcOffset::UTC).year()))
+        .map(timestamp)
 }
 
 pub(crate) fn budget_reason(run: &Run) -> String {
@@ -44,6 +65,7 @@ pub(crate) async fn schedule(
     config: Arc<RepoConfig>,
     graph: &Graph<'_>,
     fingerprints: &BTreeMap<&str, cache::PreparedFingerprint>,
+    keys: &BTreeMap<&str, cache::Key>,
     run: &mut Run,
     requests: &mut [Request],
     receipts: &Receipts,
@@ -57,6 +79,7 @@ pub(crate) async fn schedule(
         config,
         graph,
         fingerprints,
+        keys,
         run,
         requests,
         receipts,
@@ -77,6 +100,7 @@ struct Scheduler<'a, 'g> {
     config: Arc<RepoConfig>,
     graph: &'a Graph<'g>,
     fingerprints: &'a BTreeMap<&'g str, cache::PreparedFingerprint>,
+    keys: &'a BTreeMap<&'g str, cache::Key>,
     run: &'a mut Run,
     requests: &'a mut [Request],
     receipts: &'a Receipts,
@@ -90,18 +114,6 @@ impl Scheduler<'_, '_> {
         let owner = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
         let producer = Producer::current();
         let run_dir = self.run.state_dir.join("runs").join(&self.run.id);
-        let eval_hashes: BTreeMap<_, _> = self
-            .config
-            .evals
-            .iter()
-            .filter(|eval| self.fingerprints.contains_key(eval.target.as_str()))
-            .map(|eval| {
-                (
-                    eval.id.as_str(),
-                    cache::eval_definition_hash(&eval.declaration),
-                )
-            })
-            .collect();
         let mut evidence = BTreeMap::new();
         let mut running = BTreeSet::new();
         let mut waiting = BTreeSet::new();
@@ -112,16 +124,16 @@ impl Scheduler<'_, '_> {
         loop {
             let completed = evidence.len();
             // A remote result for a waiting Human key settles it locally (each verify --wait poll).
+            // A forced Run never reads from the store.
             if let Some(remote) = &self.remote
                 && !self.cancellation.is_cancelled()
+                && !self.run.force
             {
                 let keys = self
                     .requests
                     .iter()
                     .filter(|request| request.status == "WAITING_HUMAN" && !request.force)
-                    .filter_map(|request| {
-                        Some((request.fingerprint.clone()?, request.eval_def_hash.clone()))
-                    })
+                    .filter_map(|request| request.key.clone())
                     .collect();
                 remote.refresh(self.receipts, keys).await?;
             }
@@ -167,11 +179,8 @@ impl Scheduler<'_, '_> {
                     }) {
                         continue;
                     }
-                    if let Some(fingerprint) = self.fingerprints.get(eval.target.as_str())
-                        && let Some(execution) = self
-                            .receipts
-                            .cached_execution(&fingerprint.value, &eval_hashes[eval.id.as_str()])
-                            .await?
+                    if let Some(key) = self.keys.get(eval.id.as_str())
+                        && let Some(execution) = self.receipts.cached_execution(&key.value).await?
                     {
                         evidence.insert(
                             eval.id.clone(),
@@ -209,7 +218,9 @@ impl Scheduler<'_, '_> {
                     }
                     let mut execution = Execution {
                         id: format!("execution-{}", request.id),
-                        fingerprint: request.fingerprint.clone().filter(|_| !request.force),
+                        key: request.key.clone(),
+                        fingerprint: request.fingerprint.clone(),
+                        fingerprints: request.fingerprints.clone(),
                         eval_def_hash: request.eval_def_hash.clone(),
                         owner_pid: owner.pid,
                         owner_start_time: owner.start_time,
@@ -218,6 +229,7 @@ impl Scheduler<'_, '_> {
                         error: None,
                         error_code: None,
                         profile: request.profile.clone(),
+                        options: request.options.clone(),
                         usage: None,
                         tool_calls: Vec::new(),
                         provenance: Provenance {
@@ -235,7 +247,7 @@ impl Scheduler<'_, '_> {
                         origin: None,
                         manifest: None,
                     };
-                    if execution.fingerprint.is_some() {
+                    if execution.key.is_some() {
                         execution.manifest =
                             self.fingerprints[request.target.as_str()].manifest.clone();
                     }
@@ -254,22 +266,31 @@ impl Scheduler<'_, '_> {
                             .run
                             .max_executions
                             .is_none_or(|limit| self.run.executions_started < limit);
-                    // Look up the remote again just before claiming; a hit becomes a local entry.
-                    if let (Some(remote), Some(fingerprint)) =
-                        (&self.remote, &execution.fingerprint)
-                    {
-                        remote
-                            .refresh(
-                                self.receipts,
-                                vec![(fingerprint.clone(), execution.eval_def_hash.clone())],
+                    // A forced review neither reuses nor joins a live execution of its key; it
+                    // adds a newer record when it completes.
+                    let claim = if request.force {
+                        if allow_start {
+                            Claim::Owned
+                        } else {
+                            Claim::BudgetExhausted
+                        }
+                    } else {
+                        // Look up the remote again just before claiming; a hit becomes a local
+                        // record.
+                        if let (Some(remote), Some(key), false) =
+                            (&self.remote, &execution.key, self.run.force)
+                        {
+                            remote.refresh(self.receipts, vec![key.clone()]).await?;
+                        }
+                        self.receipts
+                            .claim_execution(
+                                &execution,
+                                request.execution_id.as_deref(),
+                                allow_start,
                             )
-                            .await?;
-                    }
-                    match self
-                        .receipts
-                        .claim_execution(&execution, request.execution_id.as_deref(), allow_start)
-                        .await?
-                    {
+                            .await?
+                    };
+                    match claim {
                         Claim::Reuse(execution) => {
                             waiting.remove(&index);
                             evidence.insert(
@@ -290,8 +311,7 @@ impl Scheduler<'_, '_> {
                             request.execution_id = Some(id);
                             request.status = "WAITING_HUMAN".into();
                             request.blocked_reason = Some(
-                                "Waiting for the active Human fingerprint/Eval-definition execution."
-                                    .into(),
+                                "Waiting for the active Human execution of this reuse key.".into(),
                             );
                             *request = self.receipts.follow_human(request).await?;
                             if request.status != "WAITING_HUMAN" {
@@ -315,8 +335,7 @@ impl Scheduler<'_, '_> {
                                 request.execution_id = Some(id);
                                 request.status = "QUEUED".into();
                                 request.blocked_reason = Some(
-                                    "Waiting for the active fingerprint/Eval-definition execution."
-                                        .into(),
+                                    "Waiting for the active execution of this reuse key.".into(),
                                 );
                                 self.receipts.save_request(request).await?;
                             }
@@ -332,8 +351,12 @@ impl Scheduler<'_, '_> {
                         Claim::Owned => {}
                     }
                     waiting.remove(&index);
-                    request.execution_id =
-                        execution.fingerprint.as_ref().map(|_| execution.id.clone());
+                    // Followers join a claimed execution by its id.
+                    request.execution_id = execution
+                        .key
+                        .as_ref()
+                        .filter(|_| !request.force)
+                        .map(|_| execution.id.clone());
                     request.blocked_reason = None;
                     let eval = self
                         .config

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio_rusqlite::Connection;
 
-use super::{Origin, Producer, Provenance, STATE_SCHEMA_VERSION};
+use super::{ExecutionOptions, Origin, Producer, Provenance, STATE_SCHEMA_VERSION};
 use crate::workspace::{canonical_target, outside_workspace, prepare_directory};
 
 pub const DATABASE: &str = "state.sqlite";
@@ -72,6 +72,9 @@ pub struct Request {
     pub profile: Value,
     pub requested_profile: Value,
     pub eval_def_hash: String,
+    /// The requested execution options, or a reused result's.
+    #[serde(default)]
+    pub options: ExecutionOptions,
     pub execution_id: Option<String>,
     pub provenance: Option<Provenance>,
     /// Usage spent by this request; a reused request spent none.
@@ -97,8 +100,15 @@ pub struct Request {
     pub deps: Vec<String>,
     #[serde(default)]
     pub force: bool,
+    /// The target Artifact's fingerprint.
     #[serde(default)]
     pub fingerprint: Option<String>,
+    /// The reuse key; absent without a fingerprint on every Artifact the eval depends on.
+    #[serde(default)]
+    pub key: Option<String>,
+    /// Each Artifact the key covers, with its fingerprint.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub fingerprints: std::collections::BTreeMap<String, String>,
     pub status: String,
     pub created_at: String,
     pub started_at: Option<String>,
@@ -146,16 +156,14 @@ impl Receipts {
             schema_initialized(&transaction)?;
             // Publish the schema and its version together; readers see an empty snapshot until commit.
             transaction.execute_batch("CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS executions(id TEXT PRIMARY KEY, fingerprint TEXT, eval_def_hash TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE UNIQUE INDEX IF NOT EXISTS active_fingerprint ON executions(fingerprint,eval_def_hash) WHERE fingerprint IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
-                CREATE TABLE IF NOT EXISTS cache_entries(fingerprint TEXT NOT NULL, eval_def_hash TEXT NOT NULL, execution_id TEXT NOT NULL REFERENCES executions(id), bytes INTEGER NOT NULL, last_used TEXT NOT NULL, PRIMARY KEY(fingerprint,eval_def_hash));
-                CREATE INDEX IF NOT EXISTS cache_lru ON cache_entries(last_used,fingerprint,eval_def_hash);
+                CREATE TABLE IF NOT EXISTS executions(id TEXT PRIMARY KEY, key TEXT, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, data TEXT NOT NULL);
                 CREATE INDEX IF NOT EXISTS active_request_execution ON requests(execution_id) WHERE status IN ('QUEUED','RUNNING','WAITING_HUMAN');
                 CREATE TABLE IF NOT EXISTS human_claims(request_id TEXT PRIMARY KEY REFERENCES requests(id), reviewer TEXT NOT NULL, claimed_at TEXT NOT NULL);
                 CREATE TABLE IF NOT EXISTS mcp_sessions(execution_id TEXT PRIMARY KEY, binding TEXT NOT NULL, max_calls INTEGER, started INTEGER NOT NULL);
                 CREATE TABLE IF NOT EXISTS tool_calls(execution_id TEXT NOT NULL REFERENCES mcp_sessions(execution_id), ordinal INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(execution_id,ordinal));
                 CREATE TABLE IF NOT EXISTS run_members(run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), PRIMARY KEY(run_id, eval_id), UNIQUE(run_id, ordinal));")?;
+            transaction.execute_batch(super::cache_entries::SCHEMA)?;
             transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
             transaction.commit()?;
             Ok(())

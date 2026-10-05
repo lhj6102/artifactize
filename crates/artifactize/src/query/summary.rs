@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-use crate::store::{Request, RequestView, RunView};
+use crate::store::{ExecutionOptions, Request, RequestView, RunView};
 
 pub fn request_output(view: &RequestView) -> Value {
     let mut value = json!(view);
@@ -43,12 +43,17 @@ pub fn run_output(view: &RunView) -> Value {
     let (attempts, reported, unreported, usage) = usage_totals(local.iter().copied());
     let kinds = || BTreeMap::from([("total", 0u64), ("runtime", 0), ("agent", 0), ("human", 0)]);
     let (mut executed, mut reuses, mut saved) = (kinds(), kinds(), BTreeMap::new());
+    // Reused results that another profile produced: the key leaves execution options out.
+    reuses.insert("otherProfile", 0);
     for request in &view.requests {
         let tally = if reused(request) {
             // Requests saved before reusedUsage existed kept the original attempts in usage.
             let original = request.reused_usage.as_ref().or(request.usage.as_ref());
             for attempt in original.and_then(Value::as_array).into_iter().flatten() {
                 add_usage(&mut saved, attempt);
+            }
+            if request.profile != request.requested_profile {
+                *reuses.get_mut("otherProfile").expect("tally") += 1;
             }
             &mut reuses
         } else if local_execution(request) {
@@ -76,6 +81,27 @@ pub fn run_output(view: &RunView) -> Value {
     });
     value["usage"] = json!({"spent":value["summary"]["usage"],"saved":saved});
     value
+}
+
+/// A short name for the profile that produced a request's result: its variant, or its kind
+/// with the Agent backend, model and reasoning.
+pub fn profile_name(profile: &Value, options: &ExecutionOptions) -> String {
+    if let Some(variant) = &options.variant {
+        return variant.clone();
+    }
+    match profile["kind"].as_str() {
+        Some("agent") => [
+            options.backend.as_deref(),
+            options.model.as_deref(),
+            options.reasoning.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" "),
+        Some(kind) => kind.to_owned(),
+        None => "unknown".into(),
+    }
 }
 
 fn local_execution(request: &Request) -> bool {

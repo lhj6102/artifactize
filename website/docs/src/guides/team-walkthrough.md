@@ -65,8 +65,8 @@ Verify actions: will execute 0, will reuse 3, wait 0, blocked 0
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 
-Bob's checkout has the same content, so the content fingerprints and the Eval
-definition hashes match. Paths do not matter. `status` asked the store without
+Bob's checkout has the same Artifacts and content, so the fingerprints, the Eval
+definition hashes and therefore the reuse keys match. Paths do not matter. `status` asked the store without
 changing anything. `verify` mirrored the three records into Bob's local cache:
 `artifactize cache list` shows them with the store as their origin. A later
 `verify` reuses them locally, even without the store.
@@ -89,10 +89,11 @@ Would push 2, already in the store 0, skipped 0.
 Pushed 2, already in the store 0, skipped 0.
 ```
 
-Only `usage` and its direct dependent `guide` were reviewed again. With the store
-unreachable instead of `off`, `verify` would warn once and review locally in the
-same way. `remote push` sends the local results the store does not have yet. It
-never sends mirrors, and it skips Human sign-offs unless the token has `human`.
+Only `usage` and `guide`, whose `guide/terms` key covers its child `usage`, were
+reviewed again. With the store unreachable instead of `off`, `verify` would warn
+once and review locally in the same way. `remote push` sends each key's latest
+local result that the store does not have yet. It never sends mirrors, and it skips
+Human sign-offs unless the token has `human`.
 
 ## 5. CI reuses both
 

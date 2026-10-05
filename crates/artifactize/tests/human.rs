@@ -310,7 +310,7 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
         );
         assert!(
             receipts
-                .cached_execution("human-v1", &run.requests[0].eval_def_hash)
+                .cached_execution(run.requests[0].key.as_deref().unwrap())
                 .await
                 .unwrap()
                 .is_none()
@@ -620,7 +620,7 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
         .is_err()
     );
     let cached = receipts
-        .cached_execution("human-v1", &run.requests[0].eval_def_hash)
+        .cached_execution(run.requests[0].key.as_deref().unwrap())
         .await
         .unwrap()
         .unwrap();
@@ -746,4 +746,40 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     .unwrap();
     assert_eq!(status.counts.reuse, 3);
     assert_eq!(status.evals[2].state, "RED");
+}
+
+#[tokio::test]
+async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
+    let fixture = Fixture::new(true);
+    let path = fixture.repo.join("artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    declaration["evals"][0]["profileVariants"] = json!({"lead":{"kind":"human"}});
+    fs::write(&path, declaration.to_string()).unwrap();
+    let run = fixture
+        .verify(VerifyOptions {
+            profile: Some(project::selection::ProfileSelection::Named("lead".into())),
+            ..Default::default()
+        })
+        .await;
+    let request = &run.requests[0];
+    assert_eq!(request.status, "WAITING_HUMAN");
+    assert_eq!(request.options.variant.as_deref(), Some("lead"));
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, &request.id, "alice").await.unwrap();
+    let settled = human::submit(
+        &receipts,
+        &request.id,
+        "alice",
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(settled.status, "GREEN");
+    // The declared profile reuses the sign-off the variant produced.
+    let reused = fixture.verify(Default::default()).await;
+    assert_eq!(reused.requests[0].status, "GREEN");
+    assert_eq!(reused.requests[0].execution_id, request.execution_id);
+    assert_eq!(reused.requests[0].options.variant.as_deref(), Some("lead"));
+    assert_eq!(reused.requests[0].reviewer.as_deref(), Some("alice"));
 }

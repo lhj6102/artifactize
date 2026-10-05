@@ -51,7 +51,10 @@ Usage: spent none; saved inputTokens 10, outputTokens 5, totalTokens 20
 ```
 
 `executed` counts the Run's own executions, including ERROR results and Human
-requests it recorded; `reused` counts the rest that have a source. `Usage` (printed
+requests it recorded; `reused` counts the rest that have a source. A reused result
+that another profile produced (another variant, model or limit, none of which is in
+the reuse key) adds `profile NAME` to its line, and the summary then ends with
+`; N produced by another profile` (`summary.reused.otherProfile` in JSON). `Usage` (printed
 only when some usage was reported) separates counters spent in this Run from
 `saved`, the sum of the reused executions' original counters. JSON verify and
 `run show` carry the same numbers as `summary.executed`, `summary.reused` and the
@@ -108,8 +111,9 @@ Fingerprint scripts use disposable output under the state directory, which may b
 created even when no database exists. `config graph` and `config check` remain fully
 static and never run owner code.
 
-A current completed fingerprint/Eval-definition entry yields PASS or RED and a `reuse`
-action. verify attaches cached results before their gates resolve, so the action
+A completed record for the eval's current reuse key yields PASS or RED and a `reuse`
+action; its reason says so, and names the profile that produced it when that is not
+the requested one. verify attaches cached results before their gates resolve, so the action
 stays `reuse` while a dependency is pending or RED. The state then shows the gate
 (WAIT_DEPENDENCY or BLOCKED) and the reason names it. An eval without a cached
 result runs only once its gates are GREEN. It shows `blocked` behind a RED
@@ -120,7 +124,7 @@ limit of the prediction: status cannot say whether a `wait` eval will execute. T
 `Verify actions: will execute 1, will reuse 4, wait 0, blocked 0`, so status run on
 a merged checkout answers what verify will re-review there without running it.
 Force still applies only to selected evals. Human execution actions
-record a waiting request; an active Human fingerprint/Eval-definition pair projects WAITING_HUMAN and a
+record a waiting request; an active Human execution of the same key projects WAITING_HUMAN and a
 `wait` action, even after the original verifier exits. Saved attempts
 are read for this canonical repository only: each eval's optional
 `last: {runId, verdict, fingerprint?}` is historical, not current evidence. Use
@@ -128,16 +132,19 @@ are read for this canonical repository only: each eval's optional
 Run, so its later status is STALE rather than reuse (ENG-24). Basis-only scopes can
 be satisfied; a basis with unmet dependencies is INCOMPLETE.
 
-When an eval with a fingerprint has no current cached result, `status` explains why.
-It compares the current fingerprint with the newest cached GREEN/RED result for the
-same eval and Eval definition hash (from any repository in this state), and
-reports `changes: {sinceRunId, files?, dependencies?, summary}`. In text this is a
+When an eval with a reuse key has no current cached result, `status` explains why.
+It compares the current key with the newest cached GREEN/RED record for the same
+eval and Eval definition hash (from any repository in this state), and reports
+`changes: {sinceRunId, files?, dependencies?, summary}`. In text this is a
 `Fingerprint changed since Run RUN_ID: ...` line, for example
-`changed: +docs/new.md, -old.md, src/a.py; dependency core changed`. Files and
-dependencies are listed as `path` (changed), `+path` (added) or `-path` (removed).
-A script fingerprint, or a manifest whose maps were dropped, can only report
-`fingerprint changed` or `inputs changed`. No explanation appears when that eval
-definition has never been cached, or for forced evals.
+`changed: +docs/new.md, -old.md, src/a.py; dependency core changed`. `files` lists the
+target's own files as `path` (changed), `+path` (added) or `-path` (removed);
+`dependencies` lists the mounts, children and named Artifacts whose fingerprint
+changed, as `name`, `+name` or `-name`. A script fingerprint, or a manifest whose
+file map was dropped, can only report `fingerprint changed` or `inputs changed` for
+the target. No explanation appears when that eval definition has never been
+cached, or for forced evals. An eval without a key says why: no fingerprint on its
+Artifact, or `Dependency NAME declares no fingerprint`.
 
 `config graph [ARTIFACT|FAMILY]` defaults to the whole project, or shows the selected
 required closure including cycle peers. Text lists Artifacts, evals, families,

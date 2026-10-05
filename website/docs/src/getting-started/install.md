@@ -37,7 +37,10 @@ release's tag (or `git pull` and repeat `cargo install --path`). The next
 command that opens an older state database upgrades it in place; `artifactize
 doctor` reports its schema without changing it. 0.4 calls the reuse declaration
 `fingerprint`; `config check` shows the new shape for each `artifactize.json` that
-still uses the old field.
+still uses the old field, or the content form's `dependencies` option that 0.5
+removed. 0.5 builds the reuse key differently, so the first `verify` after
+upgrading from 0.4 or earlier reviews everything once
+([Upgrading from 0.4](../concepts/fingerprints-and-reuse.md#upgrading-from-04)).
 
 0.5.0 removes the `chatgpt` and `claude` Agent backends, with `login chatgpt`,
 `logout chatgpt` and the internal `mcp` command. `config check` names the
@@ -50,7 +53,7 @@ from the state directory.
 ## State
 
 All state lives in one directory: `state.sqlite` (Runs, requests, executions, the
-fingerprint cache and Human claims), Run output under `runs/`, and the review store
+reuse records and Human claims), Run output under `runs/`, and the review store
 token under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
 `$XDG_STATE_HOME/artifactize`, else `~/.local/state/artifactize`.
 

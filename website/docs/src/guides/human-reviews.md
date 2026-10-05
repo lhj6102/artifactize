@@ -7,13 +7,14 @@ with `artifactize request` commands or in the `artifactize review` terminal UI.
 READY Human evals persist WAITING_HUMAN and release their job slot. They consume
 no `maxExecutions` budget, so even a zero budget admits a Human review. `verify`
 without `--wait` exits INCOMPLETE and lists waiting requests; it does not fabricate
-a verdict or keep a worker alive. Waiting executions with a fingerprint retain their exclusive
-fingerprint/Eval-definition claim after the verifier exits. Cross-repository followers refer to that
+a verdict or keep a worker alive. Waiting executions with a reuse key retain their exclusive
+claim on the key after the verifier exits. Cross-repository followers refer to that
 same execution and forward Human actions to its original request and repository.
 
-For a Human eval with a fingerprint, the next `verify` reuses the submitted result
-and runs its dependents. **No fingerprint means no reuse**: submission settles only
-that Run, and a later `verify` asks for a new Human review. Continuing the
+For a Human eval with a reuse key (a fingerprint on its Artifact and on every
+Artifact it depends on), the next `verify` reuses the submitted result and runs its
+dependents. **No fingerprint means no reuse**: submission settles only that Run,
+and a later `verify` asks for a new Human review. Continuing the
 dependents of a Human eval without a fingerprint requires keeping the same Run alive with `verify --wait`.
 
 ```sh

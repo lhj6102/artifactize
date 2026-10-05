@@ -37,8 +37,10 @@ adaptive thinking and exactly `output_config.effort` (`low`, `medium`, `high`,
 the requested setting fails at the provider; artifactize does not substitute a
 model or lower effort. If the response reports a model ID, it must match exactly.
 
-Agent evals share runtime evals' dependency gates, fingerprint claims, reuse and final
-fingerprint recheck. Final output must be one strict JSON object containing
+Agent evals share runtime evals' dependency gates, reuse-key claims, reuse and final
+fingerprint recheck. The backend, model, reasoning and limits are execution
+options, not part of the reuse key: a result another model or profile produced for
+the same eval and fingerprints is reused, and its record shows which one it was. Final output must be one strict JSON object containing
 `"verdict":"GREEN"` or `"verdict":"RED"` and only the permitted owner-schema fields.
 One tools-disabled repair is allowed for invalid final output, within the original
 deadline. `maxTokens` and `maxToolCalls` are enforced client-side before further tools

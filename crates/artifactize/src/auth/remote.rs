@@ -269,10 +269,32 @@ impl Remote {
                     status.as_u16()
                 ),
             ),
-            _ => failure(
-                status.is_server_error(),
-                format!("The remote store answered HTTP {}.", status.as_u16()),
-            ),
+            _ => {
+                // A client error explains itself, for example a store of another schema.
+                let detail = if status.is_client_error() {
+                    response.json::<Value>().await.ok().and_then(|body| {
+                        body["error"].as_str().map(|error| {
+                            error
+                                .chars()
+                                .filter(|c| !c.is_control())
+                                .take(300)
+                                .collect::<String>()
+                        })
+                    })
+                } else {
+                    None
+                };
+                failure(
+                    status.is_server_error(),
+                    match detail {
+                        Some(detail) => format!(
+                            "The remote store answered HTTP {}: {detail}",
+                            status.as_u16()
+                        ),
+                        None => format!("The remote store answered HTTP {}.", status.as_u16()),
+                    },
+                )
+            }
         })
     }
 
@@ -293,36 +315,30 @@ impl Remote {
         Self::json(response, "whoami").await
     }
 
-    /// Stored records for the found keys, unvalidated; at most 1000 keys per request.
-    pub async fn lookup(&self, keys: &[(String, String)]) -> Result<Vec<Value>, Failure> {
+    /// The latest stored record of each found key, unvalidated; at most 1000 keys per request.
+    pub async fn lookup(&self, keys: &[String]) -> Result<Vec<Value>, Failure> {
         #[derive(Deserialize)]
         struct Found {
             entries: Vec<Value>,
         }
         let mut entries = Vec::new();
         for chunk in keys.chunks(1000) {
-            let keys: Vec<_> = chunk
-                .iter()
-                .map(|(fingerprint, eval_def_hash)| {
-                    json!({"fingerprint": fingerprint, "evalDefHash": eval_def_hash})
-                })
-                .collect();
             let request = self
                 .request(Method::POST, "v1/lookup")?
-                .json(&json!({ "keys": keys }));
+                .json(&json!({ "keys": chunk }));
             let found: Found = Self::json(self.send(request).await?, "lookup").await?;
             entries.extend(found.entries);
         }
         Ok(entries)
     }
 
-    /// Publish an immutable record; `false` when the key already exists (the first writer wins).
+    /// Append a record to its key's history; `false` when the store already has this execution.
     pub async fn publish(&self, record: &Record) -> Result<bool, Failure> {
         #[derive(Deserialize)]
         struct Published {
             created: bool,
         }
-        let route = format!("v1/entries/{}/{}", record.eval_def_hash, record.fingerprint);
+        let route = format!("v1/entries/{}", record.key);
         let request = self.request(Method::PUT, &route)?.json(record);
         let published: Published = Self::json(self.send(request).await?, "publish").await?;
         Ok(published.created)

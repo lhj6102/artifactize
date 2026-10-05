@@ -4,6 +4,8 @@ Status: approved by the owner on 2026-10-04 with the decisions in [section 9](#9
 
 **Summary.** An optional HTTP store, `artifactize server`, holds one immutable, reduced record per (staleKey, Eval definition hash). Local `state.sqlite` keeps Runs and acts as a read-through/write-through cache. No remote claims; the first writer wins.
 
+**Since 0.5** ([#92](https://github.com/lhj6102/artifactize/issues/92)), records are keyed by the reuse key, `hash(eval strategy, (name, fingerprint) of each Artifact the eval depends on)`, and the store (schema 3) appends every record of a key and answers lookups with the latest by `completedAt`. This replaces first-writer-wins. `verify` looks up every key once per Run and reuses whichever completed last, the local latest or the store's latest, falling back to the local latest while the store is unreachable; `--force` reads nothing from the store but publishes its results. Routes are `POST /v1/lookup` with `{"keys":[KEY,...]}`, `PUT /v1/entries/{key}` and `server rm KEY`, records are schema 2, and the 0.3 `staleKey` alias is gone. The rest of this document describes the 0.3 design.
+
 ## 1. Backend options
 
 | | (a) `artifactize server` (HTTP + SQLite) | (b) S3-compatible bucket | (c) Postgres | (d) git ref in the project remote |
@@ -82,3 +84,4 @@ Every new local execution records its `producer`; a submitted Human execution al
 8. **Remote configuration:** only in the state dir (`$STATE/remote.json`) and env (`ARTIFACTIZE_REMOTE`, `ARTIFACTIZE_REMOTE_TOKEN`, `ARTIFACTIZE_REMOTE_SHARE`). Never in `artifactize.json`.
 9. **Naming:** the owner-computed reuse key is the **staleKey** throughout: remote records (`staleKey`), routes (`{staleKey, evalDefHash}` lookup keys, `PUT /v1/entries/{evalDefHash}/{staleKey}`) and `server rm STALE_KEY [EVAL_HASH]`, and locally the `staleKey` declaration, `cache show/rm STALE_KEY [EVAL_HASH]` and the state database columns.
    Since 0.4 that key is the **fingerprint** in all of these places ([#72](https://github.com/lhj6102/artifactize/issues/72)); the server still accepts a 0.3 client's `staleKey` through 0.4.x.
+   Since 0.5 the key is the reuse key described in the summary, and 0.3 and 0.4 clients are told to upgrade.
