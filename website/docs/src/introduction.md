@@ -24,11 +24,10 @@ On Linux or WSL 2, with a Rust toolchain and a C compiler, install the binary an
 review the runtime-only example. No model or API key is needed:
 
 ```sh
-git clone https://github.com/lhj6102/artifactize
-cd artifactize
-cargo install --path crates/artifactize --locked
+cargo install --git https://github.com/lhj6102/artifactize --tag v0.4.0 --locked artifactize
+git clone https://github.com/lhj6102/artifactize   # the example projects
+cd artifactize/examples/runtime-relations
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
-cd examples/runtime-relations
 artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused
 ```
@@ -39,7 +38,9 @@ artifactize verify --all    # exit 0 and nothing executes: all three results are
 ## Where to go next
 
 - [Install](getting-started/install.md) and the [Quick start](getting-started/quick-start.md)
-  take you from a clone to a first reused result.
+  take you from install to a first reused result.
 - [Concepts](concepts/artifacts-and-evals.md) explain Artifacts, evals, fingerprints and Runs.
 - [Guides](guides/agent-evals.md) cover Agent and Human evals, the team review store and CI.
 - The [Reference](reference/overview.md) has every command, field, limit and protocol.
+- The source is on [GitHub](https://github.com/lhj6102/artifactize), open source under
+  the Apache License 2.0.

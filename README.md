@@ -1,14 +1,8 @@
 # Artifactize
 
-**Review cost follows the size of a change.** Declare every Artifact (code, docs,
-designs, images) and the evals that review it: tests, LLM reviews and human
-sign-offs. While an Artifact's fingerprint is unchanged, its GREEN or RED result
-is reused, so you pay only for what changed.
+**Review cost follows the size of a change.** Still-valid reviews are reused; you pay only for what changed.
 
-<p align="center">
-  <img src="website/demo/media/change.gif" width="800"
-       alt="One file changes: artifactize status predicts one execution and four reuses and names the changed file, then artifactize verify reviews only that Artifact and reuses the other four results.">
-</p>
+https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6
 
 <p align="center">
   <a href="https://artifactize.dev/docs/">Docs</a> ·
@@ -17,6 +11,19 @@ is reused, so you pay only for what changed.
   <a href="https://artifactize.dev/docs/reference/overview.html">Reference</a> ·
   <a href="https://artifactize.dev">artifactize.dev</a>
 </p>
+
+Declare every Artifact (code, docs, designs, images) and the evals that review it:
+tests, LLM reviews and human sign-offs. While an Artifact's fingerprint is
+unchanged, its GREEN or RED result is reused. Artifactize is open source under the
+Apache License 2.0 and runs on Linux and WSL 2.
+
+## See it in your terminal
+
+Change one file: `status` predicts one execution and names the file, and `verify`
+re-reviews only that Artifact.
+
+<img src="website/demo/media/change.gif" width="800"
+     alt="One file changes: artifactize status predicts one execution and four reuses and names the changed file, then artifactize verify reviews only that Artifact and reuses the other four results.">
 
 ## Why artifactize
 
@@ -41,10 +48,16 @@ is reused, so you pay only for what changed.
 On Linux or WSL 2, with a Rust toolchain and a C compiler:
 
 ```sh
+cargo install --git https://github.com/lhj6102/artifactize --tag v0.4.0 --locked artifactize
+artifactize --version          # artifactize 0.4.0
+```
+
+To build from source instead:
+
+```sh
 git clone https://github.com/lhj6102/artifactize
 cd artifactize
 cargo install --path crates/artifactize --locked
-artifactize --version          # artifactize 0.4.0
 ```
 
 [Install](https://artifactize.dev/docs/getting-started/install.html) covers the
@@ -82,8 +95,9 @@ folder is unchanged:
 No model or API key is needed to try it:
 
 ```sh
+git clone https://github.com/lhj6102/artifactize   # the example projects
+cd artifactize/examples/runtime-relations
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
-cd examples/runtime-relations
 artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused
 ```
@@ -139,7 +153,7 @@ The recordings above are reproducible: their VHS tapes and demo projects are in
 [`website/demo`](website/demo) ([how to record](website/README.md#recordings)).
 
 Artifactize is a lean Rust port and rebrand of [CCDD](https://github.com/lhj6102/ccdd)
-7.0.0 (`cbf28b4`); the [plan](docs/PLAN.md) records the scope. It runs on Linux and WSL.
+7.0.0 (`cbf28b4`); the [plan](docs/PLAN.md) records the scope.
 
 ## License
 
