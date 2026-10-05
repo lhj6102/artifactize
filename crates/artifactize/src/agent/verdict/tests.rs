@@ -156,3 +156,53 @@ fn human_submission_errors_list_bounded_failing_paths() {
         "schema_mismatch: verdict must be GREEN or RED"
     );
 }
+
+#[test]
+fn repair_detail_names_bounded_failing_paths_of_json_results() {
+    let owner = json!({"properties":{"covered":{"type":"array","items":{"type":"string","pattern":"^R[0-9]+$"},"minItems":1},"notes":{"type":"string","maxLength":10}},"required":["covered"]});
+    let schema = VerdictSchema::new(owner.as_object(), None).unwrap();
+    let repair = |text: &str| {
+        let error = schema.parse(text).unwrap_err();
+        schema.repair_detail(text, error)
+    };
+    // Unparseable or envelope errors have no paths to name.
+    for text in ["prose", "```json\n{}\n```", r#"{"verdict":"BLUE"}"#] {
+        let detail = repair(text);
+        assert_eq!(detail, schema.parse(text).unwrap_err(), "{text}");
+    }
+    let detail = repair(r#"{"verdict":"GREEN","covered":["X1"],"notes":"far too long notes"}"#);
+    let lines: Vec<_> = detail.lines().collect();
+    assert_eq!(
+        lines[0],
+        "schema_mismatch: result must match the selected verdict's owner schema"
+    );
+    assert!(
+        lines.contains(&r#"- instancePath "/covered/0": "X1" does not match "^R[0-9]+$""#),
+        "{detail}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with(r#"- instancePath "/notes": "#)),
+        "{detail}"
+    );
+    let missing = repair(r#"{"verdict":"GREEN"}"#);
+    assert!(
+        missing.ends_with(r#"- instancePath "": "covered" is a required property"#),
+        "{missing}"
+    );
+    // Undeclared fields are named, and every line and the whole detail stay bounded.
+    let long = "k".repeat(5_000);
+    let undeclared = repair(&json!({"verdict":"RED",long.clone():1}).to_string());
+    assert!(
+        undeclared.contains("(truncated)") && undeclared.len() < 400,
+        "{undeclared}"
+    );
+    let many: Vec<_> = (0..50).map(|n| format!("bad{n}")).collect();
+    let detail =
+        repair(&json!({"verdict":"GREEN","covered":many,"notes":"y".repeat(10_000)}).to_string());
+    assert!(
+        detail.lines().count() <= 6 && detail.len() < 2_000,
+        "{detail}"
+    );
+}

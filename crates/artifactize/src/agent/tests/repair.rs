@@ -50,7 +50,15 @@ async fn schema_invalid_response_repairs_and_preserves_owner_fields() {
         .await;
     assert_eq!(review.result.unwrap(), result);
     assert_eq!(http.requests().len(), 2);
-    assert!(String::from_utf8_lossy(&http.requests()[1].body).contains("schema_mismatch"));
+    let repair: Value = serde_json::from_slice(&http.requests()[1].body).unwrap();
+    let prompt = repair["input"].as_array().unwrap().last().unwrap()["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        prompt,
+        "Your final response did not match the required schema: schema_mismatch: result must match the selected verdict's owner schema\n- instancePath \"/reason\": false is not of type \"string\"\nReturn only one JSON object matching the schema."
+    );
 }
 
 #[tokio::test]

@@ -105,6 +105,19 @@ impl VerdictSchema {
         Ok(value)
     }
 
+    /// What the single repair turn tells the model: the parse error and, when the
+    /// response was a JSON object, its failing instance paths, bounded as for a Human
+    /// submission. Sent to the provider only; the persisted error stays the bare code.
+    pub fn repair_detail(&self, text: &str, error: &str) -> String {
+        let value = (text.len() <= MAX_RESPONSE_BYTES)
+            .then(|| serde_json::from_str::<Value>(text).ok())
+            .flatten();
+        match value {
+            Some(value) => self.explain(error, &value),
+            None => error.into(),
+        }
+    }
+
     fn branch(&self, value: &Value) -> Option<(&Validator, &Value)> {
         match value.get("verdict").and_then(Value::as_str) {
             Some("GREEN") => Some((&self.green, &self.schema["GREEN"])),
@@ -123,7 +136,7 @@ impl VerdictSchema {
             .map(|error| {
                 format!(
                     "- instancePath {}: {}",
-                    quoted(&error.instance_path().to_string()),
+                    quoted(&bounded(error.instance_path().to_string())),
                     bounded(error.to_string())
                 )
             })
@@ -133,7 +146,9 @@ impl VerdictSchema {
             let fields = value.as_object().into_iter().flatten();
             paths = fields
                 .filter(|(key, _)| branch["properties"].get(key.as_str()).is_none())
-                .map(|(key, _)| format!("- field {} is not declared.", quoted(key)))
+                .map(|(key, _)| {
+                    format!("- field {} is not declared.", quoted(&bounded(key.clone())))
+                })
                 .take(5)
                 .collect();
         }
