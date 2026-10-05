@@ -48,7 +48,9 @@ pub fn prune(
     older_than: Option<Duration>,
     dry_run: bool,
 ) -> Result<PruneReport, String> {
-    let state = real_path(state)?;
+    // Canonical like the repositories it is compared with: on Windows, a state path typed in
+    // another case, or with 8.3 short names, would otherwise slip past `outside_workspace`.
+    let state = workspace::canonical_target(&real_path(state)?).map_err(|e| e.to_string())?;
     let mut report = PruneReport::default();
     let mut repositories = Vec::new();
     if let Some(repo) = repo {
@@ -255,6 +257,10 @@ fn real_path(path: &Path) -> Result<PathBuf, String> {
             return Err("Prune paths must not contain parent traversal.".into());
         }
         current.push(component);
+        // A Windows prefix alone, such as `\\?\C:`, names the volume device, not a folder.
+        if matches!(component, Component::Prefix(_) | Component::RootDir) {
+            continue;
+        }
         match current.symlink_metadata() {
             Ok(metadata) if metadata.file_type().is_symlink() => {
                 return Err(format!("Prune refuses symlinks: {}", current.display()));
