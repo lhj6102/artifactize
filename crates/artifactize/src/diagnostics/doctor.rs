@@ -124,6 +124,29 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         ),
         Err(error) => report.add("schema", "FAIL", &error, Value::Null),
     }
+    match crate::limits::Limits::read(&state) {
+        Ok(limits) if limits.backends().is_empty() => report.add(
+            "limits",
+            "PASS",
+            "No backend capacity limits (limits.json).",
+            json!({"backends":{}}),
+        ),
+        Ok(limits) => report.add(
+            "limits",
+            "PASS",
+            &format!(
+                "Backend capacity on this machine: {}.",
+                limits
+                    .backends()
+                    .iter()
+                    .map(|(backend, slots)| format!("{backend} {slots}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            json!({"backends":limits.backends()}),
+        ),
+        Err(error) => report.add("limits", "FAIL", &error, Value::Null),
+    }
     for (name, backend) in [
         ("openai", Backend::Openai),
         ("anthropic", Backend::Anthropic),

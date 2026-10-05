@@ -15,6 +15,7 @@ pub use human::HumanClaim;
 pub mod prune;
 mod receipts;
 mod runs;
+mod slots;
 pub use runs::{RunSummary, read_runs};
 mod requests;
 mod tool_calls;

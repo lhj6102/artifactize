@@ -1,7 +1,8 @@
 # State, cache and limits
 
-Where artifactize keeps its state, how to inspect and limit the reuse cache, and
-the local diagnostics and maintenance commands.
+Where artifactize keeps its state, how to inspect and limit the reuse cache, how
+to cap Agent backends machine-wide, and the local diagnostics and maintenance
+commands.
 
 ## State
 
@@ -76,6 +77,41 @@ GC and `rm` remove only reuse records, never execution or receipt rows or Run
 output. These limits are not a bound on total database size or active scratch
 space, and there is no semantic TTL, protected-reader registry or scratch cleanup.
 
+## Backend capacity
+
+`--jobs` bounds the evals of one `verify` process. Several processes on one
+machine (worktrees, CI jobs, a team member's integration run) can still send more
+Agent reviews to one backend at once than its rate limit or subscription allows.
+`$STATE/limits.json` caps the Agent reviews in flight per backend across every
+`verify` that uses that state directory:
+
+```json
+{"backends": {"codex": 4, "openai": 16}}
+```
+
+Keys are backend names as profiles declare them (`openai`, `anthropic`, `codex`),
+and each limit is 1–100000. A backend without an entry is unlimited, and with no
+file nothing is limited. The file is read when a `verify` starts. A file that is not
+a regular file, is not valid JSON, has other fields, names an unknown or removed
+backend or a limit out of range fails `verify` before it creates a Run (exit 2);
+`doctor` reports the limits, or the problem as a hard error.
+
+The limits are enforced through slots in `state.sqlite`, one per Agent review in
+flight, recorded with the owning process's pid and start time. A slot is taken just
+before a review would start: a request that would reuse a result or join a live
+execution of its key takes none. A slot is released when the review ends, and a
+slot whose owner process is gone (it crashed or was killed) is free again the next
+time a process asks for one.
+
+With every slot of its backend in use, a request waits, as QUEUED, with a reason
+such as `Waiting for a free codex slot: all 4 are in use on this machine
+(limits.json).`, and is retried as slots free up, in selection order. While it waits
+it holds no `--jobs` slot and consumes no `--max-executions` start, so runtime
+evals, Human requests and other backends keep running. Once it has its slot it
+occupies a job slot like any running eval, so a process runs at most
+`min(--jobs, free slots)` reviews of a limited backend. Cancelling a `verify` ends
+its waiting requests as CANCELLED, and its held slots are released.
+
 ## Local diagnostics and maintenance
 
 ```sh
@@ -102,7 +138,9 @@ directory, removed immediately (in the nearest existing ancestor when state does
 not yet exist). It reads the state database's schema without changing the file:
 an older schema (1 to 3) passes with a note that the next artifactize command
 upgrades it, and a database written by a newer artifactize is a hard error. `--repo`
-additionally runs the same static validation as `config check`. API keys are
+additionally runs the same static validation as `config check`. The `limits` check
+reads [`limits.json`](#backend-capacity) and reports the backend capacity (an
+invalid file is a hard error). API keys are
 reported only as present/absent, never validated or printed. Missing keys are
 warnings: optional backends need not all be configured. A backend with a
 [test endpoint](../guides/agent-evals.md#test-against-a-fake-provider) is a warning

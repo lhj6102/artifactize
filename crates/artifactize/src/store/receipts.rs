@@ -167,6 +167,7 @@ impl Receipts {
                 CREATE TABLE IF NOT EXISTS tool_calls(execution_id TEXT NOT NULL REFERENCES mcp_sessions(execution_id), ordinal INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(execution_id,ordinal));
                 CREATE TABLE IF NOT EXISTS run_members(run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), PRIMARY KEY(run_id, eval_id), UNIQUE(run_id, ordinal));")?;
             transaction.execute_batch(super::cache_entries::SCHEMA)?;
+            transaction.execute_batch(super::slots::SCHEMA)?;
             transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
             transaction.commit()?;
             Ok(())

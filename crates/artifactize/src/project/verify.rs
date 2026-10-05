@@ -94,6 +94,7 @@ pub async fn verify(
     let definitions = serde_json::to_value(crate::query::graph(&config, selection)?)
         .expect("definitions are JSON");
     let state = store::state_dir(state_dir)?;
+    let limits = crate::limits::Limits::read(&state)?;
     let receipts = Receipts::open(&state, &config.root).await?;
     let runs = workspace::prepare_directory(&state.join("runs"), &config.root)
         .map_err(|e| e.to_string())?;
@@ -224,6 +225,7 @@ pub async fn verify(
         &fingerprints,
         &keys,
         &parallelism,
+        &limits,
         &mut run,
         &mut requests,
         &receipts,

@@ -9,6 +9,7 @@ pub mod config;
 pub mod diagnostics;
 pub mod graph;
 pub mod human;
+pub mod limits;
 pub mod llm;
 pub mod monitor;
 pub mod process;

@@ -76,6 +76,11 @@ executions; a forced GREEN or RED is added as the key's newest record, and
 published to a configured review store, which later runs reuse. Dependencies may
 still reuse their own local records, but a forced Run reads nothing from the store.
 
+`--jobs N` bounds the evals one `verify` runs at once. Agent reviews are further
+bounded machine-wide per backend by `$STATE/limits.json`
+([Backend capacity](state-cache-limits.md#backend-capacity)); a request waiting for a backend slot
+holds no job slot and no executor start.
+
 `--fingerprint-jobs N` (on `verify` and `status`, at least 1) bounds how many
 fingerprints are computed at once; the default is the number of CPUs available to
 the process. In `verify` the one bound covers preparation and the end-of-review
