@@ -282,7 +282,7 @@ pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
             return Err(ScopeError("Artifact symlinks are not supported.".into()));
         }
     }
-    let actual = fs::canonicalize(&target)
+    let actual = platform::canonicalize(&target)
         .map_err(|error| ScopeError(format!("{}: {error}", target.display())))?;
     if !actual.starts_with(root) {
         return Err(ScopeError(

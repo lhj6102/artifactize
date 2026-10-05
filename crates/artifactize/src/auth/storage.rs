@@ -29,10 +29,7 @@ impl Storage {
         let directory =
             crate::workspace::canonical_target(&directory).map_err(|e| e.to_string())?;
         let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-        let input = repo
-            .unwrap_or(&cwd)
-            .canonicalize()
-            .map_err(|e| e.to_string())?;
+        let input = platform::canonicalize(repo.unwrap_or(&cwd)).map_err(|e| e.to_string())?;
         let input = if input.is_file() {
             input.parent().unwrap()
         } else {

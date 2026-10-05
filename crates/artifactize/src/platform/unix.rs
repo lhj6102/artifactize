@@ -16,7 +16,7 @@ use std::{
             process::ExitStatusExt,
         },
     },
-    path::Path,
+    path::{Path, PathBuf},
     process::ExitStatus,
 };
 
@@ -69,6 +69,11 @@ pub(crate) fn private_options() -> OpenOptions {
 /// Make an open file 0600.
 pub(crate) fn restrict_file(file: &File) -> io::Result<()> {
     file.set_permissions(Permissions::from_mode(0o600))
+}
+
+/// The absolute path of an existing file with every link resolved.
+pub(crate) fn canonicalize(path: &Path) -> io::Result<PathBuf> {
+    fs::canonicalize(path)
 }
 
 /// Persist a directory's entries, such as a file just renamed into it.
