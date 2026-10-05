@@ -362,9 +362,17 @@ fn dropped_configuration_fields_are_rejected() {
 
 #[test]
 fn agent_backends_are_explicit_and_optional_reasoning_is_exact() {
-    for backend in ["openai", "anthropic"] {
+    for backend in ["openai", "anthropic", "codex"] {
         let profile = json!({"kind":"agent","backend":backend,"model":"owner-chosen-model"});
         assert!(parse(json!({"name":"a","evals":[eval(profile)]})).is_ok());
+    }
+    for reasoning in ["none", "minimal", "low", "medium", "high", "xhigh", "max"] {
+        let profile =
+            json!({"kind":"agent","backend":"codex","model":"gpt-6-luna","reasoning":reasoning});
+        assert!(
+            parse(json!({"name":"a","evals":[eval(profile)]})).is_ok(),
+            "{reasoning}"
+        );
     }
     for backend in ["chatgpt", "claude"] {
         let profile = json!({"kind":"agent","backend":backend,"model":"owner-chosen-model"});
@@ -391,6 +399,7 @@ fn agent_backends_are_explicit_and_optional_reasoning_is_exact() {
         json!({"kind":"agent","backend":"openai","model":"m","reasoning":null}),
         json!({"kind":"agent","backend":"openai","model":"m","reasoning":"off"}),
         json!({"kind":"agent","backend":"anthropic","model":"m","reasoning":"xhigh"}),
+        json!({"kind":"agent","backend":"codex","model":"m","reasoning":"ultra"}),
         json!({"kind":"agent","backend":"openai","model":"m","effort":"high"}),
     ] {
         assert!(parse(json!({"name":"a","evals":[eval(profile)]})).is_err());

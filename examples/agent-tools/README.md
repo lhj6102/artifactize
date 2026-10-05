@@ -73,20 +73,21 @@ unavailable. `notes_spec` works in any terminal.
 
 `spec/review` names exactly one backend and one exact model. There is no
 fallback or model catalog. The default profile uses `"backend": "openai"` with
-the placeholder `YOUR_OPENAI_MODEL_ID`. The `anthropic` entry in
-`profileVariants` is a complete alternative profile. Replace the `model`
+the placeholder `YOUR_OPENAI_MODEL_ID`. The `anthropic` and `codex` entries in
+`profileVariants` are complete alternative profiles. Replace the `model`
 placeholder of the profile you use in `spec/artifactize.json`:
 
 | Backend | Credentials | Models | Review command |
 |---|---|---|---|
 | `openai` (default) | `OPENAI_API_KEY` | `artifactize models openai` | `artifactize verify --eval spec/review` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `artifactize models anthropic` | `artifactize verify --eval spec/review --profile anthropic` |
+| `codex` | `artifactize login codex` (a ChatGPT plan with Codex) | `artifactize models codex` | `artifactize verify --eval spec/review --profile codex` |
 
-`artifactize doctor` reports which keys are present, without calling any
-provider.
+`artifactize doctor` reports which keys and sign-ins are present, without calling
+any provider.
 
-`reasoning` must be a value that the backend accepts (`openai`: `none` to
-`max`; `anthropic`: `low`, `medium`, `high`, `max`).
+`reasoning` must be a value that the backend accepts (`openai` and `codex`:
+`none` to `max`; `anthropic`: `low`, `medium`, `high`, `max`).
 artifactize never remaps it. Use `--profile` together with
 `--eval spec/review`, because a named profile must exist on every included
 eval and `spec/signoff` is a Human eval. To change the default instead, edit

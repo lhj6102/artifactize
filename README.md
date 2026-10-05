@@ -36,8 +36,9 @@ re-reviews only that Artifact.
   `verify` will execute, reuse or wait for, and names the files and dependencies
   that changed.
 - **Tests, models and people in one graph.** Runtime evals run commands; Agent evals
-  ask one exact model (OpenAI or Anthropic API key) with the read-only tools you
-  declare; Human evals wait for a sign-off. RED blocks what depends on it.
+  ask one exact model (OpenAI or Anthropic API key, or a ChatGPT/Codex sign-in) with
+  the read-only tools you declare; Human evals wait for a sign-off. RED blocks what
+  depends on it.
 - **Human review in the terminal.** `artifactize monitor` shows Runs as they
   progress and hands a waiting sign-off to `artifactize review`.
 - **Centralize the reviews, not the repo.** One `artifactize server` shares verdicts

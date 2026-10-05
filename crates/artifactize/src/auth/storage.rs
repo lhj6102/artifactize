@@ -69,13 +69,6 @@ impl Storage {
 
     /// Hold `<name>.lock` until the returned file drops, serializing credential
     /// refreshes across processes.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the codex backend serializes its token refreshes with it"
-        )
-    )]
     pub async fn lock(&self, name: &str) -> Result<File, String> {
         let file = OpenOptions::new()
             .read(true)

@@ -83,6 +83,15 @@
           "timeoutMs": 240000,
           "maxToolCalls": 20,
           "maxTokens": 200000
+        },
+        "codex": {
+          "kind": "agent",
+          "backend": "codex",
+          "model": "YOUR_CODEX_MODEL_SLUG",
+          "reasoning": "medium",
+          "timeoutMs": 240000,
+          "maxToolCalls": 20,
+          "maxTokens": 200000
         }
       },
       "payload": {

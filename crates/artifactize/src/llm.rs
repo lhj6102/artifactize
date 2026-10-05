@@ -1,12 +1,14 @@
-//! Exact-model rig backends with explicit API-key credentials, and the loopback-only
-//! test endpoint override for offline fake providers.
+//! Exact-model rig backends with explicit API-key or Codex credentials, and the
+//! loopback-only test endpoint override for offline fake providers.
 
+pub mod codex;
 pub mod models;
 #[cfg(test)]
 pub(crate) mod tests;
 
 use std::{
     net::IpAddr,
+    path::Path,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -30,6 +32,7 @@ use crate::config::Backend;
 pub enum Client {
     Openai(Box<Model<openai::responses_api::wire::Responses>>),
     Anthropic(Box<Model<anthropic::wire::Messages>>),
+    Codex(codex::Codex),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,8 +75,12 @@ fn insert_counter(counters: &mut Map<String, Value>, name: &str, value: Option<u
 }
 
 impl Client {
-    pub fn new(backend: Backend, model: &str) -> Result<Self, String> {
+    /// `state` and `repo` locate Codex credentials; the API-key backends ignore them.
+    pub fn new(backend: Backend, model: &str, state: &Path, repo: &Path) -> Result<Self, String> {
         let base = base_url(backend)?;
+        if backend == Backend::Codex {
+            return Ok(Self::Codex(codex::Codex::new(model, base, state, repo)?));
+        }
         let key = api_key(backend, "for this Agent backend")?;
         let http = rig_reqwest::ReqwestClient::from(http_client()?);
         Ok(match backend {
@@ -89,6 +96,7 @@ impl Client {
                     .connect(http)
                     .completion(model),
             )),
+            Backend::Codex => unreachable!("built above"),
         })
     }
 
@@ -108,6 +116,11 @@ impl Client {
                 json!({}),
                 |effort| json!({"thinking":{"type":"adaptive"}, "output_config":{"effort":effort}}),
             ),
+            // rig's Codex contract states store:false and encrypted reasoning itself.
+            Backend::Codex => reasoning.map_or(
+                json!({}),
+                |effort| json!({"reasoning":{"effort":effort, "summary":"auto"}}),
+            ),
         })
     }
 
@@ -123,8 +136,21 @@ impl Client {
                 request.max_tokens = Some(16_384);
                 model.stream_observed(request, observed)
             }
+            // Each turn reads the credentials afresh, refreshing them when due.
+            Self::Codex(client) => client.model().await?.stream_observed(request, observed),
         }
-        .map_err(|error| diagnostic(&error))
+        .map_err(|error| self.diagnostic(&error))
+    }
+
+    fn retryable(&self, error: &ProviderError) -> bool {
+        !(matches!(self, Self::Codex(_)) && codex::permanent(error)) && retryable(error)
+    }
+
+    fn diagnostic(&self, error: &ProviderError) -> String {
+        match self {
+            Self::Codex(_) => codex::diagnostic(error),
+            _ => diagnostic(error),
+        }
     }
 
     pub async fn turn(
@@ -174,8 +200,8 @@ impl Client {
                 Ok(Ok(())) => stream
                     .finish()
                     .await
-                    .map_err(|error| (diagnostic(&error), retryable(&error))),
-                Ok(Err(error)) => Err((diagnostic(&error), retryable(&error))),
+                    .map_err(|error| (self.diagnostic(&error), self.retryable(&error))),
+                Ok(Err(error)) => Err((self.diagnostic(&error), self.retryable(&error))),
                 Err(error) => Err((error, false)),
             };
             if let Ok(response) = &result {
@@ -293,11 +319,12 @@ fn diagnostic(error: &ProviderError) -> String {
     clean_diagnostic(&message)
 }
 
-/// The environment variable that holds the backend's API key.
-pub fn key_variable(backend: Backend) -> &'static str {
+/// The environment variable that holds an API-key backend's key; `None` for codex.
+pub fn key_variable(backend: Backend) -> Option<&'static str> {
     match backend {
-        Backend::Openai => "OPENAI_API_KEY",
-        Backend::Anthropic => "ANTHROPIC_API_KEY",
+        Backend::Openai => Some("OPENAI_API_KEY"),
+        Backend::Anthropic => Some("ANTHROPIC_API_KEY"),
+        Backend::Codex => None,
     }
 }
 
@@ -306,15 +333,26 @@ pub fn base_url_variable(backend: Backend) -> &'static str {
     match backend {
         Backend::Openai => "ARTIFACTIZE_OPENAI_BASE_URL",
         Backend::Anthropic => "ARTIFACTIZE_ANTHROPIC_BASE_URL",
+        Backend::Codex => "ARTIFACTIZE_CODEX_BASE_URL",
     }
 }
 
-const BACKENDS: [Backend; 2] = [Backend::Openai, Backend::Anthropic];
+/// Every test endpoint variable: the backends' API roots and the Codex sign-in root.
+const TEST_ENDPOINTS: [&str; 4] = [
+    "ARTIFACTIZE_OPENAI_BASE_URL",
+    "ARTIFACTIZE_ANTHROPIC_BASE_URL",
+    "ARTIFACTIZE_CODEX_BASE_URL",
+    crate::auth::codex::AUTH_URL_VARIABLE,
+];
 
 /// The loopback test endpoint that replaces the backend's API root, if one is set.
-/// An empty value is unset; any other value must be a loopback URL.
 pub fn test_endpoint(backend: Backend) -> Result<Option<String>, String> {
-    let variable = base_url_variable(backend);
+    variable_endpoint(base_url_variable(backend))
+}
+
+/// The loopback test endpoint in `variable`, if set. An empty value is unset; any other
+/// value must be a loopback URL.
+pub fn variable_endpoint(variable: &str) -> Result<Option<String>, String> {
     let Some(value) = std::env::var_os(variable).filter(|value| !value.is_empty()) else {
         return Ok(None);
     };
@@ -328,9 +366,8 @@ pub fn test_endpoint(backend: Backend) -> Result<Option<String>, String> {
 
 /// The first test endpoint variable that is set, valid or not.
 pub fn active_test_endpoint() -> Option<&'static str> {
-    BACKENDS
+    TEST_ENDPOINTS
         .into_iter()
-        .map(base_url_variable)
         .find(|variable| std::env::var_os(variable).is_some_and(|value| !value.is_empty()))
 }
 
@@ -363,6 +400,7 @@ fn base_url(backend: Backend) -> Result<String, String> {
         match backend {
             Backend::Openai => "https://api.openai.com/v1",
             Backend::Anthropic => "https://api.anthropic.com",
+            Backend::Codex => codex::BASE_URL,
         }
         .into()
     }))
@@ -370,7 +408,7 @@ fn base_url(backend: Backend) -> Result<String, String> {
 
 /// The backend's API key from its environment variable; never printed or logged.
 fn api_key(backend: Backend, purpose: &str) -> Result<String, String> {
-    let variable = key_variable(backend);
+    let variable = key_variable(backend).expect("an API-key backend");
     std::env::var(variable)
         .ok()
         .filter(|key| !key.trim().is_empty())

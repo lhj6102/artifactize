@@ -25,16 +25,18 @@ pub struct Review {
     pub tool_calls: Vec<Value>,
 }
 
+/// `state` holds Codex credentials; the API-key backends read only the environment.
 pub async fn execute(
     config: &RepoConfig,
     eval: &Eval,
     output: &Path,
+    state: &Path,
     cancellation: CancellationToken,
 ) -> Review {
     let Profile::Agent { backend, model, .. } = &eval.declaration.profile else {
         unreachable!("Agent executor requires an Agent profile")
     };
-    match Client::new(*backend, model) {
+    match Client::new(*backend, model, state, &config.root) {
         Ok(client) => review(&client, config, eval, output, cancellation).await,
         Err(error) => Review {
             result: Err(error),

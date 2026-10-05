@@ -19,19 +19,21 @@ credential search or fallback:
 }
 ```
 
-`backend` accepts `openai` or `anthropic`. They use only `OPENAI_API_KEY` or
-`ANTHROPIC_API_KEY`, respectively, and never search for other credentials.
-`provider` and `effort` are not config aliases. 0.5.0 removed the `chatgpt` (Sign
-in with ChatGPT) and `claude` (Claude CLI) backends; `config check` names the
-replacements for any profile that still declares one.
+`backend` accepts `openai`, `anthropic` or `codex`. The first two use only
+`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`, respectively, and never search for other
+credentials; `codex` uses a ChatGPT sign-in (see [Codex](#codex)). `provider` and
+`effort` are not config aliases. 0.5.0 removed the `chatgpt` (Sign in with ChatGPT)
+and `claude` (Claude CLI) backends; `config check` names the replacements for any
+profile that still declares one.
 
 ```sh
 artifactize models openai            # model ID and display name, in provider order
 artifactize models anthropic --json
+artifactize models codex
 ```
 
-`reasoning` is optional. When present, OpenAI receives exactly `reasoning.effort`
-(`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Anthropic receives
+`reasoning` is optional. When present, OpenAI and Codex receive exactly
+`reasoning.effort` (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`). Anthropic receives
 adaptive thinking and exactly `output_config.effort` (`low`, `medium`, `high`,
 `max`). Other values are rejected, never remapped. A model that does not support
 the requested setting fails at the provider; artifactize does not substitute a
@@ -125,10 +127,56 @@ separate. OpenAI input already includes its cache reads. Never sum every counter
 Unreported fields stay absent. Assistant messages and reasoning are not persisted.
 
 Owner validation before relying on a provider: run one real review per backend
-(OpenAI key, Anthropic key) with an accessible exact model ID and a declared tool.
+(OpenAI key, Anthropic key, Codex sign-in) with an accessible exact model ID and a
+declared tool.
 These real reviews are still pending for the owner. Automated tests use fake HTTP
 transports or a [fake provider](#test-against-a-fake-provider) and make no real
 inference requests.
+
+## Codex
+
+`codex` reviews with the Codex models of a ChatGPT plan, such as `gpt-6-luna` and
+`gpt-6.1-sol`, through the Codex Responses endpoint
+(`https://chatgpt.com/backend-api/codex/responses`). It follows the protocol of Pi's
+`openai-codex` provider.
+
+```sh
+artifactize login codex     # sign in to ChatGPT in the browser
+artifactize models codex    # the account's Codex models
+# Declare "backend": "codex", "model": "gpt-6-luna", "reasoning": "max", then:
+artifactize verify --all
+artifactize logout codex    # revoke and delete artifactize's tokens
+```
+
+- **Sign-in.** `login codex` uses the Codex OAuth client with PKCE, as the Codex
+  CLI does. It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`
+  (0700 directory, 0600 single-link file, never followed through a symlink, replaced
+  atomically). Use the same `--state-dir` for `login`, `models` and `verify`.
+  artifactize refreshes the access token under a lock five minutes before it
+  expires, so concurrent Runs refresh it once. When the server rejects the refresh
+  token for good, the tokens are deleted and the review says to sign in again.
+- **An existing Codex sign-in.** With `ARTIFACTIZE_CODEX_AUTH_FILE` set, for example
+  to `~/.codex/auth.json`, artifactize reads that file's `tokens.access_token` (and
+  `tokens.account_id`) on every turn instead of its own tokens. It never writes,
+  copies or refreshes the file. Once the token expires, reviews fail with a message
+  to sign in with Codex again, for example with `codex login`. `logout codex` leaves
+  the file alone.
+- **Requests.** Each turn streams one Responses request with `store:false`,
+  `include: ["reasoning.encrypted_content"]`, the review's tools as function tools and
+  the review's system prompt as `instructions`. When `reasoning` is set it sends
+  `reasoning: {"effort": <reasoning>, "summary": "auto"}`, with `max` passed as is. The
+  headers name the bearer token, `ChatGPT-Account-Id`, `originator: artifactize`,
+  `OpenAI-Beta: responses=experimental` and a fresh `session_id`. Retries, budgets,
+  tool results and usage work as for `openai`.
+- **Errors.** A usage limit names the plan and when it resets, and is never retried.
+  HTTP 401 and 403 say how to sign in again.
+- **Reuse.** Like any backend, `codex` records its backend, model, reasoning and
+  limits on each result, outside the reuse key: a `codex` result and an `openai` or
+  `anthropic` result for the same eval and fingerprints reuse each other.
+- **Models.** `models codex` asks `GET <root>/models?client_version=0.160.0`, the
+  catalog that the Codex release whose protocol artifactize follows receives. It lists
+  the models whose `visibility` is `list`, as the Codex model picker does, in server
+  order. A profile may name any model your account can use, listed or not.
 
 ## Test against a fake provider
 
@@ -139,13 +187,16 @@ a fake provider on this machine. The variable replaces the provider's API root:
 |---|---|---|---|
 | `openai` | `ARTIFACTIZE_OPENAI_BASE_URL` | `http://127.0.0.1:8080/v1` | `POST <root>/responses`, `GET <root>/models` |
 | `anthropic` | `ARTIFACTIZE_ANTHROPIC_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1/messages`, `GET <root>/v1/models` |
+| `codex` | `ARTIFACTIZE_CODEX_BASE_URL` | `http://127.0.0.1:8080/backend-api/codex` | `POST <root>/responses`, `GET <root>/models` |
+| Codex sign-in | `ARTIFACTIZE_CODEX_AUTH_URL` | `http://127.0.0.1:8080` | `POST <root>/oauth/token` and `<root>/oauth/revoke`; `login codex` sends the browser to `<root>/oauth/authorize` |
 
 - The root must be `http://` or `https://` on `localhost`, `127.0.0.0/8` or `[::1]`,
   without credentials, a query or a fragment. Any other value fails the review,
   `models` and `doctor` with a message naming the variable, before any connection.
   An empty value counts as unset. For `anthropic`, a trailing `/v1` is accepted.
 - The API-key variable is still required and is sent to the fake unchanged, so set
-  a dummy key.
+  a dummy key. For `codex`, point `ARTIFACTIZE_CODEX_AUTH_FILE` at a file such as
+  `{"tokens":{"access_token":"dummy","account_id":"test"}}`.
 - Nothing else changes: the same request bodies and streaming, retries, budgets,
   tool calls, repair and verdict validation.
 - Results are recorded and reused like any other, so use a throwaway state

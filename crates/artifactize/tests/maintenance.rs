@@ -65,6 +65,7 @@ fn doctor(state: &Path, path: &Path) -> Command {
         .env("PATH", path)
         .env_remove("OPENAI_API_KEY")
         .env_remove("ANTHROPIC_API_KEY")
+        .env_remove("ARTIFACTIZE_CODEX_AUTH_FILE")
         .env("HTTPS_PROXY", "http://127.0.0.1:1")
         .env("HTTP_PROXY", "http://127.0.0.1:1");
     command
@@ -82,6 +83,8 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         assert_eq!(check(&absent, name)["status"], "WARN");
         assert_eq!(check(&absent, name)["details"]["present"], false);
     }
+    assert_eq!(check(&absent, "codex")["status"], "WARN");
+    assert_eq!(check(&absent, "codex")["details"]["source"], "none");
     // 0.5.0 removed the chatgpt and claude backends and their checks.
     let names: Vec<_> = absent["checks"]
         .as_array()
@@ -89,7 +92,10 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         .iter()
         .map(|check| check["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["state", "schema", "openai", "anthropic", "remote"]);
+    assert_eq!(
+        names,
+        ["state", "schema", "openai", "anthropic", "codex", "remote"]
+    );
     assert_eq!(check(&absent, "state")["details"]["writable"], true);
     assert_eq!(check(&absent, "schema")["details"], json!({"schema":null}));
     assert!(!state.exists());

@@ -57,6 +57,7 @@ impl Fixture {
                     .connect(http.clone())
                     .completion("exact-model"),
             )),
+            Backend::Codex => unreachable!("Codex reviews are tested end to end"),
         };
         (
             review(
@@ -360,6 +361,12 @@ fn profiles_reject_remapped_effort() {
     assert!(Client::parameters(Backend::Openai, Some("max")).is_ok());
     assert!(Client::parameters(Backend::Anthropic, Some("xhigh")).is_err());
     assert!(Client::parameters(Backend::Openai, Some("off")).is_err());
+    assert_eq!(
+        Client::parameters(Backend::Codex, Some("max")).unwrap(),
+        json!({"reasoning":{"effort":"max","summary":"auto"}})
+    );
+    assert_eq!(Client::parameters(Backend::Codex, None).unwrap(), json!({}));
+    assert!(Client::parameters(Backend::Codex, Some("ultra")).is_err());
     assert_eq!(
         Client::parameters(Backend::Openai, None)
             .unwrap()
