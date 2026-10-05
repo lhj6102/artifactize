@@ -13,7 +13,10 @@ evals in declaration order. READY runtime evals execute concurrently up to
 `--jobs N` (default 4, minimum 1), with dispatch in that same ordered selection
 then recursive configuration order. The graph is re-evaluated after each result;
 newly READY evals do not wait for an entire batch to finish. Waiters on a
-fingerprint claim occupy job slots while polling, but cache hits occupy none.
+fingerprint claim occupy job slots while polling, but cache hits occupy none. An
+Agent review of a backend with a machine-wide limit also needs one of its
+[backend slots](../reference/state-cache-limits.md#backend-capacity); a request waiting for one
+occupies no job slot.
 `verify` prints `Run: RUN_ID` to stderr as soon as the Run is saved, before any
 eval runs, so a long Run can be followed (`artifactize monitor`,
 `artifactize run show RUN_ID --wait`) or cancelled from the start; nothing else is

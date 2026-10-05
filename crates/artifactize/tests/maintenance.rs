@@ -94,8 +94,17 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         .collect();
     assert_eq!(
         names,
-        ["state", "schema", "openai", "anthropic", "codex", "remote"]
+        [
+            "state",
+            "schema",
+            "limits",
+            "openai",
+            "anthropic",
+            "codex",
+            "remote"
+        ]
     );
+    assert_eq!(check(&absent, "limits")["details"], json!({"backends":{}}));
     assert_eq!(check(&absent, "state")["details"]["writable"], true);
     assert_eq!(check(&absent, "schema")["details"], json!({"schema":null}));
     assert!(!state.exists());
