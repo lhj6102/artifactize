@@ -16,7 +16,16 @@ use crate::{
 };
 
 pub fn default_reviewer() -> Result<String, String> {
-    let reviewer = std::env::var("USER").map_err(|_| "Set USER or provide a reviewer id.")?;
+    // Windows names the signed-in user in USERNAME and sets no USER.
+    let reviewer = std::env::var("USER")
+        .or_else(|error| {
+            if cfg!(windows) {
+                std::env::var("USERNAME")
+            } else {
+                Err(error)
+            }
+        })
+        .map_err(|_| "Set USER or provide a reviewer id.")?;
     validate_reviewer(&reviewer)?;
     Ok(reviewer)
 }

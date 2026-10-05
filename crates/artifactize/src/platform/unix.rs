@@ -25,7 +25,7 @@ use tokio::signal::unix::{SignalKind, signal};
 
 use super::FileKind;
 
-pub(crate) use process::{Child, detach, process_start_time, spawn_gated};
+pub(crate) use process::{Child, process_start_time, spawn_detached, spawn_gated};
 
 /// Create a directory and its missing parents as 0700; existing ones keep their mode.
 pub(crate) fn create_private_dir_all(path: &Path) -> io::Result<()> {
@@ -173,6 +173,20 @@ fn kind(file_type: fs::FileType) -> FileKind {
 pub(crate) fn is_executable(path: &Path) -> bool {
     path.metadata()
         .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+}
+
+/// The editor a review opens fields in when `EDITOR` is unset.
+pub(crate) const DEFAULT_EDITOR: &str = "vi";
+
+/// Run `$EDITOR file` through `sh`, as `EDITOR` may hold arguments, such as `code --wait`.
+pub(crate) fn editor(editor: &str, file: &Path) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new("sh");
+    command
+        .arg("-c")
+        .arg(format!("{editor} \"$1\""))
+        .arg("sh")
+        .arg(file);
+    command
 }
 
 /// The signal that ended a process, if one did.

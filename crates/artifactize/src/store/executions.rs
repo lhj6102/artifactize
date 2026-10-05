@@ -149,8 +149,10 @@ pub struct Producer {
 
 impl Producer {
     pub fn current() -> Self {
-        let user = ["USER", "LOGNAME"]
+        // Windows sets neither, only USERNAME.
+        let user = ["USER", "LOGNAME", "USERNAME"]
             .into_iter()
+            .take(if cfg!(windows) { 3 } else { 2 })
             .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()));
         let host = crate::platform::host_name();
         let name = format!(
