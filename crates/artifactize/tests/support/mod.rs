@@ -1,7 +1,8 @@
 //! A fake model provider on loopback for end-to-end Agent tests. It answers whatever
-//! its handler scripts, in the OpenAI Responses and Anthropic Messages wire formats,
-//! and records every request. Point a backend at it with its
-//! `ARTIFACTIZE_<BACKEND>_BASE_URL` test endpoint.
+//! its handler scripts, in the OpenAI Responses, Anthropic Messages and Codex wire
+//! formats, and records every request. Point a backend at it with its
+//! `ARTIFACTIZE_<BACKEND>_BASE_URL` test endpoint (and Codex sign-in at
+//! `ARTIFACTIZE_CODEX_AUTH_URL`).
 #![allow(
     dead_code,
     reason = "each test binary uses a different part of the fake"
@@ -27,7 +28,7 @@ pub struct Request {
     pub path: String,
     /// Lowercase names.
     pub headers: BTreeMap<String, String>,
-    /// The JSON body, or null when there is none.
+    /// The JSON body, a form body as its raw text, or null when there is none.
     pub body: Value,
 }
 
@@ -108,6 +109,11 @@ impl FakeProvider {
         self.url.clone()
     }
 
+    /// The value for `ARTIFACTIZE_CODEX_BASE_URL`, shaped like the real Codex root.
+    pub fn codex_base(&self) -> String {
+        format!("{}/backend-api/codex", self.url)
+    }
+
     pub fn requests(&self) -> Vec<Request> {
         self.requests.lock().unwrap().clone()
     }
@@ -159,7 +165,8 @@ fn serve(stream: TcpStream, handler: &Handler, requests: &Mutex<Vec<Request>>) {
         body: if body.is_empty() {
             Value::Null
         } else {
-            serde_json::from_slice(&body).unwrap()
+            serde_json::from_slice(&body)
+                .unwrap_or_else(|_| Value::String(String::from_utf8_lossy(&body).into_owned()))
         },
     };
     let reply = handler(&request);
@@ -276,6 +283,54 @@ pub mod anthropic {
         Reply::Json(
             200,
             json!({"data":data,"has_more":false,"first_id":null,"last_id":null}),
+        )
+    }
+}
+
+/// Codex replies (`POST <root>/responses`, `GET <root>/models`) and sign-in tokens.
+pub mod codex {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use serde_json::{Value, json};
+
+    use super::{Reply, Request, openai};
+
+    /// An unsigned access token naming a ChatGPT account and an expiry, as the
+    /// Codex token endpoint issues them.
+    pub fn jwt(account: &str, exp: u64) -> String {
+        let encode = |value: Value| URL_SAFE_NO_PAD.encode(value.to_string());
+        format!(
+            "{}.{}.fake-signature",
+            encode(json!({"alg":"RS256","typ":"JWT"})),
+            encode(json!({"exp":exp,"https://api.openai.com/auth":{"chatgpt_account_id":account}}))
+        )
+    }
+
+    /// A completed Responses stream with no content type, as the Codex backend sends it.
+    pub fn completed(request: &Request, output: Vec<Value>, usage: Value) -> Reply {
+        let Reply::Events(events) = openai::completed(request, output, usage) else {
+            unreachable!()
+        };
+        stream(events)
+    }
+
+    /// Server-sent events without a content type.
+    pub fn stream(events: Vec<Value>) -> Reply {
+        let body = events
+            .iter()
+            .map(|event| {
+                format!(
+                    "event: {}\ndata: {event}\n\n",
+                    event["type"].as_str().unwrap()
+                )
+            })
+            .collect();
+        Reply::Raw(200, Vec::new(), body)
+    }
+
+    pub fn tokens(access: &str, refresh: &str) -> Reply {
+        Reply::Json(
+            200,
+            json!({"access_token":access,"refresh_token":refresh,"expires_in":3600,"id_token":"id"}),
         )
     }
 }

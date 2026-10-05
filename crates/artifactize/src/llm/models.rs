@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
 use rig_core::providers::{anthropic, openai};
 use serde::Serialize;
@@ -17,13 +17,19 @@ pub struct Listing {
     pub models: Vec<ListedModel>,
 }
 
-pub async fn list(backend: Backend) -> Result<Listing, String> {
+/// `state` and `repo` locate Codex credentials; the API-key backends ignore them.
+pub async fn list(
+    backend: Backend,
+    state: Option<&Path>,
+    repo: Option<&Path>,
+) -> Result<Listing, String> {
     let base = super::base_url(backend)?;
-    let key = super::api_key(backend, "to list models")?;
-    Ok(Listing {
-        backend,
-        models: list_at(backend, &key, &base).await?,
-    })
+    let models = if backend == Backend::Codex {
+        super::codex::models(&base, state, repo).await?
+    } else {
+        list_at(backend, &super::api_key(backend, "to list models")?, &base).await?
+    };
+    Ok(Listing { backend, models })
 }
 
 async fn list_at(backend: Backend, key: &str, base: &str) -> Result<Vec<ListedModel>, String> {
@@ -44,6 +50,7 @@ async fn list_at(backend: Backend, key: &str, base: &str) -> Result<Vec<ListedMo
                     .list_models()
                     .await
             }
+            Backend::Codex => unreachable!("Codex lists its own models"),
         }
     };
     let models = tokio::time::timeout(Duration::from_secs(30), request)

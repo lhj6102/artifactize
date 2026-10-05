@@ -44,6 +44,7 @@ impl ConfigError {
 pub enum Backend {
     Openai,
     Anthropic,
+    Codex,
 }
 
 /// Backends that 0.5.0 removed; a declaration naming one fails with its replacements.
@@ -56,10 +57,14 @@ impl<'de> Deserialize<'de> for Backend {
         match name.as_str() {
             "openai" => Ok(Self::Openai),
             "anthropic" => Ok(Self::Anthropic),
+            "codex" => Ok(Self::Codex),
             removed if REMOVED_BACKENDS.contains(&removed) => Err(D::Error::custom(format!(
-                r#"backend "{removed}" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex" (0.5.0) with a ChatGPT/Codex sign-in"#
+                r#"backend "{removed}" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex" with a ChatGPT/Codex sign-in"#
             ))),
-            other => Err(D::Error::unknown_variant(other, &["openai", "anthropic"])),
+            other => Err(D::Error::unknown_variant(
+                other,
+                &["openai", "anthropic", "codex"],
+            )),
         }
     }
 }
@@ -67,7 +72,8 @@ impl<'de> Deserialize<'de> for Backend {
 impl Backend {
     pub fn validate_reasoning(self, reasoning: &str) -> Result<(), String> {
         let supported = match self {
-            Self::Openai => matches!(
+            // Codex takes the Responses efforts as they are, as Pi's openai-codex does.
+            Self::Openai | Self::Codex => matches!(
                 reasoning,
                 "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
             ),

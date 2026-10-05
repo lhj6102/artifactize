@@ -49,6 +49,16 @@ pub enum Command {
         #[command(subcommand)]
         command: ToolsCommand,
     },
+    /// Sign in with Codex (ChatGPT) in the system browser and save artifactize's tokens.
+    Login {
+        #[command(subcommand)]
+        provider: AuthProvider,
+    },
+    /// Revoke and remove artifactize's own Codex tokens.
+    Logout {
+        #[command(subcommand)]
+        provider: AuthProvider,
+    },
     /// Sign in to, sign out of, or check a shared remote review store.
     Remote {
         #[command(subcommand)]
@@ -65,7 +75,7 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
-    /// List the models an API-key backend offers.
+    /// List the models a backend offers to your key or account.
     Models {
         #[command(subcommand)]
         provider: ModelProvider,
@@ -233,11 +243,19 @@ impl PolicyArgs {
 }
 
 #[derive(Debug, Subcommand)]
+pub enum AuthProvider {
+    /// The ChatGPT/Codex account that the codex backend uses.
+    Codex,
+}
+
+#[derive(Debug, Subcommand)]
 pub enum ModelProvider {
     /// OpenAI API models (OPENAI_API_KEY).
     Openai,
     /// Anthropic API models (ANTHROPIC_API_KEY).
     Anthropic,
+    /// Codex models your ChatGPT account can use (artifactize login codex).
+    Codex,
 }
 
 impl ModelProvider {
@@ -245,6 +263,7 @@ impl ModelProvider {
         match self {
             Self::Openai => crate::config::Backend::Openai,
             Self::Anthropic => crate::config::Backend::Anthropic,
+            Self::Codex => crate::config::Backend::Codex,
         }
     }
 }
@@ -332,6 +351,39 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             print_json(&report)?;
             Ok(u8::from(!report.ok))
         }
+        Some(Command::Login {
+            provider: AuthProvider::Codex,
+        }) => {
+            crate::auth::codex::login(cli.state_dir.as_deref(), cli.repo.as_deref()).await?;
+            if cli.json {
+                print_json(&json!({ "provider": "codex", "signed_in": true }))?;
+            } else {
+                writeln!(io::stdout().lock(), "Signed in with Codex.")
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(0)
+        }
+        Some(Command::Logout {
+            provider: AuthProvider::Codex,
+        }) => {
+            let revoked =
+                crate::auth::codex::logout(cli.state_dir.as_deref(), cli.repo.as_deref()).await?;
+            if !revoked {
+                writeln!(
+                    io::stderr().lock(),
+                    "Local tokens removed; their revocation was not confirmed."
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            if cli.json {
+                print_json(
+                    &json!({ "provider": "codex", "signed_in": false, "revoked": revoked }),
+                )?;
+            } else {
+                writeln!(io::stdout().lock(), "Signed out of Codex.").map_err(|e| e.to_string())?;
+            }
+            Ok(0)
+        }
         Some(Command::Remote { command }) => {
             remote::execute(
                 cli.state_dir.as_deref(),
@@ -386,7 +438,12 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             Ok(0)
         }
         Some(Command::Models { provider }) => {
-            let listing = crate::llm::models::list(provider.backend()).await?;
+            let listing = crate::llm::models::list(
+                provider.backend(),
+                cli.state_dir.as_deref(),
+                cli.repo.as_deref(),
+            )
+            .await?;
             if cli.json {
                 print_json(&listing)?;
             } else {

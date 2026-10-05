@@ -61,10 +61,14 @@ impl Server {
                     assert_ne!(count, 0);
                     bytes.extend_from_slice(&buffer[..count]);
                 }
+                // A form body is kept as its raw text.
+                let raw = &bytes[end..end + length];
                 let body = if length == 0 {
                     Value::Null
                 } else {
-                    serde_json::from_slice(&bytes[end..end + length]).unwrap()
+                    serde_json::from_slice(raw).unwrap_or_else(|_| {
+                        Value::String(String::from_utf8_lossy(raw).into_owned())
+                    })
                 };
                 captured.lock().unwrap().push(Request {
                     line,

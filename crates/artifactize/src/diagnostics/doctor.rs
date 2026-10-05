@@ -128,7 +128,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         ("openai", Backend::Openai),
         ("anthropic", Backend::Anthropic),
     ] {
-        let variable = llm::key_variable(backend);
+        let variable = llm::key_variable(backend).expect("an API-key backend");
         let present = env::var(variable).is_ok_and(|key| !key.trim().is_empty());
         let key = format!(
             "{variable} is {} (not validated with the provider)",
@@ -154,6 +154,8 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             Err(error) => report.add(name, "FAIL", &error, json!({"present":present})),
         }
     }
+    let (status, message, details) = codex(&state, repo);
+    report.add("codex", status, &message, details);
     // Offline: configuration and token storage only; `remote status` checks reachability.
     match auth::remote::remote(Some(&state), repo) {
         Ok(None) => report.add(
@@ -183,6 +185,66 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         Err(error) => report.add("remote", "FAIL", &error, Value::Null),
     }
     Ok(report)
+}
+
+/// The Codex sign-in, read offline: no lock, refresh or network, and an auth file is
+/// only read.
+fn codex(state: &Path, repo: Option<&Path>) -> (&'static str, String, Value) {
+    let endpoints = llm::test_endpoint(Backend::Codex).and_then(|base| {
+        Ok((
+            base,
+            llm::variable_endpoint(auth::codex::AUTH_URL_VARIABLE)?,
+        ))
+    });
+    let ((base, sign_in), status) = match (endpoints, auth::codex::status(Some(state), repo)) {
+        (Err(error), _) | (_, Err(error)) => return ("FAIL", error, Value::Null),
+        (Ok(endpoints), Ok(status)) => (endpoints, status),
+    };
+    let (mut level, mut message) = match (status.source, status.expired) {
+        ("none", _) => (
+            "WARN",
+            "No Codex sign-in; run `artifactize login codex` or set ARTIFACTIZE_CODEX_AUTH_FILE."
+                .to_owned(),
+        ),
+        ("file", false) => (
+            "PASS",
+            format!(
+                "ARTIFACTIZE_CODEX_AUTH_FILE is read, never refreshed: {}.",
+                status.auth_file.as_ref().unwrap().display()
+            ),
+        ),
+        ("file", true) => (
+            "WARN",
+            format!(
+                "The Codex access token in {} has expired; sign in with Codex again.",
+                status.auth_file.as_ref().unwrap().display()
+            ),
+        ),
+        (_, false) => (
+            "PASS",
+            "Codex sign-in is present; no provider validation or refresh was attempted.".to_owned(),
+        ),
+        (_, true) => (
+            "PASS",
+            "Codex sign-in is present; its access token has expired and is refreshed on next use."
+                .to_owned(),
+        ),
+    };
+    let mut details = json!(status);
+    for (variable, endpoint, key) in [
+        (llm::base_url_variable(Backend::Codex), base, "testEndpoint"),
+        (auth::codex::AUTH_URL_VARIABLE, sign_in, "testAuthEndpoint"),
+    ] {
+        if let Some(endpoint) = endpoint {
+            // A test endpoint is never a production setup, so it always warns.
+            level = "WARN";
+            message.push_str(&format!(
+                " {variable} points at the local test endpoint {endpoint}."
+            ));
+            details[key] = json!(endpoint);
+        }
+    }
+    (level, message, details)
 }
 
 fn probe_writable(state: &Path) -> std::io::Result<()> {

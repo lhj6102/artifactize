@@ -80,7 +80,7 @@ space, and there is no semantic TTL, protected-reader registry or scratch cleanu
 
 ```sh
 artifactize doctor [--repo PATH] [--state-dir PATH] [--json]
-artifactize models openai|anthropic [--json]
+artifactize models openai|anthropic|codex [--json]
 artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 ```
 
@@ -106,16 +106,22 @@ additionally runs the same static validation as `config check`. API keys are
 reported only as present/absent, never validated or printed. Missing keys are
 warnings: optional backends need not all be configured. A backend with a
 [test endpoint](../guides/agent-evals.md#test-against-a-fake-provider) is a warning
-that reports it as `testEndpoint`; an invalid test endpoint is a hard error. The remote review store
-check is also offline: it reports the resolved URL, share level and token source; a
+that reports it as `testEndpoint`; an invalid test endpoint is a hard error. The
+`codex` check reads the sign-in without a lock, refresh or network call: no sign-in
+is a warning, a stored sign-in passes even when its access token has expired (the
+next use refreshes it), and an expired `ARTIFACTIZE_CODEX_AUTH_FILE` token is a
+warning. Its details name the `source` (`stored`, `file` or `none`), `expiresAt` and
+`expired`, and `testEndpoint`/`testAuthEndpoint` when they are set. The remote review
+store check is also offline: it reports the resolved URL, share level and token source; a
 missing token is a warning, and an invalid configuration (including plain HTTP to a
 non-loopback host) or an unsafe token file is a hard error. Invalid config,
 unsafe/unwritable state or invalid auth storage are hard errors. Exit is 0 without
 hard errors, 1 with hard errors, and 2 for invocation errors.
 
 `models openai` and `models anthropic` call the provider's models endpoint with the
-corresponding API key through rig; Anthropic pagination is followed. A test
-endpoint replaces the provider's API root here too. There is no account or backend
+corresponding API key through rig; Anthropic pagination is followed. `models codex`
+lists the [Codex](../guides/agent-evals.md#codex) models of the signed-in account. A
+test endpoint replaces the provider's API root here too. There is no account or backend
 fallback. Text lists tab-separated slug/name pairs; JSON is
 consistently `{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`.
 Listings preserve provider order.

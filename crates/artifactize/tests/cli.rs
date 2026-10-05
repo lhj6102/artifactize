@@ -201,7 +201,7 @@ fn help_is_displayed_without_arguments() {
     assert!(text.contains("--repo <PATH>"));
     assert!(text.contains("--state-dir <PATH>"));
     assert!(text.contains("--json"));
-    for hidden in ["graph", "mcp", "login", "logout"] {
+    for hidden in ["graph", "mcp"] {
         assert!(
             !text
                 .lines()
