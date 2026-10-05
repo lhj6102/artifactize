@@ -58,8 +58,15 @@ impl Fixture {
         let mut args = args.to_vec();
         args.push("--json");
         let output = self.output(&args, code);
-        assert!(output.stderr.is_empty());
-        serde_json::from_slice(&output.stdout).unwrap()
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        // verify announces its Run on stderr; nothing else is printed there.
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let expected = match value["id"].as_str() {
+            Some(id) if args[0] == "verify" => format!("Run: {id}\n"),
+            _ => String::new(),
+        };
+        assert_eq!(stderr, expected);
+        value
     }
 }
 

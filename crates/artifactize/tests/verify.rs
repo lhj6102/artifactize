@@ -974,3 +974,64 @@ fn runtime_and_agent_starts_share_the_run_budget() {
             .contains("OPENAI_API_KEY")
     );
 }
+
+#[test]
+fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
+    use std::io::{BufRead, BufReader};
+    let fixture = Fixture::new();
+    let release = fixture._root.path().join("release");
+    fixture.runtime(
+        "/bin/sh",
+        &[
+            "-c",
+            "while [ ! -e \"$1\" ]; do sleep 0.05; done",
+            "sh",
+            release.to_str().unwrap(),
+        ],
+    );
+    for json in [true, false] {
+        let mut command = fixture.command();
+        command.args(["verify", "--all"]);
+        if json {
+            command.arg("--json");
+        }
+        let mut child = command
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stderr = BufReader::new(child.stderr.take().unwrap());
+        let mut line = String::new();
+        stderr.read_line(&mut line).unwrap();
+        let id = line
+            .strip_suffix('\n')
+            .and_then(|line| line.strip_prefix("Run: "))
+            .unwrap_or_else(|| panic!("{line:?}"))
+            .to_owned();
+        // The Run is saved and readable while its eval still runs.
+        let running = fixture
+            .command()
+            .args(["run", "show", &id])
+            .output()
+            .unwrap();
+        assert!(running.status.success());
+        assert_eq!(json_output(&running)["status"], "RUNNING");
+        fs::write(&release, "").unwrap();
+        let mut rest = String::new();
+        std::io::Read::read_to_string(&mut stderr, &mut rest).unwrap();
+        assert_eq!(rest, "");
+        let output = wait_for(child);
+        assert_eq!(output.status.code(), Some(0));
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        if json {
+            assert_eq!(json_output_text(&stdout)["id"], id.as_str());
+        } else {
+            assert!(stdout.starts_with(&format!("Run: {id}\n")), "{stdout}");
+        }
+        fs::remove_file(&release).unwrap();
+    }
+}
+
+fn json_output_text(stdout: &str) -> Value {
+    serde_json::from_str(stdout).unwrap()
+}

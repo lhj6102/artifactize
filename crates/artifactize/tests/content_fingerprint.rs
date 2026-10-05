@@ -335,3 +335,68 @@ fn status_explains_which_inputs_and_dependencies_changed() {
         "Fingerprint changed since Run {run}: fingerprint changed"
     )));
 }
+
+#[test]
+fn status_json_shows_each_evals_fingerprints_definition_hash_and_key() {
+    let fixture = Fixture::new();
+    fixture.artifact("core", json!({"name":"core","basis":true,"fingerprint":{}}));
+    fixture.file("core/lib.txt", "v1");
+    fixture.artifact("loose", json!({"name":"loose","basis":true}));
+    fixture.artifact(
+        "api",
+        artifact("api", json!({}), json!({"core":"core"}), PASS),
+    );
+    fixture.artifact(
+        "web",
+        artifact("web", json!({}), json!({"loose":"loose"}), PASS),
+    );
+    let status = fixture.json(&["status"], 1);
+    let eval = |id: &str| {
+        status["evals"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|eval| eval["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    let api = eval("api/check");
+    let hash = api["evalDefHash"].as_str().unwrap();
+    assert_eq!(hash.len(), 64);
+    let fingerprint = api["fingerprint"].as_str().unwrap();
+    assert!(fingerprint.starts_with("content:"));
+    assert_eq!(api["fingerprints"]["api"], fingerprint);
+    assert!(
+        api["fingerprints"]["core"]
+            .as_str()
+            .unwrap()
+            .starts_with("content:")
+    );
+    assert_eq!(api["key"].as_str().unwrap().len(), 64);
+    // An Artifact without a fingerprint shows as null and leaves no key.
+    let web = eval("web/check");
+    assert_eq!(web["fingerprints"]["loose"], Value::Null);
+    assert!(web["fingerprints"]["web"].is_string());
+    assert_eq!(web["key"], Value::Null);
+    assert_eq!(
+        web["evalDefHash"], hash,
+        "the same strategy, another Artifact"
+    );
+
+    // They are the values verify keys the Run with.
+    let run = fixture.json(&["verify", "--all"], 0);
+    let request = run["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["evalId"] == "api/check")
+        .unwrap();
+    assert_eq!(request["key"], api["key"]);
+    assert_eq!(request["evalDefHash"], api["evalDefHash"]);
+    assert_eq!(request["fingerprints"], api["fingerprints"]);
+    // web has no key, so its result satisfies only its own Run.
+    let after = fixture.json(&["status"], 1);
+    assert_eq!(after["evals"][0]["id"], "api/check");
+    assert_eq!(after["evals"][0]["action"], "reuse");
+    assert_eq!(after["evals"][0]["key"], api["key"]);
+}

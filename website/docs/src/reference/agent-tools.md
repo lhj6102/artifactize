@@ -76,7 +76,20 @@ The `json` protocol receives exactly one request on stdin:
 Scope entries contain canonical physical paths and logical child/mount maps;
 family instances also include `family: {name, material}`. `executionPaths` is
 omitted when empty. Declared execution paths are up to 64 unique workspace-relative
-files/directories, resolved without symlinks, copying, hashing or pinning.
+files/directories, resolved without symlinks or copying.
+
+When an Agent review starts, artifactize pins each execution path of the eval's
+tools: a file to the SHA-256 of its bytes, a directory to the SHA-256 over each
+entry's relative path and digest (a symlink inside contributes its target and is
+not followed). The pins are recorded in the result's provenance as
+`executionPaths: {"TOOL": {"PATH": "sha256"}}` (by registered tool name, such as
+`coverage_spec`, and declared path), travel with remote records, and stay with the
+result when it is reused, so a reused verdict shows which binary produced it. A
+path that cannot be pinned (missing, a special file, or a folder over 10,000
+entries or 1 GiB) fails the review with `PREPARATION_FAILED` before the Agent is
+called. Pins are provenance, not part of the
+[reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key): to review again when a binary
+changes, cover it in a fingerprint.
 Successful stdout is one JSON object with 1–32 content blocks:
 `{"content":[{"type":"text","text":"..."},{"type":"json","data":{}}]}`.
 Text is at most 64 KiB per block; compact JSON data at most 512 KiB per block;

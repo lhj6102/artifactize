@@ -62,6 +62,14 @@ pub struct EvalState {
     pub reason: String,
     pub blocked_by: Vec<String>,
     pub obligations: Vec<String>,
+    /// The Eval definition hash: the eval strategy the key covers.
+    pub eval_def_hash: String,
+    /// The target's current fingerprint; null without one.
+    pub fingerprint: Option<String>,
+    /// Each Artifact the eval depends on, with its current fingerprint or null without one.
+    pub fingerprints: BTreeMap<String, Option<String>>,
+    /// The reuse key composed of the hash and the fingerprints; null when one is missing.
+    pub key: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last: Option<LastRequest>,
     /// Why the key no longer matches the newest cached result for this Eval definition: the
@@ -365,6 +373,22 @@ pub async fn status(
                 .map(|id| (*id).to_owned())
                 .collect(),
             obligations: obligations_by_artifact[eval.target.as_str()].clone(),
+            eval_def_hash: cache::eval_definition_hash(&eval.declaration),
+            fingerprint: fingerprints
+                .get(eval.target.as_str())
+                .map(|fingerprint| fingerprint.value.clone()),
+            fingerprints: cache::dependencies(&config, eval)
+                .into_iter()
+                .map(|id| {
+                    (
+                        id.to_owned(),
+                        fingerprints
+                            .get(id)
+                            .map(|fingerprint| fingerprint.value.clone()),
+                    )
+                })
+                .collect(),
+            key: all_keys.get(eval.id.as_str()).map(|key| key.value.clone()),
             last: latest.remove(&eval.id),
             changes: keys.get(eval.id.as_str()).and_then(|key| {
                 previous

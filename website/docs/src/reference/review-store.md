@@ -111,8 +111,8 @@ recorded; the publisher is the server-authenticated token name. Once the local s
 records a GREEN/RED with a reuse key (after the fingerprint recheck), verify sends
 its summary record, or the full record with share `full`, outside any database
 transaction. Records carry the key, the Eval definition hash, the fingerprint of
-each Artifact the key covers and the execution `options` (backend, model,
-reasoning, limits and profile variant). `request submit` publishes Human sign-offs.
+each Artifact the key covers, the execution `options` (backend, model,
+reasoning, limits and profile variant) and an Agent result's `executionPaths` pins. `request submit` publishes Human sign-offs.
 A token without `read` looks nothing up and one without `publish` publishes nothing,
 so a read-only CI token only reuses. Human sign-offs also need `human`; with any
 other token they stay local with a warning. Nothing is published for evals without a

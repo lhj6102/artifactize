@@ -40,6 +40,9 @@ pub struct Record {
     pub profile: Value,
     #[serde(default)]
     pub options: ExecutionOptions,
+    /// An Agent result's tool `executionPaths` pins.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub execution_paths: crate::tools::pins::Pins,
     pub result: Value,
     pub usage: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -90,6 +93,7 @@ impl Record {
             execution_id: execution.id.clone(),
             profile: execution.profile.clone(),
             options: execution.options.clone(),
+            execution_paths: execution.provenance.execution_paths.clone(),
             result,
             usage,
             reviewer: execution.reviewer.clone(),
@@ -183,6 +187,7 @@ impl Record {
                     eval_id: self.eval_id,
                     eval_def_hash: self.eval_def_hash,
                     completed_at: Some(self.completed_at.clone()),
+                    execution_paths: self.execution_paths,
                 },
                 started_at: self.started_at,
                 completed_at: Some(self.completed_at),
