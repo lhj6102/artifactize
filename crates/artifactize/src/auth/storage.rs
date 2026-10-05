@@ -115,8 +115,13 @@ impl Storage {
             .map_err(|_| "Cannot encode credentials.".to_owned())?;
         file.flush().map_err(|e| e.to_string())?;
         file.as_file().sync_all().map_err(|e| e.to_string())?;
-        file.persist(self.directory.join(name))
-            .map_err(|e| e.error.to_string())?;
+        // std's rename also replaces a file that another process is still reading, which a
+        // plain MoveFileEx, as `persist` uses on Windows, refuses.
+        let temporary = file.into_temp_path().keep().map_err(|e| e.to_string())?;
+        if let Err(error) = fs::rename(&temporary, self.directory.join(name)) {
+            let _ = fs::remove_file(&temporary);
+            return Err(error.to_string());
+        }
         self.sync()
     }
 

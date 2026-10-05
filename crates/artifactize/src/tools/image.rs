@@ -29,13 +29,21 @@ pub(super) fn from_base64(data: &str, mime_type: &str) -> Result<Content, String
 pub(super) fn from_output(root: &Path, path: &str, mime_type: &str) -> Result<Content, String> {
     let path = Path::new(path);
     let relative = if path.is_absolute() {
-        path.strip_prefix(root)
+        let relative = path
+            .strip_prefix(root)
             .map_err(|_| "Image is outside the tool output directory.")?
+            .to_str()
+            .ok_or("Image path must be UTF-8.")?;
+        // Below the root, a Windows path separates its components with `\`.
+        if cfg!(windows) {
+            relative.replace('\\', "/")
+        } else {
+            relative.to_owned()
+        }
     } else {
-        path
+        path.to_str().ok_or("Image path must be UTF-8.")?.to_owned()
     };
-    let relative = relative.to_str().ok_or("Image path must be UTF-8.")?;
-    let file = scope::open_scoped(root, relative).map_err(|e| e.to_string())?;
+    let file = scope::open_scoped(root, &relative).map_err(|e| e.to_string())?;
     normalize(&read(file)?, Some(mime_type))
 }
 

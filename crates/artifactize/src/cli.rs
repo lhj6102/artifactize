@@ -22,6 +22,8 @@ use crate::{
 #[derive(Debug, Parser)]
 #[command(
     name = "artifactize",
+    // Help names the command, not the file run; on Windows that is artifactize.exe.
+    bin_name = "artifactize",
     version,
     about = "Let verification define the project."
 )]
