@@ -7,7 +7,6 @@ use std::{
     ffi::OsString,
     future::Future,
     io,
-    os::unix::process::ExitStatusExt,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -159,7 +158,7 @@ where
                     output,
                 }),
                 None => Outcome::OperationalError(Error::AbnormalExit {
-                    signal: output.status.signal(),
+                    signal: crate::platform::exit_signal(&output.status),
                     output,
                 }),
             }

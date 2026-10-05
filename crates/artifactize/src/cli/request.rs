@@ -1,6 +1,5 @@
 use std::{
     io::{self, Read, Write},
-    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
 };
 
@@ -161,11 +160,7 @@ fn submission(
     file: Option<PathBuf>,
 ) -> Result<Value, String> {
     let fields = if let Some(path) = file {
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NONBLOCK)
-            .open(path)
-            .map_err(|e| e.to_string())?;
+        let file = crate::platform::open_nonblocking(&path).map_err(|e| e.to_string())?;
         if !file.metadata().map_err(|e| e.to_string())?.is_file() {
             return Err("Human fields must be a regular JSON file.".into());
         }

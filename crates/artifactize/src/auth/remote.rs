@@ -7,7 +7,6 @@ use std::{
     env, fs,
     io::{Read, Write},
     net::IpAddr,
-    os::unix::fs::OpenOptionsExt,
     path::Path,
     sync::OnceLock,
     time::Duration,
@@ -120,11 +119,10 @@ fn valid_token(token: &str) -> Result<(), String> {
 }
 
 fn read_config(state: &Path) -> Result<Option<Config>, String> {
-    let file = match fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(state.join(CONFIG))
-    {
+    let file = match crate::platform::open_no_follow(
+        fs::OpenOptions::new().read(true),
+        &state.join(CONFIG),
+    ) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(format!("Cannot read {CONFIG}: {error}")),

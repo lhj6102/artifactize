@@ -817,13 +817,10 @@ fn cancellation_listener() -> Result<
     String,
 > {
     let cancellation = tokio_util::sync::CancellationToken::new();
-    let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
-        .map_err(|e| e.to_string())?;
-    let mut terminate = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-        .map_err(|e| e.to_string())?;
+    let stop = crate::platform::stop_requested().map_err(|e| e.to_string())?;
     let token = cancellation.clone();
     let listener = tokio::spawn(async move {
-        tokio::select! { _ = interrupt.recv() => {}, _ = terminate.recv() => {} }
+        stop.await;
         token.cancel();
     });
     Ok((cancellation, listener))

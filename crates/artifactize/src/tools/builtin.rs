@@ -2,9 +2,8 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, File},
+    fs::File,
     io::{BufRead, BufReader, Read},
-    os::fd::AsRawFd,
     path::Path,
 };
 
@@ -15,6 +14,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::Builtin,
+    platform::{self, FileKind},
     scope::{self, Scope, ScopedPath},
 };
 
@@ -255,8 +255,8 @@ impl Reader<'_> {
             }
         } else {
             // Enumerate the pinned directory, not a path that could have been replaced by a link.
-            let directory = fs::read_dir(format!("/proc/self/fd/{}", file.as_raw_fd()))
-                .map_err(|_| "Cannot list Artifact directory.")?;
+            let directory =
+                platform::read_dir(&file).map_err(|_| "Cannot list Artifact directory.")?;
             for entry in directory {
                 self.check_cancelled()?;
                 if entries.len() >= MAX_ENTRIES {
@@ -274,12 +274,17 @@ impl Reader<'_> {
                     .file_type()
                     .map_err(|_| "Cannot inspect Artifact entry.")?;
                 let relative = join(&location.path, &name);
-                let value = if kind.is_dir()
+                let value = if kind == FileKind::Directory
                     && let Some(instances) = families.get(&relative)
                 {
                     json!({"name":name,"kind":"family","instances":instances})
                 } else {
-                    json!({"name":name,"kind":if kind.is_file() { "file" } else if kind.is_dir() { "directory" } else if kind.is_symlink() { "symlink" } else { "other" }})
+                    json!({"name":name,"kind":match kind {
+                        FileKind::File => "file",
+                        FileKind::Directory => "directory",
+                        FileKind::Symlink => "symlink",
+                        FileKind::Other => "other",
+                    }})
                 };
                 entries.insert(name, value);
             }

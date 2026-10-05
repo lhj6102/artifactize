@@ -2,9 +2,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::OpenOptions,
     io::Read,
-    os::unix::fs::OpenOptionsExt,
     path::Path,
 };
 
@@ -286,10 +284,7 @@ pub fn parse_selection_file(text: &str) -> Result<Vec<String>, String> {
 
 pub fn read_selection_file(path: &Path) -> Result<Vec<String>, String> {
     // Nonblocking open lets us reject a FIFO without waiting for its writer.
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open(path)
+    let file = crate::platform::open_nonblocking(path)
         .map_err(|error| format!("{}: {error}", path.display()))?;
     let info = file.metadata().map_err(|error| error.to_string())?;
     if !info.is_file() || info.len() > MAX_FILE_BYTES as u64 {

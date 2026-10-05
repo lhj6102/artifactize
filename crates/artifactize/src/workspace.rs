@@ -1,8 +1,7 @@
 //! Workspace paths and external state/output safety checks.
 
 use std::{
-    fs, io,
-    os::unix::fs::DirBuilderExt,
+    io,
     path::{Component, Path, PathBuf},
 };
 
@@ -39,10 +38,7 @@ pub(crate) fn outside_workspace(workspace: &Path, output: &Path) -> io::Result<(
 pub(crate) fn prepare_directory(path: &Path, workspace: &Path) -> io::Result<PathBuf> {
     let path = canonical_target(path)?;
     outside_workspace(workspace, &path)?;
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&path)?;
+    crate::platform::create_private_dir_all(&path)?;
     let path = path.canonicalize()?;
     outside_workspace(workspace, &path)?;
     Ok(path)

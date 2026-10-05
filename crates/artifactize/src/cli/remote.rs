@@ -7,7 +7,10 @@ use clap::Subcommand;
 use serde_json::json;
 
 use super::print_json;
-use crate::auth::remote::{self, Share};
+use crate::{
+    auth::remote::{self, Share},
+    platform::HiddenInput,
+};
 
 #[derive(Debug, Subcommand)]
 pub enum RemoteCommand {
@@ -140,41 +143,11 @@ pub(super) async fn execute(
     }
 }
 
-/// Turns terminal echo off until dropped, so a pasted token is not shown.
-struct HiddenInput(libc::termios);
-
-impl HiddenInput {
-    fn new() -> Result<Self, String> {
-        let mut termios = std::mem::MaybeUninit::uninit();
-        // SAFETY: tcgetattr fills the struct on success; it is read only then.
-        let saved = unsafe {
-            if libc::tcgetattr(libc::STDIN_FILENO, termios.as_mut_ptr()) != 0 {
-                return Err(io::Error::last_os_error().to_string());
-            }
-            termios.assume_init()
-        };
-        let mut hidden = saved;
-        hidden.c_lflag &= !libc::ECHO;
-        // SAFETY: a valid termios for the same descriptor.
-        if unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &hidden) } != 0 {
-            return Err(io::Error::last_os_error().to_string());
-        }
-        Ok(Self(saved))
-    }
-}
-
-impl Drop for HiddenInput {
-    fn drop(&mut self) {
-        // SAFETY: restores the attributes read in `new`.
-        unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &self.0) };
-    }
-}
-
 fn read_token() -> Result<String, String> {
     let stdin = io::stdin().lock();
     let hidden = if stdin.is_terminal() {
         // Echo goes off before the prompt invites a paste.
-        let hidden = HiddenInput::new()?;
+        let hidden = HiddenInput::new().map_err(|e| e.to_string())?;
         write!(
             io::stderr().lock(),
             "Paste the remote token, then press Enter: "

@@ -3,9 +3,8 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     ffi::OsStr,
-    fs::{self, File},
+    fs::File,
     io::Read,
-    os::fd::AsRawFd,
     path::PathBuf,
 };
 
@@ -18,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     config::{CONFIG_FILE, RepoConfig},
+    platform::{self, FileKind},
     process, scope,
 };
 
@@ -189,16 +189,14 @@ impl Walk {
         let label = if path.is_empty() { "." } else { path };
         // Enumerate the pinned directory, not a path that could have been replaced by a link.
         let mut entries = Vec::new();
-        for entry in fs::read_dir(format!("/proc/self/fd/{}", directory.as_raw_fd()))
-            .map_err(|e| format!("{label}: {e}"))?
-        {
+        for entry in platform::read_dir(directory).map_err(|e| format!("{label}: {e}"))? {
             let entry = entry.map_err(|e| format!("{label}: {e}"))?;
             let kind = entry.file_type().map_err(|e| format!("{label}: {e}"))?;
             let name = entry
                 .file_name()
                 .into_string()
                 .map_err(|_| "Artifact paths must be UTF-8.")?;
-            entries.push((name, kind.is_dir()));
+            entries.push((name, kind == FileKind::Directory));
         }
         entries.sort();
         let gitignore =
@@ -277,11 +275,8 @@ impl Walk {
 
 /// A pinned folder's `.gitignore`, if any. Lines git would reject are skipped, as git skips them.
 fn read_gitignore(directory: &File) -> Result<Option<Gitignore>, String> {
-    match fs::symlink_metadata(format!(
-        "/proc/self/fd/{}/.gitignore",
-        directory.as_raw_fd()
-    )) {
-        Ok(metadata) if metadata.is_dir() => return Ok(None),
+    match platform::entry_kind(directory, OsStr::new(".gitignore")) {
+        Ok(FileKind::Directory) => return Ok(None),
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.to_string()),

@@ -1,15 +1,16 @@
 use std::{
     fs::{self, File, OpenOptions, TryLockError},
     io::{Read, Write},
-    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     time::Duration,
 };
 
 use serde::{Serialize, de::DeserializeOwned};
 
+use crate::platform;
+
 /// An owner-only directory under `$STATE/auth/` of 0600, single-link, no-follow files,
-/// replaced atomically.
+/// replaced atomically. On Windows, owner-only means a protected DACL for the current user.
 pub(super) struct Storage {
     pub directory: PathBuf,
 }
@@ -47,21 +48,17 @@ impl Storage {
             }
         }
         if create {
-            fs::DirBuilder::new()
-                .recursive(true)
-                .mode(0o700)
-                .create(&directory)
-                .map_err(|e| e.to_string())?;
+            platform::create_private_dir_all(&directory).map_err(|e| e.to_string())?;
         }
-        let metadata = match directory.metadata() {
-            Ok(metadata) => metadata,
+        let private = match platform::is_private_dir(&directory) {
+            Ok(private) => private,
             Err(error) if !create && error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Self { directory });
             }
             Err(error) => return Err(error.to_string()),
         };
         // This is an application-owned directory, not the user's state root.
-        if metadata.mode() & 0o077 != 0 {
+        if !private {
             return Err("Auth directory must have owner-only permissions (0700).".into());
         }
         Ok(Self { directory })
@@ -70,15 +67,15 @@ impl Storage {
     /// Hold `<name>.lock` until the returned file drops, serializing credential
     /// refreshes across processes.
     pub async fn lock(&self, name: &str) -> Result<File, String> {
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(self.directory.join(format!("{name}.lock")))
-            .map_err(|e| e.to_string())?;
+        let file = platform::open_no_follow(
+            platform::private_options()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false),
+            &self.directory.join(format!("{name}.lock")),
+        )
+        .map_err(|e| e.to_string())?;
         check_private_file(&file)?;
         loop {
             match file.try_lock() {
@@ -92,11 +89,10 @@ impl Storage {
     }
 
     pub fn read<T: DeserializeOwned>(&self, name: &str) -> Result<Option<T>, String> {
-        let file = match OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(self.directory.join(name))
-        {
+        let file = match platform::open_no_follow(
+            OpenOptions::new().read(true),
+            &self.directory.join(name),
+        ) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error.to_string()),
@@ -117,9 +113,7 @@ impl Storage {
     pub fn save(&self, name: &str, value: &impl Serialize) -> Result<(), String> {
         let mut file =
             tempfile::NamedTempFile::new_in(&self.directory).map_err(|e| e.to_string())?;
-        file.as_file()
-            .set_permissions(fs::Permissions::from_mode(0o600))
-            .map_err(|e| e.to_string())?;
+        platform::restrict_file(file.as_file()).map_err(|e| e.to_string())?;
         serde_json::to_writer(&mut file, value)
             .map_err(|_| "Cannot encode credentials.".to_owned())?;
         file.flush().map_err(|e| e.to_string())?;
@@ -138,15 +132,12 @@ impl Storage {
     }
 
     fn sync(&self) -> Result<(), String> {
-        File::open(&self.directory)
-            .and_then(|dir| dir.sync_all())
-            .map_err(|e| e.to_string())
+        platform::sync_dir(&self.directory).map_err(|e| e.to_string())
     }
 }
 
 fn check_private_file(file: &File) -> Result<(), String> {
-    let metadata = file.metadata().map_err(|e| e.to_string())?;
-    if !metadata.is_file() || metadata.mode() & 0o777 != 0o600 || metadata.nlink() != 1 {
+    if !platform::is_private_file(file).map_err(|e| e.to_string())? {
         return Err("Auth files must be regular, single-link, owner-only files (0600).".into());
     }
     Ok(())
