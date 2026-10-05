@@ -95,6 +95,9 @@ pub struct ExecutionOptions {
     /// The selected `profileVariants` entry; absent for the declared profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
+    /// An Agent eval's declared `resultCheck.timeoutMs`: a limit, like the profile's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_check_timeout_ms: Option<u32>,
 }
 
 impl ExecutionOptions {
@@ -126,6 +129,12 @@ impl ExecutionOptions {
             Profile::Human {} => {}
         }
         options
+    }
+
+    /// These options with the eval's declared `resultCheck` limit.
+    pub fn with_result_check(mut self, check: Option<&crate::config::ResultCheck>) -> Self {
+        self.result_check_timeout_ms = check.and_then(|check| check.timeout_ms);
+        self
     }
 }
 

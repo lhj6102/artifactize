@@ -46,7 +46,11 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
         strategy["command"] = json!(command);
         strategy["args"] = json!(args);
     }
-    // The Agent `resultCheck` declaration (#81) belongs to the strategy and joins it here.
+    // An Agent result check's command and args belong to the strategy; its timeoutMs is a
+    // limit, recorded with the execution options. Without a check, the hash is unchanged.
+    if let Some(check) = &eval.result_check {
+        strategy["resultCheck"] = json!({"command": check.command, "args": check.args});
+    }
     strategy.sort_all_objects();
     content::hex(&Sha256::digest(
         serde_json::to_vec(&strategy).expect("eval strategy is JSON"),
