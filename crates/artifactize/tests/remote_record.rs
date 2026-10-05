@@ -248,6 +248,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
             eval_id: "app/check".into(),
             eval_def_hash: key.eval_def_hash.clone(),
             completed_at: Some(completed.clone()),
+            execution_paths: Default::default(),
         },
         started_at: "2026-10-04T00:00:00Z".into(),
         completed_at: Some(completed),

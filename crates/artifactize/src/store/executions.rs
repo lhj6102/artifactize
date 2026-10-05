@@ -27,6 +27,10 @@ pub struct Provenance {
     pub eval_id: String,
     pub eval_def_hash: String,
     pub completed_at: Option<String>,
+    /// For Agent results: the SHA-256 of each tool's `executionPaths` when the review started,
+    /// by tool name and declared path.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub execution_paths: crate::tools::pins::Pins,
 }
 
 /// One execution and, once GREEN or RED with a key, one record of its key's history.

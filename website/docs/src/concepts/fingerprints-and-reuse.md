@@ -103,7 +103,8 @@ Each record keeps how and by whom it was produced, next to its result:
 A hit returns the original result without running the eval or re-validating it
 against the requested profile or schema. The request saves the original
 execution ID, the producing `profile` and `options`, `evalDefHash`, `key`,
-`provenance` (repository, Run, request, eval, definition hash and completion time)
+`provenance` (repository, Run, request, eval, definition hash, completion time and,
+for Agent results, the [pins of their tools' execution paths](../reference/agent-tools.md))
 and the original attempts as `reusedUsage` when reported, alongside its own
 `requestedProfile`. Its own `usage` is null: a reused request spent nothing.
 Runtime usage is null, not an invented zero. A reused RED remains RED for gates

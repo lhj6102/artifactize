@@ -20,6 +20,8 @@ pub struct VerifyOptions {
     /// Fingerprints computed at once, in preparation and end-of-review rechecks; `None` uses
     /// the available CPUs.
     pub fingerprint_jobs: Option<usize>,
+    /// Print `Run: RUN_ID` to stderr as soon as the Run is saved, before any eval runs.
+    pub announce_run: bool,
     pub max_executions: Option<u64>,
     /// Keep this Run alive for Human submissions; timeout never cancels a review.
     pub wait_timeout_ms: Option<u32>,
@@ -36,6 +38,7 @@ impl Default for VerifyOptions {
         Self {
             jobs: 4,
             fingerprint_jobs: None,
+            announce_run: false,
             max_executions: None,
             wait_timeout_ms: None,
             profile: None,
@@ -211,6 +214,10 @@ pub async fn verify(
         })
         .collect();
     receipts.create_run(&run, &requests).await?;
+    if options.announce_run {
+        use std::io::Write;
+        let _ = writeln!(std::io::stderr().lock(), "Run: {}", run.id);
+    }
     let mut evidence = match broker::schedule(
         config.clone(),
         &graph,

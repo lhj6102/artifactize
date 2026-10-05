@@ -20,6 +20,7 @@ use crate::{
     remote::Session,
     runtime::Verdict,
     store::{Claim, Execution, Producer, Provenance, Receipts, Request, Run},
+    tools,
 };
 
 pub(crate) fn now() -> String {
@@ -242,6 +243,7 @@ impl Scheduler<'_, '_> {
                             eval_id: request.eval_id.clone(),
                             eval_def_hash: request.eval_def_hash.clone(),
                             completed_at: None,
+                            execution_paths: Default::default(),
                         },
                         started_at: now(),
                         completed_at: None,
@@ -389,8 +391,25 @@ impl Scheduler<'_, '_> {
                     let cancellation = self.cancellation.clone();
                     let run_dir = run_dir.clone();
                     let parallelism = self.parallelism.clone();
+                    let agent = request.profile["kind"] == "agent";
                     running.insert(index);
                     self.tasks.spawn(async move {
+                        let mut execution = execution;
+                        // An Agent result pins the files its tools execute, hashed before the
+                        // review starts; a path that cannot be hashed fails the preparation.
+                        let prepared = match prepared {
+                            Ok(prepared) if agent && !cancellation.is_cancelled() => {
+                                match tools::pins::execution_paths(&config, &request.eval_id).await
+                                {
+                                    Ok(pins) => {
+                                        execution.provenance.execution_paths = pins;
+                                        Ok(prepared)
+                                    }
+                                    Err(error) => Err(error),
+                                }
+                            }
+                            prepared => prepared,
+                        };
                         let request = execution::execute(
                             config,
                             receipts.clone(),

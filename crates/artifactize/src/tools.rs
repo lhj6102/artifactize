@@ -3,6 +3,7 @@
 pub mod builtin;
 pub mod human;
 mod image;
+pub mod pins;
 mod result;
 pub(crate) mod schema;
 

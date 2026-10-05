@@ -14,6 +14,11 @@ evals in declaration order. READY runtime evals execute concurrently up to
 then recursive configuration order. The graph is re-evaluated after each result;
 newly READY evals do not wait for an entire batch to finish. Waiters on a
 fingerprint claim occupy job slots while polling, but cache hits occupy none.
+`verify` prints `Run: RUN_ID` to stderr as soon as the Run is saved, before any
+eval runs, so a long Run can be followed (`artifactize monitor`,
+`artifactize run show RUN_ID --wait`) or cancelled from the start; nothing else is
+printed there unless something goes wrong. With `--json`, stdout still carries only
+the final JSON.
 An Artifact selector runs only that Artifact's evals;
 an individual eval selector runs only that eval. Both retain the full dependency
 closure as a final obligation. `--recursive` includes every eval in that closure,
@@ -100,7 +105,11 @@ and the same `--profile`, `--recursive`, `--force` and `--ignore-gates` policy
 options. It reports current Artifact/eval states, unmet final obligations, and
 `execute` / `reuse` / `wait` / `blocked` actions. All evals in the required closure
 are shown; `selected` and `included` distinguish explicit selection from recursive
-execution. Action counts cover included evals only. Exit 0 means current validation
+execution. In JSON, each eval also shows what its
+[reuse key](fingerprints-and-reuse.md#the-reuse-key) is made of: `evalDefHash`, the target's
+`fingerprint`, `fingerprints` (each Artifact the eval depends on with its current
+fingerprint, or null without one) and the composed `key` (null when a fingerprint
+is missing), the same values `verify` would key the Run with. Action counts cover included evals only. Exit 0 means current validation
 is satisfied; 1 means obligations remain; invalid input or state errors exit 2.
 
 Status prepares current fingerprints for the selected required closure, using

@@ -478,6 +478,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 jobs: jobs as usize,
                 max_executions,
                 wait_timeout_ms: wait.then_some(timeout_ms.unwrap_or(600_000)),
+                announce_run: true,
                 ..policy.options()
             };
             let (cancellation, listener) = cancellation_listener()?;
