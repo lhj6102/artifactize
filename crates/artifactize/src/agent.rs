@@ -2,6 +2,7 @@
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
+pub mod error;
 pub mod verdict;
 
 use rig_core::{
@@ -13,6 +14,7 @@ use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
+    agent::error::{Code, Failure},
     config::{Eval, Profile, RepoConfig},
     llm::{self, Attempt, Client},
     scope::{self, InstructionPart},
@@ -20,7 +22,7 @@ use crate::{
 };
 
 pub struct Review {
-    pub result: Result<Value, String>,
+    pub result: Result<Value, Failure>,
     pub attempts: Vec<Attempt>,
     pub tool_calls: Vec<Value>,
 }
@@ -54,7 +56,10 @@ async fn review(
     cancellation: CancellationToken,
 ) -> Review {
     let mut review = Review {
-        result: Err("Agent review did not complete.".into()),
+        result: Err(Failure::new(
+            Code::AgentError,
+            "Agent review did not complete.",
+        )),
         attempts: Vec::new(),
         tool_calls: Vec::new(),
     };
@@ -79,7 +84,7 @@ async fn run(
     cancellation: &CancellationToken,
     attempts: &mut Vec<Attempt>,
     tool_calls: &mut Vec<Value>,
-) -> Result<Value, String> {
+) -> Result<Value, Failure> {
     let Profile::Agent {
         backend,
         model,
@@ -111,7 +116,6 @@ async fn run(
                 &request,
                 llm::Turn {
                     number: turn,
-                    prior_output: turn > 1,
                     deadline,
                     cancellation,
                 },
@@ -119,11 +123,15 @@ async fn run(
             )
             .await?;
         check_deadline(cancellation, deadline)?;
-        llm::validate_response(&response, model)?;
+        llm::validate_response(&response, model)
+            .map_err(|message| Failure::new(Code::ProviderError, message))?;
         // rig totals include cache reads/writes; absent usage is zero only for enforcement.
         tokens_used = tokens_used.saturating_add(response.usage.total_tokens.unwrap_or(0));
         if max_tokens.is_some_and(|limit| tokens_used > limit) {
-            return Err("PROVIDER_BUDGET_EXCEEDED: review exceeded its maxTokens budget.".into());
+            return Err(Failure::new(
+                Code::ProviderBudgetExceeded,
+                "PROVIDER_BUDGET_EXCEEDED: review exceeded its maxTokens budget.",
+            ));
         }
         let calls: Vec<_> = response
             .choice
@@ -135,7 +143,10 @@ async fn run(
             .collect();
         if calls.is_empty() {
             if response.finish_reason() != Some(FinishReason::Stop) {
-                return Err("Provider ended with tool calls but supplied no callable tool.".into());
+                return Err(Failure::new(
+                    Code::ProviderError,
+                    "Provider ended with tool calls but supplied no callable tool.",
+                ));
             }
             let text: String = response
                 .choice
@@ -150,8 +161,9 @@ async fn run(
             match result {
                 Ok(value) => return Ok(value),
                 Err(error) if repairing => {
-                    return Err(format!(
-                        "Invalid final Agent result after one format repair: {error}."
+                    return Err(Failure::new(
+                        Code::InvalidResult,
+                        format!("Invalid final Agent result after one format repair: {error}."),
                     ));
                 }
                 Err(error) => {
@@ -171,9 +183,10 @@ async fn run(
             }
         }
         if repairing {
-            return Err(
-                "Invalid final Agent result after one format repair: tools are disabled.".into(),
-            );
+            return Err(Failure::new(
+                Code::InvalidResult,
+                "Invalid final Agent result after one format repair: tools are disabled.",
+            ));
         }
         request.chat_history.push(Message::Assistant {
             id: response.message_id,
@@ -186,19 +199,21 @@ async fn run(
             calls_issued = calls_issued.saturating_add(1);
             tool_calls.push(json!({"name":call.function.name, "arguments":call.function.arguments, "result":null, "isError":true}));
             if max_tool_calls.is_some_and(|limit| calls_issued > limit) {
-                return Err(
-                    "PROVIDER_BUDGET_EXCEEDED: review exceeded its maxToolCalls budget.".into(),
-                );
+                return Err(Failure::new(
+                    Code::ProviderBudgetExceeded,
+                    "PROVIDER_BUDGET_EXCEEDED: review exceeded its maxToolCalls budget.",
+                ));
             }
             if !call_ids.insert(call.id.wire().into_owned()) {
-                return Err(
-                    "Provider repeated a tool-call ID; no further tools were executed.".into(),
-                );
+                return Err(Failure::new(
+                    Code::ProviderError,
+                    "Provider repeated a tool-call ID; no further tools were executed.",
+                ));
             }
             let result = tokio::select! {
                 biased;
-                _ = cancellation.cancelled() => return Err("Agent review was cancelled.".into()),
-                _ = tokio::time::sleep_until(deadline) => return Err("Agent review timed out.".into()),
+                _ = cancellation.cancelled() => return Err(Failure::cancelled()),
+                _ = tokio::time::sleep_until(deadline) => return Err(Failure::timeout()),
                 result = registry.call(call.function.name.as_str(), call.function.arguments.clone(), output, cancellation.clone()) => result,
             };
             check_deadline(cancellation, deadline)?;
@@ -303,11 +318,11 @@ fn prompt(
     Ok(request)
 }
 
-fn check_deadline(cancellation: &CancellationToken, deadline: Instant) -> Result<(), String> {
+fn check_deadline(cancellation: &CancellationToken, deadline: Instant) -> Result<(), Failure> {
     if cancellation.is_cancelled() {
-        Err("Agent review was cancelled.".into())
+        Err(Failure::cancelled())
     } else if Instant::now() >= deadline {
-        Err("Agent review timed out.".into())
+        Err(Failure::timeout())
     } else {
         Ok(())
     }

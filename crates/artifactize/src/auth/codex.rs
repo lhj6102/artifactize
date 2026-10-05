@@ -69,6 +69,29 @@ struct Credentials {
     saved_at: u64,
 }
 
+/// Why no token is available. A transient failure (the token endpoint unreachable or
+/// failing with 429 or 5xx) may succeed on a retry; any other means signing in again.
+#[derive(Debug)]
+pub struct TokenError {
+    pub transient: bool,
+    pub message: String,
+}
+
+impl From<String> for TokenError {
+    fn from(message: String) -> Self {
+        Self {
+            transient: false,
+            message,
+        }
+    }
+}
+
+impl From<&str> for TokenError {
+    fn from(message: &str) -> Self {
+        message.to_owned().into()
+    }
+}
+
 /// A bearer token and the ChatGPT account it belongs to. Never printed or logged.
 pub struct Token {
     pub access_token: String,
@@ -411,7 +434,8 @@ async fn sign_in(
         ],
         None,
     )
-    .await?;
+    .await
+    .map_err(|error| error.message)?;
     let credentials = credentials(tokens, now()?)?;
     let _lock = storage.lock(LOCK).await?;
     storage.save(CREDENTIALS, &credentials)
@@ -480,15 +504,17 @@ async fn token_request(
     root: &str,
     form: &[(&str, &str)],
     refreshing: Option<&Storage>,
-) -> Result<TokenResponse, String> {
+) -> Result<TokenResponse, TokenError> {
     let response = client()?
         .post(format!("{root}/oauth/token"))
         .form(form)
         .send()
         .await
-        .map_err(|_| {
-            "Codex token request failed; check your connection. The stored sign-in was kept."
-                .to_owned()
+        .map_err(|_| TokenError {
+            transient: true,
+            message:
+                "Codex token request failed; check your connection. The stored sign-in was kept."
+                    .into(),
         })?;
     let status = response.status();
     if !status.is_success() {
@@ -499,7 +525,8 @@ async fn token_request(
             .or_else(|| body["code"].as_str())
             .unwrap_or_default();
         let status = status.as_u16();
-        return Err(match refreshing {
+        let transient = status == 429 || status >= 500;
+        let message = match refreshing {
             Some(storage) if terminal(code) => {
                 storage.remove(CREDENTIALS)?;
                 format!("The Codex refresh token is no longer valid ({code}); run `artifactize login codex`.")
@@ -511,7 +538,8 @@ async fn token_request(
                 "The Codex authorization code was rejected (invalid_grant); run `artifactize login codex` again.".into()
             }
             None => format!("Codex sign-in failed (HTTP {status})."),
-        });
+        };
+        return Err(TokenError { transient, message });
     }
     response
         .json()
@@ -521,14 +549,14 @@ async fn token_request(
 
 /// A usable token: from the read-only auth file when one is set, else artifactize's own,
 /// refreshed under a cross-process lock when it is about to expire.
-pub async fn access_token(state: Option<&Path>, repo: Option<&Path>) -> Result<Token, String> {
+pub async fn access_token(state: Option<&Path>, repo: Option<&Path>) -> Result<Token, TokenError> {
     if let Some(path) = auth_file() {
-        return read_auth_file(&path);
+        return Ok(read_auth_file(&path)?);
     }
     stored_token(&Storage::new(state, repo)?, &auth_root()?).await
 }
 
-async fn stored_token(storage: &Storage, root: &str) -> Result<Token, String> {
+async fn stored_token(storage: &Storage, root: &str) -> Result<Token, TokenError> {
     let _lock = storage.lock(LOCK).await?;
     let stored = storage
         .read::<Credentials>(CREDENTIALS)?

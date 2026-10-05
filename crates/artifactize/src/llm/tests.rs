@@ -148,3 +148,38 @@ fn test_endpoints_are_loopback_only() {
         assert!(super::loopback_url(value).is_err(), "{value}");
     }
 }
+
+#[test]
+fn retry_after_reads_milliseconds_seconds_and_http_dates() {
+    use rig_core::http_client::{HeaderMap, HeaderValue};
+    use std::time::Duration;
+    let now = time::OffsetDateTime::from_unix_timestamp(1_445_412_480).unwrap();
+    let wait = |pairs: &[(&'static str, &str)]| {
+        let mut headers = HeaderMap::new();
+        for (name, value) in pairs {
+            headers.insert(*name, HeaderValue::from_str(value).unwrap());
+        }
+        super::wait_header(&headers, now)
+    };
+    assert_eq!(
+        wait(&[("retry-after-ms", "1500"), ("retry-after", "9")]),
+        Some(Duration::from_millis(1500))
+    );
+    assert_eq!(wait(&[("retry-after", "2")]), Some(Duration::from_secs(2)));
+    assert_eq!(
+        wait(&[("retry-after", "0.5")]),
+        Some(Duration::from_millis(500))
+    );
+    assert_eq!(
+        wait(&[("retry-after", "Wed, 21 Oct 2015 07:28:30 GMT")]),
+        Some(Duration::from_secs(30))
+    );
+    assert_eq!(
+        wait(&[("retry-after", "Wed, 21 Oct 2015 07:27:00 GMT")]),
+        Some(Duration::ZERO)
+    );
+    for value in ["-1", "soon", "NaN"] {
+        assert_eq!(wait(&[("retry-after", value)]), None, "{value}");
+    }
+    assert_eq!(wait(&[]), None);
+}

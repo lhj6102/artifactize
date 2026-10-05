@@ -27,7 +27,13 @@ use serde_json::{Map, Value, json};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
-use crate::config::Backend;
+use crate::{
+    agent::error::{Code, Failure},
+    config::Backend,
+};
+
+/// Attempts per turn: the first and up to two retries.
+const ATTEMPTS: usize = 3;
 
 pub enum Client {
     Openai(Box<Model<openai::responses_api::wire::Responses>>),
@@ -43,6 +49,31 @@ pub struct Attempt {
     pub usage: Map<String, Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
+}
+
+/// A classified provider failure, with the wait the provider asked for, if any.
+struct Classified {
+    code: Code,
+    message: String,
+    retry_after: Option<Duration>,
+}
+
+impl From<Classified> for Failure {
+    fn from(classified: Classified) -> Self {
+        Self::new(classified.code, classified.message)
+    }
+}
+
+impl From<Failure> for Classified {
+    fn from(failure: Failure) -> Self {
+        Self {
+            code: failure.code,
+            message: failure.message,
+            retry_after: None,
+        }
+    }
 }
 
 // Only counters cross this boundary; prompts, reasoning and raw responses stay transient.
@@ -76,12 +107,13 @@ fn insert_counter(counters: &mut Map<String, Value>, name: &str, value: Option<u
 
 impl Client {
     /// `state` and `repo` locate Codex credentials; the API-key backends ignore them.
-    pub fn new(backend: Backend, model: &str, state: &Path, repo: &Path) -> Result<Self, String> {
+    pub fn new(backend: Backend, model: &str, state: &Path, repo: &Path) -> Result<Self, Failure> {
         let base = base_url(backend)?;
         if backend == Backend::Codex {
             return Ok(Self::Codex(codex::Codex::new(model, base, state, repo)?));
         }
-        let key = api_key(backend, "for this Agent backend")?;
+        let key = api_key(backend, "for this Agent backend")
+            .map_err(|message| Failure::new(Code::Authentication, message))?;
         let http = rig_reqwest::ReqwestClient::from(http_client()?);
         Ok(match backend {
             Backend::Openai => Self::Openai(Box::new(
@@ -128,7 +160,7 @@ impl Client {
         &self,
         mut request: CompletionRequest,
         observed: AdapterContext,
-    ) -> Result<CompletionStream, String> {
+    ) -> Result<CompletionStream, Classified> {
         match self {
             Self::Openai(model) => model.stream_observed(request, observed),
             Self::Anthropic(model) => {
@@ -137,35 +169,84 @@ impl Client {
                 model.stream_observed(request, observed)
             }
             // Each turn reads the credentials afresh, refreshing them when due.
-            Self::Codex(client) => client.model().await?.stream_observed(request, observed),
+            Self::Codex(client) => {
+                let model = client.model().await.map_err(|error| Classified {
+                    code: if error.transient {
+                        Code::Transient
+                    } else {
+                        Code::Authentication
+                    },
+                    message: error.message,
+                    retry_after: None,
+                })?;
+                model.stream_observed(request, observed)
+            }
         }
-        .map_err(|error| self.diagnostic(&error))
+        .map_err(|error| self.classify(&error))
     }
 
-    fn retryable(&self, error: &ProviderError) -> bool {
-        !(matches!(self, Self::Codex(_)) && codex::permanent(error)) && retryable(error)
-    }
-
-    fn diagnostic(&self, error: &ProviderError) -> String {
-        match self {
+    /// The error code of a provider failure, from its status, codes and message.
+    fn classify(&self, error: &ProviderError) -> Classified {
+        let message = match self {
             Self::Codex(_) => codex::diagnostic(error),
             _ => diagnostic(error),
+        };
+        let report = error.report();
+        let status = report.http_status;
+        let text =
+            format!("{} {message}", report.code.as_deref().unwrap_or_default()).to_lowercase();
+        let any = |terms: &[&str]| terms.iter().any(|term| text.contains(term));
+        let code = if matches!(self, Self::Codex(_)) && codex::usage_limited(error)
+            || any(&["quota", "billing", "credit balance", "usage limit"])
+        {
+            Code::Quota
+        } else if matches!(status, Some(401 | 403))
+            || any(&[
+                "authentication",
+                "unauthorized",
+                "permission",
+                "invalid_api_key",
+                "api key",
+            ])
+        {
+            Code::Authentication
+        } else if status == Some(429) || any(&["rate_limit", "rate limit"]) {
+            Code::RateLimit
+        } else if error.is_retryable()
+            || status.is_some_and(|status| status >= 500)
+            || (status.is_none()
+                && matches!(
+                    report.code.as_deref(),
+                    Some("overloaded_error" | "server_error" | "api_error")
+                ))
+        {
+            Code::Transient
+        } else {
+            Code::ProviderError
+        };
+        Classified {
+            code,
+            message,
+            retry_after: retry_after(error),
         }
     }
 
+    /// One turn, retried while an attempt fails with a rate limit or a transient error
+    /// before producing any output or usage: at any turn, since every request replays the
+    /// whole conversation. A retry waits as long as the provider's `Retry-After` asks, or a
+    /// short backoff, within the review's deadline.
     pub async fn turn(
         &self,
         request: &CompletionRequest,
         context: Turn<'_>,
         attempts: &mut Vec<Attempt>,
-    ) -> Result<CompletionResponse, String> {
-        let mut emitted = context.prior_output;
-        for attempt in 1..=3 {
+    ) -> Result<CompletionResponse, Failure> {
+        for attempt in 1..=ATTEMPTS {
             if context.cancellation.is_cancelled() {
-                return Err("Agent review was cancelled.".into());
+                return Err(Failure::cancelled());
             }
             if Instant::now() >= context.deadline {
-                return Err("Agent review timed out.".into());
+                return Err(Failure::timeout());
             }
             let usage = Arc::new(ReportedUsage::default());
             let observed = AdapterContext::new(
@@ -173,37 +254,43 @@ impl Client {
                 Subject::default(),
                 format!("turn-{}", context.number),
             );
-            let mut stream = tokio::select! {
+            let mut emitted = false;
+            let opened = tokio::select! {
                 biased;
-                _ = context.cancellation.cancelled() => return Err("Agent review was cancelled.".into()),
-                _ = tokio::time::sleep_until(context.deadline) => return Err("Agent review timed out.".into()),
-                result = self.stream(request.clone(), observed) => result?,
+                _ = context.cancellation.cancelled() => return Err(Failure::cancelled()),
+                _ = tokio::time::sleep_until(context.deadline) => return Err(Failure::timeout()),
+                opened = self.stream(request.clone(), observed) => opened,
             };
-            let result = tokio::select! {
-                biased;
-                _ = context.cancellation.cancelled() => Err("Agent review was cancelled.".to_owned()),
-                _ = tokio::time::sleep_until(context.deadline) => Err("Agent review timed out.".to_owned()),
-                result = async {
-                    while let Some(item) = stream.next().await {
-                        match item {
-                            Ok(_) => emitted = true,
-                            Err(error) => return Err(error),
-                        }
-                    }
-                    Ok(())
-                } => Ok(result),
+            let (result, partial) = match opened {
+                Err(failure) => (Err(failure), None),
+                Ok(mut stream) => {
+                    let read = tokio::select! {
+                        biased;
+                        _ = context.cancellation.cancelled() => Err(Failure::cancelled()),
+                        _ = tokio::time::sleep_until(context.deadline) => Err(Failure::timeout()),
+                        result = async {
+                            while let Some(item) = stream.next().await {
+                                match item {
+                                    Ok(_) => emitted = true,
+                                    Err(error) => return Err(error),
+                                }
+                            }
+                            Ok(())
+                        } => Ok(result),
+                    };
+                    let partial = stream.partial();
+                    let result = match read {
+                        Ok(Ok(())) => stream.finish().await.map_err(|error| self.classify(&error)),
+                        Ok(Err(error)) => Err(self.classify(&error)),
+                        Err(failure) => Err(Classified::from(failure)),
+                    };
+                    (result, Some(partial))
+                }
             };
-            let partial = stream.partial();
             let mut counters = usage.0.lock().unwrap().clone();
-            add_cache_usage(&mut counters, &partial);
-            let result = match result {
-                Ok(Ok(())) => stream
-                    .finish()
-                    .await
-                    .map_err(|error| (self.diagnostic(&error), self.retryable(&error))),
-                Ok(Err(error)) => Err((self.diagnostic(&error), self.retryable(&error))),
-                Err(error) => Err((error, false)),
-            };
+            if let Some(partial) = &partial {
+                add_cache_usage(&mut counters, partial);
+            }
             if let Ok(response) = &result {
                 add_cache_usage(&mut counters, response);
             }
@@ -212,20 +299,36 @@ impl Client {
                 turn: context.number,
                 attempt,
                 usage: counters,
-                error: result.as_ref().err().map(|(error, _)| error.clone()),
+                error: result.as_ref().err().map(|failure| failure.message.clone()),
+                error_code: result
+                    .as_ref()
+                    .err()
+                    .map(|failure| failure.code.as_str().to_owned()),
             });
-            match result {
+            let failure = match result {
                 Ok(response) => return Ok(response),
-                Err((_error, transient))
-                    if transient && !emitted && !used_tokens && attempt < 3 =>
-                {
-                    tokio::select! {
-                        _ = context.cancellation.cancelled() => return Err("Agent review was cancelled.".into()),
-                        _ = tokio::time::sleep_until(context.deadline) => return Err("Agent review timed out.".into()),
-                        _ = tokio::time::sleep(Duration::from_millis(250 << (attempt - 1))) => {},
-                    }
-                }
-                Err((error, _)) => return Err(error),
+                Err(failure) => failure,
+            };
+            if !failure.code.retryable() || emitted || used_tokens || attempt == ATTEMPTS {
+                return Err(failure.into());
+            }
+            let wait = failure
+                .retry_after
+                .unwrap_or(Duration::from_millis(250 << (attempt - 1)));
+            if failure.retry_after.is_some() && Instant::now() + wait >= context.deadline {
+                return Err(Failure::new(
+                    failure.code,
+                    format!(
+                        "{}. The provider asked to retry after {:.1} s, past the review deadline.",
+                        failure.message.trim_end_matches('.'),
+                        wait.as_secs_f64()
+                    ),
+                ));
+            }
+            tokio::select! {
+                _ = context.cancellation.cancelled() => return Err(Failure::cancelled()),
+                _ = tokio::time::sleep_until(context.deadline) => return Err(Failure::timeout()),
+                _ = tokio::time::sleep(wait) => {},
             }
         }
         unreachable!()
@@ -234,7 +337,6 @@ impl Client {
 
 pub struct Turn<'a> {
     pub number: usize,
-    pub prior_output: bool,
     pub deadline: Instant,
     pub cancellation: &'a CancellationToken,
 }
@@ -278,31 +380,36 @@ pub fn validate_response(response: &CompletionResponse, model: &str) -> Result<(
     Ok(())
 }
 
-fn retryable(error: &ProviderError) -> bool {
-    let report = error.report();
-    let text = format!(
-        "{} {}",
-        report.code.as_deref().unwrap_or_default(),
-        diagnostic(error)
+/// The wait a provider asked for: `retry-after-ms`, or `Retry-After` in seconds or as an
+/// HTTP date.
+fn retry_after(error: &ProviderError) -> Option<Duration> {
+    wait_header(
+        error.provider_response_headers()?,
+        time::OffsetDateTime::now_utc(),
     )
-    .to_lowercase();
-    ![
-        "quota",
-        "billing",
-        "credit",
-        "authentication",
-        "unauthorized",
-        "permission",
-        "usage limit",
-    ]
-    .iter()
-    .any(|term| text.contains(term))
-        && (error.is_retryable()
-            || (report.http_status.is_none()
-                && matches!(
-                    report.code.as_deref(),
-                    Some("overloaded_error" | "rate_limit_error" | "server_error")
-                )))
+}
+
+fn wait_header(
+    headers: &rig_core::http_client::HeaderMap,
+    now: time::OffsetDateTime,
+) -> Option<Duration> {
+    let header = |name: &str| headers.get(name)?.to_str().ok().map(str::trim);
+    let seconds = |value: &str| {
+        value
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(Duration::from_secs_f64)
+    };
+    if let Some(wait) = header("retry-after-ms").and_then(seconds) {
+        return Some(wait / 1000);
+    }
+    let value = header("retry-after")?;
+    seconds(value).or_else(|| {
+        let at = time::OffsetDateTime::parse(value, &time::format_description::well_known::Rfc2822)
+            .ok()?;
+        Some(Duration::try_from(at - now).unwrap_or_default())
+    })
 }
 
 fn diagnostic(error: &ProviderError) -> String {

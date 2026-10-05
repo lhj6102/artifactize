@@ -71,9 +71,9 @@ pub(super) async fn execute(
                     request.result = Some(result);
                     Some(verdict)
                 }
-                Err(error) => {
-                    request.error = Some(error);
-                    request.error_code = Some("AGENT_ERROR".into());
+                Err(failure) => {
+                    request.error = Some(failure.message);
+                    request.error_code = Some(failure.code.as_str().into());
                     None
                 }
             }

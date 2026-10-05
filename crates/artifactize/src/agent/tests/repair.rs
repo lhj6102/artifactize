@@ -94,7 +94,7 @@ async fn second_failure_is_error_without_response_text_or_third_turn() {
             final_openai(),
         ])
         .await;
-    let error = review.result.unwrap_err();
+    let error = review.result.unwrap_err().message;
     assert!(error.contains("after one format repair"));
     assert!(error.contains("schema_mismatch"));
     assert!(!error.contains("PRIVATE_SECRET"));
@@ -120,7 +120,13 @@ async fn unsolicited_repair_tool_calls_never_execute_or_continue() {
             final_openai(),
         ])
         .await;
-    assert!(review.result.unwrap_err().contains("tools are disabled"));
+    assert!(
+        review
+            .result
+            .unwrap_err()
+            .message
+            .contains("tools are disabled")
+    );
     assert!(review.tool_calls.is_empty());
     assert_eq!(http.requests().len(), 2);
 }
@@ -163,12 +169,9 @@ async fn anthropic_repair_after_tools_exposes_no_tools() {
             anthropic_response(false, "end_turn"),
         ])
         .await;
-    assert!(
-        review
-            .result
-            .unwrap_err()
-            .contains("after one format repair")
-    );
+    let failure = review.result.unwrap_err();
+    assert!(failure.message.contains("after one format repair"));
+    assert_eq!(failure.code, crate::agent::error::Code::InvalidResult);
     assert_eq!(review.tool_calls.len(), 1);
     let requests = http.requests();
     assert_eq!(requests.len(), 3);
@@ -238,7 +241,7 @@ async fn repair_shares_original_deadline_and_cancellation_precedes_budget() {
         )
         .await;
         assert_eq!(
-            review.result.unwrap_err(),
+            review.result.unwrap_err().message,
             if cancel {
                 "Agent review was cancelled."
             } else {

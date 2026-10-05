@@ -523,6 +523,26 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                     )
                     .map_err(|e| e.to_string())?;
                 }
+                for stopped in &view.run.stopped_backends {
+                    let skipped = view
+                        .requests
+                        .iter()
+                        .filter(|request| {
+                            request.error_code.as_deref()
+                                == Some(crate::agent::error::BACKEND_STOPPED)
+                                && request.options.backend.as_ref() == Some(&stopped.backend)
+                        })
+                        .count();
+                    writeln!(
+                        stdout,
+                        "Stopped backend {} after {} in {}: {skipped} review{} not started.",
+                        stopped.backend,
+                        stopped.error_code,
+                        stopped.eval_id,
+                        if skipped == 1 { "" } else { "s" }
+                    )
+                    .map_err(|e| e.to_string())?;
+                }
                 let output = crate::query::run_output(&view);
                 let summary = &output["summary"];
                 writeln!(

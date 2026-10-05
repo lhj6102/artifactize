@@ -17,7 +17,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use serde_json::{Value, json};
@@ -30,6 +30,8 @@ pub struct Request {
     pub headers: BTreeMap<String, String>,
     /// The JSON body, a form body as its raw text, or null when there is none.
     pub body: Value,
+    /// When the request arrived.
+    pub received: Instant,
 }
 
 pub enum Reply {
@@ -159,6 +161,7 @@ fn serve(stream: TcpStream, handler: &Handler, requests: &Mutex<Vec<Request>>) {
     let mut body = vec![0; length];
     reader.read_exact(&mut body).unwrap();
     let request = Request {
+        received: Instant::now(),
         method,
         path,
         headers,

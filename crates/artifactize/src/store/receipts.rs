@@ -58,6 +58,21 @@ pub struct Run {
     pub wait_timed_out: bool,
     pub validation: Value,
     pub error: Option<String>,
+    /// Agent backends this Run stopped admitting reviews on, in the order they stopped.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stopped_backends: Vec<StoppedBackend>,
+}
+
+/// An Agent backend a Run stopped after an AUTHENTICATION or QUOTA failure, which every
+/// later review on it would repeat.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoppedBackend {
+    pub backend: String,
+    pub error_code: String,
+    pub eval_id: String,
+    pub request_id: String,
+    pub error: String,
 }
 
 fn default_jobs() -> usize {
