@@ -82,6 +82,10 @@ no provider calls or GUI programs. The tapes use JetBrains Mono, so make it visi
 to fontconfig (for example through `FONTCONFIG_FILE`) or change `FontFamily` in
 `demo/settings.tape`.
 
+The README's promo GIF, `demo/media/promo.gif`, is rendered from the landing
+page's promo video by `website/demo/promo-gif.sh`: 640 px, 25 fps and 64 colours,
+with a progress bar along the bottom edge. It needs `ffmpeg`.
+
 ## Deploy
 
 `.github/workflows/website.yml` installs the pinned mdBook (checking the release
