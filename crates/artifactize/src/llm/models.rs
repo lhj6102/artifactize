@@ -1,52 +1,31 @@
-use std::{path::Path, time::Duration};
+use std::time::Duration;
 
 use rig_core::providers::{anthropic, openai};
 use serde::Serialize;
 
 use crate::config::Backend;
 
-pub use super::chatgpt::ListedModel;
+#[derive(Serialize)]
+pub struct ListedModel {
+    pub slug: String,
+    pub display_name: String,
+}
 
 #[derive(Serialize)]
 pub struct Listing {
     pub backend: Backend,
     pub models: Vec<ListedModel>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub note: Option<&'static str>,
 }
 
-pub async fn list(
-    backend: Backend,
-    state: Option<&Path>,
-    repo: Option<&Path>,
-) -> Result<Listing, String> {
-    let models = match backend {
-        Backend::Chatgpt => super::chatgpt_models(state, repo).await?,
-        Backend::Claude => {
-            return Ok(Listing {
-                backend,
-                models: Vec::new(),
-                note: Some(
-                    "The Claude CLI selects models by name via --model; it has no model-listing API. Use an explicit model name or a CLI-supported alias.",
-                ),
-            });
-        }
-        Backend::Openai | Backend::Anthropic => {
-            let (variable, base) = match backend {
-                Backend::Openai => ("OPENAI_API_KEY", "https://api.openai.com/v1"),
-                _ => ("ANTHROPIC_API_KEY", "https://api.anthropic.com"),
-            };
-            let key = std::env::var(variable)
-                .ok()
-                .filter(|key| !key.trim().is_empty())
-                .ok_or_else(|| format!("{variable} is required to list models."))?;
-            list_at(backend, &key, base).await?
-        }
+pub async fn list(backend: Backend) -> Result<Listing, String> {
+    let key = super::api_key(backend, "to list models")?;
+    let base = match backend {
+        Backend::Openai => "https://api.openai.com/v1",
+        Backend::Anthropic => "https://api.anthropic.com",
     };
     Ok(Listing {
         backend,
-        models,
-        note: None,
+        models: list_at(backend, &key, base).await?,
     })
 }
 
@@ -68,7 +47,6 @@ async fn list_at(backend: Backend, key: &str, base: &str) -> Result<Vec<ListedMo
                     .list_models()
                     .await
             }
-            _ => unreachable!("API-key backend required"),
         }
     };
     let models = tokio::time::timeout(Duration::from_secs(30), request)
@@ -90,7 +68,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::llm::Server;
+    use crate::llm::tests::Server;
 
     #[tokio::test]
     async fn api_key_models_use_provider_headers_and_follow_anthropic_pages() {
@@ -115,6 +93,7 @@ mod tests {
         assert_eq!(requests[0].line, "GET /v1/models HTTP/1.1");
         assert_eq!(requests[0].headers["authorization"], "Bearer openai-key");
         assert!(!requests[0].headers.contains_key("x-api-key"));
+        assert!(requests[0].body.is_null());
 
         let anthropic = Server::new(vec![
             MockHttpResponse::success(json!({"data":[{"id":"first", "display_name":"First"}], "has_more":true,"last_id":"first"}).to_string()),

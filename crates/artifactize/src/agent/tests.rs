@@ -11,7 +11,6 @@ use super::*;
 use crate::config::{Backend, read_workspace_config};
 
 mod budgets;
-mod chatgpt;
 mod repair;
 
 struct Fixture {
@@ -58,7 +57,6 @@ impl Fixture {
                     .connect(http.clone())
                     .completion("exact-model"),
             )),
-            _ => unreachable!(),
         };
         (
             review(
@@ -357,36 +355,16 @@ async fn partial_text_usage_or_prior_tools_prevent_replay() {
 }
 
 #[test]
-fn profiles_reject_remapped_effort_and_subscription_backends_are_explicit() {
+fn profiles_reject_remapped_effort() {
     assert!(Client::parameters(Backend::Openai, Some("xhigh")).is_ok());
+    assert!(Client::parameters(Backend::Openai, Some("max")).is_ok());
     assert!(Client::parameters(Backend::Anthropic, Some("xhigh")).is_err());
-    assert!(Backend::Claude.validate_reasoning("xhigh").is_ok());
     assert!(Client::parameters(Backend::Openai, Some("off")).is_err());
     assert_eq!(
         Client::parameters(Backend::Openai, None)
             .unwrap()
             .get("reasoning"),
         None
-    );
-    assert!(
-        Client::new(
-            Backend::Chatgpt,
-            "exact-model",
-            Path::new("."),
-            Path::new(".")
-        )
-        .is_ok()
-    );
-    assert!(
-        Client::new(
-            Backend::Claude,
-            "exact-model",
-            Path::new("."),
-            Path::new(".")
-        )
-        .err()
-        .unwrap()
-        .contains("supervised CLI")
     );
 }
 

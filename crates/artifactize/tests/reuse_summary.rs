@@ -1,14 +1,13 @@
 use std::{
     collections::BTreeMap,
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
 
 use serde_json::{Value, json};
 
-/// Checkouts of one project sharing a state directory, with the offline Claude CLI.
+/// Checkouts of one project sharing a state directory.
 struct Fixture {
     root: tempfile::TempDir,
 }
@@ -16,12 +15,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
-        for dir in ["bin", "home"] {
-            fs::create_dir(root.path().join(dir)).unwrap();
-        }
-        let claude = root.path().join("bin/claude");
-        fs::write(&claude, include_str!("fixtures/claude.py")).unwrap();
-        fs::set_permissions(&claude, fs::Permissions::from_mode(0o700)).unwrap();
+        fs::create_dir(root.path().join("home")).unwrap();
         Self { root }
     }
 
@@ -32,12 +26,11 @@ impl Fixture {
         // web/tests is RED when its version says "broken".
         let web =
             json!({"kind":"runtime","command":"/bin/sh","args":["-c","! grep -q broken version"]});
-        let agent = json!({"kind":"agent","backend":"claude","model":"claude-test-exact","reasoning":"high","timeoutMs":15000});
         let artifacts = [
             ("api", "tests", runtime.clone(), "Run the API tests."),
             ("web", "tests", web, "Run the web tests."),
-            ("style", "contrast", runtime, "Check {web} colors."),
-            ("docs", "review", agent, "Review the docs against {api}."),
+            ("style", "contrast", runtime.clone(), "Check {web} colors."),
+            ("docs", "review", runtime, "Review the docs against {api}."),
             (
                 "brand",
                 "signoff",
@@ -49,10 +42,7 @@ impl Fixture {
         for ((artifact, eval, profile, instruction), version) in artifacts.into_iter().zip(versions)
         {
             let folder = repo.join(artifact);
-            let mut declaration = json!({"id":eval,"title":eval,"profile":profile,"payload":{"instruction":instruction}});
-            if artifact == "docs" {
-                declaration["passSchema"] = json!({"type":"object","properties":{"note":{"type":"string"}},"required":["note"]});
-            }
+            let declaration = json!({"id":eval,"title":eval,"profile":profile,"payload":{"instruction":instruction}});
             write(
                 &folder,
                 json!({"name":artifact,"evals":[declaration],
@@ -71,14 +61,7 @@ impl Fixture {
             .arg("--state-dir")
             .arg(root.join("state"))
             .args(args)
-            .env(
-                "PATH",
-                format!("{}:/usr/bin:/bin", root.join("bin").display()),
-            )
             .env("HOME", root.join("home"))
-            .env("FAKE_LOG", root.join("calls.jsonl"))
-            .env("FAKE_PIDS", root.join("pids"))
-            .env("FAKE_MODE", "success")
             .output()
             .unwrap();
         assert_eq!(
@@ -169,7 +152,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     // Branch A changes api; its first Run executes everything and waits for the Human.
     let a = fixture.checkout("a", ["a", "base", "base", "base", "base"]);
     let first = fixture.json(&a, &["verify", "--all"], 4);
-    assert_eq!(first["summary"]["executed"], tally(5, 3, 1, 1));
+    assert_eq!(first["summary"]["executed"], tally(5, 4, 0, 1));
     assert_eq!(first["summary"]["reused"], tally(0, 0, 0, 0));
     assert_eq!(first["usage"]["saved"], json!({}));
     fixture.sign(&a, &first);
@@ -177,12 +160,8 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     // Branch B changes web and docs; unchanged style and the Human signoff are reused.
     let b = fixture.checkout("b", ["base", "b", "base", "b", "base"]);
     let second = fixture.json(&b, &["verify", "--all"], 0);
-    assert_eq!(second["summary"]["executed"], tally(3, 2, 1, 0));
+    assert_eq!(second["summary"]["executed"], tally(3, 3, 0, 0));
     assert_eq!(second["summary"]["reused"], tally(2, 1, 0, 1));
-    let review = request(&second, "docs/review");
-    let spent = &second["usage"]["spent"];
-    assert!(spent["inputTokens"].as_u64().unwrap() > 0, "{spent}");
-    assert_eq!(&second["summary"]["usage"], spent);
 
     // The merge takes api from A and docs from B, and resolves web anew.
     let merge = fixture.checkout("merge", ["a", "merged", "base", "b", "base"]);
@@ -212,10 +191,10 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     assert_eq!(taken(&run)["web/tests"], "execute");
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["summary"]["executed"], tally(1, 1, 0, 0));
-    assert_eq!(run["summary"]["reused"], tally(4, 2, 1, 1));
+    assert_eq!(run["summary"]["reused"], tally(4, 3, 0, 1));
     assert_eq!(
         line(&text, "Summary:"),
-        "Summary: executed 1 (runtime 1, agent 0, human 0), reused 4 (runtime 2, agent 1, human 1)"
+        "Summary: executed 1 (runtime 1, agent 0, human 0), reused 4 (runtime 3, agent 0, human 1)"
     );
     for (eval, source) in [
         ("api/tests", &first),
@@ -231,21 +210,6 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
         assert_eq!(request(&run, eval)["provenance"]["runId"], source);
     }
     assert!(line(&text, "web/tests").ends_with("]: GREEN"), "{text}");
-
-    // Reused Agent usage is saved, not spent.
-    assert_eq!(run["usage"], json!({"spent":{},"saved":spent}));
-    assert!(line(&text, "Usage:").starts_with("Usage: spent none; saved "));
-    let reused_review = request(&run, "docs/review");
-    assert!(reused_review["usage"].is_null());
-    assert_eq!(reused_review["reusedUsage"], review["usage"]);
-    let shown = fixture.json(
-        &merge,
-        &["request", "show", reused_review["id"].as_str().unwrap()],
-        0,
-    );
-    assert_eq!(shown["summary"]["attempts"], 0);
-    assert_eq!(shown["summary"]["usage"], json!({}));
-    assert_eq!(shown["summary"]["usageState"], "none");
 }
 
 #[test]

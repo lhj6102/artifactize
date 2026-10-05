@@ -18,7 +18,7 @@ covers setup.
 - [Runtime execution library](artifactize-json.md#runtime-execution-library)
 - [Agent backends](../guides/agent-evals.md#agent-backends)
 - [Agent tools](agent-tools.md#agent-tools)
-- [Tool diagnostics and MCP](agent-tools.md#tool-diagnostics-and-mcp)
+- [Tool diagnostics](agent-tools.md#tool-diagnostics)
 - [Human tools](human-tools.md#human-tools)
 - [Human reviews](human-tools.md#human-reviews)
 - [Local diagnostics and maintenance](state-cache-limits.md#doctor-models-and-prune)

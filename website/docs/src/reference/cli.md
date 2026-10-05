@@ -31,12 +31,11 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `cache show FINGERPRINT [EVAL_HASH]` | | JSON | 0; 4 missing |
 | `cache rm FINGERPRINT [EVAL_HASH]` | | JSON | 0 |
 | `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 0 ready, 1 not |
-| `login chatgpt`, `logout chatgpt` | | text or JSON | 0 |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
 | `remote logout` | | text or JSON | 0 |
 | `remote status` | | text or JSON | 0 signed in, 1 not |
 | `remote push` | `--dry-run` | text or JSON | 0 |
-| `models openai\|anthropic\|chatgpt\|claude` | | text or JSON | 0 |
+| `models openai\|anthropic` | | text or JSON | 0 |
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
 | `monitor` | `--all` (not with `--repo`) | terminal UI | 0 |

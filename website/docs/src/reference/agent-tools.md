@@ -118,9 +118,9 @@ under `<name>_<artifactId>`; concatenation collisions are rejected. Human tools
 are never listed. Listing creates no directories and runs no owner code. Calls
 return normalized `ToolResult {content, is_error}` for successful, authored and
 system-error results. Registry calls do not mutate payloads or declarations. The
-Agent loop and stdio MCP server both call this registry.
+Agent loop calls this registry.
 
-## Tool diagnostics and MCP
+## Tool diagnostics
 
 ```sh
 artifactize tools check                         # every Agent/Human eval's scope
@@ -144,41 +144,3 @@ execution); Human calls use the reviewer's real environment. Exit codes are
 0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for
 invalid invocation. `--repo`, `--state-dir` and `--json` are accepted; reports are
 JSON even without `--json`.
-
-The internal async helper `mcp::write_config(config, effective_eval, execution_id,
-state_dir, output_dir)` writes private `mcp-manifest.json` and `mcp-config.json`
-files in an external execution directory and returns the config path. Pass the
-config to the unmodified Claude CLI with `--strict-mcp-config --mcp-config CFG
---allowedTools 'mcp__artifactize__*'` (full backend controls are in `docs/PLAN.md`).
-The generated stdio server is the internal `artifactize mcp --manifest PATH`
-command at the current executable's absolute path. It is hidden from `--help` and
-not meant to be run by hand: it speaks only MCP on stdio, rejects `--repo`,
-`--state-dir` and `--json`, and exits 0, or 1 on a server failure. The Claude
-backend launches the CLI with this config and runs the tools-disabled repair as a
-second invocation with an empty MCP config.
-
-The manifest contains `executionId`, `evalId`, `repo`, `state`, `output` and the
-effective Agent `profile`. The server reloads static declarations and binds that
-execution to its eval, scoped definitions and budget in SQLite; reconnects reject
-changed bindings instead of widening the scope or resetting counters. No snapshots,
-pinned input manifests or provider credentials are involved. One server holds an
-execution-directory lock; calls are serialized. Only Agent tools in the eval's
-admitted scope are exposed, with dynamic JSON Schemas. rmcp 3.5.0 handles newline-
-delimited JSON-RPC initialization (including 2024-11-05), ping, tool listing/calls,
-notifications and protocol errors. Each inbound line is capped at 64 KiB before
-unbounded buffering; oversized input closes the server with exit 1 and a stderr
-diagnostic, including input without a newline. Outgoing image responses retain
-the registry's image/result limits, not the inbound cap. Stdout is protocol-only.
-
-Text and JSON blocks become MCP text (JSON is serialized); validated images remain
-MCP images. Authored and operational tool failures return `isError: true`.
-Cancellation and disconnect propagate to process-group cleanup. Every tool call,
-including rejected names/arguments, cancellation and exhausted budgets, is audited
-before a response. `mcp_sessions.started` is incremented transactionally before
-admitted calls against the effective profile's `maxToolCalls`; denied calls are
-audited without running or incrementing. SQLite `tool_calls` rows contain ordered
-`name`, `arguments`, bounded `result` summary, `isError` and `error` fields.
-Unfinished calls retain an error placeholder after a crash. Sessions may precede
-the execution rows of reviews without a fingerprint; the caller owns review completion. `run show` combines
-this durable audit with in-process Agent audit through one projection; execution
-completion also copies it into the self-contained execution/cache result.

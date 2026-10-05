@@ -69,7 +69,7 @@ never `artifactize.json`, so a cloned repository cannot redirect a token. `remot
 login URL` reads one token line from stdin (never argv; a terminal does not echo
 it), verifies it with `GET /v1/whoami`, then stores it in
 `$STATE/auth/remote-token.json` (0700 directory,
-0600 single-link file, like the ChatGPT credentials) and writes
+0600 single-link file, never followed through a symlink) and writes
 `$STATE/remote.json`: `{"url":"https://reviews.example/","share":"summary"}`.
 URLs must use HTTPS with the system trust store; plain `http://` is accepted only
 for `localhost`, `127.0.0.0/8` and `[::1]`. Credentials, queries and fragments are

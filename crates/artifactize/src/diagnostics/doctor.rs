@@ -1,15 +1,12 @@
 use std::{
     env, fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use tokio_util::sync::CancellationToken;
 
-use crate::{auth, config::read_workspace_config, process, store, workspace};
+use crate::{auth, config::read_workspace_config, store, workspace};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,25 +135,6 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             json!({"present":present}),
         );
     }
-    match auth::chatgpt_status(Some(&state), repo) {
-        Ok(status) => report.add(
-            "chatgpt",
-            if status.present && !status.expired {
-                "PASS"
-            } else {
-                "WARN"
-            },
-            if !status.present {
-                "No ChatGPT login; run `artifactize login chatgpt`."
-            } else if status.expired {
-                "ChatGPT access token has expired; refresh was not attempted."
-            } else {
-                "ChatGPT login is present; no provider validation or refresh was attempted."
-            },
-            json!(status),
-        ),
-        Err(error) => report.add("chatgpt", "FAIL", &error, Value::Null),
-    }
     // Offline: configuration and token storage only; `remote status` checks reachability.
     match auth::remote::remote(Some(&state), repo) {
         Ok(None) => report.add(
@@ -184,57 +162,6 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             }
         }
         Err(error) => report.add("remote", "FAIL", &error, Value::Null),
-    }
-    let binary = env::var_os("PATH").and_then(|path| {
-        env::split_paths(&path)
-            .map(|path| path.join("claude"))
-            .find(|path| {
-                path.metadata()
-                    .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-            })
-    });
-    if let Some(binary) = binary {
-        let command = process::Command {
-            program: binary.clone().into(),
-            args: vec!["--version".into()],
-            cwd: env::current_dir().map_err(|e| e.to_string())?,
-            env: ["PATH", "HOME", "LANG", "TMPDIR"]
-                .into_iter()
-                .filter_map(|name| env::var_os(name).map(|value| (name.into(), value)))
-                .collect(),
-            timeout: Duration::from_secs(5),
-        };
-        match process::run(command, CancellationToken::new(), |_| async { Ok(()) }).await {
-            Ok(output) if output.status.success() && !output.truncated => {
-                let version = String::from_utf8(crate::runtime::clean_output(&output.stdout))
-                    .expect("clean output is UTF-8");
-                report.add(
-                    "claude",
-                    "PASS",
-                    version.trim(),
-                    json!({"present":true,"path":binary,"version":version.trim()}),
-                );
-            }
-            Ok(_) => report.add(
-                "claude",
-                "FAIL",
-                "claude --version failed or exceeded the output limit.",
-                json!({"present":true,"path":binary}),
-            ),
-            Err(error) => report.add(
-                "claude",
-                "FAIL",
-                &format!("claude --version: {error}"),
-                json!({"present":true,"path":binary}),
-            ),
-        }
-    } else {
-        report.add(
-            "claude",
-            "WARN",
-            "The claude executable was not found on PATH.",
-            json!({"present":false}),
-        );
     }
     Ok(report)
 }

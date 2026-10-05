@@ -1284,7 +1284,7 @@ fn canonical_definition_hash_includes_all_agent_settings_but_not_names() {
     let hash = eval_definition_hash(&first);
     assert_eq!(hash, eval_definition_hash(&second));
     for (key, value) in [
-        ("backend", json!("claude")),
+        ("backend", json!("openai")),
         ("model", json!("other")),
         ("reasoning", json!("low")),
         ("maxToolCalls", json!(4)),

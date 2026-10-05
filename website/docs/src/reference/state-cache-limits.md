@@ -66,7 +66,7 @@ space, and there is no semantic TTL, protected-reader registry or scratch cleanu
 
 ```sh
 artifactize doctor [--repo PATH] [--state-dir PATH] [--json]
-artifactize models openai|anthropic|chatgpt|claude [--json]
+artifactize models openai|anthropic [--json]
 artifactize prune [--older-than 7d] [--dry-run] [--state-dir PATH] [--json]
 ```
 
@@ -83,33 +83,29 @@ removes are in the [reference](#doctor-models-and-prune).
 ### Doctor, models and prune
 
 `doctor` makes no provider calls and creates no Run, verdict, cache entry or auth
-lock. It reports the resolved state directory and tests writability with a temporary
+file. It reports the resolved state directory and tests writability with a temporary
 directory, removed immediately (in the nearest existing ancestor when state does
 not yet exist). It reads the state database's schema without changing the file:
 an older schema (1 or 2) passes with a note that the next artifactize command
 upgrades it, and a database written by a newer artifactize is a hard error. `--repo`
-additionally runs the same static validation as `config check`. API keys are reported only as present/absent, never validated or printed.
-ChatGPT login presence and Unix-second access-token expiry come from protected local
-storage without refreshing. `claude` is located on PATH and only `--version` runs,
-with a five-second timeout and bounded output; Claude credentials are never read.
-Missing keys/login/binary and expired tokens are warnings: optional backends need
-not all be installed. The remote review store check is also offline: it reports
-the resolved URL, share level and token source; a missing token is a warning, and
-an invalid configuration (including plain HTTP to a non-loopback host) or an
-unsafe token file is a hard error. Invalid config, unsafe/unwritable state, invalid auth storage
-or a failing installed CLI are hard errors. Exit is 0 without hard errors, 1 with
-hard errors, and 2 for invocation errors.
+additionally runs the same static validation as `config check`. API keys are
+reported only as present/absent, never validated or printed. Missing keys are
+warnings: optional backends need not all be configured. The remote review store
+check is also offline: it reports the resolved URL, share level and token source; a
+missing token is a warning, and an invalid configuration (including plain HTTP to a
+non-loopback host) or an unsafe token file is a hard error. Invalid config,
+unsafe/unwritable state or invalid auth storage are hard errors. Exit is 0 without
+hard errors, 1 with hard errors, and 2 for invocation errors.
 
 `models openai` and `models anthropic` call the provider's models endpoint with the
-corresponding API key through rig; Anthropic pagination is followed. ChatGPT uses
-its existing login/refresh flow. There is no account or backend fallback. Claude
-has no listing API, so its command explains `--model` names/aliases without launching
-inference. Text lists tab-separated slug/name pairs; JSON is consistently
-`{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`,
-with a `note` and empty `models` for Claude. Listings preserve provider order.
+corresponding API key through rig; Anthropic pagination is followed. There is no
+account or backend fallback. Text lists tab-separated slug/name pairs; JSON is
+consistently `{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`.
+Listings preserve provider order.
 
 Only known scratch directories below `state/runs/<run-id>` are removed: runtime
-`output`/`tmp`/`home`/`cache`, leftover tool output and Claude invocation directories.
+`output`/`tmp`/`home`/`cache`, leftover tool output and the Claude CLI invocation
+directories of Runs made before 0.5.0.
 Run roots, unknown files/directories, database rows, tool audit, results and cache
 entries remain. Symlinks (including nested links), non-directory targets and
 repository content are refused before deletion. Database reads have a five-second

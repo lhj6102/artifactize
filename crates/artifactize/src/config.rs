@@ -39,24 +39,39 @@ impl ConfigError {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
     Openai,
     Anthropic,
-    Chatgpt,
-    Claude,
+}
+
+/// Backends that 0.5.0 removed; a declaration naming one fails with its replacements.
+const REMOVED_BACKENDS: [&str; 2] = ["chatgpt", "claude"];
+
+impl<'de> Deserialize<'de> for Backend {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let name = String::deserialize(deserializer)?;
+        match name.as_str() {
+            "openai" => Ok(Self::Openai),
+            "anthropic" => Ok(Self::Anthropic),
+            removed if REMOVED_BACKENDS.contains(&removed) => Err(D::Error::custom(format!(
+                r#"backend "{removed}" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex" (0.5.0) with a ChatGPT/Codex sign-in"#
+            ))),
+            other => Err(D::Error::unknown_variant(other, &["openai", "anthropic"])),
+        }
+    }
 }
 
 impl Backend {
     pub fn validate_reasoning(self, reasoning: &str) -> Result<(), String> {
         let supported = match self {
-            Self::Openai | Self::Chatgpt => matches!(
+            Self::Openai => matches!(
                 reasoning,
                 "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
             ),
             Self::Anthropic => matches!(reasoning, "low" | "medium" | "high" | "max"),
-            Self::Claude => matches!(reasoning, "low" | "medium" | "high" | "xhigh" | "max"),
         };
         if supported {
             Ok(())

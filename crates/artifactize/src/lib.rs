@@ -10,7 +10,6 @@ pub mod diagnostics;
 pub mod graph;
 pub mod human;
 pub mod llm;
-pub mod mcp;
 pub mod monitor;
 pub mod process;
 pub mod project;

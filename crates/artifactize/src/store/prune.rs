@@ -205,6 +205,7 @@ fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
         let path = entry.path();
+        // claude-* holds Claude CLI invocations of Runs made before 0.5.0.
         if matches!(name, "output" | "tmp" | "home" | "cache" | "human-tools")
             || ["tool-output-", "tool-", "claude-"]
                 .iter()

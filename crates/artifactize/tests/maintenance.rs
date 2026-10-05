@@ -78,10 +78,18 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     let bin = root.path().join("bin");
     fs::create_dir(&bin).unwrap();
     let absent = result(&mut doctor(&state, &bin), 0);
-    for name in ["openai", "anthropic", "chatgpt", "claude"] {
+    for name in ["openai", "anthropic"] {
         assert_eq!(check(&absent, name)["status"], "WARN");
         assert_eq!(check(&absent, name)["details"]["present"], false);
     }
+    // 0.5.0 removed the chatgpt and claude backends and their checks.
+    let names: Vec<_> = absent["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|check| check["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["state", "schema", "openai", "anthropic", "remote"]);
     assert_eq!(check(&absent, "state")["details"]["writable"], true);
     assert_eq!(check(&absent, "schema")["details"], json!({"schema":null}));
     assert!(!state.exists());
@@ -89,27 +97,13 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
 
     runtime_run(&state, &repo);
     let before = fs::read(state.join("state.sqlite")).unwrap();
-    let executable = bin.join("claude");
-    fs::write(&executable, "#!/bin/sh\n[ \"$#\" = 1 ] && [ \"$1\" = --version ] || exit 20\nprintf '1.2.3 (test CLI)\\n'\n").unwrap();
-    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    // Leftover 0.4 ChatGPT credentials are neither read nor removed.
     let auth = state.join("auth");
     fs::create_dir(&auth).unwrap();
     fs::set_permissions(&auth, fs::Permissions::from_mode(0o700)).unwrap();
-    let account = json!({"issuer":"https://auth.openai.com", "subject":"test", "email":null});
-    let registration =
-        json!({"client_id":"oaiapp_test", "ext_agent_host_id":"test-host", "account":account});
-    let mut credentials = json!({
-        "access_token":"private-access", "refresh_token":"private-refresh", "id_token":"private-id",
-        "token_type":"Bearer", "expires_at":4_000_000_000_u64, "saved_at":1,
-        "client_id":"oaiapp_test", "ext_agent_host_id":"test-host", "scopes":["chatgpt.tokens.use.direct"], "account":account
-    });
-    for (name, data) in [
-        ("chatgpt-registration.json", &registration),
-        ("chatgpt.json", &credentials),
-    ] {
-        fs::write(auth.join(name), data.to_string()).unwrap();
-        fs::set_permissions(auth.join(name), fs::Permissions::from_mode(0o600)).unwrap();
-    }
+    let leftover = json!({"access_token":"private-access", "refresh_token":"private-refresh"});
+    fs::write(auth.join("chatgpt.json"), leftover.to_string()).unwrap();
+    fs::set_permissions(auth.join("chatgpt.json"), fs::Permissions::from_mode(0o600)).unwrap();
     let present = result(
         doctor(&state, &bin)
             .arg("--repo")
@@ -123,41 +117,23 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         check(&present, "schema")["details"],
         json!({"schema":artifactize::store::STATE_SCHEMA_VERSION})
     );
-    for name in [
-        "openai",
-        "anthropic",
-        "chatgpt",
-        "claude",
-        "config",
-        "schema",
-    ] {
+    for name in ["openai", "anthropic", "config", "schema"] {
         assert_eq!(check(&present, name)["status"], "PASS");
     }
-    assert_eq!(
-        check(&present, "claude")["details"]["version"],
-        "1.2.3 (test CLI)"
-    );
-    assert_eq!(check(&present, "chatgpt")["details"]["expired"], false);
     let output = present.to_string();
     for secret in [
         "secret-openai",
         "secret-anthropic",
         "private-access",
         "private-refresh",
-        "private-id",
     ] {
         assert!(!output.contains(secret));
     }
-    credentials["expires_at"] = json!(1);
-    fs::write(auth.join("chatgpt.json"), credentials.to_string()).unwrap();
-    let expired = result(&mut doctor(&state, &bin), 0);
-    assert_eq!(check(&expired, "chatgpt")["details"]["expired"], true);
-    assert_eq!(check(&expired, "chatgpt")["status"], "WARN");
     assert_eq!(
         fs::read_to_string(auth.join("chatgpt.json")).unwrap(),
-        credentials.to_string()
+        leftover.to_string()
     );
-    assert!(!auth.join("chatgpt.lock").exists());
+    assert_eq!(fs::read_dir(&auth).unwrap().count(), 1);
     assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
 
     // A database written by a newer artifactize is a hard error and stays as it is.
@@ -230,15 +206,9 @@ fn doctor_reports_hard_local_errors_and_models_cli_needs_no_run() {
         );
         assert!(failure["error"].as_str().unwrap().contains(variable));
     }
-    let listing = result(command(&state).args(["models", "claude"]), 0);
-    assert_eq!(listing["backend"], "claude");
-    assert_eq!(listing["models"], json!([]));
-    assert!(
-        listing["note"]
-            .as_str()
-            .unwrap()
-            .contains("no model-listing API")
-    );
+    for removed in ["chatgpt", "claude"] {
+        result(command(&state).args(["models", removed]), 2);
+    }
     assert!(!state.exists());
 }
 
@@ -269,6 +239,7 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     drop(db);
     let run = state.join("runs").join(id(&finished));
     for path in [
+        // Claude CLI invocation output from 0.4 Runs is still pruned.
         "claude-execution/mcp-config.json",
         "tool-leftover/runtime-leftover/output/content",
         "tool-output-test/content",

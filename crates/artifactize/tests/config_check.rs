@@ -316,3 +316,36 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
             .contains("--unknown")
     );
 }
+
+#[test]
+fn config_check_names_the_replacements_for_removed_backends() {
+    for backend in ["chatgpt", "claude"] {
+        let agent = json!({"kind":"agent","backend":backend,"model":"m"});
+        let openai = json!({"kind":"agent","backend":"openai","model":"m"});
+        for (profile, variants) in [(agent.clone(), json!({})), (openai, json!({"old":agent}))] {
+            let fixture = Fixture::new();
+            fixture.write(
+                "app/artifactize.json",
+                &json!({"name":"app","evals":[{
+                    "id":"review","title":"Review","profile":profile,"profileVariants":variants,
+                    "payload":{"instruction":"Review."}
+                }]})
+                .to_string(),
+            );
+            let output = fixture
+                .command()
+                .args(["config", "check", "--json"])
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(2));
+            let error = json_output(&output)["error"].as_str().unwrap().to_owned();
+            assert!(error.contains("app/artifactize.json"), "{error}");
+            assert!(
+                error.contains(&format!(
+                    r#"backend "{backend}" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex""#
+                )),
+                "{error}"
+            );
+        }
+    }
+}

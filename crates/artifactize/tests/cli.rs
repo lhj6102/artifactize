@@ -138,7 +138,12 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         vec!["run", "show", run, "--wait", "--timeout-ms", "0"],
         vec!["run", "show", "missing"],
         vec!["monitor"],
+        // Removed in 0.5.0 with the chatgpt and claude backends.
         vec!["mcp", "--manifest", "manifest.json"],
+        vec!["login", "chatgpt"],
+        vec!["logout", "chatgpt"],
+        vec!["models", "chatgpt"],
+        vec!["models", "claude"],
     ] {
         let error = fixture.json(&args, 2)["error"].as_str().unwrap().to_owned();
         assert!(
@@ -154,7 +159,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     assert_eq!(output.status.code(), Some(2));
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Usage:"));
-    for args in [["help", "verify"], ["run", "--help"], ["mcp", "--help"]] {
+    for args in [["help", "verify"], ["run", "--help"], ["models", "--help"]] {
         let output = fixture.command().args(args).output().unwrap();
         assert!(output.status.success());
         assert!(String::from_utf8_lossy(&output.stdout).contains("Usage: artifactize"));
@@ -196,12 +201,12 @@ fn help_is_displayed_without_arguments() {
     assert!(text.contains("--repo <PATH>"));
     assert!(text.contains("--state-dir <PATH>"));
     assert!(text.contains("--json"));
-    for hidden in ["mcp", "graph"] {
+    for hidden in ["graph", "mcp", "login", "logout"] {
         assert!(
             !text
                 .lines()
                 .any(|line| line.trim_start().starts_with(hidden)),
-            "{hidden} is hidden: {text}"
+            "{hidden} is hidden or removed: {text}"
         );
     }
 }
