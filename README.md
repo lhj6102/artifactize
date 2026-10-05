@@ -22,7 +22,7 @@ Apache License 2.0 and runs on Linux and WSL 2.
 Change one file: `status` predicts one execution and names the file, and `verify`
 re-reviews only that Artifact.
 
-<img src="website/demo/media/change.gif" width="800"
+<img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/change.gif" width="800"
      alt="One file changes: artifactize status predicts one execution and four reuses and names the changed file, then artifactize verify reviews only that Artifact and reuses the other four results.">
 
 ## Why artifactize
@@ -46,11 +46,18 @@ re-reviews only that Artifact.
 
 ## Install
 
-On Linux or WSL 2, with a Rust toolchain and a C compiler:
+On Linux or WSL 2, with a Rust toolchain and a C compiler, install the latest
+release from [crates.io](https://crates.io/crates/artifactize):
 
 ```sh
-cargo install --git https://github.com/lhj6102/artifactize --tag v0.4.0 --locked artifactize
-artifactize --version          # artifactize 0.4.0
+cargo install artifactize --locked
+artifactize --version          # artifactize 0.5.0
+```
+
+Releases are also tagged on GitHub, and `cargo install` can build one from there:
+
+```sh
+cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.0 --locked artifactize
 ```
 
 To build from source instead:
@@ -67,7 +74,7 @@ prerequisites, the Agent backends, state and uninstalling.
 ## A tiny example
 
 A folder with an `artifactize.json` is an Artifact. This one, from
-[`examples/runtime-relations`](examples/runtime-relations/README.md), checks that a
+[`examples/runtime-relations`](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations), checks that a
 page has a heading, and `"fingerprint": {}` makes the result reusable while the
 folder is unchanged:
 
@@ -111,7 +118,7 @@ continues with `status`, a family of Artifacts and a Human sign-off.
 `verify` reviews once; the next `verify` reuses every result whose eval and
 fingerprints are unchanged and says where each came from.
 
-<img src="website/demo/media/reuse.gif" width="800"
+<img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/reuse.gif" width="800"
      alt="artifactize status predicts five evals; the first verify executes all five, the second reuses all five and its summary reads executed 0, reused 5.">
 
 [Fingerprints and reuse](https://artifactize.dev/docs/concepts/fingerprints-and-reuse.html) ·
@@ -123,7 +130,7 @@ fingerprints are unchanged and says where each came from.
 opens the waiting request in `artifactize review`: run the tools its owner declared,
 submit the verdict through a form, and the Run finishes.
 
-<img src="website/demo/media/human.gif" width="800"
+<img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/human.gif" width="800"
      alt="Two terminals: verify --wait waits; in the monitor, o opens review, the notes tool prints the design notes, the GREEN form is filled and submitted, and verify finishes GREEN.">
 
 [Human reviews](https://artifactize.dev/docs/guides/human-reviews.html)
@@ -134,7 +141,7 @@ Each machine keeps its own checkout and state. One `artifactize server` keeps th
 verdicts by reuse key and returns the latest, so a review done on one laptop is
 reused on the next and in CI. A read-only CI token reuses but never publishes.
 
-<img src="website/demo/media/team.gif" width="800"
+<img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/team.gif" width="800"
      alt="Alice's verify executes five evals and publishes them; on Bob's laptop status predicts five reuses and verify reuses all five from remote: alice@laptop.">
 
 [Team review store](https://artifactize.dev/docs/guides/team-review-store.html) ·
@@ -151,11 +158,11 @@ Everything else is at **[artifactize.dev/docs](https://artifactize.dev/docs/)**:
 - [Examples](https://artifactize.dev/docs/getting-started/examples.html): runtime relations, Agent and Human tools, families.
 
 The recordings above are reproducible: their VHS tapes and demo projects are in
-[`website/demo`](website/demo) ([how to record](website/README.md#recordings)).
+[`website/demo`](https://github.com/lhj6102/artifactize/tree/main/website/demo) ([how to record](https://github.com/lhj6102/artifactize/blob/main/website/README.md#recordings)).
 
 Artifactize is a lean Rust port and rebrand of [CCDD](https://github.com/lhj6102/ccdd)
-7.0.0 (`cbf28b4`); the [plan](docs/PLAN.md) records the scope.
+7.0.0 (`cbf28b4`); the [plan](https://github.com/lhj6102/artifactize/blob/main/docs/PLAN.md) records the scope.
 
 ## License
 
-Licensed under the [Apache License, Version 2.0](LICENSE).
+Licensed under the [Apache License, Version 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).

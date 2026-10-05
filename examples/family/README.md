@@ -53,7 +53,7 @@ What it demonstrates:
 ## Run it
 
 You need `artifactize` on your `PATH` ([Install](https://artifactize.dev/docs/getting-started/install.html):
-`cargo install --git https://github.com/lhj6102/artifactize --tag v0.4.0 --locked artifactize`), plus `python3`.
+`cargo install artifactize --locked`), plus `python3`.
 
 ```sh
 cd examples/family

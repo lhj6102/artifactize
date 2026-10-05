@@ -5,5 +5,8 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.4.0"
 edition = "2024"
+# rig-core 0.43 needs 1.95; clippy's incompatible_msrv lint holds the code to it.
+rust-version = "1.95"
 license = "Apache-2.0"
 repository = "https://github.com/lhj6102/artifactize"
+homepage = "https://artifactize.dev"

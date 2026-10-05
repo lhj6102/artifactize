@@ -25,7 +25,7 @@ On Linux or WSL 2, with a Rust toolchain and a C compiler, install the binary an
 review the runtime-only example. No model or API key is needed:
 
 ```sh
-cargo install --git https://github.com/lhj6102/artifactize --tag v0.4.0 --locked artifactize
+cargo install artifactize --locked
 git clone https://github.com/lhj6102/artifactize   # the example projects
 cd artifactize/examples/runtime-relations
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
