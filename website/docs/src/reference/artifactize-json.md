@@ -15,8 +15,10 @@ reuse, and neither does an eval that depends on it, so every `verify` reviews th
 again. The former `staleKey` (0.2 and 0.3) and `stale` (0.1) fields fail
 `config check` with a message showing the `fingerprint` shape, and so does the
 content form's 0.4 `dependencies` option. The old `critics`, `stale.paths`,
-`resultCheck`, `envRequirements`, `reviewPolicy.maxConcurrentExecutors` and tool
-metadata `observation` fields are rejected. Agent and Human tools use the separate flat
+`envRequirements`, `reviewPolicy.maxConcurrentExecutors` and tool metadata
+`observation` fields are rejected, and so is CCDD's `resultCheck` `script` wrapper:
+an Agent eval's [`resultCheck`](../guides/agent-evals.md#result-check) is a flat
+`{command, args, timeoutMs}`. Agent and Human tools use the separate flat
 declarations below.
 
 ## Content fingerprint

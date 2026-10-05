@@ -179,7 +179,8 @@ pub async fn verify(
             requested_profile: serde_json::to_value(&eval.declaration.profile)
                 .expect("profile is JSON"),
             eval_def_hash: cache::eval_definition_hash(&eval.declaration),
-            options: ExecutionOptions::new(&eval.declaration.profile, eval.variant.as_deref()),
+            options: ExecutionOptions::new(&eval.declaration.profile, eval.variant.as_deref())
+                .with_result_check(eval.declaration.result_check.as_ref()),
             execution_id: None,
             provenance: None,
             usage: None,

@@ -148,6 +148,7 @@ A failed Agent review records one of these `errorCode` values:
 | `CANCELLED` | Ctrl-C or a cancelled Run | no |
 | `PROVIDER_BUDGET_EXCEEDED` | `maxTokens` or `maxToolCalls` was exceeded | no |
 | `INVALID_RESULT` | No valid verdict after the one format repair | no |
+| `RESULT_CHECK_FAILED` | The eval's [`resultCheck`](#result-check) crashed, timed out or printed an invalid answer | no |
 | `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
 | `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
@@ -187,6 +188,62 @@ declared tool.
 These real reviews are still pending for the owner. Automated tests use fake HTTP
 transports or a [fake provider](#test-against-a-fake-provider) and make no real
 inference requests.
+
+## Result check
+
+JSON Schema checks the shape of a result but cannot see what the reviewer did. An
+Agent eval's `resultCheck` runs a project command over the parsed result and its
+tool-call audit before the review completes, so a check can require, for example,
+that every requirement a finding cites was read with a tool:
+
+```json
+{
+  "id": "review",
+  "title": "The specification covers every requirement",
+  "profile": {"kind": "agent", "backend": "openai", "model": "YOUR_EXACT_MODEL_ID"},
+  "payload": {"instruction": "Review {spec}."},
+  "resultCheck": {"command": "python3", "args": ["check.py", "{spec}/spec.md"], "timeoutMs": 30000}
+}
+```
+
+- **When.** After the final output passes `passSchema` or `failSchema`, and again
+  after the repair turn. A result that fails its schema is repaired first, without
+  running the check.
+- **How it runs.** Like a runtime command: literal argv with `{artifact}` references
+  resolved in the eval's scope, the target Artifact's folder as cwd, a private home,
+  temporary and output directories below the Run's output, only `PATH` and `LANG`
+  from the environment, and `timeoutMs` (default 30,000) with process-group cleanup.
+  Artifacts named in its args are dependencies of the eval, as with runtime args.
+- **stdin.** One JSON object:
+
+  ```json
+  {"version": 1, "artifactId": "spec", "family": null,
+   "result": {"verdict": "GREEN", "covered": ["R1"]},
+   "toolCalls": [{"name": "read_spec", "arguments": {"path": "spec.md"}, "isError": false}]}
+  ```
+
+  `family` is the Artifact's family name, or null. `toolCalls` lists every tool
+  call of the review in order, including rejected ones.
+- **stdout.** One JSON object, `{"errors": ["...", ...]}`: at most 8 non-empty
+  errors and at most 4 KiB. An empty list accepts the result.
+- **Errors.** The first time the check returns errors, they go to the review's one
+  tools-disabled repair turn, the same turn a schema failure uses:
+
+  ```text
+  Your final response did not pass the project's result check:
+  - R9 does not appear in spec.md.
+  Return only one JSON object matching the schema.
+  ```
+
+  If the repaired result still fails the check (or its schema), the review is
+  ERROR with `INVALID_RESULT`, and the saved error lists the check's errors.
+- **A broken check.** A non-zero exit, a timeout, or output that breaks the protocol
+  ends the review with `RESULT_CHECK_FAILED`, without a repair or a result. The error
+  says which, with up to 500 characters of the check's stderr.
+- **Reuse.** The check's `command` and `args` are part of the eval strategy, so
+  changing them reviews again. Its `timeoutMs` is a limit, like the profile's: it is
+  recorded with each result's execution options as `resultCheckTimeoutMs`, and
+  changing only it reuses the result.
 
 ## Codex
 

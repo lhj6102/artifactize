@@ -50,7 +50,8 @@ An eval depends on its target Artifact and on what the target directly connects:
 
 - the target's mounts;
 - the target's child Artifacts;
-- the Artifacts the eval names in its instruction or runtime args.
+- the Artifacts the eval names in its instruction, its runtime args or its
+  `resultCheck` args.
 
 artifactize does not follow connections further than that. Whether a change two
 connections away matters is up to how you define fingerprints: a fingerprint
@@ -67,15 +68,16 @@ SHA-256 of canonical JSON with recursively sorted keys over the eval strategy:
 - the eval kind (runtime, agent or human);
 - `payload`, including the instruction;
 - `passSchema` and `failSchema`;
-- for runtime evals, the command and args.
+- for runtime evals, the command and args;
+- for Agent evals, the `resultCheck` command and args, when there is one.
 
 Execution options are not part of the key: an Agent's backend, model, reasoning,
-`timeoutMs`, `maxToolCalls` and `maxTokens`, a runtime `timeoutMs`, and the
-selected profile variant. Neither are the eval id and title, repository paths,
-unused profile variants, or tool declarations (`views`): a tool is a way of
-viewing an Artifact, so changing only a tool's description or schema does not
-review again. To make a tool change matter, include the relevant files in the
-fingerprint.
+`timeoutMs`, `maxToolCalls` and `maxTokens`, its `resultCheck` `timeoutMs`, a
+runtime `timeoutMs`, and the selected profile variant. Neither are the eval id and
+title, repository paths, unused profile variants, or tool declarations (`views`): a
+tool is a way of viewing an Artifact, so changing only a tool's description or
+schema does not review again. To make a tool change matter, include the relevant
+files in the fingerprint.
 
 An eval has a key only when its target and every Artifact it depends on declare a
 fingerprint. Without one, it has no reuse: every `verify` reviews it again, and

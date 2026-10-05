@@ -342,14 +342,6 @@ fn dropped_configuration_fields_are_rejected() {
     ] {
         assert!(parse(declaration).unwrap_err().contains("unknown field"));
     }
-    let mut declared =
-        eval(json!({"kind":"agent","backend":"openai","model":"m","reasoning":"high"}));
-    declared["resultCheck"] = json!({"script":{"command":"check.sh","args":[]}});
-    assert!(
-        parse(json!({"name":"a","evals":[declared]}))
-            .unwrap_err()
-            .contains("resultCheck")
-    );
     assert!(
         parse(
             json!({"name":"a","views":{"agentTools":{"read":{
@@ -446,5 +438,61 @@ fn response_schema_contract_rejects_reserved_fields_and_open_envelopes() {
                 "{schema}"
             );
         }
+    }
+}
+
+#[test]
+fn result_checks_are_flat_agent_commands() {
+    let with = |profile: Value, check: Value| {
+        let mut declared = eval(profile);
+        declared["resultCheck"] = check;
+        parse(json!({"name":"a","evals":[declared]}))
+    };
+    let agent = json!({"kind":"agent","backend":"openai","model":"m"});
+    let parsed = with(
+        agent.clone(),
+        json!({"command":"python3","args":["check.py","{a}/notes.md"],"timeoutMs":5000}),
+    )
+    .unwrap();
+    assert_eq!(
+        parsed.evals[0].result_check,
+        Some(crate::config::ResultCheck {
+            command: "python3".into(),
+            args: vec!["check.py".into(), "{a}/notes.md".into()],
+            timeout_ms: Some(5000),
+        })
+    );
+    for (profile, check, expected) in [
+        // CCDD's script wrapper is not accepted.
+        (
+            agent.clone(),
+            json!({"script":{"command":"check.sh","args":[]}}),
+            "unknown field",
+        ),
+        (agent.clone(), json!(null), ""),
+        (agent.clone(), json!({"command":"check.sh"}), "args"),
+        (
+            agent.clone(),
+            json!({"command":"","args":[]}),
+            "resultCheck",
+        ),
+        (
+            agent.clone(),
+            json!({"command":"check.sh","args":[],"timeoutMs":0}),
+            "timeoutMs",
+        ),
+        (
+            json!({"kind":"human"}),
+            json!({"command":"check.sh","args":[]}),
+            "only to Agent evals",
+        ),
+        (
+            json!({"kind":"runtime","command":"true","args":[]}),
+            json!({"command":"check.sh","args":[]}),
+            "only to Agent evals",
+        ),
+    ] {
+        let error = with(profile, check.clone()).unwrap_err();
+        assert!(error.contains(expected), "{check}: {error}");
     }
 }

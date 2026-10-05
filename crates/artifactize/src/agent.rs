@@ -2,6 +2,7 @@
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
+mod check;
 pub mod error;
 pub mod verdict;
 
@@ -158,29 +159,62 @@ async fn run(
                 .collect();
             let result = verdict.parse(&text);
             check_deadline(cancellation, deadline)?;
-            match result {
-                Ok(value) => return Ok(value),
+            // A schema failure, or the project's resultCheck errors, earn the one repair turn.
+            let repair = match result {
+                Ok(value) => {
+                    let Some(check) = &eval.declaration.result_check else {
+                        return Ok(value);
+                    };
+                    let errors = check::run(
+                        config,
+                        eval,
+                        check,
+                        &value,
+                        tool_calls,
+                        output,
+                        deadline,
+                        cancellation,
+                    )
+                    .await?;
+                    check_deadline(cancellation, deadline)?;
+                    if errors.is_empty() {
+                        return Ok(value);
+                    }
+                    if repairing {
+                        return Err(Failure::new(
+                            Code::InvalidResult,
+                            format!(
+                                "Invalid final Agent result after one format repair: resultCheck: {}",
+                                errors.join("; ")
+                            ),
+                        ));
+                    }
+                    let errors: String =
+                        errors.iter().map(|error| format!("\n- {error}")).collect();
+                    format!("Your final response did not pass the project's result check:{errors}")
+                }
                 Err(error) if repairing => {
                     return Err(Failure::new(
                         Code::InvalidResult,
                         format!("Invalid final Agent result after one format repair: {error}."),
                     ));
                 }
-                Err(error) => {
-                    repairing = true;
-                    request.tools.clear();
-                    request.tool_choice = Some(ToolChoice::None);
-                    request.chat_history.push(Message::Assistant {
-                        id: response.message_id,
-                        content: response.choice,
-                    });
-                    request.chat_history.push(Message::user(format!(
-                        "Your final response did not match the required schema: {}\nReturn only one JSON object matching the schema.",
-                        verdict.repair_detail(&text, error)
-                    )));
-                    continue;
-                }
-            }
+                Err(error) => format!(
+                    "Your final response did not match the required schema: {}",
+                    verdict.repair_detail(&text, error)
+                ),
+            };
+            repairing = true;
+            request.tools.clear();
+            request.tool_choice = Some(ToolChoice::None);
+            request.chat_history.push(Message::Assistant {
+                id: response.message_id,
+                content: response.choice,
+            });
+            request.chat_history.push(Message::user(format!(
+                "{repair}\nReturn only one JSON object matching the schema."
+            )));
+            continue;
         }
         if repairing {
             return Err(Failure::new(
