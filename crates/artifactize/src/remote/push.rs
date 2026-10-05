@@ -16,8 +16,8 @@ pub struct Push {
     pub skipped: usize,
 }
 
-/// Re-send local GREEN/RED results, never mirrors; keys the store already has are no-ops.
-/// Unlike verify, this explicit command fails on any remote failure.
+/// Send the latest local GREEN/RED record of each key, never a mirror; records the store
+/// already holds are no-ops. Unlike verify, this explicit command fails on any remote failure.
 pub async fn push(
     state: Option<&Path>,
     repo: Option<&Path>,
@@ -44,10 +44,7 @@ pub async fn push(
         let Some(last) = page.last() else {
             break;
         };
-        after = Some((
-            last.fingerprint.clone().expect("cached fingerprint"),
-            last.eval_def_hash.clone(),
-        ));
+        after = Some(last.key.clone().expect("cached key"));
         let mut records = Vec::new();
         for execution in &page {
             match record(execution, &principal, remote.share) {
@@ -56,19 +53,16 @@ pub async fn push(
                     report.skipped += 1;
                     let _ = writeln!(
                         std::io::stderr().lock(),
-                        "Skipped {} {}: {reason}.",
-                        execution.fingerprint.as_deref().unwrap_or_default(),
-                        execution.eval_def_hash
+                        "Skipped {} ({}): {reason}.",
+                        execution.key.as_deref().unwrap_or_default(),
+                        execution.provenance.eval_id
                     );
                 }
             }
         }
-        // With the read scope, keys the store already has are not sent again.
+        // With the read scope, a record that is already the store's latest is not sent again.
         let existing: BTreeSet<_> = if has_scope(&principal, "read") {
-            let keys: Vec<_> = records
-                .iter()
-                .map(|record| (record.fingerprint.clone(), record.eval_def_hash.clone()))
-                .collect();
+            let keys: Vec<_> = records.iter().map(|record| record.key.clone()).collect();
             remote
                 .lookup(&keys)
                 .await
@@ -76,8 +70,8 @@ pub async fn push(
                 .into_iter()
                 .filter_map(|entry| {
                     Some((
-                        entry["fingerprint"].as_str()?.to_owned(),
-                        entry["evalDefHash"].as_str()?.to_owned(),
+                        entry["key"].as_str()?.to_owned(),
+                        entry["executionId"].as_str()?.to_owned(),
                     ))
                 })
                 .collect()
@@ -85,9 +79,8 @@ pub async fn push(
             BTreeSet::new()
         };
         for record in records {
-            // A key published meanwhile answers `created: false`; the first writer wins.
-            let created = !existing
-                .contains(&(record.fingerprint.clone(), record.eval_def_hash.clone()))
+            // The store keeps each execution once; a resent record answers `created: false`.
+            let created = !existing.contains(&(record.key.clone(), record.execution_id.clone()))
                 && (dry_run
                     || remote
                         .publish(&record)

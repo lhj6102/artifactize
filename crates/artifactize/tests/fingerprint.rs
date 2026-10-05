@@ -407,7 +407,11 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
         "import hashlib, json, pathlib, sys\njson.load(sys.stdin)\ndigest = hashlib.sha256()\nfor root in sys.argv[1:]:\n    for path in sorted(pathlib.Path(root).rglob('*')):\n        if path.is_file():\n            digest.update(path.read_bytes())\nprint(digest.hexdigest())\n",
     )
     .unwrap();
-    fixture.write("core/artifactize.json", json!({"name":"core","basis":true}));
+    // Every Artifact an eval names needs a fingerprint for the eval to have a reuse key.
+    fixture.write(
+        "core/artifactize.json",
+        json!({"name":"core","basis":true,"fingerprint":{}}),
+    );
     fs::write(fixture.repo.join("core/lib.txt"), "v1").unwrap();
     // The JSON from issue #48: a global Artifact name in both fingerprint and runtime argv.
     let api = |reference: &str, mounts: Value| {

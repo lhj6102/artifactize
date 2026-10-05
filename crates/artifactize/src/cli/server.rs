@@ -23,12 +23,8 @@ pub enum ServerCommand {
         #[command(subcommand)]
         command: TokenCommand,
     },
-    /// Remove stored entries for a fingerprint.
-    Rm {
-        fingerprint: String,
-        /// Required when the fingerprint has multiple stored Eval definitions.
-        eval_hash: Option<String>,
-    },
+    /// Remove every stored record of a reuse key.
+    Rm { key: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -126,12 +122,7 @@ pub(super) async fn execute(
         ServerCommand::Token {
             command: TokenCommand::Revoke { name, purge },
         } => print_json(&store.revoke(&name, purge).await?)?,
-        ServerCommand::Rm {
-            fingerprint,
-            eval_hash,
-        } => print_json(
-            &json!({"removed": store.remove(&fingerprint, eval_hash.as_deref()).await?}),
-        )?,
+        ServerCommand::Rm { key } => print_json(&json!({"removed": store.remove(&key).await?}))?,
     }
     Ok(0)
 }

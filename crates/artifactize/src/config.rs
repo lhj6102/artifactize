@@ -194,19 +194,9 @@ impl Views {
     }
 }
 
-/// Which dependency Artifacts a content fingerprint covers, one hop by default.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Dependencies {
-    None,
-    #[default]
-    Direct,
-    Transitive,
-}
-
-/// What a review depends on. artifactize hashes it, and while the fingerprint is unchanged
-/// it reuses the earlier verdict. The content form is the plain object; the script form
-/// keeps its `script` wrapper.
+/// The developer's definition of what an Artifact's reviews depend on: a script's output or
+/// the built-in hash of the Artifact's own files, used as is. The content form is the plain
+/// object; the script form keeps its `script` wrapper.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "Map<String, Value>", into = "Value")]
 pub enum Fingerprint {
@@ -219,7 +209,6 @@ pub enum Fingerprint {
     },
     Content {
         files: Vec<String>,
-        dependencies: Dependencies,
         ignore: Vec<String>,
     },
 }
@@ -246,8 +235,6 @@ struct ScriptFields {
 struct ContentForm {
     #[serde(default = "owner_root")]
     files: Vec<String>,
-    #[serde(default)]
-    dependencies: Dependencies,
     #[serde(default)]
     ignore: Vec<String>,
 }
@@ -277,16 +264,13 @@ impl TryFrom<Map<String, Value>> for Fingerprint {
                 timeout_ms,
             }
         } else {
-            let ContentForm {
-                files,
-                dependencies,
-                ignore,
-            } = serde_json::from_value(Value::Object(object))?;
-            Self::Content {
-                files,
-                dependencies,
-                ignore,
+            if object.contains_key("dependencies") {
+                return Err(serde::de::Error::custom(
+                    "fingerprint.dependencies was removed in 0.5: a fingerprint covers only its own Artifact, and an eval's reuse key adds the fingerprints of its mounts, children and referenced Artifacts. Remove the field.",
+                ));
             }
+            let ContentForm { files, ignore } = serde_json::from_value(Value::Object(object))?;
+            Self::Content { files, ignore }
         })
     }
 }
@@ -302,12 +286,8 @@ impl From<Fingerprint> for Value {
             } => serde_json::json!({"script": {
                 "command": command, "args": args, "files": files, "timeoutMs": timeout_ms,
             }}),
-            Fingerprint::Content {
-                files,
-                dependencies,
-                ignore,
-            } => {
-                serde_json::json!({"files": files, "dependencies": dependencies, "ignore": ignore})
+            Fingerprint::Content { files, ignore } => {
+                serde_json::json!({"files": files, "ignore": ignore})
             }
         }
     }
@@ -426,7 +406,7 @@ fn validated_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
     for key in ["staleKey", "stale"] {
         if value.get(key).is_some() {
             return Err(format!(
-                r#"{key} was renamed to fingerprint: use "fingerprint": {{"files": ["."], "dependencies": "direct", "ignore": []}} or "fingerprint": {{"script": {{...}}}}."#
+                r#"{key} was renamed to fingerprint: use "fingerprint": {{"files": ["."], "ignore": []}} or "fingerprint": {{"script": {{...}}}}."#
             ));
         }
     }
@@ -458,6 +438,10 @@ pub struct Eval {
     pub references: BTreeMap<String, String>,
     pub deps: Vec<String>,
     pub declaration: EvalDeclaration,
+    /// The `profileVariants` entry selected for this execution, if any: an execution option,
+    /// recorded with results but never part of the saved declaration.
+    #[serde(skip)]
+    pub variant: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -606,6 +590,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                         references: BTreeMap::new(),
                         deps: Vec::new(),
                         declaration,
+                        variant: None,
                     });
                 }
                 config.artifacts.insert(

@@ -97,8 +97,9 @@ impl Fixture {
         serde_json::from_str(&data).unwrap()
     }
 
+    /// The same Artifact in its own repository: every shared repository has the same key.
     fn shared_repo(&self, name: &str, script: &str) -> PathBuf {
-        let repo = self.repo(name, json!({"name":name,"fingerprint":fingerprint("concurrent"),"evals":[{
+        let repo = self.repo(name, json!({"name":"shared","fingerprint":fingerprint("concurrent"),"evals":[{
             "id":"check","title":"Review","profile":{"kind":"runtime","command":"/bin/sh",
                 "args":["review.sh",self.root.path().join("starts"),self.root.path().join("release")],"timeoutMs":10000},
             "payload":{"instruction":"Review."}
@@ -126,35 +127,50 @@ impl Fixture {
             .unwrap()
     }
 
+    /// Seed records under the keys `seed-00000`, `seed-00001`, ... (each its own execution),
+    /// least recently used first.
     fn seed_entries(&self, count: usize, bytes: i64) {
         let mut db = Connection::open(self.state.join("state.sqlite")).unwrap();
         let transaction = db.transaction().unwrap();
         for i in 0..count {
-            let fingerprint = format!("seed-{i:05}");
+            let key = format!("seed-{i:05}");
             transaction.execute(
-                "INSERT INTO executions(id,fingerprint,eval_def_hash,owner_pid,owner_start_time,status,data) SELECT ?,?,eval_def_hash,owner_pid,owner_start_time,status,json_set(data,'$.id',?,'$.fingerprint',?) FROM executions LIMIT 1",
-                rusqlite::params![fingerprint, fingerprint, fingerprint, fingerprint],
+                "INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) SELECT ?1,?1,owner_pid,owner_start_time,status,json_set(data,'$.id',?1,'$.key',?1) FROM executions LIMIT 1",
+                [&key],
             ).unwrap();
             transaction.execute(
-                "INSERT INTO cache_entries(fingerprint,eval_def_hash,execution_id,bytes,last_used) VALUES (?,(SELECT eval_def_hash FROM executions LIMIT 1),?,?,?)",
-                rusqlite::params![fingerprint, fingerprint, bytes, format!("2000-01-01T00:00:00.{i:09}Z")],
+                "INSERT INTO cache_entries(execution_id,key,eval_def_hash,completed_at,bytes,last_used) VALUES (?1,?1,'seed',?2,?3,?2)",
+                rusqlite::params![key, format!("2000-01-01T00:00:00.{i:09}Z"), bytes],
             ).unwrap();
         }
         transaction.commit().unwrap();
     }
 
-    /// Verify a new fingerprint from its own repository; publishing the entry runs LRU GC.
-    fn publish(&self, key: &str) {
+    /// Verify a new fingerprint from its own repository and return the reuse key; publishing
+    /// the record runs LRU GC.
+    fn publish(&self, name: &str) -> String {
         let repo = self.repo(
-            key,
-            json!({"name":"publisher","fingerprint":fingerprint(key),"evals":[eval("check","exit 0")]}),
+            name,
+            json!({"name":"publisher","fingerprint":fingerprint(name),"evals":[eval("check","exit 0")]}),
         );
-        self.command(&repo, &["verify", "--all"], 0);
+        key(&self.command(&repo, &["verify", "--all"], 0), 0)
+    }
+
+    /// The key a running execution holds.
+    fn running_key(&self) -> String {
+        Connection::open(self.state.join("state.sqlite"))
+            .unwrap()
+            .query_row(
+                "SELECT key FROM executions WHERE status='RUNNING'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
     }
 
     fn entries(&self) -> Vec<(String, String, i64, String, String)> {
         let db = Connection::open(self.state.join("state.sqlite")).unwrap();
-        let mut statement = db.prepare("SELECT c.fingerprint,c.execution_id,c.bytes,c.last_used,e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id ORDER BY c.fingerprint").unwrap();
+        let mut statement = db.prepare("SELECT c.key,c.execution_id,c.bytes,c.last_used,e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id ORDER BY c.key,c.completed_at").unwrap();
         statement
             .query_map([], |row| {
                 Ok((
@@ -221,6 +237,11 @@ fn fingerprint(key: &str) -> Value {
     json!({"script":{"command":"/bin/echo","args":[key]}})
 }
 
+/// The reuse key of a Run's request.
+fn key(run: &Value, index: usize) -> String {
+    run["requests"][index]["key"].as_str().unwrap().to_owned()
+}
+
 fn request<'a>(view: &'a Value, id: &str) -> &'a Value {
     view["requests"]
         .as_array()
@@ -233,7 +254,8 @@ fn request<'a>(view: &'a Value, id: &str) -> &'a Value {
 #[test]
 fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_deletion() {
     let fixture = Fixture::new();
-    let source = fixture.repo("source", json!({"name":"original","fingerprint":fingerprint("shared:red"),"evals":[eval("first","printf original; exit 7")]}));
+    // The same Artifact, under its own name, in another repository with another eval id.
+    let source = fixture.repo("source", json!({"name":"dependency","fingerprint":fingerprint("shared:red"),"evals":[eval("first","printf original; exit 7")]}));
     let original = fixture.command(&source, &["verify", "--all"], 1);
     let original_request = &original["requests"][0];
     assert!(original_request["child"]["pid"].is_number());
@@ -286,7 +308,7 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
         hit["provenance"]["repoPath"],
         source.to_string_lossy().as_ref()
     );
-    assert_eq!(hit["provenance"]["evalId"], "original/first");
+    assert_eq!(hit["provenance"]["evalId"], "dependency/first");
     assert_eq!(
         hit["provenance"]["completedAt"],
         original_request["completedAt"]
@@ -355,24 +377,23 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
     );
     let entries = fixture.command(&repo, &["cache", "list"], 0);
     assert_eq!(entries.as_array().unwrap().len(), 2);
-    for command in ["show", "rm"] {
-        assert!(
-            fixture.command(&repo, &["cache", command, "shared"], 2)["error"]
-                .as_str()
-                .unwrap()
-                .contains("multiple Eval definitions")
-        );
-    }
-    let hash = pass["evalDefHash"].as_str().unwrap();
-    let cached = fixture.command(&repo, &["cache", "show", "shared", hash], 0);
-    assert_eq!(cached["evalDefHash"], hash);
+    // One fingerprint, two eval strategies: two keys.
+    let (pass_key, fail_key) = (key(&run, 0), key(&run, 1));
+    assert_ne!(pass_key, fail_key);
+    let cached = fixture.command(&repo, &["cache", "show", &pass_key], 0);
+    assert_eq!(cached["evalDefHash"], pass["evalDefHash"]);
     assert_eq!(cached["id"], pass["executionId"]);
+    assert_eq!(cached["fingerprints"], json!({"test":"shared"}));
     assert_eq!(
-        fixture.command(&repo, &["cache", "rm", "shared", hash], 0),
+        fixture.command(&repo, &["cache", "rm", &pass_key], 0),
         json!({"removed":true})
     );
     assert_eq!(
-        fixture.command(&repo, &["cache", "show", "shared"], 0)["id"],
+        fixture.command(&repo, &["cache", "show", &pass_key], 4),
+        Value::Null
+    );
+    assert_eq!(
+        fixture.command(&repo, &["cache", "show", &fail_key], 0)["id"],
         fail["executionId"]
     );
 }
@@ -427,7 +448,7 @@ fn errors_are_audited_but_never_published() {
 }
 
 #[test]
-fn force_executes_without_reading_or_replacing_an_entry_but_dependencies_reuse() {
+fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies_reuse() {
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
@@ -435,7 +456,7 @@ fn force_executes_without_reading_or_replacing_an_entry_but_dependencies_reuse()
     );
     fs::write(repo.join("review.sh"), "exit 7").unwrap();
     let original = fixture.command(&repo, &["verify", "--all"], 1);
-    let before = fixture.entries();
+    assert_eq!(fixture.entries().len(), 1);
     fs::write(repo.join("review.sh"), "echo force >> starts").unwrap();
     let forced = fixture.command(&repo, &["verify", "--all", "--force"], 0);
     assert_ne!(
@@ -443,15 +464,55 @@ fn force_executes_without_reading_or_replacing_an_entry_but_dependencies_reuse()
         original["requests"][0]["executionId"]
     );
     assert!(forced["requests"][0]["child"]["pid"].is_number());
-    assert_eq!(fixture.entries(), before);
+    // The forced result joins the key's history next to the original.
+    let after = fixture.entries();
+    assert_eq!(after.len(), 2);
+    assert!(after.iter().all(|entry| entry.0 == key(&original, 0)));
     let status = fixture.command(&repo, &["status", "--force"], 1);
     assert_eq!(status["evals"][0]["action"], "execute");
-    assert_eq!(fixture.entries(), before);
+    assert_eq!(fixture.entries(), after);
+    // The latest record wins: the next ordinary verify reuses the forced GREEN.
+    let next = fixture.command(&repo, &["verify", "--all"], 0);
     assert_eq!(
-        fixture.command(&repo, &["verify", "--all"], 1)["requests"][0]["result"],
-        original["requests"][0]["result"]
+        next["requests"][0]["executionId"],
+        forced["requests"][0]["executionId"]
     );
     assert_eq!(fs::read_to_string(repo.join("starts")).unwrap(), "force\n");
+    let history = fixture.command(
+        &repo,
+        &["cache", "show", &key(&original, 0), "--history"],
+        0,
+    );
+    let ids: Vec<_> = history
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| record["id"].clone())
+        .collect();
+    assert_eq!(
+        ids,
+        [
+            forced["requests"][0]["executionId"].clone(),
+            original["requests"][0]["executionId"].clone()
+        ]
+    );
+    // `cache list` shows the latest record per key; `--history` shows every record.
+    let latest = fixture.command(&repo, &["cache", "list"], 0);
+    assert_eq!(latest.as_array().unwrap().len(), 1);
+    assert_eq!(
+        latest[0]["executionId"],
+        forced["requests"][0]["executionId"]
+    );
+    assert_eq!(latest[0]["verdict"], "GREEN");
+    assert_eq!(latest[0]["records"], 2);
+    let all = fixture.command(&repo, &["cache", "list", "--history"], 0);
+    let verdicts: Vec<_> = all
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["verdict"].as_str().unwrap())
+        .collect();
+    assert_eq!(verdicts, ["GREEN", "RED"]);
 
     let dependency = fixture.repo(
         "dep",
@@ -470,11 +531,14 @@ fn force_executes_without_reading_or_replacing_an_entry_but_dependencies_reuse()
     assert!(!repo.join("dependency/must-not-run").exists());
 
     let absent = fixture.repo("absent",json!({"name":"absent","fingerprint":fingerprint("never-published"),"evals":[eval("check","exit 0")]}));
-    let entries = fixture.entries();
-    fixture.command(&absent, &["verify", "--all", "--force"], 0);
-    assert_eq!(fixture.entries(), entries);
+    let before = fixture.entries().len();
+    let forced = fixture.command(&absent, &["verify", "--all", "--force"], 0);
+    assert_eq!(fixture.entries().len(), before + 1);
+    assert_eq!(
+        fixture.command(&absent, &["verify", "--all"], 0)["requests"][0]["executionId"],
+        forced["requests"][0]["executionId"]
+    );
 }
-
 #[test]
 fn status_uses_current_fingerprint_and_only_prepares_the_selected_closure() {
     let fixture = Fixture::new();
@@ -669,7 +733,7 @@ fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconc
 }
 
 #[test]
-fn force_bypasses_a_live_claim_and_never_publishes() {
+fn force_bypasses_a_live_claim_and_the_latest_completion_wins() {
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
     let target = fixture.shared_repo("target", "echo forced >> \"$1\"; printf forced");
@@ -677,11 +741,13 @@ fn force_bypasses_a_live_claim_and_never_publishes() {
     wait_until(|| fixture.starts() > 0);
     let forced = finish(fixture.spawn(&target, &["--force"]), 0);
     let execution = fixture.execution(forced["requests"][0]["executionId"].as_str().unwrap());
-    assert!(execution["fingerprint"].is_null());
-    assert_eq!(fixture.count("cache_entries"), 0);
+    assert_eq!(execution["key"], fixture.running_key().as_str());
+    assert_eq!(fixture.count("cache_entries"), 1);
     assert_eq!(fixture.starts(), 2);
     fixture.release();
     let original = finish(owner, 0);
+    assert_eq!(fixture.count("cache_entries"), 2);
+    // The owner completed after the forced review, so its record is the latest.
     let reused = fixture.command(&target, &["verify", "--all"], 0);
     assert_eq!(
         reused["requests"][0]["executionId"],
@@ -689,7 +755,6 @@ fn force_bypasses_a_live_claim_and_never_publishes() {
     );
     assert_eq!(fixture.starts(), 2);
 }
-
 #[test]
 fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     let fixture = Fixture::new();
@@ -760,7 +825,9 @@ fn zero_budget_can_join_an_owner_but_cannot_replace_it_after_failure() {
 fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget() {
     let fixture = Fixture::new();
     let source = fixture.shared_repo("source", WAIT_SCRIPT);
-    let target = fixture.shared_repo("a-target", "touch must-not-run");
+    // The shared Artifact and an unrelated sibling, without a parent that would own both.
+    let target = fixture.root.path().join("a-target");
+    let shared = fixture.shared_repo("a-target/a-shared", "touch must-not-run");
     write(
         &target,
         "independent/artifactize.json",
@@ -781,6 +848,7 @@ fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget()
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(fixture.starts(), 1);
     assert!(target.join("independent/ran").exists());
+    assert!(!shared.join("must-not-run").exists());
 }
 
 #[test]
@@ -829,13 +897,17 @@ fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
     let entries = fixture.command(&repo, &["cache", "list"], 0);
     assert_eq!(entries.as_array().unwrap().len(), 1);
     let entry = &entries[0];
+    let key = key(&run, 0);
+    assert_eq!(entry["key"], key.as_str());
     assert_eq!(entry["fingerprint"], "entry");
+    assert_eq!(entry["records"], 1);
+    assert!(entry["producer"].as_str().unwrap().contains('@'));
     assert_eq!(entry["verdict"], "RED");
     assert_eq!(entry["repoPath"], run["repoPath"]);
     assert_eq!(entry["evalId"], "original/check");
     assert_eq!(entry["bytes"], before[0].2);
     assert_eq!(entry["lastUsed"], before[0].3);
-    let saved = fixture.command(&repo, &["cache", "show", "entry"], 0);
+    let saved = fixture.command(&repo, &["cache", "show", &key], 0);
     assert_eq!(
         saved,
         fixture.execution(run["requests"][0]["executionId"].as_str().unwrap())
@@ -843,7 +915,7 @@ fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
     for field in ["result", "profile", "provenance", "usage"] {
         assert_eq!(saved[field], run["requests"][0][field]);
     }
-    for args in [vec!["cache", "list"], vec!["cache", "show", "entry"]] {
+    for args in [vec!["cache", "list"], vec!["cache", "show", &key]] {
         let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
             .arg("--state-dir")
             .arg(&fixture.state)
@@ -853,11 +925,10 @@ fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
         assert!(output.status.success());
         if args[1] == "list" {
             let text = String::from_utf8(output.stdout).unwrap();
-            assert!(text.contains("FINGERPRINT\tEVAL HASH\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED"));
-            assert!(text.contains(&format!(
-                "entry\t{}\tRED",
-                entry["evalDefHash"].as_str().unwrap()
-            )));
+            assert!(text.contains(
+                "KEY\tEVAL\tVERDICT\tCOMPLETED\tPRODUCER\tSOURCE\tRECORDS\tBYTES\tLAST USED"
+            ));
+            assert!(text.contains(&format!("{key}\toriginal/check\tRED\t")));
         } else {
             assert_eq!(
                 serde_json::from_slice::<Value>(&output.stdout).unwrap(),
@@ -871,16 +942,20 @@ fn cache_list_show_and_rm_are_repository_independent_and_preserve_audit() {
         "queries do not touch LRU metadata"
     );
     assert_eq!(
-        fixture.command(&repo, &["cache", "rm", "entry"], 0),
+        fixture.command(&repo, &["cache", "rm", &key], 0),
         json!({"removed":true})
     );
     assert_eq!(
-        fixture.command(&repo, &["cache", "rm", "entry"], 0),
+        fixture.command(&repo, &["cache", "rm", &key], 0),
         json!({"removed":false})
     );
     assert_eq!(
-        fixture.command(&repo, &["cache", "show", "entry"], 4),
+        fixture.command(&repo, &["cache", "show", &key], 4),
         Value::Null
+    );
+    assert_eq!(
+        fixture.command(&repo, &["cache", "show", &key, "--history"], 4),
+        json!([])
     );
     assert_eq!(fixture.count("executions"), 1);
     assert_eq!(
@@ -894,17 +969,24 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
-        json!({"name":"test","fingerprint":fingerprint("seed-00000"),"evals":[eval("check","exit 0")]}),
+        json!({"name":"test","fingerprint":fingerprint("seed"),"evals":[eval("check","exit 0")]}),
     );
     let original = fixture.command(&repo, &["verify", "--all"], 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute("DELETE FROM cache_entries", []).unwrap();
     fixture.seed_entries(10_000, 1);
+    // The oldest seed holds the repository's key.
+    let current = key(&original, 0);
+    db.execute(
+        "UPDATE cache_entries SET key=? WHERE key='seed-00000'",
+        [&current],
+    )
+    .unwrap();
     let hit = fixture.command(&repo, &["verify", "--all"], 0);
     assert_eq!(hit["requests"][0]["executionId"], "seed-00000");
     let used: String = db
         .query_row(
-            "SELECT last_used FROM cache_entries WHERE fingerprint='seed-00000'",
+            "SELECT last_used FROM cache_entries WHERE execution_id='seed-00000'",
             [],
             |row| row.get(0),
         )
@@ -915,29 +997,25 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
         "artifactize.json",
         json!({"name":"test","fingerprint":fingerprint("new"),"evals":[eval("check","exit 0")]}),
     );
-    fixture.command(&repo, &["verify", "--all"], 0);
+    let new = key(&fixture.command(&repo, &["verify", "--all"], 0), 0);
     assert_eq!(fixture.count("cache_entries"), 10_000);
     assert_eq!(
         fixture.command(&repo, &["cache", "show", "seed-00001"], 4),
         Value::Null
     );
-    assert!(
-        fixture
-            .command(&repo, &["cache", "show", "seed-00000"], 0)
-            .is_object()
-    );
-    assert!(
-        fixture
-            .command(&repo, &["cache", "show", "new"], 0)
-            .is_object()
-    );
+    for key in [&current, &new] {
+        assert!(
+            fixture
+                .command(&repo, &["cache", "show", key], 0)
+                .is_object()
+        );
+    }
     assert_eq!(fixture.count("executions"), 10_002);
     assert_eq!(
         fixture.command(&repo, &["run", "show", original["id"].as_str().unwrap()], 0),
         original
     );
 }
-
 #[test]
 fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     const MIB: i64 = 1024 * 1024;
@@ -950,7 +1028,7 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute("DELETE FROM cache_entries", []).unwrap();
     fixture.seed_entries(65, 16 * MIB);
-    db.execute("INSERT INTO executions(id,fingerprint,eval_def_hash,owner_pid,owner_start_time,status,data) SELECT 'active','seed-00000',eval_def_hash,1,1,'WAITING_HUMAN','{}' FROM executions LIMIT 1", []).unwrap();
+    db.execute("INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) VALUES ('active','seed-00000',1,1,'WAITING_HUMAN','{}')", []).unwrap();
     db.execute("INSERT INTO requests(id,run_id,execution_id,status,data) VALUES ('waiter',?,'seed-00001','QUEUED','{}')", [original["id"].as_str().unwrap()]).unwrap();
     for key in ["seed-00000", "seed-00001"] {
         assert!(
@@ -961,14 +1039,14 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
         );
     }
     // The new entry takes 65 seeded 16 MiB entries over 1 GiB.
-    fixture.publish("first");
+    let first = fixture.publish("first");
     assert_eq!(fixture.count("cache_entries"), 64);
     assert!(
         db.query_row::<i64, _, _>("SELECT sum(bytes) FROM cache_entries", [], |row| row.get(0))
             .unwrap()
             <= 1024 * MIB
     );
-    for key in ["seed-00000", "seed-00001", "seed-00004", "first"] {
+    for key in ["seed-00000", "seed-00001", "seed-00004", &first] {
         assert!(
             fixture
                 .command(&repo, &["cache", "show", key], 0)
@@ -994,7 +1072,7 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     );
     db.execute("UPDATE cache_entries SET bytes=?", [16 * MIB + 1])
         .unwrap();
-    fixture.publish("second");
+    let second = fixture.publish("second");
     let keys = || {
         fixture
             .entries()
@@ -1002,28 +1080,36 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
             .map(|entry| entry.0)
             .collect::<Vec<_>>()
     };
+    let sorted = |mut keys: Vec<String>| {
+        keys.sort();
+        keys
+    };
     assert_eq!(
         keys(),
-        ["second", "seed-00000", "seed-00001"],
+        sorted(vec![
+            second.clone(),
+            "seed-00000".into(),
+            "seed-00001".into()
+        ]),
         "protected rows survive even when oversized"
     );
     db.execute("UPDATE executions SET status='ERROR' WHERE id='active'", [])
         .unwrap();
     db.execute("UPDATE requests SET status='GREEN' WHERE id='waiter'", [])
         .unwrap();
-    fixture.publish("third");
-    assert_eq!(keys(), ["second", "third"]);
+    let third = fixture.publish("third");
+    assert_eq!(keys(), sorted(vec![second, third]));
     assert_eq!(fixture.count("executions"), 70);
 }
 
 #[test]
-fn rm_refuses_an_active_fingerprint_even_without_an_entry() {
+fn rm_refuses_an_active_key_even_without_an_entry() {
     let fixture = Fixture::new();
     let repo = fixture.shared_repo("repo", WAIT_SCRIPT);
     let mut owner = fixture.spawn(&repo, &[]);
     wait_until(|| fixture.starts() > 0);
     assert!(
-        fixture.command(&repo, &["cache", "rm", "concurrent"], 2)["error"]
+        fixture.command(&repo, &["cache", "rm", &fixture.running_key()], 2)["error"]
             .as_str()
             .unwrap()
             .contains("active execution")
@@ -1034,7 +1120,6 @@ fn rm_refuses_an_active_fingerprint_even_without_an_entry() {
     fixture.release();
     finish(owner, 0);
 }
-
 #[test]
 fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement() {
     let fixture = Fixture::new();
@@ -1049,8 +1134,8 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     let original = finish(owner, 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute("DELETE FROM cache_entries", []).unwrap();
-    db.execute("INSERT INTO executions(id,fingerprint,eval_def_hash,owner_pid,owner_start_time,status,data) SELECT 'replacement',fingerprint,eval_def_hash,owner_pid,owner_start_time,status,json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?", [waiting["executionId"].as_str().unwrap()]).unwrap();
-    db.execute("INSERT INTO cache_entries(fingerprint,eval_def_hash,execution_id,bytes,last_used) SELECT 'concurrent',eval_def_hash,'replacement',1,'2000-01-01T00:00:00Z' FROM executions WHERE id='replacement'", []).unwrap();
+    db.execute("INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) SELECT 'replacement',key,owner_pid,owner_start_time,status,json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?", [waiting["executionId"].as_str().unwrap()]).unwrap();
+    db.execute("INSERT INTO cache_entries(execution_id,key,eval_def_hash,completed_at,bytes,last_used) SELECT 'replacement',key,json_extract(data,'$.evalDefHash'),'2999-01-01T00:00:00.000000000Z',1,'2000-01-01T00:00:00Z' FROM executions WHERE id='replacement'", []).unwrap();
     signal(waiter.id(), "-CONT");
     let joined = finish(waiter, 0);
     assert_eq!(
@@ -1144,7 +1229,7 @@ fn gc_failure_does_not_replace_a_completed_result() {
         "repo",
         json!({"name":"test","fingerprint":fingerprint("first"),"evals":[eval("check","exit 0")]}),
     );
-    fixture.command(&repo, &["verify", "--all"], 0);
+    let first = key(&fixture.command(&repo, &["verify", "--all"], 0), 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute("UPDATE cache_entries SET bytes=1073741824", [])
         .unwrap();
@@ -1162,27 +1247,28 @@ fn gc_failure_does_not_replace_a_completed_result() {
     );
     let run = output(verified, 0);
     assert_eq!(run["requests"][0]["status"], "GREEN");
+    let second = key(&run, 0);
     assert!(
         fixture
-            .command(&repo, &["cache", "show", "second"], 0)
+            .command(&repo, &["cache", "show", &second], 0)
             .is_object()
     );
     db.execute_batch("DROP TRIGGER fail_gc").unwrap();
     fixture.publish("third");
     assert_eq!(
-        fixture.command(&repo, &["cache", "show", "first"], 4),
+        fixture.command(&repo, &["cache", "show", &first], 4),
         Value::Null,
         "the next publication retries collection"
     );
     assert!(
         fixture
-            .command(&repo, &["cache", "show", "second"], 0)
+            .command(&repo, &["cache", "show", &second], 0)
             .is_object()
     );
 }
 
 #[test]
-fn changed_schema_profile_args_and_payload_require_new_executions() {
+fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
     let fixture = Fixture::new();
     let base = json!({"id":"check","title":"Review","profile":{"kind":"runtime","command":"/bin/true","args":[]},"payload":{"instruction":"Review."}});
     let repo = fixture.repo(
@@ -1190,6 +1276,31 @@ fn changed_schema_profile_args_and_payload_require_new_executions() {
         json!({"name":"test","fingerprint":fingerprint("unchanged"),"evals":[base]}),
     );
     let original = fixture.command(&repo, &["verify", "--all"], 0);
+    let change = |pointer: &str, value: Value| {
+        let mut changed = base.clone();
+        let (parent, key) = pointer.rsplit_once('/').unwrap();
+        changed.pointer_mut(parent).unwrap()[key] = value;
+        write(
+            &repo,
+            "artifactize.json",
+            json!({"name":"test","fingerprint":fingerprint("unchanged"),"evals":[changed]}),
+        );
+    };
+    // Execution options and names are not part of the key.
+    for (pointer, value) in [
+        ("/profile/timeoutMs", json!(1000)),
+        ("/title", json!("Renamed")),
+    ] {
+        change(pointer, value);
+        assert_eq!(
+            fixture.command(&repo, &["status"], 0)["evals"][0]["action"],
+            "reuse",
+            "{pointer}"
+        );
+        let run = fixture.command(&repo, &["verify", "--all"], 0);
+        assert_eq!(run["executionsStarted"], 0, "{pointer}");
+        assert_eq!(run["requests"][0]["key"], original["requests"][0]["key"]);
+    }
     for (pointer, value, code) in [
         (
             "/passSchema",
@@ -1203,18 +1314,10 @@ fn changed_schema_profile_args_and_payload_require_new_executions() {
         ),
         ("/profile/command", json!("/bin/false"), 1),
         ("/profile/args", json!(["unused"]), 0),
-        ("/profile/timeoutMs", json!(1000), 0),
         ("/payload/instruction", json!("Different criteria."), 0),
         ("/payload/extra", json!({"criteria":[1,2]}), 0),
     ] {
-        let mut changed = base.clone();
-        let (parent, key) = pointer.rsplit_once('/').unwrap();
-        changed.pointer_mut(parent).unwrap()[key] = value;
-        write(
-            &repo,
-            "artifactize.json",
-            json!({"name":"test","fingerprint":fingerprint("unchanged"),"evals":[changed]}),
-        );
+        change(pointer, value);
         assert_eq!(
             fixture.command(&repo, &["status"], 1)["evals"][0]["action"],
             "execute",
@@ -1231,28 +1334,64 @@ fn changed_schema_profile_args_and_payload_require_new_executions() {
             "reuse"
         );
     }
-    assert_eq!(fixture.count("executions"), 8);
-    assert_eq!(fixture.count("cache_entries"), 8);
+    assert_eq!(fixture.count("executions"), 7);
+    assert_eq!(fixture.count("cache_entries"), 7);
 }
-
 #[test]
-fn only_the_effective_profile_variant_partitions_reuse() {
+fn profile_variants_share_a_result_unless_they_change_the_strategy() {
     let fixture = Fixture::new();
     let mut declaration = eval("check", "exit 0");
+    declaration["profile"]["timeoutMs"] = json!(5000);
     declaration["profileVariants"] = json!({
         "fail":{"kind":"runtime","command":"/bin/false","args":[]},
-        "same":{"kind":"runtime","command":"/bin/sh","args":["-c","exit 0"]}
+        "patient":{"kind":"runtime","command":"/bin/sh","args":["-c","exit 0"],"timeoutMs":60000}
     });
     let repo = fixture.repo(
         "repo",
         json!({"name":"test","fingerprint":fingerprint("variants"),"evals":[declaration]}),
     );
-    let original = fixture.command(&repo, &["verify", "--all"], 0);
-    let same = fixture.command(&repo, &["verify", "--all", "--profile", "same"], 0);
+    // The patient variant produces the result; the default profile reuses it.
+    let patient = fixture.command(&repo, &["verify", "--all", "--profile", "patient"], 0);
     assert_eq!(
-        same["requests"][0]["executionId"],
-        original["requests"][0]["executionId"]
+        patient["requests"][0]["options"],
+        json!({"timeoutMs":60000,"variant":"patient"})
     );
+    let default = fixture.command(&repo, &["verify", "--all"], 0);
+    assert_eq!(default["executionsStarted"], 0);
+    let reused = &default["requests"][0];
+    assert_eq!(reused["executionId"], patient["requests"][0]["executionId"]);
+    // The request and the record show which profile produced the result.
+    assert_eq!(
+        reused["options"],
+        json!({"timeoutMs":60000,"variant":"patient"})
+    );
+    assert_eq!(reused["profile"]["timeoutMs"], 60000);
+    assert_eq!(reused["requestedProfile"]["timeoutMs"], 5000);
+    let record = fixture.command(&repo, &["cache", "show", &key(&default, 0)], 0);
+    assert_eq!(record["options"]["variant"], "patient");
+    let text = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        .arg("--repo")
+        .arg(&repo)
+        .arg("--state-dir")
+        .arg(&fixture.state)
+        .args(["verify", "--all"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8(text.stdout).unwrap();
+    assert!(text.contains(", profile patient)"), "{text}");
+    assert!(
+        text.contains("reused 1 (runtime 1, agent 0, human 0); 1 produced by another profile"),
+        "{text}"
+    );
+    let status = fixture.command(&repo, &["status"], 0);
+    assert!(
+        status["evals"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("produced by profile patient"),
+        "{status}"
+    );
+
     assert_eq!(
         fixture.command(&repo, &["status", "--profile", "fail"], 1)["evals"][0]["action"],
         "execute"
@@ -1261,7 +1400,7 @@ fn only_the_effective_profile_variant_partitions_reuse() {
     assert_eq!(different["executionsStarted"], 1);
     assert_ne!(
         different["requests"][0]["evalDefHash"],
-        original["requests"][0]["evalDefHash"]
+        default["requests"][0]["evalDefHash"]
     );
     declaration["profileVariants"]["fail"]["args"] = json!(["changed unused variant"]);
     write(
@@ -1271,13 +1410,12 @@ fn only_the_effective_profile_variant_partitions_reuse() {
     );
     assert_eq!(
         fixture.command(&repo, &["verify", "--all"], 0)["requests"][0]["executionId"],
-        original["requests"][0]["executionId"]
+        patient["requests"][0]["executionId"]
     );
     assert_eq!(fixture.count("executions"), 2);
 }
-
 #[test]
-fn canonical_definition_hash_includes_all_agent_settings_but_not_names() {
+fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() {
     use artifactize::{cache::eval_definition_hash, config::EvalDeclaration};
     let first: EvalDeclaration = serde_json::from_str(r#"{"id":"one","title":"First","profile":{"kind":"agent","backend":"anthropic","model":"model","reasoning":"high","maxToolCalls":3,"maxTokens":10,"timeoutMs":1000},"payload":{"instruction":"Review.","nested":{"b":2,"a":1}},"passSchema":{"type":"object","properties":{"b":{"type":"number"},"a":{"type":"string"}}}}"#).unwrap();
     let second: EvalDeclaration = serde_json::from_str(r#"{"title":"Second","id":"two","payload":{"nested":{"a":1,"b":2},"instruction":"Review."},"passSchema":{"properties":{"a":{"type":"string"},"b":{"type":"number"}},"type":"object"},"profile":{"maxTokens":10,"maxToolCalls":3,"timeoutMs":1000,"reasoning":"high","model":"model","backend":"anthropic","kind":"agent"}}"#).unwrap();
@@ -1294,7 +1432,7 @@ fn canonical_definition_hash_includes_all_agent_settings_but_not_names() {
         let mut changed = serde_json::to_value(&first).unwrap();
         changed["profile"][key] = value;
         changed.as_object_mut().unwrap().remove("failSchema");
-        assert_ne!(
+        assert_eq!(
             hash,
             eval_definition_hash(&serde_json::from_value(changed).unwrap()),
             "{key}"
@@ -1303,8 +1441,14 @@ fn canonical_definition_hash_includes_all_agent_settings_but_not_names() {
     let mut human = first.clone();
     human.profile = artifactize::config::Profile::Human {};
     assert_ne!(hash, eval_definition_hash(&human));
+    let mut nested = serde_json::to_value(&first).unwrap();
+    nested["payload"]["nested"]["a"] = json!(3);
+    nested.as_object_mut().unwrap().remove("failSchema");
+    assert_ne!(
+        hash,
+        eval_definition_hash(&serde_json::from_value(nested).unwrap())
+    );
 }
-
 #[test]
 fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
     let fixture = Fixture::new();
@@ -1362,20 +1506,19 @@ fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
 }
 
 #[test]
-fn gc_and_removal_protect_only_the_matching_definition() {
+fn gc_and_removal_protect_only_the_matching_key() {
     let fixture = Fixture::new();
     let repo = fixture.repo("repo", json!({"name":"test","fingerprint":fingerprint("shared"),"evals":[eval("pass","exit 0"),eval("fail","exit 1")]}));
     let run = fixture.command(&repo, &["verify", "--all"], 1);
-    let hash = run["requests"][0]["evalDefHash"].as_str().unwrap();
+    let (active, other) = (key(&run, 0), key(&run, 1));
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.execute("INSERT INTO executions(id,fingerprint,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES ('active','shared',?,1,1,'WAITING_HUMAN','{}')", [hash]).unwrap();
-    let other = run["requests"][1]["evalDefHash"].as_str().unwrap();
+    db.execute("INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) VALUES ('active',?,1,1,'WAITING_HUMAN','{}')", [&active]).unwrap();
     assert_eq!(
-        fixture.command(&repo, &["cache", "rm", "shared", other], 0),
+        fixture.command(&repo, &["cache", "rm", &other], 0),
         json!({"removed":true})
     );
     assert!(
-        fixture.command(&repo, &["cache", "rm", "shared", hash], 2)["error"]
+        fixture.command(&repo, &["cache", "rm", &active], 2)["error"]
             .as_str()
             .unwrap()
             .contains("in use")
@@ -1386,12 +1529,12 @@ fn gc_and_removal_protect_only_the_matching_definition() {
     fixture.publish("other");
     assert_eq!(fixture.count("cache_entries"), 2);
     assert_eq!(
-        fixture.command(&repo, &["cache", "show", "shared", other], 4),
+        fixture.command(&repo, &["cache", "show", &other], 4),
         Value::Null
     );
     assert!(
         fixture
-            .command(&repo, &["cache", "show", "shared", hash], 0)
+            .command(&repo, &["cache", "show", &active], 0)
             .is_object()
     );
 }

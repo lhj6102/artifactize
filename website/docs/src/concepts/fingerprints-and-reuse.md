@@ -1,30 +1,35 @@
 # Fingerprints and reuse
 
-A fingerprint is what a review depends on. While it is unchanged, artifactize
-reuses the earlier GREEN or RED result instead of reviewing again, so review cost
-follows the size of a change.
+A fingerprint says what an Artifact's reviews depend on. An eval's earlier result
+is reused when the eval is unchanged and the fingerprints of the Artifacts it
+depends on are unchanged, so review cost follows the size of a change.
+
+## Fingerprints
+
+You define the fingerprint of each Artifact, in one of two forms, and artifactize
+uses the value as it is. It adds nothing to it: no tool declarations and no other
+Artifact's fingerprint. Dependencies enter through the
+[reuse key](#the-reuse-key) instead.
+
+- `"fingerprint": {}`, the built-in **content** form, is `content:` plus a
+  SHA-256 over each of the Artifact's own input files: its owner-relative path
+  and bytes.
+- `"fingerprint": {"script": {...}}` runs your command, and its output is the
+  fingerprint. It hashes nothing on its own, so the command must reflect every
+  input, script and material change that should re-review.
 
 ## Content fingerprint
 
-`"fingerprint": {}` makes review cost follow the size of a change: an Artifact is
-reviewed again only when its own files or its dependencies change, and every other
-result is reused. The fingerprint is `content:` plus a SHA-256 over the Artifact name,
-each input file's owner-relative path and bytes, and one entry per dependency in
-the chosen scope.
+`"fingerprint": {}` hashes the Artifact's own files. An Artifact is reviewed again
+when those files change or when an Artifact it depends on changes its fingerprint.
 
 - `files`: 1–64 unique owner-relative paths, default `["."]` (the whole owner
   folder). Each must exist and stay inside the Artifact: a path into a child
-  Artifact or a mount is rejected, because dependencies come from `dependencies`.
-  Directory walks skip child Artifact folders, the owner's `artifactize.json` and
-  a family's instance list. Their effect already reaches the fingerprint through the
-  Eval definition hash and the dependency list.
-- `dependencies`: `none`, `direct` (default) or `transitive`. Dependencies are the
-  graph's own: children, mounts and `{artifact}` references in instructions and
-  runtime argv. With `direct`, merging a change into `core` re-reviews `core` and
-  the Artifacts that use it directly, and only those: the new pairing. Artifacts
-  further downstream keep their results, because `direct` never looks past one
-  hop. `transitive` covers the whole dependency closure and re-reviews everything
-  downstream. Choose it when a review really reads indirect dependencies.
+  Artifact or a mount is rejected, because those are Artifacts of their own, with
+  their own fingerprints. Directory walks skip child Artifact folders, the
+  owner's `artifactize.json` and a family's instance list. Their effect already
+  reaches the key through the Eval definition hash and the dependency
+  fingerprints.
 - `ignore`: up to 64 `.gitignore`-style globs relative to the owner, without
   negation. They always exclude, like the built-in ignores `.git`,
   `__pycache__/`, `*.pyc`, `target/` and `node_modules/`. `.gitignore` files
@@ -33,38 +38,95 @@ the chosen scope.
   relative to its own file's folder, negation works, and a deeper file overrides a
   shallower one. Explicitly named `files` are never ignored.
 
-How dependency entries are hashed, the walk limits and the recorded manifest are
-in the [reference](../reference/artifactize-json.md#content-fingerprint); the script form is under
-[fingerprint scripts](../reference/artifactize-json.md#fingerprint-scripts).
+The 0.4 `dependencies` option (`none`, `direct`, `transitive`) is gone, and
+`config check` rejects it with a message: a fingerprint covers only its own
+Artifact. The walk limits and the recorded manifest are in the
+[reference](../reference/artifactize-json.md#content-fingerprint); the script form
+is under [fingerprint scripts](../reference/artifactize-json.md#fingerprint-scripts).
+
+## The reuse key
+
+An eval depends on its target Artifact and on what the target directly connects:
+
+- the target's mounts;
+- the target's child Artifacts;
+- the Artifacts the eval names in its instruction or runtime args.
+
+artifactize does not follow connections further than that. Whether a change two
+connections away matters is up to how you define fingerprints: a fingerprint
+script can read a file of any Artifact it names in its args. The key is
+
+```text
+hash(Eval definition hash, sorted (Artifact name, fingerprint) of each Artifact the eval depends on)
+```
+
+Artifact names are part of the key, so two Artifacts never share a result, even
+when their fingerprints are equal. The **Eval definition hash** is lowercase
+SHA-256 of canonical JSON with recursively sorted keys over the eval strategy:
+
+- the eval kind (runtime, agent or human);
+- `payload`, including the instruction;
+- `passSchema` and `failSchema`;
+- for runtime evals, the command and args.
+
+Execution options are not part of the key: an Agent's backend, model, reasoning,
+`timeoutMs`, `maxToolCalls` and `maxTokens`, a runtime `timeoutMs`, and the
+selected profile variant. Neither are the eval id and title, repository paths,
+unused profile variants, or tool declarations (`views`): a tool is a way of
+viewing an Artifact, so changing only a tool's description or schema does not
+review again. To make a tool change matter, include the relevant files in the
+fingerprint.
+
+An eval has a key only when its target and every Artifact it depends on declare a
+fingerprint. Without one, it has no reuse: every `verify` reviews it again, and
+`status` names the Artifact that lacks a fingerprint. A basis Artifact that other
+Artifacts mount or name needs `"fingerprint": {}` for their results to be reused.
 
 ## Completed result reuse
 
-A successful fingerprint recheck publishes either GREEN or RED to `cache_entries`,
-pointing to a self-contained `executions` row. Errors and cancellation are never
-published. The key is **(fingerprint, Eval definition hash)**, intentionally
-departing from CCDD, whose key was its identity alone. The definition hash is lowercase SHA-256
-of canonical JSON with recursively sorted keys, containing the effective
-`profile`, `payload` (including instruction), `passSchema` and `failSchema`.
-The profile is the selected variant's full definition when `--profile` is used:
-runtime command/args/timeout, Agent backend/model/reasoning/budgets/timeout, or
-Human. Eval id/title, repository paths and unused profile variants are excluded.
-Equal definitions still share across evals and repositories; changing criteria,
-schema, args or effective profile requires a separate execution.
+A successful end-of-review recheck appends the GREEN or RED result to its key's
+history in `cache_entries`, pointing to a self-contained `executions` row. Errors
+and cancellation are never recorded there. When a key holds more than one record,
+the most recent by completion time is reused, GREEN or RED. Results from different
+profiles therefore reuse each other: a review that `--profile fast` produced
+satisfies the declared profile, and the other way around.
 
-A script fingerprint hashes no script or material file contents. Owners must still
-encode input, script and material changes that invalidate results in its output.
+Each record keeps how and by whom it was produced, next to its result:
+
+- `options`: the backend, model, reasoning, `timeoutMs`, `maxToolCalls`,
+  `maxTokens` and `variant` it ran with, as declared;
+- `profile`: the effective profile;
+- `producer` (`user@host` and artifactize version), the Human `reviewer`, and for
+  a remote record its `origin` with the publisher;
+- `completedAt`, `fingerprints` (each Artifact the key covers) and `key`.
 
 A hit returns the original result without running the eval or re-validating it
-against the requested profile/schema. The request saves the original execution ID,
-actual `profile`, `evalDefHash`, `provenance` (repository, Run, request, eval,
-definition hash and completion time)
-and the original attempts as `reusedUsage` when reported, alongside
+against the requested profile or schema. The request saves the original
+execution ID, the producing `profile` and `options`, `evalDefHash`, `key`,
+`provenance` (repository, Run, request, eval, definition hash and completion time)
+and the original attempts as `reusedUsage` when reported, alongside its own
 `requestedProfile`. Its own `usage` is null: a reused request spent nothing.
-Runtime usage is null, not an invented zero. Cached RED remains RED for gates and final obligations.
-Dependencies outside execution selection can supply cached evidence without
-running. Results remain readable after the source repository is deleted; external
-paths embedded in result text are not made portable.
+Runtime usage is null, not an invented zero. A reused RED remains RED for gates
+and final obligations. Dependencies outside execution selection can supply cached
+evidence without running. Results remain readable after the source repository is
+deleted; external paths embedded in result text are not made portable.
 
-No fingerprint means no cache lookup or publication. `--force` bypasses lookup and
-publication for explicitly selected evals, leaving any existing entry unchanged.
-Forced and uncached results still satisfy their own Run and retain execution audit.
+With a [team review store](../reference/review-store.md#remote-review-store-client),
+`verify` also asks the store for every key and reuses whichever record completed
+last, the local latest or the store's latest; a store that cannot be reached leaves
+the local latest.
+
+No key means no cache lookup or publication. `--force` re-executes explicitly
+selected evals without reading or joining earlier results, local or in the store,
+and its completed GREEN or RED is appended as a newer record (and published to a
+configured store), which later runs then reuse. Forced and
+unkeyed results still satisfy their own Run and retain execution audit.
+
+## Upgrading from 0.4
+
+0.5 builds the key differently: earlier keys mixed dependency entries into content
+fingerprints and covered the whole profile. The state database moves to schema 4
+and the [team review store](../reference/review-store.md) to schema 3, and earlier
+reuse records cannot be mapped to the new key. The first `verify` after the
+upgrade therefore reviews everything once; Runs, executions and their audit stay
+readable. See [State](../reference/state-cache-limits.md#state).

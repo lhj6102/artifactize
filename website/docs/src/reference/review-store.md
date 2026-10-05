@@ -12,25 +12,27 @@ artifactize server token add ci --scopes read
 artifactize server run [--listen 127.0.0.1:8417]
 artifactize server token list
 artifactize server token revoke alice-laptop [--purge]
-artifactize server rm FINGERPRINT [EVAL_HASH]
+artifactize server rm KEY
 ```
 
 `artifactize server` keeps a [shared remote review store](https://github.com/lhj6102/artifactize/blob/main/docs/design/remote-store.md)
 in its own `review-store.sqlite` under `--state-dir`, separate from `state.sqlite`.
-It holds one immutable record per (Eval definition hash, fingerprint); the first
-writer wins. `server run` serves plain HTTP on loopback by default (it warns when
-bound elsewhere) and stops on Ctrl-C/SIGTERM; put a TLS proxy or tunnel in front,
-because clients require HTTPS except on loopback. Token commands work on the same
-file while the server runs, and take effect immediately.
+It keeps every record of each [reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key) and
+answers a lookup with the latest one by completion time, GREEN or RED, whoever
+published it and in whatever order records arrived. `server run` serves plain HTTP
+on loopback by default (it warns when bound elsewhere) and stops on Ctrl-C/SIGTERM;
+put a TLS proxy or tunnel in front, because clients require HTTPS except on
+loopback. Token commands work on the same file while the server runs, and take
+effect immediately.
 
 `token add` prints a random bearer token once; the store keeps only its SHA-256.
 Scopes are `read` (look up), `publish` (publish runtime and Agent records) and
 `human` (additionally publish Human sign-offs, together with `publish`). Give
 untrusted CI `read` only. `token list` shows names, scopes and creation/revocation
 times, never tokens. `token revoke NAME` rejects the token at once; `--purge`
-also deletes every entry it published, and may be repeated later. Names of revoked
-tokens are never reused. `rm` deletes a fingerprint's entry, requiring the hash when
-the fingerprint has several definitions.
+also deletes every record it published, and may be repeated later. Names of revoked
+tokens are never reused. `rm KEY` deletes every record of a key and prints
+`{"removed":true}` (false if absent).
 
 The API takes `Authorization: Bearer TOKEN` and answers JSON (`{"error":...}` on
 failure; 401 for a missing, unknown or revoked token, 403 for a missing scope):
@@ -38,22 +40,25 @@ failure; 401 for a missing, unknown or revoked token, 403 for a missing scope):
 | Route | Scope | Result |
 |---|---|---|
 | `GET /v1/whoami` | any | `{"principal":NAME,"scopes":[...]}` |
-| `POST /v1/lookup` with `{"keys":[{"fingerprint","evalDefHash"}]}` (at most 1000) | `read` | `{"entries":[record,...]}` for the found keys |
-| `PUT /v1/entries/{evalDefHash}/{fingerprint}` with a record | `publish` (+ `human` for Human records) | 201 `{"created":true}`, or 200 `{"created":false}` when the key exists |
+| `POST /v1/lookup` with `{"keys":[KEY,...]}` (at most 1000) | `read` | `{"entries":[record,...]}`: the latest record of each found key |
+| `PUT /v1/entries/{key}` with a record | `publish` (+ `human` for Human records) | 201 `{"created":true}`, or 200 `{"created":false}` when the store already holds this execution of the key |
 
-The server checks a record's envelope (schema 1, the path's fingerprint and hash,
-a GREEN/RED verdict and a profile kind) and size: 256 KiB for a summary, 16 MiB
-for a full record carrying `execution`. It stamps `publisher` (the token name) and
-`publishedAt` (server clock), replacing any client values. Lookups update last
-use; inserts evict least-recently-used entries above 100,000 entries or 4 GiB.
+The server checks a record's envelope (schema 2, the path's key, a GREEN/RED
+verdict, a profile kind, an execution ID and an RFC 3339 `completedAt`) and size:
+256 KiB for a summary, 16 MiB for a full record carrying `execution`. It stamps
+`publisher` (the token name) and `publishedAt` (server clock), replacing any client
+values. Clients check that a record's key matches its `evalDefHash` and
+`fingerprints` before they use it. Lookups update the last use of the record they
+return; inserts evict least-recently-used records above 100,000 records or 4 GiB.
 
-A 0.3 client calls the fingerprint `staleKey`. Throughout 0.4.x the server accepts
-that name as an alias in published records (also inside a full record's
-`execution`) and in lookup keys, stores records under `fingerprint`, and answers a
-lookup whose keys use `staleKey` with records in the 0.3 shape. A mixed team can
-therefore upgrade the server first and then one machine at a time; a 0.4 client
-needs a 0.4 server. The alias is removed in 0.5.0. A schema 1 `review-store.sqlite`
-is upgraded in place to schema 2 when the server opens it.
+**Upgrading.** A schema 1 or 2 `review-store.sqlite` (artifactize 0.3 or 0.4) is
+upgraded in place to schema 3 when the server opens it. Tokens are kept. Stored
+records are dropped: they were keyed by fingerprint and Eval definition hash as 0.4
+computed them, which no 0.5 key matches, so clients review again once and publish
+anew. A 0.5 server answers 0.4 and 0.3 clients (their lookup keys and their
+`PUT /v1/entries/{evalDefHash}/{fingerprint}` route) with 410 and a message to
+upgrade; the 0.3 `staleKey` alias is gone. Upgrade the server and its clients
+together.
 
 ## Remote review store client
 
@@ -84,13 +89,15 @@ follow redirects. `remote logout` deletes the stored token and `remote.json`; th
 server keeps the token valid until `server token revoke`. Tokens are never printed
 or logged.
 
-With a store configured, `verify` reads and writes through it. It checks the local
-cache first and looks up the keys that missed in one batched `POST /v1/lookup`
-before the Run claims anything. A hit is mirrored into the local cache (a
-self-contained `remote-<executionId>` execution with an `origin`) and reused like a
-local entry, so `run show`, `cache`, GC, the monitor and the Run summary count it as
-reuse. Each key is looked up again just before a local claim and on each
-`verify --wait` poll, at most once per second. A remote result for a key that waits
+With a store configured, `verify` reads and writes through it. Before the Run claims
+anything, it looks up every key once, in one batched `POST /v1/lookup`, including
+keys that already have local records, and reuses whichever record completed last:
+the key's latest local record or the store's latest. A store record that completed
+after the local latest (or with no local record at all) is appended to the local
+history as a self-contained `remote-<executionId>` execution with an `origin`, and
+reused like a local record, so `run show`, `cache`, GC, the monitor and the Run
+summary count it as reuse. A key that still has no result is looked up again just
+before a local claim and on each `verify --wait` poll, at most once per second. A remote result for a key that waits
 for a Human settles the waiting requests; their never-reviewed waiting execution
 becomes ERROR (`SUPERSEDED`). Text output names the source:
 
@@ -101,28 +108,36 @@ becomes ERROR (`SUPERSEDED`). Text output names the source:
 
 The producer (`user@host`) and the Human reviewer are what the publishing machine
 recorded; the publisher is the server-authenticated token name. Once the local settle
-publishes a GREEN/RED with a fingerprint to the local cache (after the fingerprint
-recheck), verify sends its summary record, or the full record with share `full`,
-outside any database transaction. `request submit` publishes Human sign-offs.
+records a GREEN/RED with a reuse key (after the fingerprint recheck), verify sends
+its summary record, or the full record with share `full`, outside any database
+transaction. Records carry the key, the Eval definition hash, the fingerprint of
+each Artifact the key covers and the execution `options` (backend, model,
+reasoning, limits and profile variant). `request submit` publishes Human sign-offs.
 A token without `read` looks nothing up and one without `publish` publishes nothing,
 so a read-only CI token only reuses. Human sign-offs also need `human`; with any
 other token they stay local with a warning. Nothing is published for evals without a
-fingerprint, and `--force` makes no remote calls at all. `status` looks up read-only,
-without mirroring, so its `reuse` prediction includes remote results.
+reuse key. `--force` never reads from the store, but a forced result is a new record
+and is published like any other, so it becomes the store's latest too (unless a
+newer one exists). `status` makes the same comparison with a read-only lookup,
+without mirroring, so its `reuse` prediction includes newer remote results;
+`status --force` makes no remote call.
 
-`remote push` sends the local GREEN/RED results the store lacks: results produced
-while it was unreachable or before `remote login`. It never sends mirrors. A
-token with `read` first looks up which keys the store already has, and those are
-not sent again. A key published in the meantime answers `created: false`. Both
-count as `existing`, so pushing twice is harmless. Human sign-offs without the
-`human` scope, and records over their size limit, are `skipped` with a reason on
-stderr. `--dry-run` sends nothing and reports what would be pushed. The output is
-`Pushed N, already in the store M, skipped K.`, or JSON
+`remote push` sends, for each key, the latest GREEN/RED record this machine
+produced: results produced while the store was unreachable, before `remote login`
+or with `ARTIFACTIZE_REMOTE=off`. It never sends mirrors. A token with `read` first looks up
+the store's latest record of each key, and a record that already is the latest is
+not sent again. The store keeps each execution once, so a record it already holds
+answers `created: false`. Both count as `existing`, and pushing twice is harmless.
+Human sign-offs without the `human` scope, and records over their size limit, are
+`skipped` with a reason on stderr. `--dry-run` sends nothing and reports what would
+be pushed. The output is `Pushed N, already in the store M, skipped K.`, or JSON
 `{"dryRun":false,"pushed":N,"existing":M,"skipped":K}`. Unlike `verify`, `push`
 fails on any remote failure, and it needs the `publish` scope.
 
 Connection errors, timeouts and 5xx answers fail open: one warning, then the process
-reviews locally without the remote. 401/403, TLS failures, other error answers and
-invalid configuration fail closed (exit 2). A lookup that fails before the Run
+continues without the remote, reusing the local latest record of each key and
+reviewing locally what has none. 401/403, TLS failures, other error answers and
+invalid configuration fail closed (exit 2), with the store's own error message when
+it sends one. A lookup that fails before the Run
 starts leaves no Run; a later failure records the Run as ERROR. A record that does
 not validate is ignored with a warning, and its eval is reviewed locally.

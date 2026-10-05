@@ -207,11 +207,12 @@ pub fn select_profiles(
             .get(name)
             .filter(|_| identifier(name, "Profile variant name").is_ok())
             .ok_or_else(|| format!("Unknown profile variant for {id}: {name}"))?;
-        profiles.insert(id.to_owned(), variant.clone());
+        profiles.insert(id.to_owned(), (name.to_owned(), variant.clone()));
     }
     for eval in &mut config.evals {
-        if let Some(profile) = profiles.remove(&eval.id) {
+        if let Some((name, profile)) = profiles.remove(&eval.id) {
             eval.declaration.profile = profile;
+            eval.variant = Some(name);
         }
     }
     // Runtime variants can introduce or remove argv references and dependency gates.

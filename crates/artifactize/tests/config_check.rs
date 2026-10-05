@@ -113,7 +113,7 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
 
 #[test]
 fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
-    let shape = r#"was renamed to fingerprint: use "fingerprint": {"files": ["."], "dependencies": "direct", "ignore": []} or "fingerprint": {"script": {...}}."#;
+    let shape = r#"was renamed to fingerprint: use "fingerprint": {"files": ["."], "ignore": []} or "fingerprint": {"script": {...}}."#;
     for (key, value) in [
         ("staleKey", json!({"content":{"inputs":["."]}})),
         (

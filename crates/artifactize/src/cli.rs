@@ -116,7 +116,7 @@ pub enum Command {
         #[command(subcommand)]
         command: RequestCommand,
     },
-    /// Inspect or maintain reusable results by fingerprint without a repository.
+    /// Inspect or maintain reusable results by reuse key without a repository.
     Cache {
         #[command(subcommand)]
         command: CacheCommand,
@@ -291,20 +291,21 @@ pub enum RunCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum CacheCommand {
-    /// List retained fingerprint/Eval-definition pairs and original execution metadata.
-    List,
-    /// Read the full saved result, profile and provenance as JSON.
+    /// List the latest record of each reuse key, the one verify reuses.
+    List {
+        /// List every record of every key, latest first per key.
+        #[arg(long)]
+        history: bool,
+    },
+    /// Read a key's latest record (result, profile, options, provenance) as JSON.
     Show {
-        fingerprint: String,
-        /// Required when the fingerprint has multiple cached Eval definitions.
-        eval_hash: Option<String>,
+        key: String,
+        /// Print every record of the key as a JSON array, latest first.
+        #[arg(long)]
+        history: bool,
     },
-    /// Remove an unused cache entry, preserving saved Runs and executions.
-    Rm {
-        fingerprint: String,
-        /// Required when the fingerprint has multiple cached Eval definitions.
-        eval_hash: Option<String>,
-    },
+    /// Remove every record of an unused key, preserving saved Runs and executions.
+    Rm { key: String },
 }
 
 #[derive(Debug, Subcommand)]
@@ -464,9 +465,13 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 let summary = &output["summary"];
                 writeln!(
                     stdout,
-                    "Summary: executed {}, reused {}",
+                    "Summary: executed {}, reused {}{}",
                     kinds(&summary["executed"]),
-                    kinds(&summary["reused"])
+                    kinds(&summary["reused"]),
+                    match summary["reused"]["otherProfile"].as_u64() {
+                        Some(0) | None => String::new(),
+                        Some(count) => format!("; {count} produced by another profile"),
+                    }
                 )
                 .map_err(|e| e.to_string())?;
                 let usage = &output["usage"];
@@ -661,26 +666,28 @@ async fn execute(cli: Cli) -> Result<u8, String> {
         Some(Command::Cache { command }) => {
             let state = crate::store::state_dir(cli.state_dir.as_deref())?;
             match command {
-                CacheCommand::List => {
-                    let entries = crate::cache::list(&state).await?;
+                CacheCommand::List { history } => {
+                    let entries = crate::cache::list(&state, history).await?;
                     if cli.json {
                         print_json(&entries)?;
                     } else {
                         let mut out = io::stdout().lock();
                         writeln!(
                             out,
-                            "FINGERPRINT\tEVAL HASH\tVERDICT\tREPO\tEVAL\tBYTES\tLAST USED"
+                            "KEY\tEVAL\tVERDICT\tCOMPLETED\tPRODUCER\tSOURCE\tRECORDS\tBYTES\tLAST USED"
                         )
                         .map_err(|e| e.to_string())?;
                         for entry in entries {
                             writeln!(
                                 out,
-                                "{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                                entry.fingerprint,
-                                entry.eval_def_hash,
-                                entry.verdict,
-                                entry.origin.as_ref().unwrap_or(&entry.repo_path),
+                                "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+                                entry.key,
                                 entry.eval_id,
+                                entry.verdict,
+                                entry.completed_at.as_deref().unwrap_or("-"),
+                                entry.producer.as_deref().unwrap_or("-"),
+                                entry.origin.as_ref().unwrap_or(&entry.repo_path),
+                                entry.records,
                                 entry.bytes,
                                 entry.last_used
                             )
@@ -688,22 +695,18 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                         }
                     }
                 }
-                CacheCommand::Show {
-                    fingerprint,
-                    eval_hash,
-                } => {
-                    let entry =
-                        crate::cache::show(&state, &fingerprint, eval_hash.as_deref()).await?;
-                    print_json(&entry)?;
-                    return Ok(if entry.is_some() { 0 } else { 4 });
+                CacheCommand::Show { key, history } => {
+                    let mut records = crate::cache::show(&state, &key, history).await?;
+                    let found = !records.is_empty();
+                    if history {
+                        print_json(&records)?;
+                    } else {
+                        print_json(&records.pop())?;
+                    }
+                    return Ok(if found { 0 } else { 4 });
                 }
-                CacheCommand::Rm {
-                    fingerprint,
-                    eval_hash,
-                } => {
-                    print_json(
-                        &json!({"removed": crate::cache::remove(&state, &fingerprint, eval_hash.as_deref()).await?}),
-                    )?;
+                CacheCommand::Rm { key } => {
+                    print_json(&json!({"removed": crate::cache::remove(&state, &key).await?}))?;
                 }
             }
             Ok(0)
@@ -754,8 +757,16 @@ fn reuse_marker(request: &crate::store::Request) -> String {
     else {
         return String::new();
     };
+    let profile = if request.profile == request.requested_profile {
+        String::new()
+    } else {
+        format!(
+            ", profile {}",
+            crate::query::profile_name(&request.profile, &request.options)
+        )
+    };
     match &request.origin {
-        None => format!(" (reused from {})", source.run_id),
+        None => format!(" (reused from {}{profile})", source.run_id),
         Some(origin) if request.profile["kind"] == "human" => format!(
             " (reused from remote: Human sign-off by {}, published by {}, {})",
             request.reviewer.as_deref().unwrap_or("unknown"),
@@ -763,7 +774,7 @@ fn reuse_marker(request: &crate::store::Request) -> String {
             source.run_id
         ),
         Some(_) => format!(
-            " (reused from remote: {}, {})",
+            " (reused from remote: {}, {}{profile})",
             request
                 .producer
                 .as_ref()

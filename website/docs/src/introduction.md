@@ -4,9 +4,10 @@ A lean Rust port and rebrand of [CCDD](https://github.com/lhj6102/ccdd), from CC
 
 Review cost follows the size of a change. Folders declare Artifacts and their evals
 in static `artifactize.json` files. artifactize builds the dependency graph and runs
-runtime, Agent (OpenAI or Anthropic API key) and Human evals. While an Artifact's
-fingerprint (what its review depends on) is unchanged it reuses the earlier GREEN/RED
-result, and `verify` shows what it executed, what it reused and the tokens reuse saved.
+runtime, Agent (OpenAI or Anthropic API key) and Human evals. While an eval and the
+fingerprints (what a review depends on) of its Artifact and the Artifacts it
+directly uses are unchanged, it reuses the earlier GREEN/RED result, and `verify`
+shows what it executed, what it reused and the tokens reuse saved.
 `status` predicts what a change will re-review. A team review store
 (`artifactize server`) shares verdicts across machines and CI. The CLI drives reviews,
 `artifactize monitor` shows their progress and `artifactize review` works

@@ -19,7 +19,7 @@
   "fingerprint": {
     "script": {
       "command": "python3",
-      "args": ["fingerprint.py", "{style}/banned.txt"]
+      "args": ["fingerprint.py"]
     }
   },
   "evals": [

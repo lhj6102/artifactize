@@ -161,6 +161,13 @@ fn tally(total: u64, runtime: u64, agent: u64, human: u64) -> Value {
     json!({"total":total,"runtime":runtime,"agent":agent,"human":human})
 }
 
+/// A reused tally: none of these results came from another profile.
+fn reused(total: u64, runtime: u64, agent: u64, human: u64) -> Value {
+    let mut tally = tally(total, runtime, agent, human);
+    tally["otherProfile"] = json!(0);
+    tally
+}
+
 fn line<'a>(text: &'a str, prefix: &str) -> &'a str {
     text.lines()
         .find(|line| line.trim_start().starts_with(prefix))
@@ -169,20 +176,23 @@ fn line<'a>(text: &'a str, prefix: &str) -> &'a str {
 
 #[test]
 fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
+    // Each eval's key covers its own Artifact and the ones it names: style names web, docs
+    // names api, and brand names docs and style.
     let fixture = Fixture::new();
     // Branch A changes api; its first Run executes everything and waits for the Human.
     let a = fixture.checkout("a", ["a", "base", "base", "base", "base"]);
     let first = fixture.json(&a, &["verify", "--all"], 4);
     assert_eq!(first["summary"]["executed"], tally(5, 3, 1, 1));
-    assert_eq!(first["summary"]["reused"], tally(0, 0, 0, 0));
+    assert_eq!(first["summary"]["reused"], reused(0, 0, 0, 0));
     assert_eq!(first["usage"]["saved"], json!({}));
     fixture.sign(&a, &first);
 
-    // Branch B changes web and docs; unchanged style and the Human signoff are reused.
-    let b = fixture.checkout("b", ["base", "b", "base", "b", "base"]);
+    // Branch B changes api and web, so docs and style review again; the Human signoff of the
+    // unchanged docs and style is reused.
+    let b = fixture.checkout("b", ["b", "b", "base", "base", "base"]);
     let second = fixture.json(&b, &["verify", "--all"], 0);
-    assert_eq!(second["summary"]["executed"], tally(3, 2, 1, 0));
-    assert_eq!(second["summary"]["reused"], tally(2, 1, 0, 1));
+    assert_eq!(second["summary"]["executed"], tally(4, 3, 1, 0));
+    assert_eq!(second["summary"]["reused"], reused(1, 0, 0, 1));
     let review = request(&second, "docs/review");
     assert_eq!(
         review["result"],
@@ -201,42 +211,45 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
                 && call.headers["authorization"] == "Bearer fake-openai-key")
     );
 
-    // The merge takes api from A and docs from B, and resolves web anew.
-    let merge = fixture.checkout("merge", ["a", "merged", "base", "b", "base"]);
+    // The merge takes api from B and resolves web anew.
+    let merge = fixture.checkout("merge", ["b", "merged", "base", "base", "base"]);
     let status = fixture.json(&merge, &["status"], 1);
-    let style = status["evals"]
+    let brand = status["evals"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|eval| eval["id"] == "style/contrast");
+        .find(|eval| eval["id"] == "brand/signoff");
     assert!(
-        style.unwrap()["reason"]
+        brand.unwrap()["reason"]
             .as_str()
             .unwrap()
-            .ends_with("its gates still wait for: web/tests"),
+            .ends_with("its gates still wait for: style/contrast"),
         "{status}"
     );
     let text = fixture.text(&merge, &["status"], 1);
     assert_eq!(
         line(&text, "Verify actions:"),
-        "Verify actions: will execute 1, will reuse 4, wait 0, blocked 0"
+        "Verify actions: will execute 1, will reuse 3, wait 1, blocked 0"
     );
 
     let text = fixture.text(&merge, &["verify", "--all"], 0);
     let id = line(&text, "Run:").strip_prefix("Run: ").unwrap();
     let run = fixture.json(&merge, &["run", "show", id], 0);
-    assert_eq!(predicted(&status), taken(&run));
+    // style waits for web's new result, then reviews again because its key covers web.
+    let mut expected = predicted(&status);
+    assert_eq!(expected["style/contrast"], "wait");
+    expected.insert("style/contrast".into(), "execute".into());
+    assert_eq!(expected, taken(&run));
     assert_eq!(taken(&run)["web/tests"], "execute");
-    assert_eq!(run["executionsStarted"], 1);
-    assert_eq!(run["summary"]["executed"], tally(1, 1, 0, 0));
-    assert_eq!(run["summary"]["reused"], tally(4, 2, 1, 1));
+    assert_eq!(run["executionsStarted"], 2);
+    assert_eq!(run["summary"]["executed"], tally(2, 2, 0, 0));
+    assert_eq!(run["summary"]["reused"], reused(3, 1, 1, 1));
     assert_eq!(
         line(&text, "Summary:"),
-        "Summary: executed 1 (runtime 1, agent 0, human 0), reused 4 (runtime 2, agent 1, human 1)"
+        "Summary: executed 2 (runtime 2, agent 0, human 0), reused 3 (runtime 1, agent 1, human 1)"
     );
     for (eval, source) in [
-        ("api/tests", &first),
-        ("style/contrast", &first),
+        ("api/tests", &second),
         ("brand/signoff", &first),
         ("docs/review", &second),
     ] {
@@ -265,7 +278,6 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     assert_eq!(shown["summary"]["usage"], json!({}));
     assert_eq!(shown["summary"]["usageState"], "none");
 }
-
 #[test]
 fn status_predicts_cached_results_behind_a_red_dependency_as_reuse() {
     let fixture = Fixture::new();
@@ -273,53 +285,110 @@ fn status_predicts_cached_results_behind_a_red_dependency_as_reuse() {
     let first = fixture.json(&base, &["verify", "--all"], 4);
     fixture.sign(&base, &first);
 
-    // web turns RED. The first Run executes it; the second finds its RED result cached.
+    // web turns RED. style names web, so its key changes; brand names style and docs, whose
+    // fingerprints did not change, so it keeps its key. The first Run executes web; the second
+    // finds its RED result cached.
     let red = fixture.checkout("red", ["base", "broken", "base", "base", "base"]);
+    let status = fixture.json(&red, &["status"], 1);
+    assert_eq!(predicted(&status)["style/contrast"], "wait");
     for executed in [1, 0] {
-        let status = fixture.json(&red, &["status"], 1);
         let run = fixture.json(&red, &["verify", "--all"], 1);
-        assert_eq!(predicted(&status), taken(&run), "{status}");
         assert_eq!(run["summary"]["executed"]["total"], executed);
         assert_eq!(request(&run, "web/tests")["status"], "RED");
+        assert_eq!(taken(&run)["style/contrast"], "blocked");
+        assert_eq!(taken(&run)["brand/signoff"], "reuse");
     }
-    // verify attaches cached results behind the RED gate, so status says reuse, not blocked.
     let status = fixture.json(&red, &["status"], 1);
-    for (eval, gate) in [
-        ("style/contrast", "web/tests"),
-        ("brand/signoff", "style/contrast"),
-    ] {
-        let row = status["evals"]
+    let run = fixture.json(&red, &["verify", "--all"], 1);
+    assert_eq!(predicted(&status), taken(&run), "{status}");
+    // verify attaches cached results behind a blocked gate, so status says reuse, not blocked.
+    let row = |eval: &str| {
+        status["evals"]
             .as_array()
             .unwrap()
             .iter()
-            .find(|row| row["id"] == eval);
-        let row = row.unwrap();
-        assert_eq!(
-            (&row["state"], &row["action"]),
-            (&json!("BLOCKED"), &json!("reuse"))
-        );
-        assert!(
-            row["reason"]
-                .as_str()
-                .unwrap()
-                .ends_with(&format!("blocked by RED: {gate}"))
-        );
-    }
+            .find(|row| row["id"] == eval)
+            .unwrap()
+            .clone()
+    };
+    let brand = row("brand/signoff");
+    assert_eq!(
+        (&brand["state"], &brand["action"]),
+        (&json!("BLOCKED"), &json!("reuse"))
+    );
+    assert!(
+        brand["reason"]
+            .as_str()
+            .unwrap()
+            .ends_with("blocked by RED: style/contrast"),
+        "{brand}"
+    );
+    let style = row("style/contrast");
+    assert_eq!(
+        (&style["state"], &style["action"]),
+        (&json!("BLOCKED"), &json!("blocked"))
+    );
+    assert_eq!(style["changes"]["summary"], "dependency web changed");
     let text = fixture.text(&red, &["status"], 1);
     assert!(
-        line(&text, "style/contrast").ends_with("BLOCKED — reuse"),
+        line(&text, "brand/signoff").ends_with("BLOCKED — reuse"),
         "{text}"
     );
     assert_eq!(
         line(&text, "Verify actions:"),
-        "Verify actions: will execute 0, will reuse 5, wait 0, blocked 0"
+        "Verify actions: will execute 0, will reuse 4, wait 0, blocked 1"
     );
+}
 
-    // An uncached eval behind the RED gate is still blocked; its cached dependent is reused.
-    let blocked = fixture.checkout("blocked", ["base", "broken", "new", "base", "base"]);
-    let status = fixture.json(&blocked, &["status"], 1);
-    let run = fixture.json(&blocked, &["verify", "--all"], 1);
-    assert_eq!(predicted(&status), taken(&run));
-    assert_eq!(taken(&run)["style/contrast"], "blocked");
-    assert_eq!(taken(&run)["brand/signoff"], "reuse");
+#[test]
+fn an_agent_model_reasoning_or_limit_change_alone_reuses_the_review() {
+    let fixture = Fixture::new();
+    let repo = fixture.checkout("base", ["base"; 5]);
+    let first = fixture.json(&repo, &["verify", "--all"], 4);
+    let review = request(&first, "docs/review").clone();
+    assert_eq!(review["status"], "GREEN");
+    let calls = fixture.provider.requests().len();
+    assert!(calls > 0);
+
+    // Another backend setting is an execution option, not part of the reuse key.
+    let path = repo.join("docs/artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    declaration["evals"][0]["profile"] = json!({"kind":"agent","backend":"openai",
+        "model":"fake-other-model","reasoning":"low","timeoutMs":60000,"maxTokens":4000});
+    fs::write(&path, declaration.to_string()).unwrap();
+    let status = fixture.json(&repo, &["status"], 1);
+    let docs = status["evals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|eval| eval["id"] == "docs/review")
+        .unwrap();
+    assert_eq!(docs["action"], "reuse");
+    assert!(
+        docs["reason"]
+            .as_str()
+            .unwrap()
+            .contains("produced by profile openai fake-exact-model high"),
+        "{docs}"
+    );
+    let text = fixture.text(&repo, &["verify", "--all"], 4);
+    assert!(
+        line(&text, "docs/review").ends_with(&format!(
+            "]: GREEN (reused from {}, profile openai fake-exact-model high)",
+            first["id"].as_str().unwrap()
+        )),
+        "{text}"
+    );
+    assert_eq!(fixture.provider.requests().len(), calls);
+    let id = line(&text, "Run:").strip_prefix("Run: ").unwrap();
+    let run = fixture.json(&repo, &["run", "show", id], 0);
+    let reused = request(&run, "docs/review");
+    assert_eq!(reused["executionId"], review["executionId"]);
+    assert_eq!(reused["profile"]["model"], "fake-exact-model");
+    assert_eq!(reused["requestedProfile"]["model"], "fake-other-model");
+    assert_eq!(
+        reused["options"],
+        json!({"backend":"openai","model":"fake-exact-model","reasoning":"high","timeoutMs":15000})
+    );
+    assert_eq!(run["summary"]["reused"]["otherProfile"], 1);
 }

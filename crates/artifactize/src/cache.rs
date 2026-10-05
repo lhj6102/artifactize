@@ -1,4 +1,4 @@
-//! Fingerprint preparation, execution ownership, reuse, and end-of-review rechecks.
+//! Fingerprints, reuse keys, execution ownership, reuse, and end-of-review rechecks.
 
 mod content;
 
@@ -16,7 +16,7 @@ pub use crate::store::cache_entries::{Entry, list, remove, show};
 pub(crate) use content::ignore_patterns;
 
 use crate::{
-    config::{EvalDeclaration, Fingerprint, RepoConfig},
+    config::{Eval, EvalDeclaration, Fingerprint, Profile, RepoConfig},
     process, runtime, scope,
     store::{Execution, Request},
     workspace,
@@ -24,17 +24,29 @@ use crate::{
 
 const MANIFEST_BYTES: usize = 64 * 1024;
 
-/// Hash the effective declaration after profile selection, without file digests.
+/// Hash the eval strategy: what is asked and how the answer is judged, never how the eval
+/// is executed. Execution options (backend, model, reasoning, limits, the profile variant),
+/// the eval's id and title, and tool views stay out.
 pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
-    let mut definition = json!({
-        "profile": eval.profile,
+    let kind = match &eval.profile {
+        Profile::Agent { .. } => "agent",
+        Profile::Human {} => "human",
+        Profile::Runtime { .. } => "runtime",
+    };
+    let mut strategy = json!({
+        "kind": kind,
         "payload": eval.payload,
         "passSchema": eval.pass_schema,
         "failSchema": eval.fail_schema,
     });
-    definition.sort_all_objects();
+    if let Profile::Runtime { command, args, .. } = &eval.profile {
+        strategy["command"] = json!(command);
+        strategy["args"] = json!(args);
+    }
+    // The Agent `resultCheck` declaration (#81) belongs to the strategy and joins it here.
+    strategy.sort_all_objects();
     content::hex(&Sha256::digest(
-        serde_json::to_vec(&definition).expect("eval definition is JSON"),
+        serde_json::to_vec(&strategy).expect("eval strategy is JSON"),
     ))
 }
 
@@ -46,31 +58,110 @@ pub struct PreparedFingerprint {
 }
 
 /// What a content fingerprint covered, saved with executions to explain later changes.
-/// Maps that would exceed 64 KiB are omitted; the fingerprint still covers them.
+/// A file map that would exceed 64 KiB is omitted; the fingerprint still covers it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
-    /// SHA-256 over every input path and file digest.
+    /// SHA-256 over every input path and file digest: the fingerprint without its prefix.
     pub inputs: String,
     /// Owner-relative path to the first 16 hex digits of its SHA-256.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub files: Option<BTreeMap<String, String>>,
-    /// Dependency Artifact to its fingerprint script value or content digest.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dependencies: Option<BTreeMap<String, String>>,
 }
 
-/// Why the current fingerprint differs from an earlier cached result for the same Eval definition.
+/// An eval's reuse key: `hash(eval strategy, sorted (name, fingerprint) of the Artifacts it
+/// depends on)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Key {
+    pub value: String,
+    pub eval_def_hash: String,
+    /// Each Artifact the eval depends on, its target included, with its fingerprint.
+    pub fingerprints: BTreeMap<String, String>,
+}
+
+/// Why an eval has no reuse key: an Artifact it depends on declares no fingerprint.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Unkeyed {
+    /// The eval's own target.
+    Target,
+    /// A mount, child or referenced Artifact.
+    Dependency(String),
+}
+
+/// Why the current key differs from an earlier cached result for the same eval and Eval
+/// definition.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Changes {
     pub since_run_id: String,
-    /// `path` changed, `+path` added, `-path` removed; absent when not comparable.
+    /// The target's own files: `path` changed, `+path` added, `-path` removed; absent when
+    /// not comparable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub files: Option<Vec<String>>,
-    /// `id` changed, `+id` added, `-id` removed; absent when not comparable.
+    /// Dependency Artifacts: `name` changed, `+name` added, `-name` removed; absent when none
+    /// changed or not comparable.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dependencies: Option<Vec<String>>,
     pub summary: String,
+}
+
+/// The Artifacts an eval depends on: its target, the target's mounts and child Artifacts, and
+/// the Artifacts the eval names in its instruction or runtime args. Connections further away
+/// count only through how the developer defines fingerprints.
+pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a str> {
+    let target = &config.artifacts[&eval.target];
+    std::iter::once(eval.target.as_str())
+        .chain(target.mounts.values().map(String::as_str))
+        .chain(target.children.values().map(String::as_str))
+        .chain(eval.deps.iter().map(String::as_str))
+        .collect()
+}
+
+/// The reuse key of an Eval definition hash over these fingerprints.
+pub fn key(eval_def_hash: &str, fingerprints: &BTreeMap<String, String>) -> String {
+    let mut digest = Sha256::new();
+    digest.update(format!("artifactize-key-v1\neval {eval_def_hash}\n"));
+    // Names are identifiers and fingerprints never contain spaces or line breaks.
+    for (name, fingerprint) in fingerprints {
+        digest.update(format!("artifact {name} {fingerprint}\n"));
+    }
+    content::hex(&digest.finalize())
+}
+
+/// The eval's reuse key from prepared fingerprints. Without a fingerprint on every Artifact
+/// it depends on, the eval has no key, so it is never reused or published.
+pub fn eval_key(
+    config: &RepoConfig,
+    eval: &Eval,
+    fingerprints: &BTreeMap<&str, PreparedFingerprint>,
+) -> Result<Key, Unkeyed> {
+    if !fingerprints.contains_key(eval.target.as_str()) {
+        return Err(Unkeyed::Target);
+    }
+    let mut values = BTreeMap::new();
+    for id in dependencies(config, eval) {
+        let fingerprint = fingerprints
+            .get(id)
+            .ok_or_else(|| Unkeyed::Dependency(id.to_owned()))?;
+        values.insert(id.to_owned(), fingerprint.value.clone());
+    }
+    let eval_def_hash = eval_definition_hash(&eval.declaration);
+    Ok(Key {
+        value: key(&eval_def_hash, &values),
+        eval_def_hash,
+        fingerprints: values,
+    })
+}
+
+/// Keys of every eval whose dependency Artifacts were all prepared, by eval id.
+pub fn eval_keys<'a>(
+    config: &'a RepoConfig,
+    fingerprints: &BTreeMap<&str, PreparedFingerprint>,
+) -> BTreeMap<&'a str, Key> {
+    config
+        .evals
+        .iter()
+        .filter_map(|eval| Some((eval.id.as_str(), eval_key(config, eval, fingerprints).ok()?)))
+        .collect()
 }
 
 /// Prepare only the selected dependency closure, once per Artifact.
@@ -80,17 +171,16 @@ pub async fn prepare<'a>(
     output_root: &Path,
     cancellation: CancellationToken,
 ) -> Result<BTreeMap<&'a str, PreparedFingerprint>, String> {
-    let mut locals = BTreeMap::new();
-    let mut keys = BTreeMap::new();
+    let mut prepared = BTreeMap::new();
     for id in artifacts {
-        if config.artifacts[id].fingerprint.is_some() {
-            keys.insert(
+        if config.artifacts[id].fingerprint.is_some() && !prepared.contains_key(id) {
+            prepared.insert(
                 id,
-                compute(config, id, output_root, &cancellation, &mut locals).await?,
+                compute(config, id, output_root, cancellation.clone()).await?,
             );
         }
     }
-    Ok(keys)
+    Ok(prepared)
 }
 
 pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String) {
@@ -98,6 +188,7 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String)
     request.execution_id = Some(execution.id.clone());
     request.result = execution.result.clone();
     request.profile = execution.profile.clone();
+    request.options = execution.options.clone();
     request.provenance = Some(execution.provenance.clone());
     request.usage = None;
     request.reused_usage = execution.usage.clone();
@@ -109,77 +200,59 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String)
     request.blocked_reason = None;
 }
 
-/// The returned value is the Artifact's whole fingerprint, shared by all of its Evals.
-pub async fn fingerprint(
+/// Recompute the eval's key after a review: every Artifact it depends on is fingerprinted
+/// again, so a change to any of them during the review is detected.
+pub async fn recheck(
     config: &RepoConfig,
-    artifact_id: &str,
+    eval: &Eval,
     output_root: &Path,
     cancellation: CancellationToken,
-) -> Result<String, String> {
-    compute(
+) -> Result<Option<String>, String> {
+    let fingerprints = prepare(
         config,
-        artifact_id,
+        dependencies(config, eval),
         output_root,
-        &cancellation,
-        &mut BTreeMap::new(),
+        cancellation,
     )
-    .await
-    .map(|key| key.value)
+    .await?;
+    Ok(eval_key(config, eval, &fingerprints)
+        .ok()
+        .map(|key| key.value))
 }
 
-/// `locals` memoizes each Artifact's own contribution within one preparation.
 async fn compute(
     config: &RepoConfig,
     id: &str,
     output_root: &Path,
-    cancellation: &CancellationToken,
-    locals: &mut BTreeMap<String, String>,
+    cancellation: CancellationToken,
 ) -> Result<PreparedFingerprint, String> {
     match &config.artifacts[id].fingerprint {
-        Some(Fingerprint::Content { .. }) => content(config, id, output_root, cancellation, locals)
-            .await
-            .map_err(|error| format!("Content fingerprint for Artifact {id} failed: {error}")),
+        Some(Fingerprint::Content { files, ignore }) => {
+            content(config, id, files, ignore, &cancellation)
+                .await
+                .map_err(|error| format!("Content fingerprint for Artifact {id} failed: {error}"))
+        }
         Some(Fingerprint::Script { .. }) => Ok(PreparedFingerprint {
-            value: local(config, id, output_root, cancellation, locals).await?,
+            value: script(config, id, output_root, cancellation)
+                .await
+                .map_err(|error| format!("Fingerprint script for Artifact {id} failed: {error}"))?,
             manifest: None,
         }),
         None => Err(format!("No fingerprint declared for Artifact {id}.")),
     }
 }
 
-/// Own input files plus each dependency's own contribution, never a dependency's dependencies.
+/// The built-in hash of the Artifact's own input files, nothing else.
 async fn content(
     config: &RepoConfig,
     id: &str,
-    output_root: &Path,
+    inputs: &[String],
+    ignore: &[String],
     cancellation: &CancellationToken,
-    locals: &mut BTreeMap<String, String>,
 ) -> Result<PreparedFingerprint, String> {
-    let Some(Fingerprint::Content {
-        files: inputs,
-        dependencies: scope,
-        ignore,
-    }) = &config.artifacts[id].fingerprint
-    else {
-        unreachable!("content fingerprint")
-    };
     let files = content::files(config, id, inputs, ignore, cancellation).await?;
-    locals.insert(id.to_owned(), files.digest.clone());
-    let mut dependencies = BTreeMap::new();
-    for dependency in content::dependencies(config, id, *scope) {
-        let value = local(config, dependency, output_root, cancellation, locals).await?;
-        dependencies.insert(dependency.to_owned(), value);
-    }
-    let mut digest = Sha256::new();
-    digest.update(format!(
-        "artifactize-content-v1\nartifact {id}\nfiles {}\n",
-        files.digest
-    ));
-    for (dependency, value) in &dependencies {
-        digest.update(format!("dependency {dependency} {value}\n"));
-    }
     let mut manifest = Manifest {
-        inputs: files.digest,
+        inputs: files.digest.clone(),
         files: Some(
             files
                 .files
@@ -187,92 +260,72 @@ async fn content(
                 .map(|(path, file)| (path.clone(), content::hex(&file[..8])))
                 .collect(),
         ),
-        dependencies: Some(dependencies),
     };
-    let size = |manifest: &Manifest| {
-        serde_json::to_vec(manifest)
-            .expect("manifest is JSON")
-            .len()
-    };
-    if size(&manifest) > MANIFEST_BYTES {
+    if serde_json::to_vec(&manifest)
+        .expect("manifest is JSON")
+        .len()
+        > MANIFEST_BYTES
+    {
         manifest.files = None;
     }
-    if size(&manifest) > MANIFEST_BYTES {
-        manifest.dependencies = None;
-    }
     Ok(PreparedFingerprint {
-        value: format!("content:{}", content::hex(&digest.finalize())),
+        value: format!("content:{}", files.digest),
         manifest: Some(manifest),
     })
 }
 
-/// A dependency's contribution: its fingerprint script value, or the digest of its own
-/// content inputs (`.` without a declared fingerprint).
-async fn local(
-    config: &RepoConfig,
-    id: &str,
-    output_root: &Path,
-    cancellation: &CancellationToken,
-    locals: &mut BTreeMap<String, String>,
-) -> Result<String, String> {
-    if let Some(value) = locals.get(id) {
-        return Ok(value.clone());
-    }
-    let value = match &config.artifacts[id].fingerprint {
-        Some(Fingerprint::Script { .. }) => script(config, id, output_root, cancellation.clone())
-            .await
-            .map_err(|error| format!("Fingerprint script for Artifact {id} failed: {error}"))?,
-        fingerprint => {
-            let (inputs, ignore) = match fingerprint {
-                Some(Fingerprint::Content { files, ignore, .. }) => (files.clone(), ignore.clone()),
-                _ => (vec![".".to_owned()], Vec::new()),
-            };
-            content::files(config, id, &inputs, &ignore, cancellation)
-                .await
-                .map_err(|error| format!("Content of Artifact {id} failed: {error}"))?
-                .digest
-        }
-    };
-    locals.insert(id.to_owned(), value.clone());
-    Ok(value)
-}
-
-/// Explain a changed fingerprint against the manifest of an earlier cached execution.
-pub fn changes(previous: &Execution, current: &PreparedFingerprint) -> Changes {
-    let compared = previous.manifest.as_ref().zip(current.manifest.as_ref());
-    let files = compared.and_then(|(old, new)| {
-        if old.inputs == new.inputs {
-            Some(Vec::new())
-        } else {
-            old.files
-                .as_ref()
-                .zip(new.files.as_ref())
-                .map(|(old, new)| diff(old, new))
-        }
-    });
-    let dependencies = compared.and_then(|(old, new)| {
-        old.dependencies
-            .as_ref()
-            .zip(new.dependencies.as_ref())
-            .map(|(old, new)| diff(old, new))
-    });
+/// Explain a changed key against an earlier cached execution of the same Eval definition:
+/// which of the target's files changed, and which dependency Artifacts' fingerprints changed.
+pub fn changes(
+    previous: &Execution,
+    target: &str,
+    current: &Key,
+    manifest: Option<&Manifest>,
+) -> Changes {
     let mut parts = Vec::new();
-    match &files {
-        Some(files) if !files.is_empty() => {
-            let shown = files
-                .iter()
-                .take(10)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ");
-            parts.push(match files.len() {
-                0..=10 => format!("changed: {shown}"),
-                total => format!("changed: {shown} and {} more", total - 10),
-            });
+    let mut files = None;
+    if previous.fingerprints.get(target) != current.fingerprints.get(target) {
+        match previous.manifest.as_ref().zip(manifest) {
+            Some((old, new)) if old.inputs == new.inputs => files = Some(Vec::new()),
+            Some((old, new)) => {
+                files = old
+                    .files
+                    .as_ref()
+                    .zip(new.files.as_ref())
+                    .map(|(old, new)| diff(old, new));
+                match &files {
+                    Some(files) if !files.is_empty() => {
+                        let shown = files
+                            .iter()
+                            .take(10)
+                            .cloned()
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        parts.push(match files.len() {
+                            0..=10 => format!("changed: {shown}"),
+                            total => format!("changed: {shown} and {} more", total - 10),
+                        });
+                    }
+                    _ => parts.push("inputs changed".to_owned()),
+                }
+            }
+            None => parts.push("fingerprint changed".to_owned()),
         }
-        None if compared.is_some() => parts.push("inputs changed".to_owned()),
-        _ => {}
     }
+    let dependencies = (!previous.fingerprints.is_empty())
+        .then(|| {
+            let others = |map: &BTreeMap<String, String>| {
+                map.iter()
+                    .filter(|(name, _)| *name != target)
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect::<BTreeMap<_, _>>()
+            };
+            diff(
+                &others(&previous.fingerprints),
+                &others(&current.fingerprints),
+            )
+        })
+        .filter(|dependencies| !dependencies.is_empty());
     for dependency in dependencies.iter().flatten() {
         parts.push(if let Some(id) = dependency.strip_prefix('+') {
             format!("dependency {id} added")

@@ -35,10 +35,60 @@ pub(super) fn upgrade(path: &Path) -> Result<(), Error> {
     }
     if version == 2 {
         fingerprints(&transaction)?;
-        transaction.pragma_update(None, "user_version", 3)?;
+        version = 3;
+    }
+    if version == 3 {
+        reuse_keys(&transaction)?;
+        transaction.pragma_update(None, "user_version", 4)?;
     }
     transaction.commit()?;
     Ok(())
+}
+
+/// Version 4 keys reuse by `hash(eval strategy, (name, fingerprint) of each Artifact the eval
+/// depends on)`. Earlier entries cannot be mapped to that key: their fingerprints mixed in
+/// dependency entries and their Eval definition hash covered the profile. Their reuse mappings
+/// are dropped, so the first verify after the upgrade reviews again; executions, Runs and
+/// waiting Human requests stay readable, and a pending Human submission still settles its Run.
+fn reuse_keys(db: &rusqlite::Transaction<'_>) -> Result<(), Error> {
+    db.execute_batch(
+        "DROP INDEX IF EXISTS active_fingerprint;
+        DROP INDEX IF EXISTS cache_lru;
+        DROP TABLE cache_entries;
+        ALTER TABLE executions DROP COLUMN fingerprint;
+        ALTER TABLE executions DROP COLUMN eval_def_hash;
+        ALTER TABLE executions ADD COLUMN key TEXT;",
+    )?;
+    db.execute_batch(super::cache_entries::SCHEMA)?;
+    // Saved content fingerprints lose `dependencies`, so a waiting Human request's recorded
+    // scope still matches the current declarations.
+    rewrite(db, "requests", |data| {
+        if let Some(artifacts) = data.pointer_mut("/humanDefinition/artifacts") {
+            content_dependencies(artifacts);
+        }
+    })?;
+    rewrite(db, "runs", |data| {
+        if let Some(artifacts) = data.pointer_mut("/definitions/artifacts") {
+            content_dependencies(artifacts);
+        }
+    })
+}
+
+/// Saved Artifact declarations: a content `fingerprint` drops its `dependencies` scope.
+fn content_dependencies(artifacts: &mut Value) {
+    for artifact in artifacts
+        .as_object_mut()
+        .into_iter()
+        .flat_map(Map::values_mut)
+    {
+        if let Some(fingerprint) = artifact
+            .get_mut("fingerprint")
+            .and_then(Value::as_object_mut)
+            .filter(|fingerprint| !fingerprint.contains_key("script"))
+        {
+            fingerprint.remove("dependencies");
+        }
+    }
 }
 
 /// Version 2 renames the version 1 reuse key to staleKey in columns, the active index and saved JSON.

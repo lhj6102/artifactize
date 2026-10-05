@@ -1,4 +1,4 @@
-//! Built-in content fingerprint: owner input files plus dependency entries.
+//! Built-in content fingerprint: the hash of an Artifact's own input files.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::{CONFIG_FILE, Dependencies, RepoConfig},
+    config::{CONFIG_FILE, RepoConfig},
     process, scope,
 };
 
@@ -61,28 +61,6 @@ fn matcher(patterns: &[String]) -> Result<Gitignore, String> {
             .map_err(|error| format!("fingerprint.ignore: {error}"))?;
     }
     builder.build().map_err(|error| error.to_string())
-}
-
-/// The direct or transitive dependency Artifacts, never the owner itself.
-pub(super) fn dependencies<'a>(
-    config: &'a RepoConfig,
-    id: &str,
-    scope: Dependencies,
-) -> BTreeSet<&'a str> {
-    let mut found = BTreeSet::new();
-    if scope == Dependencies::None {
-        return found;
-    }
-    let mut pending = vec![id];
-    while let Some(current) = pending.pop() {
-        for relation in config.relations.iter().filter(|r| r.target == current) {
-            let source = relation.source.as_str();
-            if source != id && found.insert(source) && scope == Dependencies::Transitive {
-                pending.push(source);
-            }
-        }
-    }
-    found
 }
 
 /// Hash an Artifact's own inputs off the async runtime.

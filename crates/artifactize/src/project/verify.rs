@@ -10,7 +10,7 @@ use crate::{
     graph::{EvalStatus, Evidence, Graph},
     project::selection::{ProfileSelection, Selection, select_profiles},
     remote::Session,
-    store::{self, Receipts, Request, Run, RunView},
+    store::{self, ExecutionOptions, Receipts, Request, Run, RunView},
     workspace,
 };
 
@@ -99,13 +99,11 @@ pub async fn verify(
     if cancellation.is_cancelled() {
         return Err("Project preparation was cancelled.".into());
     }
-    // --force makes no remote calls at all. Local misses are looked up in one batch, and hits
-    // are mirrored into the local cache before the Run claims anything.
-    let remote = if options.force {
-        None
-    } else {
-        Session::open(Some(&state), Some(&config.root))?
-    };
+    let keys = cache::eval_keys(&config, &fingerprints);
+    // The store is asked once for every key, and a record that completed after the local
+    // latest is mirrored into the local history before the Run claims anything. A forced Run
+    // reads nothing from the store, but publishes its results like any other.
+    let remote = Session::open(Some(&state), Some(&config.root))?;
     // Results from a fake provider must never reach the shared review store.
     if remote.is_some()
         && let Some(variable) = crate::llm::active_test_endpoint()
@@ -114,19 +112,15 @@ pub async fn verify(
             "{variable} points Agent reviews at a local test endpoint; set ARTIFACTIZE_REMOTE=off so their results stay out of the review store."
         ));
     }
-    if let Some(remote) = &remote {
-        let keys = config
-            .evals
-            .iter()
-            .filter_map(|eval| {
-                let fingerprint = fingerprints.get(eval.target.as_str())?;
-                Some((
-                    fingerprint.value.clone(),
-                    cache::eval_definition_hash(&eval.declaration),
-                ))
-            })
-            .collect();
-        remote.refresh(&receipts, keys).await?;
+    if let Some(remote) = &remote
+        && !options.force
+    {
+        remote
+            .refresh(
+                &receipts,
+                keys.values().map(|key| key.value.clone()).collect(),
+            )
+            .await?;
     }
     let directory = tempfile::Builder::new()
         .prefix("run-")
@@ -173,6 +167,7 @@ pub async fn verify(
             requested_profile: serde_json::to_value(&eval.declaration.profile)
                 .expect("profile is JSON"),
             eval_def_hash: cache::eval_definition_hash(&eval.declaration),
+            options: ExecutionOptions::new(&eval.declaration.profile, eval.variant.as_deref()),
             execution_id: None,
             provenance: None,
             usage: None,
@@ -189,6 +184,11 @@ pub async fn verify(
             fingerprint: fingerprints
                 .get(eval.target.as_str())
                 .map(|fingerprint| fingerprint.value.clone()),
+            key: keys.get(eval.id.as_str()).map(|key| key.value.clone()),
+            fingerprints: keys
+                .get(eval.id.as_str())
+                .map(|key| key.fingerprints.clone())
+                .unwrap_or_default(),
             status: "QUEUED".into(),
             created_at: run.created_at.clone(),
             started_at: None,
@@ -208,6 +208,7 @@ pub async fn verify(
         config.clone(),
         &graph,
         &fingerprints,
+        &keys,
         &mut run,
         &mut requests,
         &receipts,

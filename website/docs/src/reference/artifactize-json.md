@@ -11,47 +11,46 @@ two `fingerprint` forms.
 
 Discovery validates these fields without opening or executing scripts or inputs.
 There is no implicit or always-stale mode: an Artifact without `fingerprint` has no
-reuse, so every `verify` reviews it again. The former `staleKey` (0.2 and 0.3) and
-`stale` (0.1) fields fail `config check` with a message showing the `fingerprint`
-shape. The old `critics`, `stale.paths`,
+reuse, and neither does an eval that depends on it, so every `verify` reviews them
+again. The former `staleKey` (0.2 and 0.3) and `stale` (0.1) fields fail
+`config check` with a message showing the `fingerprint` shape, and so does the
+content form's 0.4 `dependencies` option. The old `critics`, `stale.paths`,
 `resultCheck`, `envRequirements`, `reviewPolicy.maxConcurrentExecutors` and tool
 metadata `observation` fields are rejected. Agent and Human tools use the separate flat
 declarations below.
 
 ## Content fingerprint
 
-[Fingerprints and reuse](../concepts/fingerprints-and-reuse.md#content-fingerprint) describes `files`, `dependencies` and `ignore`.
+[Fingerprints and reuse](../concepts/fingerprints-and-reuse.md#content-fingerprint) describes `files` and `ignore`.
 
-Each dependency contributes its own entry, never its dependencies' entries:
-
-- A fingerprint script contributes its output.
-- Any other Artifact contributes the SHA-256 of its own content inputs: its
-  declared `files`/`ignore`, or `["."]` when it declares no `fingerprint`.
-
-`transitive` therefore lists every Artifact in the closure explicitly. Cycles
-terminate, and SCC peers appear as ordinary dependencies; the owner never lists
-itself. A family instance hashes the shared folder without any instance's
-material, plus its own material. Editing one instance's material re-reviews only
-that instance.
+The value is `content:` plus the SHA-256 over each input file's owner-relative path
+and the SHA-256 of its bytes, in path order. It covers only the Artifact's own
+files: a dependency's change reaches an eval through the dependency's own
+fingerprint in the [reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key).
+A family instance hashes the shared folder without any instance's material, plus
+its own material. Editing one instance's material re-reviews only that instance.
 
 Walks follow the scoped path rules. Symlinks and special files fail closed unless
 they are ignored, nothing is followed out of the owner, and a walk stops with an
 error after 10,000 entries or 1 GiB. Hashing runs on preparation and on each
 end-of-review recheck. Files a review writes into ignored paths, such as Python's
 `__pycache__`, therefore never cause `INPUT_CHANGED`. A content fingerprint records a
-manifest with the execution: per-file digests (16 hex digits), the inputs digest
-and each dependency's entry. Maps that would exceed 64 KiB are dropped from the
-manifest but still covered by the fingerprint. `status` diffs this manifest against
-the current one.
+manifest with the execution: per-file digests (16 hex digits) and the inputs digest.
+A file map that would exceed 64 KiB is dropped from the manifest but still covered
+by the fingerprint. `status` diffs this manifest against the current one, and the
+recorded `fingerprints` of the key against the current dependency fingerprints.
 
 ## Fingerprint scripts
 
 Before executing any eval, `verify` computes each declared fingerprint in the selected
 required dependency closure, including dependencies whose evals are not selected.
 Every eval on an Artifact receives the same literal value, also saved on its
-request and in the Run's Artifact validation. A script fingerprint does not contain
-any implicit repository, eval, profile, dependency or content salt. A content
-fingerprint failure (a missing input, a link, a limit) aborts preparation the same way.
+request and in the Run's Artifact validation. artifactize mixes nothing into a
+script's output: no repository, eval, profile, tool view, dependency or content
+salt. The eval's [reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key) combines it with
+the Artifact's name, the fingerprints of the Artifacts the eval depends on and the
+Eval definition hash. A content fingerprint failure (a missing input, a link, a
+limit) aborts preparation the same way.
 
 The command runs from its owner's folder with JSON on stdin:
 `{"version":1,"artifactId":"example"}`. Family instances additionally receive
@@ -77,9 +76,9 @@ timeout, cancellation, missing files or cleanup failure abort preparation with
 an operational error, without starting any eval or falling back to an uncached
 review. Stderr is not forwarded as a fingerprint diagnostic.
 
-After each runtime or Agent review completes, its fingerprint is recomputed before accepting a
-GREEN or RED verdict. A changed value records ERROR/INPUT_CHANGED with no semantic
-result; a failed recheck also records ERROR. Force does not skip preparation or
+After each runtime or Agent review completes, the fingerprints its key covers are
+recomputed before accepting a GREEN or RED verdict. A changed value records
+ERROR/INPUT_CHANGED with no semantic result; a failed recheck also records ERROR. Force does not skip preparation or
 this recheck. Artifacts without a fingerprint run without either step. There is no
 workspace monitoring: content fingerprints hash files only at preparation and recheck.
 
@@ -104,7 +103,7 @@ All instance scripts use the shared folder as cwd. A parent addresses material a
 `<family-folder>/<instance>/<path>`; bypassing the instance is rejected. Instance
 material is an ownership declaration, not a sandbox hiding sibling files.
 Discovery keeps each instance's family membership and sorted material, without
-computing any digest. Only a declared `fingerprint` can become a reuse key.
+computing any digest. Only a declared `fingerprint` can enter a reuse key.
 Fingerprint scripts receive each selected instance's family name and material paths. A content fingerprint hashes the shared folder without any
 instance's material, plus the instance's own material. Each review rechecks its
 own instance's fingerprint. No workspace monitoring or automatic reuse is added.

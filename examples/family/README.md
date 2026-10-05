@@ -6,7 +6,7 @@ place in the graph.
 
 ```
 family/
-├── house-style/          basis Artifact: banned.txt lists words posts must avoid
+├── house-style/          basis Artifact with a content fingerprint: banned.txt lists words posts must avoid
 └── posts/                the family "posts"; mounts house-style as "style"
     ├── artifactize.json  one declaration for every instance
     ├── instances.json    the instance list: welcome, release-notes, tip
@@ -34,20 +34,21 @@ What it demonstrates:
 - **Shared and per-instance material.** Each instance lists its own post as
   `material`. The material must exist and is passed to the fingerprint script.
   Every instance runs the shared `check.py` from the `posts` folder.
-  `fingerprint.py` hashes the shared files, the banned-word list, the instance's
-  own entry in `instances.json` and its own material. Editing `tip.md`
-  therefore re-runs only `tip/style`, while editing `check.py` or
-  `house-style/banned.txt` re-runs every instance.
+  `fingerprint.py` hashes the shared files, the instance's own entry in
+  `instances.json` and its own material. Editing `tip.md` therefore re-runs only
+  `tip/style`, while editing `check.py` re-runs every instance. So does editing
+  `house-style/banned.txt`: every instance mounts `house-style`, so its key covers
+  `house-style`'s own fingerprint.
 - **The fingerprint script form.** This example keeps an owner-written
   `"fingerprint": {"script": {...}}` to show the script protocol: the stdin
-  context with the instance's family material, and an argv reference
-  (`{style}/banned.txt`). The built-in content form, `"fingerprint": {}`, gives
-  the same per-instance reuse without a script: it hashes the shared folder minus
-  every instance's material, adds the instance's own material, and covers the
-  mounted `house-style` as a direct dependency. The runtime-relations example
-  uses it.
+  context with the instance's family material. The built-in content form,
+  `"fingerprint": {}`, gives the same per-instance reuse without a script: it
+  hashes the shared folder minus every instance's material and adds the
+  instance's own material. The runtime-relations example uses it.
 - **A mount in a family.** Every instance mounts `house-style` as `style`,
-  depends on it, and passes `{style}/banned.txt` to the check.
+  depends on it, and passes `{style}/banned.txt` to the check. `house-style`
+  declares `"fingerprint": {}`: an eval is reused only when every Artifact it
+  depends on has a fingerprint.
 
 ## Run it
 

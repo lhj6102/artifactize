@@ -88,12 +88,13 @@ impl Receipts {
         self.connection.call(move |db| -> Result<(), Error> {
             let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             let data = serde_json::to_string(&execution)?;
-            if execution.fingerprint.is_some() {
+            if execution.key.is_some() && !request.force {
                 if transaction.execute("UPDATE executions SET status='WAITING_HUMAN',data=? WHERE id=? AND owner_pid=? AND owner_start_time=? AND status='RUNNING'", params![data, execution.id, execution.owner_pid, execution.owner_start_time as i64])? != 1 {
                     return Err(Error::Invalid("Active execution not found.".into()));
                 }
             } else {
-                transaction.execute("INSERT INTO executions(id,fingerprint,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?,NULL,?,?,?,'WAITING_HUMAN',?)", params![execution.id, execution.eval_def_hash, execution.owner_pid, execution.owner_start_time as i64, data])?;
+                // Unclaimed: a forced or unkeyed wait never holds its key's active slot.
+                transaction.execute("INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) VALUES (?,NULL,?,?,'WAITING_HUMAN',?)", params![execution.id, execution.owner_pid, execution.owner_start_time as i64, data])?;
             }
             update_request(&transaction, &request)?;
             transaction.commit()?;
@@ -108,12 +109,8 @@ impl Receipts {
                 let transaction =
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 let data: String = transaction.query_row(
-                    "SELECT data FROM executions WHERE id=? AND fingerprint=? AND eval_def_hash=?",
-                    params![
-                        request.execution_id,
-                        request.fingerprint,
-                        request.eval_def_hash
-                    ],
+                    "SELECT data FROM executions WHERE id=? AND key=?",
+                    params![request.execution_id, request.key],
                     |row| row.get(0),
                 )?;
                 let execution: Execution = serde_json::from_str(&data)?;
@@ -279,13 +276,13 @@ impl Receipts {
     }
 }
 
-/// A completed entry for the key settles a local Human wait, as a submission settles followers;
-/// the never-reviewed waiting execution becomes ERROR (SUPERSEDED).
+/// A completed record for the key settles a local Human wait, as a submission settles
+/// followers; the never-reviewed waiting execution becomes ERROR (SUPERSEDED).
 pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Result<(), Error> {
     let waiting: Option<String> = db
         .query_row(
-            "SELECT data FROM executions WHERE fingerprint=? AND eval_def_hash=? AND status='WAITING_HUMAN'",
-            params![entry.fingerprint, entry.eval_def_hash],
+            "SELECT data FROM executions WHERE key=? AND status='WAITING_HUMAN'",
+            [&entry.key],
             |row| row.get(0),
         )
         .optional()?;
@@ -296,7 +293,7 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
     let now = crate::broker::now();
     execution.status = "ERROR".into();
     execution.error = Some(format!(
-        "Superseded by the completed result {} for this fingerprint.",
+        "Superseded by the completed result {} for this key.",
         entry.id
     ));
     execution.error_code = Some("SUPERSEDED".into());
