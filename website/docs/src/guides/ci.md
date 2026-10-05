@@ -24,3 +24,9 @@ when it can reuse a sign-off, which needs a fingerprint.
 - `ARTIFACTIZE_REMOTE=off` disables the store for one command.
 
 The [team walkthrough](team-walkthrough.md#5-ci-reuses-both) runs this end to end.
+
+## Test Agent evals without a model
+
+A CI job can run Agent evals against a fake provider that it starts on loopback, with
+a throwaway state directory and the store off. See
+[Test against a fake provider](agent-evals.md#test-against-a-fake-provider).

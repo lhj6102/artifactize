@@ -1,3 +1,5 @@
+mod support;
+
 use std::{
     collections::BTreeMap,
     fs,
@@ -6,17 +8,29 @@ use std::{
 };
 
 use serde_json::{Value, json};
+use support::{FakeProvider, openai};
 
-/// Checkouts of one project sharing a state directory.
+/// Checkouts of one project sharing a state directory, with a fake OpenAI provider
+/// that passes every Agent review.
 struct Fixture {
     root: tempfile::TempDir,
+    provider: FakeProvider,
 }
 
 impl Fixture {
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir(root.path().join("home")).unwrap();
-        Self { root }
+        let provider = FakeProvider::start(|request| {
+            assert_eq!(request.path, "/v1/responses");
+            let verdict = json!({"verdict":"GREEN","note":"The docs match the API."});
+            openai::completed(
+                request,
+                vec![openai::message(&verdict.to_string())],
+                openai::usage(120, 30),
+            )
+        });
+        Self { root, provider }
     }
 
     /// `versions` are the api, web, style, docs and brand contents; each one is its fingerprint.
@@ -26,11 +40,12 @@ impl Fixture {
         // web/tests is RED when its version says "broken".
         let web =
             json!({"kind":"runtime","command":"/bin/sh","args":["-c","! grep -q broken version"]});
+        let agent = json!({"kind":"agent","backend":"openai","model":"fake-exact-model","reasoning":"high","timeoutMs":15000});
         let artifacts = [
             ("api", "tests", runtime.clone(), "Run the API tests."),
             ("web", "tests", web, "Run the web tests."),
-            ("style", "contrast", runtime.clone(), "Check {web} colors."),
-            ("docs", "review", runtime, "Review the docs against {api}."),
+            ("style", "contrast", runtime, "Check {web} colors."),
+            ("docs", "review", agent, "Review the docs against {api}."),
             (
                 "brand",
                 "signoff",
@@ -42,7 +57,10 @@ impl Fixture {
         for ((artifact, eval, profile, instruction), version) in artifacts.into_iter().zip(versions)
         {
             let folder = repo.join(artifact);
-            let declaration = json!({"id":eval,"title":eval,"profile":profile,"payload":{"instruction":instruction}});
+            let mut declaration = json!({"id":eval,"title":eval,"profile":profile,"payload":{"instruction":instruction}});
+            if artifact == "docs" {
+                declaration["passSchema"] = json!({"type":"object","properties":{"note":{"type":"string"}},"required":["note"]});
+            }
             write(
                 &folder,
                 json!({"name":artifact,"evals":[declaration],
@@ -62,6 +80,9 @@ impl Fixture {
             .arg(root.join("state"))
             .args(args)
             .env("HOME", root.join("home"))
+            .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
+            .env("OPENAI_API_KEY", "fake-openai-key")
+            .env("ARTIFACTIZE_REMOTE", "off")
             .output()
             .unwrap();
         assert_eq!(
@@ -152,7 +173,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     // Branch A changes api; its first Run executes everything and waits for the Human.
     let a = fixture.checkout("a", ["a", "base", "base", "base", "base"]);
     let first = fixture.json(&a, &["verify", "--all"], 4);
-    assert_eq!(first["summary"]["executed"], tally(5, 4, 0, 1));
+    assert_eq!(first["summary"]["executed"], tally(5, 3, 1, 1));
     assert_eq!(first["summary"]["reused"], tally(0, 0, 0, 0));
     assert_eq!(first["usage"]["saved"], json!({}));
     fixture.sign(&a, &first);
@@ -160,8 +181,25 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     // Branch B changes web and docs; unchanged style and the Human signoff are reused.
     let b = fixture.checkout("b", ["base", "b", "base", "b", "base"]);
     let second = fixture.json(&b, &["verify", "--all"], 0);
-    assert_eq!(second["summary"]["executed"], tally(3, 3, 0, 0));
+    assert_eq!(second["summary"]["executed"], tally(3, 2, 1, 0));
     assert_eq!(second["summary"]["reused"], tally(2, 1, 0, 1));
+    let review = request(&second, "docs/review");
+    assert_eq!(
+        review["result"],
+        json!({"verdict":"GREEN","note":"The docs match the API."})
+    );
+    let spent = &second["usage"]["spent"];
+    assert_eq!(spent["inputTokens"], 120, "{spent}");
+    assert_eq!(&second["summary"]["usage"], spent);
+    // Each branch's Agent review went to the fake once; nothing else was asked.
+    let calls = fixture.provider.requests();
+    assert_eq!(calls.len(), 2);
+    assert!(
+        calls
+            .iter()
+            .all(|call| call.body["model"] == "fake-exact-model"
+                && call.headers["authorization"] == "Bearer fake-openai-key")
+    );
 
     // The merge takes api from A and docs from B, and resolves web anew.
     let merge = fixture.checkout("merge", ["a", "merged", "base", "b", "base"]);
@@ -191,10 +229,10 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     assert_eq!(taken(&run)["web/tests"], "execute");
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["summary"]["executed"], tally(1, 1, 0, 0));
-    assert_eq!(run["summary"]["reused"], tally(4, 3, 0, 1));
+    assert_eq!(run["summary"]["reused"], tally(4, 2, 1, 1));
     assert_eq!(
         line(&text, "Summary:"),
-        "Summary: executed 1 (runtime 1, agent 0, human 0), reused 4 (runtime 3, agent 0, human 1)"
+        "Summary: executed 1 (runtime 1, agent 0, human 0), reused 4 (runtime 2, agent 1, human 1)"
     );
     for (eval, source) in [
         ("api/tests", &first),
@@ -210,6 +248,22 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
         assert_eq!(request(&run, eval)["provenance"]["runId"], source);
     }
     assert!(line(&text, "web/tests").ends_with("]: GREEN"), "{text}");
+
+    // Reused Agent usage is saved, not spent, and the provider was not asked again.
+    assert_eq!(fixture.provider.requests().len(), 2);
+    assert_eq!(run["usage"], json!({"spent":{},"saved":spent}));
+    assert!(line(&text, "Usage:").starts_with("Usage: spent none; saved "));
+    let reused_review = request(&run, "docs/review");
+    assert!(reused_review["usage"].is_null());
+    assert_eq!(reused_review["reusedUsage"], review["usage"]);
+    let shown = fixture.json(
+        &merge,
+        &["request", "show", reused_review["id"].as_str().unwrap()],
+        0,
+    );
+    assert_eq!(shown["summary"]["attempts"], 0);
+    assert_eq!(shown["summary"]["usage"], json!({}));
+    assert_eq!(shown["summary"]["usageState"], "none");
 }
 
 #[test]

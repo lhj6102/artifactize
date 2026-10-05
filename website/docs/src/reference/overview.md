@@ -17,6 +17,7 @@ covers setup.
 - [Scoped input library](artifactize-json.md#scoped-input-library)
 - [Runtime execution library](artifactize-json.md#runtime-execution-library)
 - [Agent backends](../guides/agent-evals.md#agent-backends)
+- [Test against a fake provider](../guides/agent-evals.md#test-against-a-fake-provider)
 - [Agent tools](agent-tools.md#agent-tools)
 - [Tool diagnostics](agent-tools.md#tool-diagnostics)
 - [Human tools](human-tools.md#human-tools)

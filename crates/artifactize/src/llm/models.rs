@@ -18,14 +18,11 @@ pub struct Listing {
 }
 
 pub async fn list(backend: Backend) -> Result<Listing, String> {
+    let base = super::base_url(backend)?;
     let key = super::api_key(backend, "to list models")?;
-    let base = match backend {
-        Backend::Openai => "https://api.openai.com/v1",
-        Backend::Anthropic => "https://api.anthropic.com",
-    };
     Ok(Listing {
         backend,
-        models: list_at(backend, &key, base).await?,
+        models: list_at(backend, &key, &base).await?,
     })
 }
 

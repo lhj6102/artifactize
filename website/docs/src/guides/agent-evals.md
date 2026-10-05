@@ -123,6 +123,78 @@ separate. OpenAI input already includes its cache reads. Never sum every counter
 Unreported fields stay absent. Assistant messages and reasoning are not persisted.
 
 Owner validation before relying on a provider: run one real review per backend
-(OpenAI key, Anthropic key) with an accessible exact model ID and a declared tool. These real reviews are still pending for the owner.
-Automated tests use fake HTTP transports or local HTTP servers and make no real
+(OpenAI key, Anthropic key) with an accessible exact model ID and a declared tool.
+These real reviews are still pending for the owner. Automated tests use fake HTTP
+transports or a [fake provider](#test-against-a-fake-provider) and make no real
 inference requests.
+
+## Test against a fake provider
+
+To test your tools, schemas and result parsing without a model, point a backend at
+a fake provider on this machine. The variable replaces the provider's API root:
+
+| Backend | Variable | Example | The fake answers |
+|---|---|---|---|
+| `openai` | `ARTIFACTIZE_OPENAI_BASE_URL` | `http://127.0.0.1:8080/v1` | `POST <root>/responses`, `GET <root>/models` |
+| `anthropic` | `ARTIFACTIZE_ANTHROPIC_BASE_URL` | `http://127.0.0.1:8080` | `POST <root>/v1/messages`, `GET <root>/v1/models` |
+
+- The root must be `http://` or `https://` on `localhost`, `127.0.0.0/8` or `[::1]`,
+  without credentials, a query or a fragment. Any other value fails the review,
+  `models` and `doctor` with a message naming the variable, before any connection.
+  An empty value counts as unset. For `anthropic`, a trailing `/v1` is accepted.
+- The API-key variable is still required and is sent to the fake unchanged, so set
+  a dummy key.
+- Nothing else changes: the same request bodies and streaming, retries, budgets,
+  tool calls, repair and verdict validation.
+- Results are recorded and reused like any other, so use a throwaway state
+  directory (`--state-dir` or `ARTIFACTIZE_STATE_HOME`). While a test endpoint is
+  set, `verify` refuses to use a review store, so set `ARTIFACTIZE_REMOTE=off`.
+  Never `remote push` a state that holds fake results.
+- `doctor` warns while a test endpoint is set and reports it as `testEndpoint`.
+
+The fake streams its answer as `text/event-stream`, in the provider's wire format,
+for the requested model. For `openai`, one `response.completed` event is enough.
+This fake passes every review:
+
+```python
+#!/usr/bin/env python3
+"""A fake OpenAI Responses provider on loopback that passes every review."""
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+
+class Fake(BaseHTTPRequestHandler):
+    def do_POST(self):
+        request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        text = json.dumps({"verdict": "GREEN"})
+        response = {
+            "id": "resp_fake", "object": "response", "created_at": 0,
+            "model": request["model"], "status": "completed",
+            "output": [{"type": "message", "id": "msg_fake", "role": "assistant",
+                        "status": "completed",
+                        "content": [{"type": "output_text", "text": text, "annotations": []}]}],
+            "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        }
+        event = {"type": "response.completed", "sequence_number": 0, "response": response}
+        body = f"event: response.completed\ndata: {json.dumps(event)}\n\n".encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+HTTPServer(("127.0.0.1", 8080), Fake).serve_forever()
+```
+
+```sh
+python3 fake_openai.py &
+export ARTIFACTIZE_OPENAI_BASE_URL=http://127.0.0.1:8080/v1 OPENAI_API_KEY=dummy
+ARTIFACTIZE_REMOTE=off artifactize --state-dir "$(mktemp -d)" verify --all
+```
+
+To exercise a tool, answer the first request with a `function_call` output item
+(`call_id`, `name`, JSON-encoded `arguments`). Its `response.completed` event must
+follow `response.output_item.added` and `response.output_item.done` events for the
+call. The next request's `input` then carries the tool's `function_call_output`.
+Answer that one with the verdict message.

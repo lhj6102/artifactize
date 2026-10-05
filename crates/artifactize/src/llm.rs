@@ -1,10 +1,12 @@
-//! Exact-model rig backends with explicit API-key credentials.
+//! Exact-model rig backends with explicit API-key credentials, and the loopback-only
+//! test endpoint override for offline fake providers.
 
 pub mod models;
 #[cfg(test)]
 pub(crate) mod tests;
 
 use std::{
+    net::IpAddr,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -71,16 +73,19 @@ fn insert_counter(counters: &mut Map<String, Value>, name: &str, value: Option<u
 
 impl Client {
     pub fn new(backend: Backend, model: &str) -> Result<Self, String> {
+        let base = base_url(backend)?;
         let key = api_key(backend, "for this Agent backend")?;
         let http = rig_reqwest::ReqwestClient::from(http_client()?);
         Ok(match backend {
             Backend::Openai => Self::Openai(Box::new(
                 openai::OpenAIConfig::new(key)
+                    .with_base_url(base)
                     .connect(http)
                     .responses(model),
             )),
             Backend::Anthropic => Self::Anthropic(Box::new(
                 anthropic::AnthropicConfig::new(key)
+                    .with_base_url(base)
                     .connect(http)
                     .completion(model),
             )),
@@ -288,12 +293,84 @@ fn diagnostic(error: &ProviderError) -> String {
     clean_diagnostic(&message)
 }
 
-/// The backend's API key from its environment variable; never printed or logged.
-fn api_key(backend: Backend, purpose: &str) -> Result<String, String> {
-    let variable = match backend {
+/// The environment variable that holds the backend's API key.
+pub fn key_variable(backend: Backend) -> &'static str {
+    match backend {
         Backend::Openai => "OPENAI_API_KEY",
         Backend::Anthropic => "ANTHROPIC_API_KEY",
+    }
+}
+
+/// The environment variable that points the backend at a loopback test endpoint.
+pub fn base_url_variable(backend: Backend) -> &'static str {
+    match backend {
+        Backend::Openai => "ARTIFACTIZE_OPENAI_BASE_URL",
+        Backend::Anthropic => "ARTIFACTIZE_ANTHROPIC_BASE_URL",
+    }
+}
+
+const BACKENDS: [Backend; 2] = [Backend::Openai, Backend::Anthropic];
+
+/// The loopback test endpoint that replaces the backend's API root, if one is set.
+/// An empty value is unset; any other value must be a loopback URL.
+pub fn test_endpoint(backend: Backend) -> Result<Option<String>, String> {
+    let variable = base_url_variable(backend);
+    let Some(value) = std::env::var_os(variable).filter(|value| !value.is_empty()) else {
+        return Ok(None);
     };
+    value
+        .to_str()
+        .ok_or_else(|| "it is not UTF-8".to_owned())
+        .and_then(loopback_url)
+        .map(Some)
+        .map_err(|error| format!("{variable}: {error}."))
+}
+
+/// The first test endpoint variable that is set, valid or not.
+pub fn active_test_endpoint() -> Option<&'static str> {
+    BACKENDS
+        .into_iter()
+        .map(base_url_variable)
+        .find(|variable| std::env::var_os(variable).is_some_and(|value| !value.is_empty()))
+}
+
+/// An http(s) URL on localhost, 127.0.0.0/8 or [::1], without credentials, a query or a
+/// fragment, and without a trailing slash. A test endpoint never leaves the machine.
+fn loopback_url(value: &str) -> Result<String, String> {
+    let url = url::Url::parse(value).map_err(|_| "it is not a URL".to_owned())?;
+    let loopback = match url.host() {
+        Some(url::Host::Domain(host)) => host.eq_ignore_ascii_case("localhost"),
+        Some(url::Host::Ipv4(ip)) => IpAddr::V4(ip).is_loopback(),
+        Some(url::Host::Ipv6(ip)) => IpAddr::V6(ip).is_loopback(),
+        None => false,
+    };
+    if !matches!(url.scheme(), "http" | "https") || !loopback {
+        return Err("a test endpoint must be http(s) on localhost, 127.0.0.0/8 or [::1]".into());
+    }
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return Err("a test endpoint has no credentials, query or fragment".into());
+    }
+    Ok(url.as_str().trim_end_matches('/').to_owned())
+}
+
+/// The backend's API root: its loopback test endpoint, else the provider's.
+fn base_url(backend: Backend) -> Result<String, String> {
+    Ok(test_endpoint(backend)?.unwrap_or_else(|| {
+        match backend {
+            Backend::Openai => "https://api.openai.com/v1",
+            Backend::Anthropic => "https://api.anthropic.com",
+        }
+        .into()
+    }))
+}
+
+/// The backend's API key from its environment variable; never printed or logged.
+fn api_key(backend: Backend, purpose: &str) -> Result<String, String> {
+    let variable = key_variable(backend);
     std::env::var(variable)
         .ok()
         .filter(|key| !key.trim().is_empty())
