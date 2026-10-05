@@ -322,3 +322,67 @@ fn fake_results_never_reach_a_review_store() {
 fn state_has_runs(state: &Path) -> bool {
     fs::read_dir(state.join("runs")).is_ok_and(|mut entries| entries.next().is_some())
 }
+
+/// The text of the last user message in a Responses request.
+fn last_prompt(request: &support::Request) -> String {
+    let input = request.body["input"].as_array().unwrap();
+    input.last().unwrap()["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default()
+        .to_owned()
+}
+
+#[test]
+fn the_repair_turn_names_the_failing_schema_paths() {
+    let project = Project::new(json!({"kind":"agent","backend":"openai","model":"fake-model"}));
+    let reply = |request: &support::Request, verdict: Value| {
+        openai::completed(
+            request,
+            vec![openai::message(&verdict.to_string())],
+            openai::usage(10, 2),
+        )
+    };
+    let repaired = FakeProvider::start(move |request| {
+        if last_prompt(request).starts_with("Your final response did not match") {
+            reply(request, json!({"verdict":"GREEN","covered":["R1"]}))
+        } else {
+            reply(request, json!({"verdict":"GREEN","covered":"R1"}))
+        }
+    });
+    let run = parsed(
+        project
+            .command(&["verify", "--all"])
+            .env("ARTIFACTIZE_OPENAI_BASE_URL", repaired.openai_base())
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(
+        run["requests"][0]["result"],
+        json!({"verdict":"GREEN","covered":["R1"]})
+    );
+    let calls = repaired.requests();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(
+        last_prompt(&calls[1]),
+        "Your final response did not match the required schema: schema_mismatch: result must match the selected verdict's owner schema\n- instancePath \"/covered\": \"R1\" is not of type \"array\"\nReturn only one JSON object matching the schema."
+    );
+
+    // A second invalid result ends the review; the saved error stays the bare code.
+    let stubborn = FakeProvider::start(move |request| {
+        reply(request, json!({"verdict":"GREEN","covered":"R1"}))
+    });
+    let run = parsed(
+        project
+            .command(&["verify", "--all", "--force"])
+            .env("ARTIFACTIZE_OPENAI_BASE_URL", stubborn.openai_base())
+            .output()
+            .unwrap(),
+        2,
+    );
+    assert_eq!(
+        run["requests"][0]["error"],
+        "Invalid final Agent result after one format repair: schema_mismatch: result must match the selected verdict's owner schema."
+    );
+    assert_eq!(stubborn.requests().len(), 2);
+}

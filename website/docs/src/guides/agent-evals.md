@@ -45,7 +45,18 @@ options, not part of the reuse key: a result another model or profile produced f
 the same eval and fingerprints is reused, and its record shows which one it was. Final output must be one strict JSON object containing
 `"verdict":"GREEN"` or `"verdict":"RED"` and only the permitted owner-schema fields.
 One tools-disabled repair is allowed for invalid final output, within the original
-deadline. `maxTokens` and `maxToolCalls` are enforced client-side before further tools
+deadline. The repair turn names the error and, when the output was a JSON object, up
+to five failing instance paths with their messages, each bounded to 200 characters,
+as a Human submission's error does:
+
+```text
+Your final response did not match the required schema: schema_mismatch: result must match the selected verdict's owner schema
+- instancePath "/covered": "R1" is not of type "array"
+Return only one JSON object matching the schema.
+```
+
+If the repaired output is still invalid, the review is ERROR, and the saved error
+keeps only the error code, never the model's output. `maxTokens` and `maxToolCalls` are enforced client-side before further tools
 execute; neither becomes a provider request parameter.
 
 The rig adapter, retries, tool results and usage counters are in

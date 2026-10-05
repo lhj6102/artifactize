@@ -163,7 +163,8 @@ async fn run(
                         content: response.choice,
                     });
                     request.chat_history.push(Message::user(format!(
-                        "Your final response did not match the required schema: {error}. Return only one JSON object matching the schema."
+                        "Your final response did not match the required schema: {}\nReturn only one JSON object matching the schema.",
+                        verdict.repair_detail(&text, error)
                     )));
                     continue;
                 }
