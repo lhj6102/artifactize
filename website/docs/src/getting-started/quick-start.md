@@ -1,7 +1,7 @@
 # Quick start (5 minutes, no model needed)
 
 The tour uses the example projects in the repository. If you installed with
-`cargo install --git`, clone it first:
+`cargo install artifactize` or `cargo install --git`, clone it first:
 
 ```sh
 git clone https://github.com/lhj6102/artifactize

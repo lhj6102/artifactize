@@ -1,9 +1,16 @@
 [package]
 name = "artifactize"
+description = "Declare Artifacts and the evals that review them (tests, LLM reviews, human sign-offs), and reuse every verdict while its fingerprints are unchanged."
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://artifactize.dev/docs/"
+readme = "../../README.md"
+keywords = ["review", "llm", "agent", "ci", "incremental"]
+categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
 
 [dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }

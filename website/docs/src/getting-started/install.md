@@ -1,13 +1,14 @@
 # Install artifactize
 
-artifactize is one binary, built with Cargo. It is open source under the
+artifactize is one binary, built with Cargo and published on
+[crates.io](https://crates.io/crates/artifactize). It is open source under the
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
 
 ## Prerequisites
 
 - Linux or WSL 2. Other platforms are not supported.
-- A stable Rust toolchain from [rustup](https://rustup.rs) and a C compiler (SQLite
-  is built from source).
+- A Rust toolchain, 1.95 or later, from [rustup](https://rustup.rs) and a C compiler
+  (SQLite is built from source).
 - `python3` and `grep` for the example projects.
 - Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
   `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime and Human evals
@@ -15,11 +16,20 @@ artifactize is one binary, built with Cargo. It is open source under the
 
 ## Install
 
-Install the 0.4.0 release from GitHub:
+Install the latest release from crates.io (releases are published there from
+0.5.0 on):
 
 ```sh
-cargo install --git https://github.com/lhj6102/artifactize --tag v0.4.0 --locked artifactize
-artifactize --version          # artifactize 0.4.0
+cargo install artifactize --locked
+artifactize --version          # artifactize 0.5.0
+```
+
+`--locked` builds with the dependency versions the release was tested with. Every
+release is also tagged on GitHub, and `cargo install` can build a tag (or `main`,
+without `--tag`) from there:
+
+```sh
+cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.0 --locked artifactize
 ```
 
 To build from source instead, install from a checkout; its `rust-toolchain.toml`
@@ -33,8 +43,9 @@ cargo install --path crates/artifactize --locked
 ```
 
 The binary goes to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs
-it under `DIR/bin` instead. To upgrade, run the install command again with the new
-release's tag (or `git pull` and repeat `cargo install --path`). The next
+it under `DIR/bin` instead. To upgrade, run `cargo install artifactize --locked`
+again (or the `--git` command with the new release's tag, or `git pull` and repeat
+`cargo install --path`). The next
 command that opens an older state database upgrades it in place; `artifactize
 doctor` reports its schema without changing it. 0.4 calls the reuse declaration
 `fingerprint`; `config check` shows the new shape for each `artifactize.json` that
