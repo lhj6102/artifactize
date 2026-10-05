@@ -2,7 +2,14 @@
 
 **Review cost follows the size of a change.** Still-valid reviews are reused; you pay only for what changed.
 
-https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6
+<p align="center">
+  <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
+    <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/promo.gif" width="640"
+         alt="The 27-second Artifactize promo: declare Artifacts, verify them with runtime, Agent and Human evals, build on separate branches, and reuse every still-valid review. A bar along the bottom shows playback progress.">
+  </a>
+  <br>
+  <sub>27-second promo, no sound. Select it for the full-quality video.</sub>
+</p>
 
 <p align="center">
   <a href="https://artifactize.dev/docs/">Docs</a> ·
