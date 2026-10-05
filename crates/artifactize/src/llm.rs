@@ -1,13 +1,10 @@
-//! Exact-model rig backends with explicit API-key or ChatGPT credentials.
+//! Exact-model rig backends with explicit API-key credentials.
 
-mod chatgpt;
 pub mod models;
-pub use chatgpt::models as chatgpt_models;
 #[cfg(test)]
-pub(crate) use chatgpt::tests::{Server, stored_credentials};
+pub(crate) mod tests;
 
 use std::{
-    path::Path,
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -31,7 +28,6 @@ use crate::config::Backend;
 pub enum Client {
     Openai(Box<Model<openai::responses_api::wire::Responses>>),
     Anthropic(Box<Model<anthropic::wire::Messages>>),
-    Chatgpt(chatgpt::Chatgpt),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,20 +70,8 @@ fn insert_counter(counters: &mut Map<String, Value>, name: &str, value: Option<u
 }
 
 impl Client {
-    pub fn new(backend: Backend, model: &str, state: &Path, repo: &Path) -> Result<Self, String> {
-        if backend == Backend::Chatgpt {
-            return Ok(Self::Chatgpt(chatgpt::Chatgpt::new(model, state, repo)?));
-        }
-        let variable = match backend {
-            Backend::Openai => "OPENAI_API_KEY",
-            Backend::Anthropic => "ANTHROPIC_API_KEY",
-            Backend::Chatgpt => unreachable!(),
-            Backend::Claude => return Err("Claude reviews use the supervised CLI executor.".into()),
-        };
-        let key = std::env::var(variable)
-            .ok()
-            .filter(|key| !key.trim().is_empty())
-            .ok_or_else(|| format!("{variable} is required for this Agent backend."))?;
+    pub fn new(backend: Backend, model: &str) -> Result<Self, String> {
+        let key = api_key(backend, "for this Agent backend")?;
         let http = rig_reqwest::ReqwestClient::from(http_client()?);
         Ok(match backend {
             Backend::Openai => Self::Openai(Box::new(
@@ -100,7 +84,6 @@ impl Client {
                     .connect(http)
                     .completion(model),
             )),
-            _ => unreachable!(),
         })
     }
 
@@ -109,14 +92,14 @@ impl Client {
             backend.validate_reasoning(reasoning)?;
         }
         Ok(match backend {
-            Backend::Openai | Backend::Chatgpt => {
+            Backend::Openai => {
                 let mut value = json!({"store":false, "parallel_tool_calls":false, "include":["reasoning.encrypted_content"]});
                 if let Some(reasoning) = reasoning {
                     value["reasoning"] = json!({"effort":reasoning});
                 }
                 value
             }
-            Backend::Anthropic | Backend::Claude => reasoning.map_or(
+            Backend::Anthropic => reasoning.map_or(
                 json!({}),
                 |effort| json!({"thinking":{"type":"adaptive"}, "output_config":{"effort":effort}}),
             ),
@@ -135,25 +118,8 @@ impl Client {
                 request.max_tokens = Some(16_384);
                 model.stream_observed(request, observed)
             }
-            Self::Chatgpt(client) => client.model().await?.stream_observed(request, observed),
         }
-        .map_err(|error| self.diagnostic(&error))
-    }
-
-    fn retryable(&self, error: &ProviderError) -> bool {
-        if matches!(self, Self::Chatgpt(_)) && matches!(error, ProviderError::Truncated) {
-            return false;
-        }
-        retryable(error)
-    }
-
-    fn diagnostic(&self, error: &ProviderError) -> String {
-        let message = diagnostic(error);
-        if matches!(self, Self::Chatgpt(_)) {
-            chatgpt::diagnostic(error.report().http_status, &provider_body(error), &message)
-        } else {
-            message
-        }
+        .map_err(|error| diagnostic(&error))
     }
 
     pub async fn turn(
@@ -203,8 +169,8 @@ impl Client {
                 Ok(Ok(())) => stream
                     .finish()
                     .await
-                    .map_err(|error| (self.diagnostic(&error), self.retryable(&error))),
-                Ok(Err(error)) => Err((self.diagnostic(&error), self.retryable(&error))),
+                    .map_err(|error| (diagnostic(&error), retryable(&error))),
+                Ok(Err(error)) => Err((diagnostic(&error), retryable(&error))),
                 Err(error) => Err((error, false)),
             };
             if let Ok(response) = &result {
@@ -282,15 +248,6 @@ pub fn validate_response(response: &CompletionResponse, model: &str) -> Result<(
 }
 
 fn retryable(error: &ProviderError) -> bool {
-    let body = provider_body(error);
-    if let Some(code) = chatgpt::error_code(&body)
-        && (code.starts_with("subscription_sharing_") || code.starts_with("chatpass_v2_"))
-    {
-        return matches!(
-            code,
-            "subscription_sharing_usage_unavailable" | "subscription_sharing_user_unavailable"
-        );
-    }
     let report = error.report();
     let text = format!(
         "{} {}",
@@ -331,11 +288,16 @@ fn diagnostic(error: &ProviderError) -> String {
     clean_diagnostic(&message)
 }
 
-fn provider_body(error: &ProviderError) -> Value {
-    error
-        .provider_response()
-        .and_then(|response| serde_json::from_str(&response.body).ok())
-        .unwrap_or(Value::Null)
+/// The backend's API key from its environment variable; never printed or logged.
+fn api_key(backend: Backend, purpose: &str) -> Result<String, String> {
+    let variable = match backend {
+        Backend::Openai => "OPENAI_API_KEY",
+        Backend::Anthropic => "ANTHROPIC_API_KEY",
+    };
+    std::env::var(variable)
+        .ok()
+        .filter(|key| !key.trim().is_empty())
+        .ok_or_else(|| format!("{variable} is required {purpose}."))
 }
 
 fn http_client() -> Result<reqwest::Client, String> {

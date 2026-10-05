@@ -1,0 +1,193 @@
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::Path,
+    process::{Command, Output},
+};
+
+use artifactize::store;
+use serde_json::{Value, json};
+
+fn fixture(repo: &Path) {
+    fs::create_dir_all(repo.join("a")).unwrap();
+    fs::create_dir_all(repo.join("b")).unwrap();
+    fs::write(repo.join("a/env.sh"), "#!/bin/sh\nprintf '%s|%s|%s' \"$HOME\" \"${TOOL_CHECK_SECRET-unset}\" \"$PWD\"\nprintf invoked > touched\n").unwrap();
+    fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o700)).unwrap();
+    let profile = json!({"kind":"agent","backend":"openai","model":"test"});
+    fs::write(repo.join("a/artifactize.json"), json!({
+        "name":"a","views":{
+            "agentTools":{
+                "read":{"builtin":"read"},"image":{"builtin":"view_image"},
+                "env":{"description":"Environment","command":"./env.sh","args":[],"protocol":"plain","inputSchema":{"type":"object","additionalProperties":false}},
+                "data":{"description":"JSON","command":"/bin/echo","args":["{\"content\":[{\"type\":\"json\",\"data\":{\"answer\":42}}]}"],"protocol":"json","inputSchema":{"type":"object"}},
+                "error":{"description":"Authored error","command":"/bin/echo","args":["{\"content\":[{\"type\":\"text\",\"text\":\"Owner error\"}],\"isError\":true}"],"protocol":"json","inputSchema":{"type":"object"}}
+            },
+            "humanTools":{"env":{"description":"Environment","kind":"output","command":"./env.sh","args":[]}}
+        },
+        "evals":[
+            {"id":"review","title":"Review","profile":profile,"payload":{"instruction":"Review a."}},
+            {"id":"human","title":"Human","profile":{"kind":"human"},"payload":{"instruction":"Review a."}}
+        ]
+    }).to_string()).unwrap();
+    fs::write(
+        repo.join("b/artifactize.json"),
+        json!({"name":"b","views":{"agentTools":{"read":{"builtin":"read"}}},"basis":true})
+            .to_string(),
+    )
+    .unwrap();
+    fs::write(repo.join("a/text.txt"), "scoped text\n").unwrap();
+}
+
+fn check(repo: &Path, state: &Path, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        .arg("--repo")
+        .arg(repo)
+        .arg("--state-dir")
+        .arg(state)
+        .args(["tools", "check"])
+        .args(args)
+        .env("TOOL_CHECK_SECRET", "real-environment")
+        .env("HOME", "/reviewer-home")
+        .output()
+        .unwrap()
+}
+
+fn parsed(output: &Output, code: i32) -> Value {
+    assert_eq!(
+        output.status.code(),
+        Some(code),
+        "stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[test]
+fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fixture(&repo);
+    let report = parsed(&check(&repo, &state, &[]), 0);
+    assert_eq!(report["scopes"].as_array().unwrap().len(), 2);
+    assert!(report["scopes"].as_array().unwrap().iter().all(|scope| {
+        scope["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["inputSchema"]["type"] == "object")
+    }));
+    assert!(!repo.join("a/touched").exists());
+    assert!(!state.exists());
+    let declaration_path = repo.join("a/artifactize.json");
+    let original = fs::read(&declaration_path).unwrap();
+    let mut declaration: Value = serde_json::from_slice(&original).unwrap();
+    declaration["views"]["agentTools"]["env"]["executionPaths"] = json!(["missing-input"]);
+    fs::write(&declaration_path, declaration.to_string()).unwrap();
+    assert_eq!(parsed(&check(&repo, &state, &["a/review"]), 1)["ok"], false);
+    assert!(!repo.join("a/touched").exists());
+    fs::write(&declaration_path, original).unwrap();
+    let scoped = parsed(&check(&repo, &state, &["a/review"]), 0);
+    assert_eq!(scoped["scopes"].as_array().unwrap().len(), 1);
+    assert!(
+        scoped["scopes"][0]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|t| t["artifactId"] == "a")
+    );
+    fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(
+        parsed(
+            &check(
+                &repo,
+                &state,
+                &["--artifact", "a", "--audience", "agent", "--tool", "env"]
+            ),
+            1
+        )["ok"],
+        false
+    );
+    assert!(!repo.join("a/touched").exists());
+    fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o700)).unwrap();
+    let agent = parsed(
+        &check(
+            &repo,
+            &state,
+            &[
+                "--execute",
+                "--artifact",
+                "a",
+                "--audience",
+                "agent",
+                "--tool",
+                "env",
+            ],
+        ),
+        0,
+    );
+    let text = agent["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("/home|unset|"), "{text}");
+    assert!(!text.contains("reviewer-home"));
+    let human = parsed(
+        &check(
+            &repo,
+            &state,
+            &[
+                "--execute",
+                "--artifact",
+                "a",
+                "--audience",
+                "human",
+                "--tool",
+                "env",
+            ],
+        ),
+        0,
+    );
+    assert!(
+        human["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("/reviewer-home|real-environment|")
+    );
+    let error = parsed(
+        &check(
+            &repo,
+            &state,
+            &[
+                "--execute",
+                "--artifact",
+                "a",
+                "--audience",
+                "agent",
+                "--tool",
+                "error",
+            ],
+        ),
+        1,
+    );
+    assert_eq!(error["result"]["isError"], true);
+    assert!(!state.join(store::DATABASE).exists());
+    assert_eq!(fs::read_dir(&state).unwrap().count(), 0);
+    for args in [
+        vec!["--eval", "a/review", "--artifact", "a"],
+        vec!["--eval", "a/review", "--execute"],
+        vec!["--execute", "--artifact", "a"],
+        vec!["--args", "{}"],
+        vec![
+            "--execute",
+            "--artifact",
+            "a",
+            "--audience",
+            "human",
+            "--tool",
+            "env",
+            "--args",
+            "{}",
+        ],
+    ] {
+        assert_eq!(check(&repo, &state, &args).status.code(), Some(2));
+    }
+}

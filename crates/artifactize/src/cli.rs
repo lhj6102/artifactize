@@ -49,23 +49,6 @@ pub enum Command {
         #[command(subcommand)]
         command: ToolsCommand,
     },
-    /// Serve an execution's scoped Agent tools over stdio MCP.
-    #[command(hide = true)]
-    Mcp {
-        /// Execution manifest written for one Agent review.
-        #[arg(long, value_name = "PATH")]
-        manifest: PathBuf,
-    },
-    /// Sign in with ChatGPT using the system browser.
-    Login {
-        #[command(subcommand)]
-        provider: AuthProvider,
-    },
-    /// Revoke the ChatGPT session and remove local tokens.
-    Logout {
-        #[command(subcommand)]
-        provider: AuthProvider,
-    },
     /// Sign in to, sign out of, or check a shared remote review store.
     Remote {
         #[command(subcommand)]
@@ -82,7 +65,7 @@ pub enum Command {
         #[arg(long)]
         dry_run: bool,
     },
-    /// List provider models, or describe the Claude CLI's model selection.
+    /// List the models an API-key backend offers.
     Models {
         #[command(subcommand)]
         provider: ModelProvider,
@@ -250,21 +233,11 @@ impl PolicyArgs {
 }
 
 #[derive(Debug, Subcommand)]
-pub enum AuthProvider {
-    /// Use your ChatGPT account and eligible plan.
-    Chatgpt,
-}
-
-#[derive(Debug, Subcommand)]
 pub enum ModelProvider {
     /// OpenAI API models (OPENAI_API_KEY).
     Openai,
     /// Anthropic API models (ANTHROPIC_API_KEY).
     Anthropic,
-    /// Models visible to the signed-in ChatGPT account.
-    Chatgpt,
-    /// Explain Claude CLI model names; no listing API.
-    Claude,
 }
 
 impl ModelProvider {
@@ -272,8 +245,6 @@ impl ModelProvider {
         match self {
             Self::Openai => crate::config::Backend::Openai,
             Self::Anthropic => crate::config::Backend::Anthropic,
-            Self::Chatgpt => crate::config::Backend::Chatgpt,
-            Self::Claude => crate::config::Backend::Claude,
         }
     }
 }
@@ -344,19 +315,6 @@ pub enum ToolsCommand {
 
 async fn execute(cli: Cli) -> Result<u8, String> {
     match cli.command {
-        Some(Command::Mcp { manifest }) => {
-            if cli.repo.is_some() || cli.state_dir.is_some() || cli.json {
-                return Err("mcp reads its repository and state from --manifest and speaks only MCP; --repo, --state-dir and --json are not supported.".into());
-            }
-            let (cancellation, listener) = cancellation_listener()?;
-            let result = crate::mcp::serve(&manifest, cancellation).await;
-            listener.abort();
-            if let Err(error) = result {
-                writeln!(io::stderr().lock(), "{error}").map_err(|e| e.to_string())?;
-                return Ok(1);
-            }
-            Ok(0)
-        }
         Some(Command::Tools {
             command: ToolsCommand::Check(options),
         }) => {
@@ -372,37 +330,6 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             let report = result?;
             print_json(&report)?;
             Ok(u8::from(!report.ok))
-        }
-        Some(Command::Login {
-            provider: AuthProvider::Chatgpt,
-        }) => {
-            crate::auth::login_chatgpt(cli.state_dir.as_deref(), cli.repo.as_deref()).await?;
-            if cli.json {
-                print_json(&json!({ "provider": "chatgpt", "signed_in": true }))?;
-            } else {
-                writeln!(io::stdout().lock(), "Signed in with ChatGPT.")
-                    .map_err(|e| e.to_string())?;
-            }
-            Ok(0)
-        }
-        Some(Command::Logout {
-            provider: AuthProvider::Chatgpt,
-        }) => {
-            let revoked =
-                crate::auth::logout_chatgpt(cli.state_dir.as_deref(), cli.repo.as_deref()).await?;
-            if !revoked {
-                writeln!(io::stderr().lock(), "Local tokens removed; remote revocation was not confirmed. Disconnect artifactize in ChatGPT Settings.")
-                    .map_err(|e| e.to_string())?;
-            }
-            if cli.json {
-                print_json(
-                    &json!({ "provider": "chatgpt", "signed_in": false, "revoked": revoked }),
-                )?;
-            } else {
-                writeln!(io::stdout().lock(), "Signed out of ChatGPT.")
-                    .map_err(|e| e.to_string())?;
-            }
-            Ok(0)
         }
         Some(Command::Remote { command }) => {
             remote::execute(
@@ -458,12 +385,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             Ok(0)
         }
         Some(Command::Models { provider }) => {
-            let listing = crate::llm::models::list(
-                provider.backend(),
-                cli.state_dir.as_deref(),
-                cli.repo.as_deref(),
-            )
-            .await?;
+            let listing = crate::llm::models::list(provider.backend()).await?;
             if cli.json {
                 print_json(&listing)?;
             } else {
@@ -471,9 +393,6 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 for model in listing.models {
                     writeln!(out, "{}\t{}", model.slug, model.display_name)
                         .map_err(|e| e.to_string())?;
-                }
-                if let Some(note) = listing.note {
-                    writeln!(out, "{note}").map_err(|e| e.to_string())?;
                 }
             }
             Ok(0)

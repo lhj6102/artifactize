@@ -83,24 +83,6 @@
           "timeoutMs": 240000,
           "maxToolCalls": 20,
           "maxTokens": 200000
-        },
-        "chatgpt": {
-          "kind": "agent",
-          "backend": "chatgpt",
-          "model": "YOUR_CHATGPT_MODEL_SLUG",
-          "reasoning": "medium",
-          "timeoutMs": 240000,
-          "maxToolCalls": 20,
-          "maxTokens": 200000
-        },
-        "claude": {
-          "kind": "agent",
-          "backend": "claude",
-          "model": "YOUR_CLAUDE_MODEL_ID",
-          "reasoning": "medium",
-          "timeoutMs": 240000,
-          "maxToolCalls": 20,
-          "maxTokens": 200000
         }
       },
       "payload": {

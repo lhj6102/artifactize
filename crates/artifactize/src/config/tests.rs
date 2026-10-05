@@ -363,10 +363,29 @@ fn dropped_configuration_fields_are_rejected() {
 
 #[test]
 fn agent_backends_are_explicit_and_optional_reasoning_is_exact() {
-    for backend in ["openai", "anthropic", "chatgpt", "claude"] {
+    for backend in ["openai", "anthropic"] {
         let profile = json!({"kind":"agent","backend":backend,"model":"owner-chosen-model"});
         assert!(parse(json!({"name":"a","evals":[eval(profile)]})).is_ok());
     }
+    for backend in ["chatgpt", "claude"] {
+        let profile = json!({"kind":"agent","backend":backend,"model":"owner-chosen-model"});
+        let error = parse(json!({"name":"a","evals":[eval(profile)]}))
+            .err()
+            .unwrap();
+        for named in [
+            format!(r#""{backend}" was removed in 0.5.0"#),
+            r#""openai""#.into(),
+            r#""anthropic""#.into(),
+            r#""codex""#.into(),
+        ] {
+            assert!(error.contains(&named), "{error}");
+        }
+    }
+    let unknown = json!({"kind":"agent","backend":"unknown","model":"m"});
+    let error = parse(json!({"name":"a","evals":[eval(unknown)]}))
+        .err()
+        .unwrap();
+    assert!(error.contains("unknown variant `unknown`"), "{error}");
     for profile in [
         json!({"kind":"agent","provider":"openai","model":"m"}),
         json!({"kind":"agent","backend":"unknown","model":"m"}),

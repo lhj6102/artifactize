@@ -9,9 +9,8 @@ artifactize is one binary, built with Cargo. It is open source under the
 - A stable Rust toolchain from [rustup](https://rustup.rs) and a C compiler (SQLite
   is built from source).
 - `python3` and `grep` for the example projects.
-- Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
-  `ANTHROPIC_API_KEY`, a ChatGPT plan that supports Sign in with ChatGPT, or the
-  official `claude` CLI, installed and signed in. Runtime and Human evals need none.
+- Optional, one per Agent backend you plan to use: `OPENAI_API_KEY` or
+  `ANTHROPIC_API_KEY`. Runtime and Human evals need none.
 
 ## Install
 
@@ -40,18 +39,25 @@ doctor` reports its schema without changing it. 0.4 calls the reuse declaration
 `fingerprint`; `config check` shows the new shape for each `artifactize.json` that
 still uses the old field.
 
+0.5.0 removes the `chatgpt` and `claude` Agent backends, with `login chatgpt`,
+`logout chatgpt` and the internal `mcp` command. `config check` names the
+replacements for each eval or profile variant that still declares one. Saved Runs
+and results of those backends stay readable. artifactize no longer uses ChatGPT
+tokens saved by an earlier release: disconnect artifactize in ChatGPT Settings, then
+delete `auth/chatgpt.json`, `auth/chatgpt-registration.json` and `auth/chatgpt.lock`
+from the state directory.
+
 ## State
 
 All state lives in one directory: `state.sqlite` (Runs, requests, executions, the
-fingerprint cache and Human claims), Run output under `runs/`, and ChatGPT
-credentials under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
+fingerprint cache and Human claims), Run output under `runs/`, and the review store
+token under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
 `$XDG_STATE_HOME/artifactize`, else `~/.local/state/artifactize`.
 
 `--state-dir PATH` moves the whole state for one command. Use the same value for
-`login`, `verify`, `request`, `run` and `monitor`. State must be outside the
-repository under review. ChatGPT credentials are also refused inside any Git
-checkout or artifactize project, such as a dotfiles repository at `$HOME`;
-`doctor` reports this as a failed `chatgpt` check.
+`verify`, `request`, `run` and `monitor`. State must be outside the repository
+under review. Tokens under `auth/` are also refused inside any Git checkout or
+artifactize project, such as a dotfiles repository at `$HOME`.
 
 ## Backends
 
@@ -62,30 +68,22 @@ catalog and no fallback to another backend or model.
 |---|---|---|
 | `openai` | `export OPENAI_API_KEY=...` | `artifactize models openai` |
 | `anthropic` | `export ANTHROPIC_API_KEY=...` | `artifactize models anthropic` |
-| `chatgpt` | `artifactize login chatgpt` | `artifactize models chatgpt` |
-| `claude` | install the official `claude` CLI and sign in once with `claude` | `artifactize models claude` explains model names |
-
-`login chatgpt` prints a sign-in URL and tries to open it with `xdg-open` or
-`wslview`. Finish in a browser on the same machine (on WSL 2, a Windows browser
-works); the callback listens on `127.0.0.1`. `logout chatgpt` asks ChatGPT to
-revoke the refresh token and deletes the stored tokens. The `claude` backend runs
-the CLI found on `PATH`; artifactize never reads Claude credentials.
 
 ```sh
-artifactize doctor                 # state and its schema, API-key presence, ChatGPT login, claude --version
+artifactize doctor                 # state and its schema, API-key presence, review store
 artifactize doctor --repo PROJECT  # also validates PROJECT's declarations
 ```
 
-`doctor` calls no provider and creates no Run. Missing keys, logins or a missing
-`claude` binary are warnings, because every backend is optional. It exits 1 only
-for hard errors such as unusable state or invalid configuration.
+`doctor` calls no provider and creates no Run. Missing keys are warnings, because
+every backend is optional. It exits 1 only for hard errors such as unusable state
+or invalid configuration.
 
 ## Cleanup and uninstall
 
 ```sh
 artifactize prune --dry-run           # list removable scratch output of finished Runs
 artifactize prune --older-than 7d     # remove it; saved results stay readable
-artifactize logout chatgpt            # if you signed in
+artifactize remote logout             # if you signed in to a review store
 cargo uninstall artifactize
 ```
 

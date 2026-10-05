@@ -36,6 +36,9 @@ impl Fixture {
         command
             .env("ARTIFACTIZE_STATE_HOME", &self.home)
             .env("ARTIFACTIZE_TEST_SECRET", "must-not-leak")
+            // Agent evals here must fail before any provider call.
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
@@ -907,8 +910,6 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
     for (backend, expected) in [
         ("openai", "OPENAI_API_KEY"),
         ("anthropic", "ANTHROPIC_API_KEY"),
-        ("chatgpt", "artifactize login chatgpt"),
-        ("claude", "could not be spawned"),
     ] {
         let fixture = Fixture::new();
         fixture.runtime("/bin/true", &[]);
@@ -918,9 +919,6 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         fs::write(path, declaration.to_string()).unwrap();
         let output = fixture
             .command()
-            .env("PATH", fixture.state.join("no-claude"))
-            .env_remove("OPENAI_API_KEY")
-            .env_remove("ANTHROPIC_API_KEY")
             .args(["verify", "--all", "--json"])
             .output()
             .unwrap();
@@ -940,11 +938,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
                 .unwrap()
                 .contains(expected)
         );
-        if backend == "claude" {
-            assert_eq!(run["requests"][1]["usage"][0]["usage"], json!({}));
-        } else {
-            assert_eq!(run["requests"][1]["usage"], json!([]));
-        }
+        assert_eq!(run["requests"][1]["usage"], json!([]));
         assert_eq!(run["requests"][1]["toolCalls"], json!([]));
         assert!(run["requests"][1]["result"].is_null());
         fs::remove_dir_all(&fixture.repo).unwrap();
@@ -963,7 +957,7 @@ fn runtime_and_agent_starts_share_the_run_budget() {
     fixture.runtime("/bin/true", &[]);
     let path = fixture.repo.join("artifactize.json");
     let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    declaration["evals"].as_array_mut().unwrap().push(json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"chatgpt","model":"not-called"},"payload":{"instruction":"Review."}}));
+    declaration["evals"].as_array_mut().unwrap().push(json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"not-called"},"payload":{"instruction":"Review."}}));
     fs::write(path, declaration.to_string()).unwrap();
     let run = fixture.verify(&["--all", "--jobs", "1", "--max-executions", "1"], 4);
     assert_eq!(run["executionsStarted"], 1);
@@ -977,6 +971,6 @@ fn runtime_and_agent_starts_share_the_run_budget() {
         run["requests"][1]["error"]
             .as_str()
             .unwrap()
-            .contains("artifactize login chatgpt")
+            .contains("OPENAI_API_KEY")
     );
 }

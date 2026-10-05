@@ -56,9 +56,8 @@ arrive, so dependents continue in the same Run.
 
 For a real Agent review, put an exact model ID in the profile you use in
 `examples/agent-tools/spec/artifactize.json`, then run
-`artifactize verify --eval spec/review`, adding `--profile anthropic`,
-`--profile chatgpt` or `--profile claude` for the other backends. Without
-credentials the review is recorded as ERROR and exits 2. See the
+`artifactize verify --eval spec/review`, adding `--profile anthropic` for the
+Anthropic backend. Without credentials the review is recorded as ERROR and exits 2. See the
 [agent-tools README](https://github.com/lhj6102/artifactize/tree/main/examples/agent-tools).
 
 ## Monitor

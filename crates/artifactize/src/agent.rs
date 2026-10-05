@@ -2,7 +2,6 @@
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
-mod claude;
 pub mod verdict;
 
 use rig_core::{
@@ -30,17 +29,12 @@ pub async fn execute(
     config: &RepoConfig,
     eval: &Eval,
     output: &Path,
-    state: &Path,
-    execution: &str,
     cancellation: CancellationToken,
 ) -> Review {
     let Profile::Agent { backend, model, .. } = &eval.declaration.profile else {
         unreachable!("Agent executor requires an Agent profile")
     };
-    if *backend == crate::config::Backend::Claude {
-        return claude::execute(config, eval, output, state, execution, cancellation).await;
-    }
-    match Client::new(*backend, model, state, &config.root) {
+    match Client::new(*backend, model) {
         Ok(client) => review(&client, config, eval, output, cancellation).await,
         Err(error) => Review {
             result: Err(error),
@@ -264,13 +258,7 @@ fn prompt(
                     let tools: Vec<_> = registry
                         .list()
                         .filter(|tool| tool.artifact_id == id)
-                        .map(|tool| match eval.declaration.profile {
-                            Profile::Agent {
-                                backend: crate::config::Backend::Claude,
-                                ..
-                            } => format!("mcp__artifactize__{}", tool.name),
-                            _ => tool.name.clone(),
-                        })
+                        .map(|tool| tool.name.as_str())
                         .collect();
                     format!("Artifact {id} (tools: {})", tools.join(", "))
                 }

@@ -8,6 +8,8 @@ use std::{
 
 use serde::{Serialize, de::DeserializeOwned};
 
+/// An owner-only directory under `$STATE/auth/` of 0600, single-link, no-follow files,
+/// replaced atomically.
 pub(super) struct Storage {
     pub directory: PathBuf,
 }
@@ -65,7 +67,16 @@ impl Storage {
         Ok(Self { directory })
     }
 
-    pub async fn lock(&self) -> Result<File, String> {
+    /// Hold `<name>.lock` until the returned file drops, serializing credential
+    /// refreshes across processes.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the codex backend serializes its token refreshes with it"
+        )
+    )]
+    pub async fn lock(&self, name: &str) -> Result<File, String> {
         let file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -73,7 +84,7 @@ impl Storage {
             .truncate(false)
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(self.directory.join("chatgpt.lock"))
+            .open(self.directory.join(format!("{name}.lock")))
             .map_err(|e| e.to_string())?;
         check_private_file(&file)?;
         loop {
