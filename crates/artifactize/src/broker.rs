@@ -52,30 +52,44 @@ pub(crate) fn sortable(value: &str) -> Option<String> {
         .map(timestamp)
 }
 
-/// The backend this Run stopped admitting the request's Agent reviews on, if any.
-fn stopped<'r>(run: &'r Run, request: &Request) -> Option<&'r StoppedBackend> {
-    let backend = request.options.backend.as_deref()?;
-    run.stopped_backends
-        .iter()
-        .find(|stopped| stopped.backend == backend)
-}
+/// The backends a Run stopped admitting reviews on, shared with its review tasks. A review
+/// records its stop before it frees its capacity slot, so no other review of the backend
+/// can take that slot and start before admission sees the stop.
+#[derive(Clone)]
+struct Stops(Arc<std::sync::Mutex<Vec<StoppedBackend>>>);
 
-/// Stop admitting a backend after a failure every later review on it would repeat.
-fn stop_backend(run: &mut Run, request: &Request) -> bool {
-    let (Some(backend), Some(code)) = (&request.options.backend, &request.error_code) else {
-        return false;
-    };
-    if !Code::stops_backend(code) || stopped(run, request).is_some() {
-        return false;
+impl Stops {
+    fn new(stopped: Vec<StoppedBackend>) -> Self {
+        Self(Arc::new(std::sync::Mutex::new(stopped)))
     }
-    run.stopped_backends.push(StoppedBackend {
-        backend: backend.clone(),
-        error_code: code.clone(),
-        eval_id: request.eval_id.clone(),
-        request_id: request.id.clone(),
-        error: request.error.clone().unwrap_or_default(),
-    });
-    true
+
+    fn all(&self) -> Vec<StoppedBackend> {
+        self.0.lock().unwrap().clone()
+    }
+
+    /// The stop of the backend the request's Agent review uses, if any.
+    fn of(&self, request: &Request) -> Option<StoppedBackend> {
+        let backend = request.options.backend.as_deref()?;
+        let stopped = self.0.lock().unwrap();
+        stopped.iter().find(|stop| stop.backend == backend).cloned()
+    }
+
+    /// Stop admitting a backend after a failure every later review on it would repeat.
+    fn record(&self, request: &Request) {
+        let (Some(backend), Some(code)) = (&request.options.backend, &request.error_code) else {
+            return;
+        };
+        let mut stopped = self.0.lock().unwrap();
+        if Code::stops_backend(code) && !stopped.iter().any(|stop| &stop.backend == backend) {
+            stopped.push(StoppedBackend {
+                backend: backend.clone(),
+                error_code: code.clone(),
+                eval_id: request.eval_id.clone(),
+                request_id: request.id.clone(),
+                error: request.error.clone().unwrap_or_default(),
+            });
+        }
+    }
 }
 
 pub(crate) fn budget_reason(run: &Run) -> String {
@@ -154,6 +168,7 @@ impl Scheduler<'_, '_> {
         let mut waiting = BTreeSet::new();
         // Requests waiting for a machine-wide backend slot: no job slot, no executor start.
         let mut capacity_waiting = BTreeSet::new();
+        let stops = Stops::new(self.run.stopped_backends.clone());
         let deadline = self
             .run
             .wait_timeout_ms
@@ -303,7 +318,7 @@ impl Scheduler<'_, '_> {
                     );
                     // A backend this Run stopped admits no new reviews and takes no slot; reuse and
                     // joining a live execution of the key still work.
-                    let backend_stopped = stopped(self.run, request).cloned();
+                    let backend_stopped = stops.of(request);
                     let allow_start = backend_stopped.is_none()
                         && (human
                             || self
@@ -477,6 +492,7 @@ impl Scheduler<'_, '_> {
                     let run_dir = run_dir.clone();
                     let parallelism = self.parallelism.clone();
                     let agent = request.profile["kind"] == "agent";
+                    let stops = stops.clone();
                     running.insert(index);
                     self.tasks.spawn(async move {
                         let receipts_for_slot = receipts.clone();
@@ -507,6 +523,10 @@ impl Scheduler<'_, '_> {
                             cancellation,
                         )
                         .await;
+                        // Admission sees a stop before this review's slot frees up.
+                        if let Ok(request) = &request {
+                            stops.record(request);
+                        }
                         if let Some(slot) = slot {
                             receipts_for_slot.release_slot(&slot).await?;
                         }
@@ -550,7 +570,9 @@ impl Scheduler<'_, '_> {
                 result = self.tasks.join_next(), if !self.tasks.is_empty() => {
                     let (index, request) = result.expect("active tasks").map_err(|e| e.to_string())??;
                     running.remove(&index);
-                    if stop_backend(self.run, &request) {
+                    let stopped = stops.all();
+                    if stopped.len() != self.run.stopped_backends.len() {
+                        self.run.stopped_backends = stopped;
                         self.receipts.save_run(self.run).await?;
                     }
                     if request.status != "WAITING_HUMAN" {

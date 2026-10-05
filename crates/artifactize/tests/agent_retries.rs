@@ -558,7 +558,8 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
     );
     let run: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(request(&run, "a/review")["errorCode"], "AUTHENTICATION");
-    // The waiter stops waiting once openai stops, without ever taking the slot.
+    // The waiter stops waiting once openai stops, without ever taking the slot: a records
+    // the stop before it frees the slot, whatever the scheduler is doing at that moment.
     let skipped = request(&run, "b/review");
     assert_eq!(skipped["errorCode"], "BACKEND_STOPPED", "{run}");
     assert!(skipped["blockedReason"].is_null());
