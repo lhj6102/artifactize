@@ -90,7 +90,9 @@ an older schema (1 or 2) passes with a note that the next artifactize command
 upgrades it, and a database written by a newer artifactize is a hard error. `--repo`
 additionally runs the same static validation as `config check`. API keys are
 reported only as present/absent, never validated or printed. Missing keys are
-warnings: optional backends need not all be configured. The remote review store
+warnings: optional backends need not all be configured. A backend with a
+[test endpoint](../guides/agent-evals.md#test-against-a-fake-provider) is a warning
+that reports it as `testEndpoint`; an invalid test endpoint is a hard error. The remote review store
 check is also offline: it reports the resolved URL, share level and token source; a
 missing token is a warning, and an invalid configuration (including plain HTTP to a
 non-loopback host) or an unsafe token file is a hard error. Invalid config,
@@ -98,8 +100,9 @@ unsafe/unwritable state or invalid auth storage are hard errors. Exit is 0 witho
 hard errors, 1 with hard errors, and 2 for invocation errors.
 
 `models openai` and `models anthropic` call the provider's models endpoint with the
-corresponding API key through rig; Anthropic pagination is followed. There is no
-account or backend fallback. Text lists tab-separated slug/name pairs; JSON is
+corresponding API key through rig; Anthropic pagination is followed. A test
+endpoint replaces the provider's API root here too. There is no account or backend
+fallback. Text lists tab-separated slug/name pairs; JSON is
 consistently `{"backend":"openai","models":[{"slug":"model-id","display_name":"model-id"}]}`.
 Listings preserve provider order.
 

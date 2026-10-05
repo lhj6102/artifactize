@@ -106,6 +106,14 @@ pub async fn verify(
     } else {
         Session::open(Some(&state), Some(&config.root))?
     };
+    // Results from a fake provider must never reach the shared review store.
+    if remote.is_some()
+        && let Some(variable) = crate::llm::active_test_endpoint()
+    {
+        return Err(format!(
+            "{variable} points Agent reviews at a local test endpoint; set ARTIFACTIZE_REMOTE=off so their results stay out of the review store."
+        ));
+    }
     if let Some(remote) = &remote {
         let keys = config
             .evals

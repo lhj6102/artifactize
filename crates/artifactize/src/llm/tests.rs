@@ -1,4 +1,4 @@
-//! A loopback HTTP server that replays canned provider responses and records requests.
+//! A loopback HTTP server that replays canned provider responses, and the test endpoint rules.
 
 use std::{
     collections::BTreeMap,
@@ -114,5 +114,33 @@ impl Server {
 impl Drop for Server {
     fn drop(&mut self) {
         self.task.abort();
+    }
+}
+
+#[test]
+fn test_endpoints_are_loopback_only() {
+    for (value, expected) in [
+        ("http://127.0.0.1:8080/v1", "http://127.0.0.1:8080/v1"),
+        ("http://127.0.0.1:8080/v1/", "http://127.0.0.1:8080/v1"),
+        ("http://127.1.2.3:9/root", "http://127.1.2.3:9/root"),
+        ("http://LOCALHOST:9", "http://localhost:9"),
+        ("https://[::1]:8443/", "https://[::1]:8443"),
+    ] {
+        assert_eq!(super::loopback_url(value).unwrap(), expected, "{value}");
+    }
+    for value in [
+        "https://api.openai.com/v1",
+        "http://10.0.0.1/v1",
+        "http://0.0.0.0:8080",
+        "http://[::ffff:10.0.0.1]/",
+        "http://localhost.example/",
+        "http://user:secret@127.0.0.1/",
+        "http://127.0.0.1/?key=1",
+        "http://127.0.0.1/#part",
+        "ftp://127.0.0.1/",
+        "127.0.0.1:8080",
+        "",
+    ] {
+        assert!(super::loopback_url(value).is_err(), "{value}");
     }
 }

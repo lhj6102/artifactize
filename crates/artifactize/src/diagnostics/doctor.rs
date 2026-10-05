@@ -6,7 +6,11 @@ use std::{
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::{auth, config::read_workspace_config, store, workspace};
+use crate::{
+    auth,
+    config::{Backend, read_workspace_config},
+    llm, store, workspace,
+};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -120,20 +124,35 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         ),
         Err(error) => report.add("schema", "FAIL", &error, Value::Null),
     }
-    for (backend, variable) in [
-        ("openai", "OPENAI_API_KEY"),
-        ("anthropic", "ANTHROPIC_API_KEY"),
+    for (name, backend) in [
+        ("openai", Backend::Openai),
+        ("anthropic", Backend::Anthropic),
     ] {
+        let variable = llm::key_variable(backend);
         let present = env::var(variable).is_ok_and(|key| !key.trim().is_empty());
-        report.add(
-            backend,
-            if present { "PASS" } else { "WARN" },
-            &format!(
-                "{variable} is {} (not validated with the provider).",
-                if present { "present" } else { "absent" }
-            ),
-            json!({"present":present}),
+        let key = format!(
+            "{variable} is {} (not validated with the provider)",
+            if present { "present" } else { "absent" }
         );
+        match llm::test_endpoint(backend) {
+            Ok(None) => report.add(
+                name,
+                if present { "PASS" } else { "WARN" },
+                &format!("{key}."),
+                json!({"present":present}),
+            ),
+            // A test endpoint is never a production setup, so it always warns.
+            Ok(Some(endpoint)) => report.add(
+                name,
+                "WARN",
+                &format!(
+                    "{key}; {} sends this backend's requests to the local test endpoint {endpoint}.",
+                    llm::base_url_variable(backend)
+                ),
+                json!({"present":present,"testEndpoint":endpoint}),
+            ),
+            Err(error) => report.add(name, "FAIL", &error, json!({"present":present})),
+        }
     }
     // Offline: configuration and token storage only; `remote status` checks reachability.
     match auth::remote::remote(Some(&state), repo) {
