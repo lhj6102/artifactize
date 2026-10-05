@@ -2,7 +2,6 @@ use std::{
     collections::BTreeMap,
     ffi::OsString,
     io,
-    os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -15,8 +14,11 @@ use artifactize::{
     process,
     runtime::{self, Command, Error, Outcome, Verdict},
 };
+use support::os::{bin, private_dir, symlink_dir};
 use tokio::{sync::oneshot, time::timeout};
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -24,10 +26,8 @@ struct Scratch(tempfile::TempDir);
 
 impl Scratch {
     fn new() -> Self {
-        let target = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
-            .canonicalize()
-            .unwrap();
+        let target =
+            support::os::canonical(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target"));
         let scratch = Self(tempfile::tempdir_in(target).unwrap());
         std::fs::create_dir(scratch.workspace()).unwrap();
         scratch
@@ -43,7 +43,7 @@ impl Scratch {
 
     fn command(&self, program: &str, args: &[&str], timeout_ms: Option<u32>) -> Command {
         Command::prepare(
-            program.into(),
+            bin(program).into(),
             args.iter().map(OsString::from).collect(),
             &self.workspace(),
             &self.run_dir(),
@@ -101,6 +101,7 @@ async fn missing_binary_is_an_operational_error_not_red() {
     ));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn signal_is_an_operational_error() {
     let scratch = Scratch::new();
@@ -111,6 +112,19 @@ async fn signal_is_an_operational_error() {
             ..
         })
     ));
+}
+
+/// Windows ends every process with an exit code, so a status that would mean a crash or
+/// Ctrl-C elsewhere is still an ordinary RED verdict, never a signal.
+#[cfg(windows)]
+#[tokio::test]
+async fn windows_exit_statuses_are_verdicts_not_signals() {
+    let scratch = Scratch::new();
+    // STATUS_CONTROL_C_EXIT, as a process ended by Ctrl-C reports it.
+    let result =
+        completed(execute(scratch.command("/bin/sh", &["-c", "exit -1073741510"], None)).await);
+    assert_eq!(result.verdict, Verdict::Red);
+    assert_eq!(result.exit_code, -1073741510);
 }
 
 #[tokio::test]
@@ -137,8 +151,14 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     let scratch = Scratch::new();
     let cancellation = CancellationToken::new();
     let (registered, child) = oneshot::channel();
+    // Windows shows no command name for a running process; the child marks its start.
+    let command = if cfg!(windows) {
+        scratch.command("/bin/sh", &["-c", "touch started; sleep 30"], None)
+    } else {
+        scratch.command("/bin/sleep", &["30"], None)
+    };
     let running = tokio::spawn(runtime::execute(
-        scratch.command("/bin/sleep", &["30"], None),
+        command,
         cancellation.clone(),
         |child| async move {
             registered.send(child).unwrap();
@@ -146,11 +166,14 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
         },
     ));
     let child = child.await.unwrap();
+    #[cfg(unix)]
     wait_for(|| {
         std::fs::read_to_string(format!("/proc/{}/comm", child.pid))
             .is_ok_and(|comm| comm.trim() == "sleep")
     })
     .await;
+    #[cfg(windows)]
+    wait_for(|| scratch.workspace().join("started").exists()).await;
     cancellation.cancel();
     assert!(matches!(
         timeout(TEST_TIMEOUT, running).await.unwrap().unwrap(),
@@ -235,7 +258,8 @@ async fn runtime_has_independent_private_external_directories() {
         .lines()
         .map(|line| line.split_once('=').unwrap())
         .collect();
-    assert_eq!(environment.len(), 10);
+    // Windows children also get their profile folders and the system variables.
+    assert_eq!(environment.len(), if cfg!(windows) { 16 } else { 10 });
     assert_eq!(
         environment["ARTIFACTIZE_WORKSPACE_DIR"],
         scratch.workspace().to_str().unwrap()
@@ -253,10 +277,10 @@ async fn runtime_has_independent_private_external_directories() {
         assert_eq!(path, directory.join(name));
         assert!(!path.starts_with(scratch.workspace()));
         assert!(path.is_dir());
-        assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o700);
+        assert!(private_dir(path));
     }
     for path in [&directory, &scratch.run_dir()] {
-        assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o700);
+        assert!(private_dir(path));
     }
     assert!(
         directory.exists(),
@@ -268,16 +292,48 @@ async fn runtime_has_independent_private_external_directories() {
 fn output_inside_workspace_is_rejected_before_creation_even_through_symlinks() {
     let scratch = Scratch::new();
     let alias = scratch.0.path().join("alias");
-    symlink(scratch.workspace(), &alias).unwrap();
     let workspace_alias = scratch.0.path().join("workspace-alias");
-    symlink(scratch.workspace(), &workspace_alias).unwrap();
+    // Junctions alias a folder as directory symlinks do, without a privilege.
+    #[cfg(windows)]
+    let linked = {
+        support::os::junction(&scratch.workspace(), &alias);
+        support::os::junction(&scratch.workspace(), &workspace_alias);
+        true
+    };
+    #[cfg(unix)]
+    let linked = symlink_dir(scratch.workspace(), &alias).is_some()
+        && symlink_dir(scratch.workspace(), &workspace_alias).is_some();
+    assert!(linked);
+    #[cfg(windows)]
+    {
+        let symlink = scratch.0.path().join("symlink");
+        if symlink_dir(scratch.workspace(), &symlink).is_some() {
+            let result = Command::prepare(
+                bin("/bin/true").into(),
+                vec![],
+                &workspace_alias,
+                &symlink.join("new/nested"),
+                None,
+            );
+            assert!(
+                matches!(result, Err(Error::OutputInsideWorkspace)),
+                "{result:?}"
+            );
+        }
+    }
     for output in [
         scratch.workspace(),
         scratch.workspace().join("new/nested"),
         alias.join("new/nested"),
         scratch.0.path().join("missing/../workspace/new"),
     ] {
-        let result = Command::prepare("/bin/true".into(), vec![], &workspace_alias, &output, None);
+        let result = Command::prepare(
+            bin("/bin/true").into(),
+            vec![],
+            &workspace_alias,
+            &output,
+            None,
+        );
         assert!(
             matches!(result, Err(Error::OutputInsideWorkspace)),
             "{output:?}: {result:?}"
@@ -293,9 +349,12 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
     let external = scratch.0.path().join("external");
     std::fs::create_dir(&external).unwrap();
     let alias = scratch.0.path().join("alias");
-    symlink(&external, &alias).unwrap();
+    #[cfg(unix)]
+    symlink_dir(&external, &alias).unwrap();
+    #[cfg(windows)]
+    support::os::junction(&external, &alias);
     let command = Command::prepare(
-        "/usr/bin/env".into(),
+        bin("/usr/bin/env").into(),
         vec![],
         &scratch.workspace(),
         &alias.join("new/nested"),
@@ -308,6 +367,8 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
 
 #[test]
 fn parent_secret_is_not_visible_to_runtime_child() {
+    // The probe's PATH has no compiler, so build the Windows stand-ins first.
+    bin("/usr/bin/env");
     // Set the parent environment in another process, never mutate this test runner's env.
     let result = std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "environment_subprocess_probe", "--nocapture"])
@@ -390,10 +451,11 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
 #[tokio::test]
 async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     let scratch = Scratch::new();
+    // Each Windows process start costs more, and the deadline covers three of them.
     let command = scratch.command(
         "/bin/sh",
         &["-c", "trap '' TERM; sh -c 'sleep 30 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait"],
-        Some(500),
+        Some(if cfg!(windows) { 2000 } else { 500 }),
     );
     let marker = command.directory().join("output/grandchild");
     let outcome = execute(command).await;
@@ -483,7 +545,10 @@ async fn deadline_is_not_reset_after_registration() {
 
 async fn assert_gone(pid: u32) {
     assert!(pid > 0, "must have observed a real process");
+    #[cfg(unix)]
     wait_for(|| !PathBuf::from(format!("/proc/{pid}")).exists()).await;
+    #[cfg(windows)]
+    wait_for(|| !support::os::running(pid)).await;
 }
 
 async fn wait_for(condition: impl Fn() -> bool) {

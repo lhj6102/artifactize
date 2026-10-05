@@ -1,10 +1,14 @@
 use std::{
     fs,
-    io::{Read, Write},
-    path::{Path, PathBuf},
+    path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::mpsc,
     time::{Duration, Instant},
+};
+#[cfg(unix)]
+use std::{
+    io::{Read, Write},
+    path::Path,
+    sync::mpsc,
 };
 
 use artifactize::{
@@ -15,6 +19,9 @@ use artifactize::{
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{Terminal, backend::TestBackend};
 use serde_json::{Value, json};
+use support::os::bin;
+
+mod support;
 
 struct Fixture {
     _root: tempfile::TempDir,
@@ -35,9 +42,9 @@ impl Fixture {
             json!({
                 "name":"release","fingerprint":{"files":["."]},
                 "views":{"humanTools":{
-                    "notes":{"description":"Print the release notes.","kind":"output","command":"cat","args":["{artifactPath}/notes.md"]},
-                    "fail":{"description":"Fail.","kind":"output","command":"false","args":[]},
-                    "open":{"description":"Open.","kind":"launch","command":"true","args":["{artifactPath}"]}
+                    "notes":{"description":"Print the release notes.","kind":"output","command":bin("cat"),"args":["{artifactPath}/notes.md"]},
+                    "fail":{"description":"Fail.","kind":"output","command":bin("false"),"args":[]},
+                    "open":{"description":"Open.","kind":"launch","command":bin("true"),"args":["{artifactPath}"]}
                 }},
                 "evals":[{"id":"signoff","title":"A person approves the release","profile":{"kind":"human"},
                     "payload":{"instruction":"Read the release notes and approve them."},
@@ -50,7 +57,7 @@ impl Fixture {
         fs::create_dir_all(repo.join("ship")).unwrap();
         fs::write(
             repo.join("ship/artifactize.json"),
-            json!({"name":"ship","evals":[{"id":"check","title":"Ship","profile":{"kind":"runtime","command":"true","args":[]},
+            json!({"name":"ship","evals":[{"id":"check","title":"Ship","profile":{"kind":"runtime","command":bin("true"),"args":[]},
                 "payload":{"instruction":"Ship {release}."}}]})
             .to_string(),
         )
@@ -74,7 +81,7 @@ impl Fixture {
     }
 
     async fn waiting(&self) -> String {
-        let deadline = Instant::now() + Duration::from_secs(15);
+        let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
         loop {
             let waiting = store::read_waiting(&self.state, Some(&self.repo))
                 .await
@@ -127,7 +134,7 @@ async fn press(review: &mut Review, code: KeyCode) -> Action {
 }
 
 fn finish(mut child: Child) -> (Option<i32>, Value) {
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
     while child.try_wait().unwrap().is_none() {
         if Instant::now() > deadline {
             child.kill().unwrap();
@@ -183,16 +190,29 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     // fail_release, notes_release, open_release: run notes first, after confirming it.
     press(&mut review, KeyCode::Char('j')).await;
     press(&mut review, KeyCode::Enter).await;
-    let release = fixture.repo.join("release").canonicalize().unwrap();
+    let release = support::os::canonical(&fixture.repo.join("release"));
     let confirm = screen(&mut review);
     assert!(
         confirm.contains(&format!(
             "Repository: {}",
-            fixture.repo.canonicalize().unwrap().display()
+            support::os::canonical(&fixture.repo).display()
         )),
         "{confirm}"
     );
-    assert!(confirm.contains(&format!("Command: cat {}/notes.md", release.display())));
+    let notes = release.join("notes.md").display().to_string();
+    let command = artifactize::review::shell([bin("cat").as_str(), notes.as_str()]);
+    let expected = format!("Command: {command}");
+    // A stand-in's long path wraps inside the dialog: compare the text without the layout.
+    let unwrapped = |text: &str| -> String {
+        text.chars()
+            .filter(|c| !c.is_whitespace() && !"│┌┐└┘─".contains(*c))
+            .collect()
+    };
+    assert!(
+        confirm.contains(&expected)
+            || (support::os::stand_ins() && unwrapped(&confirm).contains(&unwrapped(&expected))),
+        "{confirm}"
+    );
     assert_eq!(
         fixture.claim(&id).await,
         None,
@@ -344,6 +364,7 @@ fn review_rejects_unusable_options_before_taking_the_terminal() {
     }
 }
 
+#[cfg(unix)]
 fn pty(command: &str) -> (Child, mpsc::Receiver<Vec<u8>>) {
     let mut child = Command::new("script")
         .args(["-qec", command, "/dev/null"])
@@ -364,6 +385,8 @@ fn pty(command: &str) -> (Child, mpsc::Receiver<Vec<u8>>) {
     (child, receiver)
 }
 
+/// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.
+#[cfg(unix)]
 #[test]
 fn pty_review_restores_the_terminal_on_quit() {
     let root = tempfile::tempdir().unwrap();

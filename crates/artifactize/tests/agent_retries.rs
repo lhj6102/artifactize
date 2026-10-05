@@ -4,7 +4,6 @@ mod support;
 
 use std::{
     fs,
-    os::unix::fs::{DirBuilderExt, OpenOptionsExt},
     path::PathBuf,
     process::{Command, Output, Stdio},
     sync::{
@@ -57,20 +56,10 @@ impl Project {
         };
         // A Codex sign-in, for the codex evals.
         let auth = project.state.join("auth");
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&auth)
-            .unwrap();
+        support::os::create_private_dir_all(&auth);
         let credentials = json!({"access_token":codex::jwt("account-1", now() + 3600),
             "refresh_token":"refresh","account_id":"account-1","expires_at":now() + 3600,"saved_at":1});
-        fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .mode(0o600)
-            .open(auth.join("codex.json"))
-            .unwrap();
-        fs::write(auth.join("codex.json"), credentials.to_string()).unwrap();
+        support::os::write_private_file(&auth.join("codex.json"), credentials.to_string());
         project
     }
 
@@ -503,7 +492,7 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
             }
             models.fetch_add(1, Ordering::SeqCst);
             // Hold the only slot until the test has seen b wait for it.
-            let deadline = Instant::now() + Duration::from_secs(20);
+            let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
             while !release.load(Ordering::SeqCst) && Instant::now() < deadline {
                 thread::sleep(Duration::from_millis(10));
             }
@@ -540,7 +529,7 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
             .is_ok_and(|count| count == 1)
         })
     };
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
     while !waiting_for_slot() {
         assert!(
             Instant::now() < deadline,

@@ -6,7 +6,7 @@ use std::{fs, path::Path, process::Command};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use support::{FakeProvider, openai};
+use support::{FakeProvider, openai, os::bin};
 
 struct Fixture {
     root: tempfile::TempDir,
@@ -32,7 +32,7 @@ impl Fixture {
             json!({"name":"app","fingerprint":{},
                 "views":{"agentTools":{"sim":{"description":"Simulate {artifactName}.",
                     "inputSchema":{"type":"object","additionalProperties":false},
-                    "protocol":"json","command":"/bin/true","args":[],
+                    "protocol":"json","command":bin("/bin/true"),"args":[],
                     "executionPaths":["bin/sim","rules"]}}},
                 "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},
                     "payload":{"instruction":"Review the page."}}]})

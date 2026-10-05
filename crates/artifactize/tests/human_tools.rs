@@ -1,6 +1,5 @@
 use std::{
     fs,
-    os::unix::fs::{PermissionsExt, symlink},
     path::Path,
     process::Command,
     time::{Duration, Instant},
@@ -14,10 +13,29 @@ use artifactize::{
     },
 };
 use serde_json::{Value, json};
+use support::os::{bin, canonical};
 use tokio_util::sync::CancellationToken;
 
+mod support;
+
 fn tool(kind: &str, command: &str, args: &[&str]) -> Value {
+    // The Unix utilities the tools name; elsewhere their Windows stand-ins.
+    let command = match command {
+        "sh" | "printf" | "sleep" | "touch" | "false" => bin(command),
+        other => other.to_owned(),
+    };
     json!({"description":"Inspect {artifactName}","kind":kind,"command":command,"args":args})
+}
+
+/// `python3 -c SOURCE`, writing UTF-8 to pipes on Windows as it does on Unix.
+fn python(source: &str) -> Vec<&str> {
+    let mut args = if cfg!(windows) {
+        vec!["-X", "utf8"]
+    } else {
+        vec![]
+    };
+    args.extend(["-c", source]);
+    args
 }
 
 fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
@@ -179,11 +197,13 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
 
 #[tokio::test]
 async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
-    let repo = tempfile::tempdir().unwrap();
-    write_artifact(repo.path(), "root", json!({}), "Review.");
-    write_artifact(&repo.path().join("b"), "b", json!({}), "Review.");
-    fs::write(repo.path().join("b/input"), "input").unwrap();
-    let owner = repo.path().join("a");
+    let directory = tempfile::tempdir().unwrap();
+    let repo = canonical(directory.path());
+    let repo = repo.as_path();
+    write_artifact(repo, "root", json!({}), "Review.");
+    write_artifact(&repo.join("b"), "b", json!({}), "Review.");
+    fs::write(repo.join("b/input"), "input").unwrap();
+    let owner = repo.join("a");
     let command = tool(
         "output",
         "printf",
@@ -200,22 +220,27 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     let mut declaration: Value = serde_json::from_slice(&fs::read(&marker).unwrap()).unwrap();
     declaration["mounts"] = json!({"source":"b"});
     fs::write(&marker, declaration.to_string()).unwrap();
-    let result = call(repo.path()).await;
+    let result = call(repo).await;
     assert!(!result.is_error, "{result:?}");
+    let input = repo.join("b").join("input");
     assert_eq!(
         text(&result),
         format!(
             "{}\n--input={}\n{}\nliteral $(touch injected)\n",
             owner.display(),
-            repo.path().join("b/input").display(),
-            repo.path().join("b/input").display()
+            input.display(),
+            input.display()
         )
     );
     assert!(!owner.join("injected").exists());
-    let config = read_workspace_config(repo.path()).unwrap();
+    let config = read_workspace_config(repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
-    fs::remove_file(repo.path().join("b/input")).unwrap();
-    symlink("/etc/passwd", repo.path().join("b/input")).unwrap();
+    fs::remove_file(&input).unwrap();
+    #[cfg(unix)]
+    support::os::symlink_file("/etc/passwd", &input).unwrap();
+    // A junction needs no privilege and redirects the operand just the same.
+    #[cfg(windows)]
+    support::os::junction(&std::env::temp_dir(), &input);
     assert!(
         registry
             .call("inspect_a", CancellationToken::new())
@@ -225,18 +250,19 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     declaration.as_object_mut().unwrap().remove("mounts");
     declaration["views"]["humanTools"]["inspect"]["args"] = json!(["{b}"]);
     fs::write(marker, declaration.to_string()).unwrap();
-    assert!(call(repo.path()).await.is_error);
+    assert!(call(repo).await.is_error);
 }
 
 #[tokio::test]
 async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
-    let repo = tempfile::tempdir().unwrap();
-    write_artifact(repo.path(), "root", json!({}), "Review.");
-    let owner = repo.path().join("a");
+    let directory = tempfile::tempdir().unwrap();
+    let repo = canonical(directory.path());
+    write_artifact(&repo, "root", json!({}), "Review.");
+    let owner = repo.join("a");
     write_artifact(&owner, "a", json!({}), "Review.");
     let executable = owner.join("unique-human-tool-not-on-path");
     fs::write(&executable, "#!/bin/sh\nprintf '%s' \"$PWD\"\n").unwrap();
-    fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+    support::os::make_executable(&executable);
     for (command, success) in [
         ("unique-human-tool-not-on-path", false),
         ("./unique-human-tool-not-on-path", true),
@@ -249,7 +275,7 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
             json!({"inspect":tool("output", command, &[])}),
             "Review.",
         );
-        let result = call(repo.path()).await;
+        let result = call(&repo).await;
         assert_eq!(!result.is_error, success, "{command}: {result:?}");
         if success {
             assert_eq!(text(&result), owner.to_str().unwrap());
@@ -268,7 +294,13 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
     );
     let result = call(repo.path()).await;
     assert!(result.is_error);
-    assert!(text(&result).contains("exit status: 3"));
+    // Windows says "exit code" for the same status.
+    let status = if cfg!(windows) {
+        "exit code: 3"
+    } else {
+        "exit status: 3"
+    };
+    assert!(text(&result).contains(status), "{result:?}");
     assert!(text(&result).ends_with("hello\t\n"));
     assert_eq!(
         result.content[1],
@@ -279,7 +311,7 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
     write_artifact(
         repo.path(),
         "a",
-        json!({"inspect":tool("output", "python3", &["-c", "import sys; print('界'*100000); print('界'*100000,file=sys.stderr)"])}),
+        json!({"inspect":tool("output", "python3", &python("import sys; print('界'*100000); print('界'*100000,file=sys.stderr)"))}),
         "Review.",
     );
     let result = call(repo.path()).await;
@@ -340,15 +372,20 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
 struct Launched(u32);
 impl Drop for Launched {
     fn drop(&mut self) {
+        #[cfg(unix)]
         unsafe {
             libc::kill(-(self.0 as i32), libc::SIGKILL);
         }
+        #[cfg(windows)]
+        support::os::kill(self.0);
     }
 }
 
 #[test]
 fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
     let repo = tempfile::tempdir().unwrap();
+    // Build the Windows stand-ins before the probe needs them.
+    bin("sh");
     let started = Instant::now();
     let result = Command::new(std::env::current_exe().unwrap())
         .args([
@@ -371,23 +408,32 @@ fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
     assert!(result.status.success(), "{result:?}");
     let child = child.expect("launcher wrote its pid");
     assert!(started.elapsed() < Duration::from_secs(3));
-    let stat = fs::read_to_string(format!("/proc/{}/stat", child.0)).unwrap();
-    let fields: Vec<_> = stat
-        .rsplit_once(')')
-        .unwrap()
-        .1
-        .split_whitespace()
-        .collect();
-    assert_ne!(fields[0], "Z", "detached child is still running");
-    assert_eq!(
-        fields[2].parse::<u32>().unwrap(),
-        child.0,
-        "separate process group"
-    );
-    assert_eq!(
-        fields[3].parse::<u32>().unwrap(),
-        child.0,
-        "separate session"
+    #[cfg(unix)]
+    {
+        let stat = fs::read_to_string(format!("/proc/{}/stat", child.0)).unwrap();
+        let fields: Vec<_> = stat
+            .rsplit_once(')')
+            .unwrap()
+            .1
+            .split_whitespace()
+            .collect();
+        assert_ne!(fields[0], "Z", "detached child is still running");
+        assert_eq!(
+            fields[2].parse::<u32>().unwrap(),
+            child.0,
+            "separate process group"
+        );
+        assert_eq!(
+            fields[3].parse::<u32>().unwrap(),
+            child.0,
+            "separate session"
+        );
+    }
+    // The probe that launched it has exited; the detached child keeps running.
+    #[cfg(windows)]
+    assert!(
+        support::os::running(child.0),
+        "detached child is still running"
     );
     assert_eq!(
         fs::read_to_string(repo.path().join("marker")).unwrap(),
@@ -405,13 +451,14 @@ async fn human_environment_and_launch_probe() {
     write_artifact(
         repo,
         "a",
-        json!({"inspect":tool("output", "python3", &["-c", "import os; print(os.environ['ARTIFACTIZE_HUMAN_MARKER']); print(os.environ['HOME']); print(os.environ['DISPLAY']); print(os.environ['WAYLAND_DISPLAY']); print(os.environ['XDG_CONFIG_HOME'])"])}),
+        json!({"inspect":tool("output", "python3", &python("import os; print(os.environ['ARTIFACTIZE_HUMAN_MARKER']); print(os.environ['HOME']); print(os.environ['DISPLAY']); print(os.environ['WAYLAND_DISPLAY']); print(os.environ['XDG_CONFIG_HOME'])"))}),
         "Review.",
     );
     let result = call(repo).await;
     assert!(!result.is_error, "{result:?}");
+    // Python ends its printed lines with CRLF on Windows.
     assert_eq!(
-        text(&result),
+        text(&result).replace("\r\n", "\n"),
         format!(
             "reviewer-marker\n{}\n:77\nwayland-test\n{}\n",
             repo.join("real-home").display(),
@@ -446,14 +493,14 @@ async fn human_environment_and_launch_probe() {
     let tools::Content::Text { text } = &result.content[0] else {
         panic!()
     };
-    assert!(text.starts_with("absent\n"));
+    assert!(text.replace("\r\n", "\n").starts_with("absent\n"));
     assert!(!text.contains("real-home"));
     let started = Instant::now();
     let result = call(repo).await;
     assert!(!result.is_error, "{result:?}");
     assert_eq!(result.content, [Content::Launch { launched: true }]);
     assert!(started.elapsed() < Duration::from_secs(1));
-    tokio::time::timeout(Duration::from_secs(2), async {
+    tokio::time::timeout(support::os::patience(Duration::from_secs(2)), async {
         while !repo.join("marker").exists()
             || fs::read_to_string(repo.join("pid"))
                 .unwrap_or_default()

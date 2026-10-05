@@ -511,7 +511,8 @@ impl RepoConfig {
 
 /// Discover regular markers in deterministic path order, without following directory links.
 pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
-    let root = fs::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
+    let root =
+        crate::platform::canonicalize(repo).map_err(|error| ConfigError::new(repo, error))?;
     let mut config = RepoConfig {
         root,
         artifacts: BTreeMap::new(),
@@ -605,7 +606,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     let parent = config.artifacts.get_mut(parent).unwrap();
                     let child = relative.strip_prefix(&parent.path).unwrap();
                     let child = if membership.is_some() {
-                        child.join(&name)
+                        logical_join(child, name.as_ref())
                     } else {
                         child.to_owned()
                     };
@@ -649,7 +650,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 .map_err(|error| ConfigError::new(entry.path(), error))?;
             if kind.is_dir() && entry.file_name() != ".git" && entry.file_name() != "node_modules" {
                 pending.push((
-                    relative.join(entry.file_name()),
+                    logical_join(&relative, &entry.file_name()),
                     owner.clone(),
                     family.clone(),
                 ));
@@ -664,6 +665,18 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
     }
     crate::scope::resolve_config(&mut config)?;
     Ok(config)
+}
+
+/// A logical path below the workspace root: components joined with `/` on every platform,
+/// the form Artifact paths take in scopes, references and output.
+fn logical_join(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
+    if parent.as_os_str().is_empty() {
+        return PathBuf::from(name);
+    }
+    let mut path = parent.as_os_str().to_owned();
+    path.push("/");
+    path.push(name);
+    PathBuf::from(path)
 }
 
 #[cfg(test)]

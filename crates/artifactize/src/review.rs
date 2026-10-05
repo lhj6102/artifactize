@@ -806,7 +806,8 @@ fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
     }
 }
 
-/// Edit text in `$EDITOR` (default `vi`) on the restored terminal; bounded like `--fields-file`.
+/// Edit text in `$EDITOR` (default `vi`, Notepad on Windows) on the restored terminal; bounded
+/// like `--fields-file`.
 async fn edit(text: String) -> Result<String, String> {
     let file = tempfile::Builder::new()
         .prefix("artifactize-fields-")
@@ -817,12 +818,8 @@ async fn edit(text: String) -> Result<String, String> {
     let editor = std::env::var("EDITOR")
         .ok()
         .filter(|editor| !editor.trim().is_empty())
-        .unwrap_or_else(|| "vi".into());
-    let status = tokio::process::Command::new("sh")
-        .arg("-c")
-        .arg(format!("{editor} \"$1\""))
-        .arg("sh")
-        .arg(file.path())
+        .unwrap_or_else(|| crate::platform::DEFAULT_EDITOR.into());
+    let status = crate::platform::editor(&editor, file.path())
         .status()
         .await
         .map_err(|e| format!("cannot start the editor: {e}"))?;

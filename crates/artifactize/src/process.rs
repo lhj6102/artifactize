@@ -270,8 +270,7 @@ pub(crate) fn launch_detached(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(false);
-    platform::detach(&mut command);
-    let mut child = command.spawn().map_err(Error::Spawn)?;
+    let mut child = platform::spawn_detached(command).map_err(Error::Spawn)?;
     tokio::spawn(async move {
         let _ = child.wait().await;
     });

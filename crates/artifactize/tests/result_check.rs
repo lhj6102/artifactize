@@ -181,7 +181,7 @@ fn a_passing_check_sees_the_result_and_audit_in_an_isolated_process() {
             "toolCalls":[{"name":"read_spec","arguments":{"path":"spec.md"},"isError":false}]})
     );
     // The target's folder is the cwd, with a private home and no inherited environment.
-    let cwd = fs::canonicalize(project.repo.join("spec")).unwrap();
+    let cwd = support::os::canonical(&project.repo.join("spec"));
     assert_eq!(Path::new(captured[0]["cwd"].as_str().unwrap()), cwd);
     assert!(!captured[0]["home"].as_str().unwrap().is_empty());
     assert_ne!(captured[0]["home"], json!(std::env::var("HOME").ok()));

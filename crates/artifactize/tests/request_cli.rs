@@ -8,6 +8,8 @@ use std::{
 
 use serde_json::{Value, json};
 
+mod support;
+
 struct Fixture {
     root: tempfile::TempDir,
     repo: PathBuf,
@@ -54,7 +56,10 @@ impl Fixture {
 
     fn command(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
-        command
+        // Its own process group, so Ctrl-Break reaches it alone on Windows; the declarations
+        // name `cat` and `true` for PATH to find.
+        support::os::new_group(&mut command)
+            .env("PATH", support::os::path())
             .current_dir(self.root.path())
             .env("USER", "alice")
             .arg("--repo")
@@ -83,7 +88,7 @@ impl Fixture {
                 "--all",
                 "--wait",
                 "--timeout-ms",
-                "10000",
+                &support::os::slow(10000).to_string(),
                 "--json",
             ])
             .stdout(Stdio::piped())
@@ -93,7 +98,7 @@ impl Fixture {
     }
 
     fn waiting(&self) -> Value {
-        let deadline = Instant::now() + Duration::from_secs(8);
+        let deadline = Instant::now() + support::os::patience(Duration::from_secs(8));
         loop {
             let list = self.json(&["request", "list"], 0);
             if let Some(request) = list
@@ -121,7 +126,7 @@ fn parse(output: &Output) -> Value {
 }
 
 fn finish(mut child: Child, code: i32) -> Value {
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
     while child.try_wait().unwrap().is_none() {
         if Instant::now() > deadline {
             child.kill().unwrap();
@@ -378,7 +383,7 @@ fn no_fingerprint_submission_from_another_process_continues_the_same_run() {
             "--max-executions",
             "2",
             "--timeout-ms",
-            "10000",
+            &support::os::slow(10000).to_string(),
             "--json",
         ])
         .stdout(Stdio::piped())
@@ -515,13 +520,7 @@ fn wait_observes_red_and_fingerprint_errors_and_ctrl_c_stops_cleanly() {
     let fixture = Fixture::new(false);
     let child = fixture.start();
     fixture.waiting();
-    assert!(
-        Command::new("kill")
-            .args(["-INT", &child.id().to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
+    support::os::interrupt(child.id());
     let run = finish(child, 2);
     assert_eq!(run["status"], "ERROR");
     assert_eq!(run["waitTimedOut"], false);

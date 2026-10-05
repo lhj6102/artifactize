@@ -516,13 +516,22 @@ async fn script(
 }
 
 fn validate_output(stdout: &[u8]) -> Result<String, String> {
-    let value = stdout.strip_suffix(b"\n").unwrap_or(stdout);
+    // Windows programs end a line with CRLF, as Python's print does there; the value is the
+    // same as from an LF-ending Unix script.
+    let value = match stdout.strip_suffix(b"\r\n") {
+        Some(value) if cfg!(windows) => value,
+        _ => stdout.strip_suffix(b"\n").unwrap_or(stdout),
+    };
     if !(1..=128).contains(&value.len())
         || !value
             .iter()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
     {
-        return Err("stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF.".into());
+        return Err(if cfg!(windows) {
+            "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF or CRLF.".into()
+        } else {
+            "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF.".into()
+        });
     }
     Ok(String::from_utf8(value.to_vec()).expect("validated ASCII fingerprint"))
 }

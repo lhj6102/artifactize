@@ -1,11 +1,17 @@
 use std::fs;
-use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use artifactize::config::{ReviewRequirement, read_workspace_config};
 use serde_json::{Value, json};
+
+mod support;
+
+/// A declaration's path as errors print it, with the platform's separator.
+fn native(path: &str) -> String {
+    path.replace('/', std::path::MAIN_SEPARATOR_STR)
+}
 
 struct Fixture(PathBuf);
 
@@ -19,7 +25,7 @@ impl Fixture {
             .join("../../target/test-fixtures")
             .join(format!("config-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        Self(root.canonicalize().unwrap())
+        Self(support::os::canonical(&root))
     }
 
     fn write(&self, path: &str, contents: &str) {
@@ -80,7 +86,7 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-    assert!(error.contains("review/artifactize.json"));
+    assert!(error.contains(&native("review/artifactize.json")));
     assert!(error.contains("review/run"));
     assert!(error.contains("Unknown Artifact reference {missing}"));
     declaration["evals"][0]["payload"]["instruction"] = json!("Inspect.");
@@ -133,7 +139,7 @@ fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-        assert!(error.contains("app/artifactize.json"), "{error}");
+        assert!(error.contains(&native("app/artifactize.json")), "{error}");
         assert!(error.ends_with(&format!(": {key} {shape}")), "{error}");
         let output = fixture
             .command()
@@ -164,15 +170,15 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
         "unreviewed/artifactize.json",
         include_str!("fixtures/declarations/unreviewed/artifactize.json"),
     );
-    fs::set_permissions(
-        fixture.0.join("review/hook.sh"),
-        fs::Permissions::from_mode(0o755),
-    )
-    .unwrap();
+    support::os::make_executable(&fixture.0.join("review/hook.sh"));
     fixture.write(".git/ignored/artifactize.json", "not JSON");
     fixture.write("node_modules/ignored/artifactize.json", "not JSON");
     fixture.write("ccdd.json", "legacy files are not configuration");
-    symlink(fixture.0.join("review"), fixture.0.join("linked-review")).unwrap();
+    // Discovery never enters a linked folder; a junction needs no privilege on Windows.
+    #[cfg(unix)]
+    support::os::symlink_dir(fixture.0.join("review"), fixture.0.join("linked-review")).unwrap();
+    #[cfg(windows)]
+    support::os::junction(&fixture.0.join("review"), &fixture.0.join("linked-review"));
 
     let output = fixture
         .command()
@@ -270,18 +276,20 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
             .contains("repository root")
     );
     fs::remove_file(fixture.0.join("other/artifactize.json")).unwrap();
-    symlink(
+    if support::os::symlink_file(
         fixture.0.join("input/artifactize.json"),
         fixture.0.join("other/artifactize.json"),
     )
-    .unwrap();
-    assert!(
-        read_workspace_config(&fixture.0)
-            .unwrap_err()
-            .to_string()
-            .contains("regular file")
-    );
-    fs::remove_file(fixture.0.join("other/artifactize.json")).unwrap();
+    .is_some()
+    {
+        assert!(
+            read_workspace_config(&fixture.0)
+                .unwrap_err()
+                .to_string()
+                .contains("regular file")
+        );
+        fs::remove_file(fixture.0.join("other/artifactize.json")).unwrap();
+    }
     fs::create_dir(fixture.0.join("other/artifactize.json")).unwrap();
     assert!(
         read_workspace_config(&fixture.0)
@@ -339,7 +347,7 @@ fn config_check_names_the_replacements_for_removed_backends() {
                 .unwrap();
             assert_eq!(output.status.code(), Some(2));
             let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-            assert!(error.contains("app/artifactize.json"), "{error}");
+            assert!(error.contains(&native("app/artifactize.json")), "{error}");
             assert!(
                 error.contains(&format!(
                     r#"backend "{backend}" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex""#

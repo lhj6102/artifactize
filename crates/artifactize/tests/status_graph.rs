@@ -1,13 +1,15 @@
 use std::{
     fs,
-    os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
     process::{Command, Output},
 };
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use support::os::bin;
 use tempfile::TempDir;
+
+mod support;
 
 struct Fixture {
     root: TempDir,
@@ -19,12 +21,7 @@ impl Fixture {
     fn new(name: &str) -> Self {
         let root = tempfile::tempdir().unwrap();
         let repo = root.path().join("repo");
-        copy_directory(
-            &Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/fixtures")
-                .join(name),
-            &repo,
-        );
+        support::copy_fixture(name, &repo);
         Self {
             repo,
             state: root.path().join("state"),
@@ -374,7 +371,7 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     );
     assert_eq!(
         green["evals"][0]["declaration"]["profile"]["command"],
-        "/bin/sh"
+        bin("/bin/sh")
     );
     let text =
         String::from_utf8(fixture.output(&["config", "graph", "cycle-a"], 0).stdout).unwrap();
@@ -396,7 +393,11 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
         ),
     )
     .unwrap();
-    fs::set_permissions(hook, fs::Permissions::from_mode(0o755)).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(hook, fs::Permissions::from_mode(0o755)).unwrap();
+    }
     fixture.json(&["config", "check"], 0);
     fixture.json(&["config", "graph"], 0);
     assert!(!marker.exists());
@@ -404,7 +405,7 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let path = fixture.repo.join("review/artifactize.json");
     let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     declaration["fingerprint"]["script"] =
-        json!({"command":"/bin/echo","args":["current-fingerprint"]});
+        json!({"command":bin("/bin/echo"),"args":["current-fingerprint"]});
     fs::write(path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");
@@ -475,7 +476,10 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
         99
     );
     let link = fixture.root.path().join("redirected-state");
-    symlink(&fixture.repo, &link).unwrap();
+    #[cfg(unix)]
+    support::os::symlink_dir(&fixture.repo, &link).unwrap();
+    #[cfg(windows)]
+    support::os::junction(&fixture.repo, &link);
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .arg("--repo")
         .arg(&fixture.repo)

@@ -8,7 +8,10 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use support::os::bin;
 use tempfile::TempDir;
+
+mod support;
 
 struct Fixture {
     root: TempDir,
@@ -51,7 +54,7 @@ impl Fixture {
     }
 
     fn spawn(&self, repo: &Path, args: &[&str]) -> Child {
-        Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        support::os::new_group(&mut Command::new(env!("CARGO_BIN_EXE_artifactize")))
             .arg("--repo")
             .arg(repo)
             .arg("--state-dir")
@@ -100,12 +103,22 @@ impl Fixture {
     /// The same Artifact in its own repository: every shared repository has the same key.
     fn shared_repo(&self, name: &str, script: &str) -> PathBuf {
         let repo = self.repo(name, json!({"name":"shared","fingerprint":fingerprint("concurrent"),"evals":[{
-            "id":"check","title":"Review","profile":{"kind":"runtime","command":"/bin/sh",
+            "id":"check","title":"Review","profile":{"kind":"runtime","command":bin("/bin/sh"),
                 "args":["review.sh",self.root.path().join("starts"),self.root.path().join("release")],"timeoutMs":10000},
             "payload":{"instruction":"Review."}
         }]}));
         fs::write(repo.join("review.sh"), script).unwrap();
         repo
+    }
+
+    /// The owner's review in `repo` ends with `ERROR_SCRIPT` after the release. On Windows its
+    /// deadline has to fall after the waiter starts waiting, and early enough that the owner
+    /// has stopped within `finish`'s five seconds of the release.
+    fn erroring_owner(&self, repo: &Path) {
+        let path = repo.join("artifactize.json");
+        let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        declaration["evals"][0] = erroring(declaration["evals"][0].take(), 3000);
+        fs::write(path, declaration.to_string()).unwrap();
     }
 
     fn release(&self) {
@@ -187,10 +200,30 @@ impl Fixture {
     }
 }
 
+/// A review that ends in an operational error rather than a verdict: killed by a signal on
+/// Unix. Windows has no signals, so there it outlives the deadline `erroring` sets.
+#[cfg(unix)]
+const ERROR_SCRIPT: &str = "kill -TERM $$";
+#[cfg(windows)]
+const ERROR_SCRIPT: &str = "sleep 30";
+#[cfg(unix)]
+const ERROR_CODE: &str = "ABNORMAL_EXIT";
+#[cfg(windows)]
+const ERROR_CODE: &str = "TIMEOUT";
+
+/// Give an eval the deadline its `ERROR_SCRIPT` needs on Windows; a deadline is an execution
+/// option, so the eval keeps its key.
+fn erroring(mut eval: Value, timeout_ms: u64) -> Value {
+    if cfg!(windows) {
+        eval["profile"]["timeoutMs"] = json!(timeout_ms);
+    }
+    eval
+}
+
 const WAIT_SCRIPT: &str = "echo $$ >> \"$1\"; i=0; while [ ! -e \"$2\" ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i+1)); done; printf original";
 
 fn wait_until(mut condition: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
     while !condition() {
         assert!(Instant::now() < deadline, "condition was not reached");
         thread::sleep(Duration::from_millis(10));
@@ -213,7 +246,10 @@ fn output(output: Output, code: i32) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
+/// SIGINT, SIGSTOP or SIGCONT on Unix; on Windows Ctrl-Break and suspending or resuming
+/// every thread.
 fn signal(pid: u32, signal: &str) {
+    #[cfg(unix)]
     assert!(
         Command::new("/bin/kill")
             .args([signal, &pid.to_string()])
@@ -221,6 +257,32 @@ fn signal(pid: u32, signal: &str) {
             .unwrap()
             .success()
     );
+    #[cfg(windows)]
+    match signal {
+        "-INT" => support::os::interrupt(pid),
+        "-STOP" => support::os::suspend(pid),
+        "-CONT" => support::os::resume(pid),
+        _ => unreachable!("{signal}"),
+    }
+}
+
+/// SIGKILL cannot run foreground cleanup; stop the killed owner's orphaned review group. On
+/// Windows the owner's Job Object closed with it and took the review along.
+fn kill_orphans(starts: &str) {
+    #[cfg(unix)]
+    assert!(
+        Command::new("/bin/kill")
+            .args([
+                "-KILL",
+                "--",
+                &format!("-{}", starts.lines().next().unwrap())
+            ])
+            .status()
+            .unwrap()
+            .success()
+    );
+    #[cfg(windows)]
+    let _ = starts;
 }
 
 fn write(repo: &Path, path: &str, value: Value) {
@@ -230,11 +292,11 @@ fn write(repo: &Path, path: &str, value: Value) {
 }
 
 fn eval(id: &str, script: &str) -> Value {
-    json!({"id":id,"title":"Review","profile":{"kind":"runtime","command":"/bin/sh","args":["-c",script]},"payload":{"instruction":"Review."}})
+    json!({"id":id,"title":"Review","profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script]},"payload":{"instruction":"Review."}})
 }
 
 fn fingerprint(key: &str) -> Value {
-    json!({"script":{"command":"/bin/echo","args":[key]}})
+    json!({"script":{"command":bin("/bin/echo"),"args":[key]}})
 }
 
 /// The reuse key of a Run's request.
@@ -256,6 +318,8 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     let fixture = Fixture::new();
     // The same Artifact, under its own name, in another repository with another eval id.
     let source = fixture.repo("source", json!({"name":"dependency","fingerprint":fingerprint("shared:red"),"evals":[eval("first","printf original; exit 7")]}));
+    // The path artifactize records, taken before the source is deleted below.
+    let source_path = support::os::canonical(&source);
     let original = fixture.command(&source, &["verify", "--all"], 1);
     let original_request = &original["requests"][0];
     assert!(original_request["child"]["pid"].is_number());
@@ -306,7 +370,7 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     assert_eq!(hit["requestedProfile"], hit["profile"]);
     assert_eq!(
         hit["provenance"]["repoPath"],
-        source.to_string_lossy().as_ref()
+        source_path.to_string_lossy().as_ref()
     );
     assert_eq!(hit["provenance"]["evalId"], "dependency/first");
     assert_eq!(
@@ -342,8 +406,8 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
 fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition() {
     let fixture = Fixture::new();
     let repo = fixture.repo("repo", json!({"name":"test","fingerprint":fingerprint("shared"),"evals":[
-        {"id":"pass","title":"Pass","profile":{"kind":"runtime","command":"/bin/true","args":[]},"payload":{"instruction":"Review."}},
-        {"id":"fail","title":"Fail","profile":{"kind":"runtime","command":"/bin/false","args":[]},"payload":{"instruction":"Review."}}
+        {"id":"pass","title":"Pass","profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},"payload":{"instruction":"Review."}},
+        {"id":"fail","title":"Fail","profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},"payload":{"instruction":"Review."}}
     ]}));
     let run = fixture.command(&repo, &["verify", "--all", "--jobs", "1"], 1);
     let pass = &run["requests"][0];
@@ -430,10 +494,10 @@ fn no_fingerprint_executes_each_time_and_never_reads_or_publishes_cache() {
 #[test]
 fn errors_are_audited_but_never_published() {
     let fixture = Fixture::new();
-    let repo = fixture.repo("repo",json!({"name":"test","fingerprint":fingerprint("retryable"),"evals":[eval("check","kill -TERM $$")]}));
+    let repo = fixture.repo("repo",json!({"name":"test","fingerprint":fingerprint("retryable"),"evals":[erroring(eval("check",ERROR_SCRIPT), 200)]}));
     for _ in 0..2 {
         let run = fixture.command(&repo, &["verify", "--all"], 2);
-        assert_eq!(run["requests"][0]["errorCode"], "ABNORMAL_EXIT");
+        assert_eq!(run["requests"][0]["errorCode"], ERROR_CODE);
         assert!(run["requests"][0]["result"].is_null());
         assert_eq!(fixture.count("cache_entries"), 0);
     }
@@ -542,7 +606,7 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
 #[test]
 fn status_uses_current_fingerprint_and_only_prepares_the_selected_closure() {
     let fixture = Fixture::new();
-    let repo = fixture.repo("repo",json!({"name":"test","fingerprint":{"script":{"command":"/bin/cat","args":["key"]}},"evals":[eval("check","touch executed")]}));
+    let repo = fixture.repo("repo",json!({"name":"test","fingerprint":{"script":{"command":bin("/bin/cat"),"args":["key"]}},"evals":[eval("check","touch executed")]}));
     fs::write(repo.join("key"), "first").unwrap();
     fixture.command(&repo, &["verify", "--all"], 0);
     fs::remove_file(repo.join("executed")).unwrap();
@@ -589,7 +653,8 @@ fn concurrent_repos_claim_once_and_poll_for_the_original_red_result() {
     assert!(execution["completedAt"].is_null());
     assert!(execution["ownerStartTime"].as_u64().unwrap() > 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.busy_timeout(Duration::from_millis(100)).unwrap();
+    db.busy_timeout(support::os::patience(Duration::from_millis(100)))
+        .unwrap();
     db.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
     assert_eq!(
         fixture.command(&second, &["status"], 1)["evals"][0]["action"],
@@ -641,21 +706,14 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
     assert_eq!(fixture.count("cache_entries"), 1);
     assert_eq!(fixture.starts(), 2);
     assert_eq!(recovered["executionsStarted"], 1);
-    // SIGKILL cannot run foreground cleanup; stop this fixture's orphaned group.
-    let pid = fs::read_to_string(fixture.root.path().join("starts")).unwrap();
-    assert!(
-        Command::new("/bin/kill")
-            .args(["-KILL", "--", &format!("-{}", pid.lines().next().unwrap())])
-            .status()
-            .unwrap()
-            .success()
-    );
+    kill_orphans(&fs::read_to_string(fixture.root.path().join("starts")).unwrap());
 }
 
 #[test]
 fn owner_error_releases_claim_and_waiter_uses_its_own_profile() {
     let fixture = Fixture::new();
-    let source = fixture.shared_repo("source", &format!("{WAIT_SCRIPT}; kill -TERM $$"));
+    let source = fixture.shared_repo("source", &format!("{WAIT_SCRIPT}; {ERROR_SCRIPT}"));
+    fixture.erroring_owner(&source);
     let target = fixture.shared_repo("target", "echo retry >> \"$1\"; printf retried");
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);
@@ -664,7 +722,7 @@ fn owner_error_releases_claim_and_waiter_uses_its_own_profile() {
     fixture.release();
     let failed = finish(owner, 2);
     let recovered = finish(waiter, 0);
-    assert_eq!(failed["requests"][0]["errorCode"], "ABNORMAL_EXIT");
+    assert_eq!(failed["requests"][0]["errorCode"], ERROR_CODE);
     assert_eq!(recovered["requests"][0]["result"]["stdout"], "retried");
     assert_eq!(
         recovered["requests"][0]["profile"],
@@ -705,7 +763,10 @@ fn waiter_ctrl_c_leaves_owner_running_and_owner_ctrl_c_releases_the_claim() {
     assert_eq!(recovered["requests"][0]["result"]["stdout"], "retried");
     assert_eq!(fixture.count("executions"), 2);
     let pid = cancelled["requests"][0]["child"]["pid"].as_u64().unwrap();
+    #[cfg(unix)]
     assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    #[cfg(windows)]
+    assert!(!support::os::running(pid as u32));
 }
 
 #[test]
@@ -795,9 +856,12 @@ fn zero_budget_can_join_an_owner_but_cannot_replace_it_after_failure() {
         let script = if success {
             WAIT_SCRIPT.to_owned()
         } else {
-            format!("{WAIT_SCRIPT}; kill -TERM $$")
+            format!("{WAIT_SCRIPT}; {ERROR_SCRIPT}")
         };
         let source = fixture.shared_repo("source", &script);
+        if !success {
+            fixture.erroring_owner(&source);
+        }
         let target = fixture.shared_repo("target", "echo replacement >> \"$1\"");
         let owner = fixture.spawn(&source, &[]);
         wait_until(|| fixture.starts() > 0);
@@ -1175,14 +1239,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     let mut request: Request = serde_json::from_str(&data).unwrap();
     owner.kill().unwrap();
     owner.wait().unwrap();
-    let pid = fs::read_to_string(fixture.root.path().join("starts")).unwrap();
-    assert!(
-        Command::new("/bin/kill")
-            .args(["-KILL", "--", &format!("-{}", pid.trim())])
-            .status()
-            .unwrap()
-            .success()
-    );
+    kill_orphans(&fs::read_to_string(fixture.root.path().join("starts")).unwrap());
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
     execution.status = "GREEN".into();
     execution.result = Some(json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)}));
@@ -1270,7 +1327,7 @@ fn gc_failure_does_not_replace_a_completed_result() {
 #[test]
 fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
     let fixture = Fixture::new();
-    let base = json!({"id":"check","title":"Review","profile":{"kind":"runtime","command":"/bin/true","args":[]},"payload":{"instruction":"Review."}});
+    let base = json!({"id":"check","title":"Review","profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},"payload":{"instruction":"Review."}});
     let repo = fixture.repo(
         "repo",
         json!({"name":"test","fingerprint":fingerprint("unchanged"),"evals":[base]}),
@@ -1312,7 +1369,7 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
             json!({"type":"object","properties":{"reason":{"type":"string"}}}),
             0,
         ),
-        ("/profile/command", json!("/bin/false"), 1),
+        ("/profile/command", json!(bin("/bin/false")), 1),
         ("/profile/args", json!(["unused"]), 0),
         ("/payload/instruction", json!("Different criteria."), 0),
         ("/payload/extra", json!({"criteria":[1,2]}), 0),
@@ -1343,8 +1400,8 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
     let mut declaration = eval("check", "exit 0");
     declaration["profile"]["timeoutMs"] = json!(5000);
     declaration["profileVariants"] = json!({
-        "fail":{"kind":"runtime","command":"/bin/false","args":[]},
-        "patient":{"kind":"runtime","command":"/bin/sh","args":["-c","exit 0"],"timeoutMs":60000}
+        "fail":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+        "patient":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c","exit 0"],"timeoutMs":60000}
     });
     let repo = fixture.repo(
         "repo",

@@ -1,9 +1,12 @@
-use std::{fs, os::unix::fs::symlink};
+use std::fs;
 
 use serde_json::json;
 
 use super::*;
-use crate::tools::result;
+use crate::{
+    test_os::{symlink_dir, symlink_file},
+    tools::result,
+};
 
 pub(in crate::tools) fn fixtures() -> [(&'static str, Vec<u8>); 3] {
     let mut png = PNG_SIGNATURE.to_vec();
@@ -183,35 +186,57 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     let bytes = &fixtures()[0].1;
     fs::write(output.join("image"), bytes).unwrap();
     fs::write(directory.path().join("outside"), bytes).unwrap();
-    symlink("image", output.join("link")).unwrap();
-    symlink("nested", output.join("linkdir")).unwrap();
-    symlink("../outside", output.join("escape")).unwrap();
     fs::write(output.join("nested/image"), bytes).unwrap();
-    let fifo = std::ffi::CString::new(output.join("fifo").to_str().unwrap()).unwrap();
-    assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
-    for path in [
+    let outside = directory.path().join("outside");
+    let other = directory.path().join("output-other/image");
+    let mut paths = vec![
         "../outside",
         "nested/../../outside",
         "nested/../image",
-        "link",
-        "linkdir/image",
-        "escape",
         "nested",
-        "fifo",
         "",
         "./image",
         "nested\\image",
         "missing",
-        directory.path().join("outside").to_str().unwrap(),
-        directory
-            .path()
-            .join("output-other/image")
-            .to_str()
-            .unwrap(),
-    ] {
+        outside.to_str().unwrap(),
+        other.to_str().unwrap(),
+    ];
+    if symlink_file("image", output.join("link")).is_some() {
+        paths.push("link");
+    }
+    if symlink_dir("nested", output.join("linkdir")).is_some() {
+        paths.push("linkdir/image");
+    }
+    if symlink_file(
+        std::path::Path::new("..").join("outside"),
+        output.join("escape"),
+    )
+    .is_some()
+    {
+        paths.push("escape");
+    }
+    #[cfg(unix)]
+    {
+        let fifo = std::ffi::CString::new(output.join("fifo").to_str().unwrap()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        paths.push("fifo");
+    }
+    #[cfg(windows)]
+    {
+        crate::test_os::junction(&output.join("nested"), &output.join("joined"));
+        paths.push("joined/image");
+    }
+    for path in paths {
         assert!(from_output(&output, path, "image/png").is_err(), "{path}");
     }
     fs::rename(&output, directory.path().join("old-output")).unwrap();
-    symlink("old-output", &output).unwrap();
-    assert!(from_output(&output, "image", "image/png").is_err());
+    if symlink_dir("old-output", &output).is_some() {
+        assert!(from_output(&output, "image", "image/png").is_err());
+    }
+    #[cfg(windows)]
+    {
+        let _ = fs::remove_dir(&output);
+        crate::test_os::junction(&directory.path().join("old-output"), &output);
+        assert!(from_output(&output, "image", "image/png").is_err());
+    }
 }

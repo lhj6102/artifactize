@@ -1,10 +1,10 @@
-use std::os::unix::fs::symlink;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
 use super::*;
 use crate::config::read_workspace_config;
+use crate::test_os::{symlink_dir, symlink_file};
 
 struct Fixture(PathBuf);
 
@@ -18,7 +18,7 @@ impl Fixture {
             .join("../../target/test-fixtures")
             .join(format!("scope-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&root).unwrap();
-        Self(root.canonicalize().unwrap())
+        Self(crate::platform::canonicalize(&root).unwrap())
     }
 
     fn write(&self, path: &str, contents: &str) {
@@ -286,13 +286,25 @@ fn mount_validation_rejects_unknown_ambiguous_and_physical_aliases() {
             .contains("physical entry")
     );
     fs::remove_dir(fixture.0.join("review/input")).unwrap();
-    symlink("missing", fixture.0.join("review/input")).unwrap();
-    assert!(
-        read_workspace_config(&fixture.0)
-            .unwrap_err()
-            .to_string()
-            .contains("physical entry")
-    );
+    if symlink_file("missing", fixture.0.join("review/input")).is_some() {
+        assert!(
+            read_workspace_config(&fixture.0)
+                .unwrap_err()
+                .to_string()
+                .contains("physical entry")
+        );
+    }
+    #[cfg(windows)]
+    {
+        let _ = fs::remove_file(fixture.0.join("review/input"));
+        crate::test_os::junction(&fixture.0, &fixture.0.join("review/input"));
+        assert!(
+            read_workspace_config(&fixture.0)
+                .unwrap_err()
+                .to_string()
+                .contains("physical entry")
+        );
+    }
 }
 
 #[test]
@@ -335,19 +347,48 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
     fixture.artifact("owner", json!({"name":"owner"}));
     fixture.write("owner/directory/file", "input");
     outside.write("secret", "outside");
-    symlink("directory/file", fixture.0.join("owner/internal")).unwrap();
-    symlink("directory", fixture.0.join("owner/linkdir")).unwrap();
-    symlink(&outside.0, fixture.0.join("owner/outside")).unwrap();
-    symlink("missing", fixture.0.join("owner/dangling")).unwrap();
+    let mut links = Vec::new();
+    for (name, target, directory) in [
+        ("internal", Path::new("directory").join("file"), false),
+        ("linkdir", PathBuf::from("directory"), true),
+        ("outside", outside.0.clone(), true),
+        ("dangling", PathBuf::from("missing"), false),
+    ] {
+        let link = fixture.0.join("owner").join(name);
+        let created = if directory {
+            symlink_dir(target, link)
+        } else {
+            symlink_file(target, link)
+        };
+        if created.is_some() {
+            links.extend(match name {
+                "internal" => ["internal"].as_slice(),
+                "linkdir" => &["linkdir/file"],
+                "outside" => &["outside/secret"],
+                _ => &["dangling"],
+            });
+        }
+    }
+    // Junctions redirect a path as directory symlinks do, and need no privilege.
+    #[cfg(windows)]
+    {
+        crate::test_os::junction(
+            &fixture.0.join("owner/directory"),
+            &fixture.0.join("owner/joined"),
+        );
+        crate::test_os::junction(&outside.0, &fixture.0.join("owner/escape"));
+        links.extend(["joined/file", "escape/secret"]);
+    }
     let config = fixture.config();
     let scope = artifact_scope(&config, &["owner"]).unwrap();
-    for path in ["internal", "linkdir/file", "outside/secret", "dangling"] {
+    for path in links {
         assert!(
             scope
                 .resolve_input(&config.root, "owner", path)
                 .unwrap_err()
                 .to_string()
-                .contains("symlinks")
+                .contains("symlinks"),
+            "{path}"
         );
     }
     assert!(
@@ -364,14 +405,28 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
     assert!(scoped_path(&fixture.0, Path::new("../outside")).is_err());
     assert!(scoped_path(&fixture.0, &outside.0).is_err());
     fs::rename(fixture.0.join("owner"), fixture.0.join("old-owner")).unwrap();
-    symlink("old-owner", fixture.0.join("owner")).unwrap();
-    assert!(
-        scope
-            .resolve_input(&config.root, "owner", "directory/file")
-            .unwrap_err()
-            .to_string()
-            .contains("symlinks")
-    );
+    if symlink_dir("old-owner", fixture.0.join("owner")).is_some() {
+        assert!(
+            scope
+                .resolve_input(&config.root, "owner", "directory/file")
+                .unwrap_err()
+                .to_string()
+                .contains("symlinks")
+        );
+    }
+    #[cfg(windows)]
+    {
+        // A directory symlink is removed as a directory on Windows.
+        let _ = fs::remove_dir(fixture.0.join("owner"));
+        crate::test_os::junction(&fixture.0.join("old-owner"), &fixture.0.join("owner"));
+        assert!(
+            scope
+                .resolve_input(&config.root, "owner", "directory/file")
+                .unwrap_err()
+                .to_string()
+                .contains("symlinks")
+        );
+    }
 }
 
 #[test]
@@ -416,7 +471,8 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
         panic!()
     };
     let resolved = resolve_argv(&config, &scope, "review", args).unwrap();
-    let file = fixture.0.join("data/nested/file").display().to_string();
+    let file = fixture.0.join("data").join("nested").join("file");
+    let file = file.display().to_string();
     assert_eq!(
         &resolved[..4],
         [

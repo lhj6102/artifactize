@@ -63,8 +63,8 @@ pub(crate) fn spawn_gated(command: Command) -> io::Result<(Gate, JoinHandle<io::
     spawn(command)
 }
 
-/// Leave artifactize's session, for a desktop handoff that outlives it.
-pub(crate) fn detach(command: &mut Command) {
+/// Spawn in a session of its own, for a desktop handoff that outlives artifactize.
+pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process::Child> {
     // SAFETY: the forked child calls only setsid, which is async-signal-safe.
     unsafe {
         command.pre_exec(|| {
@@ -74,6 +74,7 @@ pub(crate) fn detach(command: &mut Command) {
             Ok(())
         });
     }
+    command.spawn()
 }
 
 /// Field 22 of /proc/PID/stat: the start time in clock ticks since boot.

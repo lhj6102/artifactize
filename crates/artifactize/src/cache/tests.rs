@@ -1,4 +1,4 @@
-use std::{fs, os::unix::fs::symlink, path::Path};
+use std::{fs, path::Path};
 
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -6,6 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::*;
 use crate::config::{CONFIG_FILE, read_workspace_config};
+use crate::test_os::symlink_file;
 
 struct Repo {
     root: TempDir,
@@ -162,13 +163,25 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
     let repo = Repo::new();
     repo.artifact("owner", json!({"name":"owner","fingerprint":{}}));
     repo.write("owner/a.txt", "a");
-    symlink("a.txt", repo.root.path().join("owner/link")).unwrap();
-    let error = repo.fingerprint("owner").await.unwrap_err();
-    assert!(
-        error.contains("Content fingerprint for Artifact owner failed: link:"),
-        "{error}"
-    );
-    assert!(error.contains("fingerprint.ignore"), "{error}");
+    let link = repo.root.path().join("owner/link");
+    let check = |error: String| {
+        assert!(
+            error.contains("Content fingerprint for Artifact owner failed: link:"),
+            "{error}"
+        );
+        assert!(error.contains("fingerprint.ignore"), "{error}");
+    };
+    if symlink_file("a.txt", &link).is_some() {
+        check(repo.fingerprint("owner").await.unwrap_err());
+    }
+    // A junction is a link too, and needs no privilege to create.
+    #[cfg(windows)]
+    {
+        let _ = fs::remove_file(&link);
+        repo.write("elsewhere/b.txt", "b");
+        crate::test_os::junction(&repo.root.path().join("elsewhere"), &link);
+        check(repo.fingerprint("owner").await.unwrap_err());
+    }
     repo.artifact(
         "owner",
         json!({"name":"owner","fingerprint":{"files":["a.txt","docs"],"ignore":["link"]}}),

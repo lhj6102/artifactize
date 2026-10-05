@@ -13,14 +13,14 @@ pub(super) fn prepare(
     workspace: &Path,
     run_dir: &Path,
 ) -> Result<(PathBuf, PathBuf, BTreeMap<OsString, OsString>), Error> {
-    let workspace = workspace.canonicalize()?;
+    let workspace = platform::canonicalize(workspace)?;
     if !workspace.is_dir() {
         return Err(io::Error::other("runtime workspace must be a directory").into());
     }
     let output_root = canonical_target(run_dir)?;
     outside_workspace(&workspace, &output_root)?;
     platform::create_private_dir_all(&output_root)?;
-    let output_root = output_root.canonicalize()?;
+    let output_root = platform::canonicalize(&output_root)?;
     outside_workspace(&workspace, &output_root)?;
 
     let directory = platform::private_tempdir_in("runtime-", &output_root)?;

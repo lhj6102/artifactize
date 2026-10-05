@@ -195,19 +195,25 @@ fn file_reads_reject_nonregular_and_oversized_inputs() {
     let error = "Selection input must be a regular file no larger than 4 MiB.";
     assert_eq!(read_selection_file(&path).unwrap_err(), error);
     assert_eq!(read_selection_file(directory.path()).unwrap_err(), error);
-    assert_eq!(
-        read_selection_file(Path::new("/dev/null")).unwrap_err(),
-        error
-    );
-    let fifo = directory.path().join("fifo");
-    assert!(
-        std::process::Command::new("mkfifo")
-            .arg(&fifo)
-            .status()
-            .unwrap()
-            .success()
-    );
-    assert_eq!(read_selection_file(&fifo).unwrap_err(), error);
+    #[cfg(unix)]
+    {
+        assert_eq!(
+            read_selection_file(Path::new("/dev/null")).unwrap_err(),
+            error
+        );
+        let fifo = directory.path().join("fifo");
+        assert!(
+            std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        assert_eq!(read_selection_file(&fifo).unwrap_err(), error);
+    }
+    // Windows has no FIFOs; its null device has no file information to read.
+    #[cfg(windows)]
+    assert!(read_selection_file(Path::new("NUL")).is_err());
     assert!(read_selection_file(&directory.path().join("missing")).is_err());
 }
 

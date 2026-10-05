@@ -147,13 +147,26 @@ fn read_token() -> Result<String, String> {
     let stdin = io::stdin().lock();
     let hidden = if stdin.is_terminal() {
         // Echo goes off before the prompt invites a paste.
-        let hidden = HiddenInput::new().map_err(|e| e.to_string())?;
+        let hidden = match HiddenInput::new() {
+            Ok(hidden) => Some(hidden),
+            // mintty (Git Bash) hands Windows programs a pipe that only looks like a terminal,
+            // with no console echo to turn off: read the token visibly rather than not at all.
+            Err(error) if cfg!(windows) => {
+                writeln!(
+                    io::stderr().lock(),
+                    "Warning: this terminal cannot hide input ({error}); the token will be visible."
+                )
+                .map_err(|e| e.to_string())?;
+                None
+            }
+            Err(error) => return Err(error.to_string()),
+        };
         write!(
             io::stderr().lock(),
             "Paste the remote token, then press Enter: "
         )
         .map_err(|e| e.to_string())?;
-        Some(hidden)
+        hidden
     } else {
         None
     };

@@ -442,7 +442,14 @@ async fn sign_in(
 }
 
 async fn open_browser(url: &Url) {
-    for program in ["xdg-open", "wslview"] {
+    // Explorer hands a URL to the default browser without a shell parsing its `&`s. It exits
+    // 1 even then, which only means no other program is tried.
+    let programs = if cfg!(windows) {
+        ["explorer"].as_slice()
+    } else {
+        &["xdg-open", "wslview"]
+    };
+    for program in programs {
         let mut command = Command::new(program);
         command
             .arg(url.as_str())

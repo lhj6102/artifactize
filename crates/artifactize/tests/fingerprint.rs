@@ -1,6 +1,5 @@
 use std::{
     fs,
-    os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -9,7 +8,10 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use support::os::{bin, symlink_file};
 use tempfile::TempDir;
+
+mod support;
 
 struct Fixture {
     root: TempDir,
@@ -37,7 +39,8 @@ impl Fixture {
 
     fn command(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
-        command
+        // Its own process group, so Ctrl-Break reaches it alone on Windows.
+        support::os::new_group(&mut command)
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
@@ -80,11 +83,11 @@ impl Fixture {
 }
 
 fn eval(id: &str, script: &str) -> Value {
-    json!({"id":id,"title":"Check", "profile":{"kind":"runtime","command":"/bin/sh","args":["-c",script]},"payload":{"instruction":"Check input."}})
+    json!({"id":id,"title":"Check", "profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script]},"payload":{"instruction":"Check input."}})
 }
 
 fn fingerprint(script: &str) -> Value {
-    json!({"script":{"command":"/bin/sh","args":["-c",script]}})
+    json!({"script":{"command":bin("/bin/sh"),"args":["-c",script]}})
 }
 
 #[test]
@@ -95,7 +98,10 @@ fn exact_output_is_validated_before_any_review_can_start() {
         b" value",
         b"value ",
         b"value\t",
+        // Windows takes CRLF as the one line ending its programs write.
+        #[cfg(unix)]
         b"value\r\n",
+        b"value\r\r\n",
         b"value\n\n",
         b"one\ntwo",
         b"value/key",
@@ -117,7 +123,13 @@ fn exact_output_is_validated_before_any_review_can_start() {
         );
         fixture.no_execution();
     }
-    for bytes in [b"Aa0._:-".as_slice(), b"Aa0._:-\n", &[b'x'; 128]] {
+    for bytes in [
+        b"Aa0._:-".as_slice(),
+        b"Aa0._:-\n",
+        #[cfg(windows)]
+        b"Aa0._:-\r\n",
+        &[b'x'; 128],
+    ] {
         fs::write(fixture.repo.join("key"), bytes).unwrap();
         let run = fixture.verify(&["--all"], 0);
         assert_eq!(
@@ -125,6 +137,7 @@ fn exact_output_is_validated_before_any_review_can_start() {
             String::from_utf8(bytes.to_vec())
                 .unwrap()
                 .trim_end_matches('\n')
+                .trim_end_matches('\r')
         );
     }
 }
@@ -133,16 +146,31 @@ fn exact_output_is_validated_before_any_review_can_start() {
 fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
     let fixture = Fixture::new();
     fs::write(fixture.repo.join("key"), "valid").unwrap();
-    symlink("key", fixture.repo.join("link")).unwrap();
-    symlink(&fixture.repo, fixture.repo.join("dir-link")).unwrap();
+    let mut links = Vec::new();
+    if symlink_file("key", fixture.repo.join("link")).is_some() {
+        links.extend([
+            (
+                json!({"script":{"command":bin("/bin/true"),"args":[],"files":["link"]}}),
+                "symlinks",
+            ),
+            (json!({"script":{"command":"./link","args":[]}}), "symlinks"),
+        ]);
+    }
+    #[cfg(unix)]
+    support::os::symlink_dir(&fixture.repo, fixture.repo.join("dir-link")).unwrap();
+    // A junction redirects like a directory symlink and needs no privilege.
+    #[cfg(windows)]
+    support::os::junction(&fixture.repo, &fixture.repo.join("dir-link"));
     for (declared, message) in [
         (
             fingerprint("printf valid; printf private-diagnostic >&2; exit 7"),
             "exited with",
         ),
+        // Windows has no signals; every exit status there is an exit code.
+        #[cfg(unix)]
         (fingerprint("kill -TERM $$"), "exited with"),
         (
-            json!({"script":{"command":"/bin/sleep","args":["30"],"timeoutMs":50}}),
+            json!({"script":{"command":bin("/bin/sleep"),"args":["30"],"timeoutMs":50}}),
             "timed out",
         ),
         (
@@ -150,23 +178,21 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
             "spawned",
         ),
         (
-            json!({"script":{"command":"/bin/true","args":[],"files":["missing"]}}),
+            json!({"script":{"command":bin("/bin/true"),"args":[],"files":["missing"]}}),
             "missing",
         ),
         (
-            json!({"script":{"command":"/bin/true","args":[],"files":["link"]}}),
+            json!({"script":{"command":bin("/bin/true"),"args":[],"files":["dir-link/key"]}}),
             "symlinks",
         ),
-        (
-            json!({"script":{"command":"/bin/true","args":[],"files":["dir-link/key"]}}),
-            "symlinks",
-        ),
-        (json!({"script":{"command":"./link","args":[]}}), "symlinks"),
         (
             json!({"script":{"command":"../outside","args":[]}}),
             "relative",
         ),
-    ] {
+    ]
+    .into_iter()
+    .chain(links)
+    {
         fixture.write(
             "artifactize.json",
             json!({"name":"test","fingerprint":declared,"evals":[eval("check","touch executed")]}),
@@ -194,17 +220,33 @@ assert sys.argv[3] == str(pathlib.Path.cwd() / 'key')
 for key in ['HOME', 'TMPDIR', 'XDG_CACHE_HOME', 'ARTIFACTIZE_OUTPUT_DIR']:
     path = pathlib.Path(os.environ[key])
     assert not path.is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_WORKSPACE_DIR']))
-    assert stat.S_IMODE(path.stat().st_mode) == 0o700
+    # Windows has no modes; tests/runtime.rs checks the owner-only DACL there.
+    assert os.name == 'nt' or stat.S_IMODE(path.stat().st_mode) == 0o700
     (path / 'discard').write_text('scratch')
 with open(sys.argv[1], 'a') as log:
     log.write(os.environ['ARTIFACTIZE_OUTPUT_DIR'] + '\n')
 print('protocol:v1')
 "#;
-    fixture.write("owner/artifactize.json", json!({"name":"test","fingerprint":{"script":{"command":"./fingerprint.py","args":[probe,"$HOME; ../literal $(touch executed)","{test}/key"],"files":["key"]}},"evals":[eval("one","exit 0"),eval("two","exit 3")]}));
+    // Windows has no #!, so it runs the script with python3 and the same arguments.
+    let (command, mut args) = if cfg!(windows) {
+        ("python3", vec![json!("fingerprint.py")])
+    } else {
+        ("./fingerprint.py", vec![])
+    };
+    args.extend([
+        json!(probe),
+        json!("$HOME; ../literal $(touch executed)"),
+        json!("{test}/key"),
+    ]);
+    fixture.write("owner/artifactize.json", json!({"name":"test","fingerprint":{"script":{"command":command,"args":args,"files":["key"]}},"evals":[eval("one","exit 0"),eval("two","exit 3")]}));
     fs::write(fixture.repo.join("owner/key"), "material").unwrap();
     let path = fixture.repo.join("owner/fingerprint.py");
     fs::write(&path, script).unwrap();
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let run = fixture.verify(&["--all", "--force"], 1);
     assert_eq!(run["requests"][0]["fingerprint"], "protocol:v1");
     assert_eq!(run["requests"][1]["fingerprint"], "protocol:v1");
@@ -367,8 +409,9 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while fs::read_to_string(&marker).is_err() {
+        let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
+        // The redirect creates the marker before printf writes its two lines.
+        while fs::read_to_string(&marker).map_or(true, |text| text.lines().count() < 2) {
             assert!(Instant::now() < deadline, "fingerprint never started");
             thread::sleep(Duration::from_millis(10));
         }
@@ -376,11 +419,18 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         let mut lines = marker.lines();
         let pid: u32 = lines.next().unwrap().parse().unwrap();
         let output = lines.next().unwrap();
+        // SIGTERM on Unix; Windows asks with Ctrl-Break, the closest it has.
+        #[cfg(unix)]
         assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
+        #[cfg(windows)]
+        support::os::interrupt(child.id());
         let result = child.wait_with_output().unwrap();
         assert_eq!(result.status.code(), Some(2));
         assert!(!Path::new(output).exists());
+        #[cfg(unix)]
         assert!(!Path::new(&format!("/proc/{pid}")).exists());
+        #[cfg(windows)]
+        assert!(!support::os::running(pid));
         let result: Value = serde_json::from_slice(&result.stdout).unwrap();
         let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
         assert_eq!(
@@ -489,7 +539,7 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
         fixture.write(
             &format!("{name}/artifactize.json"),
             json!({"name":name,
-                "fingerprint":{"script":{"command":"/bin/sh","args":["-c",script,"sh",name,markers]}},
+                "fingerprint":{"script":{"command":bin("/bin/sh"),"args":["-c",script,"sh",name,markers]}},
                 "evals":[eval("check", "exit 0")]}),
         );
     }
@@ -561,7 +611,7 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
     ] {
         fixture.write(
             &format!("{name}/artifactize.json"),
-            json!({"name":name,"fingerprint":fingerprint(&format!("touch {}.{name}; {script}", started.display())),
+            json!({"name":name,"fingerprint":fingerprint(&format!("touch '{}.{name}'; {script}", started.display())),
                 "evals":[eval("check", "touch executed")]}),
         );
     }

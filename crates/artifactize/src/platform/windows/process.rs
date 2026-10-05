@@ -17,10 +17,13 @@ use tokio::{
 use windows_sys::Win32::{
     Foundation::{
         ERROR_ACCESS_DENIED, ERROR_CANCELLED, ERROR_INVALID_PARAMETER, FILETIME,
-        INVALID_HANDLE_VALUE, STILL_ACTIVE,
+        HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, STILL_ACTIVE, SetHandleInformation,
     },
     System::{
-        Console::{CTRL_BREAK_EVENT, GenerateConsoleCtrlEvent},
+        Console::{
+            CTRL_BREAK_EVENT, GenerateConsoleCtrlEvent, GetStdHandle, STD_ERROR_HANDLE,
+            STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+        },
         Diagnostics::ToolHelp::{
             CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
         },
@@ -30,9 +33,9 @@ use windows_sys::Win32::{
             JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
         },
         Threading::{
-            CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED, DETACHED_PROCESS, GetExitCodeProcess,
-            GetProcessTimes, OpenProcess, OpenThread, PROCESS_QUERY_LIMITED_INFORMATION,
-            ResumeThread, THREAD_SUSPEND_RESUME,
+            CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED,
+            DETACHED_PROCESS, GetExitCodeProcess, GetProcessTimes, OpenProcess, OpenThread,
+            PROCESS_QUERY_LIMITED_INFORMATION, ResumeThread, THREAD_SUSPEND_RESUME,
         },
     },
 };
@@ -248,9 +251,34 @@ fn resume(pid: u32) -> io::Result<()> {
     Ok(())
 }
 
-/// Leave artifactize's console and process group, for a desktop handoff that outlives it.
-pub(crate) fn detach(command: &mut Command) {
-    command.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+/// Spawn outside artifactize's console, process group and job, for a desktop handoff that
+/// outlives it: a terminal, IDE or CI runner may hold artifactize in a kill-on-close job. A
+/// job that forbids breakaway refuses that spawn with access denied; the handoff then starts
+/// inside the job, as it did before.
+pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process::Child> {
+    // A new process inherits every inheritable handle, not only the standard handles it is
+    // given. artifactize's own stdout, when a caller reads it through a pipe, would then stay
+    // open until the handoff exits and keep that caller waiting. std gives each child its own
+    // duplicates, so artifactize's standard handles need not be inheritable.
+    for id in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+        // SAFETY: GetStdHandle only reads the handle table; SetHandleInformation changes only
+        // the inherit flag of a handle this process owns, and fails harmlessly for others.
+        unsafe {
+            let handle = GetStdHandle(id);
+            if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
+                SetHandleInformation(handle, HANDLE_FLAG_INHERIT, 0);
+            }
+        }
+    }
+    let detached = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP;
+    command.creation_flags(detached | CREATE_BREAKAWAY_FROM_JOB);
+    match command.spawn() {
+        Err(error) if error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => {
+            command.creation_flags(detached);
+            command.spawn()
+        }
+        spawned => spawned,
+    }
 }
 
 /// The creation time, in 100 ns intervals since 1601. A process that has exited counts as
@@ -293,4 +321,112 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
         return Err(io::Error::last_os_error());
     }
     Ok((u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{path::Path, process::Stdio, time::Duration};
+
+    use super::*;
+
+    /// A child that creates `marker` in `directory` as soon as it runs.
+    fn marker(directory: &Path) -> Command {
+        let mut command = Command::new("cmd");
+        command
+            .args(["/d", "/c", "type nul > marker"])
+            .current_dir(directory)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null());
+        command
+    }
+
+    #[tokio::test]
+    async fn an_unadmitted_gate_never_runs_the_child_and_kills_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let (gate, spawning) = spawn_gated(marker(directory.path())).unwrap();
+        let pid = gate.pid().await.unwrap();
+        assert!(process_start_time(pid).is_ok(), "the held child exists");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(!directory.path().join("marker").exists());
+        drop(gate);
+        let error = tokio::time::timeout(Duration::from_secs(5), spawning)
+            .await
+            .unwrap()
+            .unwrap()
+            .err()
+            .expect("the child must not run");
+        assert_eq!(error.raw_os_error(), Some(ERROR_CANCELLED as i32));
+        assert_eq!(
+            process_start_time(pid).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        assert!(!directory.path().join("marker").exists());
+
+        // Admitted, the same child runs: the marker would have shown an early start.
+        let (gate, spawning) = spawn_gated(marker(directory.path())).unwrap();
+        gate.admit().unwrap();
+        drop(gate);
+        let mut child = spawning.await.unwrap().unwrap();
+        assert!(child.wait().await.unwrap().success());
+        assert!(directory.path().join("marker").exists());
+    }
+
+    /// A job that forbids breakaway refuses CREATE_BREAKAWAY_FROM_JOB; the handoff then starts
+    /// inside it. A process cannot leave a job, so the probe runs in a test process of its own.
+    #[test]
+    fn a_detached_launch_inside_a_job_without_breakaway_still_starts() {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "platform::windows::process::tests::detached_launch_probe",
+                "--nocapture",
+            ])
+            .env("ARTIFACTIZE_DETACHED_PROBE", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("1 passed"),
+            "{output:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn detached_launch_probe() {
+        use windows_sys::Win32::System::{
+            JobObjects::IsProcessInJob, Threading::GetCurrentProcess,
+        };
+
+        if std::env::var_os("ARTIFACTIZE_DETACHED_PROBE").is_none() {
+            return;
+        }
+        // A job without JOB_OBJECT_LIMIT_BREAKAWAY_OK; it also ends this probe's children.
+        let job = Job::new().unwrap();
+        // SAFETY: the job handle is open; GetCurrentProcess is a pseudo-handle.
+        assert_ne!(
+            unsafe { AssignProcessToJobObject(job.0.as_raw_handle(), GetCurrentProcess()) },
+            0
+        );
+        let mut command = Command::new("cmd");
+        command
+            .args(["/d", "/c", "ping -n 3 127.0.0.1 > nul"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut child = spawn_detached(command).unwrap();
+        let mut in_job = 0;
+        // SAFETY: both handles are open and the out pointer is valid.
+        let queried = unsafe {
+            IsProcessInJob(
+                child.raw_handle().unwrap(),
+                job.0.as_raw_handle(),
+                &mut in_job,
+            )
+        };
+        assert_ne!(queried, 0);
+        assert_ne!(in_job, 0, "the fallback starts the handoff inside the job");
+        child.kill().await.unwrap();
+        // Closing the job's last handle would end this process too; it closes at exit.
+        std::mem::forget(job);
+    }
 }

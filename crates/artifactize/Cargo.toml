@@ -11,6 +11,8 @@ documentation = "https://artifactize.dev/docs/"
 readme = "../../README.md"
 keywords = ["review", "llm", "agent", "ci", "incremental"]
 categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
+# The Windows test stand-in for /bin/sh, which tests build from source on demand.
+exclude = ["tests/support/fixture.rs"]
 
 [dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }

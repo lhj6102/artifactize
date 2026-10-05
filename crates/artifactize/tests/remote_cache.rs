@@ -13,6 +13,9 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use support::os::bin;
+
+mod support;
 
 struct Server {
     state: PathBuf,
@@ -191,8 +194,8 @@ fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
         let folder = repo.join(artifact);
         write(
             &folder,
-            json!({"name":artifact,"fingerprint":{"script":{"command":"cat","args":["version"]}},
-                "evals":[{"id":"check","title":"Check","profile":{"kind":"runtime","command":"/bin/true","args":[]},
+            json!({"name":artifact,"fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
+                "evals":[{"id":"check","title":"Check","profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
                     "payload":{"instruction":"Check."}}]}),
         );
         fs::write(folder.join("version"), format!("{artifact}-{version}\n")).unwrap();
@@ -204,7 +207,7 @@ fn human_repo(root: &Path, name: &str) -> PathBuf {
     let repo = root.join(name);
     write(
         &repo,
-        json!({"name":"brand","fingerprint":{"script":{"command":"cat","args":["version"]}},
+        json!({"name":"brand","fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
             "evals":[{"id":"signoff","title":"Sign off","profile":{"kind":"human"},"payload":{"instruction":"Sign off."}}]}),
     );
     fs::write(repo.join("version"), "brand-v1\n").unwrap();
@@ -418,7 +421,7 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     assert_eq!(entries[0].1["reviewer"], "alice");
 
     // Bob's --wait poll finds the remote sign-off and settles his waiting request from it.
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
     let mut waiting = waiting;
     while waiting.try_wait().unwrap().is_none() {
         assert!(Instant::now() < deadline, "verify --wait did not settle");
@@ -525,8 +528,8 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
         let repo = root.path().join(name);
         write(
             &repo,
-            json!({"name":"app","fingerprint":{"script":{"command":"cat","args":["version"]}},
-                "evals":[{"id":"check","title":"Check","profile":{"kind":"runtime","command":"/bin/sh","args":["-c","test ! -e broken"]},
+            json!({"name":"app","fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
+                "evals":[{"id":"check","title":"Check","profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c","test ! -e broken"]},
                     "payload":{"instruction":"Check."}}]}),
         );
         fs::write(repo.join("version"), "app-v1\n").unwrap();

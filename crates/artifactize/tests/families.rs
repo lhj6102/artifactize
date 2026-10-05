@@ -1,6 +1,5 @@
 use std::{
     fs,
-    os::unix::fs::{PermissionsExt, symlink},
     path::{Path, PathBuf},
     process::{Command, Output},
 };
@@ -11,7 +10,10 @@ use artifactize::{
     scope::{RelationKind, artifact_scope, eval_scope},
 };
 use serde_json::{Value, json};
+use support::os::{bin, symlink_dir, symlink_file};
 use tempfile::TempDir;
+
+mod support;
 
 struct Fixture {
     root: TempDir,
@@ -21,16 +23,18 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
-        let repo = root.path().join("repo");
-        copy_directory(
-            &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/families"),
-            &repo,
-        );
-        fs::set_permissions(
-            repo.join("scenarios/fingerprint.sh"),
-            fs::Permissions::from_mode(0o755),
-        )
-        .unwrap();
+        // The long, plain path artifactize resolves inputs against.
+        let repo = support::os::canonical(root.path()).join("repo");
+        support::copy_fixture("families", &repo);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(
+                repo.join("scenarios/fingerprint.sh"),
+                fs::Permissions::from_mode(0o755),
+            )
+            .unwrap();
+        }
         Self { root, repo }
     }
 
@@ -61,18 +65,6 @@ impl Fixture {
             .arg(self.root.path().join("state"))
             .env("ARTIFACTIZE_STATE_HOME", self.root.path().join("home"));
         command
-    }
-}
-
-fn copy_directory(source: &Path, target: &Path) {
-    fs::create_dir_all(target).unwrap();
-    for entry in fs::read_dir(source).unwrap() {
-        let entry = entry.unwrap();
-        if entry.file_type().unwrap().is_dir() {
-            copy_directory(&entry.path(), &target.join(entry.file_name()));
-        } else {
-            fs::copy(entry.path(), target.join(entry.file_name())).unwrap();
-        }
     }
 }
 
@@ -133,7 +125,7 @@ fn file_instances_expand_to_ordinary_artifacts_evals_scopes_and_relations() {
         else {
             panic!()
         };
-        assert_eq!(command, "/bin/sh");
+        assert_eq!(*command, bin("/bin/sh"));
         assert_eq!(args, &["fingerprint.sh"]);
         assert_eq!(files, &["check.sh"]);
     }
@@ -350,10 +342,12 @@ fn instance_lists_and_material_cannot_escape_or_follow_links() {
     template["family"]["instances"] = json!("directory");
     fixture.write("scenarios/artifactize.json", template.clone());
     assert!(fixture.error().contains("must be a regular file"));
-    symlink("instances.json", fixture.repo.join("scenarios/linked.json")).unwrap();
-    template["family"]["instances"] = json!("linked.json");
-    fixture.write("scenarios/artifactize.json", template);
-    assert!(fixture.error().contains("symlinks"));
+    let file_link = symlink_file("instances.json", fixture.repo.join("scenarios/linked.json"));
+    if file_link.is_some() {
+        template["family"]["instances"] = json!("linked.json");
+        fixture.write("scenarios/artifactize.json", template);
+        assert!(fixture.error().contains("symlinks"));
+    }
     fixture.write("scenarios/artifactize.json", original);
     let list = fixture.read("scenarios/instances.json");
     fs::write(fixture.repo.join("scenarios/instances.json"), "not JSON").unwrap();
@@ -383,19 +377,25 @@ fn instance_lists_and_material_cannot_escape_or_follow_links() {
             .error()
             .contains("must exist inside its family folder")
     );
-    invalid["checkout"]["material"] = json!(["linked.json"]);
-    fixture.write("scenarios/instances.json", invalid.clone());
-    assert!(fixture.error().contains("symlinks"));
-    symlink("directory", fixture.repo.join("scenarios/linked-directory")).unwrap();
+    if file_link.is_some() {
+        invalid["checkout"]["material"] = json!(["linked.json"]);
+        fixture.write("scenarios/instances.json", invalid.clone());
+        assert!(fixture.error().contains("symlinks"));
+    }
+    let linked = fixture.repo.join("scenarios/linked-directory");
+    // A junction redirects like a directory symlink and needs no privilege.
+    if symlink_dir("directory", &linked).is_none() {
+        #[cfg(windows)]
+        support::os::junction(&fixture.repo.join("scenarios/directory"), &linked);
+    }
     fs::write(fixture.repo.join("scenarios/directory/file"), "material").unwrap();
     invalid["checkout"]["material"] = json!(["linked-directory/file"]);
     fixture.write("scenarios/instances.json", invalid.clone());
     assert!(fixture.error().contains("symlinks"));
-    symlink(
-        "../search.txt",
+    symlink_file(
+        Path::new("..").join("search.txt"),
         fixture.repo.join("scenarios/directory/link"),
-    )
-    .unwrap();
+    );
     invalid["checkout"]["material"] = json!(["directory"]);
     fixture.write("scenarios/instances.json", invalid);
     assert_eq!(
@@ -511,7 +511,7 @@ fn family_profile_variants_are_substituted_per_instance_before_selection() {
     let fixture = Fixture::new();
     let mut template = fixture.read("scenarios/artifactize.json");
     template["evals"][0]["profileVariants"] = json!({"echo":{
-        "kind":"runtime", "command":"/bin/echo", "args":[{"$param":"/expected"}]
+        "kind":"runtime", "command":bin("/bin/echo"), "args":[{"$param":"/expected"}]
     }});
     fixture.write("scenarios/artifactize.json", template.clone());
     let selection = Selection::Artifact {

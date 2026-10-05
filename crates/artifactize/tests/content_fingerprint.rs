@@ -5,7 +5,10 @@ use std::{
 };
 
 use serde_json::{Value, json};
+use support::os::bin;
 use tempfile::TempDir;
+
+mod support;
 
 struct Fixture {
     _root: TempDir,
@@ -79,7 +82,7 @@ impl Fixture {
 fn artifact(name: &str, fingerprint: Value, mounts: Value, args: &[&str]) -> Value {
     json!({
         "name": name, "mounts": mounts, "fingerprint": fingerprint,
-        "evals": [{"id":"check","title":"Check","profile":{"kind":"runtime","command":"/bin/sh","args":args},"payload":{"instruction":"Check."}}]
+        "evals": [{"id":"check","title":"Check","profile":{"kind":"runtime","command":bin("/bin/sh"),"args":args},"payload":{"instruction":"Check."}}]
     })
 }
 
@@ -112,7 +115,7 @@ fn a_dependency_change_misses_but_two_connections_away_only_through_the_fingerpr
     assert_eq!(fixture.executed(0), ["mid/check", "top/check"]);
 
     // A developer whose review of top reads base says so in top's fingerprint.
-    let covered = json!({"script":{"command":"/bin/sh","args":[
+    let covered = json!({"script":{"command":bin("/bin/sh"),"args":[
         "-c", "cat file.txt \"$1\" | cksum | tr ' ' -", "sh", "{base}/file.txt"
     ]}});
     fixture.artifact("top", artifact("top", covered, json!({"mid":"mid"}), PASS));
@@ -157,7 +160,7 @@ fn a_dependency_without_a_fingerprint_leaves_its_dependents_unkeyed() {
 #[test]
 fn equal_fingerprints_of_different_artifacts_never_share_a_result() {
     let fixture = Fixture::new();
-    let same = json!({"script":{"command":"/bin/echo","args":["same-output"]}});
+    let same = json!({"script":{"command":bin("/bin/echo"),"args":["same-output"]}});
     for name in ["first", "second"] {
         fixture.artifact(name, artifact(name, same.clone(), json!({}), PASS));
     }
@@ -177,7 +180,7 @@ fn a_tool_declaration_change_alone_reuses() {
     let tool = |description: &str| {
         json!({"agentTools":{"lint":{"description":description,
             "inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"additionalProperties":false},
-            "protocol":"json","command":"/bin/true","args":[]}}})
+            "protocol":"json","command":bin("/bin/true"),"args":[]}}})
     };
     declaration["views"] = tool("Lint a file.");
     fixture.artifact("app", declaration.clone());
@@ -291,7 +294,7 @@ fn status_explains_which_inputs_and_dependencies_changed() {
         "legacy",
         artifact(
             "legacy",
-            json!({"script":{"command":"/bin/cat","args":["key"]}}),
+            json!({"script":{"command":bin("/bin/cat"),"args":["key"]}}),
             json!({}),
             PASS,
         ),
@@ -399,4 +402,22 @@ fn status_json_shows_each_evals_fingerprints_definition_hash_and_key() {
     assert_eq!(after["evals"][0]["id"], "api/check");
     assert_eq!(after["evals"][0]["action"], "reuse");
     assert_eq!(after["evals"][0]["key"], api["key"]);
+}
+
+/// Windows opens `Secret` and `secret` as one folder, but ignore rules match names as written.
+/// A rule for `secret/` therefore leaves `Secret/` in the fingerprint: a change there still
+/// reviews again, rather than a differently cased name hiding it.
+#[cfg(windows)]
+#[test]
+fn an_ignore_rule_in_another_case_never_hides_a_change() {
+    let fixture = Fixture::new();
+    fixture.artifact(
+        "app",
+        artifact("app", json!({"ignore":["secret/"]}), json!({}), PASS),
+    );
+    fixture.file("app/Secret/key.txt", "v1");
+    assert_eq!(fixture.executed(0), ["app/check"]);
+    assert!(fixture.executed(0).is_empty());
+    fixture.file("app/Secret/key.txt", "v2");
+    assert_eq!(fixture.executed(0), ["app/check"]);
 }

@@ -4,7 +4,6 @@ mod support;
 
 use std::{
     fs,
-    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
     process::{Command, Output},
     time::{SystemTime, UNIX_EPOCH},
@@ -65,21 +64,11 @@ impl Project {
     /// artifactize's own sign-in, as `login codex` saves it.
     fn sign_in(&self, access: &str, expires_at: u64) {
         let auth = self.state.join("auth");
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&auth)
-            .unwrap();
+        support::os::create_private_dir_all(&auth);
         let credentials = json!({"access_token":access,"refresh_token":"stored-refresh",
             "account_id":"account-1","expires_at":expires_at,"saved_at":1});
         let _ = fs::remove_file(self.credentials());
-        fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .mode(0o600)
-            .open(self.credentials())
-            .unwrap();
-        fs::write(self.credentials(), credentials.to_string()).unwrap();
+        support::os::write_private_file(&self.credentials(), credentials.to_string());
     }
 
     /// A Codex CLI auth file outside the state directory.
@@ -267,13 +256,7 @@ fn an_expiring_sign_in_is_refreshed_and_rotated_before_the_review() {
         calls[1].headers["authorization"],
         format!("Bearer {}", saved["access_token"].as_str().unwrap())
     );
-    let mode = project
-        .credentials()
-        .metadata()
-        .unwrap()
-        .permissions()
-        .mode();
-    assert_eq!(mode & 0o777, 0o600);
+    assert!(support::os::private_file(&project.credentials()));
 }
 
 fn failed(project: &Project, provider: &FakeProvider) -> Value {
@@ -357,7 +340,10 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
     project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
     let access = codex::jwt("claim-account", now() + 3600);
     let file = project.auth_file(&access);
-    let before = (fs::read(&file).unwrap(), file.metadata().unwrap().mtime());
+    let before = (
+        fs::read(&file).unwrap(),
+        file.metadata().unwrap().modified().unwrap(),
+    );
     let own = fs::read(project.credentials()).unwrap();
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
@@ -374,7 +360,10 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
         assert_eq!(call.headers["chatgpt-account-id"], "file-account");
     }
     assert_eq!(
-        (fs::read(&file).unwrap(), file.metadata().unwrap().mtime()),
+        (
+            fs::read(&file).unwrap(),
+            file.metadata().unwrap().modified().unwrap()
+        ),
         before
     );
     assert_eq!(fs::read(project.credentials()).unwrap(), own);

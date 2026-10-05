@@ -11,14 +11,17 @@ use std::{
 };
 
 use artifactize::process::{self, ChildIdentity, Command};
+use support::os::bin;
 use tokio::{sync::oneshot, time::timeout};
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn command(program: &str, args: &[&str]) -> Command {
     Command {
-        program: program.into(),
+        program: bin(program).into(),
         args: args.iter().map(OsString::from).collect(),
         cwd: PathBuf::from("/"),
         env: BTreeMap::from([("PATH".into(), "/usr/bin:/bin".into())]),
@@ -58,15 +61,21 @@ async fn registration_observes_inert_group_leader_before_exec() {
     let expected_cwd = scratch.0.clone();
     let output = process::run(command, CancellationToken::new(), move |child| async move {
         assert!(!marker.exists());
-        let stat = std::fs::read_to_string(format!("/proc/{}/stat", child.pid))?;
-        let fields: Vec<_> = stat
-            .rsplit_once(')')
-            .unwrap()
-            .1
-            .split_whitespace()
-            .collect();
-        assert_eq!(fields[2].parse::<u32>().unwrap(), child.pid);
-        assert_eq!(fields[19].parse::<u64>().unwrap(), child.start_time);
+        #[cfg(unix)]
+        {
+            let stat = std::fs::read_to_string(format!("/proc/{}/stat", child.pid))?;
+            let fields: Vec<_> = stat
+                .rsplit_once(')')
+                .unwrap()
+                .1
+                .split_whitespace()
+                .collect();
+            assert_eq!(fields[2].parse::<u32>().unwrap(), child.pid);
+            assert_eq!(fields[19].parse::<u64>().unwrap(), child.start_time);
+        }
+        // Windows holds the child suspended in its job; its identity is already final.
+        #[cfg(windows)]
+        assert_eq!(support::os::start_time(child.pid), child.start_time);
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(
             !marker.exists(),
@@ -155,8 +164,10 @@ async fn invalid_cwd_is_a_spawn_error_before_registration() {
     )
     .await
     .unwrap();
+    // Windows reports a missing working directory as ERROR_DIRECTORY.
     assert!(
-        matches!(result, Err(process::Error::Spawn(error)) if error.kind() == io::ErrorKind::NotFound)
+        matches!(result, Err(process::Error::Spawn(error)) if error.kind() == io::ErrorKind::NotFound
+            || (cfg!(windows) && error.kind() == io::ErrorKind::NotADirectory))
     );
 }
 
@@ -178,7 +189,10 @@ async fn stdout_and_stderr_are_drained_concurrently_after_capture_limit() {
 
 async fn assert_gone(pid: u32) {
     assert!(pid > 0, "must have observed a real process");
+    #[cfg(unix)]
     wait_for(|| !PathBuf::from(format!("/proc/{pid}")).exists()).await;
+    #[cfg(windows)]
+    wait_for(|| !support::os::running(pid)).await;
 }
 
 async fn wait_for(condition: impl Fn() -> bool) {
@@ -204,7 +218,7 @@ impl Scratch {
                 NEXT.fetch_add(1, Ordering::SeqCst)
             ));
         std::fs::create_dir_all(&path).unwrap();
-        Self(std::fs::canonicalize(path).unwrap())
+        Self(support::os::canonical(&path))
     }
 }
 

@@ -13,10 +13,12 @@ pub(crate) fn canonical_target(path: &Path) -> io::Result<PathBuf> {
             Component::ParentDir => {
                 resolved.pop();
             }
-            _ => {
+            // A Windows prefix alone, such as `\\?\C:`, names the volume device, not a folder.
+            Component::Prefix(_) | Component::RootDir => resolved.push(component),
+            Component::Normal(_) => {
                 resolved.push(component);
                 match resolved.symlink_metadata() {
-                    Ok(_) => resolved = resolved.canonicalize()?,
+                    Ok(_) => resolved = crate::platform::canonicalize(&resolved)?,
                     Err(error) if error.kind() == io::ErrorKind::NotFound => {}
                     Err(error) => return Err(error),
                 }
@@ -39,7 +41,7 @@ pub(crate) fn prepare_directory(path: &Path, workspace: &Path) -> io::Result<Pat
     let path = canonical_target(path)?;
     outside_workspace(workspace, &path)?;
     crate::platform::create_private_dir_all(&path)?;
-    let path = path.canonicalize()?;
+    let path = crate::platform::canonicalize(&path)?;
     outside_workspace(workspace, &path)?;
     Ok(path)
 }
