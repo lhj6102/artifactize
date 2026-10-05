@@ -1,12 +1,27 @@
-use std::{
-    fs,
-    os::unix::fs::{PermissionsExt, symlink},
-    path::Path,
-    process::Command,
-};
+use std::{fs, path::Path, process::Command};
 
 use rusqlite::params;
 use serde_json::{Value, json};
+use support::os::bin;
+
+mod support;
+
+/// A link to a directory: a symlink on Unix, and on Windows a junction, which needs no
+/// privilege and which artifactize refuses just the same.
+fn link_dir(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    support::os::symlink_dir(target, link).unwrap();
+    #[cfg(windows)]
+    support::os::junction(target, link);
+}
+
+fn remove_link(link: &Path) {
+    #[cfg(unix)]
+    fs::remove_file(link).unwrap();
+    // Windows removes a directory link as a directory.
+    #[cfg(windows)]
+    fs::remove_dir(link).unwrap();
+}
 
 fn command(state: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
@@ -53,7 +68,7 @@ fn runtime_run(state: &Path, repo: &Path) -> Value {
     verify(
         state,
         repo,
-        json!({"kind":"runtime", "command":"/bin/true", "args":[]}),
+        json!({"kind":"runtime", "command":bin("/bin/true"), "args":[]}),
         0,
     )
 }
@@ -114,11 +129,9 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     let before = fs::read(state.join("state.sqlite")).unwrap();
     // Leftover 0.4 ChatGPT credentials are neither read nor removed.
     let auth = state.join("auth");
-    fs::create_dir(&auth).unwrap();
-    fs::set_permissions(&auth, fs::Permissions::from_mode(0o700)).unwrap();
+    support::os::create_private_dir_all(&auth);
     let leftover = json!({"access_token":"private-access", "refresh_token":"private-refresh"});
-    fs::write(auth.join("chatgpt.json"), leftover.to_string()).unwrap();
-    fs::set_permissions(auth.join("chatgpt.json"), fs::Permissions::from_mode(0o600)).unwrap();
+    support::os::write_private_file(&auth.join("chatgpt.json"), leftover.to_string());
     let present = result(
         doctor(&state, &bin)
             .arg("--repo")
@@ -167,9 +180,10 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     fs::create_dir(&older).unwrap();
     rusqlite::Connection::open(older.join("state.sqlite"))
         .unwrap()
-        .execute_batch(
-            &include_str!("fixtures/state-v2.sql").replace("@ROOT@", root.path().to_str().unwrap()),
-        )
+        .execute_batch(&support::recorded_state(
+            include_str!("fixtures/state-v2.sql"),
+            root.path(),
+        ))
         .unwrap();
     let before = fs::read(older.join("state.sqlite")).unwrap();
     let report = result(&mut doctor(&older, &bin), 0);
@@ -240,16 +254,7 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let id = |run: &Value| run["id"].as_str().unwrap().to_owned();
     db.execute("UPDATE runs SET status='RUNNING' WHERE id=?", [id(&active)])
         .unwrap();
-    let stat = fs::read_to_string(format!("/proc/{}/stat", std::process::id())).unwrap();
-    let start = stat
-        .rsplit_once(')')
-        .unwrap()
-        .1
-        .split_whitespace()
-        .nth(19)
-        .unwrap()
-        .parse::<i64>()
-        .unwrap();
+    let start = support::os::start_time(std::process::id()) as i64;
     db.execute("UPDATE executions SET owner_pid=?,owner_start_time=? WHERE json_extract(data,'$.provenance.runId')=?", params![std::process::id(), start, id(&owned)]).unwrap();
     drop(db);
     let run = state.join("runs").join(id(&finished));
@@ -331,15 +336,15 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
     let run = state.join("runs").join(finished["id"].as_str().unwrap());
     let output = Path::new(finished["requests"][0]["runDir"].as_str().unwrap()).join("output");
     for link in [run.join("tool-output-link"), output.join("nested-link")] {
-        symlink(&repo, &link).unwrap();
+        link_dir(&repo, &link);
         let error = result(command(&state).args(["prune"]), 2);
         assert!(error["error"].as_str().unwrap().contains("symlink"));
         assert!(output.is_dir());
         assert!(repo.join("artifactize.json").exists());
-        fs::remove_file(link).unwrap();
+        remove_link(&link);
     }
     let alias = root.path().join("alias");
-    symlink(&state, &alias).unwrap();
+    link_dir(&state, &alias);
     assert!(
         result(command(&alias).arg("prune"), 2)["error"]
             .as_str()
@@ -348,14 +353,14 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
     );
     let moved = state.join("saved-runs");
     fs::rename(state.join("runs"), &moved).unwrap();
-    symlink(&moved, state.join("runs")).unwrap();
+    link_dir(&moved, &state.join("runs"));
     assert!(
         result(command(&state).arg("prune"), 2)["error"]
             .as_str()
             .unwrap()
             .contains("symlink")
     );
-    fs::remove_file(state.join("runs")).unwrap();
+    remove_link(&state.join("runs"));
     fs::rename(moved, state.join("runs")).unwrap();
     fs::write(run.join(".git"), "gitdir: elsewhere").unwrap();
     assert!(
@@ -376,5 +381,33 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
     assert!(output.is_dir());
     for duration in ["-1d", "10", "1.5h", "999999999999999999999d"] {
         result(command(&state).args(["prune", "--older-than", duration]), 2);
+    }
+}
+
+/// Windows opens a name in any case, so a state folder named in another case is still inside
+/// the repository. Prune compares canonical paths and refuses it as it refuses the same case.
+#[cfg(windows)]
+#[test]
+fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = support::os::canonical(root.path()).join("Repo");
+    fs::create_dir(&repo).unwrap();
+    fs::write(
+        repo.join("artifactize.json"),
+        r#"{"name":"a","basis":true}"#,
+    )
+    .unwrap();
+    for state in [
+        repo.join("state"),
+        support::os::other_case(&repo).join("state"),
+    ] {
+        let error = result(command(&state).arg("prune").arg("--repo").arg(&repo), 2);
+        assert!(
+            error["error"]
+                .as_str()
+                .unwrap()
+                .contains("outside the reviewed repository"),
+            "{state:?}: {error}"
+        );
     }
 }

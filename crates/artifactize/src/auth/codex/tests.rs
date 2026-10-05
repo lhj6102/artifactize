@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt},
-    sync::Arc,
-};
+use std::{fs, sync::Arc};
 
 use rig_core::{http_client::StatusCode, test_utils::MockHttpResponse};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -24,10 +20,7 @@ pub(crate) fn jwt(account: &str, exp: u64) -> String {
 
 fn storage(root: &Path) -> Storage {
     let directory = root.join("auth");
-    fs::DirBuilder::new()
-        .mode(0o700)
-        .create(&directory)
-        .unwrap();
+    crate::platform::create_private_dir(&directory).unwrap();
     Storage { directory }
 }
 
@@ -215,7 +208,7 @@ async fn login_exchanges_the_callback_code_and_saves_private_tokens() {
         ])
     );
     let path = storage.directory.join(CREDENTIALS);
-    assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+    assert!(crate::auth::tests::private_file(&path));
     let saved: Credentials = storage.read(CREDENTIALS).unwrap().unwrap();
     assert_eq!(saved.access_token, access);
     assert_eq!(saved.refresh_token, "refresh-1");
@@ -363,12 +356,18 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
     write(
         json!({"OPENAI_API_KEY":null,"tokens":{"id_token":"id","access_token":access,"refresh_token":"r","account_id":"file-account"},"last_refresh":"2026-10-01T00:00:00Z"}),
     );
-    let before = (fs::read(&path).unwrap(), path.metadata().unwrap().mtime());
+    let before = (
+        fs::read(&path).unwrap(),
+        path.metadata().unwrap().modified().unwrap(),
+    );
     let token = read_auth_file(&path).unwrap();
     assert_eq!(token.access_token, access);
     assert_eq!(token.account_id, "file-account");
     assert_eq!(
-        (fs::read(&path).unwrap(), path.metadata().unwrap().mtime()),
+        (
+            fs::read(&path).unwrap(),
+            path.metadata().unwrap().modified().unwrap()
+        ),
         before
     );
 

@@ -1,10 +1,21 @@
-use std::{fs, os::unix::fs::symlink, process::Command, sync::mpsc, thread};
+use std::{fs, path::Path, process::Command, sync::mpsc, thread};
 
 use artifactize::store::{
     DATABASE, Receipts, STATE_SCHEMA_VERSION, read_keyed_executions, read_latest_requests,
     read_request, read_requests, read_run, read_runs,
 };
 use rusqlite::Connection;
+
+mod support;
+
+/// A link to a directory: a symlink on Unix, and on Windows a junction, which needs no
+/// privilege and which artifactize refuses just the same.
+fn link_dir(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    support::os::symlink_dir(target, link).unwrap();
+    #[cfg(windows)]
+    support::os::junction(target, link);
+}
 
 #[tokio::test]
 async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
@@ -146,9 +157,11 @@ async fn readers_observe_empty_state_until_schema_commits() {
 #[tokio::test]
 async fn repositories_share_one_state_database() {
     let root = tempfile::tempdir().unwrap();
-    let first = root.path().join("first");
-    let second = root.path().join("second");
-    let state = root.path().join("state");
+    // The long, plain paths artifactize records, whatever form TEMP takes.
+    let base = support::os::canonical(root.path());
+    let first = base.join("first");
+    let second = base.join("second");
+    let state = base.join("state");
     fs::create_dir(&first).unwrap();
     fs::create_dir(&second).unwrap();
     for (repo, name) in [(&first, "first"), (&second, "second")] {
@@ -250,13 +263,19 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         r#"{"name":"basis","basis":true}"#,
     )
     .unwrap();
-    symlink(&repo, root.path().join("alias")).unwrap();
+    link_dir(&repo, &root.path().join("alias"));
     let inner = repo.join("inner");
     fs::create_dir(&inner).unwrap();
-    symlink(&inner, root.path().join("nested-alias")).unwrap();
+    link_dir(&inner, &root.path().join("nested-alias"));
     for state in [
         repo.join("state"),
+        // Windows opens a name in any case: this is the repository too.
+        #[cfg(windows)]
+        support::os::other_case(&repo).join("state"),
         root.path().join("alias/state"),
+        // Windows drops `..` from a path before following any link, so there this names
+        // root/state, outside the repository.
+        #[cfg(unix)]
         root.path().join("nested-alias/../state"),
     ] {
         for explicit in [false, true] {
@@ -281,7 +300,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     assert!(!repo.join("state").exists());
     let state = root.path().join("state");
     fs::create_dir(&state).unwrap();
-    symlink(&repo, state.join("runs")).unwrap();
+    link_dir(&repo, &state.join("runs"));
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_STATE_HOME", root.path().join("home"))
         .arg("--repo")
@@ -293,7 +312,11 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the reviewed repository"));
+    // Windows removes a directory link as a directory.
+    #[cfg(unix)]
     fs::remove_file(state.join("runs")).unwrap();
+    #[cfg(windows)]
+    fs::remove_dir(state.join("runs")).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_STATE_HOME", repo.join("home"))
         .arg("--repo")
@@ -323,7 +346,9 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
     fs::write(&protected, "unchanged").unwrap();
     for suffix in ["", "-wal", "-shm"] {
         let file = state.join(format!("{DATABASE}{suffix}"));
-        symlink(&protected, &file).unwrap();
+        if support::os::symlink_file(&protected, &file).is_none() {
+            continue;
+        }
         assert!(
             Receipts::open(&state, &repo)
                 .await

@@ -1,28 +1,36 @@
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
     path::Path,
     process::{Command, Output},
 };
 
 use artifactize::store;
 use serde_json::{Value, json};
+use support::os::bin;
+
+mod support;
+
+/// The owner's tool script. Windows runs a script by path only through the `.exe` stand-in
+/// beside it, which a `.sh` extension would bypass.
+const TOOL: &str = if cfg!(windows) { "env-tool" } else { "env.sh" };
 
 fn fixture(repo: &Path) {
     fs::create_dir_all(repo.join("a")).unwrap();
     fs::create_dir_all(repo.join("b")).unwrap();
-    fs::write(repo.join("a/env.sh"), "#!/bin/sh\nprintf '%s|%s|%s' \"$HOME\" \"${TOOL_CHECK_SECRET-unset}\" \"$PWD\"\nprintf invoked > touched\n").unwrap();
-    fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o700)).unwrap();
+    let tool = repo.join("a").join(TOOL);
+    fs::write(&tool, "#!/bin/sh\nprintf '%s|%s|%s' \"$HOME\" \"${TOOL_CHECK_SECRET-unset}\" \"$PWD\"\nprintf invoked > touched\n").unwrap();
+    support::os::make_executable(&tool);
+    let command = format!("./{TOOL}");
     let profile = json!({"kind":"agent","backend":"openai","model":"test"});
     fs::write(repo.join("a/artifactize.json"), json!({
         "name":"a","views":{
             "agentTools":{
                 "read":{"builtin":"read"},"image":{"builtin":"view_image"},
-                "env":{"description":"Environment","command":"./env.sh","args":[],"protocol":"plain","inputSchema":{"type":"object","additionalProperties":false}},
-                "data":{"description":"JSON","command":"/bin/echo","args":["{\"content\":[{\"type\":\"json\",\"data\":{\"answer\":42}}]}"],"protocol":"json","inputSchema":{"type":"object"}},
-                "error":{"description":"Authored error","command":"/bin/echo","args":["{\"content\":[{\"type\":\"text\",\"text\":\"Owner error\"}],\"isError\":true}"],"protocol":"json","inputSchema":{"type":"object"}}
+                "env":{"description":"Environment","command":command,"args":[],"protocol":"plain","inputSchema":{"type":"object","additionalProperties":false}},
+                "data":{"description":"JSON","command":bin("/bin/echo"),"args":["{\"content\":[{\"type\":\"json\",\"data\":{\"answer\":42}}]}"],"protocol":"json","inputSchema":{"type":"object"}},
+                "error":{"description":"Authored error","command":bin("/bin/echo"),"args":["{\"content\":[{\"type\":\"text\",\"text\":\"Owner error\"}],\"isError\":true}"],"protocol":"json","inputSchema":{"type":"object"}}
             },
-            "humanTools":{"env":{"description":"Environment","kind":"output","command":"./env.sh","args":[]}}
+            "humanTools":{"env":{"description":"Environment","kind":"output","command":command,"args":[]}}
         },
         "evals":[
             {"id":"review","title":"Review","profile":profile,"payload":{"instruction":"Review a."}},
@@ -97,20 +105,25 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
             .iter()
             .all(|t| t["artifactId"] == "a")
     );
-    fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o600)).unwrap();
-    assert_eq!(
-        parsed(
-            &check(
-                &repo,
-                &state,
-                &["--artifact", "a", "--audience", "agent", "--tool", "env"]
-            ),
-            1
-        )["ok"],
-        false
-    );
-    assert!(!repo.join("a/touched").exists());
-    fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o700)).unwrap();
+    // Windows has no execute bit to take away.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(
+            parsed(
+                &check(
+                    &repo,
+                    &state,
+                    &["--artifact", "a", "--audience", "agent", "--tool", "env"]
+                ),
+                1
+            )["ok"],
+            false
+        );
+        assert!(!repo.join("a/touched").exists());
+        fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o700)).unwrap();
+    }
     let agent = parsed(
         &check(
             &repo,
@@ -128,7 +141,8 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
         0,
     );
     let text = agent["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("/home|unset|"), "{text}");
+    let home = format!("{}home|unset|", std::path::MAIN_SEPARATOR);
+    assert!(text.contains(&home), "{text}");
     assert!(!text.contains("reviewer-home"));
     let human = parsed(
         &check(

@@ -4,7 +4,6 @@
 use std::{
     collections::BTreeMap,
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Output},
 };
@@ -12,12 +11,14 @@ use std::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
+mod support;
+
 fn example(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples")
-        .join(name)
-        .canonicalize()
-        .unwrap()
+    support::os::canonical(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples")
+            .join(name),
+    )
 }
 
 struct Session(TempDir);
@@ -30,6 +31,8 @@ impl Session {
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
         command
+            // The examples name `grep` and `cat` for PATH to find.
+            .env("PATH", support::os::path())
             .current_dir(repo)
             .args(args)
             .env("ARTIFACTIZE_STATE_HOME", self.0.path().join("state"))
@@ -49,7 +52,7 @@ impl Session {
     /// A private copy for edits that turn an example RED.
     fn copy(&self, name: &str) -> PathBuf {
         let target = self.0.path().join(name);
-        copy_directory(&example(name), &target);
+        support::copy_directory(&example(name), &target);
         target
     }
 }
@@ -67,18 +70,6 @@ fn expect(output: Output, args: &[&str], code: i32) -> Output {
 
 fn parse(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
-}
-
-fn copy_directory(source: &Path, target: &Path) {
-    fs::create_dir_all(target).unwrap();
-    for entry in fs::read_dir(source).unwrap() {
-        let entry = entry.unwrap();
-        if entry.file_type().unwrap().is_dir() {
-            copy_directory(&entry.path(), &target.join(entry.file_name()));
-        } else {
-            fs::copy(entry.path(), target.join(entry.file_name())).unwrap();
-        }
-    }
 }
 
 /// Every file below `root`, so tests notice anything an example writes into its own folder.
@@ -334,15 +325,23 @@ fn family_selectors_expand_instances_and_reuse_each_instance() {
 #[test]
 fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     let session = Session::new();
-    let repo = example("agent-tools");
+    // The section tool runs /bin/sh; a copy names the stand-in where it is not at that path.
+    let repo = if support::os::stand_ins() {
+        session.copy("agent-tools")
+    } else {
+        example("agent-tools")
+    };
     let before = files(&repo);
 
     // A stub keeps the static launch check independent of the host; nothing is launched.
     let bin = session.0.path().join("bin");
     fs::create_dir(&bin).unwrap();
     fs::write(bin.join("xdg-open"), "#!/bin/sh\nexit 0\n").unwrap();
-    fs::set_permissions(bin.join("xdg-open"), fs::Permissions::from_mode(0o755)).unwrap();
-    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    support::os::make_executable(&bin.join("xdg-open"));
+    let path = std::env::join_paths(
+        std::iter::once(bin).chain(std::env::split_paths(&support::os::path())),
+    )
+    .unwrap();
     let output = session
         .command(&repo, &["tools", "check"])
         .env("PATH", path)
@@ -401,13 +400,16 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         coverage["data"]["requirements"].as_array().unwrap().len(),
         4
     );
-    let section = execute("section", r#"{"title":"Dry run"}"#);
-    assert!(
-        section["text"]
-            .as_str()
-            .unwrap()
-            .starts_with("## Dry run\n")
-    );
+    // section.sh reads lines and matches patterns as only a POSIX shell does.
+    if !support::os::stand_ins() {
+        let section = execute("section", r#"{"title":"Dry run"}"#);
+        assert!(
+            section["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("## Dry run\n")
+        );
+    }
     let image = execute("view_image", r#"{"path":"diagram.png"}"#);
     assert_eq!(image["mimeType"], "image/png");
 

@@ -1,9 +1,7 @@
 use std::{
     fs,
-    io::{Read, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::mpsc,
     time::{Duration, Instant},
 };
 
@@ -16,6 +14,8 @@ use ratatui::{Terminal, backend::TestBackend};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 use time::OffsetDateTime;
+
+mod support;
 
 struct Fixture {
     _root: tempfile::TempDir,
@@ -77,7 +77,10 @@ impl Fixture {
             &alpha.join("red/part"),
             json!({"name":"part","basis":true,"fingerprint":{}}),
         );
-        let wait = format!("while [ ! -e {} ]; do sleep 0.05; done", release.display());
+        let wait = format!(
+            "while [ ! -e '{}' ]; do sleep 0.05; done",
+            release.display()
+        );
         declare(
             &beta.join("slow"),
             json!({"name":"slow","evals":[eval("wait", runtime("sh", &["-c", &wait]), "Wait.")]}),
@@ -98,6 +101,8 @@ impl Fixture {
     fn command(&self, repo: &Path) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
         command
+            // The declarations name `sh`, `echo` and `true` for PATH to find.
+            .env("PATH", support::os::path())
             .arg("--repo")
             .arg(repo)
             .arg("--state-dir")
@@ -157,7 +162,7 @@ fn press(monitor: &mut Monitor, code: KeyCode) -> monitor::Action {
 }
 
 fn finish(mut child: Child) -> std::process::Output {
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
     while child.try_wait().unwrap().is_none() {
         if Instant::now() > deadline {
             child.kill().unwrap();
@@ -179,7 +184,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
     let (live, human) = loop {
         let runs = store::read_runs(&fixture.state, Some(&fixture.beta), 10, 0)
             .await
@@ -238,7 +243,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
     assert!(progress.contains("RUNNING 1") && progress.contains("WAITING_HUMAN 1"));
 
     fs::write(&fixture.release, "").unwrap();
-    let deadline = Instant::now() + Duration::from_secs(15);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
     loop {
         all.refresh().await;
         if screen(&mut all).contains("GREEN 1") {
@@ -496,8 +501,15 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert_eq!(dump(&fixture.state), before);
 }
 
+/// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.
+#[cfg(unix)]
 #[test]
 fn pty_session_restores_the_terminal_on_quit() {
+    use std::{
+        io::{Read, Write},
+        sync::mpsc,
+    };
+
     let root = tempfile::tempdir().unwrap();
     let both = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .args(["--repo", ".", "monitor", "--all"])

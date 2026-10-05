@@ -2,7 +2,6 @@ use std::{
     fs,
     io::{Read, Write},
     net::TcpListener,
-    os::unix::fs::PermissionsExt,
     path::Path,
     process::{Command, Stdio},
     sync::{
@@ -14,6 +13,8 @@ use std::{
 };
 
 use serde_json::{Value, json};
+
+mod support;
 
 fn test_token() -> String {
     let mut bytes = [0u8; 16];
@@ -160,10 +161,7 @@ fn login_status_overrides_and_logout_against_a_test_server() {
         json!({"url":server.url,"share":"summary","principal":"alice-laptop","scopes":["read","publish"]})
     );
     let saved = state.join("auth/remote-token.json");
-    assert_eq!(
-        fs::metadata(&saved).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
+    assert!(support::os::private_file(&saved));
     assert_eq!(
         serde_json::from_slice::<Value>(&fs::read(state.join("remote.json")).unwrap()).unwrap(),
         json!({"url":server.url,"share":"summary"})
@@ -261,8 +259,7 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     let root = tempfile::tempdir().unwrap();
     let state = root.path().join("state");
     let bin = root.path().join("bin");
-    fs::create_dir_all(state.join("auth")).unwrap();
-    fs::set_permissions(state.join("auth"), fs::Permissions::from_mode(0o700)).unwrap();
+    support::os::create_private_dir_all(&state.join("auth"));
     fs::create_dir(&bin).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -295,12 +292,15 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     assert_eq!(missing["details"]["tokenSource"], "none");
 
     let saved = state.join("auth/remote-token.json");
-    fs::write(&saved, json!({"url":url,"token":token}).to_string()).unwrap();
-    fs::set_permissions(&saved, fs::Permissions::from_mode(0o644)).unwrap();
+    let contents = json!({"url":url,"token":token}).to_string();
+    support::os::write_private_file(&saved, &contents);
+    support::os::grant_everyone_read(&saved);
     let unsafe_file = doctor(1);
     assert_eq!(unsafe_file["status"], "FAIL");
     assert!(unsafe_file["message"].as_str().unwrap().contains("0600"));
-    fs::set_permissions(&saved, fs::Permissions::from_mode(0o600)).unwrap();
+    // Owner-only again: mode 0600, or on Windows a new file with the folder's DACL.
+    fs::remove_file(&saved).unwrap();
+    support::os::write_private_file(&saved, &contents);
     let ready = doctor(0);
     assert_eq!(
         (&ready["status"], &ready["details"]["tokenSource"]),
@@ -319,6 +319,8 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     assert!(doctor(1)["message"].as_str().unwrap().contains("https://"));
 }
 
+/// Needs a pseudo-terminal from openpty(3); the Windows console has no such pair to drive.
+#[cfg(unix)]
 #[test]
 fn login_on_a_terminal_does_not_echo_the_token() {
     use std::os::fd::{FromRawFd, OwnedFd};
@@ -366,4 +368,77 @@ fn login_on_a_terminal_does_not_echo_the_token() {
     let output = String::from_utf8_lossy(&output);
     assert!(!output.contains(&token));
     assert!(output.contains("as alice-laptop"), "{output}");
+}
+
+/// Git Bash's mintty hands a program a pipe named like a pty: a terminal to `is_terminal`, but
+/// no console whose echo can be turned off. Login then reads the token visibly and says so.
+#[cfg(windows)]
+#[test]
+fn login_on_a_mintty_pipe_reads_the_token_visibly_with_a_warning() {
+    use std::{os::windows::io::FromRawHandle, ptr};
+    use windows_sys::Win32::{
+        Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE},
+        Storage::FileSystem::{CreateFileW, OPEN_EXISTING, PIPE_ACCESS_OUTBOUND},
+        System::Pipes::{CreateNamedPipeW, PIPE_TYPE_BYTE, PIPE_WAIT},
+    };
+
+    let root = tempfile::tempdir().unwrap();
+    let token = test_token();
+    let server = Whoami::start(&token);
+    let name: Vec<u16> = format!(r"\\.\pipe\msys-{}-pty0-from-master", std::process::id())
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    // SAFETY: a NUL-terminated name; each handle is checked, then owned by one File.
+    let (mut writer, reader) = unsafe {
+        let server_end = CreateNamedPipeW(
+            name.as_ptr(),
+            PIPE_ACCESS_OUTBOUND,
+            PIPE_TYPE_BYTE | PIPE_WAIT,
+            1,
+            4096,
+            4096,
+            0,
+            ptr::null(),
+        );
+        assert_ne!(server_end, INVALID_HANDLE_VALUE);
+        let client_end = CreateFileW(
+            name.as_ptr(),
+            GENERIC_READ,
+            0,
+            ptr::null(),
+            OPEN_EXISTING,
+            0,
+            ptr::null_mut(),
+        );
+        assert_ne!(client_end, INVALID_HANDLE_VALUE);
+        (
+            fs::File::from_raw_handle(server_end),
+            fs::File::from_raw_handle(client_end),
+        )
+    };
+    assert!(
+        std::io::IsTerminal::is_terminal(&reader),
+        "the pipe passes for a mintty terminal"
+    );
+    let child = artifactize(&root.path().join("state"))
+        .args(["remote", "login", &server.url])
+        .stdin(reader)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // The pipe stays open meanwhile: a pty whose master closed is no longer a terminal.
+    writer.write_all(format!("{token}\n").as_bytes()).unwrap();
+    let output = child.wait_with_output().unwrap();
+    drop(writer);
+    let (stdout, stderr) = (
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    assert!(output.status.success(), "{stdout}{stderr}");
+    assert!(stderr.contains("cannot hide input"), "{stdout}{stderr}");
+    assert!(stderr.contains("Paste the remote token"), "{stderr}");
+    assert!(stdout.contains("as alice-laptop"), "{stdout}");
+    assert!(!stdout.contains(&token) && !stderr.contains(&token));
 }

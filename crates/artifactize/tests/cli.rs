@@ -8,6 +8,8 @@ use std::{
 
 use serde_json::{Value, json};
 
+mod support;
+
 struct Fixture {
     _root: tempfile::TempDir,
     repo: PathBuf,
@@ -48,6 +50,8 @@ impl Fixture {
     fn command(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
         command
+            // The declarations name `true`, `false` and `printf` for PATH to find.
+            .env("PATH", support::os::path())
             .env("USER", "alice")
             .arg("--repo")
             .arg(&self.repo)
@@ -68,7 +72,7 @@ fn parse(output: &Output) -> Value {
 }
 
 fn waiting_request(fixture: &Fixture) -> Value {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     loop {
         let list = fixture.json(&["request", "list"], 0);
         let mut requests = list.as_array().unwrap().iter();

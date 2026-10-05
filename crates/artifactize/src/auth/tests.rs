@@ -1,6 +1,5 @@
 use std::{
     fs,
-    os::unix::fs::{MetadataExt, PermissionsExt, symlink},
     path::Path,
     sync::{
         Arc,
@@ -12,6 +11,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::storage::Storage;
+use crate::test_os::{grant_everyone_read, symlink_dir, symlink_file};
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
 struct Secret {
@@ -25,13 +25,58 @@ fn secret(token: &str) -> Secret {
 }
 
 fn test_storage(root: &Path) -> Storage {
-    use std::os::unix::fs::DirBuilderExt;
     let directory = root.join("auth");
-    fs::DirBuilder::new()
-        .mode(0o700)
-        .create(&directory)
-        .unwrap();
+    crate::platform::create_private_dir(&directory).unwrap();
     Storage { directory }
+}
+
+/// Mode 0600 on Unix; on Windows a single-link file whose DACL grants only this user.
+pub(crate) fn private_file(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata().unwrap().permissions().mode() & 0o777 == 0o600
+    }
+    #[cfg(windows)]
+    {
+        crate::platform::is_private_file(&fs::File::open(path).unwrap()).unwrap()
+    }
+}
+
+/// Mode 0700 on Unix; on Windows a DACL that grants only this user.
+pub(crate) fn private_dir(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata().unwrap().permissions().mode() & 0o777 == 0o700
+    }
+    #[cfg(windows)]
+    {
+        crate::platform::is_private_dir(path).unwrap()
+    }
+}
+
+/// The inode on Unix, the file index on Windows: what a rename replaces.
+fn file_id(file: &fs::File) -> u64 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        file.metadata().unwrap().ino()
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        };
+        let mut info = BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: an open handle and a valid out pointer.
+        assert_ne!(
+            unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) },
+            0
+        );
+        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow)
+    }
 }
 
 #[test]
@@ -41,14 +86,11 @@ fn storage_is_atomic_private_and_refuses_links() {
     storage.save("secret.json", &secret("old-secret")).unwrap();
     let path = storage.directory.join("secret.json");
     let old = fs::File::open(&path).unwrap();
-    let old_inode = old.metadata().unwrap().ino();
+    let old_inode = file_id(&old);
     storage.save("secret.json", &secret("new-secret")).unwrap();
-    assert_ne!(old_inode, path.metadata().unwrap().ino());
-    assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o600);
-    assert_eq!(
-        storage.directory.metadata().unwrap().permissions().mode() & 0o777,
-        0o700
-    );
+    assert_ne!(old_inode, file_id(&fs::File::open(&path).unwrap()));
+    assert!(private_file(&path));
+    assert!(private_dir(&storage.directory));
     assert_eq!(
         storage.read::<Secret>("secret.json").unwrap(),
         Some(secret("new-secret"))
@@ -64,11 +106,17 @@ fn storage_is_atomic_private_and_refuses_links() {
 
     let target = temp.path().join("public.json");
     fs::write(&target, r#"{"token":"public"}"#).unwrap();
-    symlink(&target, &path).unwrap();
+    if symlink_file(&target, &path).is_some() {
+        assert!(storage.read::<Secret>("secret.json").is_err());
+        fs::remove_file(&path).unwrap();
+    }
+    fs::write(&path, r#"{"token":"readable"}"#).unwrap();
+    grant_everyone_read(&path);
     assert!(storage.read::<Secret>("secret.json").is_err());
     fs::remove_file(&path).unwrap();
-    fs::write(&path, r#"{"token":"readable"}"#).unwrap();
-    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+    // Another name for the file could outlive a rotation of this one.
+    storage.save("secret.json", &secret("linked")).unwrap();
+    fs::hard_link(&path, temp.path().join("second-link.json")).unwrap();
     assert!(storage.read::<Secret>("secret.json").is_err());
 }
 
@@ -80,18 +128,28 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
     fs::write(repo.join(".git"), "worktree marker").unwrap();
     assert!(Storage::new(Some(&repo.join("state")), None).is_err());
     let alias = temp.path().join("alias");
-    symlink(&repo, &alias).unwrap();
-    assert!(Storage::new(Some(&alias.join("state")), None).is_err());
+    if symlink_dir(&repo, &alias).is_some() {
+        assert!(Storage::new(Some(&alias.join("state")), None).is_err());
+    }
+    #[cfg(windows)]
+    {
+        let junction = temp.path().join("junction");
+        crate::test_os::junction(&repo, &junction);
+        assert!(Storage::new(Some(&junction.join("state")), None).is_err());
+    }
     fs::remove_file(repo.join(".git")).unwrap();
     assert!(Storage::new(Some(&repo.join("state")), Some(&repo)).is_err());
     assert!(!repo.join("state").exists());
     let state = temp.path().join("state");
     let storage = Storage::new(Some(&state), None).unwrap();
-    assert_eq!(
-        storage.directory.metadata().unwrap().permissions().mode() & 0o777,
-        0o700
-    );
-    fs::set_permissions(&storage.directory, fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(private_dir(&storage.directory));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&storage.directory, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    #[cfg(windows)]
+    grant_everyone_read(&storage.directory);
     assert!(Storage::new(Some(&state), None).is_err());
 }
 
@@ -101,7 +159,7 @@ async fn named_locks_serialize_holders_and_stay_private() {
     let storage = Arc::new(test_storage(temp.path()));
     let first = storage.lock("codex").await.unwrap();
     let lock = storage.directory.join("codex.lock");
-    assert_eq!(lock.metadata().unwrap().permissions().mode() & 0o777, 0o600);
+    assert!(private_file(&lock));
     // Another name is independent of a held lock.
     drop(storage.lock("other").await.unwrap());
     let acquired = Arc::new(AtomicBool::new(false));
@@ -122,6 +180,7 @@ async fn named_locks_serialize_holders_and_stay_private() {
         .unwrap();
     assert!(acquired.load(Ordering::SeqCst));
     fs::remove_file(&lock).unwrap();
-    symlink(temp.path().join("elsewhere"), &lock).unwrap();
-    assert!(storage.lock("codex").await.is_err());
+    if symlink_file(temp.path().join("elsewhere"), &lock).is_some() {
+        assert!(storage.lock("codex").await.is_err());
+    }
 }

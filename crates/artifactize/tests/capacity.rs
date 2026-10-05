@@ -134,7 +134,7 @@ fn checked(output: &Output, code: i32) -> Value {
 }
 
 fn wait_until(mut condition: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
     while !condition() {
         assert!(Instant::now() < deadline, "condition was not reached");
         thread::sleep(Duration::from_millis(20));
@@ -188,17 +188,9 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     assert_eq!(fixture.active.load(Ordering::SeqCst), 0);
 }
 
-/// Field 22 of /proc/self/stat: this process's start time, as artifactize records owners.
+/// This process's start time, as artifactize records owners.
 fn own_start_time() -> u64 {
-    let stat = fs::read_to_string("/proc/self/stat").unwrap();
-    stat.rsplit_once(')')
-        .unwrap()
-        .1
-        .split_whitespace()
-        .nth(19)
-        .unwrap()
-        .parse()
-        .unwrap()
+    support::os::start_time(std::process::id())
 }
 
 #[test]

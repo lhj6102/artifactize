@@ -6,7 +6,10 @@ use artifactize::config::{Profile, read_workspace_config};
 use artifactize::runtime::{self, Command, Outcome, Verdict};
 use artifactize::scope::{eval_scope, resolve_argv, scoped_path};
 use serde_json::json;
+use support::os::bin;
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 struct Fixture(PathBuf);
 
@@ -27,12 +30,12 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
         .join(format!("scope-execution-{}-{nonce}", std::process::id()));
     fs::create_dir_all(root.join("review/nested")).unwrap();
     fs::create_dir_all(root.join("data")).unwrap();
-    let fixture = Fixture(root.canonicalize().unwrap());
+    let fixture = Fixture(support::os::canonical(&root));
     let root = &fixture.0;
     fs::write(root.join("review/artifactize.json"), json!({
         "name":"review", "mounts":{"source":"input"}, "evals":[{
             "id":"read", "title":"Read inputs", "payload":{"instruction":"Inspect inputs."},
-            "profile":{"kind":"runtime", "command":"/bin/cat", "args":["local", "{review}/nested/file", "{review}/source/file", "{input}/file"]}
+            "profile":{"kind":"runtime", "command":bin("/bin/cat"), "args":["local", "{review}/nested/file", "{review}/source/file", "{input}/file"]}
         }]
     }).to_string()).unwrap();
     fs::write(root.join("review/local"), "owner\n").unwrap();

@@ -8,7 +8,10 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use support::os::bin;
 use tempfile::TempDir;
+
+mod support;
 
 struct Fixture {
     _root: TempDir,
@@ -35,7 +38,8 @@ impl Fixture {
 
     fn command(&self, args: &[&str]) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
-        command
+        // Its own process group, so Ctrl-Break reaches it alone on Windows.
+        support::os::new_group(&mut command)
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
@@ -67,11 +71,11 @@ impl Fixture {
 }
 
 fn eval(id: &str, script: &str) -> Value {
-    json!({"id":id,"title":"Check","profile":{"kind":"runtime","command":"/bin/sh","args":["-c",script,"sh",id],"timeoutMs":10000},"payload":{"instruction":"Check."}})
+    json!({"id":id,"title":"Check","profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script,"sh",id],"timeoutMs":10000},"payload":{"instruction":"Check."}})
 }
 
 fn wait_until(mut condition: impl FnMut() -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     while !condition() {
         assert!(Instant::now() < deadline, "condition was not reached");
         thread::sleep(Duration::from_millis(10));
@@ -91,7 +95,9 @@ fn finish(mut child: Child, code: i32) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
+/// SIGINT or SIGTERM on Unix; Windows has Ctrl-Break for both.
 fn signal(child: &Child, signal: &str) {
+    #[cfg(unix)]
     assert!(
         Command::new("/bin/kill")
             .args([signal, &child.id().to_string()])
@@ -99,6 +105,11 @@ fn signal(child: &Child, signal: &str) {
             .unwrap()
             .success()
     );
+    #[cfg(windows)]
+    {
+        let _ = signal;
+        support::os::interrupt(child.id());
+    }
 }
 
 const SLOW: &str = "printf 'start %s\n' \"$1\" >> events; while [ ! -e release ]; do sleep 0.02; done; sleep 0.1; printf 'end %s\n' \"$1\" >> events";
@@ -110,7 +121,8 @@ fn independent_evals_fill_jobs_without_exceeding_them_and_default_to_four() {
         let child = fixture.spawn(&args);
         wait_until(|| fixture.starts().len() >= jobs);
         let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-        db.busy_timeout(Duration::from_millis(100)).unwrap();
+        db.busy_timeout(support::os::patience(Duration::from_millis(100)))
+            .unwrap();
         db.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
         let data: String = db
             .query_row("SELECT data FROM runs", [], |row| row.get(0))
@@ -291,12 +303,18 @@ fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
                 .unwrap()
                 .split_whitespace()
             {
+                #[cfg(unix)]
                 if let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) {
                     assert!(
                         stat.split_once(") ").unwrap().1.starts_with('Z'),
                         "process still running: {stat}"
                     );
                 }
+                #[cfg(windows)]
+                assert!(
+                    !support::os::running(pid.parse().unwrap()),
+                    "process {pid} still running"
+                );
             }
         }
         assert!(!fixture.repo.join("e3.pids").exists());

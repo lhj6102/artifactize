@@ -3,6 +3,9 @@
 //! formats, and records every request. Point a backend at it with its
 //! `ARTIFACTIZE_<BACKEND>_BASE_URL` test endpoint (and Codex sign-in at
 //! `ARTIFACTIZE_CODEX_AUTH_URL`).
+//!
+//! `os` holds the operating-system fixtures, and `copy_fixture` the repositories under
+//! `tests/fixtures`.
 #![allow(
     dead_code,
     reason = "each test binary uses a different part of the fake"
@@ -10,8 +13,10 @@
 
 use std::{
     collections::{BTreeMap, VecDeque},
+    fs,
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
+    path::Path,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -21,6 +26,126 @@ use std::{
 };
 
 use serde_json::{Value, json};
+
+pub mod os;
+
+/// A recorded `tests/fixtures/state-v*.sql` with `@ROOT@` set to `root`. Each recorded path
+/// below it takes the platform's separators, as artifactize records them there, and is
+/// escaped inside the JSON documents but not in SQL text.
+pub fn recorded_state(sql: &str, root: &Path) -> String {
+    let paths = regex::Regex::new(r"('?)@ROOT@((?:/[A-Za-z0-9._-]+)*)").unwrap();
+    paths
+        .replace_all(sql, |found: &regex::Captures| {
+            let path = found[2]
+                .split('/')
+                .filter(|part| !part.is_empty())
+                .fold(root.to_owned(), |path, part| path.join(part));
+            let path = path.to_str().unwrap();
+            if found[1].is_empty() {
+                let escaped = serde_json::to_string(path).unwrap();
+                escaped[1..escaped.len() - 1].to_owned()
+            } else {
+                format!("'{path}")
+            }
+        })
+        .into_owned()
+}
+
+/// Copy `tests/fixtures/<name>` to `target`. The fixtures name Unix commands, so that the
+/// docs can run them as they are; on Windows the copies name the `os::bin` stand-ins, and
+/// their deadlines of a second or more get `os::slow` room. A shorter one is there to expire.
+pub fn copy_fixture(name: &str, target: &Path) {
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(name),
+        target,
+        true,
+    );
+}
+
+/// Copy a directory; with the stand-ins, its declarations then name them. Nothing else
+/// changes, so a copy keeps every fingerprint that covers its declarations.
+pub fn copy_directory(source: &Path, target: &Path) {
+    copy(source, target, false);
+}
+
+fn copy(source: &Path, target: &Path, deadlines: bool) {
+    fs::create_dir_all(target).unwrap();
+    for entry in fs::read_dir(source).unwrap() {
+        let entry = entry.unwrap();
+        let destination = target.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy(&entry.path(), &destination, deadlines);
+        } else {
+            fs::copy(entry.path(), &destination).unwrap();
+            if os::stand_ins() {
+                port(&destination, deadlines);
+            }
+        }
+    }
+}
+
+/// Point a copied declaration's Unix commands at the stand-ins, and with `deadlines` give
+/// its deadlines of a second or more `os::slow` room. The runtime fixture's `check.sh`
+/// compares its working folder as a file rather than as text: Windows spells that folder
+/// with `\`, where the script appends `/review`.
+fn port(path: &Path, deadlines: bool) {
+    /// Whether anything changed.
+    fn commands(value: &mut Value, deadlines: bool) -> bool {
+        match value {
+            Value::Object(object) => {
+                let mut changed = false;
+                for (key, value) in object.iter_mut() {
+                    changed |= match value {
+                        Value::String(command)
+                            if key == "command"
+                                && (command.starts_with("/bin/")
+                                    || command.starts_with("/usr/bin/")
+                                    || command == "sh") =>
+                        {
+                            *command = os::bin(command);
+                            true
+                        }
+                        Value::Number(deadline)
+                            if deadlines
+                                && key == "timeoutMs"
+                                && deadline.as_u64().is_some_and(|ms| ms >= 1000) =>
+                        {
+                            *value = json!(os::slow(deadline.as_u64().unwrap()));
+                            true
+                        }
+                        other => commands(other, deadlines),
+                    };
+                }
+                changed
+            }
+            Value::Array(items) => {
+                let mut changed = false;
+                for item in items {
+                    changed |= commands(item, deadlines);
+                }
+                changed
+            }
+            _ => false,
+        }
+    }
+    match path.file_name().and_then(|name| name.to_str()) {
+        // Rewritten only when needed: a declaration's bytes can be part of a fingerprint.
+        Some("artifactize.json") => {
+            let mut declaration: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+            if commands(&mut declaration, deadlines) {
+                fs::write(path, serde_json::to_string_pretty(&declaration).unwrap()).unwrap();
+            }
+        }
+        Some("check.sh") => {
+            let script = fs::read_to_string(path).unwrap();
+            let script = script.replace(r#"test "$PWD" = "#, r#"test "$PWD" -ef "#);
+            fs::write(path, script).unwrap();
+        }
+        _ => {}
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Request {

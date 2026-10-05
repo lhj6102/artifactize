@@ -8,7 +8,10 @@ use artifactize::{
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use support::os::bin;
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 fn cli(state: &Path, args: &[&str]) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
@@ -36,7 +39,7 @@ fn write_repo(repo: &Path, profile: Value) {
     .unwrap();
     fs::write(
         repo.join("artifactize.json"),
-        json!({"name":"app","fingerprint":{"script":{"command":"cat","args":["fingerprint"]}},
+        json!({"name":"app","fingerprint":{"script":{"command":bin("cat"),"args":["fingerprint"]}},
             "evals":[{"id":"check","title":"Check","profile":profile,"payload":{"instruction":"Review."},
                 "passSchema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false}}]})
         .to_string(),
@@ -62,7 +65,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     let repo = root.path().join("repo");
     write_repo(
         &repo,
-        json!({"kind":"runtime","command":"/bin/sh","args":["check.sh"]}),
+        json!({"kind":"runtime","command":bin("/bin/sh"),"args":["check.sh"]}),
     );
     let producer_state = root.path().join("producer");
     let produced = verify(&repo, &producer_state).await;

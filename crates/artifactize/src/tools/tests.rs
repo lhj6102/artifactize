@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    os::unix::fs::{PermissionsExt, symlink},
-    path::Path,
-};
+use std::{fs, path::Path};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -10,6 +6,7 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::config::{parse_declaration, read_workspace_config};
+use crate::test_os::{bin, make_executable, symlink_dir};
 
 struct Fixture {
     directory: TempDir,
@@ -24,6 +21,8 @@ impl Fixture {
         let output = directory.path().join("output");
         fs::create_dir_all(&repo).unwrap();
         fs::create_dir_all(&output).unwrap();
+        // The paths tools see, which on Windows are long and without `\\?\`.
+        let repo = crate::platform::canonicalize(&repo).unwrap();
         fs::write(output.join("retained"), "caller-owned").unwrap();
         write_artifact(&repo, "a", json!({"inspect":tool}), "Review a.");
         Self {
@@ -34,6 +33,12 @@ impl Fixture {
     }
 
     fn script(&self, code: &str) {
+        // Python writes pipes in the ANSI code page on Windows; the tools here write UTF-8.
+        let code = if cfg!(windows) {
+            format!("import sys\nsys.stdout.reconfigure(encoding='utf-8')\n{code}")
+        } else {
+            code.to_owned()
+        };
         fs::write(self.repo.join("tool.py"), code).unwrap();
     }
 
@@ -179,6 +184,8 @@ assert os.environ['HOME'] != os.environ['TMPDIR']
 assert context['tmpDir'] == os.environ['TMPDIR']
 assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR']
 allowed = {'PATH','LANG','HOME','TMP','TEMP','TMPDIR','XDG_CACHE_HOME','ARTIFACTIZE_WORKSPACE_DIR','ARTIFACTIZE_OUTPUT_DIR','ARTIFACTIZE_TMP_DIR','LC_CTYPE'}
+if os.name == 'nt':
+    allowed |= {'USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','COMSPEC','PATHEXT'}
 assert set(os.environ) <= allowed
 print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':context}]}))
 "#);
@@ -212,7 +219,9 @@ async fn json_success_authored_error_and_credential_safe_failures() {
         text(&fixture.call(json!({})).await),
         "Agent tool execution failed."
     );
-    fixture.script("import os, signal\nos.kill(os.getpid(), signal.SIGKILL)");
+    fixture.script(
+        "import os, signal\nos.kill(os.getpid(), getattr(signal, 'SIGKILL', signal.SIGTERM))",
+    );
     assert_eq!(
         text(&fixture.call(json!({})).await),
         "Agent tool execution failed."
@@ -305,15 +314,27 @@ print(json.dumps({{'content':[
         );
     }
     fs::write(fixture.repo.join("source"), &image::tests::fixtures()[0].1).unwrap();
+    // Windows symlinks need a privilege; junctions, which redirect the same way, do not.
+    let (file_link, directory_link) = if cfg!(windows) {
+        (
+            "path = 'link'; _winapi.CreateJunction(os.getcwd(), os.path.join(root, path))",
+            "path = 'linkdir/source'; _winapi.CreateJunction(os.getcwd(), os.path.join(root, 'linkdir'))",
+        )
+    } else {
+        (
+            "path = 'link'; os.symlink(os.path.abspath('source'), os.path.join(root, path))",
+            "path = 'linkdir/source'; os.symlink(os.getcwd(), os.path.join(root, 'linkdir'))",
+        )
+    };
     for setup in [
         "path = request['context']['artifactPath'] + '/source'",
         "path = '../tmp/image'; shutil.copy('source', os.path.join(root, path))",
-        "path = 'link'; os.symlink(os.path.abspath('source'), os.path.join(root, path))",
-        "path = 'linkdir/source'; os.symlink(os.getcwd(), os.path.join(root, 'linkdir'))",
+        file_link,
+        directory_link,
         "path = 'image'; open(os.path.join(root,path), 'wb').write(b'not a PNG')",
         "path = 'image'; open(os.path.join(root,path), 'wb').truncate(4*1024*1024+1)",
     ] {
-        fixture.script(&format!("import json, os, shutil, sys\nrequest = json.load(sys.stdin)\nroot = request['context']['outputDir']\n{setup}\nprint(json.dumps({{'content':[{{'type':'image','path':path,'mimeType':'image/png'}}]}}))"));
+        fixture.script(&format!("import json, os, shutil, sys\nif os.name == 'nt': import _winapi\nrequest = json.load(sys.stdin)\nroot = request['context']['outputDir']\n{setup}\nprint(json.dumps({{'content':[{{'type':'image','path':path,'mimeType':'image/png'}}]}}))"));
         let result = fixture.call(json!({})).await;
         assert!(result.is_error, "{setup}");
         assert_eq!(text(&result), "Agent tool returned invalid output.");
@@ -393,7 +414,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
     let fixture = Fixture::new(tool.clone());
     let script = fixture.repo.join("unique-artifactize-tool-not-on-path");
     fs::write(&script, "#!/bin/sh\nprintf 'owner executable'\n").unwrap();
-    fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+    make_executable(&script);
     assert!(fixture.call(json!({})).await.is_error);
     tool["command"] = json!("./unique-artifactize-tool-not-on-path");
     write_artifact(
@@ -403,8 +424,14 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
         "Review.",
     );
     assert_eq!(text(&fixture.call(json!({})).await), "owner executable");
-    tool["command"] = json!("printf");
-    tool["args"] = json!(["%s", "from PATH"]);
+    // Windows has no printf on every PATH; python3 is a test prerequisite anyway.
+    if cfg!(windows) {
+        tool["command"] = json!("python3");
+        tool["args"] = json!(["-c", "import sys; sys.stdout.write('from PATH')"]);
+    } else {
+        tool["command"] = json!("printf");
+        tool["args"] = json!(["%s", "from PATH"]);
+    }
     write_artifact(
         &fixture.repo,
         "a",
@@ -412,7 +439,8 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
         "Review.",
     );
     assert_eq!(text(&fixture.call(json!({})).await), "from PATH");
-    tool["command"] = json!("/usr/bin/printf");
+    tool["command"] = json!(bin("/usr/bin/printf"));
+    tool["args"] = json!(["%s", "from PATH"]);
     write_artifact(&fixture.repo, "a", json!({"inspect":tool}), "Review.");
     assert_eq!(text(&fixture.call(json!({})).await), "from PATH");
 }
@@ -421,7 +449,10 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
 async fn path_preparation_rejects_scope_and_workspace_escapes() {
     let fixture = Fixture::new(command());
     fixture.script("open('spawned','w').write('yes')\n");
-    symlink(fixture.directory.path(), fixture.repo.join("link")).unwrap();
+    if symlink_dir(fixture.directory.path(), fixture.repo.join("link")).is_none() {
+        #[cfg(windows)]
+        crate::test_os::junction(fixture.directory.path(), &fixture.repo.join("link"));
+    }
     for (key, value) in [
         ("command", json!("../outside")),
         ("command", json!("link/outside")),
@@ -624,13 +655,19 @@ async fn dropping_call_cleans_process_before_removing_directories() {
     ));
     tokio::select! {
         result = &mut call => panic!("unexpected completion: {result:?}"),
+        // The file exists before its PID is written; wait for the PID itself.
         result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while !fixture.repo.join("started").exists() {
+            while fs::read_to_string(fixture.repo.join("started"))
+                .map_or(true, |pid| pid.parse::<u32>().is_err())
+            {
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             }
         }) => { result.unwrap(); },
     }
-    let pid = fs::read_to_string(fixture.repo.join("started")).unwrap();
+    let pid: u32 = fs::read_to_string(fixture.repo.join("started"))
+        .unwrap()
+        .parse()
+        .unwrap();
     drop(call);
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while fs::read_dir(&fixture.output).unwrap().count() != 1 {
@@ -639,7 +676,10 @@ async fn dropping_call_cleans_process_before_removing_directories() {
     })
     .await
     .unwrap();
+    #[cfg(unix)]
     assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    #[cfg(windows)]
+    assert!(!crate::test_os::running(pid));
 }
 
 #[test]

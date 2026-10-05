@@ -1,6 +1,5 @@
 use std::{
     fs,
-    os::unix::fs::symlink,
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
     thread,
@@ -9,7 +8,10 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use support::os::bin;
 use tempfile::TempDir;
+
+mod support;
 
 struct Fixture {
     _root: TempDir,
@@ -21,19 +23,22 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
-        let repo = root.path().join("repo");
+        // The long, plain path artifactize reports, whatever form TEMP takes.
+        let base = support::os::canonical(root.path());
+        let repo = base.join("repo");
         fs::create_dir(&repo).unwrap();
         Self {
             repo,
-            state: root.path().join("receipts"),
-            home: root.path().join("home"),
+            state: base.join("receipts"),
+            home: base.join("home"),
             _root: root,
         }
     }
 
     fn command(&self) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
-        command
+        // Its own process group, so Ctrl-Break reaches it alone on Windows.
+        support::os::new_group(&mut command)
             .env("ARTIFACTIZE_STATE_HOME", &self.home)
             .env("ARTIFACTIZE_TEST_SECRET", "must-not-leak")
             // Agent evals here must fail before any provider call.
@@ -48,10 +53,7 @@ impl Fixture {
 
     fn runtime_fixture() -> Self {
         let fixture = Self::new();
-        copy_directory(
-            &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runtime"),
-            &fixture.repo,
-        );
+        support::copy_fixture("runtime", &fixture.repo);
         fixture
     }
 
@@ -74,7 +76,7 @@ impl Fixture {
 
     fn runtime(&self, program: &str, args: &[&str]) {
         fs::write(self.repo.join("artifactize.json"), json!({
-            "name":"test", "evals":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":program,"args":args}, "payload":{"instruction":"Check runtime."}}]
+            "name":"test", "evals":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":bin(program),"args":args}, "payload":{"instruction":"Check runtime."}}]
         }).to_string()).unwrap();
     }
 }
@@ -89,26 +91,10 @@ fn json_output(output: &Output) -> Value {
     })
 }
 
-fn copy_directory(source: &Path, target: &Path) {
-    fs::create_dir_all(target).unwrap();
-    for entry in fs::read_dir(source).unwrap() {
-        let entry = entry.unwrap();
-        let destination = target.join(entry.file_name());
-        if entry.file_type().unwrap().is_dir() {
-            copy_directory(&entry.path(), &destination);
-        } else {
-            fs::copy(entry.path(), destination).unwrap();
-        }
-    }
-}
-
 #[test]
 fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     let fixture = Fixture::new();
-    copy_directory(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runtime"),
-        &fixture.repo,
-    );
+    support::copy_fixture("runtime", &fixture.repo);
     let output = fixture
         .command()
         .args(["verify", "--all", "--json"])
@@ -160,7 +146,8 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
         green["argv"][2],
         fixture
             .repo
-            .join("input/data.txt")
+            .join("input")
+            .join("data.txt")
             .to_string_lossy()
             .as_ref()
     );
@@ -208,10 +195,7 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
 #[test]
 fn foreground_exit_codes_selection_and_missing_evidence() {
     let fixture = Fixture::new();
-    copy_directory(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runtime"),
-        &fixture.repo,
-    );
+    support::copy_fixture("runtime", &fixture.repo);
     for (selection, code, status) in [
         ("green", 0, "GREEN"),
         ("red", 1, "RED"),
@@ -269,7 +253,10 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     let fixture = Fixture::new();
     fixture.runtime("/bin/echo", &["$HOME", "a; echo injected", "a b"]);
     let alias = fixture._root.path().join("alias");
-    symlink(&fixture.repo, &alias).unwrap();
+    #[cfg(unix)]
+    support::os::symlink_dir(&fixture.repo, &alias).unwrap();
+    #[cfg(windows)]
+    support::os::junction(&fixture.repo, &alias);
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .arg("--repo")
@@ -297,6 +284,8 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     assert_eq!(json_output(&output), first);
     for (program, args, code) in [
         ("/artifactize/missing-command", vec![], "SPAWN_FAILED"),
+        // Windows has no signals; its exit statuses are all verdicts.
+        #[cfg(unix)]
         ("/bin/sh", vec!["-c", "kill -TERM $$"], "ABNORMAL_EXIT"),
         ("/bin/cat", vec!["{test}/missing"], "PREPARATION_FAILED"),
     ] {
@@ -348,7 +337,7 @@ fn human_waiting_does_not_prevent_runtime_execution() {
 }
 
 fn wait_for(mut child: Child) -> Output {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     while child.try_wait().unwrap().is_none() {
         if Instant::now() > deadline {
             child.kill().unwrap();
@@ -379,24 +368,22 @@ fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() 
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
     while !marker.exists() {
         assert!(Instant::now() < deadline, "runtime did not start");
         thread::sleep(Duration::from_millis(10));
     }
     let database = Connection::open(fixture.state.join(artifactize::store::DATABASE)).unwrap();
-    database.busy_timeout(Duration::from_millis(100)).unwrap();
+    database
+        .busy_timeout(support::os::patience(Duration::from_millis(100)))
+        .unwrap();
     database.execute_batch("BEGIN IMMEDIATE; COMMIT;").unwrap();
     let saved: String = database
         .query_row("SELECT data FROM requests", [], |r| r.get(0))
         .unwrap();
     let saved: Value = serde_json::from_str(&saved).unwrap();
     assert!(saved["child"]["pid"].as_u64().unwrap() > 0);
-    let status = Command::new("/bin/kill")
-        .args(["-INT", &child.id().to_string()])
-        .status()
-        .unwrap();
-    assert!(status.success());
+    support::os::interrupt(child.id());
     let output = wait_for(child);
     assert_eq!(output.status.code(), Some(2));
     let run = json_output(&output);
@@ -410,12 +397,18 @@ fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() 
     assert!(show.status.success());
     assert!(json_output(&show)["requests"][0]["result"].is_null());
     let grandchild = fs::read_to_string(marker).unwrap();
+    #[cfg(unix)]
     if let Ok(stat) = fs::read_to_string(format!("/proc/{}/stat", grandchild.trim())) {
         assert!(
             stat.split_once(") ").unwrap().1.starts_with('Z'),
             "descendant still running: {stat}"
         );
     }
+    #[cfg(windows)]
+    assert!(
+        !support::os::running(grandchild.trim().parse().unwrap()),
+        "descendant still running"
+    );
 }
 
 #[test]
@@ -457,14 +450,11 @@ fn selection_errors_fail_before_discovery_or_receipts() {
 #[test]
 fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_patching_sources() {
     let fixture = Fixture::new();
-    copy_directory(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runtime"),
-        &fixture.repo,
-    );
+    support::copy_fixture("runtime", &fixture.repo);
     let source = fixture.repo.join("review/artifactize.json");
     let mut declaration: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
     declaration["evals"][0]["profileVariants"] = json!({
-        "brief": {"kind":"runtime","command":"/bin/echo","args":["variant", "{input}/data.txt"],"timeoutMs":1000}
+        "brief": {"kind":"runtime","command":bin("/bin/echo"),"args":["variant", "{input}/data.txt"],"timeoutMs":support::os::slow(1000)}
     });
     fs::write(&source, declaration.to_string()).unwrap();
     let original = fs::read(&source).unwrap();
@@ -486,12 +476,12 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
         run["selection"],
         json!({"kind":"eval","evalId":"green/check"})
     );
-    assert_eq!(run["requests"][0]["profile"]["command"], "/bin/echo");
+    assert_eq!(run["requests"][0]["profile"]["command"], bin("/bin/echo"));
     assert_eq!(
         run["requests"][0]["result"]["stdout"],
         format!(
             "variant {}\n",
-            fixture.repo.join("input/data.txt").display()
+            fixture.repo.join("input").join("data.txt").display()
         )
     );
     assert_eq!(fs::read(&source).unwrap(), original);
@@ -560,10 +550,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
 #[test]
 fn invalid_selections_and_profiles_never_create_a_run() {
     let fixture = Fixture::new();
-    copy_directory(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runtime"),
-        &fixture.repo,
-    );
+    support::copy_fixture("runtime", &fixture.repo);
     for args in [
         vec!["verify", "--eval", "missing"],
         vec!["verify", "--evals", "green/check,"],
@@ -789,7 +776,7 @@ fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
         let path = fixture.repo.join(folder).join("artifactize.json");
         let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         declaration["evals"][0]["profileVariants"] =
-            json!({"pass":{"kind":"runtime","command":"/bin/echo","args":["{input}"]}});
+            json!({"pass":{"kind":"runtime","command":bin("/bin/echo"),"args":["{input}"]}});
         fs::write(path, declaration.to_string()).unwrap();
     }
     let recursive = fixture.verify(&["blocked", "--recursive", "--profile", "pass"], 0);
@@ -799,7 +786,7 @@ fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|r| r["profile"]["command"] == "/bin/echo")
+            .all(|r| r["profile"]["command"] == bin("/bin/echo"))
     );
     assert_eq!(
         recursive["validation"]["artifacts"]
@@ -823,22 +810,19 @@ fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
 #[test]
 fn recursive_family_selection_includes_external_evals_without_forcing_them() {
     let fixture = Fixture::new();
-    copy_directory(
-        &Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/families"),
-        &fixture.repo,
-    );
+    support::copy_fixture("families", &fixture.repo);
     fs::create_dir(fixture.repo.join("external")).unwrap();
     fs::write(fixture.repo.join("external/artifactize.json"), json!({
         "name":"external", "evals":[{"id":"check","title":"External",
-            "profile":{"kind":"runtime","command":"/bin/true","args":[]},
-            "profileVariants":{"brief":{"kind":"runtime","command":"/bin/echo","args":["external variant"]}},
+            "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
+            "profileVariants":{"brief":{"kind":"runtime","command":bin("/bin/echo"),"args":["external variant"]}},
             "payload":{"instruction":"Check."}}]
     }).to_string()).unwrap();
     let path = fixture.repo.join("scenarios/artifactize.json");
     let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     declaration["mounts"] = json!({"external":"external"});
     declaration["evals"][0]["profileVariants"] =
-        json!({"brief":{"kind":"runtime","command":"/bin/echo","args":["family variant"]}});
+        json!({"brief":{"kind":"runtime","command":bin("/bin/echo"),"args":["family variant"]}});
     fs::write(path, declaration.to_string()).unwrap();
 
     let individual = fixture.verify(&["scenarios"], 4);
@@ -882,7 +866,7 @@ fn recursive_family_selection_includes_external_evals_without_forcing_them() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|r| r["status"] == "GREEN" && r["profile"]["command"] == "/bin/echo")
+            .all(|r| r["status"] == "GREEN" && r["profile"]["command"] == bin("/bin/echo"))
     );
     assert!(!fixture.repo.join("scenarios/fingerprint-ran").exists());
 }

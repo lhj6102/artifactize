@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    os::unix::{fs::symlink, net::UnixListener},
-    path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -10,6 +6,7 @@ use tempfile::TempDir;
 use super::*;
 use crate::{
     config::read_workspace_config,
+    test_os::{symlink_dir, symlink_file},
     tools::{Content, Registry, ToolResult},
 };
 
@@ -256,25 +253,41 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     let fixture = Fixture::new();
     fixture.write("a/data/file", "visible");
     fixture.write("outside/secret", "secret");
-    symlink("data/file", fixture.root.join("a/link")).unwrap();
-    symlink("data", fixture.root.join("a/linkdir")).unwrap();
-    symlink(fixture.directory.path(), fixture.root.join("a/escape")).unwrap();
-    let _socket = UnixListener::bind(fixture.root.join("a/socket")).unwrap();
-    let fifo = std::ffi::CString::new(fixture.root.join("a/fifo").to_str().unwrap()).unwrap();
-    assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
-    for path in [
+    let mut paths = vec![
         "../outside/secret",
         "/etc/passwd",
+        "C:/Windows/win.ini",
         "data/../artifactize.json",
         "data//file",
         "data/./file",
         "data\\file",
-        "link",
-        "linkdir/file",
-        "escape",
-        "socket",
-        "fifo",
-    ] {
+    ];
+    let a = fixture.root.join("a");
+    if symlink_file(PathBuf::from("data").join("file"), a.join("link")).is_some() {
+        paths.push("link");
+    }
+    if symlink_dir("data", a.join("linkdir")).is_some() {
+        paths.push("linkdir/file");
+    }
+    if symlink_dir(fixture.directory.path(), a.join("escape")).is_some() {
+        paths.push("escape");
+    }
+    #[cfg(unix)]
+    {
+        // Sockets and FIFOs: entries that are neither files nor directories.
+        let _socket = std::os::unix::net::UnixListener::bind(a.join("socket")).unwrap();
+        let fifo = std::ffi::CString::new(a.join("fifo").to_str().unwrap()).unwrap();
+        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        paths.extend(["socket", "fifo"]);
+    }
+    // Junctions redirect like directory symlinks and need no privilege.
+    #[cfg(windows)]
+    {
+        crate::test_os::junction(&a.join("data"), &a.join("joined"));
+        crate::test_os::junction(fixture.directory.path(), &a.join("escape-junction"));
+        paths.extend(["joined", "joined/file", "escape-junction"]);
+    }
+    for path in paths {
         for tool in ["read_a", "list_a", "glob_a", "grep_a", "view_image_a"] {
             let mut args = json!({"path":path});
             if tool == "glob_a" || tool == "grep_a" {
@@ -294,18 +307,23 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     let config = read_workspace_config(&fixture.root).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     fs::rename(fixture.root.join("a"), fixture.root.join("old-a")).unwrap();
-    symlink("old-a", fixture.root.join("a")).unwrap();
-    assert!(
-        registry
-            .call(
-                "read_a",
-                json!({"path":"data/file"}),
-                &fixture.root,
-                CancellationToken::new()
-            )
-            .await
-            .is_error
-    );
+    let read = || {
+        registry.call(
+            "read_a",
+            json!({"path":"data/file"}),
+            &fixture.root,
+            CancellationToken::new(),
+        )
+    };
+    if symlink_dir("old-a", fixture.root.join("a")).is_some() {
+        assert!(read().await.is_error);
+    }
+    #[cfg(windows)]
+    {
+        let _ = fs::remove_dir(fixture.root.join("a"));
+        crate::test_os::junction(&fixture.root.join("old-a"), &fixture.root.join("a"));
+        assert!(read().await.is_error);
+    }
 }
 
 #[tokio::test]
@@ -460,7 +478,12 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
     fixture.write("a/search/.hidden.txt", "alpha\n");
     fixture.write("a/search/binary.txt", b"alpha\n\0");
     fixture.write("a/search/invalid.txt", b"alpha\n\xff");
-    symlink("a.txt", fixture.root.join("a/search/link.txt")).unwrap();
+    symlink_file("a.txt", fixture.root.join("a/search/link.txt"));
+    #[cfg(windows)]
+    crate::test_os::junction(
+        &fixture.root.join("a/search/sub"),
+        &fixture.root.join("a/search/joined.txt"),
+    );
     let data = fixture
         .data("glob_a", json!({"path":"search","pattern":"*.txt"}))
         .await;

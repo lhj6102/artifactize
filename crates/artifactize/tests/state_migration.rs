@@ -7,6 +7,8 @@ use std::{fs, path::Path, process::Command};
 use rusqlite::Connection;
 use serde_json::{Value, json};
 
+mod support;
+
 /// Recorded by the version 1 binary: app (script key) and notes (content key) are GREEN and
 /// cached; doc (script key, Human) is WAITING_HUMAN.
 const VERSION_ONE: &str = include_str!("fixtures/state-v1.sql");
@@ -63,6 +65,8 @@ fn doctor(root: &Path) -> Value {
 
 fn json(root: &Path, args: &[&str], code: i32) -> Value {
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        // The recorded declarations run `true` and `cat` from PATH.
+        .env("PATH", support::os::path())
         .env("USER", "alice")
         .arg("--repo")
         .arg(root.join("repo"))
@@ -93,7 +97,7 @@ fn names(db: &Connection, query: &str) -> Vec<String> {
 
 fn upgrades_keeps_history_and_reviews_again_once(recorded: Recorded) {
     let temp = tempfile::tempdir().unwrap();
-    let root = temp.path().canonicalize().unwrap();
+    let root = support::os::canonical(temp.path());
     let runtime = json!({"kind":"runtime","command":"true","args":[]});
     let (app_key, app) = recorded.app;
     let (notes_key, notes) = recorded.notes;
@@ -123,7 +127,7 @@ fn upgrades_keeps_history_and_reviews_again_once(recorded: Recorded) {
     let database = root.join("state/state.sqlite");
     Connection::open(&database)
         .unwrap()
-        .execute_batch(&recorded.sql.replace("@ROOT@", root.to_str().unwrap()))
+        .execute_batch(&support::recorded_state(recorded.sql, &root))
         .unwrap();
 
     // doctor reports the older schema without changing the file.

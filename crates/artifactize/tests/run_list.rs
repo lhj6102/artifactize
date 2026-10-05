@@ -1,12 +1,14 @@
 use std::{
     collections::BTreeMap,
     fs,
-    os::unix::fs::symlink,
     path::Path,
     process::{Command, Output},
 };
 
 use serde_json::{Value, json};
+use support::os::bin;
+
+mod support;
 
 fn command(repo: &Path, state: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
@@ -79,8 +81,8 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         }},
         "evals":[{
             "id":"review","title":{"$param":"/label"},
-            "profile":{"kind":"runtime","command":"/bin/false","args":[]},
-            "profileVariants":{"brief":{"kind":"runtime","command":"/bin/echo","args":["saved result"]}},
+            "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+            "profileVariants":{"brief":{"kind":"runtime","command":bin("/bin/echo"),"args":["saved result"]}},
             "payload":{"instruction":"Inspect {input}."},
             "passSchema":{"type":"object"}
         }]
@@ -88,8 +90,8 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     fs::write(second.join("artifactize.json"), json!({
         "name":"other",
         "evals":[
-            {"id":"pass","title":"Pass","profile":{"kind":"runtime","command":"/bin/true","args":[]},"payload":{"instruction":"Pass."}},
-            {"id":"fail","title":"Fail","profile":{"kind":"runtime","command":"/bin/false","args":[]},"payload":{"instruction":"Fail."}},
+            {"id":"pass","title":"Pass","profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},"payload":{"instruction":"Pass."}},
+            {"id":"fail","title":"Fail","profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},"payload":{"instruction":"Fail."}},
             {"id":"human","title":"Human","profile":{"kind":"human"},"payload":{"instruction":"Inspect."}}
         ]
     }).to_string()).unwrap();
@@ -146,7 +148,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     assert_eq!(definitions["evals"][0]["declaration"]["title"], "Checkout");
     assert_eq!(
         definitions["evals"][0]["declaration"]["profile"]["command"],
-        "/bin/echo"
+        bin("/bin/echo")
     );
     assert_eq!(
         definitions["evals"][0]["declaration"]["passSchema"],
@@ -209,7 +211,11 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         json!([all[0], all[2]])
     );
     let alias = root.path().join("alias");
-    symlink(&second, &alias).unwrap();
+    #[cfg(unix)]
+    support::os::symlink_dir(&second, &alias).unwrap();
+    // A junction needs no privilege and aliases the folder just the same.
+    #[cfg(windows)]
+    support::os::junction(&second, &alias);
     assert_eq!(query(&alias, &state, &["run", "list"], 0), json!([all[1]]));
     let current = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .current_dir(&second)

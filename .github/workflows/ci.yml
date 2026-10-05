@@ -27,5 +27,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - run: cargo clippy --locked -- -D warnings
-      - run: cargo build --locked
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      # Tests build their Windows stand-ins for /bin/sh with this rustc, and run python3.
+      - run: cargo test --locked

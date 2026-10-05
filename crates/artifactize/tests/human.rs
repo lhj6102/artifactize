@@ -12,7 +12,10 @@ use artifactize::{
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
+use support::os::bin;
 use tokio_util::sync::CancellationToken;
+
+mod support;
 
 struct Fixture {
     _root: tempfile::TempDir,
@@ -81,8 +84,8 @@ fn write_human(path: &Path, fingerprint: bool) {
     fs::write(path.join("fingerprint"), "human-v1\n").unwrap();
     let mut declaration = json!({
         "name":"review", "views":{"humanTools":{
-            "inspect":{"description":"Inspect","kind":"output","command":"cat","args":["fingerprint"]},
-            "fail":{"description":"Fail","kind":"output","command":"false","args":[]}
+            "inspect":{"description":"Inspect","kind":"output","command":bin("cat"),"args":["fingerprint"]},
+            "fail":{"description":"Fail","kind":"output","command":bin("false"),"args":[]}
         },"agentTools":{"read":{"builtin":"read"}}},
         "evals":[{"id":"check","title":"Human check","profile":{"kind":"human"},"payload":{"instruction":"Review."},
             "passSchema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
@@ -90,7 +93,8 @@ fn write_human(path: &Path, fingerprint: bool) {
         }]
     });
     if fingerprint {
-        declaration["fingerprint"] = json!({"script":{"command":"cat","args":["fingerprint"]}});
+        declaration["fingerprint"] =
+            json!({"script":{"command":bin("cat"),"args":["fingerprint"]}});
     }
     fs::write(path.join("artifactize.json"), declaration.to_string()).unwrap();
 }
