@@ -477,3 +477,121 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
         }
     }
 }
+
+/// Eight Artifacts whose fingerprint scripts note how many of them run at once.
+fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
+    let markers = fixture.root.path().join("markers");
+    fs::create_dir(&markers).unwrap();
+    // Each script marks itself running, counts the running markers, and stays up for a moment.
+    let script = r#"touch "$2/running.$1"; ls "$2" | grep -c '^running\.' >> "$2/counts.$1"; sleep 0.3; rm "$2/running.$1"; echo "$1-v1""#;
+    for index in 0..8 {
+        let name = format!("part{index}");
+        fixture.write(
+            &format!("{name}/artifactize.json"),
+            json!({"name":name,
+                "fingerprint":{"script":{"command":"/bin/sh","args":["-c",script,"sh",name,markers]}},
+                "evals":[eval("check", "exit 0")]}),
+        );
+    }
+    markers
+}
+
+/// The most fingerprint scripts that ran at once, then reset the notes.
+fn most_at_once(markers: &Path) -> usize {
+    let mut most = 0;
+    for entry in fs::read_dir(markers).unwrap() {
+        let path = entry.unwrap().path();
+        let counts = fs::read_to_string(&path).unwrap();
+        most = counts
+            .lines()
+            .map(|count| count.trim().parse::<usize>().unwrap())
+            .chain([most])
+            .max()
+            .unwrap();
+        fs::remove_file(path).unwrap();
+    }
+    most
+}
+
+#[test]
+fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
+    let fixture = Fixture::new();
+    let markers = concurrent_scripts(&fixture);
+    let status = |jobs: &str| {
+        let output = fixture
+            .command()
+            .args(["status", "--json", "--fingerprint-jobs", jobs])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let status: Value = serde_json::from_slice(&output.stdout).unwrap();
+        (status, most_at_once(&markers))
+    };
+    let (one, most) = status("1");
+    assert_eq!(most, 1);
+    let (three, most) = status("3");
+    assert!((2..=3).contains(&most), "{most}");
+    assert_eq!(three, one);
+
+    // verify bounds preparation and the end-of-review rechecks alike, and records the bound.
+    let run = fixture.verify(&["--all", "--fingerprint-jobs", "3"], 0);
+    assert_eq!(run["fingerprintJobs"], 3);
+    assert!(most_at_once(&markers) <= 3);
+    let default = fixture.verify(&["--all"], 0);
+    assert!(default["fingerprintJobs"].as_u64().unwrap() >= 1);
+    assert_eq!(default["executionsStarted"], 0);
+    let output = fixture
+        .command()
+        .args(["status", "--fingerprint-jobs", "0"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancelled() {
+    let fixture = Fixture::new();
+    let started = fixture.root.path().join("started");
+    for (name, script) in [
+        // Fails last, but comes first.
+        ("alpha", "sleep 0.5; echo first failure >&2; exit 3"),
+        // Would run long; it comes after alpha's failure, so it is cancelled.
+        ("beta", "sleep 30; echo beta"),
+        ("gamma", "exit 4"),
+    ] {
+        fixture.write(
+            &format!("{name}/artifactize.json"),
+            json!({"name":name,"fingerprint":fingerprint(&format!("touch {}.{name}; {script}", started.display())),
+                "evals":[eval("check", "touch executed")]}),
+        );
+    }
+    let begin = Instant::now();
+    let output = fixture
+        .command()
+        .args(["status", "--fingerprint-jobs", "4"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Fingerprint script for Artifact alpha failed"),
+        "{stderr}"
+    );
+    assert!(
+        begin.elapsed() < Duration::from_secs(10),
+        "{:?}",
+        begin.elapsed()
+    );
+    // All three started at once.
+    for name in ["alpha", "beta", "gamma"] {
+        assert!(Path::new(&format!("{}.{name}", started.display())).exists());
+    }
+    let run = fixture
+        .command()
+        .args(["verify", "--all"])
+        .output()
+        .unwrap();
+    assert_eq!(run.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&run.stderr).contains("Artifact alpha"));
+    assert!(!fixture.repo.join("executed").exists());
+}

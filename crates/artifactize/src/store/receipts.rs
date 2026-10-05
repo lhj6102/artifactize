@@ -45,6 +45,9 @@ pub struct Run {
     pub ignore_gates: bool,
     #[serde(default = "default_jobs")]
     pub jobs: usize,
+    /// Fingerprints computed at once; absent in Runs saved before 0.5.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint_jobs: Option<usize>,
     #[serde(default)]
     pub max_executions: Option<u64>,
     #[serde(default)]

@@ -218,6 +218,9 @@ pub struct PolicyArgs {
     /// Bypass execution gates, never final validation obligations.
     #[arg(long)]
     ignore_gates: bool,
+    /// Fingerprints to compute at once (default: the available CPUs).
+    #[arg(long, value_name = "N", value_parser = clap::value_parser!(u32).range(1..))]
+    fingerprint_jobs: Option<u32>,
 }
 
 impl PolicyArgs {
@@ -227,6 +230,7 @@ impl PolicyArgs {
             recursive: self.recursive,
             force: self.force,
             ignore_gates: self.ignore_gates.then_some(true),
+            fingerprint_jobs: self.fingerprint_jobs.map(|jobs| jobs as usize),
             ..Default::default()
         }
     }

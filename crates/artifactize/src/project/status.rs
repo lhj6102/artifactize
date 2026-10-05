@@ -135,6 +135,7 @@ pub async fn status(
         &config,
         required.iter().copied(),
         &state,
+        &super::fingerprint_parallelism(options)?,
         cancellation.clone(),
     )
     .await?;

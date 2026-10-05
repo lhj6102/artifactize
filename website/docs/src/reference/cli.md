@@ -15,8 +15,8 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 
 | Command | Flags | Output | Exit |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--jobs N` (4), `--max-executions N`, `--wait`, `--timeout-ms MS` (600000, needs `--wait`) | text or JSON | outcome |
-| `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`; default `--all` | text or JSON | 0 satisfied, 1 not |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--jobs N` (4), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait`, `--timeout-ms MS` (600000, needs `--wait`) | text or JSON | outcome |
+| `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
 | `config check` | | text or JSON | 0 |
 | `config graph [ARTIFACT\|FAMILY]` | | text or JSON | 0 |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | text or JSON | 0 |
@@ -75,9 +75,15 @@ executions; a forced GREEN or RED is added as the key's newest record, and
 published to a configured review store, which later runs reuse. Dependencies may
 still reuse their own local records, but a forced Run reads nothing from the store.
 
+`--fingerprint-jobs N` (on `verify` and `status`, at least 1) bounds how many
+fingerprints are computed at once; the default is the number of CPUs available to
+the process. In `verify` the one bound covers preparation and the end-of-review
+rechecks of all concurrent reviews, independently of `--jobs`, which bounds evals.
+Results and output do not depend on the bound or on completion order.
+
 `verify --max-executions N` sets a nonnegative, shared per-Run executor-start
 budget (unlimited when omitted); it is not an Artifact declaration field.
-The Run records `jobs`, `maxExecutions` and `executionsStarted`. A prepared
+The Run records `jobs`, `fingerprintJobs`, `maxExecutions` and `executionsStarted`. A prepared
 Runtime or Agent invocation consumes one start, even when it fails to spawn or
 later returns ERROR. Human waiting, claim and tool actions consume no starts. Fingerprint preparation/rechecks, cache hits, and joined waiters
 consume none. Preparation failures before invocation consume none. Zero permits

@@ -202,12 +202,14 @@ async fn recheck(
         .iter()
         .find(|eval| eval.id == request.eval_id)
         .ok_or("Recorded Human eval no longer exists.")?;
-    let (code, error) = match cache::recheck(config, eval, output, cancellation.clone()).await {
-        Ok(Some(actual)) if &actual == expected => return Ok(()),
-        Ok(_) => ("INPUT_CHANGED", "Fingerprint changed during review.".into()),
-        Err(error) if cancellation.is_cancelled() => return Err(error),
-        Err(error) => ("FINGERPRINT_RECHECK_FAILED", error),
-    };
+    let parallelism = cache::Parallelism::new(cache::Parallelism::available());
+    let (code, error) =
+        match cache::recheck(config, eval, output, &parallelism, cancellation.clone()).await {
+            Ok(Some(actual)) if &actual == expected => return Ok(()),
+            Ok(_) => ("INPUT_CHANGED", "Fingerprint changed during review.".into()),
+            Err(error) if cancellation.is_cancelled() => return Err(error),
+            Err(error) => ("FINGERPRINT_RECHECK_FAILED", error),
+        };
     request.status = "ERROR".into();
     request.error = Some(error.clone());
     request.error_code = Some(code.into());

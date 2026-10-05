@@ -33,8 +33,14 @@ impl Repo {
 
     async fn fingerprint(&self, id: &str) -> Result<PreparedFingerprint, String> {
         let config = read_workspace_config(self.root.path()).map_err(|e| e.to_string())?;
-        let mut fingerprints =
-            prepare(&config, [id], self.output.path(), CancellationToken::new()).await?;
+        let mut fingerprints = prepare(
+            &config,
+            [id],
+            self.output.path(),
+            &Parallelism::new(2),
+            CancellationToken::new(),
+        )
+        .await?;
         Ok(fingerprints.remove(id).unwrap())
     }
 

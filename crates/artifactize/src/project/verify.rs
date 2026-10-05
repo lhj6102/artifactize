@@ -17,6 +17,9 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct VerifyOptions {
     pub jobs: usize,
+    /// Fingerprints computed at once, in preparation and end-of-review rechecks; `None` uses
+    /// the available CPUs.
+    pub fingerprint_jobs: Option<usize>,
     pub max_executions: Option<u64>,
     /// Keep this Run alive for Human submissions; timeout never cancels a review.
     pub wait_timeout_ms: Option<u32>,
@@ -32,6 +35,7 @@ impl Default for VerifyOptions {
     fn default() -> Self {
         Self {
             jobs: 4,
+            fingerprint_jobs: None,
             max_executions: None,
             wait_timeout_ms: None,
             profile: None,
@@ -53,6 +57,7 @@ pub async fn verify(
     if options.jobs == 0 {
         return Err("jobs must be at least 1.".into());
     }
+    let parallelism = super::fingerprint_parallelism(options)?;
     if options
         .wait_timeout_ms
         .is_some_and(|ms| ms == 0 || ms > 2_147_483_647)
@@ -93,6 +98,7 @@ pub async fn verify(
         &config,
         required.iter().copied(),
         &runs,
+        &parallelism,
         cancellation.clone(),
     )
     .await?;
@@ -144,6 +150,7 @@ pub async fn verify(
         profile: json!(options.profile),
         definitions,
         jobs: options.jobs,
+        fingerprint_jobs: Some(parallelism.limit()),
         max_executions: options.max_executions,
         executions_started: 0,
         wait_timeout_ms: options.wait_timeout_ms,
@@ -209,6 +216,7 @@ pub async fn verify(
         &graph,
         &fingerprints,
         &keys,
+        &parallelism,
         &mut run,
         &mut requests,
         &receipts,

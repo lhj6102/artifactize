@@ -44,6 +44,13 @@ recorded `fingerprints` of the key against the current dependency fingerprints.
 
 Before executing any eval, `verify` computes each declared fingerprint in the selected
 required dependency closure, including dependencies whose evals are not selected.
+Up to `--fingerprint-jobs N` fingerprints are computed at once (default: the CPUs
+available to the process), in `status` as in `verify`, where the same bound also
+covers the end-of-review rechecks. Nothing depends on completion order: values are
+keyed by Artifact, and a failure reports the first failing Artifact in name order,
+cancelling the fingerprints after it, which cannot change that report. Scripts can
+therefore run at the same time as each other, each in its own private output
+directory; a script that must run alone needs `--fingerprint-jobs 1`.
 Every eval on an Artifact receives the same literal value, also saved on its
 request and in the Run's Artifact validation. artifactize mixes nothing into a
 script's output: no repository, eval, profile, tool view, dependency or content
