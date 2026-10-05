@@ -1,4 +1,4 @@
-use std::{fs, os::unix::fs::DirBuilderExt, path::Path, time::Duration};
+use std::{path::Path, time::Duration};
 
 use base64::Engine;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
@@ -87,11 +87,7 @@ impl Store {
     /// Open or create `review-store.sqlite`, separate from the local `state.sqlite`.
     pub async fn open(state: &Path) -> Result<Self, String> {
         let state = crate::store::state_dir(Some(state))?;
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(&state)
-            .map_err(|e| e.to_string())?;
+        crate::platform::create_private_dir_all(&state).map_err(|e| e.to_string())?;
         for suffix in ["", "-wal", "-shm"] {
             let path = state.join(format!("{DATABASE}{suffix}"));
             if path

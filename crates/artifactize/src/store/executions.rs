@@ -152,7 +152,7 @@ impl Producer {
         let user = ["USER", "LOGNAME"]
             .into_iter()
             .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()));
-        let host = std::fs::read_to_string("/proc/sys/kernel/hostname").ok();
+        let host = crate::platform::host_name();
         let name = format!(
             "{}@{}",
             user.as_deref().unwrap_or("unknown"),

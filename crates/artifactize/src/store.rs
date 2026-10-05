@@ -42,14 +42,27 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
 pub const STATE_SCHEMA_VERSION: u32 = 4;
 
 #[derive(Debug, thiserror::Error)]
-#[error("cannot resolve state home: set ARTIFACTIZE_STATE_HOME, XDG_STATE_HOME, or HOME")]
+#[cfg_attr(
+    not(windows),
+    error("cannot resolve state home: set ARTIFACTIZE_STATE_HOME, XDG_STATE_HOME, or HOME")
+)]
+#[cfg_attr(
+    windows,
+    error(
+        "cannot resolve state home: set ARTIFACTIZE_STATE_HOME, XDG_STATE_HOME, LOCALAPPDATA, or HOME"
+    )
+)]
 pub struct StateHomeError;
 
 /// Resolve the default state home without creating directories; empty variables are ignored.
+/// On Windows, `%LOCALAPPDATA%\artifactize` comes after `XDG_STATE_HOME` and before `HOME`.
 pub fn state_home() -> Result<PathBuf, StateHomeError> {
+    let xdg = env::var_os("XDG_STATE_HOME").filter(|path| !path.is_empty());
+    #[cfg(windows)]
+    let xdg = xdg.or_else(|| env::var_os("LOCALAPPDATA"));
     resolve_state_home(
         env::var_os("ARTIFACTIZE_STATE_HOME").map(PathBuf::from),
-        env::var_os("XDG_STATE_HOME").map(PathBuf::from),
+        xdg.map(PathBuf::from),
         env::var_os("HOME").map(PathBuf::from),
     )
 }

@@ -2,14 +2,12 @@ use std::{
     collections::BTreeMap,
     env,
     ffi::OsString,
-    fs::{self, DirBuilder, Permissions},
     io,
-    os::unix::fs::{DirBuilderExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 
 use super::Error;
-use crate::workspace::canonical_target;
+use crate::{platform, workspace::canonical_target};
 
 pub(super) fn prepare(
     workspace: &Path,
@@ -21,23 +19,14 @@ pub(super) fn prepare(
     }
     let output_root = canonical_target(run_dir)?;
     outside_workspace(&workspace, &output_root)?;
-    DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&output_root)?;
+    platform::create_private_dir_all(&output_root)?;
     let output_root = output_root.canonicalize()?;
     outside_workspace(&workspace, &output_root)?;
 
-    let directory = tempfile::Builder::new()
-        .prefix("runtime-")
-        .permissions(Permissions::from_mode(0o700))
-        .tempdir_in(output_root)?;
+    let directory = platform::private_tempdir_in("runtime-", &output_root)?;
     let root = directory.path();
-    fs::set_permissions(root, Permissions::from_mode(0o700))?;
     for name in ["output", "tmp", "home", "cache"] {
-        let path = root.join(name);
-        DirBuilder::new().mode(0o700).create(&path)?;
-        fs::set_permissions(path, Permissions::from_mode(0o700))?;
+        platform::create_private_dir(&root.join(name))?;
     }
     let mut environment = BTreeMap::from([
         ("PATH".into(), env::var_os("PATH").unwrap_or_default()),
@@ -57,6 +46,23 @@ pub(super) fn prepare(
         ("XDG_CACHE_HOME", "cache"),
     ] {
         environment.insert(key.into(), root.join(name).into());
+    }
+    // Windows programs look for their home and caches here, and many cannot start without
+    // the system variables.
+    #[cfg(windows)]
+    {
+        for (key, name) in [
+            ("USERPROFILE", "home"),
+            ("APPDATA", "home"),
+            ("LOCALAPPDATA", "cache"),
+        ] {
+            environment.insert(key.into(), root.join(name).into());
+        }
+        for key in ["SystemRoot", "ComSpec", "PATHEXT"] {
+            if let Some(value) = env::var_os(key) {
+                environment.insert(key.into(), value);
+            }
+        }
     }
     Ok((workspace, directory.keep(), environment))
 }

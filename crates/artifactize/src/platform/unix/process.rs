@@ -1,16 +1,91 @@
+//! Process groups, the pre-exec admission gate, and `/proc` start times.
+
 use std::{
     io::{self, Read, Write},
     net::Shutdown,
     os::{fd::AsRawFd, unix::net::UnixStream},
+    process::ExitStatus,
     sync::Arc,
 };
 
-use process_wrap::tokio::CommandWrap;
-use tokio::{io::unix::AsyncFd, task::JoinHandle};
+use process_wrap::tokio::{ChildWrapper, CommandWrap, ProcessGroup};
+use tokio::{
+    io::unix::AsyncFd,
+    process::{ChildStderr, ChildStdin, ChildStdout, Command},
+    task::JoinHandle,
+};
 
-use super::Child;
+/// The child's process group, killed when dropped.
+pub(crate) struct Child(Box<dyn ChildWrapper>);
 
-pub(super) struct Gate(Arc<AsyncFd<UnixStream>>);
+impl Child {
+    pub fn stdin(&mut self) -> &mut Option<ChildStdin> {
+        self.0.stdin()
+    }
+
+    pub fn stdout(&mut self) -> &mut Option<ChildStdout> {
+        self.0.stdout()
+    }
+
+    pub fn stderr(&mut self) -> &mut Option<ChildStderr> {
+        self.0.stderr()
+    }
+
+    /// Wait for the leader, then reap the rest of its group.
+    pub async fn wait(&mut self) -> io::Result<ExitStatus> {
+        self.0.wait().await
+    }
+
+    /// Ask the group to stop with SIGTERM.
+    pub fn interrupt(&self) -> io::Result<()> {
+        self.0.signal(libc::SIGTERM)
+    }
+
+    /// SIGKILL the group; a group that is already gone is not an error.
+    pub fn kill(&mut self) -> io::Result<()> {
+        match self.0.start_kill() {
+            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
+            result => result,
+        }
+    }
+}
+
+impl Drop for Child {
+    fn drop(&mut self) {
+        let _ = self.0.start_kill();
+    }
+}
+
+/// Spawn `command` as the leader of a new process group, held before exec until admitted.
+pub(crate) fn spawn_gated(command: Command) -> io::Result<(Gate, JoinHandle<io::Result<Child>>)> {
+    let mut command = CommandWrap::from(command);
+    command.wrap(ProcessGroup::leader());
+    spawn(command)
+}
+
+/// Leave artifactize's session, for a desktop handoff that outlives it.
+pub(crate) fn detach(command: &mut Command) {
+    // SAFETY: the forked child calls only setsid, which is async-signal-safe.
+    unsafe {
+        command.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+/// Field 22 of /proc/PID/stat: the start time in clock ticks since boot.
+pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
+    stat.rsplit_once(')')
+        .and_then(|(_, fields)| fields.split_whitespace().nth(19))
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| io::Error::other("invalid child process start time"))
+}
+
+pub(crate) struct Gate(Arc<AsyncFd<UnixStream>>);
 
 impl Gate {
     pub async fn pid(&self) -> io::Result<u32> {
@@ -40,7 +115,7 @@ impl Drop for Gate {
     }
 }
 
-pub(super) fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Child>>)> {
+fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Child>>)> {
     let (parent, child) = UnixStream::pair()?;
     parent.set_nonblocking(true)?;
     let gate = Gate(Arc::new(AsyncFd::new(parent)?));

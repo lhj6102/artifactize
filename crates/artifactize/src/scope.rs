@@ -1,18 +1,14 @@
 //! Mounts, aliases, artifact references, and canonical scoped paths.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::ffi::CString;
 use std::fs::{self, File};
-use std::os::{
-    fd::{AsRawFd, FromRawFd},
-    unix::ffi::OsStrExt,
-};
 use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
 use thiserror::Error;
 
 use crate::config::{Artifact, CONFIG_FILE, ConfigError, Eval, Fingerprint, Profile, RepoConfig};
+use crate::platform;
 
 mod human;
 mod instruction;
@@ -174,10 +170,13 @@ pub(crate) fn open_scoped(root: &Path, path: &str) -> Result<File, ScopeError> {
         return Err(ScopeError("Scoped roots must be absolute.".into()));
     }
     let target = root.join(path);
-    let mut directory = File::open("/").map_err(|e| ScopeError(e.to_string()))?;
+    // `/`, or on Windows the volume or share root such as `C:\`.
+    let filesystem_root = target.ancestors().last().unwrap_or(&target);
+    let mut directory =
+        platform::open_directory(filesystem_root).map_err(|e| ScopeError(e.to_string()))?;
     for component in target.components() {
         directory = match component {
-            Component::RootDir => continue,
+            Component::Prefix(_) | Component::RootDir => continue,
             Component::Normal(name) => open_child(&directory, name)?,
             _ => {
                 return Err(ScopeError(
@@ -191,22 +190,10 @@ pub(crate) fn open_scoped(root: &Path, path: &str) -> Result<File, ScopeError> {
 
 /// Open one entry of a pinned directory without following a symlink.
 pub(crate) fn open_child(directory: &File, name: &std::ffi::OsStr) -> Result<File, ScopeError> {
-    let name =
-        CString::new(name.as_bytes()).map_err(|_| ScopeError("Invalid Artifact path.".into()))?;
-    // O_NONBLOCK avoids waiting on a FIFO before its type can be rejected.
-    let fd = unsafe {
-        libc::openat(
-            directory.as_raw_fd(),
-            name.as_ptr(),
-            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
-        )
-    };
-    if fd < 0 {
-        return Err(ScopeError(
-            "Cannot open Artifact input without symlink traversal.".into(),
-        ));
-    }
-    let file = unsafe { File::from_raw_fd(fd) };
+    let name = platform::EntryName::new(name)
+        .ok_or_else(|| ScopeError("Invalid Artifact path.".into()))?;
+    let file = platform::open_entry(directory, &name)
+        .map_err(|_| ScopeError("Cannot open Artifact input without symlink traversal.".into()))?;
     let metadata = file.metadata().map_err(|e| ScopeError(e.to_string()))?;
     if !metadata.is_file() && !metadata.is_dir() {
         return Err(ScopeError(

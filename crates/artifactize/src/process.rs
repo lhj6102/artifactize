@@ -1,7 +1,5 @@
 //! Literal process launches, bounded capture, and process-group cleanup.
 
-mod launch;
-
 use std::{
     collections::BTreeMap,
     ffi::OsString,
@@ -12,13 +10,14 @@ use std::{
     time::Duration,
 };
 
-use process_wrap::tokio::{ChildWrapper, CommandWrap, ProcessGroup};
 use thiserror::Error;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWriteExt},
     time::{Instant, sleep, sleep_until, timeout},
 };
 use tokio_util::sync::CancellationToken;
+
+use crate::platform::{self, Child};
 
 const OUTPUT_LIMIT: usize = 128 * 1024;
 const CLEANUP_GRACE: Duration = Duration::from_secs(1);
@@ -34,11 +33,12 @@ pub struct Command {
     pub timeout: Duration,
 }
 
-/// Linux process id and start time, captured while the group leader is still inert.
+/// Process id and start time, captured while the group leader is still inert.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChildIdentity {
     pub pid: u32,
-    /// Field 22 of /proc/PID/stat, in clock ticks since boot.
+    /// Linux: field 22 of /proc/PID/stat, in clock ticks since boot. Windows: the creation
+    /// time, in 100 ns intervals since 1601.
     pub start_time: u64,
 }
 
@@ -120,14 +120,6 @@ where
     .await?
 }
 
-struct Child(Box<dyn ChildWrapper>);
-
-impl Drop for Child {
-    fn drop(&mut self) {
-        let _ = self.0.start_kill();
-    }
-}
-
 async fn run_inner<F, R>(
     command: Command,
     input: Option<Vec<u8>>,
@@ -148,23 +140,21 @@ where
         return Err(Error::Timeout);
     }
 
-    let mut wrapped = CommandWrap::with_new(&command.program, |child| {
-        child
-            .args(&command.args)
-            .current_dir(&command.cwd)
-            .env_clear()
-            .envs(&command.env)
-            .stdin(if input.is_some() {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-    });
-    wrapped.wrap(ProcessGroup::leader());
-    let (gate, mut spawning) = launch::spawn(wrapped)?;
+    let mut child = tokio::process::Command::new(&command.program);
+    child
+        .args(&command.args)
+        .current_dir(&command.cwd)
+        .env_clear()
+        .envs(&command.env)
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let (gate, mut spawning) = platform::spawn_gated(child)?;
     let admission = tokio::select! {
         biased;
         _ = cancellation.cancelled() => Err(Error::Cancelled),
@@ -202,9 +192,9 @@ where
         return Err(error);
     }
 
-    let stdout = child.0.stdout().take().expect("stdout is piped");
-    let stderr = child.0.stderr().take().expect("stderr is piped");
-    let stdin = child.0.stdin().take();
+    let stdout = child.stdout().take().expect("stdout is piped");
+    let stderr = child.stderr().take().expect("stderr is piped");
+    let stdin = child.stdin().take();
     let reaped = CancellationToken::new();
     let feed = async {
         if let (Some(mut stdin), Some(input)) = (stdin, input) {
@@ -227,13 +217,13 @@ where
             biased;
             _ = cancellation.cancelled() => Err(Error::Cancelled),
             _ = sleep_until(deadline) => Err(Error::Timeout),
-            status = child.0.wait() => status.map_err(Error::Io),
+            status = child.wait() => status.map_err(Error::Io),
         };
         let cleanup = if result.is_err() {
             terminate(&mut child).await
         } else {
             // An ordinary main-process exit must not leave its descendants running.
-            kill(&mut child)
+            child.kill()
         };
         reaped.cancel();
         cleanup?;
@@ -280,14 +270,7 @@ pub(crate) fn launch_detached(
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .kill_on_drop(false);
-    unsafe {
-        command.pre_exec(|| {
-            if libc::setsid() == -1 {
-                return Err(io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
+    platform::detach(&mut command);
     let mut child = command.spawn().map_err(Error::Spawn)?;
     tokio::spawn(async move {
         let _ = child.wait().await;
@@ -296,12 +279,7 @@ pub(crate) fn launch_detached(
 }
 
 pub(crate) fn child_identity(pid: u32) -> io::Result<ChildIdentity> {
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
-    let start_time = stat
-        .rsplit_once(')')
-        .and_then(|(_, fields)| fields.split_whitespace().nth(19))
-        .and_then(|value| value.parse().ok())
-        .ok_or_else(|| io::Error::other("invalid child process start time"))?;
+    let start_time = platform::process_start_time(pid)?;
     Ok(ChildIdentity { pid, start_time })
 }
 
@@ -313,21 +291,14 @@ pub(crate) fn is_alive(owner: ChildIdentity) -> io::Result<bool> {
     }
 }
 
-fn kill(child: &mut Child) -> io::Result<()> {
-    match child.0.start_kill() {
-        Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
-        result => result,
-    }
-}
-
 async fn terminate(child: &mut Child) -> io::Result<()> {
-    let _ = child.0.signal(libc::SIGTERM);
+    let _ = child.interrupt();
     tokio::select! {
         _ = sleep(CLEANUP_GRACE) => {},
-        _ = child.0.wait() => {},
+        _ = child.wait() => {},
     }
-    kill(child)?;
-    child.0.wait().await?;
+    child.kill()?;
+    child.wait().await?;
     Ok(())
 }
 

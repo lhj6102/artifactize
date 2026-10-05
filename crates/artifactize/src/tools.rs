@@ -291,21 +291,16 @@ fn preflight_executable(
     owner: &str,
     command: &str,
 ) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
     let program = executable(root, scope, owner, command)
         .map_err(|_| "Tool executable path is unavailable or outside scope.".to_owned())?;
-    let runnable = |path: &Path| {
-        path.metadata()
-            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
-    };
     let found = if Path::new(&program).is_absolute() {
-        runnable(Path::new(&program))
+        crate::platform::is_executable(Path::new(&program))
     } else {
         let cwd = scope
             .resolve_input(root, owner, "")
             .map_err(|e| e.to_string())?;
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
-            .any(|dir| runnable(&cwd.join(dir).join(&program)))
+            .any(|dir| crate::platform::is_executable(&cwd.join(dir).join(&program)))
     };
     if found {
         Ok(())
