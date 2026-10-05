@@ -102,7 +102,7 @@
             <li><b>Verify.</b> Runtime, Agent and Human evals. One layer. Five evals, all GREEN.</li>
             <li><b>Collaborate.</b> Build apart, verify apart. Each branch executes 3 evals and reuses 2.</li>
             <li><b>Reuse.</b> Still-valid reviews are reused. Pay only for what changed. After the merge: 4 reused, 0 Agent tokens, 0 Human sign-offs, 1 executed.</li>
-            <li>Artifactize. Declare. Verify. Reuse. Not just code: manage every artifact together.</li>
+            <li>Artifactize. Declare. Verify. Reuse. Not just code: manage every artifact together. Open source: github.com/lhj6102/artifactize.</li>
           </ol>
         </details>
       </figcaption>
@@ -353,17 +353,17 @@
     <div class="wrap start-inner">
       <p class="kicker">Get started</p>
       <h2 id="start-title">Try it in five minutes.</h2>
-      <p>Artifactize builds from source with Cargo on Linux and WSL 2. The quick start reviews an example project and needs no model or API key.</p>
+      <p>Artifactize is open source under the Apache License 2.0. Install the 0.4.0 release with Cargo on Linux or WSL 2; the quick start then reviews an example project with no model or API key.</p>
       <div class="panel start-panel">
-<pre class="code term"><code><span class="t-dim"># three GREEN results</span>
-<span class="t-prompt">$</span> artifactize verify --all
-<span class="t-dim"># nothing executes: all three are reused</span>
-<span class="t-prompt">$</span> artifactize verify --all</code></pre>
+<pre class="code term"><code><span class="t-dim"># Linux or WSL 2, with a Rust toolchain and a C compiler</span>
+<span class="t-prompt">$</span> cargo install --git https://github.com/lhj6102/artifactize --tag v0.4.0 --locked artifactize
+<span class="t-prompt">$</span> artifactize --version
+artifactize 0.4.0</code></pre>
       </div>
       <div class="cta center">
         <a class="btn btn-primary" href="/docs/getting-started/install.html">Install <span aria-hidden="true">→</span></a>
         <a class="btn btn-ghost" href="/docs/getting-started/quick-start.html">Quick start</a>
-        <a class="btn btn-ghost" href="/docs/">Read the docs</a>
+        <a class="btn btn-ghost" href="https://github.com/lhj6102/artifactize">GitHub</a>
       </div>
     </div>
   </section>
@@ -383,7 +383,7 @@
       <a href="/docs/reference/overview.html">Reference</a>
       <a href="https://github.com/lhj6102/artifactize">GitHub</a>
     </nav>
-    <!-- When the repository is public, add: <p class="foot-meta">Open source · Apache-2.0</p> -->
+    <p class="foot-meta"><a href="https://github.com/lhj6102/artifactize/blob/main/LICENSE">Open source · Apache-2.0</a></p>
   </div>
 </footer>
 

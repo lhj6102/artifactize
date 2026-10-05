@@ -1,16 +1,13 @@
 # Install artifactize
 
-artifactize is one binary, built from source with Cargo.
-
-> [!NOTE]
-> The repository is private for now, so cloning it needs access to
-> [lhj6102/artifactize](https://github.com/lhj6102/artifactize).
+artifactize is one binary, built with Cargo. It is open source under the
+[Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
 
 ## Prerequisites
 
 - Linux or WSL 2. Other platforms are not supported.
-- A Rust toolchain from [rustup](https://rustup.rs) and a C compiler (SQLite is
-  built from source). The repository's `rust-toolchain.toml` selects stable Rust.
+- A stable Rust toolchain from [rustup](https://rustup.rs) and a C compiler (SQLite
+  is built from source).
 - `python3` and `grep` for the example projects.
 - Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
   `ANTHROPIC_API_KEY`, a ChatGPT plan that supports Sign in with ChatGPT, or the
@@ -18,15 +15,26 @@ artifactize is one binary, built from source with Cargo.
 
 ## Install
 
+Install the 0.4.0 release from GitHub:
+
+```sh
+cargo install --git https://github.com/lhj6102/artifactize --tag v0.4.0 --locked artifactize
+artifactize --version          # artifactize 0.4.0
+```
+
+To build from source instead, install from a checkout; its `rust-toolchain.toml`
+selects stable Rust. The example projects and the [Quick start](quick-start.md)
+use a checkout too:
+
 ```sh
 git clone https://github.com/lhj6102/artifactize
 cd artifactize
 cargo install --path crates/artifactize --locked
-artifactize --version          # artifactize 0.4.0
 ```
 
 The binary goes to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs
-it under `DIR/bin` instead. Run the same command again to upgrade. The next
+it under `DIR/bin` instead. To upgrade, run the install command again with the new
+release's tag (or `git pull` and repeat `cargo install --path`). The next
 command that opens an older state database upgrades it in place; `artifactize
 doctor` reports its schema without changing it. 0.4 calls the reuse declaration
 `fingerprint`; `config check` shows the new shape for each `artifactize.json` that
