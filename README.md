@@ -1,6 +1,6 @@
 # Artifactize
 
-**Review cost follows the size of a change.** Still-valid reviews are reused; you pay only for what changed.
+**The AI-native collaboration layer for one-of-a-kind teammates and their agents.**
 
 <p align="center">
   <a href="https://github.com/user-attachments/assets/6aafdfbe-e41c-4b90-b435-dab7bfdd28b6">
@@ -19,10 +19,24 @@
   <a href="https://artifactize.dev">artifactize.dev</a>
 </p>
 
-Declare every Artifact (code, docs, designs, images) and the evals that review it:
-tests, LLM reviews and human sign-offs. While an Artifact's fingerprint is
-unchanged, its GREEN or RED result is reused. Artifactize is open source under the
-Apache License 2.0 and runs on Linux and WSL 2.
+Artifactize splits a project into Artifacts (code, docs, designs, images), each with
+its own evals: tests, LLM reviews and human sign-offs. Every teammate, human or
+agent, works their own way on their part, and integrating that work never pays for
+the same review twice: while an Artifact's fingerprint is unchanged, its GREEN or RED
+result is reused. Artifactize is open source under the Apache License 2.0 and runs on
+Linux and WSL 2.
+
+## Why I built it
+
+Building games with AI, working alone got fast, but working with others still felt
+like hitting a wall. There had to be a sweet spot between traditional development and
+AI-native work. So I looked for a way for every teammate, human or agent, to keep
+their own style and still add up to one coherent result, and I structured the project
+around evaluation.
+
+Artifactize is that collaboration layer: it splits a project into modules that each
+carry their own evaluation criteria, so everyone can work their way, and it cuts the
+evaluation cost wasted during integration.
 
 ## See it in your terminal
 
@@ -32,24 +46,26 @@ re-reviews only that Artifact.
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/change.gif" width="800"
      alt="One file changes: artifactize status predicts one execution and four reuses and names the changed file, then artifactize verify reviews only that Artifact and reuses the other four results.">
 
-## Why artifactize
+## How it helps a team
 
-- **Reuse every review that still holds.** You define each Artifact's fingerprint;
-  the built-in one hashes the Artifact's own files. While the eval and the
-  fingerprints of the Artifacts it depends on are unchanged, `verify` reuses the
-  earlier verdict, from any profile, and reports what it executed, what it reused
-  and the tokens reuse saved.
+- **Each part carries its own bar.** An Artifact declares the evals that judge it:
+  runtime evals run commands; Agent evals ask one exact model (OpenAI or Anthropic API
+  key, or a ChatGPT/Codex sign-in) with the read-only tools you declare; Human evals
+  wait for a sign-off. RED blocks what depends on it. Whoever works on a part, in
+  whatever style, meets the same bar.
+- **Integration reuses every review that still holds.** You define each Artifact's
+  fingerprint; the built-in one hashes the Artifact's own files. While the eval and
+  the fingerprints of the Artifacts it depends on are unchanged, `verify` reuses the
+  earlier verdict, from any profile, and reports what it executed, what it reused and
+  the tokens reuse saved. Review cost follows the size of a change.
+- **Centralize the reviews, not the repo.** One `artifactize server` shares verdicts
+  across teammates' checkouts and CI, so a branch's reviews carry over to the merge
+  and a person signs off a change once.
 - **Know what a change will cost before you run it.** `status` predicts what
   `verify` will execute, reuse or wait for, and names the files and dependencies
   that changed.
-- **Tests, models and people in one graph.** Runtime evals run commands; Agent evals
-  ask one exact model (OpenAI or Anthropic API key, or a ChatGPT/Codex sign-in) with
-  the read-only tools you declare; Human evals wait for a sign-off. RED blocks what
-  depends on it.
 - **Human review in the terminal.** `artifactize monitor` shows Runs as they
   progress and hands a waiting sign-off to `artifactize review`.
-- **Centralize the reviews, not the repo.** One `artifactize server` shares verdicts
-  across machines and CI.
 
 ## Install
 
@@ -184,9 +200,6 @@ Everything else is at **[artifactize.dev/docs](https://artifactize.dev/docs/)**:
 
 The recordings above are reproducible: their VHS tapes and demo projects are in
 [`website/demo`](https://github.com/lhj6102/artifactize/tree/main/website/demo) ([how to record](https://github.com/lhj6102/artifactize/blob/main/website/README.md#recordings)).
-
-Artifactize is a lean Rust port and rebrand of [CCDD](https://github.com/lhj6102/ccdd)
-7.0.0 (`cbf28b4`); the [plan](https://github.com/lhj6102/artifactize/blob/main/docs/PLAN.md) records the scope.
 
 ## License
 

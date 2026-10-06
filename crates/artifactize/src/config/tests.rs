@@ -463,7 +463,7 @@ fn result_checks_are_flat_agent_commands() {
         })
     );
     for (profile, check, expected) in [
-        // CCDD's script wrapper is not accepted.
+        // A script wrapper is not accepted.
         (
             agent.clone(),
             json!({"script":{"command":"check.sh","args":[]}}),

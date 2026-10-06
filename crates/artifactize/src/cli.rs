@@ -25,7 +25,7 @@ use crate::{
     // Help names the command, not the file run; on Windows that is artifactize.exe.
     bin_name = "artifactize",
     version,
-    about = "Let verification define the project."
+    about = "The AI-native collaboration layer for one-of-a-kind teammates and their agents."
 )]
 pub struct Cli {
     /// Repository input path.

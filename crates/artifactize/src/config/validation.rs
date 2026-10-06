@@ -17,7 +17,7 @@ where
     D: Deserializer<'de>,
 {
     let number = Number::deserialize(deserializer)?;
-    // CCDD accepts integral JSON numbers even when written as 1.0 or 1e3.
+    // Integral JSON numbers are accepted even when written as 1.0 or 1e3.
     let value = number.as_f64().ok_or_else(|| D::Error::custom(message))?;
     if value < 1.0 || value > max as f64 || value.fract() != 0.0 {
         return Err(D::Error::custom(message));

@@ -2,7 +2,7 @@
 # Built by website/build.sh with the mdBook version pinned there.
 [book]
 title = "Artifactize docs"
-description = "Declare Artifacts and their evals, verify them, and reuse every review whose fingerprint is unchanged."
+description = "The AI-native collaboration layer for one-of-a-kind teammates and their agents: Artifacts with their own evals, and every review reused while it still holds."
 authors = ["Hyukjin LIM"]
 language = "en"
 src = "src"
