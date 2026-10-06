@@ -273,15 +273,19 @@ Summary: executed 3 (runtime 0, agent 3, human 0), reused 18 (runtime 7, agent 7
           <button type="button" class="demo-tab" role="tab" id="install-tab-windows" aria-controls="install-windows" aria-selected="false" tabindex="-1" data-os="windows">Windows</button>
           <button type="button" class="demo-tab" role="tab" id="install-tab-macos" aria-controls="install-macos" aria-selected="false" tabindex="-1" data-os="macos">macOS</button>
         </div>
-        <div class="panel start-panel" role="tabpanel" id="install-linux" aria-labelledby="install-tab-linux">
+        <div class="panel start-panel" role="tabpanel" id="install-linux" aria-labelledby="install-tab-linux" data-copy="curl -fsSL https://artifactize.dev/install.sh | sh">
+          <button type="button" class="copy" aria-label="Copy the install command" hidden>Copy</button>
+          <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
 <pre class="code term"><code><span class="t-dim"># Linux or WSL 2 (x86_64, aarch64): installs to ~/.local/bin, no sudo</span>
-<span class="t-prompt">$</span> curl -fsSL https://artifactize.dev/install.sh | sh
+<span class="t-prompt">$</span> <span data-command>curl -fsSL https://artifactize.dev/install.sh | sh</span>
 <span class="t-prompt">$</span> artifactize --version</code></pre>
         </div>
-        <div class="panel start-panel" role="tabpanel" id="install-windows" aria-labelledby="install-tab-windows">
+        <div class="panel start-panel" role="tabpanel" id="install-windows" aria-labelledby="install-tab-windows" data-copy="irm https://artifactize.dev/install.ps1 | iex">
+          <button type="button" class="copy" aria-label="Copy the install command" hidden>Copy</button>
+          <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
 <pre class="code term"><code><span class="t-dim"># Windows x86_64 in PowerShell (experimental): installs to</span>
 <span class="t-dim"># %LOCALAPPDATA%\Programs\artifactize and adds it to your PATH, no admin</span>
-<span class="t-prompt">PS&gt;</span> irm https://artifactize.dev/install.ps1 | iex
+<span class="t-prompt">PS&gt;</span> <span data-command>irm https://artifactize.dev/install.ps1 | iex</span>
 <span class="t-prompt">PS&gt;</span> artifactize --version</code></pre>
         </div>
         <div class="panel start-panel" role="tabpanel" id="install-macos" aria-labelledby="install-tab-macos">

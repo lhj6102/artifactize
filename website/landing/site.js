@@ -233,3 +233,57 @@
   var os = detect();
   select(tabs.filter(function (t) { return t.getAttribute('data-os') === os; })[0] || tabs[0], false);
 })();
+
+// Copy buttons for the install commands. The panel's data-copy holds the exact command,
+// without the prompt or comments. Without the Clipboard API, or when it refuses (an
+// insecure context), the command is selected for Ctrl+C instead. Without JS the buttons
+// stay hidden.
+(function () {
+  var keys = /Mac|iPhone|iPad/.test(navigator.platform || '') ? 'Cmd+C' : 'Ctrl+C';
+  Array.prototype.forEach.call(document.querySelectorAll('[data-copy]'), function (panel) {
+    var button = panel.querySelector('.copy');
+    var status = panel.querySelector('[data-copy-status]');
+    var command = panel.querySelector('[data-command]');
+    var text = panel.getAttribute('data-copy');
+    if (!button || !status || !text) return;
+    var timer = 0;
+
+    function show(message, state, ms) {
+      clearTimeout(timer);
+      button.textContent = message;
+      button.setAttribute('data-state', state);
+      // Clear first, so the same message is announced again.
+      status.textContent = '';
+      setTimeout(function () { status.textContent = message; }, 50);
+      timer = setTimeout(function () {
+        button.textContent = 'Copy';
+        button.removeAttribute('data-state');
+        status.textContent = '';
+      }, ms);
+    }
+
+    function selectCommand() {
+      var selection = window.getSelection();
+      if (command && selection) {
+        var range = document.createRange();
+        range.selectNodeContents(command);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      show('Press ' + keys + ' to copy', 'select', 4000);
+    }
+
+    button.addEventListener('click', function () {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) {
+        selectCommand();
+        return;
+      }
+      navigator.clipboard.writeText(text).then(function () {
+        show('Copied', 'copied', 2000);
+      }, selectCommand);
+    });
+    // The class makes room for the button.
+    panel.classList.add('copyable');
+    button.hidden = false;
+  });
+})();
