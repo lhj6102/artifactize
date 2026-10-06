@@ -22,6 +22,8 @@ use validation::{path, paths, positive_integer, present, script, text, timeout};
 /// Format version for artifactize configuration documents.
 pub const CONFIG_FORMAT_VERSION: u32 = 1;
 pub const CONFIG_FILE: &str = "artifactize.json";
+/// Gitignore-style folder patterns, at the workspace root, that discovery skips.
+pub const IGNORE_FILE: &str = ".artifactizeignore";
 
 #[derive(Debug, Error)]
 #[error("{path}: {message}")]
@@ -500,6 +502,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
         evals: Vec::new(),
         relations: Vec::new(),
     };
+    let ignored = discovery_ignore(&config.root)?;
     let mut pending = vec![(PathBuf::new(), None::<String>, None::<String>)];
     while let Some((relative, mut owner, mut family)) = pending.pop() {
         let directory = config.root.join(&relative);
@@ -628,7 +631,11 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             let kind = entry
                 .file_type()
                 .map_err(|error| ConfigError::new(entry.path(), error))?;
-            if kind.is_dir() && entry.file_name() != ".git" && entry.file_name() != "node_modules" {
+            if kind.is_dir()
+                && entry.file_name() != ".git"
+                && entry.file_name() != "node_modules"
+                && !ignored.matched(entry.path(), true).is_ignore()
+            {
                 pending.push((
                     logical_join(&relative, &entry.file_name()),
                     owner.clone(),
@@ -645,6 +652,22 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
     }
     crate::scope::resolve_config(&mut config)?;
     Ok(config)
+}
+
+/// The folders the workspace root's `.artifactizeignore` (gitignore syntax) keeps out of
+/// discovery, such as test fixtures or example projects with their own `artifactize.json`.
+fn discovery_ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigError> {
+    let file = root.join(IGNORE_FILE);
+    let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
+    // A regular file only: discovery never follows links.
+    if fs::symlink_metadata(&file).is_ok_and(|metadata| metadata.is_file())
+        && let Some(error) = builder.add(&file)
+    {
+        return Err(ConfigError::new(&file, error));
+    }
+    builder
+        .build()
+        .map_err(|error| ConfigError::new(&file, error))
 }
 
 /// A logical path below the workspace root: components joined with `/` on every platform,

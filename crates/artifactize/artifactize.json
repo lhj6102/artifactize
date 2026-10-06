@@ -1,0 +1,60 @@
+{
+  "name": "cli",
+  "fingerprint": { "files": ["."] },
+  "views": {
+    "agentTools": {
+      "list": { "builtin": "list" },
+      "glob": { "builtin": "glob" },
+      "grep": { "builtin": "grep" },
+      "read": { "builtin": "read" }
+    }
+  },
+  "evals": [
+    {
+      "id": "follows-style",
+      "title": "The CLI code follows the code checklist",
+      "profile": {
+        "kind": "agent",
+        "backend": "codex",
+        "model": "gpt-6-luna",
+        "reasoning": "max",
+        "timeoutMs": 1800000,
+        "maxToolCalls": 120,
+        "maxTokens": 4000000
+      },
+      "payload": {
+        "instruction": "Read the checklist {code-style} with read_style_code-style. Then review the Rust code of {cli} (src/ and Cargo.toml; tests/ only for M-TAUTOLOGICAL-TESTS) against every item, using list_cli, glob_cli, grep_cli and read_cli. Tool paths are relative to the Artifact, for example src/cache.rs. Submit GREEN when no item is clearly violated. Otherwise submit RED with up to 20 violations, the most important first, each with the item id, a path:line and one sentence on what to change."
+      },
+      "passSchema": {
+        "type": "object",
+        "properties": {
+          "summary": { "type": "string", "minLength": 1 }
+        },
+        "required": ["summary"],
+        "additionalProperties": false
+      },
+      "failSchema": {
+        "type": "object",
+        "properties": {
+          "violations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "item": { "type": "string", "minLength": 1 },
+                "where": { "type": "string", "minLength": 1 },
+                "change": { "type": "string", "minLength": 1 }
+              },
+              "required": ["item", "where", "change"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["violations"],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

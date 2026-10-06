@@ -9,6 +9,16 @@ scoped references and the runtime execution environment.
 [Artifacts and evals](../concepts/artifacts-and-evals.md#folder-configuration) describes the declaration and the
 two `fingerprint` forms.
 
+Discovery walks the repository from its root and skips `.git`, `node_modules`, and the
+folders listed in an optional root `.artifactizeignore` (gitignore syntax). List
+folders there that hold their own `artifactize.json` but are not part of this
+workspace, such as test fixtures or example projects:
+
+```gitignore
+crates/app/tests/
+examples/
+```
+
 Discovery validates these fields without opening or executing scripts or inputs.
 There is no implicit or always-stale mode: an Artifact without `fingerprint` has no
 reuse, and neither does an eval that depends on it, so every `verify` reviews them
