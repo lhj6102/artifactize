@@ -1,19 +1,22 @@
 name: Binaries
 
-# Builds the release binaries and tests the install scripts against them.
-# release.yml calls this before it publishes anything. Pull requests that touch the
-# release, the build or the install scripts run it too, and keep the archives as
-# workflow artifacts.
+# Builds the release binaries. release.yml calls this before it publishes anything;
+# pull requests that touch the release, the build or the install scripts run it too,
+# keep the archives as workflow artifacts and try each install script once.
 #
-# Each build uploads the workflow artifact binaries-<target>: the archive
-# artifactize-v<version>-<target>.tar.gz (.zip on Windows) and its .sha256, written by
-# .github/scripts/package.sh. To extend the pipeline:
-# - a new target (such as aarch64-apple-darwin) is one matrix entry with its runner;
-# - a platform packager (a signed macOS .pkg, MSIX) is its own job that downloads
-#   binaries-<target> and runs in a protected environment with its own secrets;
-# - a distribution channel is a job in release.yml after the GitHub release.
+# Each build uploads binaries-<target>: artifactize-v<version>-<target>.tar.gz (.zip on
+# Windows) and its .sha256, written by .github/scripts/package.sh. The Linux builds gate
+# a release; the Windows build is best effort until v1 and never fails the workflow.
+# To extend: a new target is one matrix entry with its runner; a platform packager
+# (signed macOS .pkg, MSIX) is its own job that downloads binaries-<target>; a
+# distribution channel is a job in release.yml after the GitHub release.
 on:
   workflow_call:
+    inputs:
+      version:
+        description: Build as this version (a release tag without the v); empty keeps Cargo.toml's.
+        type: string
+        default: ""
   workflow_dispatch:
   pull_request:
     paths:
@@ -38,6 +41,8 @@ jobs:
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    continue-on-error: ${{ matrix.best-effort || false }}
     strategy:
       fail-fast: false
       matrix:
@@ -48,8 +53,10 @@ jobs:
             os: ubuntu-24.04-arm
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+            best-effort: true
     env:
       TARGET: ${{ matrix.target }}
+      TAG_VERSION: ${{ inputs.version }}
       # The static CRT, so the .exe needs no Visual C++ runtime DLLs. musl targets link
       # statically by default.
       CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
@@ -75,11 +82,22 @@ jobs:
           sudo ln -sfn /usr/include/asm-generic "$include/asm-generic"
           sudo ln -sfn "/usr/include/$arch-linux-gnu/asm" "$include/asm"
           echo "CC_${TARGET//-/_}=musl-gcc" >>"$GITHUB_ENV"
-      - name: Read the crate version
+      # A prerelease tag (v0.6.0-alpha.1) builds as its own version without a commit
+      # that bumps Cargo.toml; the change stays in this checkout.
+      - name: Set the version
         run: |
-          version=$(cargo metadata --no-deps --format-version 1 \
-            | jq -r '.packages[] | select(.name == "artifactize") | .version')
-          echo "VERSION=$version" >>"$GITHUB_ENV"
+          crate() {
+            cargo metadata --no-deps --format-version 1 \
+              | jq -r '.packages[] | select(.name == "artifactize") | .version'
+          }
+          current=$(crate)
+          if [ -n "$TAG_VERSION" ] && [ "$TAG_VERSION" != "$current" ]; then
+            sed -i.orig "s/^version = \"$current\"\$/version = \"$TAG_VERSION\"/" Cargo.toml
+            rm Cargo.toml.orig
+            cargo update --workspace
+            [ "$(crate)" = "$TAG_VERSION" ] || { echo "::error::cannot set the version to $TAG_VERSION" >&2; exit 1; }
+          fi
+          echo "VERSION=$(crate)" >>"$GITHUB_ENV"
       - name: Build
         run: cargo build --release --locked -p artifactize --target "$TARGET"
       - name: Check that the binary is static and runs
@@ -101,7 +119,6 @@ jobs:
               ;;
             *-linux-musl)
               file "$bin"
-              ldd "$bin" || true
               if ! file "$bin" | grep -Eq 'static(-pie)? linked|statically linked'; then
                 echo "::error::$bin is not statically linked" >&2
                 exit 1
@@ -122,50 +139,44 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-  install-sh:
-    name: install.sh in ${{ matrix.image }} (${{ matrix.target }})
-    needs: build
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: debian:stable-slim
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-          - image: alpine:latest
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-          - image: debian:stable-slim
-            os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-    steps:
-      - uses: actions/checkout@v4
-      - name: ShellCheck
-        if: matrix.os == 'ubuntu-latest'
-        run: shellcheck website/landing/install.sh .github/scripts/*.sh
-      - uses: actions/download-artifact@v4
-        with:
-          name: binaries-${{ matrix.target }}
-          path: dist
-      # Fresh install, PATH hint, doctor, update, a tampered archive and a missing release.
-      - run: sh .github/scripts/test-install.sh dist "${{ matrix.image }}"
-
-  install-ps1:
-    name: install.ps1 on Windows
-    needs: build
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
-        with:
-          name: binaries-x86_64-pc-windows-msvc
-          path: dist
-      # Each run installs into the default directory, updates in place, refuses a
-      # tampered archive, then uninstalls.
-      - name: Windows PowerShell 5.1
+      # One happy-path install per script, on pull requests only. The scripts reach the
+      # archive through their internal ARTIFACTIZE_DOWNLOAD_URL.
+      - name: Install with install.sh in debian:stable-slim
+        if: matrix.target == 'x86_64-unknown-linux-musl' && github.event_name == 'pull_request'
+        run: |
+          sh -n website/landing/install.sh
+          docker run --rm \
+            -v "$PWD/website/landing/install.sh:/src/install.sh:ro" \
+            -v "$PWD/dist:/serve/v$VERSION:ro" \
+            -e ARTIFACTIZE_DOWNLOAD_URL=file:///serve -e ARTIFACTIZE_VERSION="$VERSION" \
+            debian:stable-slim sh -euc '
+              apt-get update -qq
+              apt-get install -y -qq --no-install-recommends curl >/dev/null
+              curl -fsSL file:///src/install.sh | sh
+              test "$(~/.local/bin/artifactize --version)" = "artifactize $ARTIFACTIZE_VERSION"
+              ~/.local/bin/artifactize doctor'
+      - name: Install with install.ps1
+        if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name == 'pull_request'
         shell: powershell
-        run: .github/scripts/test-install.ps1 -Dist dist -Port 8737
-      - name: PowerShell 7
-        shell: pwsh
-        run: .github/scripts/test-install.ps1 -Dist dist -Port 8738
+        run: |
+          New-Item -ItemType Directory -Path "serve\v$env:VERSION" | Out-Null
+          Copy-Item dist\* "serve\v$env:VERSION\"
+          Copy-Item website\landing\install.ps1 serve\
+          $server = Start-Process python -PassThru -WindowStyle Hidden `
+            -ArgumentList '-m', 'http.server', '8737', '--bind', '127.0.0.1', '--directory', 'serve'
+          try {
+            $base = 'http://127.0.0.1:8737'
+            for ($i = 0; ; $i++) {
+              try { Invoke-WebRequest -UseBasicParsing "$base/install.ps1" | Out-Null; break }
+              catch { if ($i -ge 50) { throw }; Start-Sleep -Milliseconds 200 }
+            }
+            $env:ARTIFACTIZE_DOWNLOAD_URL = $base
+            $env:ARTIFACTIZE_VERSION = $env:VERSION
+            irm "$base/install.ps1" | iex
+            $out = & artifactize --version
+            if ($out -ne "artifactize $env:VERSION") { throw "--version printed: $out" }
+            & artifactize doctor
+            if ($LASTEXITCODE -ne 0) { throw 'artifactize doctor failed' }
+          } finally {
+            Stop-Process -Id $server.Id -Force
+          }

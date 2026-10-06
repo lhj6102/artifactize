@@ -1,23 +1,22 @@
 # Install artifactize
 
 artifactize is one binary. From 0.5.2 on, every
-[GitHub release](https://github.com/lhj6102/artifactize/releases) attaches prebuilt
-binaries for Linux (x86_64 and aarch64, statically linked) and Windows (x64), each with
-a SHA-256 checksum; every release is also published on
-[crates.io](https://crates.io/crates/artifactize). It is open source under the
+[GitHub release](https://github.com/lhj6102/artifactize/releases) attaches statically
+linked Linux binaries (x86_64 and aarch64), each with a SHA-256 checksum, and every
+stable release is published on [crates.io](https://crates.io/crates/artifactize). It is
+open source under the
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
 
 ## Prerequisites
 
-- Linux (x86_64 or aarch64), WSL 2, or Windows 10 or 11 (x64).
+- Linux (x86_64 or aarch64) or WSL 2. Windows (x64) is experimental.
 - `python3` and `grep` for the example projects.
 - Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
   `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime and Human evals
   need none.
 
-The install scripts and `cargo binstall` need no Rust toolchain. `cargo install`
-needs Rust 1.95 or later, from [rustup](https://rustup.rs), and a C compiler (SQLite
-is built from source).
+The install script needs no Rust toolchain. `cargo install` needs Rust 1.95 or later,
+from [rustup](https://rustup.rs), and a C compiler (SQLite is built from source).
 
 ## Install
 
@@ -29,49 +28,21 @@ artifactize --version          # artifactize 0.5.1
 ```
 
 The [script](https://artifactize.dev/install.sh) picks the static binary for your
-CPU from the latest GitHub release, checks its SHA-256 against the release's checksum
-and refuses a mismatch, then installs it to `~/.local/bin`. It uses `curl` or `wget`,
-never `sudo`, and never edits your shell startup files: if `~/.local/bin` is not on
-`PATH`, it prints the line to add. Two environment variables change what it does:
+CPU from the latest stable GitHub release, checks its SHA-256 against the release's
+checksum and refuses a mismatch, then installs it to `~/.local/bin`. It uses `curl` or
+`wget`, never `sudo`, and never edits your shell startup files: if `~/.local/bin` is
+not on `PATH`, it prints the line to add. Two environment variables change what it
+does; a prerelease installs only when `ARTIFACTIZE_VERSION` names it:
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_VERSION=0.5.2 sh             # this release
 curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_INSTALL_DIR="$HOME/bin" sh   # this directory
 ```
 
-### Windows
-
-In PowerShell (Windows PowerShell 5.1 or PowerShell 7):
-
-```powershell
-irm https://artifactize.dev/install.ps1 | iex
-```
-
-The [script](https://artifactize.dev/install.ps1) downloads the release zip, checks
-its SHA-256 and refuses a mismatch, installs `artifactize.exe` to
-`%LOCALAPPDATA%\Programs\artifactize` and adds that directory to your user `Path`.
-It needs no administrator rights. Open a new terminal to use `artifactize`. It reads
-the same `ARTIFACTIZE_VERSION` and `ARTIFACTIZE_INSTALL_DIR` variables:
-
-```powershell
-$env:ARTIFACTIZE_VERSION = '0.5.2'; irm https://artifactize.dev/install.ps1 | iex
-```
-
-The Windows binary is not code-signed yet, so Windows blocks it where Smart App
-Control is on. On such a machine, install the Linux binary inside WSL 2 instead.
-
-### cargo-binstall
-
-With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), Cargo installs the
-same release binary instead of compiling it:
-
-```sh
-cargo binstall artifactize
-```
-
 ### cargo install
 
-Build the latest release from crates.io (releases are published there from 0.5.0 on):
+Install the latest release from crates.io (releases are published there from
+0.5.0 on):
 
 ```sh
 cargo install artifactize --locked
@@ -95,13 +66,30 @@ cd artifactize
 cargo install --path crates/artifactize --locked
 ```
 
-Cargo installs to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs
-under `DIR/bin` instead.
+The binary goes to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs
+it under `DIR/bin` instead. With
+[cargo-binstall](https://github.com/cargo-bins/cargo-binstall), `cargo binstall
+artifactize` installs the prebuilt Linux binary there instead of compiling.
+
+### Windows (experimental)
+
+Releases also attach a Windows (x64) zip when its build succeeds. In PowerShell
+(Windows PowerShell 5.1 or PowerShell 7):
+
+```powershell
+irm https://artifactize.dev/install.ps1 | iex
+```
+
+The [script](https://artifactize.dev/install.ps1) checks the zip's SHA-256, installs
+`artifactize.exe` to `%LOCALAPPDATA%\Programs\artifactize` and adds that directory to
+your user `Path`, without administrator rights; open a new terminal afterwards. It reads
+the same environment variables. The binary is not code-signed, so Windows blocks it
+where Smart App Control is on; use WSL 2 there.
 
 ## Update
 
-Run the command you installed with again: the install script or `cargo binstall
-artifactize` replaces the binary with the latest release, and `cargo install
+Run the command you installed with again: an install script or `cargo binstall
+artifactize` replaces the binary with the latest stable release, and `cargo install
 artifactize --locked` rebuilds it (or run the `--git` command with the new release's
 tag, or `git pull` and repeat `cargo install --path`). Your state stays where it is.
 
@@ -177,7 +165,7 @@ Then remove the binary the way you installed it:
 
 ```sh
 rm ~/.local/bin/artifactize           # install.sh (or your ARTIFACTIZE_INSTALL_DIR)
-cargo uninstall artifactize           # cargo binstall or cargo install
+cargo uninstall artifactize           # cargo install or cargo binstall
 ```
 
 On Windows, delete the install directory, then remove it from your user `Path`

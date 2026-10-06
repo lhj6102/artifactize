@@ -22,7 +22,7 @@
 Declare every Artifact (code, docs, designs, images) and the evals that review it:
 tests, LLM reviews and human sign-offs. While an Artifact's fingerprint is
 unchanged, its GREEN or RED result is reused. Artifactize is open source under the
-Apache License 2.0 and runs on Linux, WSL 2 and Windows.
+Apache License 2.0 and runs on Linux and WSL 2.
 
 ## See it in your terminal
 
@@ -54,40 +54,47 @@ re-reviews only that Artifact.
 ## Install
 
 On Linux (x86_64 or aarch64) or WSL 2, install the static binary from the latest
-GitHub release into `~/.local/bin`; the script checks its SHA-256 and needs no `sudo`:
+GitHub release into `~/.local/bin`. The script checks its SHA-256 and needs no `sudo`:
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version          # artifactize 0.5.1
 ```
 
-On Windows (x64), run this in PowerShell. It installs to
-`%LOCALAPPDATA%\Programs\artifactize` and adds that directory to your user `Path`:
+Prebuilt binaries are attached to releases from 0.5.2 on. To update, run the script
+again; to uninstall, `rm ~/.local/bin/artifactize`. Your state
+(`~/.local/state/artifactize` by default) is kept.
 
-```powershell
-irm https://artifactize.dev/install.ps1 | iex
-```
-
-With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), Cargo fetches the
-same release binary:
-
-```sh
-cargo binstall artifactize
-```
-
-Or build the latest release from [crates.io](https://crates.io/crates/artifactize)
-with a Rust toolchain and a C compiler:
+With a Rust toolchain and a C compiler, install the latest release from
+[crates.io](https://crates.io/crates/artifactize) instead (or fetch the prebuilt
+binary with `cargo binstall artifactize`):
 
 ```sh
 cargo install artifactize --locked
 ```
 
-Prebuilt binaries are attached to releases from 0.5.2 on. To update, run the same
-command again. To uninstall, delete the binary (`rm ~/.local/bin/artifactize`, or
-`cargo uninstall artifactize`); your state under `$XDG_STATE_HOME/artifactize` (by
-default `~/.local/state/artifactize`) is kept.
-[Install](https://artifactize.dev/docs/getting-started/install.html) covers pinning a
-version, Windows uninstall, building from source, the Agent backends and state.
+Releases are also tagged on GitHub, and `cargo install` can build one from there:
+
+```sh
+cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.1 --locked artifactize
+```
+
+To build from source instead:
+
+```sh
+git clone https://github.com/lhj6102/artifactize
+cd artifactize
+cargo install --path crates/artifactize --locked
+```
+
+Experimental: on Windows (x64), install from PowerShell:
+
+```powershell
+irm https://artifactize.dev/install.ps1 | iex
+```
+
+[Install](https://artifactize.dev/docs/getting-started/install.html) covers the
+prerequisites, the Agent backends, state and uninstalling.
 
 ## A tiny example
 

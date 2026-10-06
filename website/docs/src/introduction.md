@@ -12,7 +12,7 @@ saved.
 `status` predicts what a change will re-review. A team review store
 (`artifactize server`) shares verdicts across machines and CI. The CLI drives reviews,
 `artifactize monitor` shows their progress and `artifactize review` works
-through waiting Human sign-offs. It runs on Linux, WSL 2 and Windows.
+through waiting Human sign-offs. It runs on Linux and WSL.
 
 Every non-DROP item in the [CCDD 7.0 capability inventory](https://github.com/lhj6102/artifactize/blob/main/docs/ccdd-7-inventory.md)
 is checked off; the [plan](https://github.com/lhj6102/artifactize/blob/main/docs/PLAN.md) records the lean scope and what was dropped.
@@ -33,8 +33,7 @@ artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused
 ```
 
-[Install](getting-started/install.md) has Windows, `cargo binstall`, the prerequisites,
-backend setup and the full
+[Install](getting-started/install.md) has the prerequisites, backend setup and the full
 [quick start](getting-started/quick-start.md).
 
 ## Where to go next

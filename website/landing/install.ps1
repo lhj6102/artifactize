@@ -1,4 +1,4 @@
-# Install artifactize from its GitHub release on Windows.
+# Install artifactize from its GitHub release on Windows (experimental before v1).
 #
 #   irm https://artifactize.dev/install.ps1 | iex
 #
@@ -9,7 +9,8 @@
 # Run it again to update.
 #
 # Environment:
-#   ARTIFACTIZE_VERSION      install this release (0.5.2 or v0.5.2), not the latest
+#   ARTIFACTIZE_VERSION      install this release (0.5.2 or v0.5.2) instead of the latest
+#                            stable one; only this way installs a prerelease (0.6.0-alpha.1)
 #   ARTIFACTIZE_INSTALL_DIR  install into this directory instead
 #
 # Internal, for this repository's CI only:

@@ -9,7 +9,8 @@
 # directory is not on PATH, it prints the line to add. Run it again to update.
 #
 # Environment:
-#   ARTIFACTIZE_VERSION      install this release (0.5.2 or v0.5.2), not the latest
+#   ARTIFACTIZE_VERSION      install this release (0.5.2 or v0.5.2) instead of the latest
+#                            stable one; only this way installs a prerelease (0.6.0-alpha.1)
 #   ARTIFACTIZE_INSTALL_DIR  install into this directory instead of ~/.local/bin
 #
 # Internal, for this repository's CI only:
@@ -63,6 +64,7 @@ fetch() {
     esac
 }
 
+# GitHub's latest release is the newest stable one; it skips prereleases.
 latest_version() {
     api="https://api.github.com/repos/$REPO/releases/latest"
     fetch "$api" "$tmp/latest.json" ||
