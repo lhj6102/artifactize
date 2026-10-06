@@ -58,7 +58,7 @@ GitHub release into `~/.local/bin`. The script checks its SHA-256 and needs no `
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | sh
-artifactize --version          # artifactize 0.5.1
+artifactize --version          # artifactize 0.5.2
 ```
 
 Prebuilt binaries are attached to releases from 0.5.2 on. To update, run the script
@@ -76,7 +76,7 @@ cargo install artifactize --locked
 Releases are also tagged on GitHub, and `cargo install` can build one from there:
 
 ```sh
-cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.1 --locked artifactize
+cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.2 --locked artifactize
 ```
 
 To build from source instead:
