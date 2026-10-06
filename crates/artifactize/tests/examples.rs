@@ -426,13 +426,15 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
     let run_id = loop {
         let listed = session.json(&repo, &["request", "list", "--json"], 0);
-        if let Some(request) = listed.as_array().unwrap().first() {
-            assert_eq!(request["status"], "WAITING_HUMAN");
+        // The request is saved QUEUED first, then turns WAITING_HUMAN.
+        if let Some(request) = listed.as_array().unwrap().first()
+            && request["status"] == "WAITING_HUMAN"
+        {
             break request["runId"].as_str().unwrap().to_owned();
         }
         assert!(
             Instant::now() < deadline,
-            "the sign-off request did not appear"
+            "the sign-off request did not start waiting: {listed}"
         );
         thread::sleep(Duration::from_millis(20));
     };
