@@ -18,7 +18,7 @@ use std::{
 use serde_json::{Value, json};
 use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
 
-const FOLLOW_UP: &str = "A person follows up";
+use artifactize::agent::FOLLOW_UP;
 
 /// A workspace of one Artifact, `notes`, with one Agent eval whose result must list
 /// `covered`, and a content fingerprint.
@@ -360,6 +360,17 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             assert!(body.contains("Why GREEN?"));
         }
         assert!(calls[4].body.to_string().contains("enc-send-1"));
+        // Only a framed question is added: the system prompt and the history the repair
+        // turn sent, and the answer to it, are the prefix the cache already holds.
+        let (review, follow) = (input(&calls[2]), input(&calls[3]));
+        assert_eq!(calls[3].body["instructions"], calls[2].body["instructions"]);
+        assert_eq!(follow[..review.len()], review[..], "{backend}");
+        assert_eq!(follow.len(), review.len() + 2);
+        assert_eq!(
+            text_of(follow.last().unwrap()),
+            format!("{FOLLOW_UP}\n\nQuestion:\nWhy GREEN?")
+        );
+        assert!(FOLLOW_UP.contains("This is not a new review") && FOLLOW_UP.contains("not JSON"));
 
         // A second follow-up continues the same thread.
         let text = project.text(&provider, &["session", "send", &session, "Still?"], 0);
@@ -404,11 +415,25 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             ]
         );
         assert_eq!(events[end + 6]["toolCalls"][0]["name"], "read_notes");
-        assert!(
-            project
-                .text(&provider, &["session", "show", &id], 0)
-                .contains("══ Follow-up 2")
+        // The file keeps the framing and the person's own words; show prints the words.
+        assert_eq!(
+            (&events[end + 1]["text"], &events[end + 1]["framing"]),
+            (&json!("Why GREEN?"), &json!(FOLLOW_UP))
         );
+        assert_eq!(events[end + 2]["question"], "Why GREEN?");
+        assert_eq!(
+            text_of(&events[end + 2]["message"]),
+            format!("{FOLLOW_UP}\n\nQuestion:\nWhy GREEN?")
+        );
+        let shown = project.text(&provider, &["session", "show", &id], 0);
+        for expected in [
+            "══ Follow-up 2",
+            "── Person (turn 1, follow-up 1)\nWhy GREEN?\n",
+            "── Person (turn 1, follow-up 2)\nStill?\n",
+        ] {
+            assert!(shown.contains(expected), "{expected} in {shown}");
+        }
+        assert!(!shown.contains(FOLLOW_UP), "{shown}");
 
         // The recorded review and its reuse never change.
         let after = project.json(&provider, &["request", "show", &id], 0);
@@ -475,7 +500,13 @@ fn concurrent_sends_take_turns_in_one_thread() {
             let asked: Vec<_> = input(request)
                 .iter()
                 .filter(|item| text_of(item).starts_with(FOLLOW_UP))
-                .map(|item| text_of(item).rsplit("\n\n").next().unwrap().to_owned())
+                .map(|item| {
+                    text_of(item)
+                        .rsplit("Question:\n")
+                        .next()
+                        .unwrap()
+                        .to_owned()
+                })
                 .collect();
             let Some(last) = asked.last() else {
                 return responses(

@@ -383,6 +383,11 @@ fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
                     continue;
                 };
                 let turn = event["turn"].as_u64().unwrap_or_default();
+                // A follow-up's question shows the person's words; --json keeps the framing.
+                if let Some(question) = event["question"].as_str() {
+                    writeln!(out, "\n── Person (turn {turn}{send})\n{question}")?;
+                    continue;
+                }
                 let label = match &message {
                     Message::System { .. } => "System".to_owned(),
                     Message::User { .. } if event["repair"] == true => {

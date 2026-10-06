@@ -366,7 +366,14 @@ notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would
   another fingerprint now, the header says `files changed since this review`, and the
   model is told so.
 - The answer is free text, with no verdict schema, and each follow-up gets the
-  profile's `maxToolCalls`, `maxTokens` and `timeoutMs` budgets afresh.
+  profile's `maxToolCalls`, `maxTokens` and `timeoutMs` budgets afresh. Your message is
+  sent as one new user turn that frames it as a follow-up, not a new review: `Follow-up
+  question from a person about the review above. This is not a new review: the verdict
+  stays as recorded, and the instruction to return one JSON object applied only to the
+  review. Answer in plain text, not JSON. You may use the tools again.`, then
+  `Question:` and your message. The system prompt and the saved history are sent
+  unchanged, so the cached prefix still matches. `session show` prints your message
+  as you wrote it, and `--json` keeps both.
 - The message and the answer, tool calls included, are appended to the session, so
   repeated sends continue one thread. Sends to one session take turns: a second
   `session send` waits for the first and then continues after its answer.

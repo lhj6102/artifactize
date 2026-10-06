@@ -172,9 +172,9 @@ Every event has its `kind` and its time in `at`:
 | `kind` | Holds |
 |---|---|
 | `review` | First line: `version` (1), `sessionId`, `runId`, `requestId`, `evalId`, `target`, `producer`, `state`, `backend`, `model`, `reasoning`, `parameters` (as sent, with `prompt_cache_key`), `budgets` (`timeoutMs`, `maxToolCalls`, `maxTokens`) and `tools` (the definitions offered) |
-| `message` | One message as the provider received or sent it (`message`, a rig message: `role` `system`, `user` or `assistant`, with text, tool calls, tool results and reasoning, encrypted content and signatures included), and the `turn` (provider request) that carried it; the repair prompt has `"repair": true` |
+| `message` | One message as the provider received or sent it (`message`, a rig message: `role` `system`, `user` or `assistant`, with text, tool calls, tool results and reasoning, encrypted content and signatures included), and the `turn` (provider request) that carried it; the repair prompt has `"repair": true`, and a follow-up's framed question has the person's own words in `question` |
 | `end` | The review's `result`, or its `errorCode` and `error` |
-| `send` | A follow-up starts: its `send` number, the person's `text`, `filesChanged` and the `tools` offered |
+| `send` | A follow-up starts: its `send` number, the person's `text`, the `framing` sent before it, `filesChanged` and the `tools` offered |
 | `answer` | The follow-up's answer `text` (or `errorCode` and `error`), its attempts' `usage` and its `toolCalls` audit |
 
 The messages of a follow-up also carry its `send` number. The request's verdict,

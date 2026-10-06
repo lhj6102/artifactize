@@ -30,6 +30,10 @@ use crate::{
 /// A review's deadline when its profile sets no `timeoutMs`.
 const DEFAULT_TIMEOUT_MS: u32 = 240_000;
 
+/// What every follow-up's question starts with, before the person's message: the review's
+/// system prompt still asks for a JSON verdict, and this turn sets that aside.
+pub const FOLLOW_UP: &str = "Follow-up question from a person about the review above. This is not a new review: the verdict stays as recorded, and the instruction to return one JSON object applied only to the review. Answer in plain text, not JSON. You may use the tools again.";
+
 pub struct Review {
     pub result: Result<Value, Failure>,
     pub attempts: Vec<Attempt>,
@@ -505,24 +509,30 @@ async fn continue_conversation(
         .conversation
         .history()
         .map_err(|error| Failure::new(Code::AgentError, error))?;
-    let note = match continuation.files_changed {
-        Some(true) => {
-            " The Artifact files changed since this review; read them again before relying on what you saw."
+    // Only this new user turn is added: the system prompt and the history stay as the
+    // review sent them, so the provider's prompt cache still matches their prefix.
+    let framing = format!(
+        "{FOLLOW_UP}{}",
+        match continuation.files_changed {
+            Some(true) => {
+                " The Artifact files changed since this review; read them again before relying on what you saw."
+            }
+            _ => "",
         }
-        _ => "",
-    };
-    let question = Message::user(format!(
-        "A person follows up on this review. Your recorded verdict stands and does not change. Answer in plain text, not JSON. You may use the registered Artifact tools.{note}\n\n{message}"
-    ));
+    );
+    let question = Message::user(format!("{framing}\n\nQuestion:\n{message}"));
     let mut request = CompletionRequest::new(question.clone());
     request.chat_history = history;
     request.chat_history.push(question.clone());
     request.tools = definitions(&registry);
     request.additional_params = Some(Client::parameters(backend, reasoning, recorder.id())?);
     recorder.event(json!({
-        "kind":"send", "text":message, "filesChanged":continuation.files_changed,
+        "kind":"send", "text":message, "framing":framing,
+        "filesChanged":continuation.files_changed,
         "tools":request.tools.iter().map(|tool| &tool.name).collect::<Vec<_>>(),
     }));
+    // The question as sent, and the person's own words for `session show`.
+    recorder.event(json!({"kind":"message","turn":1,"message":question,"question":message}));
     follow_up.started = true;
     let mut turns = Turns {
         client: &client,
@@ -539,7 +549,6 @@ async fn continue_conversation(
         call_ids: HashSet::new(),
         recorder,
     };
-    turns.input(&question, false);
     loop {
         let response = turns.next(&request, &mut follow_up.attempts).await?;
         let calls = calls_of(&response);
