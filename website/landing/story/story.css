@@ -571,6 +571,16 @@
   font-weight: 600;
 }
 
+.sf.k-branch .sf-box {
+  fill: color-mix(in srgb, var(--pink) 5%, transparent);
+  stroke: color-mix(in srgb, var(--pink) 50%, var(--line));
+  stroke-dasharray: 6 4;
+}
+
+.sf.k-branch .sf-icon path {
+  stroke: var(--pink);
+}
+
 .sf.ns-stale .sf-box { stroke: var(--amber); }
 .sf.ns-reviewed .sf-box { stroke: color-mix(in srgb, var(--green) 60%, var(--line)); }
 .sf.ns-reused .sf-box { stroke: var(--reused-line); }
@@ -702,7 +712,6 @@
 .ln-label {
   fill: var(--dim);
   font-weight: 600;
-  text-anchor: end;
 }
 
 .ln-pill {

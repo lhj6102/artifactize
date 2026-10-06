@@ -51,6 +51,7 @@ const ICONS = {
   website: 'M1.6 2.8h12.8v10.4H1.6zM1.6 5.8h12.8M3.6 4.3h.1M5.4 4.3h.1',
   docs: 'M8 4.2C6.6 3 4.6 2.6 2 2.8v9.8c2.6-.2 4.6.2 6 1.4 1.4-1.2 3.4-1.6 6-1.4V2.8c-2.6-.2-4.6.2-6 1.4zM8 4.2V14',
   repo: 'M1.8 3.6h4.4l1.5 1.7h6.5v7.9H1.8z',
+  branch: 'M5 5.2v5.6M3.4 3.6a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0M3.4 12.4a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0M9.4 5.2a1.6 1.6 0 1 0 3.2 0 1.6 1.6 0 1 0-3.2 0M11 6.8c0 2.8-6 1.8-6 4',
   store: 'M2.8 3.8C2.8 2.6 5.1 1.8 8 1.8s5.2.8 5.2 2v8.4c0 1.2-2.3 2-5.2 2s-5.2-.8-5.2-2zM2.8 3.8c0 1.2 2.3 2 5.2 2s5.2-.8 5.2-2M2.8 8c0 1.2 2.3 2 5.2 2s5.2-.8 5.2-2',
   ci: 'M13 8a5 5 0 0 1-8.7 3.4M3 8a5 5 0 0 1 8.7-3.4M11.8 1.8v2.8H9M4.2 14.2v-2.8H7',
   person: 'M8 7.4a2.7 2.7 0 1 0 0-5.4 2.7 2.7 0 0 0 0 5.4zM2.6 14.2c.4-3 2.7-4.8 5.4-4.8s5 1.8 5.4 4.8',
@@ -292,11 +293,12 @@ export class StoryGraph {
         o: present && !isFrame ? 1 : 0,
         fo: present && isFrame ? 1 : 0,
       });
-      // A node that splits shrinks into its parts.
+      // A node that splits shrinks into its parts; one that merges moves into its target.
       if (!present && prev?.nodes.has(id)) {
         const into = [...snap.emerge].filter(([, src]) => src === id).map(([n]) => snap.pos.get(n));
-        const first = into.find(Boolean);
-        if (first) Object.assign(/** @type {Geo} */ (this.geoB.get(id)), { x: first.x, y: first.y, s: cur.s * 0.6 });
+        const mergedInto = snap.merge.get(id);
+        const first = mergedInto ? snap.pos.get(mergedInto) : into.find(Boolean);
+        if (first) Object.assign(/** @type {Geo} */ (this.geoB.get(id)), { x: first.x, y: first.y, s: first.s * 0.8 });
       }
       const g = this.els.get(id);
       if (g) {
@@ -363,7 +365,9 @@ export class StoryGraph {
 
     this.changed.clear();
     for (const g of this.els.values()) g.classList.remove('is-changed');
-    if (snap.ripple && !instant) this.ripple(snap, T.ripple);
+    // Let new edges grow and merging nodes arrive before a ripple starts.
+    const settle = snap.fresh.size || snap.merge.size ? T.edgeDelay + T.edgeGrow : 0;
+    if (snap.ripple.length && !instant) this.ripple(snap, T.ripple + settle);
     this.syncNodeStates();
     this.updateHud(snap.counts);
     this.draw(true);
@@ -376,31 +380,38 @@ export class StoryGraph {
    * @param {number} delay
    */
   ripple(snap, delay) {
-    const id = /** @type {string} */ (snap.ripple);
+    const ids = snap.ripple;
     const base = performance.now() - this.t0 + delay;
     const all = [...snap.wave1, ...snap.wave2];
-    if (snap.oldFp) this.setFp(id, snap.oldFp);
+    for (const id of ids) this.setFp(id, snap.oldFp.get(id));
     for (const e of all) this.setEdgeState(e, 'reused');
     this.syncNodeStates();
     this.later(base, () => {
-      this.changed.add(id);
-      this.els.get(id)?.classList.add('is-changed');
-      this.setFp(id, snap.fp.get(id));
-      this.ring(id);
+      for (const id of ids) {
+        this.changed.add(id);
+        this.els.get(id)?.classList.add('is-changed');
+        this.setFp(id, snap.fp.get(id));
+        this.ring(id);
+      }
     });
     snap.wave1.forEach((e, i) => this.later(base + 260 + i * 90, () => this.setEdgeState(e, 'stale')));
     snap.wave2.forEach((e, i) => {
-      this.later(base + 420 + i * 90, () => this.pulse(e, id));
+      this.later(base + 420 + i * 90, () => this.pulse(e, ids));
       this.later(base + 760 + i * 90, () => this.setEdgeState(e, 'stale'));
     });
-    // The changed Artifact's own evals run first; the evals that depend on it wait, then run.
-    snap.wave1.forEach((e, i) => this.later(base + 1500 + i * 120, () => this.setEdgeState(e, 'reviewed')));
+    // The changed Artifacts' own evals settle first; the evals that depend on them wait, then
+    // settle: reviewed, or reused when the step marks a verdict found elsewhere.
+    /** @param {string} e */
+    const settle = (e) => this.setEdgeState(e, snap.edges.get(e) || 'reviewed');
+    snap.wave1.forEach((e, i) => this.later(base + 1500 + i * 120, () => settle(e)));
     const second = base + 2000 + snap.wave1.length * 120;
-    snap.wave2.forEach((e, i) => this.later(second + i * 140, () => this.setEdgeState(e, 'reviewed')));
+    snap.wave2.forEach((e, i) => this.later(second + i * 140, () => settle(e)));
     const end = second + snap.wave2.length * 140;
     this.later(end + 200, () => {
-      this.changed.delete(id);
-      this.els.get(id)?.classList.remove('is-changed');
+      for (const id of ids) {
+        this.changed.delete(id);
+        this.els.get(id)?.classList.remove('is-changed');
+      }
       this.syncNodeStates();
     });
     this.later(end + T.hold, () => {
@@ -433,9 +444,9 @@ export class StoryGraph {
     }
   }
 
-  /** A dot that runs from the changed node along an eval reviewed against it. @param {string} edge @param {string} changed */
+  /** A dot that runs from a changed node along an eval reviewed against it. @param {string} edge @param {string[]} changed */
   pulse(edge, changed) {
-    if (edge.split('->')[1] !== changed) return;
+    if (!changed.includes(edge.split('->')[1])) return;
     const d = el('circle', { class: 'fx-dot', r: 3.4 * this.k, opacity: 0 }, this.layers.fx);
     this.tracks.push({
       at: performance.now() - this.t0,
@@ -497,6 +508,7 @@ export class StoryGraph {
 
   /** @param {string} id @param {string | undefined} fp */
   setFp(id, fp) {
+    if (!fp) return;
     const g = this.els.get(id);
     const def = this.nodeDef.get(id);
     if (!g || !def || def.sub || !fp) return;
@@ -736,7 +748,7 @@ export class StoryGraph {
         s = Math.max(s, cg.s);
       }
       const def = this.nodeDef.get(id);
-      const ls = def?.kind === 'repo' ? 1 : clamp(s, 0.5, 1);
+      const ls = def?.kind === 'repo' || def?.kind === 'branch' ? 1 : clamp(s, 0.5, 1);
       const pad = 12 * k * Math.max(s, 0.5);
       const top = (ls > 0.6 ? 20 : 4) * k * ls;
       let fb = card || { x: 0, y: 0, w: 0, h: 0 };
@@ -837,15 +849,19 @@ export class StoryGraph {
         const text = this.laneText(o.text || '');
         const pw = text.length * fs * CHAR + 18 * k;
         const ph = 22 * k;
-        p.pill.setAttribute('x', String(r1(x1 - 10 * k - pw)));
+        const lw = o.label.length * fs * CHAR;
+        // Label then pill, at the lane's right end, or from its left end.
+        const left = o.align === 'left';
+        const pillX = left ? x0 + 14 * k + lw + 8 * k : x1 - 10 * k - pw;
+        p.pill.setAttribute('x', String(r1(pillX)));
         p.pill.setAttribute('y', String(r1(y - ph / 2)));
         p.pill.setAttribute('width', String(r1(pw)));
         p.pill.setAttribute('height', String(r1(ph)));
         p.text.textContent = text;
-        p.text.setAttribute('x', String(r1(x1 - 10 * k - pw / 2)));
+        p.text.setAttribute('x', String(r1(pillX + pw / 2)));
         p.text.setAttribute('y', String(r1(y + 0.5)));
         p.text.setAttribute('font-size', String(r1(fs)));
-        p.label.setAttribute('x', String(r1(x1 - 18 * k - pw)));
+        p.label.setAttribute('x', String(r1(pillX - 8 * k - lw)));
         p.label.setAttribute('y', String(r1(y + 0.5)));
         p.label.setAttribute('font-size', String(r1(fs)));
       } else {

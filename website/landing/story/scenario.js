@@ -13,7 +13,7 @@
 
 /** @type {StoryNode[]} */
 const nodes = [
-  // One project, the "app" repository.
+  // One project: the "app" repository.
   { id: 'idea', label: 'Idea', kind: 'idea', parent: 'app' },
   { id: 'spec', label: 'Spec', kind: 'doc', parent: 'app' },
   { id: 'code', label: 'Code', kind: 'code', parent: 'app' },
@@ -29,17 +29,19 @@ const nodes = [
   { id: 'brand', label: 'Brand guide', kind: 'sheet', parent: 'app' },
   { id: 'alice', label: 'Alice', kind: 'person', sub: 'reviewer', parent: 'app' },
 
-  // More repositories, people, the review store and CI.
-  { id: 'app', label: 'app', kind: 'repo' },
-  { id: 'web', label: 'web', kind: 'repo' },
-  { id: 'w-site', label: 'site', kind: 'website', parent: 'web' },
-  { id: 'w-core', label: 'core', kind: 'module', parent: 'web' },
-  { id: 'w-style', label: 'style', kind: 'sheet', parent: 'web' },
-  { id: 'sdk', label: 'sdk', kind: 'repo' },
-  { id: 'k-core', label: 'core', kind: 'module', parent: 'sdk' },
-  { id: 'k-client', label: 'client', kind: 'module', parent: 'sdk' },
-  { id: 'k-style', label: 'style', kind: 'sheet', parent: 'sdk' },
-  { id: 'bob', label: 'Bob', kind: 'person', sub: 'developer', parent: 'web' },
+  // The same repository as a frame, two worktrees where people change one module
+  // each in parallel (copies of the Artifacts they touch), the review store and CI.
+  { id: 'app', label: 'app · main', kind: 'repo' },
+  { id: 'wt-api', label: 'bob/api', kind: 'branch' },
+  { id: 'bob', label: 'Bob', kind: 'person', sub: 'developer', parent: 'wt-api' },
+  { id: 'bob-api', label: 'api', kind: 'module', parent: 'wt-api', copyOf: 'api' },
+  { id: 'bob-tests', label: 'tests', kind: 'runtime', parent: 'wt-api', copyOf: 'tests' },
+  { id: 'bob-style', label: 'Style sheet', kind: 'sheet', parent: 'wt-api', copyOf: 'style' },
+  { id: 'wt-cli', label: 'carol/cli', kind: 'branch' },
+  { id: 'carol', label: 'Carol', kind: 'person', sub: 'developer', parent: 'wt-cli' },
+  { id: 'carol-cli', label: 'cli', kind: 'module', parent: 'wt-cli', copyOf: 'cli' },
+  { id: 'carol-tests', label: 'tests', kind: 'runtime', parent: 'wt-cli', copyOf: 'tests' },
+  { id: 'carol-style', label: 'Style sheet', kind: 'sheet', parent: 'wt-cli', copyOf: 'style' },
   { id: 'store', label: 'Review store', kind: 'store', sub: 'artifactize server' },
   { id: 'ci', label: 'CI', kind: 'ci', sub: 'read-only token' },
 ];
@@ -64,21 +66,19 @@ const edges = [
   { from: 'site', to: 'docs', kind: 'runtime', bend: 0 },
   { from: 'site', to: 'api', kind: 'runtime' },
   { from: 'site', to: 'brand', kind: 'agent', bend: 0 },
-  { from: 'w-site', to: 'w-core', kind: 'runtime' },
-  { from: 'w-core', to: 'w-style', kind: 'agent' },
-  { from: 'k-core', to: 'k-style', kind: 'agent' },
-  { from: 'k-client', to: 'k-style', kind: 'agent' },
-  { from: 'k-client', to: 'k-core', kind: 'runtime' },
+  { from: 'bob-api', to: 'bob-tests', kind: 'runtime' },
+  { from: 'bob-api', to: 'bob-style', kind: 'agent' },
+  { from: 'carol-cli', to: 'carol-tests', kind: 'runtime' },
+  { from: 'carol-cli', to: 'carol-style', kind: 'agent' },
 ];
 
 /** @type {Record<string, Overlay>} */
 const overlays = {
   'signed-once': { type: 'badge', node: 'alice', text: 'signed off once', tone: 'human', side: 'top' },
-  'flow-app': { type: 'flow', from: 'app', to: 'store', tone: 'publish', back: 'reuse' },
-  'flow-web': { type: 'flow', from: 'web', to: 'store', tone: 'publish', back: 'reuse' },
-  'flow-sdk': { type: 'flow', from: 'sdk', to: 'store', tone: 'publish', back: 'reuse' },
-  'flow-ci': { type: 'flow', from: 'store', to: 'ci', tone: 'reuse', bend: 0.2 },
-  'ci-lane': { type: 'lane', y: 93, label: 'verify --all', text: 'executed {executed} · reused {reused}' },
+  'flow-bob': { type: 'flow', from: 'wt-api', to: 'store', tone: 'publish', back: 'reuse' },
+  'flow-carol': { type: 'flow', from: 'wt-cli', to: 'store', tone: 'publish', back: 'reuse', bend: 0 },
+  'flow-ci': { type: 'flow', from: 'store', to: 'ci', tone: 'reuse', bend: 0 },
+  'ci-lane': { type: 'lane', y: 92, label: 'verify --all', text: 'executed {executed} · reused {reused}', align: 'left' },
 };
 
 /** Positions in percent of the stage. Frames (code, repos) wrap their children. @type {Record<string, LayoutPreset>} */
@@ -97,17 +97,22 @@ const layouts = {
     },
   },
   grown: { base: 'beyond', nodes: { core: [14, 62], api: [38, 62], cli: [62, 62], sync: [86, 62], brand: [86, 94] } },
-  team: {
+  parallel: {
     parts: [
-      { base: 'grown', fit: [0, 7, 52, 54], scale: 0.5 },
-      { nodes: { alice: [47, 9, 0.85] } },
-      { nodes: { 'w-site': [15, 25], 'w-core': [60, 25], 'w-style': [38, 80] }, fit: [70, 2, 98, 20], scale: 0.5 },
-      { nodes: { bob: [86, 28, 0.85] } },
-      { nodes: { 'k-core': [15, 25], 'k-client': [60, 25], 'k-style': [38, 80] }, fit: [70, 42, 98, 58], scale: 0.5 },
-      { nodes: { store: [46, 76] } },
+      { base: 'grown', fit: [0, 4, 52, 52], scale: 0.5 },
+      { nodes: { alice: [46.8, 6.9, 0.85] } },
+      {
+        nodes: { bob: [20, 32, 0.85], 'bob-api': [66, 32, 0.85], 'bob-tests': [52, 86, 0.5], 'bob-style': [80, 86, 0.5] },
+        fit: [0, 66, 44, 92],
+      },
+      {
+        nodes: { carol: [20, 32, 0.85], 'carol-cli': [66, 32, 0.85], 'carol-tests': [52, 86, 0.5], 'carol-style': [80, 86, 0.5] },
+        fit: [56, 66, 100, 92],
+      },
+      { nodes: { store: [84, 30] } },
     ],
   },
-  ci: { base: 'team', nodes: { store: [46, 69], ci: [10, 94] } },
+  merged: { base: 'parallel', nodes: { ci: [84, 92] } },
 };
 
 /** One entry per <section data-step> in index.html, in the same order. @type {StoryStep[]} */
@@ -143,17 +148,22 @@ const steps = [
     connect: ['sync->tests', 'sync->style', 'site->brand', 'docs->cli'],
   },
   {
-    id: 'team', layout: 'team',
-    add: ['app', 'web', 'w-site', 'w-core', 'w-style', 'sdk', 'k-core', 'k-client', 'k-style', 'store', 'bob'],
-    connect: ['w-site->w-core', 'w-core->w-style', 'k-core->k-style', 'k-client->k-style', 'k-client->k-core'],
-    show: ['flow-app', 'flow-web', 'flow-sdk'],
-    // The shared core and style sheet carry verdicts already in the store.
-    mark: { reused: ['w-core->w-style', 'k-core->k-style'] },
+    id: 'parallel', layout: 'parallel',
+    add: ['app', 'store', 'wt-api', 'bob', 'bob-api', 'bob-tests', 'bob-style', 'wt-cli', 'carol', 'carol-cli', 'carol-tests', 'carol-style'],
+    connect: ['bob-api->bob-tests', 'bob-api->bob-style', 'carol-cli->carol-tests', 'carol-cli->carol-style'],
+    show: ['flow-bob', 'flow-carol'],
+    // Bob changes api and Carol changes cli, each in their own worktree; their evals run there.
+    ripple: ['bob-api', 'carol-cli'],
   },
   {
-    id: 'ci', layout: 'ci',
-    add: ['ci'], show: ['flow-ci', 'ci-lane'],
-    ripple: 'cli',
+    id: 'merge', layout: 'merged',
+    merge: { 'bob-api': 'api', 'carol-cli': 'cli', 'bob-tests': 'tests', 'bob-style': 'style', 'carol-tests': 'tests', 'carol-style': 'style' },
+    remove: ['wt-api', 'wt-cli', 'bob', 'carol'],
+    add: ['ci'], show: ['flow-ci', 'ci-lane'], hide: ['flow-bob', 'flow-carol'],
+    ripple: ['api', 'cli'],
+    // The branches reviewed these with the same inputs, so CI reuses them from the store.
+    // Only the code's review against the Spec sees both changes at once, and runs.
+    mark: { reused: ['api->tests', 'api->style', 'cli->tests', 'cli->style', 'docs->api', 'docs->cli', 'site->api'] },
   },
 ];
 

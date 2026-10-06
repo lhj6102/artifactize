@@ -4,10 +4,11 @@
 // `@typedef {import('./types.js').Name} Name`.
 
 /**
- * What a node draws as. Every kind but person, repo, store and ci is an
- * Artifact, and only Artifacts count in the stage's "Artifacts" meter.
+ * What a node draws as. Every kind but person, repo, branch, store and ci is an
+ * Artifact, and only Artifacts count in the stage's "Artifacts" meter. A
+ * branch is a checkout (a worktree or a branch) drawn as a frame.
  * @typedef {'idea' | 'doc' | 'code' | 'module' | 'runtime' | 'sheet' | 'website' | 'docs'
- *   | 'repo' | 'store' | 'ci' | 'person'} NodeKind
+ *   | 'repo' | 'branch' | 'store' | 'ci' | 'person'} NodeKind
  */
 
 /** @typedef {'runtime' | 'agent' | 'human'} EvalKind */
@@ -28,6 +29,8 @@
  *   is drawn as a frame around them; its eval then depends on them too.
  * @property {string} [sub]    Second line. Artifacts default to their fingerprint.
  * @property {string} [fp]     Fingerprint to show. Defaults to a hash of the id.
+ * @property {string} [copyOf] The Artifact this node copies in another checkout.
+ *   It starts with that Artifact's fingerprint and is not counted again.
  */
 
 /**
@@ -89,6 +92,7 @@
  * @property {number} y
  * @property {string} label
  * @property {string} [text]
+ * @property {'left' | 'right'} [align] Where the label and text sit. Default right.
  */
 
 /** @typedef {FlowOverlay | BadgeOverlay | LaneOverlay} Overlay */
@@ -103,14 +107,17 @@
  * @property {string[]} [add]  Nodes to add.
  * @property {Record<string, string>} [emerge] Added node → node it grows out of.
  * @property {{ from: string, into: string[] }} [split] Replace `from` with `into`.
+ * @property {Record<string, string>} [merge] Node → node it merges into: the first
+ *   is removed and the second takes its fingerprint (a branch merging back).
  * @property {string[]} [remove]  Nodes to remove (their edges go too).
  * @property {string[]} [connect] Edge ids to add.
  * @property {string[]} [disconnect]
  * @property {string[]} [show]  Overlay ids to show.
  * @property {string[]} [hide]
  * @property {string[]} [sketch] Nodes drawn as not yet declared.
- * @property {string} [ripple] A node whose fingerprint changes in this step:
- *   every eval that depends on it goes stale and is reviewed again.
+ * @property {string | string[]} [ripple] Nodes whose fingerprint changes in this
+ *   step: every eval that depends on one goes stale and is reviewed again, unless
+ *   `mark` says it is reused (a verdict from elsewhere, such as a merged branch).
  * @property {Partial<Record<EvalState, string[]>>} [mark] Set eval states.
  */
 
@@ -152,14 +159,15 @@
  * @property {Set<string>} frames     Present nodes drawn as frames.
  * @property {Map<string, XYS>} pos   Layout position of each present node.
  * @property {Map<string, string>} emerge Node added here → node it grows from.
+ * @property {Map<string, string>} merge  Node removed here → node it merges into.
  * @property {Map<string, string>} fp Fingerprint of each Artifact.
  * @property {Set<string>} sketch
  * @property {Map<string, EvalState>} edges Present edges and their final state.
  * @property {Set<string>} fresh      Edges connected in this step.
- * @property {string | null} ripple
- * @property {string[]} wave1  Ripple: evals on the changed node itself.
- * @property {string[]} wave2  Ripple: evals that depend on it.
- * @property {string | null} oldFp  Ripple: the changed node's previous fingerprint.
+ * @property {string[]} ripple  Nodes whose fingerprint changes in this step.
+ * @property {string[]} wave1  Ripple: evals on the changed nodes themselves.
+ * @property {string[]} wave2  Ripple: evals that depend on them.
+ * @property {Map<string, string>} oldFp  Ripple: each changed node's previous fingerprint.
  * @property {Set<string>} overlays
  * @property {Counts} counts
  */

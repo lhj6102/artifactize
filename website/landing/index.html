@@ -85,7 +85,7 @@
     <div class="wrap story-head">
       <p class="kicker">The story</p>
       <h2 id="story-title">Grow a project, and watch what gets reviewed again.</h2>
-      <p>One project, from an idea to many repositories. Each step adds Artifacts and the evals between them; the graphic shows which verdicts run again and which are reused.</p>
+      <p>One project, from an idea to a team working on it in parallel. Each step adds Artifacts and the evals between them; the graphic shows which verdicts run again and which are reused.</p>
     </div>
 
     <div class="story-grid">
@@ -129,8 +129,8 @@
             <li><a href="#step-beyond" data-short="Beyond code">Beyond code</a></li>
             <li><a href="#step-ripple" data-short="A change">A change</a></li>
             <li><a href="#step-grows" data-short="It keeps growing">It keeps growing</a></li>
-            <li><a href="#step-team" data-short="Many repositories">Many repositories</a></li>
-            <li><a href="#step-ci" data-short="CI and sign-offs">CI and sign-offs</a></li>
+            <li><a href="#step-parallel" data-short="Work in parallel">Work in parallel</a></li>
+            <li><a href="#step-merge" data-short="Merge and CI">Merge and CI</a></li>
           </ol>
         </nav>
       </div>
@@ -201,21 +201,22 @@ Verify actions: will execute 2, will reuse 7, wait 3, blocked 0</code></pre>
           <p class="sr">In the graphic: sync joins the modules, Brand guide joins the website, and the docs gain an eval against cli. Four new evals execute; twelve are reused.</p>
         </section>
 
-        <section class="story-step" data-step="team" id="step-team" aria-labelledby="step-team-h">
-          <p class="step-k"><b>09</b>Many repositories</p>
-          <h3 id="step-team-h">Verdicts flow through one review store.</h3>
-          <p>Each machine records its verdicts in local state. With <code>artifactize remote</code>, Alice's and Bob's machines also publish them to one <code>artifactize server</code> and reuse what it holds. The reuse key is the eval and the name and fingerprint of each Artifact it covers, never a path, so any checkout or repository with the same Artifacts reuses the same verdict.</p>
+        <section class="story-step" data-step="parallel" id="step-parallel" aria-labelledby="step-parallel-h">
+          <p class="step-k"><b>09</b>Work in parallel</p>
+          <h3 id="step-parallel-h">Split the work: each person verifies their own change.</h3>
+          <p>Bob changes api in one worktree and Carol changes cli in another, each with their own checkout and state. Each runs <code>verify</code>: it re-reviews what their change touched, reuses the rest, and publishes the verdicts to the team's <code>artifactize server</code>. Paths do not matter to the reuse key, so a verdict earned in one checkout is reused by every other with the same inputs.</p>
           <pre class="step-code"><code><span class="t-prompt">$</span> artifactize remote login https://reviews.example/</code></pre>
-          <p class="sr">In the graphic: the project shrinks into the app repository, beside two more repositories, web and sdk, that share the core module and the style sheet. Each repository publishes verdicts to the review store and reuses them from it; the shared evals arrive already reviewed.</p>
+          <p class="sr">In the graphic: the project zooms out into the app repository on main. Below it, two worktrees: Bob's holds a copy of api and Carol's a copy of cli. Each changes its module, runs that module's tests and style review, and publishes the verdicts to the review store; the rest of the graph stays reused.</p>
         </section>
 
-        <section class="story-step" data-step="ci" id="step-ci" aria-labelledby="step-ci-h">
-          <p class="step-k"><b>10</b>CI and sign-offs</p>
-          <h3 id="step-ci-h">CI runs only what is stale, and a person signs off once.</h3>
-          <p>CI runs <code>verify --all</code> with a read-only token: it reuses the team's verdicts, never publishes, and executes only the evals a change made stale, so Agent reviews spend tokens only on what changed. Alice's sign-off was recorded once; every machine and CI reuses it until the Spec changes.</p>
-          <pre class="step-code"><code><span class="t-dim"># CI: store URL and read token in the env</span>
-<span class="t-prompt">$</span> artifactize verify --all</code></pre>
-          <p class="sr">In the graphic: a CI lane appears below the review store, which sends verdicts to CI only. A change to cli makes four evals stale; CI executes those four and reuses the rest. Alice's sign-off still carries its one badge, "signed off once".</p>
+        <section class="story-step" data-step="merge" id="step-merge" aria-labelledby="step-merge-h">
+          <p class="step-k"><b>10</b>Merge and CI</p>
+          <h3 id="step-merge-h">CI runs only what the merge made new, and a person signs off once.</h3>
+          <p>Both branches merge into main. CI runs <code>verify --all</code> with a read-only token: it reuses the verdicts the branches published and executes only evals whose inputs are new after the merge, here the code's review against the Spec, which now sees both changes. Agent reviews spend tokens only on that. Alice's sign-off was recorded once; every checkout and CI reuses it until the Spec changes.</p>
+          <pre class="step-code"><code><span class="t-dim"># CI on main: store URL and read token in the env</span>
+<span class="t-prompt">$</span> artifactize verify --all
+Summary: executed 1 (runtime 0, agent 1, human 0), reused 15 (runtime 6, agent 8, human 1)</code></pre>
+          <p class="sr">In the graphic: the worktrees merge back into the app repository, so api and cli take their new fingerprints. Their evals turn stale and come back reused from the review store; only Code's review against the Spec, which spans both changes, executes. A CI lane reads verdicts from the store: executed 1, reused 15. Alice's sign-off keeps its one badge, "signed off once".</p>
         </section>
       </div>
     </div>

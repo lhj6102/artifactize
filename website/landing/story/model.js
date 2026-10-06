@@ -13,7 +13,10 @@
 /** @typedef {import('./types.js').XYS} XYS */
 
 /** Kinds that are not Artifacts: they never count as one and have no fingerprint. */
-export const NON_ARTIFACT = new Set(['person', 'repo', 'store', 'ci']);
+export const NON_ARTIFACT = new Set(['person', 'repo', 'branch', 'store', 'ci']);
+
+/** @param {string | string[] | undefined} r */
+const rippleList = (r) => (r === undefined ? [] : Array.isArray(r) ? r : [r]);
 
 /** @type {readonly EvalState[]} */
 const EVAL_STATES = ['pending', 'stale', 'reviewed', 'reused'];
@@ -51,6 +54,7 @@ export function validateScenario(sc, sectionIds) {
   }
   for (const n of sc.nodes) {
     if (n.parent && !nodeIds.has(n.parent)) out.push(`node "${n.id}" has an unknown parent "${n.parent}"`);
+    if (n.copyOf && !nodeIds.has(n.copyOf)) out.push(`node "${n.id}" copies an unknown node "${n.copyOf}"`);
   }
   const edgeIds = new Set();
   for (const e of sc.edges) {
@@ -110,6 +114,11 @@ export function validateScenario(sc, sectionIds) {
       if (!present.has(id)) out.push(`step "${s}": "${id}" emerges but is not added`);
       if (!present.has(src)) out.push(`step "${s}": "${id}" emerges from "${src}", which is not on the stage`);
     }
+    for (const [id, into] of Object.entries(step.merge || {})) {
+      if (!present.has(id)) out.push(`step "${s}" merges "${id}", which is not on the stage`);
+      if (!present.has(into)) out.push(`step "${s}" merges "${id}" into "${into}", which is not on the stage`);
+      present.delete(id);
+    }
     for (const id of step.remove || []) present.delete(id);
     for (const id of [...connected]) {
       const [from, to] = id.split('->');
@@ -129,7 +138,9 @@ export function validateScenario(sc, sectionIds) {
         if (!connected.has(id)) out.push(`step "${s}" marks "${id}", which is not connected`);
       }
     }
-    if (step.ripple && !present.has(step.ripple)) out.push(`step "${s}" ripples from "${step.ripple}", which is not on the stage`);
+    for (const id of rippleList(step.ripple)) {
+      if (!present.has(id)) out.push(`step "${s}" ripples from "${id}", which is not on the stage`);
+    }
     if (sc.layouts[step.layout]) {
       const pos = resolveLayout(sc, step.layout);
       const frames = framesOf(sc, present);
@@ -216,23 +227,24 @@ function resolvePart(sc, part, seen) {
 }
 
 /**
- * The evals a fingerprint change of `changed` makes stale: those reviewing it,
- * those reviewed against it, and those of its parent (a group's evals depend
- * on its children). Like artifactize's reuse key, it looks one connection away.
+ * The evals a fingerprint change of the `changed` nodes makes stale: those
+ * reviewing one, those reviewed against one, and those of a parent (a group's
+ * evals depend on its children). Like artifactize's reuse key, it looks one
+ * connection away.
  * @param {Scenario} sc
  * @param {Iterable<string>} edgeIds
- * @param {string} changed
+ * @param {string[]} changed
  */
 export function affectedBy(sc, edgeIds, changed) {
-  const parent = sc.nodes.find((n) => n.id === changed)?.parent;
+  const parents = new Set(changed.map((c) => sc.nodes.find((n) => n.id === c)?.parent).filter(Boolean));
   /** @type {string[]} */
   const wave1 = [];
   /** @type {string[]} */
   const wave2 = [];
   for (const id of edgeIds) {
     const [from, to] = id.split('->');
-    if (from === changed) wave1.push(id);
-    else if (to === changed || (parent && from === parent)) wave2.push(id);
+    if (changed.includes(from)) wave1.push(id);
+    else if (changed.includes(to) || parents.has(from)) wave2.push(id);
   }
   return { wave1, wave2 };
 }
@@ -244,6 +256,7 @@ export function affectedBy(sc, edgeIds, changed) {
  */
 export function buildSnapshots(sc) {
   const kind = new Map(sc.nodes.map((n) => [n.id, n.kind]));
+  const def = new Map(sc.nodes.map((n) => [n.id, n]));
   const edgeKind = new Map(sc.edges.map((e) => [edgeId(e), e.kind]));
   /** @type {Map<string, string>} */
   const fp = new Map();
@@ -260,7 +273,15 @@ export function buildSnapshots(sc) {
   return sc.steps.map((step, index) => {
     /** @type {Map<string, string>} */
     const emerge = new Map();
-    for (const id of step.add || []) nodes.add(id);
+    /** @type {Map<string, string>} */
+    const merge = new Map();
+    for (const id of step.add || []) {
+      nodes.add(id);
+      // A copy in another checkout starts with the original's fingerprint.
+      const copyOf = def.get(id)?.copyOf;
+      const orig = copyOf ? fp.get(copyOf) : undefined;
+      if (orig && !def.get(id)?.fp) fp.set(id, orig);
+    }
     if (step.split) {
       for (const id of step.split.into) {
         nodes.add(id);
@@ -269,6 +290,14 @@ export function buildSnapshots(sc) {
       nodes.delete(step.split.from);
     }
     for (const [id, src] of Object.entries(step.emerge || {})) emerge.set(id, src);
+    const before = new Map(fp);
+    for (const [id, into] of Object.entries(step.merge || {})) {
+      if (!nodes.has(id) || !nodes.has(into)) continue;
+      const f = fp.get(id);
+      if (f) fp.set(into, f);
+      merge.set(id, into);
+      nodes.delete(id);
+    }
     for (const id of step.remove || []) nodes.delete(id);
     for (const id of [...edges]) {
       const [from, to] = id.split('->');
@@ -289,17 +318,17 @@ export function buildSnapshots(sc) {
     /** @type {Map<string, EvalState>} */
     const state = new Map();
     for (const id of edges) state.set(id, fresh.has(id) ? 'reviewed' : 'reused');
-    /** @type {string[]} */
-    let wave1 = [];
-    /** @type {string[]} */
-    let wave2 = [];
-    let oldFp = null;
-    const ripple = step.ripple && nodes.has(step.ripple) ? step.ripple : null;
-    if (ripple) {
-      ({ wave1, wave2 } = affectedBy(sc, edges, ripple));
-      for (const id of [...wave1, ...wave2]) state.set(id, 'reviewed');
-      oldFp = fp.get(ripple) || null;
-      if (oldFp) fp.set(ripple, hashHex(`${ripple}:${step.id}:${oldFp}`));
+    const ripple = rippleList(step.ripple).filter((id) => nodes.has(id));
+    const { wave1, wave2 } = affectedBy(sc, edges, ripple);
+    for (const id of [...wave1, ...wave2]) state.set(id, 'reviewed');
+    /** @type {Map<string, string>} */
+    const oldFp = new Map();
+    for (const id of ripple) {
+      const old = before.get(id);
+      if (!old) continue;
+      oldFp.set(id, old);
+      // A node a branch merged into already took that branch's fingerprint.
+      if (![...merge.values()].includes(id)) fp.set(id, hashHex(`${id}:${step.id}:${old}`));
     }
     for (const [st, ids] of Object.entries(step.mark || {})) {
       for (const id of ids || []) {
@@ -330,7 +359,9 @@ export function buildSnapshots(sc) {
     }
     cumExecuted += executed;
     cumNaive += edges.size;
-    const artifacts = [...nodes].filter((id) => !NON_ARTIFACT.has(kind.get(id) || 'person') && !sketch.has(id)).length;
+    const artifacts = [...nodes].filter(
+      (id) => !NON_ARTIFACT.has(kind.get(id) || 'person') && !sketch.has(id) && !def.get(id)?.copyOf,
+    ).length;
 
     return {
       id: step.id,
@@ -339,6 +370,7 @@ export function buildSnapshots(sc) {
       frames,
       pos,
       emerge,
+      merge,
       fp: new Map(fp),
       sketch,
       edges: state,
