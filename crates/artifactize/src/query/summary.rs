@@ -1,13 +1,70 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use serde::Serialize;
 use serde_json::{Value, json};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use crate::store::{ExecutionOptions, Request, RequestView, RunView};
 
+/// How a request got a result that another request's execution produced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceKind {
+    /// A completed local record of the reuse key.
+    Cache,
+    /// The live execution of the reuse key that the request waited for.
+    Joined,
+    /// A record from the remote review store.
+    Remote,
+}
+
+/// The request whose execution produced a reused result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Source<'a> {
+    pub run_id: &'a str,
+    pub request_id: &'a str,
+    pub kind: SourceKind,
+}
+
+/// Where a request's result came from: `None` when the request executed itself or has no
+/// result from an execution yet. The one rule behind `source`, `summary.reused`, the text
+/// marker and the monitor.
+pub fn source(request: &Request) -> Option<Source<'_>> {
+    let provenance = request
+        .provenance
+        .as_ref()
+        .filter(|source| source.request_id != request.id)?;
+    let kind = if request.origin.is_some() {
+        SourceKind::Remote
+    } else if request.joined {
+        SourceKind::Joined
+    } else {
+        SourceKind::Cache
+    };
+    Some(Source {
+        run_id: &provenance.run_id,
+        request_id: &provenance.request_id,
+        kind,
+    })
+}
+
+/// The result came from another request's execution, possibly in this Run.
+pub fn reused(request: &Request) -> bool {
+    source(request).is_some()
+}
+
+/// A saved request as output: `source` stands for the saved `joined` flag.
+fn with_source(value: &mut Value, request: &Request) {
+    let object = value.as_object_mut().expect("a request is an object");
+    object.remove("joined");
+    object.insert("source".into(), json!(source(request)));
+}
+
 pub fn request_output(view: &RequestView) -> Value {
     let mut value = json!(view);
     let request = &view.request;
+    with_source(&mut value, request);
     // A reused request spent nothing; the source's attempts and tools stay in its audit.
     let spent = (!reused(request)).then_some(request);
     let (attempts, reported, unreported, usage) = usage_totals(spent);
@@ -26,6 +83,10 @@ pub fn request_output(view: &RequestView) -> Value {
 
 pub fn run_output(view: &RunView) -> Value {
     let mut value = json!(view);
+    let requests = value["requests"].as_array_mut().expect("requests");
+    for (output, request) in requests.iter_mut().zip(&view.requests) {
+        with_source(output, request);
+    }
     let mut counts = BTreeMap::<&str, u64>::new();
     let mut seen = BTreeSet::new();
     let local: Vec<_> = view
@@ -109,14 +170,6 @@ fn local_execution(request: &Request) -> bool {
         .provenance
         .as_ref()
         .is_some_and(|source| source.request_id == request.id)
-}
-
-/// The result came from another request's execution, possibly in this Run.
-pub fn reused(request: &Request) -> bool {
-    request
-        .provenance
-        .as_ref()
-        .is_some_and(|source| source.request_id != request.id)
 }
 
 fn wall_ms(start: &str, end: Option<&str>) -> Option<u64> {

@@ -100,6 +100,10 @@ pub struct Request {
     /// The reused execution's original usage, never counted as spent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reused_usage: Option<Value>,
+    /// The reused result came from the live execution this request waited for, not a
+    /// completed record. Saved only; output reports it as `source.kind` ([`crate::query::source`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub joined: bool,
     /// Who produced a reused result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub producer: Option<Producer>,

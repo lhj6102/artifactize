@@ -185,6 +185,7 @@ pub async fn verify(
             provenance: None,
             usage: None,
             reused_usage: None,
+            joined: false,
             producer: None,
             reviewer: None,
             origin: None,

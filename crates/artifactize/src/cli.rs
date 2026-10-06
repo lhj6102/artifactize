@@ -831,11 +831,7 @@ fn cancellation_listener() -> Result<
 /// Where a reused result came from: its source Run, plus the producer for a remote result,
 /// or the reviewer and the authenticated publisher for a remote Human sign-off.
 fn reuse_marker(request: &crate::store::Request) -> String {
-    let Some(source) = request
-        .provenance
-        .as_ref()
-        .filter(|_| crate::query::reused(request))
-    else {
+    let Some(source) = crate::query::source(request) else {
         return String::new();
     };
     let profile = if request.profile == request.requested_profile {
