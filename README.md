@@ -53,12 +53,24 @@ re-reviews only that Artifact.
 
 ## Install
 
-On Linux or WSL 2, with a Rust toolchain and a C compiler, install the latest
-release from [crates.io](https://crates.io/crates/artifactize):
+On Linux (x86_64 or aarch64) or WSL 2, install the static binary from the latest
+GitHub release into `~/.local/bin`. The script checks its SHA-256 and needs no `sudo`:
+
+```sh
+curl -fsSL https://artifactize.dev/install.sh | sh
+artifactize --version          # artifactize 0.5.1
+```
+
+Prebuilt binaries are attached to releases from 0.5.2 on. To update, run the script
+again; to uninstall, `rm ~/.local/bin/artifactize`. Your state
+(`~/.local/state/artifactize` by default) is kept.
+
+With a Rust toolchain and a C compiler, install the latest release from
+[crates.io](https://crates.io/crates/artifactize) instead (or fetch the prebuilt
+binary with `cargo binstall artifactize`):
 
 ```sh
 cargo install artifactize --locked
-artifactize --version          # artifactize 0.5.1
 ```
 
 Releases are also tagged on GitHub, and `cargo install` can build one from there:
@@ -73,6 +85,12 @@ To build from source instead:
 git clone https://github.com/lhj6102/artifactize
 cd artifactize
 cargo install --path crates/artifactize --locked
+```
+
+Experimental: on Windows (x64), install from PowerShell:
+
+```powershell
+irm https://artifactize.dev/install.ps1 | iex
 ```
 
 [Install](https://artifactize.dev/docs/getting-started/install.html) covers the

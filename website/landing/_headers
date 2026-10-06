@@ -8,3 +8,13 @@
 
 /media/*
   Cache-Control: public, max-age=604800
+
+# The install scripts (curl ... | sh, irm ... | iex) read as text in a browser too, and
+# reach users within minutes of a deploy.
+/install.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
+/install.ps1
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300

@@ -21,11 +21,11 @@ Start with [Install](getting-started/install.md): prerequisites, backend setup, 
 
 ## Get started
 
-On Linux or WSL 2, with a Rust toolchain and a C compiler, install the binary and
-review the runtime-only example. No model or API key is needed:
+On Linux or WSL 2, install the binary and review the runtime-only example. No model
+or API key is needed:
 
 ```sh
-cargo install artifactize --locked
+curl -fsSL https://artifactize.dev/install.sh | sh   # or: cargo install artifactize --locked
 git clone https://github.com/lhj6102/artifactize   # the example projects
 cd artifactize/examples/runtime-relations
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart

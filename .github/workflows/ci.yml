@@ -1,11 +1,14 @@
 name: CI
 
 # Changes that touch only the website (built by website.yml) skip the Rust checks.
+# Before v1, only the Linux check gates changes. Windows runs on pushes to main and by
+# hand, as an informational signal that never fails the workflow.
 on:
   push:
     paths-ignore: ["website/**", ".github/workflows/website.yml"]
   pull_request:
     paths-ignore: ["website/**", ".github/workflows/website.yml"]
+  workflow_dispatch:
 
 jobs:
   check:
@@ -15,18 +18,22 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       # Packages the crate and builds the package as crates.io would, without uploading.
       - run: cargo publish --dry-run --locked -p artifactize
   windows:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: windows-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --locked --all-targets -- -D warnings
       # Tests build their Windows stand-ins for /bin/sh with this rustc, and run python3.
       - run: cargo test --locked

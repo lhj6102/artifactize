@@ -1,7 +1,18 @@
 name: Release
 
-# Pushing a version tag (v0.5.1) publishes that version to crates.io and creates its
-# GitHub release. The tag must match the crate version.
+# Pushing a version tag releases it, each stage only after the previous one succeeds:
+# 1. check the tag and run the tests (Linux);
+# 2. build the release binaries (binaries.yml);
+# 3. publish to crates.io, create the GitHub release and attach the Linux archives
+#    and their .sha256 checksums;
+# 4. attach the Windows zip, best effort until v1: its build or upload may fail
+#    without failing the release.
+# A stable tag (v0.5.2) must match the crate version. A prerelease tag (v0.6.0-alpha.1)
+# builds as that version without a version-bump commit and creates a GitHub
+# prerelease only: no crates.io. A failed check or Linux build publishes nothing.
+#
+# Later distribution channels (a Homebrew tap, winget, the Microsoft Store) are jobs
+# with `needs: publish`, each independent, so one failing channel blocks no other.
 on:
   push:
     tags: ["v*"]
@@ -14,33 +25,109 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check:
+    name: Tag and tests
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check the tag
+        id: tag
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Tag $GITHUB_REF_NAME is not v<major>.<minor>.<patch>[-<prerelease>]." >&2
+            exit 1
+          fi
+          case $version in
+            *-*) prerelease=true ;;
+            *)
+              prerelease=false
+              crate=$(cargo metadata --no-deps --format-version 1 \
+                | jq -r '.packages[] | select(.name == "artifactize") | .version')
+              if [ "$version" != "$crate" ]; then
+                echo "Tag $GITHUB_REF_NAME does not match the crate version $crate." >&2
+                exit 1
+              fi
+              ;;
+          esac
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >>"$GITHUB_OUTPUT"
+      - run: cargo test --locked
+
+  binaries:
+    needs: check
+    uses: ./.github/workflows/binaries.yml
+    with:
+      version: ${{ needs.check.outputs.version }}
+
   publish:
+    needs: [check, binaries]
     runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: write # the GitHub release
       id-token: write # crates.io Trusted Publishing
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      PRERELEASE: ${{ needs.check.outputs.prerelease }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Check that the tag matches the crate version
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*-linux-musl
+          path: dist
+          merge-multiple: true
+      - name: Check the Linux archives and their checksums
+        working-directory: dist
         run: |
-          version=$(cargo metadata --no-deps --format-version 1 \
-            | jq -r '.packages[] | select(.name == "artifactize") | .version')
-          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match the crate version $version." >&2
-            exit 1
-          fi
-      - run: cargo test --locked
+          ls -l
+          for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+            sha256sum -c "artifactize-v$VERSION-$target.tar.gz.sha256"
+          done
       # crates.io Trusted Publishing: the crate trusts this workflow in environment
       # "release", so the job exchanges its OIDC token for a short-lived publish token.
       - uses: rust-lang/crates-io-auth-action@v1
+        if: env.PRERELEASE == 'false'
         id: auth
       - name: Publish to crates.io
+        if: env.PRERELEASE == 'false'
         run: cargo publish --locked -p artifactize
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          flags=
+          if [ "$PRERELEASE" = true ]; then flags=--prerelease; fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes $flags
+      - name: Attach the Linux archives and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*
+
+  windows:
+    name: Attach the Windows zip (best effort)
+    needs: publish
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: write # the GitHub release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-x86_64-pc-windows-msvc
+          path: dist
+      - name: Attach the Windows zip and its checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          cd dist
+          sha256sum -c ./*.sha256
+          gh release upload "$GITHUB_REF_NAME" ./*

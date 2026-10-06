@@ -5,7 +5,7 @@ deployed from this directory to Cloudflare Workers (static assets).
 
 | Path | Contents |
 |---|---|
-| `landing/` | The landing page, copied to `dist/` as is: a short hero, the scroll story (`landing/story/`, native ES modules with JSDoc types; see its `README.md`), the terminal recordings and the install block. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the media (`landing/media/`), favicons, `404.html`, `_headers` and `.assetsignore`, which keeps `jsconfig.json` and `story/README.md` out of the deployed site. |
+| `landing/` | The landing page, copied to `dist/` as is: a short hero, the scroll story (`landing/story/`, native ES modules with JSDoc types; see its `README.md`), the terminal recordings and the install block. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the media (`landing/media/`), favicons, `404.html`, `_headers`, the install scripts `install.sh` and `install.ps1` (served at `/install.sh` and `/install.ps1`, tested by `.github/workflows/binaries.yml`) and `.assetsignore`, which keeps `jsconfig.json` and `story/README.md` out of the deployed site. |
 | `docs/` | The user docs as an [mdBook](https://rust-lang.github.io/mdBook/): `book.toml`, `src/` (`SUMMARY.md` and the chapters) and `theme/`. Built into `dist/docs/`. |
 | `build.sh` | Builds everything into `dist/` (gitignored) and checks every internal link. |
 | `check-links.py` | The internal link check that `build.sh` runs over `dist/`. |
