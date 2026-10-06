@@ -155,8 +155,15 @@
     if (-not (@($env:Path -split ';' | ForEach-Object { $_.TrimEnd('\') }) -contains $dir)) {
         $env:Path = "$env:Path;$dir"
     }
-    $found = Get-Command artifactize -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($found -and $found.Path -ne $exe) {
-        Say "note: 'artifactize' on Path is $($found.Path), which comes before $dir"
+    # Every other artifactize on Path: one that comes first runs instead. A warning only.
+    $others = @(Get-Command artifactize -CommandType Application -All -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -ne $exe } | Select-Object -ExpandProperty Path -Unique)
+    if ($others) {
+        Say "another artifactize on your Path may run instead of this one:"
+        foreach ($other in $others) {
+            $version = try { (& $other --version 2>$null) -join ' ' } catch { 'version unknown' }
+            Write-Host "    $other ($version)"
+        }
+        Say "remove it (a cargo install: cargo uninstall artifactize), or put $dir first on your Path, then open a new terminal."
     }
 }

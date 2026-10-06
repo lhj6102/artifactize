@@ -77,7 +77,7 @@ Every new local execution records its `producer`; a submitted Human execution al
 1. **Backend:** `artifactize server`, an HTTP server over its own SQLite file, using axum, with scoped bearer tokens `read`/`publish`/`human`. The server stamps the authenticated publisher. Tokens are revocable with `--purge`.
 2. **Default share level:** `summary`. `full` is opt-in.
 3. **Unreachable remote:** fail open (run locally, warn once) on network errors, timeouts and 5xx. Fail closed on 401/403, TLS and configuration errors.
-4. **Cross-machine claims:** none. Accept duplicates, first writer wins, look up again before each local claim and on each `--wait` poll.
+4. **Cross-machine claims:** none. Accept duplicates, first writer wins, look up again before each local claim and on each poll while verify waits for Human results.
 5. **Human sign-offs:** reusable team-wide, accepted only from `human`-scoped tokens. Output shows the reviewer and the publisher.
 6. **Publishing:** scoped tokens; untrusted CI gets read-only.
 7. **TLS:** the server binds 127.0.0.1 by default, with a proxy or tunnel in front. Clients require HTTPS except on loopback.
