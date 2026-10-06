@@ -115,6 +115,11 @@ pub struct Request {
     pub origin: Option<Origin>,
     #[serde(default)]
     pub tool_calls: Vec<Value>,
+    /// The Agent review's session id ([`crate::agent::session_id`]), which every request of
+    /// the review sends as its prompt-cache identity. Absent when no Agent review ran, as on
+    /// reuse, and on requests saved before it existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_definition: Option<Value>,
     pub payload: Value,

@@ -16,6 +16,8 @@ use crate::{
 mod budgets;
 mod repair;
 
+const SESSION: &str = "0f4c2a9e-review-session";
+
 struct Fixture {
     _directory: TempDir,
     config: RepoConfig,
@@ -68,6 +70,7 @@ impl Fixture {
                 &self.config,
                 &self.config.evals[0],
                 &self.output,
+                SESSION,
                 CancellationToken::new(),
             )
             .await,
@@ -208,6 +211,10 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
     );
     let next: Value = serde_json::from_slice(&requests[1].body).unwrap();
     assert!(next.to_string().contains("tool evidence"));
+    // Every turn shares the review's prompt-cache identity.
+    for body in [&body, &next] {
+        assert_eq!(body["prompt_cache_key"], SESSION);
+    }
     let outputs: Vec<_> = next["input"]
         .as_array()
         .unwrap()
@@ -374,21 +381,27 @@ async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
 
 #[test]
 fn profiles_reject_remapped_effort() {
-    assert!(Client::parameters(Backend::Openai, Some("xhigh")).is_ok());
-    assert!(Client::parameters(Backend::Openai, Some("max")).is_ok());
-    assert!(Client::parameters(Backend::Anthropic, Some("xhigh")).is_err());
-    assert!(Client::parameters(Backend::Openai, Some("off")).is_err());
+    let parameters = |backend, reasoning| Client::parameters(backend, reasoning, SESSION);
+    assert!(parameters(Backend::Openai, Some("xhigh")).is_ok());
+    assert!(parameters(Backend::Openai, Some("max")).is_ok());
+    assert!(parameters(Backend::Anthropic, Some("xhigh")).is_err());
+    assert!(parameters(Backend::Openai, Some("off")).is_err());
     assert_eq!(
-        Client::parameters(Backend::Codex, Some("max")).unwrap(),
-        json!({"reasoning":{"effort":"max","summary":"auto"}})
+        parameters(Backend::Codex, Some("max")).unwrap(),
+        json!({"prompt_cache_key":SESSION,"reasoning":{"effort":"max","summary":"auto"}})
     );
-    assert_eq!(Client::parameters(Backend::Codex, None).unwrap(), json!({}));
-    assert!(Client::parameters(Backend::Codex, Some("ultra")).is_err());
     assert_eq!(
-        Client::parameters(Backend::Openai, None)
-            .unwrap()
-            .get("reasoning"),
-        None
+        parameters(Backend::Codex, None).unwrap(),
+        json!({"prompt_cache_key":SESSION})
+    );
+    assert!(parameters(Backend::Codex, Some("ultra")).is_err());
+    let openai = parameters(Backend::Openai, None).unwrap();
+    assert_eq!(openai.get("reasoning"), None);
+    assert_eq!(openai["prompt_cache_key"], SESSION);
+    // Anthropic caches by prefix; its requests carry no session.
+    assert_eq!(
+        parameters(Backend::Anthropic, Some("high")).unwrap(),
+        json!({"thinking":{"type":"adaptive"},"output_config":{"effort":"high"}})
     );
 }
 
@@ -487,5 +500,21 @@ async fn registry_image_blocks_reach_both_provider_wires() {
             assert!(body.to_string().contains("base64"));
             assert!(body.to_string().contains("image/png"));
         }
+    }
+}
+
+#[test]
+fn session_ids_are_distinct_version_4_uuids() {
+    let (first, second) = (session_id().unwrap(), session_id().unwrap());
+    assert_ne!(first, second);
+    for id in [&first, &second] {
+        let groups: Vec<_> = id.split('-').map(str::len).collect();
+        assert_eq!(groups, [8, 4, 4, 4, 12], "{id}");
+        assert!(
+            id.chars()
+                .all(|c| c == '-' || matches!(c, '0'..='9' | 'a'..='f'))
+        );
+        assert_eq!(&id[14..15], "4", "{id}");
+        assert!(matches!(&id[19..20], "8" | "9" | "a" | "b"), "{id}");
     }
 }
