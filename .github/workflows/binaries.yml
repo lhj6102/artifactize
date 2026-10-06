@@ -5,9 +5,13 @@ name: Binaries
 # release, the build or the install scripts run it too, and keep the archives as
 # workflow artifacts.
 #
-# Each archive is artifactize-v<version>-<target>.tar.gz (.zip on Windows) and holds
-# artifactize-v<version>-<target>/ with the binary, LICENSE and README.md. Next to it,
-# <archive>.sha256 reads "<hex digest>  <archive>", as sha256sum writes it.
+# Each build uploads the workflow artifact binaries-<target>: the archive
+# artifactize-v<version>-<target>.tar.gz (.zip on Windows) and its .sha256, written by
+# .github/scripts/package.sh. To extend the pipeline:
+# - a new target (such as aarch64-apple-darwin) is one matrix entry with its runner;
+# - a platform packager (a signed macOS .pkg, MSIX) is its own job that downloads
+#   binaries-<target> and runs in a protected environment with its own secrets;
+# - a distribution channel is a job in release.yml after the GitHub release.
 on:
   workflow_call:
   workflow_dispatch:
@@ -15,7 +19,7 @@ on:
     paths:
       - ".github/workflows/binaries.yml"
       - ".github/workflows/release.yml"
-      - ".github/scripts/test-install.*"
+      - ".github/scripts/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/*/Cargo.toml"
@@ -80,9 +84,10 @@ jobs:
         run: cargo build --release --locked -p artifactize --target "$TARGET"
       - name: Check that the binary is static and runs
         run: |
+          bin=target/$TARGET/release/artifactize
           case $TARGET in
-            *windows*)
-              bin=target/$TARGET/release/artifactize.exe
+            *-windows-msvc)
+              bin=$bin.exe
               # dumpbin from the runner's Visual Studio lists the DLLs the .exe imports.
               vs=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" \
                 -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
@@ -94,8 +99,7 @@ jobs:
                 exit 1
               fi
               ;;
-            *)
-              bin=target/$TARGET/release/artifactize
+            *-linux-musl)
               file "$bin"
               ldd "$bin" || true
               if ! file "$bin" | grep -Eq 'static(-pie)? linked|statically linked'; then
@@ -111,28 +115,7 @@ jobs:
             exit 1
           fi
       - name: Package
-        run: |
-          name=artifactize-v$VERSION-$TARGET
-          mkdir -p "dist/$name"
-          cp LICENSE README.md "dist/$name/"
-          cd dist
-          case $TARGET in
-            *windows*)
-              cp "../target/$TARGET/release/artifactize.exe" "$name/"
-              archive=$name.zip
-              7z a -tzip -bso0 -bsp0 "$archive" "$name"
-              ;;
-            *)
-              cp "../target/$TARGET/release/artifactize" "$name/"
-              archive=$name.tar.gz
-              tar -czf "$archive" --owner=0 --group=0 "$name"
-              ;;
-          esac
-          rm -r "$name"
-          sum=$(sha256sum "$archive" | cut -d ' ' -f 1)
-          printf '%s  %s\n' "$sum" "$archive" >"$archive.sha256"
-          ls -l
-          cat "$archive.sha256"
+        run: sh .github/scripts/package.sh "$TARGET" "$VERSION"
       - uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.target }}
@@ -160,7 +143,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: ShellCheck
         if: matrix.os == 'ubuntu-latest'
-        run: shellcheck website/landing/install.sh .github/scripts/test-install.sh
+        run: shellcheck website/landing/install.sh .github/scripts/*.sh
       - uses: actions/download-artifact@v4
         with:
           name: binaries-${{ matrix.target }}

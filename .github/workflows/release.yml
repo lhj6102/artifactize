@@ -7,7 +7,10 @@ name: Release
 #    them (binaries.yml);
 # 3. publish to crates.io, create the GitHub release and attach every archive and its
 #    .sha256 checksum.
-# A failed check or build publishes nothing.
+# A failed check or build publishes nothing. A new target or platform packager plugs
+# into binaries.yml. A distribution channel (a Homebrew tap, winget, the Microsoft
+# Store) is its own job with `needs: publish`, pointing at the attached assets, so
+# one failing channel neither blocks nor undoes the others.
 on:
   push:
     tags: ["v*"]
@@ -60,9 +63,12 @@ jobs:
         run: |
           ls -l
           version=${GITHUB_REF_NAME#v}
-          for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-msvc; do
-            case $target in *windows*) ext=zip ;; *) ext=tar.gz ;; esac
-            sha256sum -c "artifactize-v$version-$target.$ext.sha256"
+          for file in *; do
+            case $file in
+              *.sha256) ;;
+              "artifactize-v$version-"*) sha256sum -c "$file.sha256" ;;
+              *) echo "$file is not an archive of version $version" >&2; exit 1 ;;
+            esac
           done
       # crates.io Trusted Publishing: the crate trusts this workflow in environment
       # "release", so the job exchanges its OIDC token for a short-lived publish token.
