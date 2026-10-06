@@ -24,7 +24,7 @@ from [rustup](https://rustup.rs), and a C compiler (SQLite is built from source)
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | sh
-artifactize --version          # artifactize 0.5.2
+artifactize --version          # artifactize 0.5.3
 ```
 
 The [script](https://artifactize.dev/install.sh) picks the static binary for your
@@ -53,7 +53,7 @@ release is also tagged on GitHub, and `cargo install` can build a tag (or `main`
 without `--tag`) from there:
 
 ```sh
-cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.2 --locked artifactize
+cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.3 --locked artifactize
 ```
 
 To build from source instead, install from a checkout; its `rust-toolchain.toml`
