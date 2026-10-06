@@ -28,19 +28,40 @@ pub struct Review {
     pub tool_calls: Vec<Value>,
 }
 
+/// A new review's session id, a random UUID: every request of the review, its turns,
+/// retries and repair turn, carries it as the provider's prompt-cache identity.
+pub fn session_id() -> Result<String, String> {
+    let mut bytes = [0_u8; 16];
+    getrandom::fill(&mut bytes).map_err(|_| "Cannot obtain secure randomness.".to_owned())?;
+    // Version 4, RFC 9562 variant.
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+    Ok(format!(
+        "{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    ))
+}
+
 /// `state` holds Codex credentials; the API-key backends read only the environment.
+/// `session` is the review's [`session_id`].
 pub async fn execute(
     config: &RepoConfig,
     eval: &Eval,
     output: &Path,
     state: &Path,
+    session: &str,
     cancellation: CancellationToken,
 ) -> Review {
     let Profile::Agent { backend, model, .. } = &eval.declaration.profile else {
         unreachable!("Agent executor requires an Agent profile")
     };
     match Client::new(*backend, model, state, &config.root) {
-        Ok(client) => review(&client, config, eval, output, cancellation).await,
+        Ok(client) => review(&client, config, eval, output, session, cancellation).await,
         Err(error) => Review {
             result: Err(error),
             attempts: Vec::new(),
@@ -54,6 +75,7 @@ async fn review(
     config: &RepoConfig,
     eval: &Eval,
     output: &Path,
+    session: &str,
     cancellation: CancellationToken,
 ) -> Review {
     let mut review = Review {
@@ -69,6 +91,7 @@ async fn review(
         config,
         eval,
         output,
+        session,
         &cancellation,
         &mut review.attempts,
         &mut review.tool_calls,
@@ -77,11 +100,16 @@ async fn review(
     review
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the review's client, eval, output, session and cancellation, and its audit"
+)]
 async fn run(
     client: &Client,
     config: &RepoConfig,
     eval: &Eval,
     output: &Path,
+    session: &str,
     cancellation: &CancellationToken,
     attempts: &mut Vec<Attempt>,
     tool_calls: &mut Vec<Value>,
@@ -104,7 +132,7 @@ async fn run(
         eval.declaration.fail_schema.as_ref(),
     )?;
     let mut request = prompt(config, eval, &registry, &verdict.schema)?;
-    request.additional_params = Some(Client::parameters(*backend, reasoning.as_deref())?);
+    request.additional_params = Some(Client::parameters(*backend, reasoning.as_deref(), session)?);
     let mut turn = 0;
     let mut tokens_used = 0_u64;
     let mut calls_issued = 0_u64;

@@ -18,7 +18,7 @@ use crate::{
 
 pub(super) enum Prepared {
     Runtime(runtime::Command),
-    Agent { state: PathBuf },
+    Agent { state: PathBuf, session: String },
     Human,
 }
 
@@ -51,14 +51,21 @@ pub(super) async fn execute(
             request.human_definition = None;
             None
         }
-        Ok(Prepared::Agent { state }) => {
+        Ok(Prepared::Agent { state, session }) => {
             let eval = config
                 .evals
                 .iter()
                 .find(|eval| eval.id == request.eval_id)
                 .expect("included eval");
-            let review =
-                agent::execute(&config, eval, &run_dir, &state, cancellation.clone()).await;
+            let review = agent::execute(
+                &config,
+                eval,
+                &run_dir,
+                &state,
+                &session,
+                cancellation.clone(),
+            )
+            .await;
             request.usage = Some(json!(review.attempts));
             request.tool_calls = review.tool_calls;
             match review.result {
@@ -210,9 +217,13 @@ pub(super) fn prepare(
         return Ok(Prepared::Human);
     }
     if matches!(eval.declaration.profile, Profile::Agent { .. }) {
+        // Saved with the RUNNING request, before the review's first turn.
+        let session = agent::session_id()?;
         request.run_dir = Some(run_dir.to_path_buf());
+        request.session_id = Some(session.clone());
         return Ok(Prepared::Agent {
             state: state.into(),
+            session,
         });
     }
     let Profile::Runtime {

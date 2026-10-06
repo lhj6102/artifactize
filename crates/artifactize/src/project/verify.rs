@@ -190,6 +190,7 @@ pub async fn verify(
             reviewer: None,
             origin: None,
             tool_calls: Vec::new(),
+            session_id: None,
             human_definition: None,
             payload: json!(eval.declaration.payload),
             references: json!(eval.references),

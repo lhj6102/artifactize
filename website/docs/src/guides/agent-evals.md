@@ -136,6 +136,16 @@ once with `RATE_LIMIT`. A failure after output or usage is never retried, so not
 is paid for twice. Each attempt is saved in `usage` with its counters, `error` and
 `errorCode`.
 
+### Prompt caching
+
+Each Agent review gets a random session id, saved on its request as `sessionId`
+(`verify --json`, `run show`, `request show`). Every request of the review, its turns,
+retries and repair turn, sends it as `prompt_cache_key` on `openai` and `codex`, and
+`codex` also as the `session-id` header. The provider can then serve the conversation
+prefix that each turn replays from its prompt cache. Every review, including a forced
+re-review, starts a new session. `anthropic` caches by prefix and sends no session.
+The `cacheReadTokens` counter of each attempt in `usage` shows the cached input.
+
 A failed Agent review records one of these `errorCode` values:
 
 | `errorCode` | Cause | Retried |
@@ -293,8 +303,9 @@ artifactize logout codex    # revoke and delete artifactize's tokens
   the review's system prompt as `instructions`. When `reasoning` is set it sends
   `reasoning: {"effort": <reasoning>, "summary": "auto"}`, with `max` passed as is. The
   headers name the bearer token, `ChatGPT-Account-Id`, `originator: artifactize`,
-  `OpenAI-Beta: responses=experimental` and a fresh `session_id`. Retries, budgets,
-  tool results and usage work as for `openai`.
+  `OpenAI-Beta: responses=experimental` and the review's `session-id`
+  ([prompt caching](#prompt-caching)). Retries, budgets, tool results and usage work
+  as for `openai`.
 - **Errors.** A usage limit is `QUOTA`: it names the plan and when it resets, and
   stops `codex` for the Run. A plain HTTP 429 is a `RATE_LIMIT`, retried. HTTP 401
   and 403 are `AUTHENTICATION` and say how to sign in again. A token endpoint that is

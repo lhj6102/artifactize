@@ -8,6 +8,11 @@
 //! content type. artifactize adds the headers Pi sends (`OpenAI-Beta`, an event-stream
 //! `accept`, its own `originator` and user agent, the ChatGPT account), and drops
 //! rig's default instructions so the review's own system prompt is the only one.
+//!
+//! Every request of one review carries the review's session id, as `prompt_cache_key`
+//! and as the `session-id` header the backend keys its prompt cache on. rig 0.43 sends a
+//! fresh `session_id` per request instead (0xPlaygrounds/rig#2719), which artifactize
+//! turns off.
 
 use std::{
     path::{Path, PathBuf},
@@ -45,10 +50,25 @@ static HOOKS: DialectHooks = DialectHooks {
     modality_envelope: None,
 };
 
-fn envelope(_: &openai::OpenAIConfig, _: &CompletionRequest, builder: Builder) -> Builder {
-    builder
+fn envelope(_: &openai::OpenAIConfig, request: &CompletionRequest, builder: Builder) -> Builder {
+    let builder = builder
         .header("OpenAI-Beta", "responses=experimental")
-        .header("accept", "text/event-stream")
+        .header("accept", "text/event-stream");
+    // TODO: once rig ships `OpenAIConfig::with_session_id` (0xPlaygrounds/rig#2722), pin
+    // the session there and drop this header and the `session_ids` override in `model`.
+    match session(request) {
+        Some(session) => builder.header("session-id", session),
+        None => builder,
+    }
+}
+
+/// The review's session id: the request's `prompt_cache_key` ([`super::Client::parameters`]).
+fn session(request: &CompletionRequest) -> Option<&str> {
+    request
+        .additional_params
+        .as_ref()?
+        .get("prompt_cache_key")?
+        .as_str()
 }
 
 /// `artifactize/<version> (<os> <arch>; artifactize)`, the shape rig gives gateways.
@@ -93,6 +113,11 @@ impl Codex {
         let token = auth::access_token(Some(&self.state), Some(&self.repo)).await?;
         let mut dialect = chatgpt::DIALECT;
         dialect.quirks.hooks = Some(&HOOKS);
+        // No fresh `session_id` per request, which the backend's cache ignores; the
+        // envelope sends the review's `session-id` instead.
+        if let Some(identity) = &mut dialect.quirks.identity {
+            identity.session_ids = false;
+        }
         let mut config = openai::OpenAIConfig::with_key(&dialect, token.access_token)
             .with_base_url(&self.base)
             .with_account_id(token.account_id);

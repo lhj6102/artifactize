@@ -132,13 +132,19 @@ impl Client {
         })
     }
 
-    pub fn parameters(backend: Backend, reasoning: Option<&str>) -> Result<Value, String> {
+    /// The provider parameters of every request of one review. The Responses backends key
+    /// their prompt cache on the review's `session` id; Anthropic caches by prefix alone.
+    pub fn parameters(
+        backend: Backend,
+        reasoning: Option<&str>,
+        session: &str,
+    ) -> Result<Value, String> {
         if let Some(reasoning) = reasoning {
             backend.validate_reasoning(reasoning)?;
         }
         Ok(match backend {
             Backend::Openai => {
-                let mut value = json!({"store":false, "parallel_tool_calls":false, "include":["reasoning.encrypted_content"]});
+                let mut value = json!({"store":false, "parallel_tool_calls":false, "include":["reasoning.encrypted_content"], "prompt_cache_key":session});
                 if let Some(reasoning) = reasoning {
                     value["reasoning"] = json!({"effort":reasoning});
                 }
@@ -148,11 +154,15 @@ impl Client {
                 json!({}),
                 |effort| json!({"thinking":{"type":"adaptive"}, "output_config":{"effort":effort}}),
             ),
-            // rig's Codex contract states store:false and encrypted reasoning itself.
-            Backend::Codex => reasoning.map_or(
-                json!({}),
-                |effort| json!({"reasoning":{"effort":effort, "summary":"auto"}}),
-            ),
+            // rig's Codex contract states store:false and encrypted reasoning itself. The
+            // `session-id` header repeats the cache key (see `codex::envelope`).
+            Backend::Codex => {
+                let mut value = json!({"prompt_cache_key":session});
+                if let Some(effort) = reasoning {
+                    value["reasoning"] = json!({"effort":effort, "summary":"auto"});
+                }
+                value
+            }
         })
     }
 

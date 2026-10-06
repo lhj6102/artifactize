@@ -190,8 +190,11 @@ fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
         assert_eq!(headers["openai-beta"], "responses=experimental");
         assert_eq!(headers["accept"], "text/event-stream");
         assert!(headers["user-agent"].starts_with("artifactize/"));
-        assert!(headers.contains_key("session_id"));
+        // The review's session keys the prompt cache; rig's per-request `session_id` is off.
+        assert_eq!(headers["session-id"], review["sessionId"].as_str().unwrap());
+        assert!(!headers.contains_key("session_id"));
         let body = &call.body;
+        assert_eq!(body["prompt_cache_key"], review["sessionId"]);
         assert_eq!(body["model"], "gpt-6-luna");
         assert_eq!(body["reasoning"], json!({"effort":"max","summary":"auto"}));
         assert_eq!(body["store"], false);
