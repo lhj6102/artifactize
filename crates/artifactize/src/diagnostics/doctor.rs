@@ -147,6 +147,8 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         ),
         Err(error) => report.add("limits", "FAIL", &error, Value::Null),
     }
+    let (status, message, details) = sessions(&state);
+    report.add("sessions", status, &message, details);
     for (name, backend) in [
         ("openai", Backend::Openai),
         ("anthropic", Backend::Anthropic),
@@ -208,6 +210,48 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         Err(error) => report.add("remote", "FAIL", &error, Value::Null),
     }
     Ok(report)
+}
+
+/// The saved Agent conversations: whether new ones are saved, the store's size against its
+/// bounds, and the state id their references name.
+fn sessions(state: &Path) -> (&'static str, String, Value) {
+    let bounds = match crate::limits::Limits::read(state) {
+        Ok(limits) => limits.agent_sessions(),
+        Err(_) => {
+            return (
+                "FAIL",
+                "limits.json is invalid; see limits.".into(),
+                Value::Null,
+            );
+        }
+    };
+    let (usage, state_id) = match (
+        crate::agent::session::usage(state),
+        store::read_state_id(state),
+    ) {
+        (Ok(usage), Ok(state_id)) => (usage, state_id),
+        (Err(error), _) | (_, Err(error)) => return ("FAIL", error, Value::Null),
+    };
+    let mib = |bytes: u64| format!("{:.1} MiB", bytes as f64 / 1_048_576.0);
+    let message = format!(
+        "{} Agent session{} take {} of {}; a collection brings them down to {}.{}",
+        usage.sessions,
+        if usage.sessions == 1 { "" } else { "s" },
+        mib(usage.bytes),
+        mib(bounds.max_bytes),
+        mib(bounds.target_bytes),
+        if bounds.enabled {
+            ""
+        } else {
+            " Saving is off (limits.json agentSessions.enabled)."
+        }
+    );
+    let details = json!({
+        "enabled": bounds.enabled, "sessions": usage.sessions, "bytes": usage.bytes,
+        "maxBytes": bounds.max_bytes, "targetBytes": bounds.target_bytes,
+        "directory": crate::agent::session::directory(state), "stateId": state_id,
+    });
+    ("PASS", message, details)
 }
 
 /// The Codex sign-in, read offline: no lock, refresh or network, and an auth file is

@@ -128,8 +128,10 @@ impl Record {
             )
             && valid_id(&self.execution_id)
             && crate::broker::sortable(&self.completed_at).is_some()
+            && valid_session(self.producer.as_ref())
             && self.execution.as_ref().is_none_or(|execution| {
-                execution.key.as_ref() == Some(&self.key)
+                valid_session(execution.producer.as_ref())
+                    && execution.key.as_ref() == Some(&self.key)
                     && execution.eval_def_hash == self.eval_def_hash
                     && execution.fingerprints == self.fingerprints
                     && execution.status == self.verdict
@@ -244,6 +246,14 @@ pub(crate) fn valid_hash(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// A producer's session reference, if any, names its conversation in bounded, printable
+/// fields. It is a pointer back to the producing machine; no conversation is ever published.
+fn valid_session(producer: Option<&Producer>) -> bool {
+    producer
+        .and_then(|producer| producer.session.as_ref())
+        .is_none_or(crate::agent::session::SessionRef::valid)
 }
 
 fn valid_id(value: &str) -> bool {

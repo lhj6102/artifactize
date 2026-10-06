@@ -26,6 +26,7 @@ struct Filter<'a> {
     id: Option<&'a str>,
     repo: Option<&'a Path>,
     waiting: bool,
+    session: Option<&'a str>,
 }
 
 pub async fn read_requests(state: &Path, run: Option<&str>) -> Result<Vec<RequestView>, String> {
@@ -50,6 +51,19 @@ pub async fn read_request(state: &Path, id: &str) -> Result<RequestView, String>
     .await?
     .pop()
     .ok_or_else(|| "Review request not found.".into())
+}
+
+/// The request whose Agent review ran as session `id`, if this state has it.
+pub async fn read_session_request(state: &Path, id: &str) -> Result<Option<RequestView>, String> {
+    Ok(read(
+        state,
+        Filter {
+            session: Some(id),
+            ..Filter::default()
+        },
+    )
+    .await?
+    .pop())
 }
 
 /// WAITING_HUMAN requests, newest Run first, from the canonical `repo`'s Runs or every Run.
@@ -93,6 +107,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
     let id = filter.id.map(str::to_owned);
     let repo = repo.map(|repo| repo.to_string_lossy().into_owned());
     let waiting = filter.waiting;
+    let session = filter.session.map(str::to_owned);
     connection.call(move |db| -> Result<_, Error> {
         db.busy_timeout(Duration::from_secs(5))?;
         let transaction = db.transaction()?;
@@ -109,8 +124,9 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                 LEFT JOIN human_claims h ON h.request_id=json_extract(e.data,'$.provenance.requestId')
                 WHERE (?1 IS NULL OR q.run_id=?1) AND (?2 IS NULL OR q.id=?2)
                 AND (?3 IS NULL OR r.repo=?3) AND (NOT ?4 OR q.status='WAITING_HUMAN')
+                AND (?5 IS NULL OR json_extract(q.data,'$.sessionId')=?5)
                 ORDER BY r.rowid DESC,m.ordinal")?;
-            statement.query_map(params![run, id, repo, waiting], |row| {
+            statement.query_map(params![run, id, repo, waiting, session], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?,
                     row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, Option<String>>(5)?,
                     row.get::<_, Option<String>>(6)?, row.get::<_, Option<String>>(7)?))

@@ -17,6 +17,10 @@ pub struct PruneReport {
     pub removed: Vec<PathBuf>,
     pub would_remove: Vec<PathBuf>,
     pub skipped_runs: Vec<String>,
+    /// Agent sessions the size-bound collection deleted, oldest first.
+    pub removed_sessions: Vec<String>,
+    /// With `--dry-run`, the Agent sessions it would delete.
+    pub would_remove_sessions: Vec<String>,
 }
 
 pub fn parse_duration(value: &str) -> Result<Duration, String> {
@@ -60,6 +64,14 @@ pub fn prune(
         workspace::outside_workspace(repo, &state).map_err(|e| e.to_string())?;
     }
     check_files(&state)?;
+    // Saved Agent conversations past their size bound (limits.json agentSessions).
+    let bounds = crate::limits::Limits::read(&state)?.agent_sessions();
+    let sessions = crate::agent::session::collect(&state, bounds, dry_run)?;
+    if dry_run {
+        report.would_remove_sessions = sessions.removed;
+    } else {
+        report.removed_sessions = sessions.removed;
+    }
     if !state
         .join(DATABASE)
         .try_exists()

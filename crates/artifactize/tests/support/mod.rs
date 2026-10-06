@@ -348,17 +348,24 @@ pub mod openai {
             "name":name,"arguments":arguments.to_string(),"status":"completed"})
     }
 
+    /// A reasoning item with a summary and the encrypted content a stateless replay needs.
+    pub fn reasoning(id: &str, summary: &str, encrypted: &str) -> Value {
+        json!({"type":"reasoning","id":id,"encrypted_content":encrypted,
+            "summary":[{"type":"summary_text","text":summary}]})
+    }
+
     pub fn usage(input: u64, output: u64) -> Value {
         json!({"input_tokens":input,"output_tokens":output,"total_tokens":input + output,
             "input_tokens_details":{"cached_tokens":0},
             "output_tokens_details":{"reasoning_tokens":0}})
     }
 
-    /// A streamed, completed response for the requested model.
+    /// A streamed, completed response for the requested model. Function calls and reasoning
+    /// items are also streamed as items, as the providers do.
     pub fn completed(request: &Request, output: Vec<Value>, usage: Value) -> Reply {
         let mut events = Vec::new();
         for (index, item) in output.iter().enumerate() {
-            if item["type"] == "function_call" {
+            if item["type"] == "function_call" || item["type"] == "reasoning" {
                 for kind in ["response.output_item.added", "response.output_item.done"] {
                     events.push(json!({"type":kind,"output_index":index,"item":item}));
                 }

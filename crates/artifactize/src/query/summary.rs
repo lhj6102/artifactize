@@ -59,6 +59,12 @@ fn with_source(value: &mut Value, request: &Request) {
     let object = value.as_object_mut().expect("a request is an object");
     object.remove("joined");
     object.insert("source".into(), json!(source(request)));
+    // The reference in the text form `session show` and `session send` take.
+    if let (Some(reference), Some(Value::Object(session))) =
+        (&request.session, object.get_mut("session"))
+    {
+        session.insert("ref".into(), json!(reference.to_string()));
+    }
 }
 
 pub fn request_output(view: &RequestView) -> Value {

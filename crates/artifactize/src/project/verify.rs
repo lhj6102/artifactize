@@ -191,6 +191,7 @@ pub async fn verify(
             origin: None,
             tool_calls: Vec::new(),
             session_id: None,
+            session: None,
             human_definition: None,
             payload: json!(eval.declaration.payload),
             references: json!(eval.references),
@@ -335,6 +336,21 @@ pub async fn verify(
         "evals":required_evals.iter().map(|(id, eval)| json!({"id":id,"status":status(eval.status),"blockedBy":eval.unmet_gates})).collect::<Vec<_>>(),
     });
     receipts.finish(&run, &requests).await?;
+    // Saved Agent conversations past their size bound are collected; a failure only warns.
+    let state = run.state_dir.clone();
+    let bounds = limits.agent_sessions();
+    let collected =
+        tokio::task::spawn_blocking(move || crate::agent::session::collect(&state, bounds, false))
+            .await
+            .map_err(|e| e.to_string())
+            .and_then(|collected| collected);
+    if let Err(error) = collected {
+        use std::io::Write;
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "Agent session collection failed: {error}"
+        );
+    }
     store::read_run(&run.state_dir, &run.id).await
 }
 

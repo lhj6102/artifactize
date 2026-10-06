@@ -18,7 +18,12 @@ use crate::{
 
 pub(super) enum Prepared {
     Runtime(runtime::Command),
-    Agent { state: PathBuf, session: String },
+    Agent {
+        state: PathBuf,
+        session: String,
+        /// Where the review's conversation is saved; `None` when saving is off.
+        saving: Option<agent::session::Saving>,
+    },
     Human,
 }
 
@@ -51,21 +56,33 @@ pub(super) async fn execute(
             request.human_definition = None;
             None
         }
-        Ok(Prepared::Agent { state, session }) => {
+        Ok(Prepared::Agent {
+            state,
+            session,
+            saving,
+        }) => {
             let eval = config
                 .evals
                 .iter()
                 .find(|eval| eval.id == request.eval_id)
                 .expect("included eval");
+            let mut recorder = agent::session::Recorder::new(saving.as_ref(), &request, &session);
             let review = agent::execute(
                 &config,
                 eval,
                 &run_dir,
                 &state,
-                &session,
+                &mut recorder,
                 cancellation.clone(),
             )
             .await;
+            // The result names its saved conversation, and so does every reuse of it.
+            if let Some(reference) = recorder.reference() {
+                request.session = Some(reference.clone());
+                if let Some(producer) = &mut execution.producer {
+                    producer.session = Some(reference.clone());
+                }
+            }
             request.usage = Some(json!(review.attempts));
             request.tool_calls = review.tool_calls;
             match review.result {
@@ -209,6 +226,7 @@ pub(super) fn prepare(
     eval: &Eval,
     run_dir: &Path,
     state: &Path,
+    saving: Option<&agent::session::Saving>,
     request: &mut Request,
 ) -> Result<Prepared, String> {
     if matches!(eval.declaration.profile, Profile::Human {}) {
@@ -224,6 +242,7 @@ pub(super) fn prepare(
         return Ok(Prepared::Agent {
             state: state.into(),
             session,
+            saving: saving.cloned(),
         });
     }
     let Profile::Runtime {

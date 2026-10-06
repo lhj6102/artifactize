@@ -258,6 +258,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         producer: Some(Producer {
             name: "bob@laptop".into(),
             version: "0.5.0".into(),
+            session: None,
         }),
         reviewer: None,
         origin: None,

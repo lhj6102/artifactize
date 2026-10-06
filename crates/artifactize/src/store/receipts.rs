@@ -13,6 +13,11 @@ use crate::workspace::{canonical_target, outside_workspace, prepare_directory};
 
 pub const DATABASE: &str = "state.sqlite";
 
+/// Named values of the state itself: `id`, a random UUID made when a database is first opened
+/// for writing, which identifies the state in Agent session references.
+const STATE_META: &str =
+    "CREATE TABLE IF NOT EXISTS state_meta(name TEXT PRIMARY KEY, value TEXT NOT NULL);";
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
@@ -120,6 +125,10 @@ pub struct Request {
     /// reuse, and on requests saved before it existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// Where the saved conversation behind this request's result lives: its own review's,
+    /// or for a reused result the producing review's. Absent when none was saved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<crate::agent::session::SessionRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_definition: Option<Value>,
     pub payload: Value,
@@ -170,7 +179,9 @@ impl Receipts {
             .await
             .map_err(|e| e.to_string())?;
         let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let state_id = crate::agent::uuid()?;
         loop {
+            let state_id = state_id.clone();
             let initialized = connection.call(move |db| -> Result<(), Error> {
             db.busy_timeout(Duration::from_secs(5))?;
             db.pragma_update(None, "foreign_keys", true)?;
@@ -192,6 +203,9 @@ impl Receipts {
                 CREATE TABLE IF NOT EXISTS run_members(run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), PRIMARY KEY(run_id, eval_id), UNIQUE(run_id, ordinal));")?;
             transaction.execute_batch(super::cache_entries::SCHEMA)?;
             transaction.execute_batch(super::slots::SCHEMA)?;
+            // The state's stable id, which Agent session references name: one per database.
+            transaction.execute_batch(STATE_META)?;
+            transaction.execute("INSERT OR IGNORE INTO state_meta(name,value) VALUES ('id',?)", [&state_id])?;
             transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
             transaction.commit()?;
             Ok(())
@@ -211,6 +225,20 @@ impl Receipts {
             }
         }
         Ok(Self { connection })
+    }
+
+    /// This state's stable id ([`read_state_id`]).
+    pub async fn state_id(&self) -> Result<String, String> {
+        self.connection
+            .call(|db| -> Result<String, Error> {
+                Ok(
+                    db.query_row("SELECT value FROM state_meta WHERE name='id'", [], |row| {
+                        row.get(0)
+                    })?,
+                )
+            })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub async fn create_run(&self, run: &Run, requests: &[Request]) -> Result<(), String> {
@@ -333,6 +361,37 @@ pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
         db.pragma_query_value(None, "user_version", |row| row.get(0))
     };
     read().map(Some).map_err(|e| e.to_string())
+}
+
+/// The state's stable id, read without creating or upgrading anything; `None` until a
+/// command that writes the state has opened it.
+pub fn read_state_id(state: &Path) -> Result<Option<String>, String> {
+    let state = canonical_target(state).map_err(|e| e.to_string())?;
+    regular_files(&state)?;
+    let database = state.join(DATABASE);
+    if !database.try_exists().map_err(|e| e.to_string())? {
+        return Ok(None);
+    }
+    let read = || -> Result<Option<String>, rusqlite::Error> {
+        let db = rusqlite::Connection::open_with_flags(
+            &database,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?;
+        db.busy_timeout(Duration::from_secs(5))?;
+        let exists: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='state_meta')",
+            [],
+            |row| row.get(0),
+        )?;
+        if !exists {
+            return Ok(None);
+        }
+        db.query_row("SELECT value FROM state_meta WHERE name='id'", [], |row| {
+            row.get(0)
+        })
+        .optional()
+    };
+    read().map_err(|e| e.to_string())
 }
 
 fn regular_files(state: &Path) -> Result<(), String> {
