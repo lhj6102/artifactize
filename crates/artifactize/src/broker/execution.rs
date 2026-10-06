@@ -6,7 +6,7 @@ use std::{
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
-use super::now;
+use super::{Stops, now};
 use crate::{
     agent, cache,
     config::{Eval, Profile, RepoConfig},
@@ -29,7 +29,7 @@ pub(super) enum Prepared {
 
 #[expect(
     clippy::too_many_arguments,
-    reason = "the request with its execution and preparation, and the Run's output, fingerprint bound and cancellation"
+    reason = "the request with its execution and preparation, and the Run's output, fingerprint bound, backend stops and cancellation"
 )]
 pub(super) async fn execute(
     config: Arc<RepoConfig>,
@@ -39,6 +39,7 @@ pub(super) async fn execute(
     prepared: Result<Prepared, String>,
     run_dir: PathBuf,
     parallelism: &cache::Parallelism,
+    stops: &Stops,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     if matches!(prepared, Ok(Prepared::Human)) && !cancellation.is_cancelled() {
@@ -84,7 +85,6 @@ pub(super) async fn execute(
                 }
             }
             request.usage = Some(json!(review.attempts));
-            request.tool_calls = review.tool_calls;
             match review.result {
                 Ok(result) => {
                     let verdict = if result["verdict"] == "GREEN" {
@@ -182,11 +182,12 @@ pub(super) async fn execute(
     execution.error = request.error.clone();
     execution.error_code = request.error_code.clone();
     execution.usage = request.usage.clone();
-    execution.tool_calls = request.tool_calls.clone();
     execution.completed_at = request.completed_at.clone();
     execution.provenance.completed_at = request.completed_at.clone();
     request.execution_id = Some(execution.id.clone());
     request.provenance = Some(execution.provenance.clone());
+    // Admission sees a backend stop before completing frees this review's slot.
+    stops.record(&request);
     receipts.complete_execution(&execution, &request).await?;
     Ok(request)
 }

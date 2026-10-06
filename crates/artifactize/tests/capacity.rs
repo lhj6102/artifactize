@@ -1,5 +1,5 @@
 //! Machine-wide Agent backend capacity from `$STATE/limits.json`, shared by every `verify`
-//! process through slots in `state.sqlite`.
+//! process through the RUNNING executions of each backend in `state.sqlite`.
 
 mod support;
 
@@ -110,10 +110,24 @@ impl Fixture {
         Connection::open(self.state().join("state.sqlite")).unwrap()
     }
 
+    /// Slots held: RUNNING executions on a backend.
     fn slots(&self) -> u32 {
         self.database()
-            .query_row("SELECT count(*) FROM backend_slots", [], |row| row.get(0))
+            .query_row(
+                "SELECT count(*) FROM executions WHERE backend IS NOT NULL AND status='RUNNING'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap()
+    }
+
+    /// Hold an openai slot with an execution of this live process (the test).
+    fn hold(&self) {
+        self.database().execute(
+            "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) VALUES ('held',NULL,'held','RUNNING',?,?,'openai','{}')",
+            rusqlite::params![std::process::id(), own_start_time() as i64],
+        )
+        .unwrap();
     }
 }
 
@@ -201,11 +215,7 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
     // A first Run creates the state database; then a live process (this test) holds the slot.
     finish(fixture.spawn(&repo, &[]), 0);
     let db = fixture.database();
-    db.execute(
-        "INSERT INTO backend_slots(execution_id,backend,owner_pid,owner_start_time,acquired_at) VALUES ('held','openai',?,?,'2026-10-05T00:00:00Z')",
-        rusqlite::params![std::process::id(), own_start_time() as i64],
-    )
-    .unwrap();
+    fixture.hold();
     let calls = fixture.provider.requests().len();
     let waiting = fixture.spawn(&repo, &["--force", "--max-executions", "1"]);
     wait_until(|| capacity_waiters(&db) == 1);
@@ -222,9 +232,9 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
         .unwrap();
     assert_eq!(started, 0);
 
-    // The holder "crashes": a slot whose owner is gone is free again.
+    // The holder "crashes": the execution of an owner that is gone ends, and frees its slot.
     db.execute(
-        "UPDATE backend_slots SET owner_start_time=0 WHERE execution_id='held'",
+        "UPDATE executions SET owner_start_time=0 WHERE id='held'",
         [],
     )
     .unwrap();
@@ -234,6 +244,23 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
     assert!(run["requests"][0]["blockedReason"].is_null());
     assert_eq!(fixture.provider.requests().len(), calls + 1);
     assert_eq!(fixture.slots(), 0);
+    let held: (String, String) = db
+        .query_row(
+            "SELECT status,json_extract(data,'$.errorCode') FROM executions WHERE id='held'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(held, ("ERROR".to_owned(), "OWNER_DIED".to_owned()));
+    // Every execution names the backend whose slot it held.
+    let backends: Vec<Option<String>> = db
+        .prepare("SELECT DISTINCT backend FROM executions WHERE id!='held'")
+        .unwrap()
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(backends, [Some("openai".to_owned())]);
 }
 
 #[test]
@@ -305,11 +332,7 @@ fn a_request_waiting_for_a_slot_holds_no_job_slot() {
     fixture.limits(json!({"backends":{"openai":1}}));
     finish(fixture.spawn(&repo, &[]), 0);
     let db = fixture.database();
-    db.execute(
-        "INSERT INTO backend_slots(execution_id,backend,owner_pid,owner_start_time,acquired_at) VALUES ('held','openai',?,?,'2026-10-05T00:00:00Z')",
-        rusqlite::params![std::process::id(), own_start_time() as i64],
-    )
-    .unwrap();
+    fixture.hold();
     // With one job, the Agent review waits for its slot and the runtime eval still runs.
     let run = fixture.spawn(&repo, &["--force", "--jobs", "1"]);
     wait_until(|| capacity_waiters(&db) == 1);
@@ -322,7 +345,7 @@ fn a_request_waiting_for_a_slot_holds_no_job_slot() {
         .unwrap()
             == 1
     });
-    db.execute("DELETE FROM backend_slots WHERE execution_id='held'", [])
+    db.execute("UPDATE executions SET status='ERROR' WHERE id='held'", [])
         .unwrap();
     let run = finish(run, 0);
     assert_eq!(run["executionsStarted"], 2);

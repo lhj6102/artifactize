@@ -91,7 +91,7 @@ pub fn prune(
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|e| e.to_string())?;
     if version != STATE_SCHEMA_VERSION {
-        return Err(format!("Unsupported state schema version: {version}"));
+        return Err(super::schema_error(version));
     }
     let cutoff = older_than
         .map(|age| {
@@ -129,11 +129,11 @@ pub fn prune(
             .as_deref()
             .and_then(|date| OffsetDateTime::parse(date, &Rfc3339).ok());
         let requests_terminal: bool = transaction.query_row(
-            "SELECT NOT EXISTS(SELECT 1 FROM requests q WHERE (q.run_id=?1 OR q.id IN (SELECT request_id FROM run_members WHERE run_id=?1)) AND q.status NOT IN ('GREEN','RED','ERROR','INCOMPLETE','BLOCKED','BUDGET_EXHAUSTED'))", [&id], |row| row.get(0),
+            "SELECT NOT EXISTS(SELECT 1 FROM requests WHERE run_id=? AND status NOT IN ('GREEN','RED','ERROR','INCOMPLETE','BLOCKED','BUDGET_EXHAUSTED'))", [&id], |row| row.get(0),
         ).map_err(|e| e.to_string())?;
         let owners = {
             let mut statement = transaction.prepare(
-                "SELECT owner_pid,owner_start_time,status FROM executions WHERE json_extract(data,'$.provenance.runId')=?1 OR id IN (SELECT q.execution_id FROM requests q WHERE q.run_id=?1 OR q.id IN (SELECT request_id FROM run_members WHERE run_id=?1))"
+                "SELECT owner_pid,owner_start_time,status FROM executions WHERE json_extract(data,'$.provenance.runId')=?1 OR id IN (SELECT execution_id FROM requests WHERE run_id=?1)"
             ).map_err(|e| e.to_string())?;
             statement
                 .query_map([&id], |row| {
@@ -219,25 +219,17 @@ fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
         let path = entry.path();
-        // claude-* holds Claude CLI invocations of Runs made before 0.5.0.
         if matches!(name, "output" | "tmp" | "home" | "cache" | "human-tools")
-            || ["tool-output-", "tool-", "claude-"]
+            || ["tool-output-", "tool-"]
                 .iter()
                 .any(|prefix| prefixed(name, prefix))
         {
             if directory(&path)? {
                 targets.push(path);
             }
-        } else if [
-            "runtime-",
-            "fingerprint-",
-            // Fingerprint script scratch in Run folders written before state version 3
-            // (stale-key-) and before version 2 (identity-).
-            "stale-key-",
-            "identity-",
-        ]
-        .iter()
-        .any(|prefix| prefixed(name, prefix))
+        } else if ["runtime-", "fingerprint-"]
+            .iter()
+            .any(|prefix| prefixed(name, prefix))
             && directory(&path)?
         {
             collect(&path, targets)?;

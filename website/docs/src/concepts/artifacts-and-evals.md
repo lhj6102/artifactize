@@ -10,8 +10,7 @@ A folder with an `artifactize.json` is an Artifact. It has a `name` and usually
 `evals`; `mounts`, `basis`, `views`, `fingerprint` and, at the root, `reviewPolicy`
 are optional. Each eval has an `id`, a `title`, a `profile` whose `kind` is
 `runtime`, `agent` or `human`, and a `payload` with an `instruction`;
-`passSchema`, `failSchema` and `profileVariants` are optional, and an Agent eval
-may add a [`resultCheck`](../guides/agent-evals.md#result-check). A runtime eval's
+`passSchema`, `failSchema` and `profileVariants` are optional. A runtime eval's
 exit code is its verdict (0 is GREEN); an Agent or a Human returns GREEN or RED
 with owner fields. This is the `guide` Artifact of the
 [runtime-relations example](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations), whose README

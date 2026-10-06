@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::{
-    Receipts, Request,
+    Receipts, Request, history,
     receipts::{Error, schema_initialized, update_request},
 };
 use crate::{config::Profile, process, runtime::Verdict};
@@ -13,9 +13,20 @@ use crate::{config::Profile, process, runtime::Verdict};
 pub enum Claim {
     Owned,
     BudgetExhausted,
+    /// Every machine-wide slot of the execution's backend is held.
+    Full,
     Reuse(Box<Execution>),
     Wait(String),
     WaitHuman(String),
+}
+
+/// The machine-wide limit (`limits.json`) of the backend an execution would start on.
+pub struct Capacity {
+    pub limit: u32,
+    /// Whether the Run stopped admitting the backend. It is asked while the claim holds the
+    /// write lock, so the stop of a review that records it before it completes is always seen
+    /// once that review's slot is free.
+    pub stopped: Box<dyn FnOnce() -> bool + Send>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +44,8 @@ pub struct Provenance {
     pub execution_paths: crate::tools::pins::Pins,
 }
 
-/// One execution and, once GREEN or RED with a key, one record of its key's history.
+/// One execution and, once GREEN or RED with a key, one record of its key's history. A local
+/// Agent execution holds one of its backend's machine-wide slots while RUNNING.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Execution {
@@ -58,8 +70,6 @@ pub struct Execution {
     #[serde(default)]
     pub options: ExecutionOptions,
     pub usage: Option<Value>,
-    #[serde(default)]
-    pub tool_calls: Vec<Value>,
     pub provenance: Provenance,
     pub started_at: String,
     pub completed_at: Option<String>,
@@ -95,9 +105,6 @@ pub struct ExecutionOptions {
     /// The selected `profileVariants` entry; absent for the declared profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variant: Option<String>,
-    /// An Agent eval's declared `resultCheck.timeoutMs`: a limit, like the profile's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub result_check_timeout_ms: Option<u32>,
 }
 
 impl ExecutionOptions {
@@ -129,12 +136,6 @@ impl ExecutionOptions {
             Profile::Human {} => {}
         }
         options
-    }
-
-    /// These options with the eval's declared `resultCheck` limit.
-    pub fn with_result_check(mut self, check: Option<&crate::config::ResultCheck>) -> Self {
-        self.result_check_timeout_ms = check.and_then(|check| check.timeout_ms);
-        self
     }
 }
 
@@ -185,6 +186,15 @@ pub struct Origin {
 }
 
 impl Execution {
+    /// The backend whose machine-wide slot this execution holds while RUNNING: a local Agent
+    /// review's. A mirrored record ran elsewhere.
+    fn backend(&self) -> Option<&str> {
+        self.options
+            .backend
+            .as_deref()
+            .filter(|_| self.origin.is_none())
+    }
+
     /// Whether this record completed after `other`, comparing `completedAt` as instants.
     pub fn completed_after(&self, other: &Execution) -> bool {
         let at = |execution: &Execution| {
@@ -209,7 +219,11 @@ impl Execution {
 pub(super) fn lookup(db: &rusqlite::Connection, key: &str) -> Result<Option<Execution>, Error> {
     let data: Option<String> = db
         .query_row(
-            &format!("SELECT e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE c.key=? AND e.status IN ('GREEN','RED') ORDER BY {} LIMIT 1", super::cache_entries::LATEST),
+            &format!(
+                "SELECT e.data FROM executions e WHERE e.key=? AND {} ORDER BY {} LIMIT 1",
+                history::RECORD,
+                history::LATEST
+            ),
             [key],
             |row| row.get(0),
         )
@@ -217,6 +231,45 @@ pub(super) fn lookup(db: &rusqlite::Connection, key: &str) -> Result<Option<Exec
     data.map(|data| serde_json::from_str(&data))
         .transpose()
         .map_err(Into::into)
+}
+
+/// End a RUNNING execution whose owner process is gone, which frees its key and its slot.
+fn owner_died(db: &rusqlite::Connection, id: &str, at: &str) -> Result<(), Error> {
+    db.execute(
+        "UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Execution owner died.','$.errorCode','OWNER_DIED','$.completedAt',?1,'$.provenance.completedAt',?1) WHERE id=?2 AND status='RUNNING'",
+        params![at, id],
+    )?;
+    Ok(())
+}
+
+/// How many slots of `backend` the RUNNING executions of live owners hold; the executions of
+/// dead owners end, freeing theirs.
+fn held_slots(db: &rusqlite::Connection, backend: &str, at: &str) -> Result<u32, Error> {
+    let owners = {
+        let mut statement = db.prepare(
+            "SELECT id,owner_pid,owner_start_time FROM executions WHERE backend=? AND status='RUNNING'",
+        )?;
+        statement
+            .query_map([backend], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    process::ChildIdentity {
+                        pid: row.get(1)?,
+                        start_time: row.get::<_, i64>(2)? as u64,
+                    },
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    let mut held = 0;
+    for (id, owner) in owners {
+        if process::is_alive(owner).map_err(|e| Error::Invalid(e.to_string()))? {
+            held += 1;
+        } else {
+            owner_died(db, &id, at)?;
+        }
+    }
+    Ok(held)
 }
 
 fn active_owner(
@@ -342,8 +395,9 @@ pub async fn read_latest_cached(
             let mut latest = std::collections::BTreeMap::new();
             {
                 let mut statement = transaction.prepare(&format!(
-                    "SELECT e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE c.eval_def_hash=? AND json_extract(e.data,'$.provenance.evalId')=? AND e.status IN ('GREEN','RED') ORDER BY {} LIMIT 1",
-                    super::cache_entries::LATEST
+                    "SELECT e.data FROM executions e WHERE e.eval_def_hash=? AND json_extract(e.data,'$.provenance.evalId')=? AND {} ORDER BY {} LIMIT 1",
+                    history::RECORD,
+                    history::LATEST
                 ))?;
                 for (eval_id, eval_def_hash) in keys {
                     let data: Option<String> = statement
@@ -369,10 +423,7 @@ impl Receipts {
             .call(move |db| -> Result<_, Error> {
                 let execution = lookup(db, &key)?;
                 if let Some(execution) = &execution {
-                    db.execute(
-                        "UPDATE cache_entries SET last_used=? WHERE execution_id=?",
-                        params![crate::broker::now(), execution.id],
-                    )?;
+                    history::touch(db, &execution.id, &crate::broker::now())?;
                 }
                 Ok(execution)
             })
@@ -380,8 +431,7 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
-    /// The saved execution when its own settle appended it to its key's history; never a
-    /// mirror.
+    /// The saved execution when its own settle added it to its key's history; never a mirror.
     pub async fn published_execution(
         &self,
         execution_id: &str,
@@ -391,7 +441,10 @@ impl Receipts {
             .call(move |db| -> Result<_, Error> {
                 let data: Option<String> = db
                     .query_row(
-                        "SELECT e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id WHERE c.execution_id=? AND e.status IN ('GREEN','RED')",
+                        &format!(
+                            "SELECT e.data FROM executions e WHERE e.id=? AND {}",
+                            history::RECORD
+                        ),
                         [execution_id],
                         |row| row.get(0),
                     )
@@ -405,19 +458,25 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
+    /// Claim an execution for its request. A `keyed` claim (a key, not forced) first reuses
+    /// the key's latest record or waits for the key's live execution. Starting needs
+    /// `allow_start` and, on a backend with a machine-wide limit, a free slot: the slots the
+    /// backend's RUNNING executions hold are counted and this execution inserted RUNNING in
+    /// one write transaction. An unkeyed or forced execution without a limit is saved when it
+    /// completes.
     pub async fn claim_execution(
         &self,
         execution: &Execution,
+        keyed: bool,
         waiting_for: Option<&str>,
         allow_start: bool,
+        capacity: Option<Capacity>,
     ) -> Result<Claim, String> {
         let execution = execution.clone();
         let waiting_for = waiting_for.map(str::to_owned);
         self.connection.call(move |db| -> Result<Claim, Error> {
-            let Some(key) = &execution.key else {
-                return Ok(if allow_start { Claim::Owned } else { Claim::BudgetExhausted });
-            };
-            {
+            let key = execution.key.as_deref().filter(|_| keyed);
+            if let Some(key) = key {
                 let transaction = db.transaction()?;
                 if let Some(claim) = available_to_waiter(&transaction, key, waiting_for.as_deref())? {
                     return Ok(claim);
@@ -426,24 +485,39 @@ impl Receipts {
             if !allow_start {
                 return Ok(Claim::BudgetExhausted);
             }
+            let capacity = capacity.zip(execution.backend());
+            if key.is_none() && capacity.is_none() {
+                return Ok(Claim::Owned);
+            }
             let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            if let Some(claim) = available_to_waiter(&transaction, key, waiting_for.as_deref())? {
+            if let Some(key) = key
+                && let Some(claim) = available_to_waiter(&transaction, key, waiting_for.as_deref())?
+            {
                 return Ok(claim);
             }
-            if let Some((id, _, _)) = active_owner(&transaction, key)? {
-                transaction.execute(
-                    "UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Execution owner died.','$.errorCode','OWNER_DIED','$.completedAt',?,'$.provenance.completedAt',?) WHERE id=? AND status='RUNNING'",
-                    params![execution.started_at, execution.started_at, id],
-                )?;
+            if let Some((capacity, backend)) = capacity {
+                if (capacity.stopped)() {
+                    return Ok(Claim::BudgetExhausted);
+                }
+                if held_slots(&transaction, backend, &execution.started_at)? >= capacity.limit {
+                    transaction.commit()?;
+                    return Ok(Claim::Full);
+                }
+            }
+            if let Some(key) = key
+                && let Some((id, _, _)) = active_owner(&transaction, key)?
+            {
+                owner_died(&transaction, &id, &execution.started_at)?;
             }
             let inserted = transaction.execute(
-                "INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?) ON CONFLICT(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN') DO NOTHING",
-                params![execution.id, key, execution.owner_pid, execution.owner_start_time as i64, execution.status, serde_json::to_string(&execution)?],
+                "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN') DO NOTHING",
+                params![execution.id, key, execution.eval_def_hash, execution.status, execution.owner_pid, execution.owner_start_time as i64, execution.backend(), serde_json::to_string(&execution)?],
             )?;
-            let claim = if inserted == 1 {
-                Claim::Owned
-            } else {
-                Claim::Wait(active_owner(&transaction, key)?.expect("conflicting active key").0)
+            let claim = match key {
+                Some(key) if inserted == 0 => {
+                    Claim::Wait(active_owner(&transaction, key)?.expect("conflicting active key").0)
+                }
+                _ => Claim::Owned,
             };
             transaction.commit()?;
             Ok(claim)
@@ -456,10 +530,10 @@ impl Receipts {
             .call(move |db| -> Result<(), Error> {
                 let transaction = db.transaction()?;
                 update_request(&transaction, &request)?;
-                transaction.execute(
-                    "UPDATE cache_entries SET last_used=? WHERE execution_id=?",
-                    params![request.completed_at, request.execution_id],
-                )?;
+                if let (Some(execution), Some(at)) = (&request.execution_id, &request.completed_at)
+                {
+                    history::touch(&transaction, execution, at)?;
+                }
                 transaction.commit()?;
                 Ok(())
             })
@@ -480,9 +554,8 @@ impl Receipts {
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 let published = settle(&transaction, &execution, &request)?;
                 transaction.commit()?;
-                if published && let Err(error) = super::cache_entries::collect(db) {
-                    use std::io::Write;
-                    let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
+                if published {
+                    history::collect_after(db);
                 }
                 Ok(())
             })
@@ -490,7 +563,7 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
-    /// Append a remote result to its key's history as a self-contained execution when it
+    /// Add a remote result to its key's history as a self-contained execution when it
     /// completed after the key's latest local record, which it then replaces as the one reused;
     /// `None` when the local record is as new. The mirrored record settles a local Human wait
     /// for the key.
@@ -509,7 +582,7 @@ impl Receipts {
                     ));
                 };
                 let data = serde_json::to_string(&execution)?;
-                if data.len() > super::cache_entries::MAX_ENTRY_BYTES {
+                if data.len() > history::MAX_ENTRY_BYTES {
                     return Err(Error::Invalid(
                         "Remote result exceeds the cache entry limit.".into(),
                     ));
@@ -524,8 +597,8 @@ impl Receipts {
                 }
                 // A mirror kept after `cache rm` or GC is reused for the same remote execution.
                 transaction.execute(
-                    "INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
-                    params![execution.id, key, execution.owner_pid, execution.owner_start_time as i64, execution.status, data],
+                    "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
+                    params![execution.id, key, execution.eval_def_hash, execution.status, execution.owner_pid, execution.owner_start_time as i64, data],
                 )?;
                 let data: String = transaction.query_row(
                     "SELECT data FROM executions WHERE id=? AND key=? AND status=?",
@@ -533,13 +606,15 @@ impl Receipts {
                     |row| row.get(0),
                 ).optional()?.ok_or_else(|| Error::Invalid("Mirrored execution ID conflicts with another execution.".into()))?;
                 let mirrored: Execution = serde_json::from_str(&data)?;
-                super::cache_entries::append(&transaction, &mirrored, data.len(), &crate::broker::now())?;
+                if let Some((completed_at, bytes)) = history::columns(&mirrored, data.len())? {
+                    transaction.execute(
+                        "UPDATE executions SET completed_at=?,bytes=?,last_used=? WHERE id=? AND completed_at IS NULL",
+                        params![completed_at, bytes, crate::broker::now(), mirrored.id],
+                    )?;
+                }
                 super::human::settle_waiting(&transaction, &mirrored)?;
                 transaction.commit()?;
-                if let Err(error) = super::cache_entries::collect(db) {
-                    use std::io::Write;
-                    let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
-                }
+                history::collect_after(db);
                 Ok(Some(mirrored))
             })
             .await
@@ -547,40 +622,34 @@ impl Receipts {
     }
 }
 
-/// Save a finished execution and its request; a GREEN/RED with a key is appended to the key's
-/// history. A claimed execution updates its active row; a forced or unkeyed one is inserted.
+/// Save a finished execution and its request; a GREEN/RED with a key joins the key's history.
+/// A claimed or Human execution updates its active row; a forced or unkeyed one is inserted,
+/// or replaces the RUNNING row its limited start inserted. True when it joined the history.
 pub(super) fn settle(
     db: &rusqlite::Connection,
     execution: &Execution,
     request: &Request,
 ) -> Result<bool, Error> {
-    let mut execution = execution.clone();
-    let mut request = request.clone();
-    execution.tool_calls =
-        super::tool_calls::project(db, Some(&execution.id), &execution.tool_calls)?;
-    request.tool_calls = execution.tool_calls.clone();
-    let data = serde_json::to_string(&execution)?;
+    let data = serde_json::to_string(execution)?;
+    let record = history::columns(execution, data.len())?;
+    let last_used = record.as_ref().and(execution.completed_at.as_deref());
+    let (completed_at, bytes) = record.clone().unzip();
     let claimed = execution.key.is_some() && !request.force;
     if claimed || request.human_definition.is_some() {
         if db.execute(
-            "UPDATE executions SET status=?,data=? WHERE id=? AND owner_pid=? AND owner_start_time=? AND status IN ('RUNNING','WAITING_HUMAN')",
-            params![execution.status, data, execution.id, execution.owner_pid, execution.owner_start_time as i64],
+            "UPDATE executions SET key=?,status=?,completed_at=?,bytes=?,last_used=?,data=? WHERE id=? AND owner_pid=? AND owner_start_time=? AND status IN ('RUNNING','WAITING_HUMAN')",
+            params![execution.key, execution.status, completed_at, bytes, last_used, data, execution.id, execution.owner_pid, execution.owner_start_time as i64],
         )? != 1
         {
             return Err(Error::Invalid("Active execution not found.".into()));
         }
     } else {
         db.execute(
-            "INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) VALUES (?,?,?,?,?,?)",
-            params![execution.id, execution.key, execution.owner_pid, execution.owner_start_time as i64, execution.status, data],
+            "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,completed_at,bytes,last_used,data) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET key=excluded.key,status=excluded.status,completed_at=excluded.completed_at,bytes=excluded.bytes,last_used=excluded.last_used,data=excluded.data",
+            params![execution.id, execution.key, execution.eval_def_hash, execution.status, execution.owner_pid, execution.owner_start_time as i64, execution.backend(), completed_at, bytes, last_used, data],
         )?;
     }
-    let published = super::cache_entries::append(
-        db,
-        &execution,
-        data.len(),
-        execution.completed_at.as_deref().unwrap_or_default(),
-    )?;
-    update_request(db, &request)?;
-    Ok(published)
+    update_request(db, request)?;
+    Ok(record.is_some())
 }

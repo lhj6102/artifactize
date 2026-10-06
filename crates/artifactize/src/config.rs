@@ -151,28 +151,6 @@ pub struct EvalDeclaration {
     pub pass_schema: Option<Map<String, Value>>,
     #[serde(default, deserialize_with = "present")]
     pub fail_schema: Option<Map<String, Value>>,
-    /// An Agent eval's project check over the parsed result and its tool-call audit.
-    #[serde(
-        default,
-        deserialize_with = "present",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub result_check: Option<ResultCheck>,
-}
-
-/// A command that reads `{version, artifactId, family, result, toolCalls}` on stdin and
-/// prints `{"errors": [...]}`; errors go to the review's one repair turn.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ResultCheck {
-    pub command: String,
-    pub args: Vec<String>,
-    #[serde(
-        default,
-        deserialize_with = "timeout",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub timeout_ms: Option<u32>,
 }
 
 impl EvalDeclaration {
@@ -184,12 +162,6 @@ impl EvalDeclaration {
         self.profile.validate()?;
         for schema in [&self.pass_schema, &self.fail_schema].into_iter().flatten() {
             crate::agent::verdict::validate_schema(schema)?;
-        }
-        if let Some(check) = &self.result_check {
-            if !matches!(self.profile, Profile::Agent { .. }) {
-                return Err("resultCheck applies only to Agent evals.".into());
-            }
-            script(&check.command, &check.args).map_err(|error| format!("resultCheck: {error}"))?;
         }
         if self.profile_variants.len() > 64 {
             return Err("profileVariants must contain at most 64 named profiles.".into());
@@ -441,6 +413,14 @@ fn validated_declaration(value: Value) -> Result<ArtifactDeclaration, String> {
         if value.get(key).is_some() {
             return Err(format!(
                 r#"{key} was renamed to fingerprint: use "fingerprint": {{"files": ["."], "ignore": []}} or "fingerprint": {{"script": {{...}}}}."#
+            ));
+        }
+    }
+    for eval in value["evals"].as_array().into_iter().flatten() {
+        if eval.get("resultCheck").is_some() {
+            return Err(format!(
+                "Eval {}: resultCheck was removed in 0.6.0; remove it. The review's tool calls are in its saved session (artifactize session show).",
+                eval["id"].as_str().unwrap_or("?")
             ));
         }
     }

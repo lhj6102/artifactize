@@ -234,7 +234,7 @@ async fn schema_allows_only_one_active_execution_per_key() {
     fs::create_dir(&repo).unwrap();
     let _receipts = Receipts::open(&state, &repo).await.unwrap();
     let db = Connection::open(state.join(DATABASE)).unwrap();
-    let insert = "INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) VALUES (?, ?, 1, 1, ?, '{}')";
+    let insert = "INSERT INTO executions(id,key,eval_def_hash,owner_pid,owner_start_time,status,data) VALUES (?, ?, 'hash', 1, 1, ?, '{}')";
     db.execute(insert, ["first", "shared", "RUNNING"]).unwrap();
     assert!(
         db.execute(insert, ["second", "shared", "WAITING_HUMAN"])

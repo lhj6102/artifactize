@@ -115,17 +115,17 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
             return Ok(Vec::new());
         }
         let views = {
-            let mut statement = transaction.prepare("SELECT q.data,r.repo,e.data,h.request_id,h.reviewer,h.claimed_at,
+            // A follower shows the claim of the waiting request whose execution it follows.
+            let mut statement = transaction.prepare("SELECT q.data,r.repo,e.data,h.id,h.claimed_by,h.claimed_at,
                 json_extract(r.data,'$.definitions.artifacts'),
-                (SELECT value FROM json_each(r.data,'$.definitions.evals') WHERE json_extract(value,'$.id')=m.eval_id)
+                (SELECT value FROM json_each(r.data,'$.definitions.evals') WHERE json_extract(value,'$.id')=q.eval_id)
                 FROM requests q JOIN runs r ON r.id=q.run_id
-                JOIN run_members m ON m.request_id=q.id
                 LEFT JOIN executions e ON e.id=q.execution_id
-                LEFT JOIN human_claims h ON h.request_id=json_extract(e.data,'$.provenance.requestId')
+                LEFT JOIN requests h ON h.id=json_extract(e.data,'$.provenance.requestId') AND h.claimed_by IS NOT NULL
                 WHERE (?1 IS NULL OR q.run_id=?1) AND (?2 IS NULL OR q.id=?2)
                 AND (?3 IS NULL OR r.repo=?3) AND (NOT ?4 OR q.status='WAITING_HUMAN')
                 AND (?5 IS NULL OR json_extract(q.data,'$.sessionId')=?5)
-                ORDER BY r.rowid DESC,m.ordinal")?;
+                ORDER BY r.rowid DESC,q.ordinal")?;
             statement.query_map(params![run, id, repo, waiting, session], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?,
                     row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, Option<String>>(5)?,
@@ -133,8 +133,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
             })?.map(|row| {
                 let (data, repo, execution, request_id, reviewer, claimed_at, artifacts, eval) = row?;
                 outside_workspace(Path::new(&repo), &state).map_err(|e| Error::Invalid(e.to_string()))?;
-                let mut request: Request = serde_json::from_str(&data)?;
-                request.tool_calls = super::tool_calls::project(&transaction, request.execution_id.as_deref(), &request.tool_calls)?;
+                let request: Request = serde_json::from_str(&data)?;
                 let artifacts: Option<Value> = artifacts.map(|data| serde_json::from_str(&data)).transpose()?;
                 let eval: Option<Value> = eval.map(|data| serde_json::from_str(&data)).transpose()?;
                 let definition = eval.zip(artifacts.as_ref().and_then(|artifacts| artifacts.get(&request.target)))

@@ -3,7 +3,6 @@
 
 use std::{collections::HashSet, path::Path, time::Duration};
 
-mod check;
 pub mod error;
 pub mod session;
 pub mod verdict;
@@ -37,7 +36,6 @@ pub const FOLLOW_UP: &str = "Follow-up question from a person about the review a
 pub struct Review {
     pub result: Result<Value, Failure>,
     pub attempts: Vec<Attempt>,
-    pub tool_calls: Vec<Value>,
 }
 
 /// A new review's session id, a random UUID: every request of the review, its turns,
@@ -82,7 +80,6 @@ pub async fn execute(
         Err(error) => Review {
             result: Err(error),
             attempts: Vec::new(),
-            tool_calls: Vec::new(),
         },
     }
 }
@@ -101,7 +98,6 @@ async fn review(
             "Agent review did not complete.",
         )),
         attempts: Vec::new(),
-        tool_calls: Vec::new(),
     };
     review.result = run(
         client,
@@ -111,7 +107,6 @@ async fn review(
         recorder,
         &cancellation,
         &mut review.attempts,
-        &mut review.tool_calls,
     )
     .await;
     recorder.event(match &review.result {
@@ -147,13 +142,15 @@ impl Turns<'_> {
         self.recorder.message(self.turn + 1, message, repair);
     }
 
-    /// One provider turn, checked against the model and the token budget, its answer recorded.
+    /// One provider turn, checked against the model and the token budget, its attempts and
+    /// answer recorded.
     async fn next(
         &mut self,
         request: &CompletionRequest,
         attempts: &mut Vec<Attempt>,
     ) -> Result<CompletionResponse, Failure> {
         self.turn += 1;
+        let first = attempts.len();
         let response = self
             .client
             .turn(
@@ -165,7 +162,13 @@ impl Turns<'_> {
                 },
                 attempts,
             )
-            .await?;
+            .await;
+        for attempt in &attempts[first..] {
+            let mut event = json!(attempt);
+            event["kind"] = json!("attempt");
+            self.recorder.event(event);
+        }
+        let response = response?;
         check_deadline(self.cancellation, self.deadline)?;
         llm::validate_response(&response, self.model)
             .map_err(|message| Failure::new(Code::ProviderError, message))?;
@@ -193,49 +196,71 @@ impl Turns<'_> {
         Ok(response)
     }
 
-    /// Run the answer's tool calls one at a time, auditing each, and record their results.
-    async fn call_tools(
-        &mut self,
-        calls: Vec<ToolCall>,
-        tool_calls: &mut Vec<Value>,
-    ) -> Result<Message, Failure> {
-        let (cancellation, deadline) = (self.cancellation, self.deadline);
+    /// Run the answer's tool calls one at a time and record their results, with which of
+    /// them failed. The calls that ran keep their results when a budget, the deadline or a
+    /// repeated call ID stops the rest.
+    async fn call_tools(&mut self, calls: Vec<ToolCall>) -> Result<Message, Failure> {
         let mut results = Vec::new();
+        let mut failed = Vec::new();
+        let mut stopped = None;
         // Each call is awaited before the next starts: tool concurrency is exactly one.
         for call in calls {
-            check_deadline(cancellation, deadline)?;
-            self.calls_issued = self.calls_issued.saturating_add(1);
-            tool_calls.push(json!({"name":call.function.name, "arguments":call.function.arguments, "result":null, "isError":true}));
-            if self
-                .max_tool_calls
-                .is_some_and(|limit| self.calls_issued > limit)
-            {
-                return Err(Failure::new(
-                    Code::ProviderBudgetExceeded,
-                    "PROVIDER_BUDGET_EXCEEDED: review exceeded its maxToolCalls budget.",
-                ));
+            match self.call_tool(&call).await {
+                Ok((result, is_error)) => {
+                    results.push(result);
+                    failed.push(is_error);
+                }
+                Err(failure) => {
+                    stopped = Some(failure);
+                    break;
+                }
             }
-            if !self.call_ids.insert(call.id.wire().into_owned()) {
-                return Err(Failure::new(
-                    Code::ProviderError,
-                    "Provider repeated a tool-call ID; no further tools were executed.",
-                ));
+            if let Err(failure) = check_deadline(self.cancellation, self.deadline) {
+                stopped = Some(failure);
+                break;
             }
-            let result = tokio::select! {
-                biased;
-                _ = cancellation.cancelled() => return Err(Failure::cancelled()),
-                _ = tokio::time::sleep_until(deadline) => return Err(Failure::timeout()),
-                result = self.registry.call(call.function.name.as_str(), call.function.arguments.clone(), self.output, cancellation.clone()) => result,
-            };
-            check_deadline(cancellation, deadline)?;
-            let record = tool_calls.last_mut().unwrap();
-            record["result"] = json!(result_summary(&result));
-            record["isError"] = json!(result.is_error);
-            results.push(call.result(tool_content(result)?));
         }
         let message = Message::tool_results(results);
-        self.input(&message, false);
-        Ok(message)
+        if !failed.is_empty() {
+            self.recorder.tool_results(self.turn + 1, &message, &failed);
+        }
+        match stopped {
+            Some(failure) => Err(failure),
+            None => Ok(message),
+        }
+    }
+
+    /// One tool call, counted against the budget: its result and whether it failed.
+    async fn call_tool(
+        &mut self,
+        call: &ToolCall,
+    ) -> Result<(rig_core::message::ToolResult, bool), Failure> {
+        let (cancellation, deadline) = (self.cancellation, self.deadline);
+        check_deadline(cancellation, deadline)?;
+        self.calls_issued = self.calls_issued.saturating_add(1);
+        if self
+            .max_tool_calls
+            .is_some_and(|limit| self.calls_issued > limit)
+        {
+            return Err(Failure::new(
+                Code::ProviderBudgetExceeded,
+                "PROVIDER_BUDGET_EXCEEDED: review exceeded its maxToolCalls budget.",
+            ));
+        }
+        if !self.call_ids.insert(call.id.wire().into_owned()) {
+            return Err(Failure::new(
+                Code::ProviderError,
+                "Provider repeated a tool-call ID; no further tools were executed.",
+            ));
+        }
+        let result = tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => return Err(Failure::cancelled()),
+            _ = tokio::time::sleep_until(deadline) => return Err(Failure::timeout()),
+            result = self.registry.call(call.function.name.as_str(), call.function.arguments.clone(), self.output, cancellation.clone()) => result,
+        };
+        let failed = result.is_error;
+        Ok((call.result(tool_content(result)?), failed))
     }
 }
 
@@ -261,10 +286,6 @@ fn text_of(response: &CompletionResponse) -> String {
         .collect()
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "the review's client, eval, output, session and cancellation, and its audit"
-)]
 async fn run(
     client: &Client,
     config: &RepoConfig,
@@ -273,7 +294,6 @@ async fn run(
     recorder: &mut Recorder,
     cancellation: &CancellationToken,
     attempts: &mut Vec<Attempt>,
-    tool_calls: &mut Vec<Value>,
 ) -> Result<Value, Failure> {
     let Profile::Agent {
         backend,
@@ -337,40 +357,9 @@ async fn run(
             let text = text_of(&response);
             let result = verdict.parse(&text);
             check_deadline(cancellation, deadline)?;
-            // A schema failure, or the project's resultCheck errors, earn the one repair turn.
+            // A schema failure earns the one repair turn.
             let repair = match result {
-                Ok(value) => {
-                    let Some(check) = &eval.declaration.result_check else {
-                        return Ok(value);
-                    };
-                    let errors = check::run(
-                        config,
-                        eval,
-                        check,
-                        &value,
-                        tool_calls,
-                        output,
-                        deadline,
-                        cancellation,
-                    )
-                    .await?;
-                    check_deadline(cancellation, deadline)?;
-                    if errors.is_empty() {
-                        return Ok(value);
-                    }
-                    if repairing {
-                        return Err(Failure::new(
-                            Code::InvalidResult,
-                            format!(
-                                "Invalid final Agent result after one format repair: resultCheck: {}",
-                                errors.join("; ")
-                            ),
-                        ));
-                    }
-                    let errors: String =
-                        errors.iter().map(|error| format!("\n- {error}")).collect();
-                    format!("Your final response did not pass the project's result check:{errors}")
-                }
+                Ok(value) => return Ok(value),
                 Err(error) if repairing => {
                     return Err(Failure::new(
                         Code::InvalidResult,
@@ -406,16 +395,15 @@ async fn run(
             id: response.message_id,
             content: response.choice,
         });
-        let results = turns.call_tools(calls, tool_calls).await?;
+        let results = turns.call_tools(calls).await?;
         request.chat_history.push(results);
     }
 }
 
-/// A follow-up's free-text answer, the attempts it took and its tool-call audit.
+/// A follow-up's free-text answer and the attempts it took.
 pub struct FollowUp {
     pub answer: Result<String, Failure>,
     pub attempts: Vec<Attempt>,
-    pub tool_calls: Vec<Value>,
     /// Whether the message was sent; one that failed before, such as on a missing API key,
     /// leaves the saved conversation as it was.
     pub started: bool,
@@ -450,7 +438,6 @@ pub async fn follow_up(
             "The follow-up did not complete.",
         )),
         attempts: Vec::new(),
-        tool_calls: Vec::new(),
         started: false,
     };
     follow_up.answer = continue_conversation(
@@ -466,15 +453,12 @@ pub async fn follow_up(
     if !follow_up.started {
         return follow_up;
     }
-    let mut event = match &follow_up.answer {
+    recorder.event(match &follow_up.answer {
         Ok(text) => json!({"kind":"answer","text":text}),
         Err(failure) => {
             json!({"kind":"answer","errorCode":failure.code.as_str(),"error":failure.message})
         }
-    };
-    event["usage"] = json!(follow_up.attempts);
-    event["toolCalls"] = json!(follow_up.tool_calls);
-    recorder.event(event);
+    });
     follow_up
 }
 
@@ -565,7 +549,7 @@ async fn continue_conversation(
             id: response.message_id,
             content: response.choice,
         });
-        let results = turns.call_tools(calls, &mut follow_up.tool_calls).await?;
+        let results = turns.call_tools(calls).await?;
         request.chat_history.push(results);
     }
 }
@@ -603,14 +587,6 @@ fn tool_content(result: ToolResult) -> Result<Vec<ToolResultContent>, String> {
                 ))
             }
         })
-        .collect()
-}
-
-fn result_summary(result: &ToolResult) -> String {
-    serde_json::to_string(result)
-        .expect("tool result is JSON")
-        .chars()
-        .take(4096)
         .collect()
 }
 

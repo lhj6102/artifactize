@@ -19,10 +19,16 @@ mod repair;
 const SESSION: &str = "0f4c2a9e-review-session";
 
 struct Fixture {
-    _directory: TempDir,
+    directory: TempDir,
     config: RepoConfig,
     output: PathBuf,
+    /// How many reviews ran; each saves its session in a state of its own.
+    reviews: std::cell::Cell<usize>,
 }
+
+/// A tool call as the saved session records it: its name, and its result's content with
+/// whether it failed, or `None` when it was never answered.
+type Call = (String, Option<(String, bool)>);
 
 impl Fixture {
     fn new(backend: &str) -> Self {
@@ -39,10 +45,61 @@ impl Fixture {
         fs::write(repo.join("tool.py"), "import json,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'text','text':'tool evidence'},{'type':'json','data':{'ok':True}}]}))\n").unwrap();
         let config = read_workspace_config(&repo).unwrap();
         Self {
-            _directory: directory,
+            directory,
             config,
             output,
+            reviews: Default::default(),
         }
+    }
+
+    fn state(&self) -> PathBuf {
+        self.directory
+            .path()
+            .join(format!("state-{}", self.reviews.get()))
+    }
+
+    /// The tool calls of the latest review, from its saved session.
+    fn calls(&self) -> Vec<Call> {
+        let path = session::path(&self.state(), SESSION).unwrap();
+        let Some(conversation) = session::Conversation::load(&path).unwrap() else {
+            return Vec::new();
+        };
+        let (mut ids, mut calls) = (Vec::new(), Vec::<Call>::new());
+        for event in &conversation.events {
+            let Ok(message) = serde_json::from_value::<Message>(event["message"].clone()) else {
+                continue;
+            };
+            match message {
+                Message::Assistant { content, .. } => {
+                    for part in content {
+                        if let AssistantContent::ToolCall(call) = part {
+                            ids.push(call.id.wire().into_owned());
+                            calls.push((call.function.name.as_str().into(), None));
+                        }
+                    }
+                }
+                Message::User { content } => {
+                    let results = content.iter().filter_map(|part| match part {
+                        rig_core::message::UserContent::ToolResult(result) => Some(result),
+                        _ => None,
+                    });
+                    for (index, result) in results.enumerate() {
+                        let call = (0..calls.len())
+                            .rev()
+                            .find(|&call| {
+                                calls[call].1.is_none() && ids[call] == result.call.wire()
+                            })
+                            .expect("an answered call");
+                        calls[call].1 = Some((
+                            json!(result.content).to_string(),
+                            event["isError"][index] == true,
+                        ));
+                    }
+                }
+                Message::System { .. } => {}
+            }
+        }
+        calls
     }
 
     async fn run(&self, responses: Vec<MockHttpResponse>) -> (Review, SequencedHttpClient) {
@@ -64,13 +121,15 @@ impl Fixture {
             )),
             Backend::Codex => unreachable!("Codex reviews are tested end to end"),
         };
+        self.reviews.set(self.reviews.get() + 1);
+        let mut recorder = session::Recorder::test(&self.state(), SESSION);
         (
             review(
                 &client,
                 &self.config,
                 &self.config.evals[0],
                 &self.output,
-                &mut session::Recorder::off(SESSION),
+                &mut recorder,
                 CancellationToken::new(),
             )
             .await,
@@ -170,14 +229,11 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
         ])
         .await;
     assert_eq!(review.result.unwrap(), json!({"verdict":"GREEN"}));
-    assert_eq!(review.tool_calls.len(), 2);
-    assert_eq!(review.tool_calls[0]["isError"], false);
-    assert!(
-        review.tool_calls[0]["result"]
-            .as_str()
-            .unwrap()
-            .contains("tool evidence")
-    );
+    let calls = fixture.calls();
+    assert_eq!(calls.len(), 2);
+    let (result, failed) = calls[0].1.clone().unwrap();
+    assert!(!failed);
+    assert!(result.contains("tool evidence"));
     assert_eq!(review.attempts[0].usage, serde_json::Map::new());
     assert_eq!(review.attempts[1].usage, json!({"inputTokens":10,"outputTokens":4,"totalTokens":14,"cacheReadTokens":0,"reasoningTokens":2}).as_object().unwrap().clone());
     let requests = http.requests();
@@ -285,7 +341,7 @@ async fn incomplete_wrong_model_and_duplicate_calls_fail_before_tools() {
     ] {
         let (review, http) = fixture.run(vec![response, final_openai()]).await;
         assert!(review.result.is_err(), "{:?}", review.result);
-        assert!(review.tool_calls.is_empty());
+        assert!(fixture.calls().is_empty());
         assert_eq!(http.requests().len(), 1);
     }
     let (review, _) = Fixture::new("anthropic")
@@ -353,7 +409,7 @@ async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
         .await;
     // A failed turn after tool calls replays the whole conversation, so it retries too.
     assert_eq!(review.result.unwrap(), json!({"verdict":"GREEN"}));
-    assert_eq!(review.tool_calls.len(), 1);
+    assert_eq!(fixture.calls().len(), 1);
     assert_eq!(http.requests().len(), 3);
     let turns: Vec<_> = review
         .attempts
@@ -424,8 +480,9 @@ async fn deadline_stops_retry_without_extra_requests() {
 }
 
 #[tokio::test]
-async fn unknown_tool_error_is_audited_and_replayed_without_native_error_flag() {
-    let (review, http) = Fixture::new("openai")
+async fn unknown_tool_error_is_recorded_and_replayed_without_native_error_flag() {
+    let fixture = Fixture::new("openai");
+    let (review, http) = fixture
         .run(vec![
             openai_response(
                 "exact-model",
@@ -437,14 +494,11 @@ async fn unknown_tool_error_is_audited_and_replayed_without_native_error_flag() 
         ])
         .await;
     assert!(review.result.is_ok());
-    assert_eq!(review.tool_calls[0]["name"], "unregistered");
-    assert_eq!(review.tool_calls[0]["isError"], true);
-    assert!(
-        review.tool_calls[0]["result"]
-            .as_str()
-            .unwrap()
-            .contains("Unknown registered Agent tool")
-    );
+    let (name, answer) = fixture.calls().remove(0);
+    assert_eq!(name, "unregistered");
+    let (result, failed) = answer.unwrap();
+    assert!(failed);
+    assert!(result.contains("Unknown registered Agent tool"));
     assert!(
         String::from_utf8_lossy(&http.requests()[1].body).contains("Unknown registered Agent tool")
     );
@@ -490,7 +544,7 @@ async fn registry_image_blocks_reach_both_provider_wires() {
         };
         let (review, http) = fixture.run(responses).await;
         assert!(review.result.is_ok(), "{:?}", review.result);
-        assert_eq!(review.tool_calls[0]["isError"], false);
+        assert!(!fixture.calls()[0].1.as_ref().unwrap().1);
         let body: Value = serde_json::from_slice(&http.requests()[1].body).unwrap();
         assert!(body.to_string().contains(png));
         if backend == "openai" {

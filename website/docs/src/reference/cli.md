@@ -27,7 +27,7 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `request unclaim ID` | `--reviewer NAME` (`$USER`) | JSON | 0 |
 | `request tool ID TOOL` | `--reviewer NAME` | text or JSON | 0; 2 tool error |
 | `request submit ID` | `--verdict GREEN\|RED`, `--fields JSON` \| `--fields-file PATH`, `--reviewer NAME` | JSON | 0, also for RED |
-| `session show REF` | | text, or the stored events as JSON | 0 |
+| `session show REF` | `--summary` | text, or the stored events (or the summary) as JSON | 0 |
 | `session send REF MESSAGE` | | text or JSON | 0 |
 | `cache list` | `--history` | text or JSON | 0 |
 | `cache show KEY` | `--history` | JSON | 0; 4 missing |
@@ -61,12 +61,20 @@ errors: text on stderr, or `{"error":"..."}` on stdout with `--json`. There is n
 request's `session.ref` (`user@host/STATE_ID/RUN_ID/REQUEST_ID/SESSION_ID`), a request
 id such as `run-Hq2b9X-1`, or a `sessionId`; a request that reused a result names the
 review that produced it. `show` prints the conversation as text, and with `--json` the
-stored events as they are: `{"reference","file","events"}`. `send` prints the answer
-under a header naming the session, the follow-up number and the model, and
-`files changed since this review` when an Artifact the review covered changed; `--json`
-prints `{"reference","sessionId","requestId","send","filesChanged","answer","toolCalls","usage"}`.
+stored events as they are: `{"reference","file","events"}`. `show --summary` prints
+the [session summary](../guides/agent-evals.md#session-summary), computed from the
+session file alone: the backend, model and time span, the turns with their tokens and
+the total, the tool calls per tool with how many failed, and the follow-ups; `--json`
+prints `{"reference","sessionId","requestId","backend","model","reasoning","startedAt","endedAt","durationMs","followUps","turns","tokens","toolCalls"}`.
+`send` prints the answer under a header naming the session, the follow-up number and
+the model, and `files changed since this review` when an Artifact the review covered
+changed; `--json` prints `{"reference","sessionId","requestId","send","filesChanged","answer","usage"}`.
 Both exit 2 for a reference to another machine or state, a session the GC removed, one
 that was not saved, a request that is still running (`send`), and a failed follow-up.
+
+Every command that reads or writes the state exits 2 when the state was written by an
+earlier artifactize, which it does not migrate
+([State](state-cache-limits.md#state)); `doctor` reports such a state as a hard error.
 
 ## Runtime CLI
 

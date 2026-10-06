@@ -9,17 +9,21 @@
 //! - `message`: one rig [`Message`] exactly as the provider received or sent it, with the
 //!   `turn` (the provider request) that carried it. The system prompt and instructions come
 //!   first, then each answer with its reasoning (encrypted reasoning items and thinking
-//!   signatures included), tool calls and their results. The repair prompt has `repair`,
-//!   and the answer it replaced is the message before it;
+//!   signatures included), tool calls and their results. A message of tool results has
+//!   `isError`, whether each result failed, in order. The repair prompt has `repair`, and
+//!   the answer it replaced is the message before it;
+//! - `attempt`: one provider attempt of a `turn`, its `usage` counters and any error;
 //! - `end`: the review's `result`, or its `errorCode` and `error`;
-//! - `send` and `answer` around each follow-up, whose messages carry its `send` number.
+//! - `send` and `answer` around each follow-up, whose events carry its `send` number.
 //!
 //! Every event has its time in `at`. Writing never fails a review: an error is reported on
 //! stderr and the review goes on without its conversation.
 
 mod gc;
+mod summary;
 
 pub use gc::{Collection, Usage, collect, usage};
+pub use summary::{Summary, tokens_text};
 
 use std::{
     fmt,
@@ -29,7 +33,7 @@ use std::{
     time::Duration,
 };
 
-use rig_core::message::{AssistantContent, Message, ToolResultContent};
+use rig_core::message::{AssistantContent, Message, ToolResultContent, UserContent};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -187,6 +191,22 @@ impl Recorder {
         }
     }
 
+    /// A session saved below `state` for no Run.
+    #[cfg(test)]
+    pub(crate) fn test(state: &Path, id: &str) -> Self {
+        let reference = SessionRef {
+            producer: "tester@host".into(),
+            state: "state".into(),
+            run_id: "run".into(),
+            request_id: "request".into(),
+            session_id: id.into(),
+        };
+        Self {
+            target: Some((path(state, id).unwrap(), json!(reference))),
+            ..Self::off(id)
+        }
+    }
+
     /// Append follow-up `send` to the saved conversation at `path`.
     pub(crate) fn append(path: &Path, id: &str, send: usize) -> Result<Self, String> {
         let file = platform::open_no_follow(File::options().append(true), path)
@@ -244,6 +264,14 @@ impl Recorder {
             event["repair"] = json!(true);
         }
         self.event(event);
+    }
+
+    /// The message of tool results that `turn` sends, with whether each failed.
+    pub(crate) fn tool_results(&mut self, turn: usize, message: &Message, failed: &[bool]) {
+        if self.file.is_none() {
+            return;
+        }
+        self.event(json!({"kind":"message","turn":turn,"message":message,"isError":failed}));
     }
 
     /// Append an event, stamped with its time and the follow-up it belongs to.
@@ -351,8 +379,8 @@ impl Conversation {
     }
 
     /// Every message in order, the review's and its follow-ups', ready to send again. Tool
-    /// calls a stopped review never answered get an error result, since a provider expects
-    /// every call answered.
+    /// calls a stopped review never answered get an error result next to the results of
+    /// those that ran, since a provider expects every call answered.
     pub fn history(&self) -> Result<Vec<Message>, String> {
         let mut messages = self
             .events
@@ -361,21 +389,46 @@ impl Conversation {
             .map(|event| serde_json::from_value::<Message>(event["message"].clone()))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("{}: {e}", self.path.display()))?;
-        if let Some(Message::Assistant { content, .. }) = messages.last() {
-            let results: Vec<_> = content
-                .iter()
-                .filter_map(|part| match part {
-                    AssistantContent::ToolCall(call) => {
-                        Some(call.result(vec![ToolResultContent::text(
+        let Some(last) = messages
+            .iter()
+            .rposition(|message| matches!(message, Message::Assistant { .. }))
+        else {
+            return Ok(messages);
+        };
+        let answered: Vec<_> = messages[last + 1..]
+            .iter()
+            .flat_map(|message| match message {
+                Message::User { content } => content.as_slice(),
+                _ => &[],
+            })
+            .filter_map(|part| match part {
+                UserContent::ToolResult(result) => Some(result.call.wire()),
+                _ => None,
+            })
+            .collect();
+        let Message::Assistant { content, .. } = &messages[last] else {
+            unreachable!("the last answer")
+        };
+        let missing: Vec<_> = content
+            .iter()
+            .filter_map(|part| match part {
+                AssistantContent::ToolCall(call) if !answered.contains(&call.id.wire()) => {
+                    Some(UserContent::ToolResult(call.result(vec![
+                        ToolResultContent::text(
                             "Not run: the review stopped before this tool call completed.",
-                        )]))
-                    }
-                    _ => None,
-                })
-                .collect();
-            if !results.is_empty() {
-                messages.push(Message::tool_results(results));
-            }
+                        ),
+                    ])))
+                }
+                _ => None,
+            })
+            .collect();
+        if missing.is_empty() {
+            return Ok(messages);
+        }
+        let ran = last + 1 < messages.len();
+        match messages.last_mut() {
+            Some(Message::User { content }) if ran => content.extend(missing),
+            _ => messages.push(Message::User { content: missing }),
         }
         Ok(messages)
     }
@@ -447,6 +500,75 @@ mod tests {
         }
         assert!(path(Path::new("/state"), "..").is_err());
         assert!(path(Path::new("/state"), "a/b").is_err());
+    }
+
+    #[test]
+    fn calls_a_stopped_review_never_answered_are_answered_on_replay() {
+        use rig_core::message::{ToolCall, ToolFunction, ToolName};
+        let call = |id: &str| {
+            ToolCall::from_wire(
+                id,
+                ToolFunction::new(ToolName::new("read").unwrap(), json!({})),
+            )
+        };
+        let answer = Message::Assistant {
+            id: None,
+            content: vec![
+                AssistantContent::ToolCall(call("c1")),
+                AssistantContent::ToolCall(call("c2")),
+            ],
+        };
+        let ran = Message::tool_results(vec![
+            call("c1").result(vec![ToolResultContent::text("ran")]),
+        ]);
+        let replay = |messages: &[&Message]| {
+            let events = std::iter::once(json!({"kind":"review"}))
+                .chain(
+                    messages
+                        .iter()
+                        .map(|message| json!({"kind":"message","message":message})),
+                )
+                .collect();
+            Conversation {
+                path: "session.jsonl".into(),
+                events,
+            }
+            .history()
+            .unwrap()
+        };
+        let results = |message: &Message| match message {
+            Message::User { content } => content
+                .iter()
+                .map(|part| match part {
+                    UserContent::ToolResult(result) => {
+                        (result.call.wire().into_owned(), json!(result.content))
+                    }
+                    _ => panic!("only tool results"),
+                })
+                .collect::<Vec<_>>(),
+            _ => panic!("a user message"),
+        };
+        let not_run = json!([{"type":"text","text":"Not run: the review stopped before this tool call completed."}]);
+        // The budget stopped the second call: it is answered next to the first one's result.
+        let history = replay(&[&answer, &ran]);
+        assert_eq!(history.len(), 2);
+        assert_eq!(
+            results(&history[1]),
+            [
+                ("c1".to_owned(), json!([{"type":"text","text":"ran"}])),
+                ("c2".to_owned(), not_run.clone())
+            ]
+        );
+        // No call ran: every call is answered in a new message.
+        let history = replay(&[&answer]);
+        assert_eq!(history.len(), 2);
+        assert_eq!(
+            results(&history[1]),
+            [
+                ("c1".to_owned(), not_run.clone()),
+                ("c2".to_owned(), not_run)
+            ]
+        );
     }
 
     #[test]

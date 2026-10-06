@@ -21,8 +21,6 @@ pub enum Code {
     ProviderBudgetExceeded,
     /// No valid verdict after the one format repair.
     InvalidResult,
-    /// The eval's `resultCheck` crashed, timed out or broke its output protocol.
-    ResultCheckFailed,
     /// Any other provider failure: a rejected request, an unknown or different model,
     /// an incomplete response or a malformed tool call.
     ProviderError,
@@ -44,7 +42,6 @@ impl Code {
             Self::Cancelled => "CANCELLED",
             Self::ProviderBudgetExceeded => "PROVIDER_BUDGET_EXCEEDED",
             Self::InvalidResult => "INVALID_RESULT",
-            Self::ResultCheckFailed => "RESULT_CHECK_FAILED",
             Self::ProviderError => "PROVIDER_ERROR",
             Self::AgentError => "AGENT_ERROR",
         }

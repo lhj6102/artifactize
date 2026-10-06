@@ -56,8 +56,7 @@ See [Remote review store client](../reference/review-store.md#remote-review-stor
   saved conversation (`producer.session`: the producer, its state id, and the Run,
   request and session ids).
 
-It never sends argv, stdout/stderr, the tool-call audit, repository paths or an Agent
-conversation.
+It never sends argv, stdout/stderr, repository paths or an Agent conversation.
 `full` (`remote login --share full` or `ARTIFACTIZE_REMOTE_SHARE=full`) also sends
 the saved execution as is, including captured output. Owner fields are free text
 at both levels, so keep secrets out of the fields that `passSchema` and

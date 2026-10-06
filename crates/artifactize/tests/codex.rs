@@ -170,8 +170,8 @@ fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
     );
     let review = &run["requests"][0];
     assert_eq!(review["status"], "GREEN", "{run}");
-    assert_eq!(review["toolCalls"][0]["name"], "read_spec");
-    assert_eq!(review["toolCalls"][0]["isError"], false);
+    // The review's tool calls live in its saved session, not in the request.
+    assert!(review.get("toolCalls").is_none());
     let attempts = review["usage"].as_array().unwrap();
     assert_eq!(attempts.len(), 2);
     assert_eq!(attempts[1]["usage"]["inputTokens"], 40);

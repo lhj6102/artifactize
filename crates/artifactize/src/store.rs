@@ -7,25 +7,22 @@ use std::{
 
 use crate::workspace::canonical_target;
 
-pub(crate) mod cache_entries;
 mod executions;
+pub(crate) mod history;
 mod human;
-mod migrate;
 pub use human::HumanClaim;
 pub mod prune;
 mod receipts;
 mod runs;
-mod slots;
 pub use runs::{RunSummary, read_runs};
 mod requests;
-mod tool_calls;
 pub use executions::{
-    Claim, Execution, ExecutionOptions, Origin, Producer, Provenance, read_keyed_executions,
-    read_latest_cached,
+    Capacity, Claim, Execution, ExecutionOptions, Origin, Producer, Provenance,
+    read_keyed_executions, read_latest_cached,
 };
 pub use receipts::{
-    DATABASE, LastRequest, Receipts, Request, Run, RunView, StoppedBackend, read_latest_requests,
-    read_run, read_state_id, state_schema,
+    DATABASE, EARLIER_STATE, LastRequest, Receipts, Request, Run, RunView, StoppedBackend,
+    read_latest_requests, read_run, read_state_id, schema_error, state_schema,
 };
 pub use requests::{RequestView, read_request, read_requests, read_session_request, read_waiting};
 
@@ -38,8 +35,9 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
     canonical_target(&path).map_err(|e| e.to_string())
 }
 
-/// SQLite `user_version` for artifactize state databases.
-pub const STATE_SCHEMA_VERSION: u32 = 4;
+/// SQLite `user_version` for artifactize state databases. 5 since 0.6.0, whose four tables no
+/// earlier state is migrated to.
+pub const STATE_SCHEMA_VERSION: u32 = 5;
 
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(

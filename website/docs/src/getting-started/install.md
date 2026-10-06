@@ -95,13 +95,15 @@ artifactize` replaces the binary with the latest stable release, and `cargo inst
 artifactize --locked` rebuilds it (or run the `--git` command with the new release's
 tag, or `git pull` and repeat `cargo install --path`). Your state stays where it is.
 
-The next command that opens an older state database upgrades it in place; `artifactize
-doctor` reports its schema without changing it. 0.4 calls the reuse declaration
-`fingerprint`; `config check` shows the new shape for each `artifactize.json` that
-still uses the old field, or the content form's `dependencies` option that 0.5
-removed. 0.5 builds the reuse key differently, so the first `verify` after
-upgrading from 0.4 or earlier reviews everything once
-([Upgrading from 0.4](../concepts/fingerprints-and-reuse.md#upgrading-from-04)).
+0.6.0 starts a new state. Every command refuses a state database that an earlier
+artifactize wrote, with exit code 2, and `artifactize doctor` reports it: set
+`ARTIFACTIZE_STATE_HOME` (or `--state-dir`) to a new directory, or move the old one
+away. The first `verify` in the new state reviews everything once
+([Upgrading to 0.6](../concepts/fingerprints-and-reuse.md#upgrading-to-06)). An eval
+that still declares `resultCheck` fails `config check`: remove it. 0.4 calls the reuse
+declaration `fingerprint`; `config check` shows the new shape for each
+`artifactize.json` that still uses the old field, or the content form's
+`dependencies` option that 0.5 removed.
 
 0.5.0 removes the `chatgpt` and `claude` Agent backends, with `login chatgpt`,
 `logout chatgpt` and the internal `mcp` command, and adds `codex` for ChatGPT plan
@@ -114,9 +116,10 @@ from the state directory.
 
 ## State
 
-All state lives in one directory: `state.sqlite` (Runs, requests, executions, the
-reuse records and Human claims), Run output under `runs/`, and the Codex sign-in and
-the review store token under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
+All state lives in one directory: `state.sqlite` (Runs, requests and executions,
+with the reuse records, Human claims and backend slots), Run output under `runs/`,
+saved Agent conversations under `agent-sessions/`, and the Codex sign-in and the
+review store token under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
 `$XDG_STATE_HOME/artifactize`, else (on Windows) `%LOCALAPPDATA%\artifactize`, else
 `~/.local/state/artifactize`.
 

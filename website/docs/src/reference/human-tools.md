@@ -60,12 +60,12 @@ The internal library exposes asynchronous operations with an open `store::Receip
   expiry timers, preparation phases, readiness hooks or alarms.
 - `human::unclaim(receipts, request_id, reviewer)` releases that lock without a
   verdict, so another reviewer can claim the request. Only the claimant can release,
-  and only while the request still waits; tool calls already recorded are kept.
+  and only while the request still waits.
 - `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation)`
   authorizes the claimant, reopens the recorded Artifact/eval scope and declarations,
   and checks the fingerprint before invoking a registered Human tool. The tool takes
   no free arguments and uses the reviewer's real environment. Ordinary tool errors
-  are correctable actions, not verdicts. Only tool name and error metadata are saved.
+  are correctable actions, not verdicts. Human tool runs are not recorded.
 - `human::tool_command(receipts, request_id, tool)` resolves what that tool would
   run (repository, program, argv and directory) without claiming or running it.
 - `human::submit(receipts, request_id, reviewer, result, cancellation)` accepts
@@ -90,9 +90,9 @@ joins the saved eval and its owning Artifact (including family membership) from
 the Run; older Runs without saved definitions return null. These queries need no
 repository and run no owner code. `run show` and JSON verify include a Run summary:
 status counts, executed and reused requests by reviewer kind, wall time, actual
-executor starts, attempts, tool counts and usage reporting completeness. Run totals
+executor starts, attempts and usage reporting completeness. Run totals
 exclude reused source executions; the Run-level `usage.saved` sums their original
 counters. Reused requests keep source attribution and the raw per-provider attempts
-in `reusedUsage`; their own summaries report no attempts or tool calls (`usageState: "none"`).
+in `reusedUsage`; their own summaries report no attempts (`usageState: "none"`).
 Unreported usage is never represented as a known zero token count. There are no
 separate summary commands or `--full` mode.

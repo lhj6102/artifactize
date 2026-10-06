@@ -71,7 +71,7 @@ pub fn request_output(view: &RequestView) -> Value {
     let mut value = json!(view);
     let request = &view.request;
     with_source(&mut value, request);
-    // A reused request spent nothing; the source's attempts and tools stay in its audit.
+    // A reused request spent nothing; the source's attempts stay with its own request.
     let spent = (!reused(request)).then_some(request);
     let (attempts, reported, unreported, usage) = usage_totals(spent);
     value["summary"] = json!({
@@ -79,7 +79,6 @@ pub fn request_output(view: &RequestView) -> Value {
         "wallMs":wall_ms(&request.created_at, request.completed_at.as_deref()),
         "executorStarts":u64::from(local_execution(request) && request.started_at.is_some() && request.profile["kind"] != "human"),
         "attempts":attempts,
-        "toolCalls":tool_totals(spent),
         "usageState":usage_state(reported, unreported),
         "reportedAttempts":reported,"unreportedAttempts":unreported,"usage":usage,
         "executionSource":request.provenance,
@@ -114,8 +113,7 @@ pub fn run_output(view: &RunView) -> Value {
     reuses.insert("otherProfile", 0);
     for request in &view.requests {
         let tally = if reused(request) {
-            // Requests saved before reusedUsage existed kept the original attempts in usage.
-            let original = request.reused_usage.as_ref().or(request.usage.as_ref());
+            let original = request.reused_usage.as_ref();
             for attempt in original.and_then(Value::as_array).into_iter().flatten() {
                 add_usage(&mut saved, attempt);
             }
@@ -142,7 +140,7 @@ pub fn run_output(view: &RunView) -> Value {
         "executed":executed,"reused":reuses,
         "wallMs":wall_ms(&view.run.created_at, view.run.completed_at.as_deref()),
         "executorStarts":view.run.executions_started,
-        "attempts":attempts,"toolCalls":tool_totals(local.iter().copied()),
+        "attempts":attempts,
         "usageState":usage_state(reported, unreported),
         "reportedAttempts":reported,"unreportedAttempts":unreported,"usage":usage,
     });
@@ -186,18 +184,6 @@ fn wall_ms(start: &str, end: Option<&str>) -> Option<u64> {
         .ok()?
         .unwrap_or_else(OffsetDateTime::now_utc);
     Some((end - start).whole_milliseconds().max(0) as u64)
-}
-
-fn tool_totals<'a>(requests: impl IntoIterator<Item = &'a Request>) -> BTreeMap<&'a str, u64> {
-    let mut counts = BTreeMap::new();
-    for request in requests {
-        for call in &request.tool_calls {
-            if let Some(name) = call["name"].as_str() {
-                *counts.entry(name).or_default() += 1;
-            }
-        }
-    }
-    counts
 }
 
 fn usage_totals<'a>(

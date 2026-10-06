@@ -27,7 +27,6 @@ const RESERVED: &[&str] = &[
     "stderr",
     "durationMs",
     "exitCode",
-    "toolCalls",
 ];
 
 pub(crate) fn validate_schema(schema: &Map<String, Value>) -> Result<(), String> {

@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
-pub use crate::store::cache_entries::{Entry, list, remove, show};
+pub use crate::store::history::{Entry, list, remove, show};
 pub(crate) use content::ignore_patterns;
 
 use crate::{
@@ -45,11 +45,6 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
     if let Profile::Runtime { command, args, .. } = &eval.profile {
         strategy["command"] = json!(command);
         strategy["args"] = json!(args);
-    }
-    // An Agent result check's command and args belong to the strategy; its timeoutMs is a
-    // limit, recorded with the execution options. Without a check, the hash is unchanged.
-    if let Some(check) = &eval.result_check {
-        strategy["resultCheck"] = json!({"command": check.command, "args": check.args});
     }
     strategy.sort_all_objects();
     content::hex(&Sha256::digest(
@@ -273,7 +268,6 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String)
         .and_then(|producer| producer.session.clone());
     request.reviewer = execution.reviewer.clone();
     request.origin = execution.origin.clone();
-    request.tool_calls = execution.tool_calls.clone();
     request.completed_at = Some(completed_at);
     request.blocked_reason = None;
 }

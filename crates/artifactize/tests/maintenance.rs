@@ -185,31 +185,32 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
     let before = fs::read(state.join("state.sqlite")).unwrap();
     let newer = result(&mut doctor(&state, &bin), 1);
     assert_eq!(check(&newer, "schema")["status"], "FAIL");
-    assert_eq!(check(&newer, "schema")["details"], json!({"schema":99}));
+    let supported = artifactize::store::STATE_SCHEMA_VERSION;
+    assert_eq!(
+        check(&newer, "schema")["details"],
+        json!({"schema":99,"supported":supported})
+    );
     assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
 
-    // An older database is only reported; the next command that opens it upgrades it.
+    // An earlier artifactize's database is a hard error too: it is never migrated.
     let older = root.path().join("older");
     fs::create_dir(&older).unwrap();
     rusqlite::Connection::open(older.join("state.sqlite"))
         .unwrap()
-        .execute_batch(&support::recorded_state(
-            include_str!("fixtures/state-v2.sql"),
-            root.path(),
-        ))
+        .execute_batch(
+            "CREATE TABLE run_members(run_id TEXT, eval_id TEXT); PRAGMA user_version=4;",
+        )
         .unwrap();
     let before = fs::read(older.join("state.sqlite")).unwrap();
-    let report = result(&mut doctor(&older, &bin), 0);
-    assert_eq!(check(&report, "schema")["status"], "PASS");
+    let report = result(&mut doctor(&older, &bin), 1);
+    assert_eq!(check(&report, "schema")["status"], "FAIL");
     assert_eq!(
         check(&report, "schema")["details"],
-        json!({"schema":2,"upgradeTo":artifactize::store::STATE_SCHEMA_VERSION})
+        json!({"schema":4,"supported":supported})
     );
-    assert!(
-        check(&report, "schema")["message"]
-            .as_str()
-            .unwrap()
-            .contains("the next artifactize command upgrades it")
+    assert_eq!(
+        check(&report, "schema")["message"],
+        artifactize::store::EARLIER_STATE
     );
     assert_eq!(fs::read(older.join("state.sqlite")).unwrap(), before);
     assert!(!older.join("state.sqlite-wal").exists());
@@ -272,8 +273,6 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     drop(db);
     let run = state.join("runs").join(id(&finished));
     for path in [
-        // Claude CLI invocation output from 0.4 Runs is still pruned.
-        "claude-execution/mcp-config.json",
         "tool-leftover/runtime-leftover/output/content",
         "tool-output-test/content",
         "unknown/keep",
@@ -289,7 +288,7 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let repo_before = fs::read(repo.join("artifactize.json")).unwrap();
     let dry = result(command(&state).args(["prune", "--dry-run"]), 0);
     assert_eq!(dry["removed"], json!([]));
-    assert_eq!(dry["wouldRemove"].as_array().unwrap().len(), 7);
+    assert_eq!(dry["wouldRemove"].as_array().unwrap().len(), 6);
     assert!(
         dry["wouldRemove"]
             .as_array()

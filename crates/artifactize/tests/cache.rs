@@ -131,6 +131,11 @@ impl Fixture {
             .map_or(0, |starts| starts.lines().count())
     }
 
+    /// Records of the key history.
+    fn records(&self) -> u32 {
+        self.count("executions WHERE completed_at IS NOT NULL")
+    }
+
     fn count(&self, table: &str) -> u32 {
         Connection::open(self.state.join("state.sqlite"))
             .unwrap()
@@ -148,11 +153,7 @@ impl Fixture {
         for i in 0..count {
             let key = format!("seed-{i:05}");
             transaction.execute(
-                "INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) SELECT ?1,?1,owner_pid,owner_start_time,status,json_set(data,'$.id',?1,'$.key',?1) FROM executions LIMIT 1",
-                [&key],
-            ).unwrap();
-            transaction.execute(
-                "INSERT INTO cache_entries(execution_id,key,eval_def_hash,completed_at,bytes,last_used) VALUES (?1,?1,'seed',?2,?3,?2)",
+                "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT ?1,?1,'seed',status,owner_pid,owner_start_time,?2,?3,?2,json_set(data,'$.id',?1,'$.key',?1) FROM executions LIMIT 1",
                 rusqlite::params![key, format!("2000-01-01T00:00:00.{i:09}Z"), bytes],
             ).unwrap();
         }
@@ -183,7 +184,7 @@ impl Fixture {
 
     fn entries(&self) -> Vec<(String, String, i64, String, String)> {
         let db = Connection::open(self.state.join("state.sqlite")).unwrap();
-        let mut statement = db.prepare("SELECT c.key,c.execution_id,c.bytes,c.last_used,e.data FROM cache_entries c JOIN executions e ON e.id=c.execution_id ORDER BY c.key,c.completed_at").unwrap();
+        let mut statement = db.prepare("SELECT key,id,bytes,last_used,data FROM executions WHERE completed_at IS NOT NULL ORDER BY key,completed_at").unwrap();
         statement
             .query_map([], |row| {
                 Ok((
@@ -325,7 +326,7 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     assert!(original_request["child"]["pid"].is_number());
     assert!(original_request["usage"].is_null());
     assert_eq!(fixture.count("executions"), 1);
-    assert_eq!(fixture.count("cache_entries"), 1);
+    assert_eq!(fixture.records(), 1);
     fs::remove_dir_all(&source).unwrap();
     let target = fixture.repo("target", json!({"name":"root","basis":true}));
     let mut same = eval("second", "printf original; exit 7");
@@ -419,7 +420,7 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
     assert_eq!(pass["evalDefHash"].as_str().unwrap().len(), 64);
     assert_eq!(pass["provenance"]["evalDefHash"], pass["evalDefHash"]);
     assert_eq!(fixture.count("executions"), 2);
-    assert_eq!(fixture.count("cache_entries"), 2);
+    assert_eq!(fixture.records(), 2);
     let status = fixture.command(&repo, &["status"], 1);
     assert_eq!(status["evals"][0]["state"], "PASS");
     assert_eq!(status["evals"][1]["state"], "RED");
@@ -499,7 +500,7 @@ fn errors_are_audited_but_never_published() {
         let run = fixture.command(&repo, &["verify", "--all"], 2);
         assert_eq!(run["requests"][0]["errorCode"], ERROR_CODE);
         assert!(run["requests"][0]["result"].is_null());
-        assert_eq!(fixture.count("cache_entries"), 0);
+        assert_eq!(fixture.records(), 0);
     }
     assert_eq!(fixture.count("executions"), 2);
     write(
@@ -508,7 +509,7 @@ fn errors_are_audited_but_never_published() {
         json!({"name":"test","fingerprint":fingerprint("retryable"),"evals":[eval("check","exit 0")]}),
     );
     fixture.command(&repo, &["verify", "--all"], 0);
-    assert_eq!(fixture.count("cache_entries"), 1);
+    assert_eq!(fixture.records(), 1);
 }
 
 #[test]
@@ -671,7 +672,7 @@ fn concurrent_repos_claim_once_and_poll_for_the_original_red_result() {
         );
     }
     assert_eq!(fixture.starts(), 1);
-    assert_eq!(fixture.count("cache_entries"), 1);
+    assert_eq!(fixture.records(), 1);
     let follower = if first["requests"][0]["child"].is_null() {
         &first
     } else {
@@ -709,7 +710,7 @@ fn killed_owner_is_reclaimed_by_a_waiting_verify() {
         waiting["executionId"]
     );
     assert_eq!(fixture.count("executions"), 2);
-    assert_eq!(fixture.count("cache_entries"), 1);
+    assert_eq!(fixture.records(), 1);
     assert_eq!(fixture.starts(), 2);
     assert_eq!(recovered["executionsStarted"], 1);
     kill_orphans(&fs::read_to_string(fixture.root.path().join("starts")).unwrap());
@@ -735,7 +736,7 @@ fn owner_error_releases_claim_and_waiter_uses_its_own_profile() {
         recovered["requests"][0]["requestedProfile"]
     );
     assert_eq!(fixture.count("executions"), 2);
-    assert_eq!(fixture.count("cache_entries"), 1);
+    assert_eq!(fixture.records(), 1);
     assert_eq!(fixture.starts(), 2);
 }
 
@@ -782,7 +783,11 @@ fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconc
     let original = fixture.command(&repo, &["verify", "--all"], 0);
     let id = original["requests"][0]["executionId"].as_str().unwrap();
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.execute("DELETE FROM cache_entries", []).unwrap();
+    db.execute(
+        "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL",
+        [],
+    )
+    .unwrap();
     db.execute(
         "UPDATE executions SET owner_pid=?,owner_start_time=0,status='RUNNING',data=json_set(data,'$.ownerPid',?,'$.ownerStartTime',0,'$.status','RUNNING','$.result',NULL,'$.completedAt',NULL,'$.provenance.completedAt',NULL) WHERE id=?",
         rusqlite::params![std::process::id(), std::process::id(), id],
@@ -809,11 +814,11 @@ fn force_bypasses_a_live_claim_and_the_latest_completion_wins() {
     let forced = finish(fixture.spawn(&target, &["--force"]), 0);
     let execution = fixture.execution(forced["requests"][0]["executionId"].as_str().unwrap());
     assert_eq!(execution["key"], fixture.running_key().as_str());
-    assert_eq!(fixture.count("cache_entries"), 1);
+    assert_eq!(fixture.records(), 1);
     assert_eq!(fixture.starts(), 2);
     fixture.release();
     let original = finish(owner, 0);
-    assert_eq!(fixture.count("cache_entries"), 2);
+    assert_eq!(fixture.records(), 2);
     // The owner completed after the forced review, so its record is the latest.
     let reused = fixture.command(&target, &["verify", "--all"], 0);
     assert_eq!(
@@ -1076,12 +1081,16 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     );
     let original = fixture.command(&repo, &["verify", "--all"], 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.execute("DELETE FROM cache_entries", []).unwrap();
+    db.execute(
+        "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL",
+        [],
+    )
+    .unwrap();
     fixture.seed_entries(10_000, 1);
     // The oldest seed holds the repository's key.
     let current = key(&original, 0);
     db.execute(
-        "UPDATE cache_entries SET key=? WHERE key='seed-00000'",
+        "UPDATE executions SET key=? WHERE key='seed-00000'",
         [&current],
     )
     .unwrap();
@@ -1089,7 +1098,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     assert_eq!(hit["requests"][0]["executionId"], "seed-00000");
     let used: String = db
         .query_row(
-            "SELECT last_used FROM cache_entries WHERE execution_id='seed-00000'",
+            "SELECT last_used FROM executions WHERE id='seed-00000'",
             [],
             |row| row.get(0),
         )
@@ -1101,7 +1110,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
         json!({"name":"test","fingerprint":fingerprint("new"),"evals":[eval("check","exit 0")]}),
     );
     let new = key(&fixture.command(&repo, &["verify", "--all"], 0), 0);
-    assert_eq!(fixture.count("cache_entries"), 10_000);
+    assert_eq!(fixture.records(), 10_000);
     assert_eq!(
         fixture.command(&repo, &["cache", "show", "seed-00001"], 4),
         Value::Null
@@ -1129,10 +1138,14 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     );
     let original = fixture.command(&repo, &["verify", "--all"], 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.execute("DELETE FROM cache_entries", []).unwrap();
+    db.execute(
+        "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL",
+        [],
+    )
+    .unwrap();
     fixture.seed_entries(65, 16 * MIB);
-    db.execute("INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) VALUES ('active','seed-00000',1,1,'WAITING_HUMAN','{}')", []).unwrap();
-    db.execute("INSERT INTO requests(id,run_id,execution_id,status,data) VALUES ('waiter',?,'seed-00001','QUEUED','{}')", [original["id"].as_str().unwrap()]).unwrap();
+    db.execute("INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES ('active','seed-00000','seed','WAITING_HUMAN',1,1,'{}')", []).unwrap();
+    db.execute("INSERT INTO requests(id,run_id,eval_id,ordinal,execution_id,status,data) VALUES ('waiter',?,'waiter',1,'seed-00001','QUEUED','{}')", [original["id"].as_str().unwrap()]).unwrap();
     for key in ["seed-00000", "seed-00001"] {
         assert!(
             fixture.command(&repo, &["cache", "rm", key], 2)["error"]
@@ -1143,9 +1156,9 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     }
     // The new entry takes 65 seeded 16 MiB entries over 1 GiB.
     let first = fixture.publish("first");
-    assert_eq!(fixture.count("cache_entries"), 64);
+    assert_eq!(fixture.records(), 64);
     assert!(
-        db.query_row::<i64, _, _>("SELECT sum(bytes) FROM cache_entries", [], |row| row.get(0))
+        db.query_row::<i64, _, _>("SELECT sum(bytes) FROM executions", [], |row| row.get(0))
             .unwrap()
             <= 1024 * MIB
     );
@@ -1173,8 +1186,11 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
         .unwrap(),
         "WAITING_HUMAN"
     );
-    db.execute("UPDATE cache_entries SET bytes=?", [16 * MIB + 1])
-        .unwrap();
+    db.execute(
+        "UPDATE executions SET bytes=? WHERE completed_at IS NOT NULL",
+        [16 * MIB + 1],
+    )
+    .unwrap();
     let second = fixture.publish("second");
     let keys = || {
         fixture
@@ -1236,9 +1252,12 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     fixture.release();
     let original = finish(owner, 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.execute("DELETE FROM cache_entries", []).unwrap();
-    db.execute("INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) SELECT 'replacement',key,owner_pid,owner_start_time,status,json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?", [waiting["executionId"].as_str().unwrap()]).unwrap();
-    db.execute("INSERT INTO cache_entries(execution_id,key,eval_def_hash,completed_at,bytes,last_used) SELECT 'replacement',key,json_extract(data,'$.evalDefHash'),'2999-01-01T00:00:00.000000000Z',1,'2000-01-01T00:00:00Z' FROM executions WHERE id='replacement'", []).unwrap();
+    db.execute(
+        "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL",
+        [],
+    )
+    .unwrap();
+    db.execute("INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT 'replacement',key,eval_def_hash,status,owner_pid,owner_start_time,'2999-01-01T00:00:00.000000000Z',1,'2000-01-01T00:00:00Z',json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?", [waiting["executionId"].as_str().unwrap()]).unwrap();
     signal(waiter.id(), "-CONT");
     let joined = finish(waiter, 0);
     assert_eq!(
@@ -1292,7 +1311,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
         .complete_execution(&execution, &request)
         .await
         .unwrap();
-    assert_eq!(fixture.count("cache_entries"), 0);
+    assert_eq!(fixture.records(), 0);
     assert_eq!(
         artifactize::store::read_run(&fixture.state, &request.run_id)
             .await
@@ -1310,7 +1329,7 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     );
     assert_eq!(joined["requests"][0]["executionId"], execution.id);
     assert_eq!(joined["executionsStarted"], 0);
-    assert_eq!(fixture.count("cache_entries"), 0);
+    assert_eq!(fixture.records(), 0);
     assert_eq!(fixture.count("executions"), 1);
     assert_eq!(fixture.starts(), 1);
     let later = fixture.command(&target, &["verify", "--all"], 0);
@@ -1327,9 +1346,12 @@ fn gc_failure_does_not_replace_a_completed_result() {
     );
     let first = key(&fixture.command(&repo, &["verify", "--all"], 0), 0);
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.execute("UPDATE cache_entries SET bytes=1073741824", [])
-        .unwrap();
-    db.execute_batch("CREATE TRIGGER fail_gc BEFORE DELETE ON cache_entries BEGIN SELECT RAISE(FAIL,'GC unavailable'); END;").unwrap();
+    db.execute(
+        "UPDATE executions SET bytes=1073741824 WHERE completed_at IS NOT NULL",
+        [],
+    )
+    .unwrap();
+    db.execute_batch("CREATE TRIGGER fail_gc BEFORE UPDATE OF completed_at ON executions WHEN NEW.completed_at IS NULL BEGIN SELECT RAISE(FAIL,'GC unavailable'); END;").unwrap();
     write(
         &repo,
         "artifactize.json",
@@ -1431,7 +1453,7 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
         );
     }
     assert_eq!(fixture.count("executions"), 7);
-    assert_eq!(fixture.count("cache_entries"), 7);
+    assert_eq!(fixture.records(), 7);
 }
 #[test]
 fn profile_variants_share_a_result_unless_they_change_the_strategy() {
@@ -1598,7 +1620,7 @@ fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
         runs[2]["requests"][0]["executionId"]
     );
     assert_eq!(fixture.starts(), 2);
-    assert_eq!(fixture.count("cache_entries"), 2);
+    assert_eq!(fixture.records(), 2);
 }
 
 #[test]
@@ -1608,7 +1630,7 @@ fn gc_and_removal_protect_only_the_matching_key() {
     let run = fixture.command(&repo, &["verify", "--all"], 1);
     let (active, other) = (key(&run, 0), key(&run, 1));
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    db.execute("INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) VALUES ('active',?,1,1,'WAITING_HUMAN','{}')", [&active]).unwrap();
+    db.execute("INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES ('active',?,'active','WAITING_HUMAN',1,1,'{}')", [&active]).unwrap();
     assert_eq!(
         fixture.command(&repo, &["cache", "rm", &other], 0),
         json!({"removed":true})
@@ -1620,10 +1642,13 @@ fn gc_and_removal_protect_only_the_matching_key() {
             .contains("in use")
     );
     fixture.command(&repo, &["verify", "--eval", "test/fail"], 1);
-    db.execute("UPDATE cache_entries SET bytes=16777217", [])
-        .unwrap();
+    db.execute(
+        "UPDATE executions SET bytes=16777217 WHERE completed_at IS NOT NULL",
+        [],
+    )
+    .unwrap();
     fixture.publish("other");
-    assert_eq!(fixture.count("cache_entries"), 2);
+    assert_eq!(fixture.records(), 2);
     assert_eq!(
         fixture.command(&repo, &["cache", "show", &other], 4),
         Value::Null

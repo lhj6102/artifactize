@@ -96,7 +96,9 @@ for details on each backend.
 
 ```sh
 artifactize verify --eval spec/review   # exit 0 GREEN, 1 RED, 2 ERROR (for example, a missing API key)
-artifactize run show RUN_ID             # verdict, owner fields, every tool call, per-attempt usage
+artifactize run show RUN_ID             # verdict, owner fields, per-attempt usage
+artifactize session show REQUEST_ID     # the review's conversation, every tool call included
+artifactize session show REQUEST_ID --summary   # turns, tokens, tool calls per tool
 ```
 
 To see a RED review, copy this folder (for example,

@@ -79,8 +79,7 @@ pub async fn read_runs(
         };
         {
             let mut statement = transaction.prepare(
-                "SELECT q.status,count(*) FROM run_members m JOIN requests q ON q.id=m.request_id
-                 WHERE m.run_id=? GROUP BY q.status",
+                "SELECT status,count(*) FROM requests WHERE run_id=? GROUP BY status",
             )?;
             for run in &mut runs {
                 outside_workspace(&run.repo_path, &state).map_err(|e| Error::Invalid(e.to_string()))?;

@@ -13,7 +13,6 @@ async fn fenced_json_is_repaired_with_same_settings_and_no_tools() {
         ])
         .await;
     assert_eq!(review.result.unwrap(), json!({"verdict":"RED"}));
-    assert!(review.tool_calls.is_empty());
     let requests = http.requests();
     assert_eq!(requests.len(), 2);
     let first: Value = serde_json::from_slice(&requests[0].body).unwrap();
@@ -108,7 +107,8 @@ async fn second_failure_is_error_without_response_text_or_third_turn() {
 
 #[tokio::test]
 async fn unsolicited_repair_tool_calls_never_execute_or_continue() {
-    let (review, http) = Fixture::new("openai")
+    let fixture = Fixture::new("openai");
+    let (review, http) = fixture
         .run(vec![
             final_text("not JSON"),
             openai_response(
@@ -127,7 +127,7 @@ async fn unsolicited_repair_tool_calls_never_execute_or_continue() {
             .message
             .contains("tools are disabled")
     );
-    assert!(review.tool_calls.is_empty());
+    assert!(fixture.calls().iter().all(|(_, answer)| answer.is_none()));
     assert_eq!(http.requests().len(), 2);
 }
 
@@ -172,7 +172,7 @@ async fn anthropic_repair_after_tools_exposes_no_tools() {
     let failure = review.result.unwrap_err();
     assert!(failure.message.contains("after one format repair"));
     assert_eq!(failure.code, crate::agent::error::Code::InvalidResult);
-    assert_eq!(review.tool_calls.len(), 1);
+    assert_eq!(fixture.calls().len(), 1);
     let requests = http.requests();
     assert_eq!(requests.len(), 3);
     let body: Value = serde_json::from_slice(&requests[2].body).unwrap();

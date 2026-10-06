@@ -90,15 +90,7 @@ pub async fn run_human_tool(
     )
     .await?;
     receipts.human_request(&request.id, reviewer).await?;
-    let result = registry.call(tool, cancellation).await;
-    receipts
-        .record_human_tool(
-            &request.id,
-            reviewer,
-            json!({"name":tool,"isError":result.is_error}),
-        )
-        .await?;
-    Ok(result)
+    Ok(registry.call(tool, cancellation).await)
 }
 
 /// What a registered Human tool of a waiting request would run; needs no claim and runs nothing.

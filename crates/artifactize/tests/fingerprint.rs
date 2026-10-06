@@ -310,8 +310,12 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
         assert_eq!(run["validation"]["satisfied"], false);
         let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
         assert_eq!(
-            db.query_row::<u32, _, _>("SELECT count(*) FROM cache_entries", [], |row| row.get(0))
-                .unwrap(),
+            db.query_row::<u32, _, _>(
+                "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
+                [],
+                |row| row.get(0)
+            )
+            .unwrap(),
             0
         );
     }
@@ -434,8 +438,12 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         let result: Value = serde_json::from_slice(&result.stdout).unwrap();
         let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
         assert_eq!(
-            db.query_row::<u32, _, _>("SELECT count(*) FROM cache_entries", [], |row| row.get(0))
-                .unwrap(),
+            db.query_row::<u32, _, _>(
+                "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
+                [],
+                |row| row.get(0)
+            )
+            .unwrap(),
             0
         );
         if recheck {

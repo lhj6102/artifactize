@@ -21,7 +21,9 @@ use crate::{
     process,
     remote::Session,
     runtime::Verdict,
-    store::{Claim, Execution, Producer, Provenance, Receipts, Request, Run, StoppedBackend},
+    store::{
+        Capacity, Claim, Execution, Producer, Provenance, Receipts, Request, Run, StoppedBackend,
+    },
     tools,
 };
 
@@ -53,8 +55,9 @@ pub(crate) fn sortable(value: &str) -> Option<String> {
 }
 
 /// The backends a Run stopped admitting reviews on, shared with its review tasks. A review
-/// records its stop before it frees its capacity slot, so no other review of the backend
-/// can take that slot and start before admission sees the stop.
+/// records its stop before its execution completes and frees its capacity slot, and taking a
+/// slot asks again under the same write lock, so no other review of the backend can take the
+/// slot and start.
 #[derive(Clone)]
 struct Stops(Arc<std::sync::Mutex<Vec<StoppedBackend>>>);
 
@@ -72,6 +75,15 @@ impl Stops {
         let backend = request.options.backend.as_deref()?;
         let stopped = self.0.lock().unwrap();
         stopped.iter().find(|stop| stop.backend == backend).cloned()
+    }
+
+    /// Whether `backend` stopped, asked later.
+    fn check(&self, backend: &str) -> Box<dyn FnOnce() -> bool + Send> {
+        let (stops, backend) = (self.clone(), backend.to_owned());
+        Box::new(move || {
+            let stopped = stops.0.lock().unwrap();
+            stopped.iter().any(|stop| stop.backend == backend)
+        })
     }
 
     /// Stop admitting a backend after a failure every later review on it would repeat.
@@ -295,7 +307,6 @@ impl Scheduler<'_, '_> {
                         profile: request.profile.clone(),
                         options: request.options.clone(),
                         usage: None,
-                        tool_calls: Vec::new(),
                         provenance: Provenance {
                             repo_path: self.config.root.clone(),
                             run_id: self.run.id.clone(),
@@ -328,7 +339,7 @@ impl Scheduler<'_, '_> {
                     );
                     // A backend this Run stopped admits no new reviews and takes no slot; reuse and
                     // joining a live execution of the key still work.
-                    let backend_stopped = stops.of(request);
+                    let mut backend_stopped = stops.of(request);
                     let allow_start = backend_stopped.is_none()
                         && (human
                             || self
@@ -349,18 +360,39 @@ impl Scheduler<'_, '_> {
                         &execution,
                         request,
                         allow_start && limited.is_none(),
+                        None,
                     )
                     .await?;
-                    let mut slot = None;
                     if let (Claim::BudgetExhausted, Some((backend, limit)), true) =
                         (&claim, &limited, allow_start)
                     {
-                        if full.contains(backend)
-                            || !self
-                                .receipts
-                                .acquire_slot(backend, *limit, &execution.id, owner)
-                                .await?
-                        {
+                        claim = if full.contains(backend) {
+                            Claim::Full
+                        } else {
+                            let claim = self::claim(
+                                self.receipts,
+                                self.remote.as_deref(),
+                                self.run.force,
+                                &execution,
+                                request,
+                                true,
+                                Some(Capacity {
+                                    limit: *limit,
+                                    stopped: stops.check(backend),
+                                }),
+                            )
+                            .await?;
+                            // The backend may have stopped while this review waited for a slot.
+                            backend_stopped = stops.of(request);
+                            claim
+                        };
+                    }
+                    if !matches!(claim, Claim::Full) {
+                        capacity_waiting.remove(&index);
+                    }
+                    match claim {
+                        Claim::Full => {
+                            let (backend, limit) = limited.as_ref().expect("a limited backend");
                             full.insert(backend.clone());
                             waiting.remove(&index);
                             if capacity_waiting.insert(index) {
@@ -371,23 +403,6 @@ impl Scheduler<'_, '_> {
                             }
                             continue;
                         }
-                        claim = self::claim(
-                            self.receipts,
-                            self.remote.as_deref(),
-                            self.run.force,
-                            &execution,
-                            request,
-                            true,
-                        )
-                        .await?;
-                        if matches!(claim, Claim::Owned) {
-                            slot = Some(execution.id.clone());
-                        } else {
-                            self.receipts.release_slot(&execution.id).await?;
-                        }
-                    }
-                    capacity_waiting.remove(&index);
-                    match claim {
                         Claim::Reuse(execution) => {
                             waiting.remove(&index);
                             evidence.insert(
@@ -506,7 +521,6 @@ impl Scheduler<'_, '_> {
                     let stops = stops.clone();
                     running.insert(index);
                     self.tasks.spawn(async move {
-                        let receipts_for_slot = receipts.clone();
                         let mut execution = execution;
                         // An Agent result pins the files its tools execute, hashed before the
                         // review starts; a path that cannot be hashed fails the preparation.
@@ -531,17 +545,10 @@ impl Scheduler<'_, '_> {
                             prepared,
                             run_dir,
                             &parallelism,
+                            &stops,
                             cancellation,
                         )
-                        .await;
-                        // Admission sees a stop before this review's slot frees up.
-                        if let Ok(request) = &request {
-                            stops.record(request);
-                        }
-                        if let Some(slot) = slot {
-                            receipts_for_slot.release_slot(&slot).await?;
-                        }
-                        let request = request?;
+                        .await?;
                         // Publication runs after the local commit, outside any transaction.
                         if let Some(remote) = remote {
                             remote.publish_request(&receipts, &request).await?;
@@ -603,8 +610,9 @@ impl Scheduler<'_, '_> {
     }
 }
 
-/// Claim an execution for a request: a forced review takes no claim and joins nothing, while
-/// any other first looks up the remote store again (a hit becomes a local record).
+/// Claim an execution for a request: a forced review takes no claim of its key and joins
+/// nothing, while any other first looks up the remote store again (a hit becomes a local
+/// record). With `capacity`, starting also takes a slot of the backend.
 async fn claim(
     receipts: &Receipts,
     remote: Option<&Session>,
@@ -612,18 +620,19 @@ async fn claim(
     execution: &Execution,
     request: &Request,
     allow_start: bool,
+    capacity: Option<Capacity>,
 ) -> Result<Claim, String> {
-    if request.force {
-        return Ok(if allow_start {
-            Claim::Owned
-        } else {
-            Claim::BudgetExhausted
-        });
-    }
-    if let (Some(remote), Some(key), false) = (remote, &execution.key, run_force) {
+    let keyed = execution.key.is_some() && !request.force;
+    if let (Some(remote), Some(key), true, false) = (remote, &execution.key, keyed, run_force) {
         remote.refresh(receipts, vec![key.clone()]).await?;
     }
     receipts
-        .claim_execution(execution, request.execution_id.as_deref(), allow_start)
+        .claim_execution(
+            execution,
+            keyed,
+            request.execution_id.as_deref(),
+            allow_start,
+            capacity,
+        )
         .await
 }

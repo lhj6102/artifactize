@@ -346,8 +346,8 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         assert_eq!(answer["send"], 1);
         assert_eq!(answer["sessionId"], session.as_str());
         assert_eq!(answer["filesChanged"], false);
-        assert_eq!(answer["toolCalls"].as_array().unwrap().len(), 1);
-        assert_eq!(answer["toolCalls"][0]["name"], "read_notes");
+        assert!(answer.get("toolCalls").is_none());
+        assert_eq!(answer["usage"].as_array().unwrap().len(), 2);
         let calls = provider.requests();
         assert_eq!(calls.len(), 5, "{backend}");
         for call in &calls[3..] {
@@ -412,17 +412,21 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             [
                 ("send", 1),
                 ("message", 1),
+                ("attempt", 1),
                 ("message", 1),
                 ("message", 1),
+                ("attempt", 1),
                 ("message", 1),
                 ("answer", 1),
                 ("send", 2),
                 ("message", 2),
+                ("attempt", 2),
                 ("message", 2),
                 ("answer", 2)
             ]
         );
-        assert_eq!(events[end + 6]["toolCalls"][0]["name"], "read_notes");
+        // The follow-up's tool result, and whether it failed.
+        assert_eq!(events[end + 5]["isError"], json!([false]));
         // The file keeps the framing and the person's own words; show prints the words.
         assert_eq!(
             (&events[end + 1]["text"], &events[end + 1]["framing"]),
@@ -443,9 +447,55 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         }
         assert!(!shown.contains(FOLLOW_UP), "{shown}");
 
+        // The summary, from the session file alone: three review turns (the call, the
+        // answer and its repair), two turns of the first follow-up and one of the second.
+        let summary = project.json(&provider, &["session", "show", &id, "--summary"], 0);
+        assert_eq!(summary["sessionId"], session.as_str());
+        assert_eq!(summary["reference"], reference.as_str());
+        assert_eq!(
+            (&summary["backend"], &summary["followUps"]),
+            (&json!(backend), &json!(2))
+        );
+        let turns: Vec<_> = summary["turns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|turn| (turn["followUp"].as_u64(), turn["turn"].as_u64().unwrap()))
+            .collect();
+        assert_eq!(
+            turns,
+            [
+                (None, 1),
+                (None, 2),
+                (None, 3),
+                (Some(1), 1),
+                (Some(1), 2),
+                (Some(2), 1)
+            ]
+        );
+        assert_eq!(summary["turns"][0]["tokens"]["inputTokens"], 10);
+        assert_eq!(summary["tokens"]["inputTokens"], 60);
+        assert_eq!(summary["tokens"]["outputTokens"], 12);
+        assert_eq!(
+            summary["toolCalls"],
+            json!({"read_notes":{"calls":2,"failed":0}})
+        );
+        assert!(summary["durationMs"].is_u64());
+        let shown = project.text(&provider, &["session", "show", &session, "--summary"], 0);
+        for expected in [
+            format!("Session {session} · {backend} {backend}-model\n"),
+            "Turns: 6 · follow-ups: 2\n".into(),
+            "Tokens: input 60 · output 12 · cache read 0 · reasoning 0\n".into(),
+            "  turn 1: input 10 · output 2 · cache read 0 · reasoning 0\n".into(),
+            "  follow-up 2, turn 1: input 10 · output 2 · cache read 0 · reasoning 0\n".into(),
+            "Tool calls: 2\n  read_notes: 2\n".into(),
+        ] {
+            assert!(shown.contains(&expected), "{expected} in {shown}");
+        }
+
         // The recorded review and its reuse never change.
         let after = project.json(&provider, &["request", "show", &id], 0);
-        for field in ["status", "result", "usage", "toolCalls", "completedAt"] {
+        for field in ["status", "result", "usage", "completedAt"] {
             assert_eq!(after[field], before[field], "{field}");
         }
         let calls = provider.requests().len();

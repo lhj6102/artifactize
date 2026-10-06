@@ -87,7 +87,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             json!({"writable":false}),
         ),
     }
-    // Read-only: an older database is upgraded by the next command that opens it, never here.
+    // Read-only: a state of another schema is refused, never migrated.
     let current = store::STATE_SCHEMA_VERSION;
     match store::state_schema(&state) {
         Ok(None) => report.add(
@@ -102,25 +102,17 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             "The state database is not initialized yet.",
             json!({"schema":0}),
         ),
-        Ok(Some(found)) if found > current => report.add(
-            "schema",
-            "FAIL",
-            &format!("Unsupported state schema version: {found}; a newer artifactize wrote it."),
-            json!({"schema":found}),
-        ),
-        Ok(Some(found)) if found < current => report.add(
-            "schema",
-            "PASS",
-            &format!(
-                "State database schema {found}; the next artifactize command upgrades it to {current}."
-            ),
-            json!({"schema":found,"upgradeTo":current}),
-        ),
-        Ok(Some(_)) => report.add(
+        Ok(Some(found)) if found == current => report.add(
             "schema",
             "PASS",
             &format!("State database schema {current}."),
             json!({"schema":current}),
+        ),
+        Ok(Some(found)) => report.add(
+            "schema",
+            "FAIL",
+            &store::schema_error(found),
+            json!({"schema":found,"supported":current}),
         ),
         Err(error) => report.add("schema", "FAIL", &error, Value::Null),
     }
@@ -225,13 +217,12 @@ fn sessions(state: &Path) -> (&'static str, String, Value) {
             );
         }
     };
-    let (usage, state_id) = match (
-        crate::agent::session::usage(state),
-        store::read_state_id(state),
-    ) {
-        (Ok(usage), Ok(state_id)) => (usage, state_id),
-        (Err(error), _) | (_, Err(error)) => return ("FAIL", error, Value::Null),
+    let usage = match crate::agent::session::usage(state) {
+        Ok(usage) => usage,
+        Err(error) => return ("FAIL", error, Value::Null),
     };
+    // A database the schema check refuses has no id to report here.
+    let state_id = store::read_state_id(state).ok().flatten();
     let mib = |bytes: u64| format!("{:.1} MiB", bytes as f64 / 1_048_576.0);
     let message = format!(
         "{} Agent session{} take {} of {}; a collection brings them down to {}.{}",
