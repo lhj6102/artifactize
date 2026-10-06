@@ -113,7 +113,13 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         ],
         0,
     );
-    let other = query(&second, &state, &["verify", "--all"], 1);
+    // The Human wait times out at once, so the Run ends INCOMPLETE with its request open.
+    let other = query(
+        &second,
+        &state,
+        &["verify", "--all", "--timeout-ms", "1"],
+        3,
+    );
     let last = query(
         &first,
         &state,

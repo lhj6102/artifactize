@@ -36,11 +36,16 @@ have no internal gates. `--ignore-gates` bypasses execution gates only: final
 validation still requires actual GREEN evidence or explicit `basis: true` throughout
 the required scope. A basis never waives its dependencies. Selected GREEN results
 with missing obligations remain recorded in an INCOMPLETE Run; both text and JSON
-output identify unmet obligations. Human evals record WAITING_HUMAN requests;
-without a submission, ordinary verify exits INCOMPLETE (4). Use `--wait` to keep
-the same Run scheduling after Human submissions.
+output identify unmet obligations. Human evals record WAITING_HUMAN requests, and
+`verify` waits for their results as it waits for runtime and Agent evals: when a
+submission arrives, evals that depend on it run in the same Run. `--timeout-ms MS`
+(default 600000) bounds the wait; when it expires the Run ends INCOMPLETE with exit
+3, and the waiting requests stay open for submission.
+`--reuse-only KINDS` (for example `agent,human` in CI) lets evals of the listed
+kinds only reuse a result; one with nothing to reuse is not executed and leaves
+the Run INCOMPLETE ([CLI](../reference/cli.md#reuse-only)).
 
-Verification runs in the foreground, with or without `--wait`: GREEN exits 0,
+Verification runs in the foreground: GREEN exits 0,
 RED 1, ERROR 2, Human wait timeout 3, and INCOMPLETE 4. Ctrl-C/SIGTERM cancels every owned process
 group, waits for cleanup, and records ERROR/CANCELLED for running and queued
 requests, never RED. Previously committed results remain unchanged. There is no

@@ -167,12 +167,12 @@ fingerprints are unchanged and says where each came from.
 
 ## Human review in the terminal
 
-`verify --wait` keeps the Run alive while a Human eval waits. In the monitor, `o`
+`verify` keeps the Run alive while a Human eval waits. In the monitor, `o`
 opens the waiting request in `artifactize review`: run the tools its owner declared,
 submit the verdict through a form, and the Run finishes.
 
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/human.gif" width="800"
-     alt="Two terminals: verify --wait waits; in the monitor, o opens review, the notes tool prints the design notes, the GREEN form is filled and submitted, and verify finishes GREEN.">
+     alt="Two terminals: verify waits; in the monitor, o opens review, the notes tool prints the design notes, the GREEN form is filled and submitted, and verify finishes GREEN.">
 
 [Human reviews](https://artifactize.dev/docs/guides/human-reviews.html)
 

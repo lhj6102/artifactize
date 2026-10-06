@@ -179,7 +179,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
     let (_, second) = fixture.seed();
     let child = fixture
         .command(&fixture.beta)
-        .args(["verify", "--all", "--wait", "--timeout-ms", "30000"])
+        .args(["verify", "--all", "--timeout-ms", "30000"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()

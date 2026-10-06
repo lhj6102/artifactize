@@ -109,7 +109,12 @@ lists `R3` as uncited.
 ## Try the Human sign-off
 
 ```sh
-artifactize verify --eval spec/signoff  # prints "Run: RUN_ID", records a WAITING_HUMAN request, exits 4
+artifactize verify --eval spec/signoff  # prints "Run: RUN_ID", records a WAITING_HUMAN request, and waits
+```
+
+While `verify` waits, in a second terminal:
+
+```sh
 artifactize request list --run RUN_ID   # shows the REQUEST_ID of spec/signoff
 artifactize request claim REQUEST_ID
 artifactize request tool REQUEST_ID notes_spec   # prints notes.md
@@ -123,7 +128,7 @@ artifactize run show RUN_ID
 against the eval's schemas: `{"approved":false}` is rejected and the request
 stays open. A RED sign-off looks like
 `--verdict RED --fields '{"unresolved":["Which files count as old?"]}'`.
-The Run stays INCOMPLETE while `spec/review` has no result, because an
-Artifact is satisfied only when every one of its evals is GREEN. Without a
-fingerprint, a submission settles only its own Run, and a later `verify` asks for
-a new sign-off.
+Once you submit, `verify` records the sign-off and exits 4: the Run stays
+INCOMPLETE while `spec/review` has no result, because an Artifact is satisfied
+only when every one of its evals is GREEN. Without a fingerprint, a submission
+settles only its own Run, and a later `verify` asks for a new sign-off.

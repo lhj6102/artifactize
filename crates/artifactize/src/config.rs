@@ -138,6 +138,38 @@ impl Profile {
             Self::Runtime { command, args, .. } => script(command, args),
         }
     }
+
+    pub fn kind(&self) -> ProfileKind {
+        match self {
+            Self::Agent { .. } => ProfileKind::Agent,
+            Self::Human {} => ProfileKind::Human,
+            Self::Runtime { .. } => ProfileKind::Runtime,
+        }
+    }
+}
+
+/// The kind of reviewer a profile names, without its execution options.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, clap::ValueEnum,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum ProfileKind {
+    /// Runtime evals: a command's exit code.
+    Runtime,
+    /// Agent evals: a model's review.
+    Agent,
+    /// Human evals: a person's sign-off.
+    Human,
+}
+
+impl ProfileKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Runtime => "runtime",
+            Self::Agent => "agent",
+            Self::Human => "human",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

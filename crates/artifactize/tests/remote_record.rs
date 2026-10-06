@@ -1,4 +1,4 @@
-use std::{fs, path::Path, process::Command};
+use std::{fs, path::Path, process::Command, time::Duration};
 
 use artifactize::{
     cache, human,
@@ -52,7 +52,11 @@ async fn verify(repo: &Path, state: &Path) -> artifactize::store::RunView {
         repo,
         Some(state),
         &Selection::All,
-        &VerifyOptions::default(),
+        // A Human request is recorded, and the wait for it times out at once.
+        &VerifyOptions {
+            wait_timeout: Duration::from_millis(1),
+            ..Default::default()
+        },
         CancellationToken::new(),
     )
     .await

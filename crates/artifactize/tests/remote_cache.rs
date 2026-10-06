@@ -399,17 +399,16 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
 
     // Bob waits for a sign-off that does not exist anywhere yet.
     let waiting = bob
-        .command(
-            &repo,
-            &["verify", "--all", "--wait", "--timeout-ms", "30000"],
-        )
+        .command(&repo, &["verify", "--all", "--timeout-ms", "30000"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
 
-    // A token without the human scope keeps the sign-off local.
-    let run = laptop.json(&repo, &["verify", "--all"], 4);
+    // A token without the human scope keeps the sign-off local. Each signer's own verify
+    // records the request and stops waiting at once.
+    let record = ["verify", "--all", "--timeout-ms", "1"];
+    let run = laptop.json(&repo, &record, 3);
     let stderr = laptop.sign(&repo, &run);
     assert!(
         stderr.contains("stays local: remote token alice-laptop lacks the human scope"),
@@ -417,18 +416,21 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
     );
     assert_eq!(server.entries(), []);
 
-    let run = signer.json(&repo, &["verify", "--all"], 4);
+    let run = signer.json(&repo, &record, 3);
     assert!(signer.sign(&repo, &run).is_empty());
     let entries = server.entries();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].0, "alice-signoff");
     assert_eq!(entries[0].1["reviewer"], "alice");
 
-    // Bob's --wait poll finds the remote sign-off and settles his waiting request from it.
+    // Bob's wait poll finds the remote sign-off and settles his waiting request from it.
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
     let mut waiting = waiting;
     while waiting.try_wait().unwrap().is_none() {
-        assert!(Instant::now() < deadline, "verify --wait did not settle");
+        assert!(
+            Instant::now() < deadline,
+            "the waiting verify did not settle"
+        );
         thread::sleep(Duration::from_millis(50));
     }
     let (text, _) = checked(waiting.wait_with_output().unwrap(), 0, &bob.token);
@@ -444,9 +446,9 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
         "Summary: executed 0 (runtime 0, agent 0, human 0), reused 1 (runtime 0, agent 0, human 1)"
     );
 
-    // A fresh machine reuses the sign-off without recording a Human request.
+    // A fresh machine, such as CI, reuses the sign-off from the store under --reuse-only.
     let carol = Machine::new(root.path(), "carol", &server.url, &bob.token);
-    let (text, _) = carol.run(&repo, &["verify", "--all"], 0);
+    let (text, _) = carol.run(&repo, &["verify", "--all", "--reuse-only", "human"], 0);
     assert!(line(&text, "brand/signoff").contains("Human sign-off by alice"));
 }
 
@@ -460,7 +462,7 @@ fn remote_push_publishes_results_produced_offline_once() {
     let runtime = runtime_repo(root.path(), "runtime", "v1");
     let human = human_repo(root.path(), "human");
     offline.run(&runtime, &["verify", "--all"], 0);
-    let run = offline.json(&human, &["verify", "--all"], 4);
+    let run = offline.json(&human, &["verify", "--all", "--timeout-ms", "1"], 3);
     offline.sign(&human, &run);
     assert_eq!(server.entries(), []);
 

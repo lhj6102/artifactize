@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, path::Path, sync::Arc};
+use std::{collections::BTreeSet, path::Path, sync::Arc, time::Duration};
 
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -6,13 +6,16 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     broker::{self, now},
     cache,
-    config::{DependencyGates, read_workspace_config},
+    config::{DependencyGates, ProfileKind, read_workspace_config},
     graph::{EvalStatus, Evidence, Graph},
     project::selection::{ProfileSelection, Selection, select_profiles},
     remote::Session,
     store::{self, ExecutionOptions, Receipts, Request, Run, RunView},
     workspace,
 };
+
+/// How long a Run waits for Human results unless told otherwise.
+pub const DEFAULT_HUMAN_WAIT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone)]
 pub struct VerifyOptions {
@@ -23,8 +26,11 @@ pub struct VerifyOptions {
     /// Print `Run: RUN_ID` to stderr as soon as the Run is saved, before any eval runs.
     pub announce_run: bool,
     pub max_executions: Option<u64>,
-    /// Keep this Run alive for Human submissions; timeout never cancels a review.
-    pub wait_timeout_ms: Option<u32>,
+    /// How long this Run waits for Human submissions; the timeout never cancels a review.
+    pub wait_timeout: Duration,
+    /// Kinds whose evals only reuse a result, from the cache or the review store; one with
+    /// nothing to reuse is not executed, and the Run ends INCOMPLETE.
+    pub reuse_only: BTreeSet<ProfileKind>,
     pub profile: Option<ProfileSelection>,
     pub recursive: bool,
     /// Force only explicitly selected Evals, never recursive dependencies.
@@ -40,7 +46,8 @@ impl Default for VerifyOptions {
             fingerprint_jobs: None,
             announce_run: false,
             max_executions: None,
-            wait_timeout_ms: None,
+            wait_timeout: DEFAULT_HUMAN_WAIT,
+            reuse_only: BTreeSet::new(),
             profile: None,
             recursive: false,
             force: false,
@@ -61,12 +68,10 @@ pub async fn verify(
         return Err("jobs must be at least 1.".into());
     }
     let parallelism = super::fingerprint_parallelism(options)?;
-    if options
-        .wait_timeout_ms
-        .is_some_and(|ms| ms == 0 || ms > 2_147_483_647)
-    {
-        return Err("wait timeout must be between 1 and 2147483647 ms.".into());
-    }
+    let wait_timeout_ms = u32::try_from(options.wait_timeout.as_millis())
+        .ok()
+        .filter(|ms| (1..=2_147_483_647).contains(ms))
+        .ok_or("wait timeout must be between 1 and 2147483647 ms.")?;
     let config = read_workspace_config(repo).map_err(|e| e.to_string())?;
     let config = Arc::new(select_profiles(
         config,
@@ -157,8 +162,9 @@ pub async fn verify(
         fingerprint_jobs: Some(parallelism.limit()),
         max_executions: options.max_executions,
         executions_started: 0,
-        wait_timeout_ms: options.wait_timeout_ms,
+        wait_timeout_ms: Some(wait_timeout_ms),
         wait_timed_out: false,
+        reuse_only: options.reuse_only.clone(),
         recursive: options.recursive,
         force: options.force,
         ignore_gates,
@@ -284,9 +290,14 @@ pub async fn verify(
     let budget_exhausted = requests
         .iter()
         .any(|request| request.status == "BUDGET_EXHAUSTED");
+    // Only a --reuse-only eval that had nothing to reuse leaves stale evidence in a Run.
+    let not_reused = evidence
+        .values()
+        .filter(|evidence| matches!(evidence, Evidence::Stale))
+        .count();
     run.status = if cancellation.is_cancelled() {
         "ERROR"
-    } else if run.wait_timed_out || budget_exhausted {
+    } else if run.wait_timed_out || budget_exhausted || not_reused > 0 {
         "INCOMPLETE"
     } else if required_evals
         .iter()
@@ -311,6 +322,12 @@ pub async fn verify(
             Some("Human wait timed out; pending requests remain available for submission.".into());
     } else if budget_exhausted {
         run.error = Some(broker::budget_reason(&run));
+    } else if not_reused > 0 {
+        run.error = Some(format!(
+            "{not_reused} eval{} had no result to reuse and {} not executed (--reuse-only).",
+            if not_reused == 1 { "" } else { "s" },
+            if not_reused == 1 { "was" } else { "were" }
+        ));
     }
     run.completed_at = Some(now());
     run.validation = json!({

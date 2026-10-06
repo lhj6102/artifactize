@@ -167,6 +167,9 @@ fn reused(total: u64, runtime: u64, agent: u64, human: u64) -> Value {
     tally
 }
 
+/// A verify that records the Human request and stops waiting for it at once (exit 3).
+const RECORD: [&str; 4] = ["verify", "--all", "--timeout-ms", "1"];
+
 fn line<'a>(text: &'a str, prefix: &str) -> &'a str {
     text.lines()
         .find(|line| line.trim_start().starts_with(prefix))
@@ -180,7 +183,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
     let fixture = Fixture::new();
     // Branch A changes api; its first Run executes everything and waits for the Human.
     let a = fixture.checkout("a", ["a", "base", "base", "base", "base"]);
-    let first = fixture.json(&a, &["verify", "--all"], 4);
+    let first = fixture.json(&a, &RECORD, 3);
     assert_eq!(first["summary"]["executed"], tally(5, 3, 1, 1));
     assert_eq!(first["summary"]["reused"], reused(0, 0, 0, 0));
     assert_eq!(first["usage"]["saved"], json!({}));
@@ -281,7 +284,7 @@ fn merge_run_marks_reuse_counts_savings_and_matches_the_status_prediction() {
 fn status_predicts_cached_results_behind_a_red_dependency_as_reuse() {
     let fixture = Fixture::new();
     let base = fixture.checkout("base", ["base"; 5]);
-    let first = fixture.json(&base, &["verify", "--all"], 4);
+    let first = fixture.json(&base, &RECORD, 3);
     fixture.sign(&base, &first);
 
     // web turns RED. style names web, so its key changes; brand names style and docs, whose
@@ -343,7 +346,7 @@ fn status_predicts_cached_results_behind_a_red_dependency_as_reuse() {
 fn an_agent_model_reasoning_or_limit_change_alone_reuses_the_review() {
     let fixture = Fixture::new();
     let repo = fixture.checkout("base", ["base"; 5]);
-    let first = fixture.json(&repo, &["verify", "--all"], 4);
+    let first = fixture.json(&repo, &RECORD, 3);
     let review = request(&first, "docs/review").clone();
     assert_eq!(review["status"], "GREEN");
     let calls = fixture.provider.requests().len();
@@ -370,7 +373,7 @@ fn an_agent_model_reasoning_or_limit_change_alone_reuses_the_review() {
             .contains("produced by profile openai fake-exact-model high"),
         "{docs}"
     );
-    let text = fixture.text(&repo, &["verify", "--all"], 4);
+    let text = fixture.text(&repo, &RECORD, 3);
     assert!(
         line(&text, "docs/review").ends_with(&format!(
             "]: GREEN (reused from {}, profile openai fake-exact-model high)",
@@ -390,4 +393,64 @@ fn an_agent_model_reasoning_or_limit_change_alone_reuses_the_review() {
         json!({"backend":"openai","model":"fake-exact-model","reasoning":"high","timeoutMs":15000})
     );
     assert_eq!(run["summary"]["reused"]["otherProfile"], 1);
+}
+
+#[test]
+fn reuse_only_runs_tests_and_takes_reviews_only_from_the_cache() {
+    let fixture = Fixture::new();
+    let ci = ["verify", "--all", "--reuse-only", "agent,human"];
+    // Nothing is cached: the runtime evals execute, the Agent review is not executed, and the
+    // sign-off that names it waits behind it. No model or person is asked.
+    let base = fixture.checkout("base", ["base"; 5]);
+    let first = fixture.json(&base, &ci, 4);
+    assert_eq!(first["status"], "INCOMPLETE");
+    assert_eq!(first["reuseOnly"], json!(["agent", "human"]));
+    assert_eq!(first["summary"]["executed"], tally(3, 3, 0, 0));
+    assert_eq!(fixture.provider.requests().len(), 0);
+    let review = request(&first, "docs/review");
+    assert_eq!(review["status"], "STALE");
+    assert!(review["executionId"].is_null());
+    assert!(
+        review["blockedReason"]
+            .as_str()
+            .unwrap()
+            .starts_with("Not reused (--reuse-only agent)"),
+        "{review}"
+    );
+    assert_eq!(
+        request(&first, "brand/signoff")["status"],
+        "WAIT_DEPENDENCY"
+    );
+    let saved = fixture.json(&base, &["request", "list"], 0);
+    assert!(
+        saved
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|request| request["status"] != "WAITING_HUMAN")
+    );
+    let text = fixture.text(&base, &ci, 4);
+    assert!(
+        line(&text, "docs/review").contains("]: STALE — Not reused (--reuse-only agent)"),
+        "{text}"
+    );
+    assert!(line(&text, "Reason:").contains("not executed (--reuse-only)"));
+
+    // A local verify produces the review and the sign-off; CI then reuses every result.
+    let local = fixture.json(&base, &RECORD, 3);
+    fixture.sign(&base, &local);
+    assert_eq!(fixture.provider.requests().len(), 1);
+    let cached = fixture.json(&base, &ci, 0);
+    assert_eq!(cached["summary"]["executed"], tally(0, 0, 0, 0));
+    assert_eq!(cached["summary"]["reused"], reused(5, 3, 1, 1));
+
+    // A change to api executes its unlisted runtime eval again, and the review that names api
+    // has nothing to reuse. The sign-off's key covers docs and style, not api: it is reused.
+    let changed = fixture.checkout("changed", ["changed", "base", "base", "base", "base"]);
+    let run = fixture.json(&changed, &ci, 4);
+    assert_eq!(run["summary"]["executed"], tally(1, 1, 0, 0));
+    assert_eq!(run["summary"]["reused"], reused(3, 2, 0, 1));
+    assert_eq!(request(&run, "api/tests")["status"], "GREEN");
+    assert_eq!(request(&run, "docs/review")["status"], "STALE");
+    assert_eq!(fixture.provider.requests().len(), 1);
 }

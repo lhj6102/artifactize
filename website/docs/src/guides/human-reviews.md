@@ -6,19 +6,21 @@ with `artifactize request` commands or in the `artifactize review` terminal UI.
 
 READY Human evals persist WAITING_HUMAN and release their job slot. They consume
 no `maxExecutions` budget, so even a zero budget admits a Human review. `verify`
-without `--wait` exits INCOMPLETE and lists waiting requests; it does not fabricate
-a verdict or keep a worker alive. Waiting executions with a reuse key retain their exclusive
+waits for Human results as it waits for runtime and Agent evals, and never
+fabricates a verdict. When its wait times out it exits and lists the waiting
+requests, and no worker stays alive. Waiting executions with a reuse key retain their exclusive
 claim on the key after the verifier exits. Cross-repository followers refer to that
 same execution and forward Human actions to its original request and repository.
 
-For a Human eval with a reuse key (a fingerprint on its Artifact and on every
-Artifact it depends on), the next `verify` reuses the submitted result and runs its
-dependents. **No fingerprint means no reuse**: submission settles only that Run,
-and a later `verify` asks for a new Human review. Continuing the
-dependents of a Human eval without a fingerprint requires keeping the same Run alive with `verify --wait`.
+A submission that arrives while `verify` waits runs the Human eval's dependents in
+the same Run. For a Human eval with a reuse key (a fingerprint on its Artifact and on
+every Artifact it depends on), a later `verify` also reuses the submitted result and
+runs its dependents. **No fingerprint means no reuse**: submission settles only that
+Run, and a later `verify` asks for a new Human review, so the dependents of a Human
+eval without a fingerprint continue only in the Run that waits for it.
 
 ```sh
-artifactize verify --all --wait --timeout-ms 600000
+artifactize verify --all --timeout-ms 600000
 # In another terminal, using the same state directory:
 artifactize request list [--run RUN_ID] [--json]
 artifactize request show REQUEST_ID
@@ -47,18 +49,20 @@ at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
 leave the request correctable. A successful submission exits 0, even for RED;
 it does not start a separate verifier.
 
-`verify --wait` polls saved pending Human request states and resumes newly READY
+While Human requests wait, `verify` polls their saved states and resumes newly READY
 dependents in the **same Run**, retaining its execution budget and earlier
-results. While waiting the Run remains RUNNING. `--timeout-ms` requires `--wait`,
+results. While waiting the Run remains RUNNING. `--timeout-ms`
 defaults to 600000, and accepts 1–2147483647. The deadline begins when scheduling
 starts and is checked when foreground execution is idle with pending Human work;
 it never interrupts running evals or cancels Human requests. On timeout the Run
 ends INCOMPLETE with `waitTimedOut: true` and exit 3. Claims and submissions remain
 available, but no background worker continues dependents. Without a fingerprint,
-use a new waiting verify and submit its new request to complete those dependents.
+use a new verify and submit its new request to complete those dependents.
 Ctrl-C/SIGTERM exits 2, cleans owned processes, and ends the Run as cancelled;
 previously created Human requests remain available. Missing non-Human obligations
 without any pending Human request return INCOMPLETE (4) immediately.
+`verify --reuse-only human` never records a Human request or waits: a Human eval
+reuses a sign-off or is [not executed](../reference/cli.md#reuse-only), as CI wants.
 
 The [reference](../reference/human-tools.md#human-reviews) has the library API, the
 `request list` and `request show` fields and Run summaries.

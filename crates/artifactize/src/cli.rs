@@ -17,7 +17,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand, error::ErrorKind};
 use serde_json::json;
 
 use crate::{
-    config::read_workspace_config,
+    config::{ProfileKind, read_workspace_config},
     project::selection::{ProfileSelection, Selection, read_selection_file},
 };
 
@@ -99,12 +99,12 @@ pub enum Command {
         /// Limit executor starts in this Run; cache hits and waiters are free.
         #[arg(long, value_name = "N")]
         max_executions: Option<u64>,
-        /// Keep this Run alive while Human results are pending.
-        #[arg(long)]
-        wait: bool,
-        /// Human wait timeout; does not cancel pending requests (default 600000).
-        #[arg(long, value_name = "MS", requires = "wait", value_parser = clap::value_parser!(u32).range(1..=2_147_483_647))]
+        /// How long to wait for Human results; does not cancel pending requests (default 600000).
+        #[arg(long, value_name = "MS", value_parser = clap::value_parser!(u32).range(1..=2_147_483_647))]
         timeout_ms: Option<u32>,
+        /// Only reuse results for these kinds (comma-separated); an eval with nothing to reuse is not executed.
+        #[arg(long, value_name = "KINDS", value_enum, value_delimiter = ',')]
+        reuse_only: Vec<ProfileKind>,
     },
     /// Inspect current validation, saved Run audit, and what verify would do.
     Status {
@@ -485,14 +485,17 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             policy,
             jobs,
             max_executions,
-            wait,
             timeout_ms,
+            reuse_only,
         }) => {
             let selection = selection.resolve()?;
             let options = crate::project::VerifyOptions {
                 jobs: jobs as usize,
                 max_executions,
-                wait_timeout_ms: wait.then_some(timeout_ms.unwrap_or(600_000)),
+                wait_timeout: timeout_ms.map_or(crate::project::DEFAULT_HUMAN_WAIT, |ms| {
+                    Duration::from_millis(ms.into())
+                }),
+                reuse_only: reuse_only.into_iter().collect(),
                 announce_run: true,
                 ..policy.options()
             };

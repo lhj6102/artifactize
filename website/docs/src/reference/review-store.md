@@ -97,7 +97,7 @@ after the local latest (or with no local record at all) is appended to the local
 history as a self-contained `remote-<executionId>` execution with an `origin`, and
 reused like a local record, so `run show`, `cache`, GC, the monitor and the Run
 summary count it as reuse. A key that still has no result is looked up again just
-before a local claim and on each `verify --wait` poll, at most once per second. A remote result for a key that waits
+before a local claim and on each poll of `verify`'s Human wait, at most once per second. A remote result for a key that waits
 for a Human settles the waiting requests; their never-reviewed waiting execution
 becomes ERROR (`SUPERSEDED`). Text output names the source:
 

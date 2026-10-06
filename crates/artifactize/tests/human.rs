@@ -66,12 +66,13 @@ impl Fixture {
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state)
-            .args(["verify", "--all", "--json"])
+            .args(["verify", "--all", "--timeout-ms", "1", "--json"])
             .output()
             .unwrap();
+        // The Human wait times out at once; the request stays open for submission.
         assert_eq!(
             output.status.code(),
-            Some(4),
+            Some(3),
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
@@ -97,6 +98,14 @@ fn write_human(path: &Path, fingerprint: bool) {
             json!({"script":{"command":bin("cat"),"args":["fingerprint"]}});
     }
     fs::write(path.join("artifactize.json"), declaration.to_string()).unwrap();
+}
+
+/// Options that record Human requests and return at once instead of waiting for them.
+fn returning() -> VerifyOptions {
+    VerifyOptions {
+        wait_timeout: Duration::from_millis(1),
+        ..Default::default()
+    }
 }
 
 fn green() -> Value {
@@ -128,7 +137,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
     let follower = fixture
         .verify(VerifyOptions {
             max_executions: Some(0),
-            ..Default::default()
+            ..returning()
         })
         .await;
     assert_eq!(follower.requests[0].status, "WAITING_HUMAN");
@@ -139,7 +148,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
     let default = Fixture::new(false)
         .verify(VerifyOptions {
             max_executions: Some(0),
-            ..Default::default()
+            ..returning()
         })
         .await;
     assert_eq!(default.requests[0].status, "WAITING_HUMAN");
@@ -149,7 +158,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
 #[tokio::test]
 async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_submit() {
     let fixture = Fixture::new(false);
-    let run = fixture.verify(Default::default()).await;
+    let run = fixture.verify(returning()).await;
     let id = &run.requests[0].id;
     let receipts = fixture.receipts().await;
     assert!(
@@ -275,7 +284,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
 async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishing() {
     for tool in [false, true] {
         let fixture = Fixture::new(true);
-        let run = fixture.verify(Default::default()).await;
+        let run = fixture.verify(returning()).await;
         let id = &run.requests[0].id;
         let receipts = fixture.receipts().await;
         human::claim(&receipts, id, "alice").await.unwrap();
@@ -330,7 +339,7 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
 #[tokio::test]
 async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
     let fixture = Fixture::new(false);
-    let run = fixture.verify(Default::default()).await;
+    let run = fixture.verify(returning()).await;
     let id = &run.requests[0].id;
     let receipts = fixture.receipts().await;
     human::claim(&receipts, id, "alice").await.unwrap();
@@ -368,7 +377,7 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     let fixture = Fixture::new(false);
     write_human(&fixture.repo.join("child"), true);
     fs::write(fixture.repo.join("artifactize.json"), json!({"name":"parent","evals":[{"id":"test","title":"Dependent","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Check child."}}]}).to_string()).unwrap();
-    let run = fixture.verify(Default::default()).await;
+    let run = fixture.verify(returning()).await;
     assert_eq!(run.run.status, "INCOMPLETE");
     let waiting = run
         .requests
@@ -394,7 +403,7 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     )
     .await
     .unwrap();
-    let complete = fixture.verify(Default::default()).await;
+    let complete = fixture.verify(returning()).await;
     assert_eq!(complete.run.status, "GREEN");
     assert_eq!(complete.run.executions_started, 1);
     assert!(complete.requests.iter().all(|r| r.status == "GREEN"));
@@ -409,7 +418,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         &other.repo,
         Some(&fixture.state),
         &Selection::All,
-        &VerifyOptions::default(),
+        &returning(),
         CancellationToken::new(),
     )
     .await
@@ -476,7 +485,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         &other.repo,
         Some(&fixture.state),
         &Selection::All,
-        &VerifyOptions::default(),
+        &returning(),
         CancellationToken::new(),
     )
     .await
@@ -510,7 +519,7 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
         &other.repo,
         Some(&fixture.state),
         &Selection::All,
-        &VerifyOptions::default(),
+        &returning(),
         CancellationToken::new(),
     )
     .await
@@ -577,7 +586,7 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
 #[tokio::test]
 async fn concurrent_submissions_commit_only_once() {
     let fixture = Fixture::new(true);
-    let run = fixture.verify(Default::default()).await;
+    let run = fixture.verify(returning()).await;
     let id = &run.requests[0].id;
     let receipts = fixture.receipts().await;
     human::claim(&receipts, id, "alice").await.unwrap();
@@ -592,7 +601,7 @@ async fn concurrent_submissions_commit_only_once() {
 #[tokio::test]
 async fn forced_human_checks_fingerprint_without_replacing_cache() {
     let fixture = Fixture::new(true);
-    let run = fixture.verify(Default::default()).await;
+    let run = fixture.verify(returning()).await;
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &run.requests[0].id, "alice")
         .await
@@ -609,7 +618,7 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
     let forced = fixture
         .verify(VerifyOptions {
             force: true,
-            ..Default::default()
+            ..returning()
         })
         .await;
     assert_eq!(forced.requests[0].status, "WAITING_HUMAN");
@@ -640,7 +649,7 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
 #[tokio::test]
 async fn no_fingerprint_results_are_not_reused_by_a_new_verify() {
     let fixture = Fixture::new(false);
-    let run = fixture.verify(Default::default()).await;
+    let run = fixture.verify(returning()).await;
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &run.requests[0].id, "alice")
         .await
@@ -654,7 +663,7 @@ async fn no_fingerprint_results_are_not_reused_by_a_new_verify() {
     )
     .await
     .unwrap();
-    let next = fixture.verify(Default::default()).await;
+    let next = fixture.verify(returning()).await;
     assert_eq!(next.requests[0].status, "WAITING_HUMAN");
     assert_ne!(next.requests[0].execution_id, run.requests[0].execution_id);
 }
@@ -675,7 +684,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         .unwrap()
         .extend([same, different]);
     fs::write(path, declaration.to_string()).unwrap();
-    let run = fixture.verify(Default::default()).await;
+    let run = fixture.verify(returning()).await;
     assert_eq!(run.requests[0].execution_id, run.requests[1].execution_id);
     assert_eq!(run.requests[0].eval_def_hash, run.requests[1].eval_def_hash);
     assert_ne!(run.requests[0].execution_id, run.requests[2].execution_id);
@@ -702,7 +711,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         &fixture.repo,
         Some(&fixture.state),
         &Selection::All,
-        &VerifyOptions::default(),
+        &returning(),
         CancellationToken::new(),
     )
     .await
@@ -726,7 +735,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     )
     .await
     .unwrap();
-    let reused = fixture.verify(Default::default()).await;
+    let reused = fixture.verify(returning()).await;
     assert_eq!(reused.requests[0].status, "GREEN");
     assert_eq!(reused.requests[1].status, "GREEN");
     assert_eq!(reused.requests[2].status, "RED");
@@ -752,7 +761,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         &fixture.repo,
         Some(&fixture.state),
         &Selection::All,
-        &VerifyOptions::default(),
+        &returning(),
         CancellationToken::new(),
     )
     .await
@@ -771,7 +780,7 @@ async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
     let run = fixture
         .verify(VerifyOptions {
             profile: Some(project::selection::ProfileSelection::Named("lead".into())),
-            ..Default::default()
+            ..returning()
         })
         .await;
     let request = &run.requests[0];
@@ -790,7 +799,7 @@ async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
     .unwrap();
     assert_eq!(settled.status, "GREEN");
     // The declared profile reuses the sign-off the variant produced.
-    let reused = fixture.verify(Default::default()).await;
+    let reused = fixture.verify(returning()).await;
     assert_eq!(reused.requests[0].status, "GREEN");
     assert_eq!(reused.requests[0].execution_id, request.execution_id);
     assert_eq!(reused.requests[0].options.variant.as_deref(), Some("lead"));

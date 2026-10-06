@@ -55,11 +55,12 @@ fn verify(state: &Path, repo: &Path, profile: Value, code: i32) -> Value {
     fs::write(repo.join("artifactize.json"), json!({
         "name":"a", "evals":[{"id":"review", "title":"Review", "payload":{"instruction":"Review"}, "profile":profile}]
     }).to_string()).unwrap();
+    // A Human request is recorded and left waiting: the wait times out at once.
     result(
         command(state)
             .arg("--repo")
             .arg(repo)
-            .args(["verify", "--all"]),
+            .args(["verify", "--all", "--timeout-ms", "1"]),
         code,
     )
 }
@@ -261,7 +262,7 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     let finished = runtime_run(&state, &repo);
-    let waiting = verify(&state, &repo, json!({"kind":"human"}), 4);
+    let waiting = verify(&state, &repo, json!({"kind":"human"}), 3);
     let active = runtime_run(&state, &repo);
     let owned = runtime_run(&state, &repo);
     let db = rusqlite::Connection::open(state.join("state.sqlite")).unwrap();

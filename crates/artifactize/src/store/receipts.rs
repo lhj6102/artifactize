@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -9,7 +10,10 @@ use serde_json::Value;
 use tokio_rusqlite::Connection;
 
 use super::{ExecutionOptions, Origin, Producer, Provenance, STATE_SCHEMA_VERSION};
-use crate::workspace::{canonical_target, outside_workspace, prepare_directory};
+use crate::{
+    config::ProfileKind,
+    workspace::{canonical_target, outside_workspace, prepare_directory},
+};
 
 pub const DATABASE: &str = "state.sqlite";
 
@@ -92,6 +96,9 @@ pub struct Run {
     pub wait_timeout_ms: Option<u32>,
     #[serde(default)]
     pub wait_timed_out: bool,
+    /// Kinds whose evals only reuse a result; one with nothing to reuse is not executed.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub reuse_only: BTreeSet<ProfileKind>,
     pub validation: Value,
     pub error: Option<String>,
     /// Agent backends this Run stopped admitting reviews on, in the order they stopped.
