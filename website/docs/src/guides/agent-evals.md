@@ -371,8 +371,11 @@ notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would
   question from a person about the review above. This is not a new review: the verdict
   stays as recorded, and the instruction to return one JSON object applied only to the
   review. Answer in plain text, not JSON. You may use the tools again.`, then
-  `Question:` and your message. The system prompt and the saved history are sent
-  unchanged, so the cached prefix still matches. `session show` prints your message
+  `Question:` and your message. The review's system prompt says the same from the
+  start: the review returns one JSON verdict, and a later follow-up question is
+  answered in plain text. It and the saved history are sent unchanged, so the cached
+  prefix still matches. Conversations saved by artifactize before this lack that
+  sentence in their system prompt, and their follow-ups rely on the framing alone. `session show` prints your message
   as you wrote it, and `--json` keeps both.
 - The message and the answer, tool calls included, are appended to the session, so
   repeated sends continue one thread. Sends to one session take turns: a second

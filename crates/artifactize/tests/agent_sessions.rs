@@ -274,12 +274,14 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
             .iter()
             .filter(|event| event["kind"] == "message")
             .collect();
-        assert!(
-            messages[0]["message"]["content"]
-                .as_str()
-                .unwrap()
-                .starts_with("Follow the artifactize review instructions")
-        );
+        // The system prompt says from the start how a later follow-up is answered.
+        let system = messages[0]["message"]["content"].as_str().unwrap();
+        assert!(system.starts_with(
+            "Follow the artifactize review instructions. For the review itself, return only one JSON object matching the schema for its verdict."
+        ));
+        assert!(system.ends_with(
+            "If a person later asks a follow-up question about this review, answer that question in plain text instead, not JSON; the verdict stays as recorded."
+        ));
         let reasoning = &messages[2]["message"]["content"][0];
         assert_eq!(reasoning["type"], "reasoning");
         assert_eq!(reasoning["id"], "rs_1");
@@ -363,7 +365,13 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         // Only a framed question is added: the system prompt and the history the repair
         // turn sent, and the answer to it, are the prefix the cache already holds.
         let (review, follow) = (input(&calls[2]), input(&calls[3]));
-        assert_eq!(calls[3].body["instructions"], calls[2].body["instructions"]);
+        // The instructions every request sends are the review's system prompt, byte for byte.
+        for call in &calls {
+            assert_eq!(call.body["instructions"], calls[0].body["instructions"]);
+        }
+        if backend == "codex" {
+            assert_eq!(calls[3].body["instructions"], system);
+        }
         assert_eq!(follow[..review.len()], review[..], "{backend}");
         assert_eq!(follow.len(), review.len() + 2);
         assert_eq!(
