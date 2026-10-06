@@ -14,11 +14,10 @@ There is no implicit or always-stale mode: an Artifact without `fingerprint` has
 reuse, and neither does an eval that depends on it, so every `verify` reviews them
 again. The former `staleKey` (0.2 and 0.3) and `stale` (0.1) fields fail
 `config check` with a message showing the `fingerprint` shape, and so does the
-content form's 0.4 `dependencies` option. The old `critics`, `stale.paths`,
+content form's 0.4 `dependencies` option. An eval's `resultCheck` fails with
+`resultCheck was removed in 0.6.0`. The old `critics`, `stale.paths`,
 `envRequirements`, `reviewPolicy.maxConcurrentExecutors` and tool metadata
-`observation` fields are rejected, and so is a `resultCheck` `script` wrapper:
-an Agent eval's [`resultCheck`](../guides/agent-evals.md#result-check) is a flat
-`{command, args, timeoutMs}`. Agent and Human tools use the separate flat
+`observation` fields are rejected. Agent and Human tools use the separate flat
 declarations below.
 
 ## Content fingerprint
@@ -113,8 +112,7 @@ All instance scripts use the shared folder as cwd. A parent addresses material a
 material is an ownership declaration, not a sandbox hiding sibling files.
 Discovery keeps each instance's family membership and sorted material, without
 computing any digest. Only a declared `fingerprint` can enter a reuse key.
-Fingerprint scripts, `json` protocol tools and an Agent eval's
-[`resultCheck`](../guides/agent-evals.md#result-check) receive each instance's
+Fingerprint scripts and `json` protocol tools receive each instance's
 `"family":{"name":...,"material":[...]}`, with material paths relative to the shared
 family folder. A content fingerprint hashes the shared folder without any
 instance's material, plus the instance's own material. Each review rechecks its

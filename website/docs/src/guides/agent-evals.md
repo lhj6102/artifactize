@@ -160,7 +160,6 @@ A failed Agent review records one of these `errorCode` values:
 | `CANCELLED` | Ctrl-C or a cancelled Run | no |
 | `PROVIDER_BUDGET_EXCEEDED` | `maxTokens` or `maxToolCalls` was exceeded | no |
 | `INVALID_RESULT` | No valid verdict after the one format repair | no |
-| `RESULT_CHECK_FAILED` | The eval's [`resultCheck`](#result-check) crashed, timed out or printed an invalid answer | no |
 | `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
 | `BACKEND_STOPPED` | Not started: the Run stopped admitting reviews on the backend | — |
@@ -186,13 +185,15 @@ Only tools from the eval's scope are exposed. They run sequentially with private
 runtime environments. Tool results keep text, JSON and validated base64 image blocks rather than flattening
 structured data. PNG/JPEG/WebP results reach both provider wires; unsupported-model
 image requests fail with the provider error. Duplicate provider call IDs fail
-closed. Tool audit and per-request-attempt `usage` are saved on both success and
-ERROR; on cache hits the tool audit is retained with original execution attribution
-and the attempts move to `reusedUsage`, never counted as spent. Counters
+closed. Per-request-attempt `usage` is saved on both success and ERROR; on cache hits
+the attempts move to `reusedUsage`, never counted as spent. Counters
 are provider-reported (including reported zero), not inferred totals or costs.
 Anthropic `inputTokens` is its native uncached input; cache read/write counters are
 separate. OpenAI input already includes its cache reads. Never sum every counter.
-Unreported fields stay absent. Assistant messages and reasoning are not persisted.
+Unreported fields stay absent. The request keeps the verdict, result and usage; the
+messages, reasoning and tool calls, with their arguments and results, are only in the
+review's [saved conversation](#saved-conversations), and
+[`session show --summary`](#session-summary) counts them.
 
 Owner validation before relying on a provider: run one real review per backend
 (OpenAI key, Anthropic key, Codex sign-in) with an accessible exact model ID and a
@@ -200,73 +201,6 @@ declared tool.
 These real reviews are still pending for the owner. Automated tests use fake HTTP
 transports or a [fake provider](#test-against-a-fake-provider) and make no real
 inference requests.
-
-## Result check
-
-JSON Schema checks the shape of a result but cannot see what the reviewer did. An
-Agent eval's `resultCheck` runs a project command over the parsed result and its
-tool-call audit before the review completes, so a check can require, for example,
-that every requirement a finding cites was read with a tool:
-
-```json
-{
-  "id": "review",
-  "title": "The specification covers every requirement",
-  "profile": {"kind": "agent", "backend": "openai", "model": "YOUR_EXACT_MODEL_ID"},
-  "payload": {"instruction": "Review {spec}."},
-  "resultCheck": {"command": "python3", "args": ["check.py", "{spec}/spec.md"], "timeoutMs": 30000}
-}
-```
-
-- **When.** After the final output passes `passSchema` or `failSchema`, and again
-  after the repair turn. A result that fails its schema is repaired first, without
-  running the check.
-- **How it runs.** Like a runtime command: literal argv with `{artifact}` references
-  resolved in the eval's scope, the target Artifact's folder as cwd, a private home,
-  temporary and output directories below the Run's output, only `PATH` and `LANG`
-  from the environment, and `timeoutMs` (default 30,000) with process-group cleanup.
-  Artifacts named in its args are dependencies of the eval, as with runtime args.
-- **stdin.** One JSON object:
-
-  ```json
-  {"version": 2, "artifactId": "spec", "family": null,
-   "result": {"verdict": "GREEN", "covered": ["R1"]},
-   "toolCalls": [{"name": "read_spec", "arguments": {"path": "spec.md"}, "isError": false}]}
-  ```
-
-  `family` is null unless the Artifact is a
-  [family instance](../reference/artifactize-json.md#artifact-families). For an
-  instance it is the object that fingerprint scripts and `json` tools receive, with
-  material paths relative to the check's cwd (the shared family folder):
-
-  ```json
-  {"version": 2, "artifactId": "alpha",
-   "family": {"name": "specs", "material": ["alpha.md"]},
-   "result": {"verdict": "GREEN"}, "toolCalls": []}
-  ```
-
-  `toolCalls` lists every tool call of the review in order, including rejected ones.
-  Version 2 (0.5.3) replaced version 1, whose `family` was only the family name.
-- **stdout.** One JSON object, `{"errors": ["...", ...]}`: at most 8 non-empty
-  errors and at most 4 KiB. An empty list accepts the result.
-- **Errors.** The first time the check returns errors, they go to the review's one
-  tools-disabled repair turn, the same turn a schema failure uses:
-
-  ```text
-  Your final response did not pass the project's result check:
-  - R9 does not appear in spec.md.
-  Return only one JSON object matching the schema.
-  ```
-
-  If the repaired result still fails the check (or its schema), the review is
-  ERROR with `INVALID_RESULT`, and the saved error lists the check's errors.
-- **A broken check.** A non-zero exit, a timeout, or output that breaks the protocol
-  ends the review with `RESULT_CHECK_FAILED`, without a repair or a result. The error
-  says which, with up to 500 characters of the check's stderr.
-- **Reuse.** The check's `command` and `args` are part of the eval strategy, so
-  changing them reviews again. Its `timeoutMs` is a limit, like the profile's: it is
-  recorded with each result's execution options as `resultCheckTimeoutMs`, and
-  changing only it reuses the result.
 
 ## Saved conversations
 
@@ -277,13 +211,16 @@ like continuing a chat. The recorded verdict never changes.
 **What is saved.** Each review session gets one owner-only file under
 `$STATE/agent-sessions/` ([layout](../reference/state-cache-limits.md#agent-sessions)).
 It holds the system prompt and instructions, every turn's messages, each tool call
-with its arguments and full result, the repair turn (the prompt that asked for it and
-the answer it replaced), and the encrypted reasoning items (Responses
+with its arguments and full result and whether it failed, the repair turn (the prompt
+that asked for it and the answer it replaced), each provider attempt with its token
+counters, and the encrypted reasoning items (Responses
 `reasoning.encrypted_content`, Anthropic thinking signatures) needed to replay the
 conversation exactly. It also records the backend, model, reasoning, provider
 parameters, budgets and tool definitions, the [`sessionId`](#prompt-caching), and the
-Run and request ids. Every backend is saved, `anthropic` included. Saving never fails
-a review: a write error is reported on stderr and the review goes on without it.
+Run and request ids. Every backend is saved, `anthropic` included. The session is the
+only record of a review's tool calls: the request keeps its verdict, result and usage.
+Saving never fails a review: a write error is reported on stderr and the review goes
+on without it.
 
 **The reference.** A request whose conversation was saved carries `session` in
 `verify --json`, `run show` and `request show`:
@@ -345,6 +282,43 @@ Your final response did not match the required schema: …
 Text output cuts tool results after 2000 characters and shows only reasoning
 summaries. `--json` prints the stored events as they are, which is also the
 conversation's replayable export.
+
+### Session summary
+
+`--summary` counts what the conversation spent and did, from the session file alone:
+its turns (provider requests) with the tokens of each and in total, the tool calls per
+tool with how many failed, the follow-ups, and the backend, model and time span. A
+failed call returned an error, or never ran because a budget, the deadline or the end
+of the review stopped it first.
+
+```sh
+artifactize session show run-FiVNCV-1 --summary
+```
+
+```text
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · codex gpt-6-luna (reasoning max)
+Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
+Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
+Time: 2026-10-06T09:14:02.118604115Z to 2026-10-06T09:16:41.502330019Z (159.4 s)
+Turns: 5 · follow-ups: 1
+Tokens: input 21410 · output 1318 · cache read 15872 · reasoning 704
+  turn 1: input 3920 · output 212 · cache read 0 · reasoning 128
+  turn 2: input 4310 · output 260 · cache read 3840 · reasoning 160
+  turn 3: input 4402 · output 96 · cache read 4224 · reasoning 64
+  follow-up 1, turn 1: input 4366 · output 410 · cache read 3840 · reasoning 224
+  follow-up 1, turn 2: input 4412 · output 340 · cache read 3968 · reasoning 128
+Tool calls: 3 (1 failed)
+  read_notes: 2
+  search_notes: 1 (1 failed)
+```
+
+A turn that took several attempts says so, for example `(2 attempts)`. Token counters
+are the ones the provider reported, summed over the turn's attempts; a counter no
+attempt reported is left out. `--json` prints the same as one object: `backend`,
+`model`, `reasoning`, `startedAt`, `endedAt`, `durationMs`, `followUps`, `turns` (each
+with `followUp` when it answered one, `turn`, `attempts` and `tokens`), `tokens`,
+`toolCalls` (`{"read_notes": {"calls": 2, "failed": 0}, …}`), `sessionId`,
+`requestId` and `reference`.
 
 **Following up.**
 

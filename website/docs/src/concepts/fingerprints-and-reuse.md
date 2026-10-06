@@ -50,8 +50,7 @@ An eval depends on its target Artifact and on what the target directly connects:
 
 - the target's mounts;
 - the target's child Artifacts;
-- the Artifacts the eval names in its instruction, its runtime args or its
-  `resultCheck` args.
+- the Artifacts the eval names in its instruction or runtime args.
 
 artifactize does not follow connections further than that. Whether a change two
 connections away matters is up to how you define fingerprints: a fingerprint
@@ -68,12 +67,11 @@ SHA-256 of canonical JSON with recursively sorted keys over the eval strategy:
 - the eval kind (runtime, agent or human);
 - `payload`, including the instruction;
 - `passSchema` and `failSchema`;
-- for runtime evals, the command and args;
-- for Agent evals, the `resultCheck` command and args, when there is one.
+- for runtime evals, the command and args.
 
 Execution options are not part of the key: an Agent's backend, model, reasoning,
-`timeoutMs`, `maxToolCalls` and `maxTokens`, its `resultCheck` `timeoutMs`, a
-runtime `timeoutMs`, and the selected profile variant. Neither are the eval id and
+`timeoutMs`, `maxToolCalls` and `maxTokens`, a runtime `timeoutMs`, and the
+selected profile variant. Neither are the eval id and
 title, repository paths, unused profile variants, or tool declarations (`views`): a
 tool is a way of viewing an Artifact, so changing only a tool's description or
 schema does not review again. To make a tool change matter, include the relevant
@@ -86,9 +84,10 @@ Artifacts mount or name needs `"fingerprint": {}` for their results to be reused
 
 ## Completed result reuse
 
-A successful end-of-review recheck appends the GREEN or RED result to its key's
-history in `cache_entries`, pointing to a self-contained `executions` row. Errors
-and cancellation are never recorded there. When a key holds more than one record,
+A successful end-of-review recheck adds the GREEN or RED result to its key's
+history: its self-contained `executions` row gets its completion time, size and last
+use ([State](../reference/state-cache-limits.md#state)). Errors and cancellation are
+never recorded there. When a key holds more than one record,
 the most recent by completion time is reused, GREEN or RED. Results from different
 profiles therefore reuse each other: a review that `--profile fast` produced
 satisfies the declared profile, and the other way around.
@@ -128,13 +127,12 @@ No key means no cache lookup or publication. `--force` re-executes explicitly
 selected evals without reading or joining earlier results, local or in the store,
 and its completed GREEN or RED is appended as a newer record (and published to a
 configured store), which later runs then reuse. Forced and
-unkeyed results still satisfy their own Run and retain execution audit.
+unkeyed results still satisfy their own Run and keep their execution.
 
-## Upgrading from 0.4
+## Upgrading to 0.6
 
-0.5 builds the key differently: earlier keys mixed dependency entries into content
-fingerprints and covered the whole profile. The state database moves to schema 4
-and the [team review store](../reference/review-store.md) to schema 3, and earlier
-reuse records cannot be mapped to the new key. The first `verify` after the
-upgrade therefore reviews everything once; Runs, executions and their audit stay
-readable. See [State](../reference/state-cache-limits.md#state).
+0.6 keeps the key of 0.5, but starts a new state: artifactize refuses a state an
+earlier version wrote and does not migrate it
+([State](../reference/state-cache-limits.md#state)). The first `verify` in the new state
+reviews everything once, or reuses what a [team review store](../reference/review-store.md)
+holds for the same keys.

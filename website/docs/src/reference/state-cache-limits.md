@@ -6,25 +6,43 @@ bounded, and the local diagnostics and maintenance commands.
 
 ## State
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 4),
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 5),
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, falling back to `$XDG_STATE_HOME/artifactize` or
 `~/.local/state/artifactize`. `--state-dir PATH` moves the whole state, including
-private output directories under `PATH/runs`. An older database (schema 1 to 3,
-artifactize 0.1 to 0.4) is upgraded in place to schema 4 before any read or write:
-the 0.2 and 0.4 renames are applied to columns, the active index and saved JSON,
-and saved declarations take the current fingerprint shape. Schema 4 keys reuse
-differently ([the reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key)), and earlier reuse
-records cannot be mapped to it, so the upgrade drops them: **the first `verify`
-after the upgrade reviews again, once.** Runs, executions, their audit and waiting
-Human requests survive. A Human request recorded before the upgrade can still be
-claimed and submitted; its result settles its own Run, and the next `verify` asks
-for a new sign-off. There is no migration from earlier receipt layouts. Saved Runs
-stay readable after the original repository is removed. State/output inside the
-reviewed repository is rejected, including through symlink ancestors; database
-files and their WAL sidecars must be regular files. Each database has a stable id, a
-random UUID made the first time a command writes it (table `state_meta`, row `id`),
-which [Agent session references](#agent-sessions) name.
+private output directories under `PATH/runs`. Saved Runs stay readable after the
+original repository is removed. State/output inside the reviewed repository is
+rejected, including through symlink ancestors; database files and their WAL sidecars
+must be regular files.
+
+The state keeps what was reviewed, with which verdict, and how it was executed, in
+four tables:
+
+| Table | One row per | Columns besides the saved JSON in `data` |
+|---|---|---|
+| `runs` | Run | `id`, `repo`, `status` |
+| `requests` | eval of a Run | `id`, `run_id`, `eval_id`, `ordinal` (its place in the Run's selection order), `execution_id`, `status`, and `claimed_by` and `claimed_at`, the Human claim of a waiting request |
+| `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), and the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used` |
+| `state_meta` | named value of the state | `name`, `value` |
+
+A Run has one request per eval and per ordinal. One execution per reuse key can be
+active (RUNNING or WAITING_HUMAN) at a time. `state_meta` holds the state's stable
+id, a random UUID made when the database is created (row `id`), which
+[Agent session references](#agent-sessions) name. How a review went, its
+conversation and its tool calls, is not in the state: it is in the review's
+[saved session](#agent-sessions).
+
+There is no migration. A state written by an earlier artifactize (schema 1 to 4,
+artifactize 0.1 to 0.5) is refused by every command that reads or writes it, with
+exit code 2 and this message, and left as it is:
+
+```text
+This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). artifactize does not migrate it.
+```
+
+A new state reviews every eval once and then reuses as before.
+[`doctor`](#doctor-models-and-prune) reports such a state as a hard error, and a
+database written by a newer artifactize the same way.
 
 Tokens are never stored inside a repository. `$STATE/auth`, which holds the Codex
 sign-in and the review store token, is refused when it lies inside a git work tree or
@@ -68,11 +86,13 @@ record their `reviewer`); a missing key prints `null` and exits 4. `show
 --history` prints all of the key's records as a JSON array, latest first. Entries
 mirrored from a [shared remote review store](review-store.md) carry an `origin`
 (store, publisher, publication time), which `list` shows in place of the
-repository. Reads neither create missing state nor update access times. `rm`
-removes every record of the key and prints `{"removed":true}` (false if absent),
-preserving saved Runs and execution audit. `rm` refuses a key with an active
-execution or waiter. Keys come from `cache list` or from a request's `key` in
-`verify --json` and `run show`.
+repository. Reads neither create missing state nor update access times. A key's
+records are its completed GREEN/RED executions whose history columns
+(`completed_at`, `bytes`, `last_used`) are set; the latest is the newest completion,
+then the most recently stored. `rm` takes every record of the key out of its history
+and prints `{"removed":true}` (false if absent), preserving saved Runs and the
+executions themselves. `rm` refuses a key with an active execution or waiter. Keys
+come from `cache list` or from a request's `key` in `verify --json` and `run show`.
 
 How reuse keys are built and what a hit returns is in
 [Completed result reuse](../concepts/fingerprints-and-reuse.md#completed-result-reuse); entry and byte
@@ -91,9 +111,10 @@ execution and records an in-flight waiter needs. Protected entries can temporari
 automatic maintenance failures are reported on stderr without replacing an already
 completed verdict; the next publication retries collection.
 
-GC and `rm` remove only reuse records, never execution or receipt rows or Run
-output. These limits are not a bound on total database size or active scratch
-space, and there is no semantic TTL, protected-reader registry or scratch cleanup.
+GC and `rm` clear only the history columns of a record, never execution or receipt
+rows or Run output. These limits are not a bound on total database size or active
+scratch space, and there is no semantic TTL, protected-reader registry or scratch
+cleanup.
 
 ## Backend capacity
 
@@ -114,12 +135,18 @@ a regular file, is not valid JSON, has other fields, names an unknown or removed
 backend or a limit out of range fails `verify` before it creates a Run (exit 2);
 `doctor` reports the limits, or the problem as a hard error.
 
-The limits are enforced through slots in `state.sqlite`, one per Agent review in
-flight, recorded with the owning process's pid and start time. A slot is taken just
-before a review would start: a request that would reuse a result or join a live
-execution of its key takes none. A slot is released when the review ends, and a
-slot whose owner process is gone (it crashed or was killed) is free again the next
-time a process asks for one.
+The bookkeeping is the `executions` table of `state.sqlite`: an Agent review's
+execution names its `backend`, and it holds one of that backend's slots while its
+status is RUNNING. A slot is taken just before a review would start: one write
+transaction (`BEGIN IMMEDIATE`) counts the RUNNING executions of the backend and,
+under the limit, inserts this one. A request that would reuse a result or join a live
+execution of its key takes none. The slot frees when the review's execution
+completes. An execution whose owner process is gone (it crashed or was killed, by pid
+and start time) ends as ERROR (`OWNER_DIED`) the next time a process asks for a slot,
+which frees its slot with it; there is no separate cleanup. When a review's failure
+stops its backend for the Run ([`BACKEND_STOPPED`](../guides/agent-evals.md#stopping-a-backend)),
+the stop is recorded before its slot frees, so a request waiting for that slot is not
+started.
 
 With every slot of its backend in use, a request waits, as QUEUED, with a reason
 such as `Waiting for a free codex slot: all 4 are in use on this machine
@@ -172,14 +199,18 @@ Every event has its `kind` and its time in `at`:
 | `kind` | Holds |
 |---|---|
 | `review` | First line: `version` (1), `sessionId`, `runId`, `requestId`, `evalId`, `target`, `producer`, `state`, `backend`, `model`, `reasoning`, `parameters` (as sent, with `prompt_cache_key`), `budgets` (`timeoutMs`, `maxToolCalls`, `maxTokens`) and `tools` (the definitions offered) |
-| `message` | One message as the provider received or sent it (`message`, a rig message: `role` `system`, `user` or `assistant`, with text, tool calls, tool results and reasoning, encrypted content and signatures included), and the `turn` (provider request) that carried it; the repair prompt has `"repair": true`, and a follow-up's framed question has the person's own words in `question` |
+| `message` | One message as the provider received or sent it (`message`, a rig message: `role` `system`, `user` or `assistant`, with text, tool calls, tool results and reasoning, encrypted content and signatures included), and the `turn` (provider request) that carried it; a message of tool results has `isError`, whether each result failed, in order; the repair prompt has `"repair": true`, and a follow-up's framed question has the person's own words in `question` |
+| `attempt` | One provider attempt of a `turn`: its `attempt` number, the `usage` counters the provider reported (`inputTokens`, `outputTokens`, `totalTokens`, `cacheReadTokens`, `cacheWriteTokens`, `reasoningTokens`, where reported), and its `error` and `errorCode` when it failed |
 | `end` | The review's `result`, or its `errorCode` and `error` |
 | `send` | A follow-up starts: its `send` number, the person's `text`, the `framing` sent before it, `filesChanged` and the `tools` offered |
-| `answer` | The follow-up's answer `text` (or `errorCode` and `error`), its attempts' `usage` and its `toolCalls` audit |
+| `answer` | The follow-up's answer `text`, or its `errorCode` and `error` |
 
-The messages of a follow-up also carry its `send` number. The request's verdict,
-result, usage and tool-call audit stay in `state.sqlite` as before; the file adds
-everything else. A last line cut short by a crash is ignored when the file is read.
+The events of a follow-up also carry its `send` number. When a budget, the deadline or
+a repeated call ID stops a turn's tool calls, the results of the calls that ran are
+saved and the others have none. The request's verdict, result and usage stay in
+`state.sqlite`; the session is the only record of the conversation and its tool calls,
+and [`session show --summary`](../guides/agent-evals.md#session-summary) counts them.
+A last line cut short by a crash is ignored when the file is read.
 
 ## Local diagnostics and maintenance
 
@@ -207,9 +238,10 @@ removes are in the [reference](#doctor-models-and-prune).
 `doctor` makes no provider calls and creates no Run, verdict, cache entry or auth
 file. It reports the resolved state directory and tests writability with a temporary
 directory, removed immediately (in the nearest existing ancestor when state does
-not yet exist). It reads the state database's schema without changing the file:
-an older schema (1 to 3) passes with a note that the next artifactize command
-upgrades it, and a database written by a newer artifactize is a hard error. `--repo`
+not yet exist). It reads the state database's schema without changing the file: a
+database [written by an earlier artifactize](#state) (schema 1 to 4) or by a newer
+one is a hard error, with the message other commands refuse it with and its `schema`
+and the `supported` one in the details. `--repo`
 additionally runs the same static validation as `config check`. The `limits` check
 reads [`limits.json`](#backend-capacity) and reports the backend capacity (an
 invalid file is a hard error). The `sessions` check reports the
@@ -242,10 +274,9 @@ consistently `{"backend":"openai","models":[{"slug":"model-id","display_name":"m
 Listings preserve provider order.
 
 Only known scratch directories below `state/runs/<run-id>` are removed: runtime
-`output`/`tmp`/`home`/`cache`, leftover tool output and the Claude CLI invocation
-directories of Runs made before 0.5.0.
-Run roots, unknown files/directories, database rows, tool audit, results and reuse
-records remain. Symlinks (including nested links), non-directory targets and
+`output`/`tmp`/`home`/`cache` and leftover tool output.
+Run roots, unknown files/directories, database rows, results and reuse records
+remain. Symlinks (including nested links), non-directory targets and
 repository content are refused before deletion. Database reads have a five-second
 busy timeout and finish before deletion; prune holds no writer lock. This is plain
 prune, without quarantine, crash-recovery machinery or hostile filesystem-race
