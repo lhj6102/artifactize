@@ -48,7 +48,7 @@ fn eval(instruction: &str) -> Value {
 }
 
 #[test]
-fn reference_parser_preserves_ccdd_brace_groups_and_escape_parity() {
+fn reference_parser_preserves_brace_groups_and_escape_parity() {
     let source = r#"{first} {first}/file {a-b_9} \{escaped} \{also\} {after} {{doubled}} ${variable} { "key": "{json}" } {nested {ignored}} {'}'} {`}`} {"\\\"}"} {last} {unfinished {hidden}"#;
     assert_eq!(
         instruction_references(source),

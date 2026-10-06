@@ -173,7 +173,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     support::os::make_executable(&fixture.0.join("review/hook.sh"));
     fixture.write(".git/ignored/artifactize.json", "not JSON");
     fixture.write("node_modules/ignored/artifactize.json", "not JSON");
-    fixture.write("ccdd.json", "legacy files are not configuration");
+    fixture.write("other.json", "other names are not configuration");
     // Discovery never enters a linked folder; a junction needs no privilege on Windows.
     #[cfg(unix)]
     support::os::symlink_dir(fixture.0.join("review"), fixture.0.join("linked-review")).unwrap();

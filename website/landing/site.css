@@ -422,7 +422,7 @@ p {
 .k-human { --k: var(--amber); }
 
 .hero h1 {
-  font-size: clamp(40px, 7.4vw, 80px);
+  font-size: clamp(36px, 5.8vw, 66px);
   letter-spacing: -0.045em;
   line-height: 1.02;
   text-wrap: balance;
@@ -431,6 +431,10 @@ p {
 .hero h1 em {
   font-style: normal;
   color: var(--green);
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 .lede {
@@ -638,6 +642,24 @@ p {
   .vc-label {
     display: none;
   }
+}
+
+/* ---------- Why ---------- */
+
+.why {
+  text-align: center;
+}
+
+.why-inner {
+  max-width: 800px;
+}
+
+.why-inner > p:not(.kicker) {
+  max-width: 700px;
+  margin: 18px auto 0;
+  color: var(--dim);
+  font-size: 18px;
+  text-wrap: pretty;
 }
 
 /* ---------- Get started ---------- */

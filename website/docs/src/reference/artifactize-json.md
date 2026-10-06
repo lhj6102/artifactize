@@ -16,7 +16,7 @@ again. The former `staleKey` (0.2 and 0.3) and `stale` (0.1) fields fail
 `config check` with a message showing the `fingerprint` shape, and so does the
 content form's 0.4 `dependencies` option. The old `critics`, `stale.paths`,
 `envRequirements`, `reviewPolicy.maxConcurrentExecutors` and tool metadata
-`observation` fields are rejected, and so is CCDD's `resultCheck` `script` wrapper:
+`observation` fields are rejected, and so is a `resultCheck` `script` wrapper:
 an Agent eval's [`resultCheck`](../guides/agent-evals.md#result-check) is a flat
 `{command, args, timeoutMs}`. Agent and Human tools use the separate flat
 declarations below.
@@ -175,7 +175,7 @@ The runtime deadline defaults to 30,000 ms and accepts 1 through 2,147,483,647 m
 It covers inert-child registration and execution without a reset. Each raw stdout
 and stderr stream is capped at 128 KiB while excess bytes are drained. Runtime
 results decode UTF-8 lossily, remove ANSI CSI sequences and C0 controls except tab,
-LF and CR (DEL is preserved, matching CCDD), and retain the truncation flag and
+LF and CR (DEL is preserved), and retain the truncation flag and
 actual exit status/duration. Low-level process results remain unmodified bytes.
 
 Cancellation and timeout signal the entire owned process group with SIGTERM,
