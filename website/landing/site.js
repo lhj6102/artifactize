@@ -1,7 +1,31 @@
-// artifactize.dev: play/pause and captions for the promo video, and the
-// terminal recordings further down. The promo pauses while it is off screen
-// and never autoplays under reduced motion (see the inline script next to it
-// in index.html).
+// artifactize.dev: the theme toggle, and play/pause and captions for the
+// promo video and the terminal recordings on pages that have them. The promo
+// pauses while it is off screen and never autoplays under reduced motion.
+
+// Theme toggle: dark (the docs' "navy") or light. It writes the docs'
+// localStorage key, so the choice carries across the site.
+(function () {
+  var button = document.querySelector('.theme-toggle');
+  if (!button) return;
+  var root = document.documentElement;
+  function sync() {
+    var light = root.getAttribute('data-theme') === 'light';
+    button.setAttribute('aria-label', light ? 'Use the dark theme' : 'Use the light theme');
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', light ? '#FFFFFF' : '#090B0F');
+  }
+  button.hidden = false;
+  button.addEventListener('click', function () {
+    var light = root.getAttribute('data-theme') !== 'light';
+    root.setAttribute('data-theme', light ? 'light' : 'dark');
+    try {
+      localStorage.setItem('mdbook-theme', light ? 'light' : 'navy');
+    } catch (e) {}
+    sync();
+  });
+  sync();
+})();
+
 (function () {
   var video = document.getElementById('promo');
   if (!video) return;
@@ -105,7 +129,8 @@
         var name = tab.getAttribute('data-name');
         frame.style.aspectRatio = '1000 / ' + tab.getAttribute('data-height');
         video.setAttribute('height', tab.getAttribute('data-height'));
-        video.setAttribute('aria-label', tab.getAttribute('data-label'));
+        var caption = demo.querySelector('.demo-caption');
+        if (caption) caption.textContent = tab.getAttribute('data-label');
         video.poster = '/media/demo/' + name + '.webp';
         video.querySelector('source').src = '/media/demo/' + name + '.mp4';
         video.load();
@@ -114,7 +139,19 @@
       });
     });
 
+    // Nothing loads until the recording nears the viewport: the poster (a still
+    // frame) then, and the video only when it plays.
+    function showPoster() {
+      if (!video.poster && video.getAttribute('data-poster')) video.poster = video.getAttribute('data-poster');
+    }
     if ('IntersectionObserver' in window) {
+      var near = new IntersectionObserver(function (entries) {
+        if (entries[0].isIntersecting) {
+          showPoster();
+          near.disconnect();
+        }
+      }, { rootMargin: '300px 0px' });
+      near.observe(video);
       new IntersectionObserver(function (entries) {
         visible = entries[0].isIntersecting;
         if (!visible && !video.paused) {
@@ -123,6 +160,8 @@
           play();
         }
       }, { threshold: 0.35 }).observe(video);
+    } else {
+      showPoster();
     }
   });
 })();

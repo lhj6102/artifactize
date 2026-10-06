@@ -5,7 +5,7 @@ deployed from this directory to Cloudflare Workers (static assets).
 
 | Path | Contents |
 |---|---|
-| `landing/` | The landing page: static HTML, CSS and a little JS, copied to `dist/` as is. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the promo media (`landing/media/`), favicons, `404.html` and `_headers`. |
+| `landing/` | The landing page, copied to `dist/` as is: a short hero, the scroll story (`landing/story/`, native ES modules with JSDoc types; see its `README.md`), the terminal recordings and the install block. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the media (`landing/media/`), favicons, `404.html`, `_headers` and `.assetsignore`, which keeps `jsconfig.json` and `story/README.md` out of the deployed site. |
 | `docs/` | The user docs as an [mdBook](https://rust-lang.github.io/mdBook/): `book.toml`, `src/` (`SUMMARY.md` and the chapters) and `theme/`. Built into `dist/docs/`. |
 | `build.sh` | Builds everything into `dist/` (gitignored) and checks every internal link. |
 | `check-links.py` | The internal link check that `build.sh` runs over `dist/`. |
@@ -48,7 +48,9 @@ links into them at `https://artifactize.dev/docs/`. Write chapters in
 
 ## Landing page media
 
-The promo video is the owner's motion graphic (1920×1080, 60 fps). The master is
+The promo video is the owner's motion graphic (1920×1080, 60 fps). The landing page
+no longer shows it, but the social card comes from the same master and the README's GIF
+is rendered from the video (see Recordings). The master is
 not committed; `make-media.sh MASTER.mp4` writes the web versions: AV1 WebM and
 H.264 MP4 at 1600×900 and 30 fps, the poster (the "Reuse" frame) and the 1200×630
 social card (`og.jpg`). `media/promo-v10.en.vtt` holds the video's on-screen text

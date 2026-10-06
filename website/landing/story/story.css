@@ -1,0 +1,777 @@
+/* The scroll story: a sticky graphic beside (or, on phones, above) the
+   steps. Colours come from the tokens in /site.css, so both themes apply.
+   Without JavaScript the graphic is hidden and the steps read as a list. */
+
+.story {
+  --stage-bg: #0C1016;
+  --node-bg: #141A23;
+  --chip-bg: #0C1016;
+  --reused-line: color-mix(in srgb, var(--cyan) 42%, var(--line));
+  position: relative;
+  padding-top: 72px;
+  border-top: 1px solid var(--line-soft);
+}
+
+:root[data-theme="light"] .story {
+  --stage-bg: #F8FAFC;
+  --node-bg: #FFFFFF;
+  --chip-bg: #FFFFFF;
+  --reused-line: color-mix(in srgb, var(--cyan) 45%, var(--line));
+}
+
+.story-head {
+  max-width: 820px;
+  margin: 0 auto 8px;
+  text-align: center;
+}
+
+.story-head p:not(.kicker) {
+  max-width: 640px;
+  margin: 16px auto 0;
+  color: var(--dim);
+  font-size: 18px;
+}
+
+.story-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 0 var(--gutter);
+}
+
+.story-aside {
+  display: none;
+}
+
+.story-steps {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 48px 0 24px;
+}
+
+.story-step {
+  padding: 28px 0;
+}
+
+.step-k {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  color: var(--green);
+  font: 600 12.5px/1.2 var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.step-k b {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--green) 50%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--green) 9%, transparent);
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.story-step h3 {
+  font-size: clamp(25px, 2.5vw, 32px);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.story-step p:not(.step-k) {
+  margin-top: 14px;
+  color: var(--dim);
+  font-size: 17.5px;
+  line-height: 1.65;
+}
+
+.story-step p code {
+  padding: 0.1em 0.38em;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  background: var(--panel2);
+  color: var(--ice);
+  font-size: 0.84em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.step-code {
+  margin: 18px 0 0;
+  padding: 11px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--code-bg);
+  color: var(--ice);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.step-code .t-prompt {
+  color: var(--green);
+}
+
+.step-code .t-dim {
+  color: var(--faint);
+}
+
+/* ---------- With JavaScript: the sticky stage ---------- */
+
+.js .story-aside {
+  position: sticky;
+  top: var(--header);
+  z-index: 5;
+  display: block;
+  height: calc(100vh - var(--header));
+  height: calc(100svh - var(--header));
+  padding: 20px 0;
+}
+
+.js .story-steps {
+  max-width: 500px;
+  margin: 0;
+  padding: 12vh 0 34vh;
+}
+
+.js .story-step {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 72vh;
+  min-height: 72svh;
+  padding: 0;
+  /* Added to the page's 80px scroll-padding-top: a step link lands with the step centred. */
+  scroll-margin-top: max(0px, calc(14vh - 80px));
+  transition: opacity 0.4s ease;
+}
+
+.story-ready .story-step:not(.is-active) {
+  opacity: 0.45;
+}
+
+@media (min-width: 761px) {
+  .js .story-grid {
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+    gap: 56px;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1060px) {
+  .js .story-grid {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 32px;
+  }
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background:
+    radial-gradient(var(--dot) 1.1px, transparent 1.3px) 0 0 / 26px 26px,
+    var(--stage-bg);
+  box-shadow: 0 24px 70px var(--shadow);
+  font-family: var(--mono);
+}
+
+.stage-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 230px 0 16px;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  color: var(--dim);
+  font-size: 12.5px;
+}
+
+.stage-step {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.stage-step b {
+  color: var(--green);
+  font-weight: 700;
+}
+
+.stage-step span {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.stage-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.stage-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  overflow: visible;
+  transition: opacity 0.18s ease;
+}
+
+.stage-svg.is-fading {
+  opacity: 0;
+}
+
+.stage-meter {
+  display: grid;
+  gap: 10px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.meter-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 0;
+}
+
+.meter-counts div {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.meter-counts dt {
+  color: var(--faint);
+}
+
+.meter-counts dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-counts .m-exec dd { color: var(--green); }
+.meter-counts .m-reuse dd { color: var(--cyan); }
+.meter-counts .m-human dd { color: var(--amber); }
+
+.meter-cost {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+}
+
+.meter-cost .meter-track {
+  flex: 1 1 140px;
+}
+
+.meter-track {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 99px;
+  background: var(--line-soft);
+}
+
+.meter-track i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.meter-track .bar-naive {
+  background: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--dim) 45%, transparent) 0 3px, transparent 3px 6px);
+}
+
+.meter-track .bar-exec {
+  background: var(--green);
+}
+
+.meter-cost p {
+  color: var(--faint);
+  white-space: nowrap;
+}
+
+.meter-cost p b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-cost p b.c {
+  color: var(--green);
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--faint);
+  font-size: 11.5px;
+}
+
+.legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.legend svg {
+  width: 26px;
+  height: 12px;
+  overflow: visible;
+}
+
+.legend .lg-chip {
+  width: 14px;
+  height: 14px;
+}
+
+/* The step links sit over the stage's top bar. */
+.story-rail {
+  position: absolute;
+  top: 20px;
+  right: 0;
+  display: flex;
+  align-items: center;
+  height: 46px;
+  padding: 0 12px;
+}
+
+.story-rail ol {
+  display: flex;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.story-rail a {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 26px;
+  border-radius: 6px;
+  color: transparent;
+  font-size: 0;
+  text-decoration: none;
+}
+
+.story-rail a::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--line);
+  transition: background-color 0.2s, transform 0.2s;
+}
+
+.story-rail a:hover::before {
+  background: var(--dim);
+}
+
+.story-rail a[aria-current="step"]::before {
+  background: var(--green);
+  transform: scale(1.5);
+}
+
+/* ---------- Phones: the stage on top, the steps beneath ---------- */
+
+@media (max-width: 760px) {
+  .js .story-grid {
+    padding: 0;
+  }
+  .js .story-aside {
+    height: 45vh;
+    height: 45svh;
+    margin: 0;
+    padding: 8px var(--gutter) 10px;
+    background: var(--bg);
+    box-shadow: 0 10px 18px -12px var(--shadow);
+  }
+  .js .story-steps {
+    max-width: none;
+    padding: 2vh var(--gutter) 40vh;
+  }
+  .js .story-step {
+    justify-content: flex-start;
+    min-height: 66vh;
+    min-height: 66svh;
+    padding-top: 18px;
+    /* Lands just below the stage (the page adds 80px of scroll-padding-top). */
+    scroll-margin-top: calc(45svh - 12px);
+  }
+  .story-step h3 {
+    font-size: 23px;
+  }
+  .story-step p:not(.step-k) {
+    font-size: 16.5px;
+  }
+  .stage {
+    border-radius: 14px;
+  }
+  .stage-top {
+    min-height: 34px;
+    padding: 0 160px 0 12px;
+    font-size: 11.5px;
+  }
+  .story-rail {
+    top: 8px;
+    right: var(--gutter);
+    height: 34px;
+    padding: 0 8px;
+  }
+  .story-rail a {
+    width: 13px;
+  }
+  .stage-meter {
+    gap: 6px;
+    padding: 7px 12px 8px;
+  }
+  .meter-counts {
+    gap: 2px 12px;
+    font-size: 11px;
+  }
+  .meter-counts dd {
+    font-size: 13px;
+  }
+  .meter-counts .m-art,
+  .meter-cost p,
+  .legend {
+    display: none;
+  }
+  .meter-track {
+    height: 4px;
+  }
+}
+
+/* ---------- The graph ---------- */
+
+.stage-svg text {
+  font-family: var(--mono);
+  dominant-baseline: central;
+}
+
+/* Nodes */
+.sn-card {
+  fill: var(--node-bg);
+  stroke: var(--line);
+  stroke-width: 1.3;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 0.35s, fill 0.35s;
+}
+
+.sn-ring {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2.4;
+  vector-effect: non-scaling-stroke;
+  transition: stroke 0.35s;
+}
+
+.sn-icon path,
+.sf-icon path {
+  fill: none;
+  stroke: var(--dim);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.sn-label {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sn-sub {
+  fill: var(--faint);
+  font-size: 9.5px;
+  letter-spacing: 0.02em;
+  transition: fill 0.3s;
+}
+
+.sn.k-store .sn-card { stroke: color-mix(in srgb, var(--green) 60%, var(--line)); }
+.sn.k-store .sn-icon path { stroke: var(--green); }
+.sn.k-ci .sn-card { stroke: color-mix(in srgb, var(--blue) 55%, var(--line)); }
+.sn.k-ci .sn-icon path { stroke: var(--blue); }
+.sn.k-person .sn-icon path { stroke: var(--amber); }
+
+.sn.is-sketch .sn-card {
+  fill: transparent;
+  stroke: var(--faint);
+  stroke-dasharray: 4 4;
+}
+
+.sn.is-sketch .sn-label {
+  fill: var(--dim);
+}
+
+.sn.is-sketch .sn-ring {
+  stroke: color-mix(in srgb, var(--amber) 35%, transparent);
+  animation: breathe 2.8s ease-in-out infinite;
+}
+
+.sn.ns-reviewed .sn-card { stroke: var(--green); }
+.sn.ns-reviewed .sn-ring { stroke: color-mix(in srgb, var(--green) 28%, transparent); }
+.sn.ns-reused .sn-card { stroke: var(--reused-line); }
+.sn.ns-stale .sn-card { stroke: var(--amber); }
+.sn.ns-stale .sn-ring {
+  stroke: color-mix(in srgb, var(--amber) 45%, transparent);
+  animation: breathe 0.9s ease-in-out infinite;
+}
+.sn.is-changed .sn-sub { fill: var(--amber); }
+
+/* Frames: a group of Artifacts, or a repository */
+.sf-box {
+  fill: color-mix(in srgb, var(--panel2) 45%, transparent);
+  stroke: var(--line);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 5;
+  transition: stroke 0.35s;
+}
+
+.sf.k-repo .sf-box {
+  fill: color-mix(in srgb, var(--panel) 70%, transparent);
+  stroke-dasharray: none;
+}
+
+.sf-label {
+  fill: var(--dim);
+  font-weight: 600;
+}
+
+.sf.k-branch .sf-box {
+  fill: color-mix(in srgb, var(--pink) 5%, transparent);
+  stroke: color-mix(in srgb, var(--pink) 50%, var(--line));
+  stroke-dasharray: 6 4;
+}
+
+.sf.k-branch .sf-icon path {
+  stroke: var(--pink);
+}
+
+.sf.ns-stale .sf-box { stroke: var(--amber); }
+.sf.ns-reviewed .sf-box { stroke: color-mix(in srgb, var(--green) 60%, var(--line)); }
+.sf.ns-reused .sf-box { stroke: var(--reused-line); }
+
+/* Eval edges: colour and dash by kind */
+.se,
+.sc {
+  --k: var(--blue);
+}
+
+.se.k-agent,
+.sc.k-agent {
+  --k: var(--violet);
+}
+
+.se.k-human,
+.sc.k-human {
+  --k: var(--amber);
+}
+
+.se-line {
+  fill: none;
+  stroke: var(--k);
+  stroke-width: var(--w, 1.7);
+  stroke-linecap: round;
+  transition: stroke-opacity 0.4s;
+}
+
+.se.k-agent .se-line {
+  stroke-dasharray: 7 5;
+}
+
+.se.k-human .se-line {
+  stroke-dasharray: 0.5 5;
+  stroke-width: calc(var(--w, 1.7) * 1.5);
+}
+
+.se.st-reused .se-line {
+  stroke-opacity: 0.5;
+}
+
+.se.st-stale .se-line {
+  stroke-dasharray: 5 5;
+  animation: march 0.6s linear infinite;
+}
+
+.se-end,
+.se-head {
+  fill: var(--k);
+}
+
+/* A Human review's reviewer: a mark beside its loop, never a node. */
+.by-face {
+  fill: color-mix(in srgb, var(--amber) 16%, var(--stage-bg));
+  stroke: var(--amber);
+  stroke-width: 1;
+}
+
+.by-initial {
+  fill: var(--amber);
+  font-size: 8px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.by-name {
+  fill: var(--amber);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* Verdict chips: the ring is the eval kind, the glyph the verdict state */
+.sc-in {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.sc-bg {
+  fill: var(--chip-bg);
+  stroke: var(--k);
+  stroke-width: 1.4;
+  transition: fill 0.3s;
+}
+
+.sc-g {
+  fill: none;
+  stroke: var(--k);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.sc.k-agent .g-kind {
+  fill: var(--k);
+  stroke: none;
+}
+
+.sc.st-pending .g-kind { opacity: 1; }
+.sc.st-reviewed .g-reviewed { opacity: 1; stroke: var(--green); stroke-width: 1.9; }
+.sc.st-reused .g-reused { opacity: 1; stroke: var(--cyan); }
+.sc.st-stale .g-stale { opacity: 1; stroke: var(--amber); stroke-width: 2; }
+.sc.st-reviewed .sc-bg { fill: color-mix(in srgb, var(--green) 18%, var(--chip-bg)); }
+.sc.st-reused .sc-bg { fill: color-mix(in srgb, var(--cyan) 9%, var(--chip-bg)); }
+.sc.st-stale .sc-bg {
+  fill: color-mix(in srgb, var(--amber) 22%, var(--chip-bg));
+  stroke: var(--amber);
+}
+
+/* Overlays */
+.fl-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--dim) 55%, transparent);
+  stroke-width: 1.4;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+}
+
+.fl-dot.t-publish { fill: var(--green); }
+.fl-dot.t-reuse { fill: var(--cyan); }
+
+.bd-box {
+  fill: color-mix(in srgb, var(--amber) 13%, var(--stage-bg));
+  stroke: color-mix(in srgb, var(--amber) 60%, transparent);
+  stroke-width: 1;
+}
+
+.ov-badge.t-reuse .bd-box {
+  fill: color-mix(in srgb, var(--cyan) 12%, var(--stage-bg));
+  stroke: color-mix(in srgb, var(--cyan) 55%, transparent);
+}
+
+.bd-text {
+  fill: var(--amber);
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.ov-badge.t-reuse .bd-text { fill: var(--cyan); }
+.ov-badge.t-note .bd-text { fill: var(--dim); }
+
+.ln-box {
+  fill: color-mix(in srgb, var(--blue) 6%, transparent);
+  stroke: color-mix(in srgb, var(--blue) 35%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.ln-label {
+  fill: var(--dim);
+  font-weight: 600;
+}
+
+.ln-pill {
+  fill: color-mix(in srgb, var(--green) 12%, var(--stage-bg));
+  stroke: color-mix(in srgb, var(--green) 50%, transparent);
+  stroke-width: 1;
+}
+
+.ln-text {
+  fill: var(--text);
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.fx-ring {
+  fill: none;
+  stroke: var(--amber);
+  stroke-width: 1.8;
+}
+
+.fx-dot {
+  fill: var(--amber);
+}
+
+@keyframes breathe {
+  50% { stroke-opacity: 0.25; }
+}
+
+@keyframes march {
+  to { stroke-dashoffset: -10; }
+}
+
+/* Reduced motion: no marching or breathing; steps crossfade (see graph.js). */
+@media (prefers-reduced-motion: reduce) {
+  .story .stage-svg {
+    transition: opacity 0.18s ease !important;
+  }
+  .sn-ring,
+  .se-line {
+    animation: none !important;
+  }
+}
