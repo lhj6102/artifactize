@@ -17,7 +17,10 @@ port=${PORT:-8737}
 root=$(cd "$(dirname "$0")/../.." && pwd)
 
 set -- "$dist"/artifactize-v*.tar.gz
-[ $# -eq 1 ] && [ -f "$1" ] || { echo "expected one artifactize-v*.tar.gz in $dist" >&2; exit 1; }
+if [ $# -ne 1 ] || [ ! -f "$1" ]; then
+    echo "expected one artifactize-v*.tar.gz in $dist" >&2
+    exit 1
+fi
 name=${1##*/}
 rest=${name#artifactize-v}
 rest=${rest%.tar.gz}
