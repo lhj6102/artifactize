@@ -165,3 +165,71 @@
     }
   });
 })();
+
+// Install tabs: show the command for the visitor's OS first. Without JS every panel
+// shows; with it, the tabs pick one, and arrow keys, Home/End or a sideways swipe
+// switch between them.
+(function () {
+  var install = document.querySelector('[data-install]');
+  if (!install) return;
+  var list = install.querySelector('[role="tablist"]');
+  var tabs = Array.prototype.slice.call(install.querySelectorAll('[role="tab"]'));
+  if (!list || !tabs.length) return;
+
+  function detect() {
+    var platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    var agent = navigator.userAgent || '';
+    if (/win/i.test(platform) || /Windows/.test(agent)) return 'windows';
+    if (/iPhone|iPad|iPod|Android/.test(agent)) return 'linux';
+    if (/mac/i.test(platform) || /Macintosh|Mac OS X/.test(agent)) return 'macos';
+    return 'linux';
+  }
+
+  function select(tab, focus) {
+    tabs.forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+      var panel = document.getElementById(t.getAttribute('aria-controls'));
+      if (panel) panel.hidden = !on;
+    });
+    if (focus) tab.focus();
+  }
+
+  function step(by) {
+    var current = tabs.indexOf(document.activeElement);
+    if (current < 0) {
+      current = tabs.findIndex(function (t) { return t.getAttribute('aria-selected') === 'true'; });
+    }
+    select(tabs[(current + by + tabs.length) % tabs.length], true);
+  }
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener('click', function () { select(tab, false); });
+  });
+  list.addEventListener('keydown', function (event) {
+    if (event.key === 'ArrowRight') step(1);
+    else if (event.key === 'ArrowLeft') step(-1);
+    else if (event.key === 'Home') select(tabs[0], true);
+    else if (event.key === 'End') select(tabs[tabs.length - 1], true);
+    else return;
+    event.preventDefault();
+  });
+
+  var startX = null;
+  install.addEventListener('touchstart', function (event) {
+    startX = event.touches.length === 1 ? event.touches[0].clientX : null;
+  }, { passive: true });
+  install.addEventListener('touchend', function (event) {
+    if (startX === null) return;
+    var dx = event.changedTouches[0].clientX - startX;
+    startX = null;
+    if (Math.abs(dx) < 50) return;
+    var current = tabs.findIndex(function (t) { return t.getAttribute('aria-selected') === 'true'; });
+    select(tabs[(current + (dx < 0 ? 1 : -1) + tabs.length) % tabs.length], false);
+  }, { passive: true });
+
+  list.hidden = false;
+  var os = detect();
+  select(tabs.filter(function (t) { return t.getAttribute('data-os') === os; })[0] || tabs[0], false);
+})();

@@ -1,8 +1,10 @@
 name: Binaries
 
-# Builds the release binaries. release.yml calls this before it publishes anything;
-# pull requests that touch the release, the build or the install scripts run it too,
-# keep the archives as workflow artifacts and try each install script once.
+# Builds the release binaries. release.yml calls it twice: once for Linux, which gates
+# the release, and once for Windows, which runs alongside and never delays it. Pull
+# requests that touch the release workflows, the packaging scripts or the install
+# scripts build every target, keep the archives as workflow artifacts and try each
+# install script once.
 #
 # Each build uploads binaries-<target>: artifactize-v<version>-<target>.tar.gz (.zip on
 # Windows) and its .sha256, written by .github/scripts/package.sh. The Linux builds gate
@@ -17,16 +19,16 @@ on:
         description: Build as this version (a release tag without the v); empty keeps Cargo.toml's.
         type: string
         default: ""
+      platform:
+        description: Which targets to build, linux, windows or all.
+        type: string
+        default: all
   workflow_dispatch:
   pull_request:
     paths:
       - ".github/workflows/binaries.yml"
       - ".github/workflows/release.yml"
       - ".github/scripts/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/*/Cargo.toml"
-      - "rust-toolchain.toml"
       - "website/landing/install.sh"
       - "website/landing/install.ps1"
 
@@ -45,15 +47,14 @@ jobs:
     continue-on-error: ${{ matrix.best-effort || false }}
     strategy:
       fail-fast: false
+      # One entry per target; best-effort targets never fail the workflow.
       matrix:
-        include:
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-24.04-arm
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            best-effort: true
+        include: >-
+          ${{ fromJSON(
+            inputs.platform == 'linux' && '[{"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest"},{"target":"aarch64-unknown-linux-musl","os":"ubuntu-24.04-arm"}]'
+            || inputs.platform == 'windows' && '[{"target":"x86_64-pc-windows-msvc","os":"windows-latest","best-effort":true}]'
+            || '[{"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest"},{"target":"aarch64-unknown-linux-musl","os":"ubuntu-24.04-arm"},{"target":"x86_64-pc-windows-msvc","os":"windows-latest","best-effort":true}]'
+          ) }}
     env:
       TARGET: ${{ matrix.target }}
       TAG_VERSION: ${{ inputs.version }}
@@ -82,22 +83,12 @@ jobs:
           sudo ln -sfn /usr/include/asm-generic "$include/asm-generic"
           sudo ln -sfn "/usr/include/$arch-linux-gnu/asm" "$include/asm"
           echo "CC_${TARGET//-/_}=musl-gcc" >>"$GITHUB_ENV"
-      # A prerelease tag (v0.6.0-alpha.1) builds as its own version without a commit
-      # that bumps Cargo.toml; the change stays in this checkout.
+      # A release builds as its tag's version; main keeps a placeholder version.
       - name: Set the version
         run: |
-          crate() {
-            cargo metadata --no-deps --format-version 1 \
-              | jq -r '.packages[] | select(.name == "artifactize") | .version'
-          }
-          current=$(crate)
-          if [ -n "$TAG_VERSION" ] && [ "$TAG_VERSION" != "$current" ]; then
-            sed -i.orig "s/^version = \"$current\"\$/version = \"$TAG_VERSION\"/" Cargo.toml
-            rm Cargo.toml.orig
-            cargo update --workspace
-            [ "$(crate)" = "$TAG_VERSION" ] || { echo "::error::cannot set the version to $TAG_VERSION" >&2; exit 1; }
-          fi
-          echo "VERSION=$(crate)" >>"$GITHUB_ENV"
+          if [ -n "$TAG_VERSION" ]; then sh .github/scripts/set-version.sh "$TAG_VERSION"; fi
+          echo "VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "artifactize") | .version')" >>"$GITHUB_ENV"
       - name: Build
         run: cargo build --release --locked -p artifactize --target "$TARGET"
       - name: Check that the binary is static and runs

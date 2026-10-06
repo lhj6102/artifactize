@@ -74,7 +74,7 @@ GitHub release into `~/.local/bin`. The script checks its SHA-256 and needs no `
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | sh
-artifactize --version          # artifactize 0.5.3
+artifactize --version
 ```
 
 Prebuilt binaries are attached to releases from 0.5.2 on. To update, run the script
@@ -89,10 +89,10 @@ binary with `cargo binstall artifactize`):
 cargo install artifactize --locked
 ```
 
-Releases are also tagged on GitHub, and `cargo install` can build one from there:
+To install a particular release from crates.io, name its version:
 
 ```sh
-cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.3 --locked artifactize
+cargo install artifactize --locked --version <version>
 ```
 
 To build from source instead:
