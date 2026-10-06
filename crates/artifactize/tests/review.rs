@@ -281,21 +281,6 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     let view = store::read_request(&fixture.state, &id).await.unwrap();
     assert_eq!(view.request.result.unwrap()["approved"], true);
     assert!(view.claim.is_none());
-    let calls: Vec<_> = view
-        .request
-        .tool_calls
-        .iter()
-        .map(|call| (call["name"].as_str().unwrap(), call["isError"] == true))
-        .collect();
-    assert_eq!(
-        calls,
-        [
-            ("notes_release", false),
-            ("fail_release", true),
-            ("open_release", false),
-            ("notes_release", false)
-        ]
-    );
 }
 
 #[tokio::test]

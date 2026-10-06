@@ -13,7 +13,7 @@ use super::{cancellation_listener, print_json};
 use crate::{
     agent::{
         self,
-        session::{self, Conversation, Recorder, SessionRef},
+        session::{self, Conversation, Recorder, SessionRef, Summary},
     },
     cache,
     config::read_workspace_config,
@@ -28,6 +28,10 @@ pub enum SessionCommand {
         /// A session reference, request id or session id.
         #[arg(value_name = "REF")]
         reference: String,
+        /// Print the conversation's turns, tokens, tool calls and follow-ups instead,
+        /// computed from the saved session.
+        #[arg(long)]
+        summary: bool,
     },
     /// Ask the reviewer a follow-up in the saved conversation; the recorded verdict stays.
     Send {
@@ -46,10 +50,21 @@ pub(super) async fn execute(
     json: bool,
 ) -> Result<u8, String> {
     match command {
-        SessionCommand::Show { reference } => {
+        SessionCommand::Show { reference, summary } => {
             let located = locate(state, &reference).await?;
             let conversation = located.load()?;
-            if json {
+            if summary {
+                let summary = Summary::new(&conversation);
+                if json {
+                    let mut value = json!(summary);
+                    value["reference"] = json!(located.reference.as_ref().map(ToString::to_string));
+                    value["sessionId"] = json!(located.id);
+                    value["requestId"] = json!(located.request.request.id);
+                    print_json(&value)?;
+                } else {
+                    show_summary(&located, &summary).map_err(|e| e.to_string())?;
+                }
+            } else if json {
                 print_json(&json!({
                     "reference": located.reference.as_ref().map(ToString::to_string),
                     "file": conversation.path,
@@ -92,7 +107,6 @@ pub(super) async fn execute(
                     "send": send.number,
                     "filesChanged": send.files_changed,
                     "answer": answer_text,
-                    "toolCalls": answer.tool_calls,
                     "usage": answer.attempts,
                 }))?;
             } else {
@@ -345,9 +359,8 @@ fn clip(text: &str) -> String {
     )
 }
 
-fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
-    let mut out = io::stdout().lock();
-    let header = conversation.header();
+/// The session, its backend and model, and the request whose review it is.
+fn heading(out: &mut impl Write, located: &Located, header: &serde_json::Value) -> io::Result<()> {
     let request = &located.request.request;
     writeln!(
         out,
@@ -372,6 +385,71 @@ fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
     if let Some(reused_by) = &located.reused_by {
         writeln!(out, "Request {reused_by} reused this review's result.")?;
     }
+    Ok(())
+}
+
+fn show_summary(located: &Located, summary: &Summary) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    let header = serde_json::json!({
+        "backend": summary.backend, "model": summary.model, "reasoning": summary.reasoning,
+    });
+    heading(&mut out, located, &header)?;
+    if let (Some(start), Some(end)) = (&summary.started_at, &summary.ended_at) {
+        let took = summary.duration_ms.map_or(String::new(), |ms| {
+            format!(" ({:.1} s)", ms as f64 / 1000.0)
+        });
+        writeln!(out, "Time: {start} to {end}{took}")?;
+    }
+    writeln!(
+        out,
+        "Turns: {} · follow-ups: {}",
+        summary.turns.len(),
+        summary.follow_ups
+    )?;
+    let none = || "none reported".to_owned();
+    writeln!(
+        out,
+        "Tokens: {}",
+        session::tokens_text(&summary.tokens).unwrap_or_else(none)
+    )?;
+    for turn in &summary.turns {
+        let label = match turn.follow_up {
+            Some(send) => format!("follow-up {send}, turn {}", turn.turn),
+            None => format!("turn {}", turn.turn),
+        };
+        let retries = match turn.attempts {
+            0 | 1 => String::new(),
+            attempts => format!(" ({attempts} attempts)"),
+        };
+        writeln!(
+            out,
+            "  {label}: {}{retries}",
+            session::tokens_text(&turn.tokens).unwrap_or_else(none)
+        )?;
+    }
+    let failed = |count: u64| {
+        if count == 0 {
+            String::new()
+        } else {
+            format!(" ({count} failed)")
+        }
+    };
+    let (calls, failures) = summary
+        .tool_calls
+        .values()
+        .fold((0, 0), |(calls, failed), tool| {
+            (calls + tool.calls, failed + tool.failed)
+        });
+    writeln!(out, "Tool calls: {calls}{}", failed(failures))?;
+    for (name, tool) in &summary.tool_calls {
+        writeln!(out, "  {name}: {}{}", tool.calls, failed(tool.failed))?;
+    }
+    Ok(())
+}
+
+fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
+    let mut out = io::stdout().lock();
+    heading(&mut out, located, conversation.header())?;
     for event in &conversation.events {
         let send = event["send"]
             .as_u64()

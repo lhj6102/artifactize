@@ -265,7 +265,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     );
     assert_eq!(submitted["status"], "GREEN");
     assert!(submitted["claim"].is_null());
-    assert_eq!(submitted["summary"]["toolCalls"]["inspect_child"], 1);
+    assert!(submitted["summary"].get("toolCalls").is_none());
     assert_eq!(submitted["summary"]["executorStarts"], 0);
     assert!(submitted["summary"]["wallMs"].is_u64());
     fixture.json(
@@ -284,11 +284,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     assert_ne!(completed["id"], run["id"]);
     assert_eq!(completed["summary"]["executorStarts"], 1);
     assert_eq!(completed["summary"]["counts"]["GREEN"], 2);
-    assert_eq!(
-        completed["summary"]["toolCalls"],
-        json!({}),
-        "reused tools are not counted twice"
-    );
+    assert!(completed["summary"].get("toolCalls").is_none());
     fs::remove_dir_all(&fixture.repo).unwrap();
     let shown = fixture
         .command()
@@ -429,8 +425,12 @@ fn no_fingerprint_submission_from_another_process_continues_the_same_run() {
         1
     );
     assert_eq!(
-        db.query_row::<i64, _, _>("SELECT count(*) FROM cache_entries", [], |r| r.get(0))
-            .unwrap(),
+        db.query_row::<i64, _, _>(
+            "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
+            [],
+            |r| r.get(0)
+        )
+        .unwrap(),
         0
     );
 }

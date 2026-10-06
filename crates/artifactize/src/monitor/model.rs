@@ -222,9 +222,6 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             .iter()
             .filter(move |view| view.request.status == status)
     };
-    let tools: u64 = summary["toolCalls"]
-        .as_object()
-        .map_or(0, |calls| calls.values().filter_map(Value::as_u64).sum());
     let usage = pairs(&summary["usage"]);
     let saved = pairs(&output["usage"]["saved"]);
     let unmet = join(strs(&run.validation["obligations"]), ", ");
@@ -254,7 +251,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             .map(|(status, count)| (status.clone(), count.as_u64().unwrap_or(0)))
             .collect(),
         work: format!(
-            "executions {}/{} · jobs {} · executed {} · reused {} · tool calls {tools}{}{}",
+            "executions {}/{} · jobs {} · executed {} · reused {}{}{}",
             run.executions_started,
             run.max_executions
                 .map_or("unlimited".into(), |max| max.to_string()),
@@ -568,13 +565,6 @@ fn options(options: &crate::store::ExecutionOptions) -> String {
     }
 }
 
-fn truncate(text: String, limit: usize) -> String {
-    if text.chars().count() <= limit {
-        return text;
-    }
-    format!("{}…", text.chars().take(limit).collect::<String>())
-}
-
 fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     let request = &view.request;
     let summary = &query::request_output(view)["summary"];
@@ -668,22 +658,6 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             serde_json::to_string_pretty(result).unwrap_or_default(),
         );
     }
-    let calls = request.tool_calls.iter().map(|call| {
-        let outcome = if call["isError"] == true {
-            format!("error: {}", call["error"].as_str().unwrap_or("failed"))
-        } else {
-            format!("ok: {}", call["result"].as_str().unwrap_or("-"))
-        };
-        let name = call["name"].as_str().unwrap_or("?");
-        truncate(
-            format!(
-                "{}. {name} {} → {outcome}",
-                call["order"], call["arguments"]
-            ),
-            240,
-        )
-    });
-    detail.push("Tool calls", join(calls, "\n"));
     let total = pairs(&summary["usage"]);
     let attempts = request.usage.as_ref().or(request.reused_usage.as_ref());
     let attempts = attempts

@@ -13,10 +13,41 @@ use crate::workspace::{canonical_target, outside_workspace, prepare_directory};
 
 pub const DATABASE: &str = "state.sqlite";
 
-/// Named values of the state itself: `id`, a random UUID made when a database is first opened
-/// for writing, which identifies the state in Agent session references.
-const STATE_META: &str =
-    "CREATE TABLE IF NOT EXISTS state_meta(name TEXT PRIMARY KEY, value TEXT NOT NULL);";
+/// The four tables of a state and the indexes its lookups use.
+///
+/// - `runs`: one row per Run.
+/// - `requests`: one row per eval of a Run, at its `ordinal` in the Run's selection order;
+///   `claimed_by` and `claimed_at` hold the Human claim of a waiting request.
+/// - `executions`: one row per execution. `backend` names the Agent backend it runs on, and
+///   a RUNNING execution with a backend holds one of that backend's machine-wide slots. A
+///   completed GREEN/RED execution with a key is a record of the key's history while
+///   `completed_at` (sortable), `bytes` and `last_used` are set; the cache GC and `cache rm`
+///   clear them, and the execution stays.
+/// - `state_meta`: named values of the state itself: `id`, a random UUID made when the
+///   database is created, which identifies the state in Agent session references.
+const SCHEMA: &str = "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+    CREATE TABLE requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, claimed_by TEXT, claimed_at TEXT, data TEXT NOT NULL, UNIQUE(run_id, eval_id), UNIQUE(run_id, ordinal));
+    CREATE TABLE executions(id TEXT PRIMARY KEY, key TEXT, eval_def_hash TEXT NOT NULL, status TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, backend TEXT, completed_at TEXT, bytes INTEGER, last_used TEXT, data TEXT NOT NULL);
+    CREATE TABLE state_meta(name TEXT PRIMARY KEY, value TEXT NOT NULL);
+    CREATE INDEX active_request_execution ON requests(execution_id) WHERE status IN ('QUEUED','RUNNING','WAITING_HUMAN');
+    CREATE UNIQUE INDEX active_key ON executions(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN');
+    CREATE INDEX key_history ON executions(key, completed_at);
+    CREATE INDEX definition_history ON executions(eval_def_hash, completed_at);
+    CREATE INDEX running_backend ON executions(backend) WHERE status='RUNNING';";
+
+/// Why a state written by an earlier artifactize is refused: no version migrates.
+pub const EARLIER_STATE: &str = "This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). artifactize does not migrate it.";
+
+/// Why a state database of schema `version`, neither this one nor uninitialized, is refused.
+pub fn schema_error(version: u32) -> String {
+    match version {
+        0 => "Unsupported state schema version: 0.".into(),
+        version if version < STATE_SCHEMA_VERSION => EARLIER_STATE.into(),
+        version => {
+            format!("Unsupported state schema version: {version}; a newer artifactize wrote it.")
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -118,8 +149,6 @@ pub struct Request {
     /// The remote store, publisher and publication time of a result reused from a mirror.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Origin>,
-    #[serde(default)]
-    pub tool_calls: Vec<Value>,
     /// The Agent review's session id ([`crate::agent::session_id`]), which every request of
     /// the review sends as its prompt-cache identity. Absent when no Agent review ran, as on
     /// reuse, and on requests saved before it existed.
@@ -182,34 +211,32 @@ impl Receipts {
         let state_id = crate::agent::uuid()?;
         loop {
             let state_id = state_id.clone();
-            let initialized = connection.call(move |db| -> Result<(), Error> {
-            db.busy_timeout(Duration::from_secs(5))?;
-            db.pragma_update(None, "foreign_keys", true)?;
-            let version: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
-            if version != 0 && version != STATE_SCHEMA_VERSION {
-                return Err(Error::Invalid(format!("Unsupported state schema version: {version}")));
-            }
-            db.pragma_update(None, "journal_mode", "WAL")?;
-            let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            schema_initialized(&transaction)?;
-            // Publish the schema and its version together; readers see an empty snapshot until commit.
-            transaction.execute_batch("CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS executions(id TEXT PRIMARY KEY, key TEXT, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, data TEXT NOT NULL);
-                CREATE INDEX IF NOT EXISTS active_request_execution ON requests(execution_id) WHERE status IN ('QUEUED','RUNNING','WAITING_HUMAN');
-                CREATE TABLE IF NOT EXISTS human_claims(request_id TEXT PRIMARY KEY REFERENCES requests(id), reviewer TEXT NOT NULL, claimed_at TEXT NOT NULL);
-                CREATE TABLE IF NOT EXISTS mcp_sessions(execution_id TEXT PRIMARY KEY, binding TEXT NOT NULL, max_calls INTEGER, started INTEGER NOT NULL);
-                CREATE TABLE IF NOT EXISTS tool_calls(execution_id TEXT NOT NULL REFERENCES mcp_sessions(execution_id), ordinal INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY(execution_id,ordinal));
-                CREATE TABLE IF NOT EXISTS run_members(run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL REFERENCES requests(id), PRIMARY KEY(run_id, eval_id), UNIQUE(run_id, ordinal));")?;
-            transaction.execute_batch(super::cache_entries::SCHEMA)?;
-            transaction.execute_batch(super::slots::SCHEMA)?;
-            // The state's stable id, which Agent session references name: one per database.
-            transaction.execute_batch(STATE_META)?;
-            transaction.execute("INSERT OR IGNORE INTO state_meta(name,value) VALUES ('id',?)", [&state_id])?;
-            transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
-            transaction.commit()?;
-            Ok(())
-            }).await;
+            let initialized = connection
+                .call(move |db| -> Result<(), Error> {
+                    db.busy_timeout(Duration::from_secs(5))?;
+                    db.pragma_update(None, "foreign_keys", true)?;
+                    let version: u32 =
+                        db.pragma_query_value(None, "user_version", |row| row.get(0))?;
+                    if version != 0 && version != STATE_SCHEMA_VERSION {
+                        return Err(Error::Invalid(schema_error(version)));
+                    }
+                    db.pragma_update(None, "journal_mode", "WAL")?;
+                    let transaction =
+                        db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                    // Publish the schema, the state's id and the version together; readers see
+                    // an empty snapshot until commit.
+                    if !schema_initialized(&transaction)? {
+                        transaction.execute_batch(SCHEMA)?;
+                        transaction.execute(
+                            "INSERT INTO state_meta(name,value) VALUES ('id',?)",
+                            [&state_id],
+                        )?;
+                        transaction.pragma_update(None, "user_version", STATE_SCHEMA_VERSION)?;
+                    }
+                    transaction.commit()?;
+                    Ok(())
+                })
+                .await;
             match initialized {
                 Ok(()) => break,
                 Err(tokio_rusqlite::Error::Error(Error::Sql(rusqlite::Error::SqliteFailure(
@@ -248,8 +275,7 @@ impl Receipts {
             let transaction = db.transaction()?;
             transaction.execute("INSERT INTO runs(id,repo,status,data) VALUES (?,?,?,?)", params![run.id, run.repo_path.to_string_lossy(), run.status, serde_json::to_string(&run)?])?;
             for (ordinal, request) in requests.iter().enumerate() {
-                transaction.execute("INSERT INTO requests(id,run_id,status,data) VALUES (?,?,?,?)", params![request.id, run.id, request.status, serde_json::to_string(request)?])?;
-                transaction.execute("INSERT INTO run_members(run_id,eval_id,ordinal,request_id) VALUES (?,?,?,?)", params![run.id, request.eval_id, ordinal as i64, request.id])?;
+                transaction.execute("INSERT INTO requests(id,run_id,eval_id,ordinal,status,data) VALUES (?,?,?,?,?,?)", params![request.id, run.id, request.eval_id, ordinal as i64, request.status, serde_json::to_string(request)?])?;
             }
             transaction.commit()?;
             Ok(())
@@ -330,21 +356,23 @@ pub(super) fn schema_initialized(transaction: &rusqlite::Transaction<'_>) -> Res
         return Ok(false);
     }
     if version != STATE_SCHEMA_VERSION {
-        return Err(Error::Invalid(format!(
-            "Unsupported state schema version: {version}"
-        )));
+        return Err(Error::Invalid(schema_error(version)));
     }
     Ok(true)
 }
 
-/// Reject non-regular state files, then upgrade an older schema before any read or write.
+/// Reject non-regular state files and a database of another schema before any read or write.
 pub(super) fn check_files(state: &Path) -> Result<(), String> {
-    regular_files(state)?;
-    super::migrate::upgrade(&state.join(DATABASE)).map_err(|e| e.to_string())
+    match state_schema(state)? {
+        Some(version) if version != 0 && version != STATE_SCHEMA_VERSION => {
+            Err(schema_error(version))
+        }
+        _ => Ok(()),
+    }
 }
 
-/// The state database's schema version, read without upgrading or creating it; `None`
-/// without a database. `doctor` reports it.
+/// The state database's schema version, read without creating it; `None` without a database.
+/// `doctor` reports it.
 pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
     let state = canonical_target(state).map_err(|e| e.to_string())?;
     regular_files(&state)?;
@@ -363,33 +391,30 @@ pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
     read().map(Some).map_err(|e| e.to_string())
 }
 
-/// The state's stable id, read without creating or upgrading anything; `None` until a
-/// command that writes the state has opened it.
+/// The state's stable id, read without creating anything; `None` until a command that writes
+/// the state has opened it.
 pub fn read_state_id(state: &Path) -> Result<Option<String>, String> {
     let state = canonical_target(state).map_err(|e| e.to_string())?;
-    regular_files(&state)?;
+    check_files(&state)?;
     let database = state.join(DATABASE);
     if !database.try_exists().map_err(|e| e.to_string())? {
         return Ok(None);
     }
-    let read = || -> Result<Option<String>, rusqlite::Error> {
-        let db = rusqlite::Connection::open_with_flags(
+    let read = || -> Result<Option<String>, Error> {
+        let mut db = rusqlite::Connection::open_with_flags(
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
         db.busy_timeout(Duration::from_secs(5))?;
-        let exists: bool = db.query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='state_meta')",
-            [],
-            |row| row.get(0),
-        )?;
-        if !exists {
+        let transaction = db.transaction()?;
+        if !schema_initialized(&transaction)? {
             return Ok(None);
         }
-        db.query_row("SELECT value FROM state_meta WHERE name='id'", [], |row| {
-            row.get(0)
-        })
-        .optional()
+        Ok(transaction
+            .query_row("SELECT value FROM state_meta WHERE name='id'", [], |row| {
+                row.get(0)
+            })
+            .optional()?)
     };
     read().map_err(|e| e.to_string())
 }
@@ -454,9 +479,9 @@ pub async fn read_latest_requests(
             let latest = {
                 let mut statement = transaction.prepare(
                     "SELECT eval_id,run_id,status,fingerprint FROM (
-                SELECT m.eval_id,q.run_id,q.status,json_extract(q.data, '$.fingerprint') AS fingerprint,
-                    row_number() OVER (PARTITION BY m.eval_id ORDER BY r.rowid DESC) AS rank
-                FROM run_members m JOIN requests q ON q.id=m.request_id JOIN runs r ON r.id=m.run_id
+                SELECT q.eval_id,q.run_id,q.status,json_extract(q.data, '$.fingerprint') AS fingerprint,
+                    row_number() OVER (PARTITION BY q.eval_id ORDER BY r.rowid DESC) AS rank
+                FROM requests q JOIN runs r ON r.id=q.run_id
                 WHERE r.repo=?
             ) WHERE rank=1 ORDER BY eval_id",
                 )?;
@@ -491,24 +516,33 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     .await
     .map_err(|e| e.to_string())?;
     let id = id.to_owned();
-    connection.call(move |db| -> Result<RunView, Error> {
-        db.busy_timeout(Duration::from_secs(5))?;
-        let transaction = db.transaction()?;
-        if !schema_initialized(&transaction)? {
-            return Err(Error::Invalid("Run not found.".into()));
-        }
-        let saved: Option<(String, String)> = transaction.query_row("SELECT repo,data FROM runs WHERE id=?", [&id], |row| Ok((row.get(0)?, row.get(1)?))).optional()?;
-        let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
-        outside_workspace(Path::new(&repo), &state).map_err(|e| Error::Invalid(e.to_string()))?;
-        let run = serde_json::from_str(&data)?;
-        let mut requests = {
-            let mut statement = transaction.prepare("SELECT q.data FROM requests q JOIN run_members m ON q.id=m.request_id WHERE m.run_id=? ORDER BY m.ordinal")?;
-            statement.query_map([&id], |row| row.get::<_, String>(0))?.map(|row| Ok(serde_json::from_str(&row?)?)).collect::<Result<Vec<Request>, Error>>()?
-        };
-        for request in &mut requests {
-            request.tool_calls = super::tool_calls::project(&transaction, request.execution_id.as_deref(), &request.tool_calls)?;
-        }
-        transaction.commit()?;
-        Ok(RunView { run, requests })
-    }).await.map_err(|e| e.to_string())
+    connection
+        .call(move |db| -> Result<RunView, Error> {
+            db.busy_timeout(Duration::from_secs(5))?;
+            let transaction = db.transaction()?;
+            if !schema_initialized(&transaction)? {
+                return Err(Error::Invalid("Run not found.".into()));
+            }
+            let saved: Option<(String, String)> = transaction
+                .query_row("SELECT repo,data FROM runs WHERE id=?", [&id], |row| {
+                    Ok((row.get(0)?, row.get(1)?))
+                })
+                .optional()?;
+            let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
+            outside_workspace(Path::new(&repo), &state)
+                .map_err(|e| Error::Invalid(e.to_string()))?;
+            let run = serde_json::from_str(&data)?;
+            let requests = {
+                let mut statement = transaction
+                    .prepare("SELECT data FROM requests WHERE run_id=? ORDER BY ordinal")?;
+                statement
+                    .query_map([&id], |row| row.get::<_, String>(0))?
+                    .map(|row| Ok(serde_json::from_str(&row?)?))
+                    .collect::<Result<Vec<Request>, Error>>()?
+            };
+            transaction.commit()?;
+            Ok(RunView { run, requests })
+        })
+        .await
+        .map_err(|e| e.to_string())
 }

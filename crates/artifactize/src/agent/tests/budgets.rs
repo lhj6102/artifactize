@@ -33,14 +33,14 @@ async fn tool_budget_counts_unknown_and_invalid_calls_before_validation() {
             .await;
         assert!(review.result.unwrap_err().message.contains("maxToolCalls"));
         assert_eq!(http.requests().len(), 1);
-        assert_eq!(review.tool_calls.len(), 2);
-        assert!(review.tool_calls[0]["result"].is_string());
+        // The first call ran and keeps its result; the budget stopped the others.
+        let calls = fixture.calls();
+        assert_eq!(calls.len(), 3);
         assert_eq!(
-            review.tool_calls[0]["isError"],
+            calls[0].1.as_ref().unwrap().1,
             first["name"] == "unknown" || first["arguments"] == "{}"
         );
-        assert!(review.tool_calls[1]["result"].is_null());
-        assert_eq!(review.tool_calls[1]["isError"], true);
+        assert!(calls[1].1.is_none() && calls[2].1.is_none());
     }
 }
 
@@ -78,9 +78,10 @@ async fn tool_budget_and_duplicate_ids_span_turns() {
             "{error}"
         );
         assert_eq!(http.requests().len(), 2);
-        assert_eq!(review.tool_calls.len(), 2);
-        assert_eq!(review.tool_calls[0]["isError"], false);
-        assert!(review.tool_calls[1]["result"].is_null());
+        let calls = fixture.calls();
+        assert_eq!(calls.len(), 2);
+        assert!(!calls[0].1.as_ref().unwrap().1);
+        assert!(calls[1].1.is_none());
     }
 }
 
@@ -110,7 +111,10 @@ async fn token_budget_is_cumulative_and_crosses_before_tools() {
         .await;
     assert!(review.result.unwrap_err().message.contains("maxTokens"));
     assert_eq!(http.requests().len(), 2);
-    assert_eq!(review.tool_calls.len(), 1);
+    // The second turn crossed the budget before its call ran.
+    let calls = fixture.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(calls[0].1.is_some() && calls[1].1.is_none());
     assert_eq!(review.attempts[1].usage["totalTokens"], 8);
 
     let (review, _) = fixture
@@ -141,7 +145,7 @@ async fn token_budget_includes_anthropic_cache_reads_and_writes() {
         .run(vec![anthropic_response(true, "tool_use")])
         .await;
     assert!(review.result.unwrap_err().message.contains("maxTokens"));
-    assert!(review.tool_calls.is_empty());
+    assert!(fixture.calls().iter().all(|(_, answer)| answer.is_none()));
     assert_eq!(http.requests().len(), 1);
     assert_eq!(review.attempts[0].usage["cacheReadTokens"], 2);
     assert_eq!(review.attempts[0].usage["cacheWriteTokens"], 5);

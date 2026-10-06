@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, io::Write, path::Path};
 use serde::Serialize;
 
 use super::session::{has_scope, record};
-use crate::{auth::remote, store::cache_entries};
+use crate::{auth::remote, store::history};
 
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,7 +40,7 @@ pub async fn push(
     };
     let mut after = None;
     loop {
-        let page = cache_entries::local(&state, after.take(), 100).await?;
+        let page = history::local(&state, after.take(), 100).await?;
         let Some(last) = page.last() else {
             break;
         };

@@ -557,7 +557,11 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
     assert_eq!(models.load(Ordering::SeqCst), 1);
     let slots: u32 = database()
         .unwrap()
-        .query_row("SELECT count(*) FROM backend_slots", [], |row| row.get(0))
+        .query_row(
+            "SELECT count(*) FROM executions WHERE backend IS NOT NULL AND status='RUNNING'",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
     assert_eq!(slots, 0);
 }

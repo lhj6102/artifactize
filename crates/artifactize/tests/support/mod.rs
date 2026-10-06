@@ -29,28 +29,6 @@ use serde_json::{Value, json};
 
 pub mod os;
 
-/// A recorded `tests/fixtures/state-v*.sql` with `@ROOT@` set to `root`. Each recorded path
-/// below it takes the platform's separators, as artifactize records them there, and is
-/// escaped inside the JSON documents but not in SQL text.
-pub fn recorded_state(sql: &str, root: &Path) -> String {
-    let paths = regex::Regex::new(r"('?)@ROOT@((?:/[A-Za-z0-9._-]+)*)").unwrap();
-    paths
-        .replace_all(sql, |found: &regex::Captures| {
-            let path = found[2]
-                .split('/')
-                .filter(|part| !part.is_empty())
-                .fold(root.to_owned(), |path, part| path.join(part));
-            let path = path.to_str().unwrap();
-            if found[1].is_empty() {
-                let escaped = serde_json::to_string(path).unwrap();
-                escaped[1..escaped.len() - 1].to_owned()
-            } else {
-                format!("'{path}")
-            }
-        })
-        .into_owned()
-}
-
 /// Copy `tests/fixtures/<name>` to `target`. The fixtures name Unix commands, so that the
 /// docs can run them as they are; on Windows the copies name the `os::bin` stand-ins, and
 /// their deadlines of a second or more get `os::slow` room. A shorter one is there to expire.

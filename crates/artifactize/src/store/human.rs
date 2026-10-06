@@ -38,7 +38,7 @@ fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), 
 
 fn claim(db: &rusqlite::Connection, request: &str) -> Result<HumanClaim, Error> {
     Ok(db.query_row(
-        "SELECT request_id,reviewer,claimed_at FROM human_claims WHERE request_id=?",
+        "SELECT id,claimed_by,claimed_at FROM requests WHERE id=? AND claimed_by IS NOT NULL",
         [request],
         |row| {
             Ok(HumanClaim {
@@ -50,14 +50,24 @@ fn claim(db: &rusqlite::Connection, request: &str) -> Result<HumanClaim, Error> 
     )?)
 }
 
+/// Clear a request's Human claim.
+fn unclaim(db: &rusqlite::Connection, request: &str) -> Result<(), Error> {
+    db.execute(
+        "UPDATE requests SET claimed_by=NULL,claimed_at=NULL WHERE id=?",
+        [request],
+    )?;
+    Ok(())
+}
+
 fn claimant(db: &rusqlite::Connection, request: &str, reviewer: &str) -> Result<(), Error> {
     let owner: Option<String> = db
         .query_row(
-            "SELECT reviewer FROM human_claims WHERE request_id=?",
+            "SELECT claimed_by FROM requests WHERE id=?",
             [request],
             |row| row.get(0),
         )
-        .optional()?;
+        .optional()?
+        .flatten();
     if owner.as_deref() != Some(reviewer) {
         return Err(Error::Invalid(
             "Only the Human claimant may perform this action.".into(),
@@ -94,7 +104,7 @@ impl Receipts {
                 }
             } else {
                 // Unclaimed: a forced or unkeyed wait never holds its key's active slot.
-                transaction.execute("INSERT INTO executions(id,key,owner_pid,owner_start_time,status,data) VALUES (?,NULL,?,?,'WAITING_HUMAN',?)", params![execution.id, execution.owner_pid, execution.owner_start_time as i64, data])?;
+                transaction.execute("INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES (?,NULL,?,'WAITING_HUMAN',?,?,?)", params![execution.id, execution.eval_def_hash, execution.owner_pid, execution.owner_start_time as i64, data])?;
             }
             update_request(&transaction, &request)?;
             transaction.commit()?;
@@ -131,7 +141,7 @@ impl Receipts {
         self.connection.call(move |db| -> Result<_, Error> {
             let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             let (request, _) = waiting(&transaction, &id)?;
-            transaction.execute("INSERT INTO human_claims(request_id,reviewer,claimed_at) VALUES (?,?,?) ON CONFLICT(request_id) DO NOTHING", params![request.id, reviewer, crate::broker::now()])?;
+            transaction.execute("UPDATE requests SET claimed_by=?,claimed_at=? WHERE id=? AND claimed_by IS NULL", params![reviewer, crate::broker::now(), request.id])?;
             claimant(&transaction, &request.id, &reviewer)?;
             let claim = claim(&transaction, &request.id)?;
             transaction.commit()?;
@@ -154,8 +164,7 @@ impl Receipts {
                 let (request, _) = waiting(&transaction, &id)?;
                 claimant(&transaction, &request.id, &reviewer)?;
                 let claim = claim(&transaction, &request.id)?;
-                transaction
-                    .execute("DELETE FROM human_claims WHERE request_id=?", [&request.id])?;
+                unclaim(&transaction, &request.id)?;
                 transaction.commit()?;
                 Ok(claim)
             })
@@ -196,34 +205,6 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
-    pub(crate) async fn record_human_tool(
-        &self,
-        id: &str,
-        reviewer: &str,
-        call: serde_json::Value,
-    ) -> Result<(), String> {
-        let id = id.to_owned();
-        let reviewer = reviewer.to_owned();
-        self.connection
-            .call(move |db| -> Result<_, Error> {
-                let transaction =
-                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-                let (mut request, mut execution) = waiting(&transaction, &id)?;
-                claimant(&transaction, &request.id, &reviewer)?;
-                request.tool_calls.push(call);
-                execution.tool_calls = request.tool_calls.clone();
-                transaction.execute(
-                    "UPDATE executions SET data=? WHERE id=?",
-                    params![serde_json::to_string(&execution)?, execution.id],
-                )?;
-                update_request(&transaction, &request)?;
-                transaction.commit()?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| e.to_string())
-    }
-
     pub(crate) async fn settle_human(
         &self,
         request: &Request,
@@ -237,7 +218,6 @@ impl Receipts {
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 let (current, mut execution) = waiting(&transaction, &request.id)?;
                 claimant(&transaction, &current.id, &reviewer)?;
-                request.tool_calls = current.tool_calls;
                 request.completed_at = Some(crate::broker::now());
                 request.blocked_reason = None;
                 execution.status = request.status.clone();
@@ -262,12 +242,10 @@ impl Receipts {
                     receive(&mut follower, &execution);
                     update_request(&transaction, &follower)?;
                 }
-                transaction
-                    .execute("DELETE FROM human_claims WHERE request_id=?", [&request.id])?;
+                unclaim(&transaction, &request.id)?;
                 transaction.commit()?;
-                if published && let Err(error) = super::cache_entries::collect(db) {
-                    use std::io::Write;
-                    let _ = writeln!(std::io::stderr().lock(), "Cache GC failed: {error}");
+                if published {
+                    super::history::collect_after(db);
                 }
                 Ok(request)
             })
@@ -314,10 +292,7 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
     for mut follower in followers {
         receive(&mut follower, entry);
         update_request(db, &follower)?;
-        db.execute(
-            "DELETE FROM human_claims WHERE request_id=?",
-            [&follower.id],
-        )?;
+        unclaim(db, &follower.id)?;
     }
     Ok(())
 }

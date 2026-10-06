@@ -111,8 +111,8 @@ fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
         review["result"],
         json!({"verdict":"GREEN","covered":["R1"]})
     );
-    assert_eq!(review["toolCalls"][0]["name"], "read_spec");
-    assert_eq!(review["toolCalls"][0]["isError"], false);
+    // The review's tool calls live in its saved session, not in the request.
+    assert!(review.get("toolCalls").is_none());
     let attempts = review["usage"].as_array().unwrap();
     assert_eq!(attempts.len(), 2);
     assert_eq!(attempts[1]["usage"]["inputTokens"], 40);

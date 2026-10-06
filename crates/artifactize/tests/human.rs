@@ -230,7 +230,6 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         .await
         .unwrap();
     assert_eq!(result.status, "GREEN");
-    assert_eq!(result.tool_calls.len(), 2);
     assert!(
         human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
             .await
@@ -251,16 +250,22 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     assert_eq!(
         fixture
             .database()
-            .query_row("SELECT count(*) FROM human_claims", [], |row| row
-                .get::<_, u32>(0))
+            .query_row(
+                "SELECT count(*) FROM requests WHERE claimed_by IS NOT NULL",
+                [],
+                |row| row.get::<_, u32>(0)
+            )
             .unwrap(),
         0
     );
     assert_eq!(
         fixture
             .database()
-            .query_row("SELECT count(*) FROM cache_entries", [], |row| row
-                .get::<_, u32>(0))
+            .query_row(
+                "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
+                [],
+                |row| row.get::<_, u32>(0)
+            )
             .unwrap(),
         0
     );
@@ -735,7 +740,11 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     assert_eq!(
         fixture
             .database()
-            .query_row::<u32, _, _>("SELECT count(*) FROM cache_entries", [], |row| row.get(0))
+            .query_row::<u32, _, _>(
+                "SELECT count(*) FROM executions WHERE completed_at IS NOT NULL",
+                [],
+                |row| row.get(0)
+            )
             .unwrap(),
         2
     );

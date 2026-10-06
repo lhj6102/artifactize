@@ -17,12 +17,13 @@ pub const SCHEMA: u32 = 2;
 /// JSON byte limit of a summary record.
 pub const MAX_SUMMARY_BYTES: usize = 256 * 1024;
 /// JSON byte limit of a full record, the local per-entry cache limit.
-pub const MAX_FULL_BYTES: usize = crate::store::cache_entries::MAX_ENTRY_BYTES;
+pub const MAX_FULL_BYTES: usize = crate::store::history::MAX_ENTRY_BYTES;
 
 /// One record of a reuse key's history; the store keeps every record and returns the latest.
 ///
-/// A summary carries no argv, captured output, tool-call audit or repository path. A full
-/// record additionally carries the saved `execution` as is. The server stamps `publisher`
+/// A summary carries no argv, captured output or repository path. A full record additionally
+/// carries the saved `execution` as is; one an earlier artifactize published may still hold
+/// its `toolCalls`, which readers ignore. The server stamps `publisher`
 /// and `publishedAt`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -181,7 +182,6 @@ impl Record {
                 profile: self.profile,
                 options: self.options,
                 usage: self.usage,
-                tool_calls: Vec::new(),
                 provenance: Provenance {
                     repo_path: PathBuf::new(),
                     run_id: self.run_id,

@@ -186,7 +186,7 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     );
     assert_eq!(
         database
-            .query_row::<i64, _, _>("SELECT count(*) FROM run_members", [], |r| r.get(0))
+            .query_row::<i64, _, _>("SELECT count(*) FROM requests", [], |r| r.get(0))
             .unwrap(),
         7
     );
@@ -923,7 +923,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
                 .contains(expected)
         );
         assert_eq!(run["requests"][1]["usage"], json!([]));
-        assert_eq!(run["requests"][1]["toolCalls"], json!([]));
+        assert!(run["requests"][1].get("toolCalls").is_none());
         assert!(run["requests"][1]["result"].is_null());
         fs::remove_dir_all(&fixture.repo).unwrap();
         let shown = fixture

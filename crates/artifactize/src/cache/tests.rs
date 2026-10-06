@@ -440,3 +440,42 @@ fn changes_name_target_files_and_dependency_fingerprints() {
     assert_eq!(changes.summary, "fingerprint changed");
     assert!(changes.files.is_none() && changes.dependencies.is_none());
 }
+
+/// The keys of evals without a `resultCheck`, computed by artifactize 0.5 before 0.6.0
+/// removed it: they do not change, so their results stay reusable.
+#[test]
+fn keys_of_evals_without_a_result_check_are_pinned() {
+    let agent: EvalDeclaration = serde_json::from_value(json!({
+        "id":"spec-coverage","title":"Spec coverage",
+        "profile":{"kind":"agent","backend":"openai","model":"gpt-5.1","reasoning":"high","timeoutMs":60000,"maxToolCalls":20},
+        "payload":{"instruction":"Check that {spec} covers every requirement.","focus":["errors","limits"]},
+        "passSchema":{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"]},
+        "failSchema":{"type":"object","properties":{"missing":{"type":"array","items":{"type":"string"}}},"required":["missing"]}
+    }))
+    .unwrap();
+    let runtime: EvalDeclaration = serde_json::from_value(json!({
+        "id":"tests","title":"Tests",
+        "profile":{"kind":"runtime","command":"./check.sh","args":["{spec}/rules.md","--strict"],"timeoutMs":9000},
+        "payload":{"instruction":"Run the checks."}
+    }))
+    .unwrap();
+    let fingerprints: BTreeMap<String, String> = [("app", "content:1111"), ("spec", "script-v2")]
+        .into_iter()
+        .map(|(name, value)| (name.to_owned(), value.to_owned()))
+        .collect();
+    for (eval, hash, pinned) in [
+        (
+            &agent,
+            "65116b8f0d4f8bcb1d8a197706fa57d4a1881216edb6e8533086a6deb2b7abb4",
+            "f79bfb7fa26e3393235264152e0310e95ce48fb5de0842d8b58ebd3dd431fc13",
+        ),
+        (
+            &runtime,
+            "bbc05cdeb642f96bdce73eaea01a2a7273e12d6e0c2642ef4bc2f3b61959cd1d",
+            "69fb9f32d95c97bc0c5c471e98644da7093337a89d553e383159402c1eb57f5e",
+        ),
+    ] {
+        assert_eq!(eval_definition_hash(eval), hash);
+        assert_eq!(key(hash, &fingerprints), pinned);
+    }
+}

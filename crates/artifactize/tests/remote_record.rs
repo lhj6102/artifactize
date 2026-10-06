@@ -106,6 +106,17 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     keys.sort();
     assert_eq!(keys, ["durationMs", "exitCode", "truncated", "verdict"]);
     let full = Record::new(&execution, true).unwrap();
+    // A full record an earlier artifactize published still holds its tool calls and result
+    // check limit; readers ignore them.
+    let mut earlier = serde_json::to_value(&full).unwrap();
+    earlier["execution"]["toolCalls"] = json!([{"name":"read","isError":false}]);
+    earlier["execution"]["options"]["resultCheckTimeoutMs"] = json!(5000);
+    let earlier: Record = serde_json::from_value(earlier).unwrap();
+    assert!(
+        !serde_json::to_string(&earlier)
+            .unwrap()
+            .contains("toolCalls")
+    );
     assert_eq!(
         full.execution.unwrap().result.unwrap()["stderr"],
         "stderr-marker\n"
@@ -243,7 +254,6 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         profile: fast.clone(),
         options: ExecutionOptions::new(&variant, Some("fast")),
         usage: Some(json!([{"turn":1,"attempt":1,"usage":{"inputTokens":10}}])),
-        tool_calls: Vec::new(),
         provenance: Provenance {
             repo_path: "/elsewhere".into(),
             run_id: "run-elsewhere".into(),

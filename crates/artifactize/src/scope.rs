@@ -554,16 +554,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 });
             }
         }
-        // A runtime command's args, or an Agent eval's resultCheck args, may name Artifacts.
-        let argv = match &eval.declaration.profile {
-            Profile::Runtime { args, .. } => Some(args),
-            _ => eval
-                .declaration
-                .result_check
-                .as_ref()
-                .map(|check| &check.args),
-        };
-        if let Some(args) = argv {
+        if let Profile::Runtime { args, .. } = &eval.declaration.profile {
             for (index, argument) in args.iter().enumerate() {
                 let Some(reference) = argument_reference(argument).map_err(error)? else {
                     continue;
