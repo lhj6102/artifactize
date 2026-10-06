@@ -31,6 +31,15 @@
           "timeoutMs": 1800000,
           "maxToolCalls": 120,
           "maxTokens": 4000000
+        },
+        "sol-max": {
+          "kind": "agent",
+          "backend": "codex",
+          "model": "gpt-6.1-sol",
+          "reasoning": "max",
+          "timeoutMs": 1800000,
+          "maxToolCalls": 120,
+          "maxTokens": 4000000
         }
       },
       "payload": {
