@@ -145,6 +145,10 @@ pub struct Producer {
     pub name: String,
     /// The producing artifactize version.
     pub version: String,
+    /// Where an Agent review's saved conversation lives. It travels with remote records,
+    /// which older clients read without it; the conversation itself never leaves the machine.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<crate::agent::session::SessionRef>,
 }
 
 impl Producer {
@@ -166,6 +170,7 @@ impl Producer {
         Self {
             name: name.chars().filter(|c| !c.is_control()).take(200).collect(),
             version: env!("CARGO_PKG_VERSION").into(),
+            session: None,
         }
     }
 }

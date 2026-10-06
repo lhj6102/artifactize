@@ -203,7 +203,12 @@ fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
         assert_eq!(body["tools"][0]["type"], "function");
         assert_eq!(body["tools"][0]["name"], "read_spec");
         let instructions = body["instructions"].as_str().unwrap();
-        assert!(instructions.starts_with("Follow the artifactize review instructions."));
+        assert!(instructions.starts_with(
+            "Follow the artifactize review instructions. For the review itself, return only one JSON object"
+        ));
+        assert!(instructions.contains(
+            "If a person later asks a follow-up question about this review, answer that question in plain text instead"
+        ));
         assert!(!instructions.contains("You are ChatGPT"));
         for absent in ["temperature", "max_output_tokens", "text", "metadata"] {
             assert!(body.get(absent).is_none(), "{absent}: {body}");

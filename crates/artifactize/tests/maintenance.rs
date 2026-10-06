@@ -113,6 +113,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
             "state",
             "schema",
             "limits",
+            "sessions",
             "openai",
             "anthropic",
             "codex",
@@ -120,6 +121,18 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
         ]
     );
     assert_eq!(check(&absent, "limits")["details"], json!({"backends":{}}));
+    let sessions = &check(&absent, "sessions")["details"];
+    assert_eq!(
+        (
+            &sessions["enabled"],
+            &sessions["sessions"],
+            &sessions["bytes"],
+            &sessions["stateId"]
+        ),
+        (&json!(true), &json!(0), &json!(0), &Value::Null)
+    );
+    assert_eq!(sessions["maxBytes"], 1_073_741_824);
+    assert_eq!(sessions["targetBytes"], 805_306_368);
     assert_eq!(check(&absent, "state")["details"]["writable"], true);
     assert_eq!(check(&absent, "schema")["details"], json!({"schema":null}));
     assert!(!state.exists());

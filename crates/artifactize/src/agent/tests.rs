@@ -70,7 +70,7 @@ impl Fixture {
                 &self.config,
                 &self.config.evals[0],
                 &self.output,
-                SESSION,
+                &mut session::Recorder::off(SESSION),
                 CancellationToken::new(),
             )
             .await,

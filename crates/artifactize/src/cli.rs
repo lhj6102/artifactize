@@ -3,8 +3,10 @@
 mod remote;
 mod request;
 mod server;
+mod session;
 use request::RequestCommand;
 use server::ServerCommand;
+use session::SessionCommand;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -127,6 +129,11 @@ pub enum Command {
     Request {
         #[command(subcommand)]
         command: RequestCommand,
+    },
+    /// Read a saved Agent review conversation or continue it with a follow-up.
+    Session {
+        #[command(subcommand)]
+        command: SessionCommand,
     },
     /// Inspect or maintain reusable results by reuse key without a repository.
     Cache {
@@ -438,6 +445,12 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 for id in &report.skipped_runs {
                     writeln!(out, "Skipped Run {id}").map_err(|e| e.to_string())?;
                 }
+                for id in &report.removed_sessions {
+                    writeln!(out, "Removed Agent session {id}").map_err(|e| e.to_string())?;
+                }
+                for id in &report.would_remove_sessions {
+                    writeln!(out, "Would remove Agent session {id}").map_err(|e| e.to_string())?;
+                }
                 writeln!(out, "Database audit and repository files were preserved.")
                     .map_err(|e| e.to_string())?;
             }
@@ -746,6 +759,10 @@ async fn execute(cli: Cli) -> Result<u8, String> {
         Some(Command::Request { command }) => {
             let state = crate::store::state_dir(cli.state_dir.as_deref())?;
             request::execute(&state, command, cli.json).await
+        }
+        Some(Command::Session { command }) => {
+            let state = crate::store::state_dir(cli.state_dir.as_deref())?;
+            session::execute(&state, cli.repo.as_deref(), command, cli.json).await
         }
         Some(Command::Cache { command }) => {
             let state = crate::store::state_dir(cli.state_dir.as_deref())?;

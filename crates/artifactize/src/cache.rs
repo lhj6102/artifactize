@@ -267,6 +267,10 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String)
     request.usage = None;
     request.reused_usage = execution.usage.clone();
     request.producer = execution.producer.clone();
+    request.session = execution
+        .producer
+        .as_ref()
+        .and_then(|producer| producer.session.clone());
     request.reviewer = execution.reviewer.clone();
     request.origin = execution.origin.clone();
     request.tool_calls = execution.tool_calls.clone();

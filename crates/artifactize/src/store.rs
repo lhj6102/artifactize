@@ -25,9 +25,9 @@ pub use executions::{
 };
 pub use receipts::{
     DATABASE, LastRequest, Receipts, Request, Run, RunView, StoppedBackend, read_latest_requests,
-    read_run, state_schema,
+    read_run, read_state_id, state_schema,
 };
-pub use requests::{RequestView, read_request, read_requests, read_waiting};
+pub use requests::{RequestView, read_request, read_requests, read_session_request, read_waiting};
 
 /// Resolve the single state directory without creating it.
 pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {

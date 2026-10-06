@@ -162,6 +162,16 @@ impl Scheduler<'_, '_> {
     async fn run(&mut self) -> Result<BTreeMap<String, Evidence>, String> {
         let owner = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
         let producer = Producer::current();
+        // Agent conversations are saved under the state, named by its id and this producer.
+        let saving = if self.limits.agent_sessions().enabled {
+            Some(crate::agent::session::Saving {
+                state: self.run.state_dir.clone(),
+                state_id: self.receipts.state_id().await?,
+                producer: producer.name.clone(),
+            })
+        } else {
+            None
+        };
         let run_dir = self.run.state_dir.join("runs").join(&self.run.id);
         let mut evidence = BTreeMap::new();
         let mut running = BTreeSet::new();
@@ -474,6 +484,7 @@ impl Scheduler<'_, '_> {
                         eval,
                         &run_dir,
                         &self.run.state_dir,
+                        saving.as_ref(),
                         request,
                     );
                     if prepared.is_ok() && !human && !self.cancellation.is_cancelled() {

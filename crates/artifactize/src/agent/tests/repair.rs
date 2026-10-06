@@ -237,7 +237,7 @@ async fn repair_shares_original_deadline_and_cancellation_precedes_budget() {
             &fixture.config,
             &fixture.config.evals[0],
             &fixture.output,
-            SESSION,
+            &mut session::Recorder::off(SESSION),
             cancellation,
         )
         .await;
