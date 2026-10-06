@@ -50,6 +50,7 @@ detect_target() {
     # One line per OS that has release binaries.
     case $os in
         Linux) printf '%s\n' "$arch-unknown-linux-musl" ;;
+        Darwin) err "macOS is not supported yet: https://github.com/lhj6102/artifactize/issues/111" ;;
         *) err "no prebuilt binary for $os; install with: cargo install artifactize --locked" ;;
     esac
 }

@@ -24,7 +24,7 @@ from [rustup](https://rustup.rs), and a C compiler (SQLite is built from source)
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | sh
-artifactize --version          # artifactize 0.5.3
+artifactize --version
 ```
 
 The [script](https://artifactize.dev/install.sh) picks the static binary for your
@@ -48,13 +48,15 @@ Install the latest release from crates.io (releases are published there from
 cargo install artifactize --locked
 ```
 
-`--locked` builds with the dependency versions the release was tested with. Every
-release is also tagged on GitHub, and `cargo install` can build a tag (or `main`,
-without `--tag`) from there:
+`--locked` builds with the dependency versions the release was tested with. To install
+a particular release, name its version:
 
 ```sh
-cargo install --git https://github.com/lhj6102/artifactize --tag v0.5.3 --locked artifactize
+cargo install artifactize --locked --version <version>
 ```
+
+Releases take their version from their tag, so a build from a git checkout or tag
+reports the placeholder version `0.0.0-dev`.
 
 To build from source instead, install from a checkout; its `rust-toolchain.toml`
 selects stable Rust. The example projects and the [Quick start](quick-start.md)

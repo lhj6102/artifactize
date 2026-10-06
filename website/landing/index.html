@@ -266,12 +266,27 @@ Summary: executed 3 (runtime 0, agent 3, human 0), reused 18 (runtime 7, agent 7
     <div class="wrap start-inner">
       <p class="kicker">Get started</p>
       <h2 id="start-title">Try it in five minutes.</h2>
-      <p>Artifactize is open source under the Apache License 2.0. Install the static binary on Linux or WSL 2 with one command, no Rust toolchain needed; the quick start then reviews an example project with no model or API key.</p>
-      <div class="panel start-panel">
+      <p>Artifactize is open source under the Apache License 2.0. Install it with one command, no Rust toolchain needed; the quick start then reviews an example project with no model or API key.</p>
+      <div class="install" data-install>
+        <div class="demo-tabs install-tabs" role="tablist" aria-label="Operating system" hidden>
+          <button type="button" class="demo-tab" role="tab" id="install-tab-linux" aria-controls="install-linux" aria-selected="true" data-os="linux">Linux / WSL</button>
+          <button type="button" class="demo-tab" role="tab" id="install-tab-windows" aria-controls="install-windows" aria-selected="false" tabindex="-1" data-os="windows">Windows</button>
+          <button type="button" class="demo-tab" role="tab" id="install-tab-macos" aria-controls="install-macos" aria-selected="false" tabindex="-1" data-os="macos">macOS</button>
+        </div>
+        <div class="panel start-panel" role="tabpanel" id="install-linux" aria-labelledby="install-tab-linux">
 <pre class="code term"><code><span class="t-dim"># Linux or WSL 2 (x86_64, aarch64): installs to ~/.local/bin, no sudo</span>
 <span class="t-prompt">$</span> curl -fsSL https://artifactize.dev/install.sh | sh
-<span class="t-prompt">$</span> artifactize --version
-artifactize 0.5.3</code></pre>
+<span class="t-prompt">$</span> artifactize --version</code></pre>
+        </div>
+        <div class="panel start-panel" role="tabpanel" id="install-windows" aria-labelledby="install-tab-windows">
+<pre class="code term"><code><span class="t-dim"># Windows x86_64 in PowerShell (experimental): installs to</span>
+<span class="t-dim"># %LOCALAPPDATA%\Programs\artifactize and adds it to your PATH, no admin</span>
+<span class="t-prompt">PS&gt;</span> irm https://artifactize.dev/install.ps1 | iex
+<span class="t-prompt">PS&gt;</span> artifactize --version</code></pre>
+        </div>
+        <div class="panel start-panel" role="tabpanel" id="install-macos" aria-labelledby="install-tab-macos">
+          <p class="install-note">macOS support is coming. Follow its progress in <a href="https://github.com/lhj6102/artifactize/issues/111">issue #111</a>.</p>
+        </div>
       </div>
       <div class="cta center">
         <a class="btn btn-primary" href="/docs/getting-started/install.html">Install <span aria-hidden="true">→</span></a>

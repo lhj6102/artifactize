@@ -1,17 +1,22 @@
 name: CI
 
 # Changes that touch only the website (built by website.yml) skip the Rust checks.
-# Before v1, only the Linux check gates changes. Windows runs on pushes to main and by
-# hand, as an informational signal that never fails the workflow.
+# Before v1, only the Linux check gates changes; pushes to main keep its cache warm for
+# release.yml. Windows runs weekly and by hand, as an informational signal that never
+# fails the workflow.
 on:
   push:
+    branches: [main]
     paths-ignore: ["website/**", ".github/workflows/website.yml"]
   pull_request:
     paths-ignore: ["website/**", ".github/workflows/website.yml"]
+  schedule:
+    - cron: "17 3 * * 1"
   workflow_dispatch:
 
 jobs:
   check:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,13 +24,15 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: linux
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       # Packages the crate and builds the package as crates.io would, without uploading.
       - run: cargo publish --dry-run --locked -p artifactize
   windows:
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     continue-on-error: true
     steps:
