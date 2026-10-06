@@ -43,7 +43,7 @@ pub(super) fn from_output(root: &Path, path: &str, mime_type: &str) -> Result<Co
     } else {
         path.to_str().ok_or("Image path must be UTF-8.")?.to_owned()
     };
-    let file = scope::open_scoped(root, &relative).map_err(|e| e.to_string())?;
+    let file = scope::open_scoped(root, &relative).map_err(|e| format!("Image {relative}: {e}"))?;
     normalize(&read(file)?, Some(mime_type))
 }
 

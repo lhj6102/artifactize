@@ -298,11 +298,27 @@ fn kind(attributes: u32, reparse_tag: u32) -> FileKind {
     }
 }
 
+/// The error for a refused reparse point, which `is_link_refusal` recognizes.
 fn reparse_point() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::InvalidInput,
-        "refusing a symbolic link, junction or other reparse point",
-    )
+    io::Error::new(io::ErrorKind::InvalidInput, ReparsePoint)
+}
+
+#[derive(Debug)]
+struct ReparsePoint;
+
+impl std::fmt::Display for ReparsePoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("refusing a symbolic link, junction or other reparse point")
+    }
+}
+
+impl std::error::Error for ReparsePoint {}
+
+/// Whether `open_entry` or `open_no_follow` failed because the entry is a reparse point.
+pub(crate) fn is_link_refusal(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|inner| inner.is::<ReparsePoint>())
 }
 
 /// The entries of a pinned directory, read from its handle rather than a path that could

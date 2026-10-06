@@ -19,9 +19,9 @@ use windows as os;
 pub(crate) use os::{
     Child, DEFAULT_EDITOR, EntryName, HiddenInput, canonicalize, create_private_dir,
     create_private_dir_all, editor, entry_kind, exit_signal, host_name, is_executable,
-    is_private_dir, is_private_file, open_directory, open_entry, open_no_follow, open_nonblocking,
-    private_options, private_tempdir_in, process_start_time, read_dir, restrict_file,
-    spawn_detached, spawn_gated, stop_requested, sync_dir,
+    is_link_refusal, is_private_dir, is_private_file, open_directory, open_entry, open_no_follow,
+    open_nonblocking, private_options, private_tempdir_in, process_start_time, read_dir,
+    restrict_file, spawn_detached, spawn_gated, stop_requested, sync_dir,
 };
 
 /// The type of a directory entry, read without following it.

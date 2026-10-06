@@ -128,6 +128,17 @@ pub(crate) fn open_entry(directory: &File, name: &EntryName) -> io::Result<File>
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
+/// Whether `open_entry` failed because the entry is a symlink: `O_NOFOLLOW` reports `ELOOP`
+/// on Linux and macOS, and `EMLINK` on FreeBSD and DragonFly.
+pub(crate) fn is_link_refusal(error: &io::Error) -> bool {
+    let link = if cfg!(any(target_os = "freebsd", target_os = "dragonfly")) {
+        libc::EMLINK
+    } else {
+        libc::ELOOP
+    };
+    error.raw_os_error() == Some(link)
+}
+
 /// The entries of a pinned directory, listed through its descriptor rather than a path
 /// that could have been replaced by a link.
 pub(crate) fn read_dir(

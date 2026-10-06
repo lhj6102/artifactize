@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     config::Builtin,
     platform::{self, FileKind},
-    scope::{self, Scope, ScopedPath},
+    scope::{self, OpenError, Scope, ScopedPath},
 };
 
 use super::{Content, ToolResult, image};
@@ -30,25 +30,25 @@ const SEARCH_BYTES: usize = 64 * 1024 * 1024;
 pub(crate) fn description(builtin: Builtin) -> &'static str {
     match builtin {
         Builtin::Read => {
-            "Read UTF-8 complete lines in {artifactName}. path is a relative logical file path, including child/mount paths. offset is 1-based (default 1); limit defaults to 80, maximum 500. Returns numbered lines preserving LF/CRLF/BOM, up to 64 KiB, startLine/endLine/lineCount, totalLines when known, truncated and nextOffset. No symlinks or binary text."
+            "Read UTF-8 complete lines in {artifactName}. path is a relative logical file path, including child/mount paths. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". offset is 1-based (default 1); limit defaults to 80, maximum 500. Returns numbered lines preserving LF/CRLF/BOM, up to 64 KiB, startLine/endLine/lineCount, totalLines when known, truncated and nextOffset. No symlinks or binary text."
         }
         Builtin::List => {
-            "List {artifactName} at a relative logical path (default root). Sorted entries include name, path and kind; mounts and family instance catalogs are included. offset is 0-based; limit defaults to and cannot exceed 200. Returns totalEntries, truncated and nextOffset. Symlinks and special files are listed but never followed. Directories are limited to 10,000 entries."
+            "List {artifactName} at a relative logical path (default root). Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Sorted entries include name, path and kind; mounts and family instance catalogs are included. offset is 0-based; limit defaults to and cannot exceed 200. Returns totalEntries, truncated and nextOffset. Symlinks and special files are listed but never followed. Directories are limited to 10,000 entries."
         }
         Builtin::Glob => {
-            "Find files in {artifactName} with a relative glob pattern (* within a path component, ** across directories). path is a relative logical directory, default root; patterns are relative to it. Returns up to 200 sorted logical paths and truncated. Includes hidden files, mounts and family instance paths; ignores no files by git rules. Symlinks/special files are skipped, mount cycles are not repeated, and traversal is limited to 10,000 entries."
+            "Find files in {artifactName} with a relative glob pattern (* within a path component, ** across directories). path is a relative logical directory, default root; patterns are relative to it. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Returns up to 200 sorted logical paths and truncated. Includes hidden files, mounts and family instance paths; ignores no files by git rules. Symlinks/special files are skipped, mount cycles are not repeated, and traversal is limited to 10,000 entries."
         }
         Builtin::Grep => {
-            "Search UTF-8 files in {artifactName} with a Rust regex, one match per matching line. path is a relative logical file or directory (default root); glob filters paths relative to it. caseInsensitive defaults to false; maxResults defaults to and cannot exceed 200. Returns matches with path, line and text, plus truncated. Skips binary/invalid UTF-8 and symlinks; includes hidden files. Caps: 10,000 traversed entries, 8 MiB per file, 64 MiB searched, 512 KiB result. Skipped oversized files or bounded results set truncated."
+            "Search UTF-8 files in {artifactName} with a Rust regex, one match per matching line. path is a relative logical file or directory (default root); glob filters paths relative to it. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". caseInsensitive defaults to false; maxResults defaults to and cannot exceed 200. Returns matches with path, line and text, plus truncated. Skips binary/invalid UTF-8 and symlinks; includes hidden files. Caps: 10,000 traversed entries, 8 MiB per file, 64 MiB searched, 512 KiB result. Skipped oversized files or bounded results set truncated."
         }
         Builtin::ViewImage => {
-            "View one image in {artifactName} at a relative logical file path, including child/mount paths. Detects PNG, JPEG or WebP by bytes, not extension; returns an embedded image block. Requires a nonempty regular file up to 4 MiB; no symlinks, GIF, BMP or animated PNG."
+            "View one image in {artifactName} at a relative logical file path, including child/mount paths. Paths are relative to {artifactName} itself: use \"image.png\", not \"{artifactName}/image.png\". Detects PNG, JPEG or WebP by bytes, not extension; returns an embedded image block. Requires a nonempty regular file up to 4 MiB; no symlinks, GIF, BMP or animated PNG."
         }
     }
 }
 
 pub(crate) fn input_schema(builtin: Builtin) -> Value {
-    let path = json!({"type":"string","maxLength":4096,"description":"Relative logical Artifact path; no absolute paths, dot components, backslashes or symlinks. Empty means the root."});
+    let path = json!({"type":"string","maxLength":4096,"description":"Logical path relative to the tool's Artifact, without the Artifact's name; no absolute paths, dot components, backslashes or symlinks. Empty means the root."});
     let pattern = json!({"type":"string","minLength":1,"maxLength":4096});
     let integer =
         |min, max, default| json!({"type":"integer","minimum":min,"maximum":max,"default":default});
@@ -142,21 +142,25 @@ impl Reader<'_> {
         .map_err(|e| e.to_string())
     }
 
-    fn open(&self, location: &ScopedPath) -> Result<File, String> {
+    /// Open the resolved `location` of the logical `path`, which a missing entry names.
+    fn open(&self, path: &str, location: &ScopedPath) -> Result<File, String> {
         let artifact = self.scope.artifacts[location.artifact_id.as_str()];
-        scope::open_input(self.root, artifact, &location.path).map_err(|e| e.to_string())
+        scope::open_input(self.root, artifact, &location.path).map_err(|error| match error {
+            OpenError::NotFound => missing(self.owner, path),
+            error => error.to_string(),
+        })
     }
 
     fn view_image(&self, path: &str) -> Result<Content, String> {
         let location = self.location(path, false)?;
-        let bytes = image::read(self.open(&location)?)?;
+        let bytes = image::read(self.open(path, &location)?)?;
         self.check_cancelled()?;
         image::normalize(&bytes, None)
     }
 
     fn read(&self, path: &str, offset: usize, limit: usize) -> Result<Value, String> {
         let location = self.location(path, false)?;
-        let file = self.open(&location)?;
+        let file = self.open(path, &location)?;
         if !file.metadata().map_err(|e| e.to_string())?.is_file() {
             return Err("Reading requires a regular file; list the directory first.".into());
         }
@@ -228,7 +232,7 @@ impl Reader<'_> {
     fn entries(&self, path: &str) -> Result<Vec<Value>, String> {
         self.check_cancelled()?;
         let location = self.location(path, true)?;
-        let file = self.open(&location)?;
+        let file = self.open(path, &location)?;
         if !file.metadata().map_err(|e| e.to_string())?.is_dir() {
             return Err("Listing requires a directory.".into());
         }
@@ -343,7 +347,7 @@ impl Reader<'_> {
     fn files(&self, path: &str) -> Result<(BTreeSet<String>, bool), String> {
         let location = self.location(path, true)?;
         if self
-            .open(&location)?
+            .open(path, &location)?
             .metadata()
             .map_err(|e| e.to_string())?
             .is_file()
@@ -390,7 +394,7 @@ impl Reader<'_> {
         let matcher = glob(pattern)?;
         let location = self.location(path, true)?;
         if !self
-            .open(&location)?
+            .open(path, &location)?
             .metadata()
             .map_err(|e| e.to_string())?
             .is_dir()
@@ -412,7 +416,7 @@ impl Reader<'_> {
             }
             // Recheck entries that may have changed since enumeration.
             if !self
-                .open(&self.location(&file, false)?)?
+                .open(&file, &self.location(&file, false)?)?
                 .metadata()
                 .map_err(|e| e.to_string())?
                 .is_file()
@@ -444,7 +448,7 @@ impl Reader<'_> {
             {
                 continue;
             }
-            let input = self.open(&self.location(&file, false)?)?;
+            let input = self.open(&file, &self.location(&file, false)?)?;
             let metadata = input.metadata().map_err(|e| e.to_string())?;
             if !metadata.is_file() {
                 return Err("Grep requires regular files.".into());
@@ -494,6 +498,20 @@ impl Reader<'_> {
             }
         }
         Ok(json!({"path":path,"matches":matches,"truncated":truncated}))
+    }
+}
+
+/// A missing path, with a hint when a model prefixed it with the Artifact's own name.
+fn missing(owner: &str, path: &str) -> String {
+    match path.strip_prefix(owner) {
+        Some("") => format!(
+            "No {path:?} in Artifact {owner}; paths are relative to the Artifact, without its name (its root is \"\")."
+        ),
+        Some(rest) if rest.starts_with('/') => format!(
+            "No {path:?} in Artifact {owner}; paths are relative to the Artifact (for example {:?}), without its name.",
+            &rest[1..]
+        ),
+        _ => format!("No {path:?} in Artifact {owner}."),
     }
 }
 
