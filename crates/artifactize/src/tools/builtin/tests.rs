@@ -327,6 +327,108 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
 }
 
 #[tokio::test]
+async fn missing_paths_and_links_report_their_cause() {
+    let fixture = Fixture::new();
+    fixture.write("a/data/file", "visible");
+    let error = |result: ToolResult| {
+        assert!(result.is_error, "{result:?}");
+        let [Content::Text { text }] = result.content.as_slice() else {
+            panic!("{result:?}")
+        };
+        text.clone()
+    };
+    let symlink = "Cannot open Artifact input without symlink traversal.";
+    let mut cases = vec![
+        ("read_a", "notes.md", r#"No "notes.md" in Artifact a."#),
+        (
+            "grep_a",
+            "data/missing",
+            r#"No "data/missing" in Artifact a."#,
+        ),
+        (
+            "read_a",
+            "a/data/file",
+            r#"No "a/data/file" in Artifact a; paths are relative to the Artifact (for example "data/file"), without its name."#,
+        ),
+        (
+            "view_image_a",
+            "a/image.png",
+            r#"No "a/image.png" in Artifact a; paths are relative to the Artifact (for example "image.png"), without its name."#,
+        ),
+        (
+            "list_a",
+            "a",
+            r#"No "a" in Artifact a; paths are relative to the Artifact, without its name (its root is "")."#,
+        ),
+        // Only the Artifact's own name, not a longer component that starts with it, earns the hint.
+        ("list_a", "ab/data", r#"No "ab/data" in Artifact a."#),
+    ];
+    let a = fixture.root.join("a");
+    if symlink_file(PathBuf::from("data").join("file"), a.join("link")).is_some() {
+        cases.push(("read_a", "link", symlink));
+    }
+    if symlink_dir("data", a.join("linkdir")).is_some() {
+        cases.push(("list_a", "linkdir", symlink));
+    }
+    #[cfg(windows)]
+    {
+        crate::test_os::junction(&a.join("data"), &a.join("joined"));
+        cases.extend([
+            ("list_a", "joined", symlink),
+            ("read_a", "joined/file", symlink),
+        ]);
+    }
+    for (tool, path, message) in cases {
+        let mut args = json!({"path":path});
+        if tool == "grep_a" {
+            args["pattern"] = json!(".*");
+        }
+        assert_eq!(
+            error(fixture.call(tool, args).await),
+            message,
+            "{tool} {path}"
+        );
+    }
+    // Any other failure names the operating system's error.
+    #[cfg(unix)]
+    assert_eq!(
+        error(fixture.call("read_a", json!({"path":"data/file/x"})).await),
+        format!(
+            "Cannot open Artifact input: {}",
+            std::io::Error::from_raw_os_error(libc::ENOTDIR)
+        )
+    );
+}
+
+#[tokio::test]
+async fn descriptions_say_paths_are_relative_to_the_artifact_without_its_name() {
+    let fixture = Fixture::new();
+    let config = read_workspace_config(&fixture.root).unwrap();
+    let registry = Registry::new(&config, "a/review").unwrap();
+    for tool in registry.list() {
+        let example = if tool.name == "view_image_a" {
+            r#"use "image.png", not "a/image.png"."#
+        } else {
+            r#"use "notes.md", not "a/notes.md"."#
+        };
+        assert!(
+            tool.description
+                .contains(&format!("Paths are relative to a itself: {example}")),
+            "{}",
+            tool.description
+        );
+        assert!(
+            tool.input_schema["properties"]["path"]["description"]
+                .as_str()
+                .unwrap()
+                .starts_with(
+                    "Logical path relative to the tool's Artifact, without the Artifact's name;"
+                )
+        );
+    }
+}
+
+#[tokio::test]
 async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in() {
     let fixture = Fixture::new();
     for (tool, args) in [

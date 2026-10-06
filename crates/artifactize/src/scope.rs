@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
+use std::io;
 use std::path::{Component, Path, PathBuf};
 
 use serde::Serialize;
@@ -153,21 +154,31 @@ impl Scope<'_> {
     }
 }
 
+/// Why a scoped open failed. A missing entry stays distinct, so a caller that knows the
+/// logical path the user asked for can name it.
+#[derive(Debug, Error)]
+pub(crate) enum OpenError {
+    #[error("No such file or directory.")]
+    NotFound,
+    #[error(transparent)]
+    Refused(#[from] ScopeError),
+}
+
 /// Open each component relative to its pinned parent, so replacement cannot redirect a read through a link.
-pub(crate) fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, ScopeError> {
+pub(crate) fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, OpenError> {
     if !root.is_absolute() || artifact.path.is_absolute() {
-        return Err(ScopeError(
-            "Artifact roots must be absolute and owner paths relative.".into(),
-        ));
+        return Err(
+            ScopeError("Artifact roots must be absolute and owner paths relative.".into()).into(),
+        );
     }
     open_scoped(&root.join(&artifact.path), path)
 }
 
 /// Open a relative path below an absolute root without following any symlink components.
-pub(crate) fn open_scoped(root: &Path, path: &str) -> Result<File, ScopeError> {
+pub(crate) fn open_scoped(root: &Path, path: &str) -> Result<File, OpenError> {
     logical_path(path)?;
     if !root.is_absolute() {
-        return Err(ScopeError("Scoped roots must be absolute.".into()));
+        return Err(ScopeError("Scoped roots must be absolute.".into()).into());
     }
     let target = root.join(path);
     // `/`, or on Windows the volume or share root such as `C:\`.
@@ -181,7 +192,8 @@ pub(crate) fn open_scoped(root: &Path, path: &str) -> Result<File, ScopeError> {
             _ => {
                 return Err(ScopeError(
                     "Artifact path must not traverse parent directories.".into(),
-                ));
+                )
+                .into());
             }
         };
     }
@@ -189,16 +201,23 @@ pub(crate) fn open_scoped(root: &Path, path: &str) -> Result<File, ScopeError> {
 }
 
 /// Open one entry of a pinned directory without following a symlink.
-pub(crate) fn open_child(directory: &File, name: &std::ffi::OsStr) -> Result<File, ScopeError> {
+pub(crate) fn open_child(directory: &File, name: &std::ffi::OsStr) -> Result<File, OpenError> {
     let name = platform::EntryName::new(name)
         .ok_or_else(|| ScopeError("Invalid Artifact path.".into()))?;
-    let file = platform::open_entry(directory, &name)
-        .map_err(|_| ScopeError("Cannot open Artifact input without symlink traversal.".into()))?;
+    let file = platform::open_entry(directory, &name).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            OpenError::NotFound
+        } else if platform::is_link_refusal(&error) {
+            ScopeError("Cannot open Artifact input without symlink traversal.".into()).into()
+        } else {
+            ScopeError(format!("Cannot open Artifact input: {error}")).into()
+        }
+    })?;
     let metadata = file.metadata().map_err(|e| ScopeError(e.to_string()))?;
     if !metadata.is_file() && !metadata.is_dir() {
-        return Err(ScopeError(
-            "Artifact input must be a regular file or directory.".into(),
-        ));
+        return Err(
+            ScopeError("Artifact input must be a regular file or directory.".into()).into(),
+        );
     }
     Ok(file)
 }
