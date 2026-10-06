@@ -1,12 +1,12 @@
 // @ts-check
 // Turns the scenario's per-step changes into one full snapshot per step, and
-// checks the scenario for mistakes the types cannot catch (an edge naming a
+// checks the scenario for mistakes the types cannot catch (an eval naming a
 // node that does not exist, a step without copy, a node without a position).
 // It knows node kinds and eval rules, never the story itself.
 
 /** @typedef {import('./types.js').Scenario} Scenario */
 /** @typedef {import('./types.js').StoryNode} StoryNode */
-/** @typedef {import('./types.js').StoryEdge} StoryEdge */
+/** @typedef {import('./types.js').StoryEval} StoryEval */
 /** @typedef {import('./types.js').EvalState} EvalState */
 /** @typedef {import('./types.js').LayoutPart} LayoutPart */
 /** @typedef {import('./types.js').Snapshot} Snapshot */
@@ -21,8 +21,11 @@ const rippleList = (r) => (r === undefined ? [] : Array.isArray(r) ? r : [r]);
 /** @type {readonly EvalState[]} */
 const EVAL_STATES = ['pending', 'stale', 'reviewed', 'reused'];
 
-/** @param {StoryEdge} e */
-export const edgeId = (e) => `${e.from}->${e.to}`;
+/** An eval's id: `on->deps` for a review against other Artifacts, `on#kind` for one on its own. @param {StoryEval} e */
+export const evalId = (e) => e.id || (e.deps && e.deps.length ? `${e.on}->${e.deps.join(',')}` : `${e.on}#${e.kind}`);
+
+/** The nodes an eval touches: its Artifact, then its dependencies. @param {StoryEval} e */
+export const evalEnds = (e) => [e.on, ...(e.deps || [])];
 
 /**
  * A short, stable stand-in for a fingerprint.
@@ -56,15 +59,18 @@ export function validateScenario(sc, sectionIds) {
     if (n.parent && !nodeIds.has(n.parent)) out.push(`node "${n.id}" has an unknown parent "${n.parent}"`);
     if (n.copyOf && !nodeIds.has(n.copyOf)) out.push(`node "${n.id}" copies an unknown node "${n.copyOf}"`);
   }
-  const edgeIds = new Set();
-  for (const e of sc.edges) {
-    const id = edgeId(e);
-    if (edgeIds.has(id)) out.push(`edge "${id}" is declared twice`);
-    edgeIds.add(id);
-    for (const end of [e.from, e.to]) {
-      if (!nodeIds.has(end)) out.push(`edge "${id}" names an unknown node "${end}"`);
+  /** @type {Map<string, StoryEval>} */
+  const evalById = new Map();
+  for (const e of sc.evals) {
+    const id = evalId(e);
+    if (evalById.has(id)) out.push(`eval "${id}" is declared twice`);
+    evalById.set(id, e);
+    for (const end of evalEnds(e)) {
+      if (!nodeIds.has(end)) out.push(`eval "${id}" names an unknown node "${end}"`);
     }
+    if (e.by && e.kind !== 'human') out.push(`eval "${id}" names a reviewer but is not a Human eval`);
   }
+  const edgeIds = new Set(evalById.keys());
   for (const [id, o] of Object.entries(sc.overlays)) {
     const ends = o.type === 'flow' ? [o.from, o.to] : o.type === 'badge' ? [o.node] : [];
     for (const end of ends) {
@@ -99,8 +105,9 @@ export function validateScenario(sc, sectionIds) {
     known(s, 'added node', step.add, nodeIds);
     known(s, 'removed node', step.remove, nodeIds);
     known(s, 'sketched node', step.sketch, nodeIds);
-    known(s, 'edge', step.connect, edgeIds);
-    known(s, 'edge', step.disconnect, edgeIds);
+    known(s, 'relabelled node', Object.keys(step.relabel || {}), nodeIds);
+    known(s, 'eval', step.connect, edgeIds);
+    known(s, 'eval', step.disconnect, edgeIds);
     known(s, 'overlay', step.show, new Set(Object.keys(sc.overlays)));
     known(s, 'overlay', step.hide, new Set(Object.keys(sc.overlays)));
     for (const id of step.add || []) present.add(id);
@@ -121,14 +128,14 @@ export function validateScenario(sc, sectionIds) {
     }
     for (const id of step.remove || []) present.delete(id);
     for (const id of [...connected]) {
-      const [from, to] = id.split('->');
-      if (!present.has(from) || !present.has(to)) connected.delete(id);
+      const e = evalById.get(id);
+      if (!e || !evalEnds(e).every((n) => present.has(n))) connected.delete(id);
     }
     for (const id of step.disconnect || []) connected.delete(id);
     for (const id of step.connect || []) {
-      const [from, to] = id.split('->');
-      for (const end of [from, to]) {
-        if (edgeIds.has(id) && !present.has(end)) out.push(`step "${s}" connects "${id}", but "${end}" is not on the stage`);
+      const e = evalById.get(id);
+      for (const end of e ? evalEnds(e) : []) {
+        if (!present.has(end)) out.push(`step "${s}" connects "${id}", but "${end}" is not on the stage`);
       }
       connected.add(id);
     }
@@ -228,23 +235,25 @@ function resolvePart(sc, part, seen) {
 
 /**
  * The evals a fingerprint change of the `changed` nodes makes stale: those
- * reviewing one, those reviewed against one, and those of a parent (a group's
+ * reviewing one, those that depend on one, and those of a parent (a group's
  * evals depend on its children). Like artifactize's reuse key, it looks one
  * connection away.
  * @param {Scenario} sc
- * @param {Iterable<string>} edgeIds
+ * @param {Iterable<string>} evalIds
  * @param {string[]} changed
  */
-export function affectedBy(sc, edgeIds, changed) {
+export function affectedBy(sc, evalIds, changed) {
+  const byId = new Map(sc.evals.map((e) => [evalId(e), e]));
   const parents = new Set(changed.map((c) => sc.nodes.find((n) => n.id === c)?.parent).filter(Boolean));
   /** @type {string[]} */
   const wave1 = [];
   /** @type {string[]} */
   const wave2 = [];
-  for (const id of edgeIds) {
-    const [from, to] = id.split('->');
-    if (changed.includes(from)) wave1.push(id);
-    else if (changed.includes(to) || parents.has(from)) wave2.push(id);
+  for (const id of evalIds) {
+    const e = byId.get(id);
+    if (!e) continue;
+    if (changed.includes(e.on)) wave1.push(id);
+    else if ((e.deps || []).some((d) => changed.includes(d)) || parents.has(e.on)) wave2.push(id);
   }
   return { wave1, wave2 };
 }
@@ -257,7 +266,7 @@ export function affectedBy(sc, edgeIds, changed) {
 export function buildSnapshots(sc) {
   const kind = new Map(sc.nodes.map((n) => [n.id, n.kind]));
   const def = new Map(sc.nodes.map((n) => [n.id, n]));
-  const edgeKind = new Map(sc.edges.map((e) => [edgeId(e), e.kind]));
+  const evalById = new Map(sc.evals.map((e) => [evalId(e), e]));
   /** @type {Map<string, string>} */
   const fp = new Map();
   for (const n of sc.nodes) {
@@ -300,15 +309,14 @@ export function buildSnapshots(sc) {
     }
     for (const id of step.remove || []) nodes.delete(id);
     for (const id of [...edges]) {
-      const [from, to] = id.split('->');
-      if (!nodes.has(from) || !nodes.has(to)) edges.delete(id);
+      const e = evalById.get(id);
+      if (!e || !evalEnds(e).every((n) => nodes.has(n))) edges.delete(id);
     }
     for (const id of step.disconnect || []) edges.delete(id);
     const fresh = new Set();
     for (const id of step.connect || []) {
-      if (!edgeKind.has(id)) continue;
-      const [from, to] = id.split('->');
-      if (!nodes.has(from) || !nodes.has(to)) continue;
+      const e = evalById.get(id);
+      if (!e || !evalEnds(e).every((n) => nodes.has(n))) continue;
       if (!edges.has(id)) fresh.add(id);
       edges.add(id);
     }
@@ -317,7 +325,7 @@ export function buildSnapshots(sc) {
 
     /** @type {Map<string, EvalState>} */
     const state = new Map();
-    for (const id of edges) state.set(id, fresh.has(id) ? 'reviewed' : 'reused');
+    for (const id of edges) state.set(id, fresh.has(id) ? step.connectAs || 'reviewed' : 'reused');
     const ripple = rippleList(step.ripple).filter((id) => nodes.has(id));
     const { wave1, wave2 } = affectedBy(sc, edges, ripple);
     for (const id of [...wave1, ...wave2]) state.set(id, 'reviewed');
@@ -349,14 +357,16 @@ export function buildSnapshots(sc) {
 
     let executed = 0;
     let reused = 0;
+    let signoffs = 0;
     for (const [id, st] of state) {
       if (st === 'reviewed') {
         executed++;
-        if (edgeKind.get(id) === 'human') human++;
+        if (evalById.get(id)?.kind === 'human') signoffs++;
       } else if (st === 'reused') {
         reused++;
       }
     }
+    human += signoffs;
     cumExecuted += executed;
     cumNaive += edges.size;
     const artifacts = [...nodes].filter(
@@ -373,14 +383,15 @@ export function buildSnapshots(sc) {
       merge,
       fp: new Map(fp),
       sketch,
-      edges: state,
+      labels: new Map(Object.entries(step.relabel || {}).filter(([id]) => nodes.has(id))),
+      evals: state,
       fresh,
       ripple,
       wave1,
       wave2,
       oldFp,
       overlays: new Set([...overlays].filter((id) => overlayFits(sc, id, nodes))),
-      counts: { artifacts, evals: edges.size, executed, reused, human, cumExecuted, cumNaive },
+      counts: { artifacts, evals: edges.size, executed, reused, human, signoffs, cumExecuted, cumNaive },
     };
   });
 }

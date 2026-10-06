@@ -627,8 +627,29 @@
   animation: march 0.6s linear infinite;
 }
 
-.se-end {
+.se-end,
+.se-head {
   fill: var(--k);
+}
+
+/* A Human review's reviewer: a mark beside its loop, never a node. */
+.by-face {
+  fill: color-mix(in srgb, var(--amber) 16%, var(--stage-bg));
+  stroke: var(--amber);
+  stroke-width: 1;
+}
+
+.by-initial {
+  fill: var(--amber);
+  font-size: 8px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.by-name {
+  fill: var(--amber);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 /* Verdict chips: the ring is the eval kind, the glyph the verdict state */

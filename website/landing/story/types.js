@@ -34,14 +34,20 @@
  */
 
 /**
- * One eval. `from` is the Artifact it reviews; `to` is what it is reviewed
- * against (an Artifact it names, or the person who signs off).
- * The edge id is `${from}->${to}`.
- * @typedef {Object} StoryEdge
- * @property {string} from
- * @property {string} to
+ * One eval: it reviews the Artifact `on`, and depends on the Artifacts in
+ * `deps` (those its instruction or args name). With deps it is drawn as an
+ * edge to each (id `${on}->${deps}`); without, as a chip on the node itself
+ * (id `${on}#${kind}`). Give an `id` when a node has two of one kind.
+ * @typedef {Object} StoryEval
+ * @property {string} on
  * @property {EvalKind} kind
- * @property {number} [bend]  Curvature, about -0.4 to 0.4. Default 0.12.
+ * @property {string[]} [deps]
+ * @property {string} [by]    Human evals: the reviewer's initial, shown on the chip.
+ * @property {string} [id]
+ * @property {number} [bend]  Edge curvature, about -0.4 to 0.4. Default 0.12.
+ * @property {'top' | 'right' | 'bottom' | 'left'} [side] Without deps: the side of the
+ *   node the loop leaves from. Default top.
+ * @property {number} [at]    Without deps: offset along that side, -0.5 to 0.5. Default 0.
  */
 
 /**
@@ -110,7 +116,9 @@
  * @property {Record<string, string>} [merge] Node → node it merges into: the first
  *   is removed and the second takes its fingerprint (a branch merging back).
  * @property {string[]} [remove]  Nodes to remove (their edges go too).
- * @property {string[]} [connect] Edge ids to add.
+ * @property {string[]} [connect] Eval ids to add.
+ * @property {EvalState} [connectAs] State of the edges connected here. Default
+ *   `reviewed`; `reused` for a copy whose verdicts are already in the store.
  * @property {string[]} [disconnect]
  * @property {string[]} [show]  Overlay ids to show.
  * @property {string[]} [hide]
@@ -119,12 +127,13 @@
  *   step: every eval that depends on one goes stale and is reviewed again, unless
  *   `mark` says it is reused (a verdict from elsewhere, such as a merged branch).
  * @property {Partial<Record<EvalState, string[]>>} [mark] Set eval states.
+ * @property {Record<string, string>} [relabel] Labels for this step only (frames).
  */
 
 /**
  * @typedef {Object} Scenario
  * @property {StoryNode[]} nodes
- * @property {StoryEdge[]} edges
+ * @property {StoryEval[]} evals
  * @property {Record<string, Overlay>} overlays
  * @property {Record<string, LayoutPreset>} layouts
  * @property {StoryStep[]} steps
@@ -139,6 +148,7 @@
  * @property {number} executed
  * @property {number} reused
  * @property {number} human      Human sign-offs executed so far.
+ * @property {number} signoffs   Human sign-offs executed in this step.
  * @property {number} cumExecuted
  * @property {number} cumNaive
  */
@@ -162,8 +172,9 @@
  * @property {Map<string, string>} merge  Node removed here → node it merges into.
  * @property {Map<string, string>} fp Fingerprint of each Artifact.
  * @property {Set<string>} sketch
- * @property {Map<string, EvalState>} edges Present edges and their final state.
- * @property {Set<string>} fresh      Edges connected in this step.
+ * @property {Map<string, string>} labels  Labels overridden in this step.
+ * @property {Map<string, EvalState>} evals Present evals and their final state.
+ * @property {Set<string>} fresh      Evals connected in this step.
  * @property {string[]} ripple  Nodes whose fingerprint changes in this step.
  * @property {string[]} wave1  Ripple: evals on the changed nodes themselves.
  * @property {string[]} wave2  Ripple: evals that depend on them.

@@ -7,12 +7,12 @@
 // attributes only (no layout reads); state colours change through CSS
 // transitions. It stops when nothing moves or the stage is off screen.
 
-import { edgeId, NON_ARTIFACT } from './model.js';
+import { evalId, NON_ARTIFACT } from './model.js';
 
 /** @typedef {import('./types.js').Scenario} Scenario */
 /** @typedef {import('./types.js').Snapshot} Snapshot */
 /** @typedef {import('./types.js').StoryNode} StoryNode */
-/** @typedef {import('./types.js').StoryEdge} StoryEdge */
+/** @typedef {import('./types.js').StoryEval} StoryEval */
 /** @typedef {import('./types.js').EvalState} EvalState */
 /** @typedef {import('./types.js').NodeKind} NodeKind */
 /** @typedef {import('./types.js').Overlay} Overlay */
@@ -143,8 +143,14 @@ export class StoryGraph {
     this.hud = options.hud || null;
     /** @type {Map<string, StoryNode>} */
     this.nodeDef = new Map(scenario.nodes.map((n) => [n.id, n]));
-    /** @type {Map<string, StoryEdge>} */
-    this.edgeDef = new Map(scenario.edges.map((e) => [edgeId(e), e]));
+    /** Each eval as drawn: an edge `from` → `to` (its first dependency), or a loop on `from`. */
+    /** @type {Map<string, { from: string, to: string | null, kind: StoryEval['kind'], bend?: number, side: 'top' | 'right' | 'bottom' | 'left', at: number, by?: string }>} */
+    this.edgeDef = new Map(
+      scenario.evals.map((e) => [
+        evalId(e),
+        { from: e.on, to: e.deps?.[0] ?? null, kind: e.kind, bend: e.bend, side: e.side || 'top', at: e.at || 0, by: e.by },
+      ]),
+    );
     /** @type {Map<string, string[]>} */
     this.children = new Map();
     for (const n of scenario.nodes) {
@@ -304,6 +310,10 @@ export class StoryGraph {
       if (g) {
         g.classList.toggle('is-sketch', snap.sketch.has(id));
         this.setFp(id, snap.fp.get(id));
+        const label = snap.labels.get(id) || this.nodeDef.get(id)?.label || '';
+        const fl = this.els.get(`f:${id}`)?._parts?.label;
+        if (g._parts?.label) g._parts.label.textContent = label;
+        if (fl) fl.textContent = label;
       }
     }
     this.moving = !instant;
@@ -312,12 +322,12 @@ export class StoryGraph {
     }
 
     // Edges: grow the new ones, fade the old ones, and set verdicts.
-    const edgeIds = new Set([...this.edgeAnim.keys(), ...snap.edges.keys()]);
+    const edgeIds = new Set([...this.edgeAnim.keys(), ...snap.evals.keys()]);
     let order = 0;
     for (const id of edgeIds) {
       this.ensureEdge(id);
       const a = this.edgeAnim.get(id) || { o: 0, g: 0, o0: 0, o1: 0, g0: 0, g1: 0, at: 0, dur: 1 };
-      const present = snap.edges.has(id);
+      const present = snap.evals.has(id);
       const shown = a.o > 0.5 && a.g > 0.99;
       if (present && !shown) {
         a.o0 = 1;
@@ -341,7 +351,7 @@ export class StoryGraph {
       }
       this.edgeAnim.set(id, a);
       if (!present) continue;
-      const final = /** @type {EvalState} */ (snap.edges.get(id));
+      const final = /** @type {EvalState} */ (snap.evals.get(id));
       const rippled = snap.wave1.includes(id) || snap.wave2.includes(id);
       if (instant) {
         this.setEdgeState(id, final);
@@ -401,12 +411,20 @@ export class StoryGraph {
     });
     // The changed Artifacts' own evals settle first; the evals that depend on them wait, then
     // settle: reviewed, or reused when the step marks a verdict found elsewhere.
+    // Human reviews wait for a person, so they settle last.
     /** @param {string} e */
-    const settle = (e) => this.setEdgeState(e, snap.edges.get(e) || 'reviewed');
-    snap.wave1.forEach((e, i) => this.later(base + 1500 + i * 120, () => settle(e)));
-    const second = base + 2000 + snap.wave1.length * 120;
-    snap.wave2.forEach((e, i) => this.later(second + i * 140, () => settle(e)));
-    const end = second + snap.wave2.length * 140;
+    const settle = (e) => this.setEdgeState(e, snap.evals.get(e) || 'reviewed');
+    /** @param {string} e */
+    const human = (e) => this.edgeDef.get(e)?.kind === 'human';
+    // Order: the changed Artifacts' own evals, then any sign-off (a person takes a
+    // moment), then the evals that depend on them, which waited for both.
+    snap.wave1.filter((e) => !human(e)).forEach((e, i) => this.later(base + 1500 + i * 120, () => settle(e)));
+    const second = base + 2300 + snap.wave1.length * 120;
+    const signs = all.filter(human);
+    signs.forEach((e, i) => this.later(second + i * 200, () => settle(e)));
+    const third = second + signs.length * 200 + (signs.length ? 500 : 0);
+    snap.wave2.filter((e) => !human(e)).forEach((e, i) => this.later(third + i * 140, () => settle(e)));
+    const end = third + snap.wave2.length * 140;
     this.later(end + 200, () => {
       for (const id of ids) {
         this.changed.delete(id);
@@ -446,7 +464,8 @@ export class StoryGraph {
 
   /** A dot that runs from a changed node along an eval reviewed against it. @param {string} edge @param {string[]} changed */
   pulse(edge, changed) {
-    if (!changed.includes(edge.split('->')[1])) return;
+    const to = this.edgeDef.get(edge)?.to;
+    if (!to || !changed.includes(to)) return;
     const d = el('circle', { class: 'fx-dot', r: 3.4 * this.k, opacity: 0 }, this.layers.fx);
     this.tracks.push({
       at: performance.now() - this.t0,
@@ -488,8 +507,8 @@ export class StoryGraph {
     const st = new Map();
     const rank = { pending: 1, reused: 2, reviewed: 3, stale: 4 };
     for (const [id, state] of this.edgeState) {
-      if (!this.snap.edges.has(id)) continue;
-      const from = id.split('->')[0];
+      if (!this.snap.evals.has(id)) continue;
+      const from = this.edgeDef.get(id)?.from || '';
       const prev = st.get(from);
       if (!prev || rank[state] > rank[/** @type {EvalState} */ (prev)]) st.set(from, state);
     }
@@ -569,12 +588,26 @@ export class StoryGraph {
     if (this.els.has(`e:${id}`)) return;
     const def = this.edgeDef.get(id);
     if (!def) return;
-    const g = el('g', { class: `se k-${def.kind} st-reused`, opacity: 0 }, this.layers.edges);
+    const loop = !def.to;
+    const g = el('g', { class: `se k-${def.kind} st-reused${loop ? ' is-loop' : ''}`, opacity: 0 }, this.layers.edges);
     const line = el('path', { class: 'se-line' }, g);
-    const dot = el('circle', { class: 'se-end', r: 2.4 }, g);
+    // An edge ends in a dot at the dependency; a loop returns to its node with an arrowhead.
+    const dot = el(loop ? 'path' : 'circle', loop ? { class: 'se-head' } : { class: 'se-end', r: 2.4 }, g);
     /** @type {SVGElement & { _parts?: Record<string, SVGElement> }} */
     const gx = g;
     gx._parts = { line, dot };
+    if (loop && def.by) {
+      // A Human review names its reviewer: people are marks, not nodes.
+      const mark = el('g', { class: 'se-by' }, this.layers.badges);
+      el('circle', { class: 'by-face', r: 6.5 }, mark);
+      const initial = el('text', { class: 'by-initial' }, mark);
+      initial.textContent = def.by.charAt(0);
+      const name = el('text', { class: 'by-name' }, mark);
+      name.textContent = def.by;
+      gx._parts.mark = mark;
+      gx._parts.initial = initial;
+      gx._parts.name = name;
+    }
     this.els.set(`e:${id}`, gx);
 
     const c = el('g', { class: `sc k-${def.kind} st-reused`, opacity: 0 }, this.layers.chips);
@@ -599,8 +632,8 @@ export class StoryGraph {
       /** @type {Record<string, SVGElement>} */
       const parts = { line };
       for (let i = 0; i < 3; i++) {
-        parts[`a${i}`] = el('circle', { class: `fl-dot t-${o.tone}`, r: 3 }, g);
-        if (o.back) parts[`b${i}`] = el('circle', { class: `fl-dot t-${o.back}`, r: 3 }, g);
+        parts[`a${i}`] = el('circle', { class: `fl-dot t-${o.tone}`, r: 3, opacity: 0 }, g);
+        if (o.back) parts[`b${i}`] = el('circle', { class: `fl-dot t-${o.back}`, r: 3, opacity: 0 }, g);
       }
       g._parts = parts;
     } else if (o.type === 'badge') {
@@ -783,6 +816,10 @@ export class StoryGraph {
       const chip = this.els.get(`c:${id}`);
       const def = this.edgeDef.get(id);
       if (!g || !chip || !def) continue;
+      if (!def.to) {
+        this.drawLoop(id, g, chip, a);
+        continue;
+      }
       const ga = this.geo.get(def.from);
       const gb = this.geo.get(def.to);
       const ba = this.box.get(def.from);
@@ -868,10 +905,84 @@ export class StoryGraph {
         const ba = this.box.get(o.from);
         const bb = this.box.get(o.to);
         const curve = ba && bb ? curveBetween(ba, bb, o.bend ?? 0.08, 6 * k) : null;
-        if (!curve) continue;
+        if (!curve) {
+          this.curves.delete(`o:${id}`);
+          continue;
+        }
         this.curves.set(`o:${id}`, curve);
         g._parts.line.setAttribute('d', partial(curve, 1));
       }
+    }
+  }
+
+  /**
+   * An eval that reviews one Artifact alone: a loop that leaves the node on one
+   * side and returns to it, with its verdict chip at the far end and, for a
+   * Human review, the reviewer's mark beyond it.
+   * @param {string} id
+   * @param {SVGElement & { _parts: Record<string, SVGElement> }} g
+   * @param {SVGElement} chip
+   * @param {{ o: number, g: number }} a
+   */
+  drawLoop(id, g, chip, a) {
+    const def = /** @type {NonNullable<ReturnType<typeof this.edgeDef.get>>} */ (this.edgeDef.get(id));
+    const geo = this.geo.get(def.from);
+    const b = this.box.get(def.from);
+    const mark = g._parts.mark;
+    const vis = geo && b ? Math.max(geo.o, geo.fo) * a.o * clamp(a.g * 1.6, 0, 1) : 0;
+    if (!geo || !b || vis < 0.01) {
+      g.setAttribute('opacity', '0');
+      chip.setAttribute('opacity', '0');
+      mark?.setAttribute('opacity', '0');
+      return;
+    }
+    const mini = clamp((0.78 - geo.s) / 0.26, 0, 1);
+    const sc = this.k * Math.max(geo.s, 0.5);
+    // Outward normal n and tangent t of the side the loop sits on.
+    const [nx, ny] = { top: [0, -1], right: [1, 0], bottom: [0, 1], left: [-1, 0] }[def.side];
+    const tx = -ny;
+    const ty = nx;
+    const half = Math.abs(nx) * (b.w / 2) + Math.abs(ny) * (b.h / 2);
+    const along = Math.abs(tx) * b.w + Math.abs(ty) * b.h;
+    const bx = b.x + nx * half + tx * def.at * along;
+    const by = b.y + ny * half + ty * def.at * along;
+    const d = 6 * sc;
+    const L = 30 * sc;
+    const e = 9 * sc;
+    const p1 = [bx - tx * d, by - ty * d];
+    const p2 = [bx + tx * d, by + ty * d];
+    const c1 = [p1[0] + nx * L - tx * e, p1[1] + ny * L - ty * e];
+    const c2 = [p2[0] + nx * L + tx * e, p2[1] + ny * L + ty * e];
+    g.setAttribute('opacity', String(Math.round(vis * 100) / 100));
+    g.style.setProperty('--w', String(r1(lerp(1.7, 1.1, mini) * this.k)));
+    g._parts.line.setAttribute('d', `M${r1(p1[0])} ${r1(p1[1])}C${r1(c1[0])} ${r1(c1[1])} ${r1(c2[0])} ${r1(c2[1])} ${r1(p2[0])} ${r1(p2[1])}`);
+    // Arrowhead at the return point, along the curve's last direction.
+    const ux = p2[0] - c2[0];
+    const uy = p2[1] - c2[1];
+    const ul = Math.hypot(ux, uy) || 1;
+    const hx = (ux / ul) * 5 * sc;
+    const hy = (uy / ul) * 5 * sc;
+    g._parts.dot.setAttribute('d', `M${r1(p2[0])} ${r1(p2[1])}L${r1(p2[0] - hx - hy * 0.6)} ${r1(p2[1] - hy + hx * 0.6)}L${r1(p2[0] - hx + hy * 0.6)} ${r1(p2[1] - hy - hx * 0.6)}Z`);
+    // The chip at the loop's far end (t = 0.5 of the cubic).
+    const ax = 0.125 * p1[0] + 0.375 * c1[0] + 0.375 * c2[0] + 0.125 * p2[0];
+    const ay = 0.125 * p1[1] + 0.375 * c1[1] + 0.375 * c2[1] + 0.125 * p2[1];
+    chip.setAttribute('opacity', String(Math.round(vis * 100) / 100));
+    chip.setAttribute('transform', `translate(${r1(ax)} ${r1(ay)}) scale(${Math.round(sc * lerp(0.82, 0.6, mini) * 100) / 100})`);
+    if (mark && def.by) {
+      // Avatar and name beyond the chip, in the same direction.
+      const s = this.k;
+      const w = (13 + 4 + def.by.length * 10 * CHAR) * s;
+      const gap = 9 * sc + 5 * s;
+      const mx = ax + nx * (gap + (Math.abs(nx) * w) / 2);
+      const my = ay + ny * (gap + 8 * s);
+      mark.setAttribute('transform', `translate(${r1(mx - w / 2)} ${r1(my)}) scale(${Math.round(s * 100) / 100})`);
+      mark.setAttribute('opacity', String(Math.round(vis * (1 - mini) * 100) / 100));
+      g._parts.initial.setAttribute('x', '6.5');
+      g._parts.initial.setAttribute('y', '0.5');
+      g._parts.name.setAttribute('x', '17');
+      g._parts.name.setAttribute('y', '0.5');
+      const face = mark.firstElementChild;
+      face?.setAttribute('cx', '6.5');
     }
   }
 

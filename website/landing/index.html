@@ -85,7 +85,7 @@
     <div class="wrap story-head">
       <p class="kicker">The story</p>
       <h2 id="story-title">Grow a project, and watch what gets reviewed again.</h2>
-      <p>One project, from an idea to a team working on it in parallel. Each step adds Artifacts and the evals between them; the graphic shows which verdicts run again and which are reused.</p>
+      <p>One project, from an idea to a team working on copies of it in parallel. Each step adds Artifacts and the evals between them; the graphic shows which verdicts run again and which are reused.</p>
     </div>
 
     <div class="story-grid">
@@ -113,6 +113,7 @@
               <li><svg viewBox="0 0 26 12"><path d="M1 6h24" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round"/></svg>Runtime</li>
               <li><svg viewBox="0 0 26 12"><path d="M1 6h24" stroke="var(--violet)" stroke-width="1.8" stroke-dasharray="7 5"/></svg>Agent</li>
               <li><svg viewBox="0 0 26 12"><path d="M1 6h24" stroke="var(--amber)" stroke-width="2.6" stroke-dasharray="0.5 5" stroke-linecap="round"/></svg>Human</li>
+              <li><svg viewBox="0 0 26 12"><path d="M8 11C2 1 24 1 18 11" fill="none" stroke="var(--dim)" stroke-width="1.6"/></svg>reviews one Artifact alone</li>
               <li><svg class="lg-chip" viewBox="-9 -9 18 18"><circle r="8" fill="none" stroke="var(--green)" stroke-width="1.4"/><path d="M-2.8.2-.8 2.2 2.9-2" fill="none" stroke="var(--green)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>reviewed</li>
               <li><svg class="lg-chip" viewBox="-9 -9 18 18"><circle r="8" fill="none" stroke="var(--cyan)" stroke-width="1.4"/><path d="M2.6-.9A2.8 2.8 0 1 0 2.4 1.6M2.9-3.1v2.3H.6" fill="none" stroke="var(--cyan)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>reused</li>
               <li><svg class="lg-chip" viewBox="-9 -9 18 18"><circle r="8" fill="none" stroke="var(--amber)" stroke-width="1.4"/><path d="M0-3.1V.6M0 2.8v.1" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linecap="round"/></svg>stale</li>
@@ -148,75 +149,75 @@
         <section class="story-step" data-step="artifacts" id="step-artifacts" aria-labelledby="step-artifacts-h">
           <p class="step-k"><b>02</b>Artifacts</p>
           <h3 id="step-artifacts-h">The idea and a spec become Artifacts.</h3>
-          <p>A folder with an <code>artifactize.json</code> is an Artifact: a doc, a spec, a module, a website, a style sheet. Each declares a fingerprint, what its reviews depend on; the built-in one hashes the folder's own files.</p>
+          <p>A folder with an <code>artifactize.json</code> is an Artifact: a doc, a spec, a module, a website, a style sheet. Each declares a fingerprint, what its reviews depend on; the built-in one hashes the folder's own files. An eval can review one Artifact on its own: here an Agent checks that the Spec is complete.</p>
           <pre class="step-code"><code>"fingerprint": {}</code></pre>
-          <p class="sr">In the graphic: two Artifacts, Idea and Spec, each showing a short fingerprint.</p>
+          <p class="sr">In the graphic: two Artifacts, Idea and Spec, each showing a short fingerprint. An Agent eval loops on the Spec, reviewing it alone, and executes once.</p>
         </section>
 
         <section class="story-step" data-step="relations" id="step-relations" aria-labelledby="step-relations-h">
           <p class="step-k"><b>03</b>Evals</p>
           <h3 id="step-relations-h">Code arrives, and evals connect the parts.</h3>
-          <p>An eval reviews one Artifact, and every Artifact it names becomes a dependency of that review. An Agent eval reviews the code against the Spec, another reviews the Spec against the Idea, and Alice signs off the Spec as a Human eval.</p>
+          <p>An eval reviews one Artifact, alone or against others: every other Artifact it names becomes a dependency of that review, drawn as an edge. An Agent eval reviews the code against the Spec, another the Spec against the Idea, and Alice signs off the Spec itself as a Human eval.</p>
           <pre class="step-code"><code>"instruction": "Review {code} against {spec}."</code></pre>
-          <p class="sr">In the graphic: Code appears below Idea and Spec, with Alice beside them. Agent evals run from Code to Spec and from Spec to Idea, and a Human eval from Spec to Alice. All three execute once and turn GREEN.</p>
+          <p class="sr">In the graphic: Code appears below Idea and Spec. Agent eval edges run from Code to Spec and from Spec to Idea, and a Human eval loops on the Spec, marked with its reviewer, Alice. All three execute once; the Spec's completeness review is reused.</p>
         </section>
 
         <section class="story-step" data-step="runtime" id="step-runtime" aria-labelledby="step-runtime-h">
           <p class="step-k"><b>04</b>Tests and style</p>
           <h3 id="step-runtime-h">Tests run as runtime evals, and a style sheet reviews the code.</h3>
-          <p>Inside Code, a runtime eval runs the tests: any command can review an Artifact, and exit code 0 is GREEN. A coding-style sheet becomes an Artifact too, and an Agent eval reviews the source against it. The three earlier verdicts still hold, so they are reused.</p>
+          <p>Inside Code, a runtime eval runs the tests: any command can review an Artifact, and exit code 0 is GREEN. A coding-style sheet becomes an Artifact too: an Agent eval reviews the source against it, and Alice signs the sheet off. The four earlier verdicts still hold, so they are reused.</p>
           <pre class="step-code"><code>"kind": "runtime",
 "command": "cargo", "args": ["test"]</code></pre>
-          <p class="sr">In the graphic: Code opens into a frame holding src and tests. A runtime eval joins src to tests and an Agent eval joins src to the Style sheet; both execute. The three earlier evals are reused.</p>
+          <p class="sr">In the graphic: Code opens into a frame holding src and tests. A runtime eval joins src to tests, an Agent eval joins src to the Style sheet, and a Human eval loops on the Style sheet, reviewed by Alice; all three execute. The four earlier evals are reused.</p>
         </section>
 
         <section class="story-step" data-step="modules" id="step-modules" aria-labelledby="step-modules-h">
           <p class="step-k"><b>05</b>Modules</p>
           <h3 id="step-modules-h">The code splits into modules.</h3>
-          <p>src becomes three child Artifacts, core, api and cli, each with its own fingerprint, tests and style review. From now on a change to one module re-reviews that module and what depends on it, not the whole codebase.</p>
-          <p class="sr">In the graphic: src splits into core, api and cli inside the Code frame. Each module gets a runtime eval against tests and an Agent eval against the Style sheet. Those six execute, and so does Code's review, because its children changed; the rest are reused.</p>
+          <p>src becomes three child Artifacts, core, cli and api, each with its own fingerprint, tests and style review; api, the public interface, also gets a Human sign-off. From now on a change to one module re-reviews that module and what depends on it, not the whole codebase.</p>
+          <p class="sr">In the graphic: src splits into core, cli and api inside the Code frame. Each module gets a runtime eval against tests and an Agent eval against the Style sheet, and a Human eval loops on api, reviewed by Alice. Those seven execute, and so does Code's review, because its children changed; the other four are reused.</p>
         </section>
 
         <section class="story-step" data-step="beyond" id="step-beyond" aria-labelledby="step-beyond-h">
           <p class="step-k"><b>06</b>Beyond code</p>
           <h3 id="step-beyond-h">A website and docs pages join the graph.</h3>
-          <p>The docs pages are reviewed against the api module. The website's runtime evals check its links into the docs and run its code samples against api. More Artifacts now depend on the code, so a code change has more to re-review.</p>
-          <p class="sr">In the graphic: Docs pages and Website appear below the code. Three new evals execute: the docs against api, the website against the docs, and the website against api.</p>
+          <p>The docs pages are reviewed against the api module, and their build runs as a runtime eval of its own. The website's runtime evals check its links into the docs and run its code samples against api, and Dana, a designer, signs the website off. More Artifacts now depend on the code, so a code change has more to re-review.</p>
+          <p class="sr">In the graphic: Docs pages and Website appear below the code. Five new evals execute: the docs against api, the docs' build (a loop on Docs pages), the website against the docs and against api, and Dana's sign-off of the website (a loop on Website).</p>
         </section>
 
         <section class="story-step" data-step="ripple" id="step-ripple" aria-labelledby="step-ripple-h">
           <p class="step-k"><b>07</b>A change</p>
           <h3 id="step-ripple-h">Change one module, and only what depends on it runs again.</h3>
-          <p>Edit api and its fingerprint changes. Its own evals go stale and run first; the evals that depend on api wait for them, then run: the code's review against the Spec, the docs pages and the website samples. The other seven verdicts, Alice's sign-off among them, are reused.</p>
+          <p>Edit api and its fingerprint changes. Its own evals go stale and run first, its Human review included: Alice signs off the new api once. The evals that depend on api wait for them, then run: the code's review against the Spec, the docs pages and the website samples. The other eleven verdicts, the Spec's and the website's sign-offs among them, are reused.</p>
           <pre class="step-code"><code><span class="t-prompt">$</span> artifactize status
 <span class="t-dim">…</span>
-Verify actions: will execute 2, will reuse 7, wait 3, blocked 0</code></pre>
-          <p class="sr">In the graphic: api's fingerprint changes and a ripple spreads from it. Five evals turn stale and are reviewed again; seven stay reused, including Alice's sign-off, now marked "signed off once".</p>
+Verify actions: will execute 3, will reuse 11, wait 3, blocked 0</code></pre>
+          <p class="sr">In the graphic: api's fingerprint changes and a ripple spreads from it. api's tests and style review turn stale and run, its Human review waits for Alice's sign-off, then the three evals that depend on api run. Six evals execute, one of them a sign-off; eleven stay reused.</p>
         </section>
 
         <section class="story-step" data-step="grows" id="step-grows" aria-labelledby="step-grows-h">
           <p class="step-k"><b>08</b>It keeps growing</p>
           <h3 id="step-grows-h">New Artifacts and relations keep arriving.</h3>
           <p>A sync module joins the code, a brand guide arrives to review the website against, and the docs pages start covering the CLI. Each addition runs its own evals once; every verdict already earned stays reused.</p>
-          <p class="sr">In the graphic: sync joins the modules, Brand guide joins the website, and the docs gain an eval against cli. Four new evals execute; twelve are reused.</p>
+          <p class="sr">In the graphic: sync joins the modules, Brand guide joins the website, and the docs gain an eval against cli. Four new evals execute; seventeen are reused.</p>
         </section>
 
         <section class="story-step" data-step="parallel" id="step-parallel" aria-labelledby="step-parallel-h">
           <p class="step-k"><b>09</b>Work in parallel</p>
-          <h3 id="step-parallel-h">Split the work: each person verifies their own change.</h3>
-          <p>Bob changes api in one worktree and Carol changes cli in another, each with their own checkout and state. Each runs <code>verify</code>: it re-reviews what their change touched, reuses the rest, and publishes the verdicts to the team's <code>artifactize server</code>. Paths do not matter to the reuse key, so a verdict earned in one checkout is reused by every other with the same inputs.</p>
+          <h3 id="step-parallel-h">Split the work across copies of one repository.</h3>
+          <p>Alice changes the docs in her clone, Bob changes api in a worktree and Carol changes cli in another. Each runs <code>verify</code> in their own copy and publishes the verdicts to the team's <code>artifactize server</code>. It is one project with the same Artifacts, and paths are not part of the reuse key, so whatever a change did not touch is reused across the copies. Bob's api change needs Alice's sign-off once, in his copy.</p>
           <pre class="step-code"><code><span class="t-prompt">$</span> artifactize remote login https://reviews.example/</code></pre>
-          <p class="sr">In the graphic: the project zooms out into the app repository on main. Below it, two worktrees: Bob's holds a copy of api and Carol's a copy of cli. Each changes its module, runs that module's tests and style review, and publishes the verdicts to the review store; the rest of the graph stays reused.</p>
+          <p class="sr">In the graphic: the project zooms out into three copies of the same repository around the review store: app · alice/docs, app · bob/api and app · carol/cli. In each copy the changed Artifact and the evals that depend on it turn stale and run, fourteen in all, one of them the sign-off of Bob's api; the other 49 are reused. Verdicts flow between each copy and the store.</p>
         </section>
 
         <section class="story-step" data-step="merge" id="step-merge" aria-labelledby="step-merge-h">
           <p class="step-k"><b>10</b>Merge and CI</p>
-          <h3 id="step-merge-h">CI runs only what the merge made new, and a person signs off once.</h3>
-          <p>Both branches merge into main. CI runs <code>verify --all</code> with a read-only token: it reuses the verdicts the branches published and executes only evals whose inputs are new after the merge, here the code's review against the Spec, which now sees both changes. Agent reviews spend tokens only on that. Alice's sign-off was recorded once; every checkout and CI reuses it until the Spec changes.</p>
+          <h3 id="step-merge-h">CI runs only what the merge made new, and each sign-off happens once.</h3>
+          <p>The copies merge into main. CI runs <code>verify --all</code> with a read-only token: it reuses the verdicts the copies already earned from the store, the sign-off of Bob's api included, and executes only evals whose inputs are new after the merge, those that see two people's changes at once: the code's review against the Spec and the docs' reviews of api and cli. No Human review is asked for again.</p>
           <pre class="step-code"><code><span class="t-dim"># CI on main: store URL and read token in the env</span>
 <span class="t-prompt">$</span> artifactize verify --all
-Summary: executed 1 (runtime 0, agent 1, human 0), reused 15 (runtime 6, agent 8, human 1)</code></pre>
-          <p class="sr">In the graphic: the worktrees merge back into the app repository, so api and cli take their new fingerprints. Their evals turn stale and come back reused from the review store; only Code's review against the Spec, which spans both changes, executes. A CI lane reads verdicts from the store: executed 1, reused 15. Alice's sign-off keeps its one badge, "signed off once".</p>
+Summary: executed 3 (runtime 0, agent 3, human 0), reused 18 (runtime 7, agent 7, human 4)</code></pre>
+          <p class="sr">In the graphic: the copies merge back into app · main, so api and cli take their new fingerprints. Their evals turn stale; those the copies already reviewed, api's sign-off included, come back reused from the store, and the three that see two changes at once execute. A CI lane reads verdicts from the store: executed 3, reused 18.</p>
         </section>
       </div>
     </div>
