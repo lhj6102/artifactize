@@ -357,3 +357,30 @@ fn config_check_names_the_replacements_for_removed_backends() {
         }
     }
 }
+
+#[test]
+fn config_check_names_the_removal_of_result_check() {
+    let fixture = Fixture::new();
+    fixture.write(
+        "app/artifactize.json",
+        &json!({"name":"app","evals":[{
+            "id":"review","title":"Review",
+            "profile":{"kind":"agent","backend":"openai","model":"m"},
+            "payload":{"instruction":"Review."},
+            "resultCheck":{"command":"python3","args":["check.py"]}
+        }]})
+        .to_string(),
+    );
+    let output = fixture
+        .command()
+        .args(["config", "check", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let error = json_output(&output)["error"].as_str().unwrap().to_owned();
+    assert!(error.contains(&native("app/artifactize.json")), "{error}");
+    assert!(
+        error.contains("Eval review: resultCheck was removed in 0.6.0"),
+        "{error}"
+    );
+}
