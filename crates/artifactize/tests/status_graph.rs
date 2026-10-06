@@ -59,7 +59,9 @@ impl Fixture {
         // verify announces its Run on stderr; nothing else is printed there.
         let stderr = String::from_utf8_lossy(&output.stderr);
         let expected = match value["id"].as_str() {
-            Some(id) if args[0] == "verify" => format!("Run: {id}\n"),
+            Some(id) if args[0] == "verify" => {
+                format!("Started {id} (follow: artifactize monitor)\n")
+            }
             _ => String::new(),
         };
         assert_eq!(stderr, expected);

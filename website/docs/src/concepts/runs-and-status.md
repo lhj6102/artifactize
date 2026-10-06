@@ -17,7 +17,7 @@ fingerprint claim occupy job slots while polling, but cache hits occupy none. An
 Agent review of a backend with a machine-wide limit also needs one of its
 [backend slots](../reference/state-cache-limits.md#backend-capacity); a request waiting for one
 occupies no job slot.
-`verify` prints `Run: RUN_ID` to stderr as soon as the Run is saved, before any
+`verify` prints `Started RUN_ID (follow: artifactize monitor)` to stderr as soon as the Run is saved, before any
 eval runs, so a long Run can be followed (`artifactize monitor`,
 `artifactize run show RUN_ID --wait`) or cancelled from the start; nothing else is
 printed there unless something goes wrong. With `--json`, stdout still carries only

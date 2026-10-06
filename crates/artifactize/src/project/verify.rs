@@ -226,7 +226,11 @@ pub async fn verify(
     receipts.create_run(&run, &requests).await?;
     if options.announce_run {
         use std::io::Write;
-        let _ = writeln!(std::io::stderr().lock(), "Run: {}", run.id);
+        let _ = writeln!(
+            std::io::stderr().lock(),
+            "Started {} (follow: artifactize monitor)",
+            run.id
+        );
     }
     let mut evidence = match broker::schedule(
         config.clone(),

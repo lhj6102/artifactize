@@ -325,7 +325,12 @@ impl Client {
             let wait = failure
                 .retry_after
                 .unwrap_or(Duration::from_millis(250 << (attempt - 1)));
-            if failure.retry_after.is_some() && Instant::now() + wait >= context.deadline {
+            // A wait too long to add to now is past any deadline.
+            if failure.retry_after.is_some()
+                && Instant::now()
+                    .checked_add(wait)
+                    .is_none_or(|end| end >= context.deadline)
+            {
                 return Err(Failure::new(
                     failure.code,
                     format!(
@@ -409,7 +414,7 @@ fn wait_header(
             .parse::<f64>()
             .ok()
             .filter(|value| value.is_finite() && *value >= 0.0)
-            .map(Duration::from_secs_f64)
+            .and_then(|value| Duration::try_from_secs_f64(value).ok())
     };
     if let Some(wait) = header("retry-after-ms").and_then(seconds) {
         return Some(wait / 1000);

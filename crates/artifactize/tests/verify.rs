@@ -1045,7 +1045,9 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
         stderr.read_line(&mut line).unwrap();
         let id = line
             .strip_suffix('\n')
-            .and_then(|line| line.strip_prefix("Run: "))
+            .and_then(|line| line.strip_prefix("Started "))
+            .and_then(|line| line.split_once(" ("))
+            .map(|(id, _)| id)
             .unwrap_or_else(|| panic!("{line:?}"))
             .to_owned();
         // The Run is saved and readable while its eval still runs.

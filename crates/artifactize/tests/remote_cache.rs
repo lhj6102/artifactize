@@ -171,16 +171,16 @@ impl Machine {
     }
 }
 
-/// Text stdout and stderr, without verify's `Run: RUN_ID` announcement.
+/// Text stdout and stderr, without verify's `Started RUN_ID` announcement.
 fn checked(output: Output, code: i32, token: &str) -> (String, String) {
     let stdout = String::from_utf8(output.stdout).unwrap();
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(!stdout.contains(token) && !stderr.contains(token));
     assert_eq!(output.status.code(), Some(code), "{stdout}{stderr}");
-    assert!(stderr.matches("Run: run-").count() <= 1, "{stderr}");
+    assert!(stderr.matches("Started run-").count() <= 1, "{stderr}");
     let stderr = stderr
         .lines()
-        .filter(|line| !line.starts_with("Run: run-"))
+        .filter(|line| !line.starts_with("Started run-"))
         .map(|line| format!("{line}\n"))
         .collect();
     (stdout, stderr)
