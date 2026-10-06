@@ -14,6 +14,16 @@ categories = ["command-line-utilities", "development-tools", "development-tools:
 # The Windows test stand-in for /bin/sh, which tests build from source on demand.
 exclude = ["tests/support/fixture.rs"]
 
+# `cargo binstall artifactize` installs the archive that release.yml attaches to the
+# GitHub release (.github/workflows/binaries.yml builds it) instead of compiling.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }{ archive-suffix }"
+pkg-fmt = "tgz"
+bin-dir = "{ name }-v{ version }-{ target }/{ bin }{ binary-ext }"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
 [dependencies]
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 base64 = "0.22"

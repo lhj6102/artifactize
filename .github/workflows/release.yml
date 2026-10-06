@@ -1,7 +1,13 @@
 name: Release
 
-# Pushing a version tag (v0.5.1) publishes that version to crates.io and creates its
-# GitHub release. The tag must match the crate version.
+# Pushing a version tag (v0.5.2) releases that version. The tag must match the crate
+# version. In order, and each step only after the previous one succeeds:
+# 1. check the tag and run the tests;
+# 2. build and smoke-test every release binary, and test the install scripts against
+#    them (binaries.yml);
+# 3. publish to crates.io, create the GitHub release and attach every archive and its
+#    .sha256 checksum.
+# A failed check or build publishes nothing.
 on:
   push:
     tags: ["v*"]
@@ -14,12 +20,9 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish:
+  check:
+    name: Tag and tests
     runs-on: ubuntu-latest
-    environment: release
-    permissions:
-      contents: write # the GitHub release
-      id-token: write # crates.io Trusted Publishing
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -32,6 +35,35 @@ jobs:
             exit 1
           fi
       - run: cargo test --locked
+
+  binaries:
+    needs: check
+    uses: ./.github/workflows/binaries.yml
+
+  publish:
+    needs: binaries
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write # the GitHub release
+      id-token: write # crates.io Trusted Publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          path: dist
+          merge-multiple: true
+      - name: Check the archives and their checksums
+        working-directory: dist
+        run: |
+          ls -l
+          version=${GITHUB_REF_NAME#v}
+          for target in x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-msvc; do
+            case $target in *windows*) ext=zip ;; *) ext=tar.gz ;; esac
+            sha256sum -c "artifactize-v$version-$target.$ext.sha256"
+          done
       # crates.io Trusted Publishing: the crate trusts this workflow in environment
       # "release", so the job exchanges its OIDC token for a short-lived publish token.
       - uses: rust-lang/crates-io-auth-action@v1
@@ -44,3 +76,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+      - name: Attach the archives and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*

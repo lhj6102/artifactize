@@ -1,27 +1,80 @@
 # Install artifactize
 
-artifactize is one binary, built with Cargo and published on
+artifactize is one binary. From 0.5.2 on, every
+[GitHub release](https://github.com/lhj6102/artifactize/releases) attaches prebuilt
+binaries for Linux (x86_64 and aarch64, statically linked) and Windows (x64), each with
+a SHA-256 checksum; every release is also published on
 [crates.io](https://crates.io/crates/artifactize). It is open source under the
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
 
 ## Prerequisites
 
-- Linux or WSL 2. Other platforms are not supported.
-- A Rust toolchain, 1.95 or later, from [rustup](https://rustup.rs) and a C compiler
-  (SQLite is built from source).
+- Linux (x86_64 or aarch64), WSL 2, or Windows 10 or 11 (x64).
 - `python3` and `grep` for the example projects.
 - Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
   `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime and Human evals
   need none.
 
+The install scripts and `cargo binstall` need no Rust toolchain. `cargo install`
+needs Rust 1.95 or later, from [rustup](https://rustup.rs), and a C compiler (SQLite
+is built from source).
+
 ## Install
 
-Install the latest release from crates.io (releases are published there from
-0.5.0 on):
+### Linux and WSL 2
+
+```sh
+curl -fsSL https://artifactize.dev/install.sh | sh
+artifactize --version          # artifactize 0.5.1
+```
+
+The [script](https://artifactize.dev/install.sh) picks the static binary for your
+CPU from the latest GitHub release, checks its SHA-256 against the release's checksum
+and refuses a mismatch, then installs it to `~/.local/bin`. It uses `curl` or `wget`,
+never `sudo`, and never edits your shell startup files: if `~/.local/bin` is not on
+`PATH`, it prints the line to add. Two environment variables change what it does:
+
+```sh
+curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_VERSION=0.5.2 sh             # this release
+curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_INSTALL_DIR="$HOME/bin" sh   # this directory
+```
+
+### Windows
+
+In PowerShell (Windows PowerShell 5.1 or PowerShell 7):
+
+```powershell
+irm https://artifactize.dev/install.ps1 | iex
+```
+
+The [script](https://artifactize.dev/install.ps1) downloads the release zip, checks
+its SHA-256 and refuses a mismatch, installs `artifactize.exe` to
+`%LOCALAPPDATA%\Programs\artifactize` and adds that directory to your user `Path`.
+It needs no administrator rights. Open a new terminal to use `artifactize`. It reads
+the same `ARTIFACTIZE_VERSION` and `ARTIFACTIZE_INSTALL_DIR` variables:
+
+```powershell
+$env:ARTIFACTIZE_VERSION = '0.5.2'; irm https://artifactize.dev/install.ps1 | iex
+```
+
+The Windows binary is not code-signed yet, so Windows blocks it where Smart App
+Control is on. On such a machine, install the Linux binary inside WSL 2 instead.
+
+### cargo-binstall
+
+With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), Cargo installs the
+same release binary instead of compiling it:
+
+```sh
+cargo binstall artifactize
+```
+
+### cargo install
+
+Build the latest release from crates.io (releases are published there from 0.5.0 on):
 
 ```sh
 cargo install artifactize --locked
-artifactize --version          # artifactize 0.5.1
 ```
 
 `--locked` builds with the dependency versions the release was tested with. Every
@@ -42,11 +95,17 @@ cd artifactize
 cargo install --path crates/artifactize --locked
 ```
 
-The binary goes to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs
-it under `DIR/bin` instead. To upgrade, run `cargo install artifactize --locked`
-again (or the `--git` command with the new release's tag, or `git pull` and repeat
-`cargo install --path`). The next
-command that opens an older state database upgrades it in place; `artifactize
+Cargo installs to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs
+under `DIR/bin` instead.
+
+## Update
+
+Run the command you installed with again: the install script or `cargo binstall
+artifactize` replaces the binary with the latest release, and `cargo install
+artifactize --locked` rebuilds it (or run the `--git` command with the new release's
+tag, or `git pull` and repeat `cargo install --path`). Your state stays where it is.
+
+The next command that opens an older state database upgrades it in place; `artifactize
 doctor` reports its schema without changing it. 0.4 calls the reuse declaration
 `fingerprint`; `config check` shows the new shape for each `artifactize.json` that
 still uses the old field, or the content form's `dependencies` option that 0.5
@@ -68,7 +127,8 @@ from the state directory.
 All state lives in one directory: `state.sqlite` (Runs, requests, executions, the
 reuse records and Human claims), Run output under `runs/`, and the Codex sign-in and
 the review store token under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`, else
-`$XDG_STATE_HOME/artifactize`, else `~/.local/state/artifactize`.
+`$XDG_STATE_HOME/artifactize`, else (on Windows) `%LOCALAPPDATA%\artifactize`, else
+`~/.local/state/artifactize`.
 
 `--state-dir PATH` moves the whole state for one command. Use the same value for
 `login`, `verify`, `request`, `run` and `monitor`. State must be outside the repository
@@ -111,11 +171,25 @@ artifactize prune --dry-run           # list removable scratch output of finishe
 artifactize prune --older-than 7d     # remove it; saved results stay readable
 artifactize logout codex              # if you signed in with Codex
 artifactize remote logout             # if you signed in to a review store
-cargo uninstall artifactize
 ```
 
-`prune` never touches active Runs, database rows or the repository. To remove
-everything, delete the state directory that `artifactize doctor` prints on its
+Then remove the binary the way you installed it:
+
+```sh
+rm ~/.local/bin/artifactize           # install.sh (or your ARTIFACTIZE_INSTALL_DIR)
+cargo uninstall artifactize           # cargo binstall or cargo install
+```
+
+On Windows, delete the install directory, then remove it from your user `Path`
+(search the Start menu for "Edit environment variables for your account"):
+
+```powershell
+Remove-Item -Recurse "$env:LOCALAPPDATA\Programs\artifactize"
+```
+
+Uninstalling keeps the state directory, so a later install finds your Runs and saved
+results again. `prune` never touches active Runs, database rows or the repository. To
+remove everything, delete the state directory that `artifactize doctor` prints on its
 first line.
 
 Next, take the [Quick start](quick-start.md): a five-minute tour that needs no model.

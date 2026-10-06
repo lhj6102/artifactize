@@ -12,7 +12,7 @@ saved.
 `status` predicts what a change will re-review. A team review store
 (`artifactize server`) shares verdicts across machines and CI. The CLI drives reviews,
 `artifactize monitor` shows their progress and `artifactize review` works
-through waiting Human sign-offs. It runs on Linux and WSL.
+through waiting Human sign-offs. It runs on Linux, WSL 2 and Windows.
 
 Every non-DROP item in the [CCDD 7.0 capability inventory](https://github.com/lhj6102/artifactize/blob/main/docs/ccdd-7-inventory.md)
 is checked off; the [plan](https://github.com/lhj6102/artifactize/blob/main/docs/PLAN.md) records the lean scope and what was dropped.
@@ -21,11 +21,11 @@ Start with [Install](getting-started/install.md): prerequisites, backend setup, 
 
 ## Get started
 
-On Linux or WSL 2, with a Rust toolchain and a C compiler, install the binary and
-review the runtime-only example. No model or API key is needed:
+On Linux or WSL 2, install the binary and review the runtime-only example. No model
+or API key is needed:
 
 ```sh
-cargo install artifactize --locked
+curl -fsSL https://artifactize.dev/install.sh | sh   # or: cargo install artifactize --locked
 git clone https://github.com/lhj6102/artifactize   # the example projects
 cd artifactize/examples/runtime-relations
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
@@ -33,7 +33,8 @@ artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused
 ```
 
-[Install](getting-started/install.md) has the prerequisites, backend setup and the full
+[Install](getting-started/install.md) has Windows, `cargo binstall`, the prerequisites,
+backend setup and the full
 [quick start](getting-started/quick-start.md).
 
 ## Where to go next

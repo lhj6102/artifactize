@@ -1,0 +1,188 @@
+name: Binaries
+
+# Builds the release binaries and tests the install scripts against them.
+# release.yml calls this before it publishes anything. Pull requests that touch the
+# release, the build or the install scripts run it too, and keep the archives as
+# workflow artifacts.
+#
+# Each archive is artifactize-v<version>-<target>.tar.gz (.zip on Windows) and holds
+# artifactize-v<version>-<target>/ with the binary, LICENSE and README.md. Next to it,
+# <archive>.sha256 reads "<hex digest>  <archive>", as sha256sum writes it.
+on:
+  workflow_call:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/binaries.yml"
+      - ".github/workflows/release.yml"
+      - ".github/scripts/test-install.*"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/*/Cargo.toml"
+      - "rust-toolchain.toml"
+      - "website/landing/install.sh"
+      - "website/landing/install.ps1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: binaries-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    env:
+      TARGET: ${{ matrix.target }}
+      # The static CRT, so the .exe needs no Visual C++ runtime DLLs. musl targets link
+      # statically by default.
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      # The C dependencies (bundled SQLite, aws-lc, ring) build with musl-gcc. It sees
+      # only musl's headers, and aws-lc also includes Linux kernel headers
+      # (linux/random.h), so link those into musl's include directory.
+      - name: Install the musl C toolchain
+        if: contains(matrix.target, '-linux-musl')
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq musl-tools
+          arch=$(uname -m)
+          include=/usr/include/$arch-linux-musl
+          sudo ln -sfn /usr/include/linux "$include/linux"
+          sudo ln -sfn /usr/include/asm-generic "$include/asm-generic"
+          sudo ln -sfn "/usr/include/$arch-linux-gnu/asm" "$include/asm"
+          echo "CC_${TARGET//-/_}=musl-gcc" >>"$GITHUB_ENV"
+      - name: Read the crate version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "artifactize") | .version')
+          echo "VERSION=$version" >>"$GITHUB_ENV"
+      - name: Build
+        run: cargo build --release --locked -p artifactize --target "$TARGET"
+      - name: Check that the binary is static and runs
+        run: |
+          case $TARGET in
+            *windows*)
+              bin=target/$TARGET/release/artifactize.exe
+              # dumpbin from the runner's Visual Studio lists the DLLs the .exe imports.
+              vs=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" \
+                -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+                -property installationPath)
+              dumpbin=$(ls "$(cygpath -u "$vs")"/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe | tail -n 1)
+              "$dumpbin" -nologo -dependents "$bin" | tee dependents.txt
+              if grep -Ei 'vcruntime|msvcp|ucrtbase|api-ms-win-crt' dependents.txt; then
+                echo "::error::$bin needs the Visual C++ runtime; build it with +crt-static" >&2
+                exit 1
+              fi
+              ;;
+            *)
+              bin=target/$TARGET/release/artifactize
+              file "$bin"
+              ldd "$bin" || true
+              if ! file "$bin" | grep -Eq 'static(-pie)? linked|statically linked'; then
+                echo "::error::$bin is not statically linked" >&2
+                exit 1
+              fi
+              ;;
+          esac
+          out=$("$bin" --version)
+          echo "$out"
+          if [ "$out" != "artifactize $VERSION" ]; then
+            echo "::error::$bin --version printed '$out', not 'artifactize $VERSION'" >&2
+            exit 1
+          fi
+      - name: Package
+        run: |
+          name=artifactize-v$VERSION-$TARGET
+          mkdir -p "dist/$name"
+          cp LICENSE README.md "dist/$name/"
+          cd dist
+          case $TARGET in
+            *windows*)
+              cp "../target/$TARGET/release/artifactize.exe" "$name/"
+              archive=$name.zip
+              7z a -tzip -bso0 -bsp0 "$archive" "$name"
+              ;;
+            *)
+              cp "../target/$TARGET/release/artifactize" "$name/"
+              archive=$name.tar.gz
+              tar -czf "$archive" --owner=0 --group=0 "$name"
+              ;;
+          esac
+          rm -r "$name"
+          sum=$(sha256sum "$archive" | cut -d ' ' -f 1)
+          printf '%s  %s\n' "$sum" "$archive" >"$archive.sha256"
+          ls -l
+          cat "$archive.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  install-sh:
+    name: install.sh in ${{ matrix.image }} (${{ matrix.target }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:stable-slim
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - image: alpine:latest
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - image: debian:stable-slim
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        if: matrix.os == 'ubuntu-latest'
+        run: shellcheck website/landing/install.sh .github/scripts/test-install.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: dist
+      # Fresh install, PATH hint, doctor, update, a tampered archive and a missing release.
+      - run: sh .github/scripts/test-install.sh dist "${{ matrix.image }}"
+
+  install-ps1:
+    name: install.ps1 on Windows
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-x86_64-pc-windows-msvc
+          path: dist
+      # Each run installs into the default directory, updates in place, refuses a
+      # tampered archive, then uninstalls.
+      - name: Windows PowerShell 5.1
+        shell: powershell
+        run: .github/scripts/test-install.ps1 -Dist dist -Port 8737
+      - name: PowerShell 7
+        shell: pwsh
+        run: .github/scripts/test-install.ps1 -Dist dist -Port 8738
