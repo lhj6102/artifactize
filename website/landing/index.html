@@ -257,10 +257,10 @@ Summary: executed 3 (runtime 0, agent 3, human 0), reused 18 (runtime 7, agent 7
     <div class="wrap start-inner">
       <p class="kicker">Get started</p>
       <h2 id="start-title">Try it in five minutes.</h2>
-      <p>Artifactize is open source under the Apache License 2.0. Install the latest release from crates.io with Cargo on Linux or WSL 2; the quick start then reviews an example project with no model or API key.</p>
+      <p>Artifactize is open source under the Apache License 2.0. Install the static binary on Linux or WSL 2 with one command, no Rust toolchain needed; the quick start then reviews an example project with no model or API key.</p>
       <div class="panel start-panel">
-<pre class="code term"><code><span class="t-dim"># Linux or WSL 2, with a Rust toolchain and a C compiler</span>
-<span class="t-prompt">$</span> cargo install artifactize --locked
+<pre class="code term"><code><span class="t-dim"># Linux or WSL 2 (x86_64, aarch64): installs to ~/.local/bin, no sudo</span>
+<span class="t-prompt">$</span> curl -fsSL https://artifactize.dev/install.sh | sh
 <span class="t-prompt">$</span> artifactize --version
 artifactize 0.5.2</code></pre>
       </div>
