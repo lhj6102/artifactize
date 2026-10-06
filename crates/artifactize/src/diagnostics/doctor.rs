@@ -217,13 +217,12 @@ fn sessions(state: &Path) -> (&'static str, String, Value) {
             );
         }
     };
-    let (usage, state_id) = match (
-        crate::agent::session::usage(state),
-        store::read_state_id(state),
-    ) {
-        (Ok(usage), Ok(state_id)) => (usage, state_id),
-        (Err(error), _) | (_, Err(error)) => return ("FAIL", error, Value::Null),
+    let usage = match crate::agent::session::usage(state) {
+        Ok(usage) => usage,
+        Err(error) => return ("FAIL", error, Value::Null),
     };
+    // A database the schema check refuses has no id to report here.
+    let state_id = store::read_state_id(state).ok().flatten();
     let mib = |bytes: u64| format!("{:.1} MiB", bytes as f64 / 1_048_576.0);
     let message = format!(
         "{} Agent session{} take {} of {}; a collection brings them down to {}.{}",

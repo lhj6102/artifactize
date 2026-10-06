@@ -86,6 +86,15 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
             .unwrap();
         assert_eq!(schema["status"], "FAIL");
         assert_eq!(schema["message"], EARLIER_STATE);
+        // Only the schema check reports it.
+        let failed: Vec<_> = report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|check| check["status"] == "FAIL")
+            .map(|check| check["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(failed, ["schema"]);
         assert_eq!(
             schema["details"],
             json!({"schema":version,"supported":STATE_SCHEMA_VERSION})
