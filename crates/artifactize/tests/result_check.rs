@@ -28,6 +28,9 @@ if mode == "hang":
 if mode == "garbage":
     print("not json")
     sys.exit(0)
+if mode == "accept":
+    print(json.dumps({"errors": []}))
+    sys.exit(0)
 text = open(spec).read()
 errors = []
 read = [call for call in data["toolCalls"] if call["name"] == "read_spec" and not call["isError"]]
@@ -176,7 +179,7 @@ fn a_passing_check_sees_the_result_and_audit_in_an_isolated_process() {
     assert_eq!(captured.len(), 1);
     assert_eq!(
         captured[0]["input"],
-        json!({"version":1,"artifactId":"spec","family":null,
+        json!({"version":2,"artifactId":"spec","family":null,
             "result":{"verdict":"GREEN","covered":["R1"]},
             "toolCalls":[{"name":"read_spec","arguments":{"path":"spec.md"},"isError":false}]})
     );
@@ -186,6 +189,41 @@ fn a_passing_check_sees_the_result_and_audit_in_an_isolated_process() {
     assert!(!captured[0]["home"].as_str().unwrap().is_empty());
     assert_ne!(captured[0]["home"], json!(std::env::var("HOME").ok()));
     assert!(captured[0]["secret"].is_null());
+}
+
+#[test]
+fn a_family_instance_check_gets_its_family_name_and_material() {
+    let project = Project::new("accept", 10_000);
+    fs::write(project.repo.join("spec/alpha.md"), "R1: alpha.\n").unwrap();
+    let check = json!({"command":"python3","args":["check.py", project.capture(), "-", "accept"]});
+    fs::write(
+        project.repo.join("spec/artifactize.json"),
+        json!({"name":"spec","family":{"instances":{"alpha":{"material":["alpha.md"]}}},
+            "evals":[{"id":"review","title":"Review",
+                "profile":{"kind":"agent","backend":"openai","model":"fake-model"},
+                "payload":{"instruction":"Review the alpha instance."},
+                "resultCheck":check}]})
+        .to_string(),
+    )
+    .unwrap();
+    let provider = FakeProvider::start(|request| {
+        let output = openai::message(&json!({"verdict":"GREEN"}).to_string());
+        openai::completed(request, vec![output], openai::usage(10, 2))
+    });
+    let run = project.verify(&provider, &[], 0);
+    assert_eq!(review(&run)["status"], "GREEN", "{run}");
+    let captured = project.captured();
+    assert_eq!(captured.len(), 1);
+    // The same object fingerprint scripts and `json` tools receive, relative to the cwd.
+    assert_eq!(
+        captured[0]["input"],
+        json!({"version":2,"artifactId":"alpha",
+            "family":{"name":"spec","material":["alpha.md"]},
+            "result":{"verdict":"GREEN"},"toolCalls":[]})
+    );
+    let cwd = Path::new(captured[0]["cwd"].as_str().unwrap());
+    assert_eq!(cwd, support::os::canonical(&project.repo.join("spec")));
+    assert!(cwd.join("alpha.md").is_file());
 }
 
 #[test]

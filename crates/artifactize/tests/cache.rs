@@ -679,6 +679,12 @@ fn concurrent_repos_claim_once_and_poll_for_the_original_red_result() {
     };
     assert!(follower["requests"][0]["startedAt"].is_null());
     assert!(follower["requests"][0]["blockedReason"].is_null());
+    let owner = if follower == &first { &second } else { &first };
+    assert!(owner["requests"][0]["source"].is_null());
+    assert_eq!(
+        follower["requests"][0]["source"],
+        json!({"runId":owner["id"],"requestId":owner["requests"][0]["id"],"kind":"joined"})
+    );
 }
 
 #[test]
@@ -847,6 +853,39 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     assert_eq!(forced["executionsStarted"], 0);
     assert_eq!(fixture.count("executions"), 1);
     assert!(!repo.join("must-not-run").exists());
+}
+
+#[test]
+fn source_names_the_execution_a_result_came_from_and_how() {
+    let fixture = Fixture::new();
+    let repo = fixture.repo(
+        "repo",
+        json!({"name":"test","fingerprint":fingerprint("sources"),"evals":[
+            eval("first", "sleep 0.2"),
+            eval("second", "sleep 0.2")
+        ]}),
+    );
+    // Siblings share a reuse key: the second joins the first's live execution.
+    let run = fixture.command(&repo, &["verify", "--all", "--jobs", "2"], 0);
+    let (owner, joined) = (&run["requests"][0], &run["requests"][1]);
+    assert!(owner["source"].is_null(), "{run}");
+    let source = |kind| json!({"runId":run["id"],"requestId":owner["id"],"kind":kind});
+    assert_eq!(joined["source"], source("joined"));
+    assert!(joined.get("joined").is_none());
+    assert_eq!(run["summary"]["reused"]["total"], 1);
+    let shown = fixture.command(&repo, &["run", "show", run["id"].as_str().unwrap()], 0);
+    assert_eq!(shown["requests"][0]["source"], Value::Null);
+    assert_eq!(shown["requests"][1]["source"], source("joined"));
+    let id = joined["id"].as_str().unwrap();
+    let request = fixture.command(&repo, &["request", "show", id], 0);
+    assert_eq!(request["source"], source("joined"));
+
+    // A later Run finds the completed record.
+    let hit = fixture.command(&repo, &["verify", "--all"], 0);
+    for request in hit["requests"].as_array().unwrap() {
+        assert_eq!(request["source"], source("cache"));
+    }
+    assert_eq!(hit["summary"]["reused"]["total"], 2);
 }
 
 #[test]

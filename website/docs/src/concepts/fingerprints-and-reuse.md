@@ -108,7 +108,12 @@ execution ID, the producing `profile` and `options`, `evalDefHash`, `key`,
 `provenance` (repository, Run, request, eval, definition hash, completion time and,
 for Agent results, the [pins of their tools' execution paths](../reference/agent-tools.md))
 and the original attempts as `reusedUsage` when reported, alongside its own
-`requestedProfile`. Its own `usage` is null: a reused request spent nothing.
+`requestedProfile`. Its own `usage` is null: a reused request spent nothing. Its
+`source`, `{"runId", "requestId", "kind"}`, names the request whose execution
+produced the result and whether it was a completed record (`cache`), a live
+execution the request waited for (`joined`) or a remote store record (`remote`);
+`source` is null on a request that executed itself
+([Runs](runs-and-status.md#verify-and-runs)).
 Runtime usage is null, not an invented zero. A reused RED remains RED for gates
 and final obligations. Dependencies outside execution selection can supply cached
 evidence without running. Results remain readable after the source repository is

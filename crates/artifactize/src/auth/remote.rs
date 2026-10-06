@@ -16,7 +16,7 @@ use reqwest::{Method, Response, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use super::storage::Storage;
+use super::storage::{Storage, Tokens};
 use crate::remote::Record;
 
 pub const CONFIG: &str = "remote.json";
@@ -160,7 +160,9 @@ pub fn remote(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<Remote
         valid_token(&token).map_err(|e| format!("ARTIFACTIZE_REMOTE_TOKEN: {e}"))?;
         (Some(token), TokenSource::Env)
     } else {
-        match Storage::inspect(Some(&state_dir), repo)?.read::<StoredToken>(TOKEN)? {
+        match Storage::inspect(Some(&state_dir), repo, Tokens::Remote)?
+            .read::<StoredToken>(TOKEN)?
+        {
             Some(stored) if parse_url(&stored.url)?.origin() == url.origin() => {
                 valid_token(&stored.token)?;
                 (Some(stored.token), TokenSource::File)
@@ -361,7 +363,7 @@ pub async fn login(
         client: OnceLock::new(),
     };
     let principal = remote.whoami().await.map_err(|failure| failure.message)?;
-    let storage = Storage::new(state, repo)?;
+    let storage = Storage::new(state, repo, Tokens::Remote)?;
     storage.save(
         TOKEN,
         &StoredToken {
@@ -387,7 +389,7 @@ pub async fn login(
 
 /// Forget the stored token and `remote.json`; the server keeps the token until revoked.
 pub fn logout(state: Option<&Path>, repo: Option<&Path>) -> Result<(), String> {
-    Storage::new(state, repo)?.remove(TOKEN)?;
+    Storage::new(state, repo, Tokens::Remote)?.remove(TOKEN)?;
     match fs::remove_file(crate::store::state_dir(state)?.join(CONFIG)) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.to_string()),
         _ => Ok(()),

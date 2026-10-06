@@ -68,6 +68,21 @@ only when some usage was reported) separates counters spent in this Run from
 `run show` carry the same numbers as `summary.executed`, `summary.reused` and the
 Run-level `usage: {spent, saved}`; `summary.usage` stays equal to `usage.spent`.
 
+In JSON, each request's `source` says where its result came from. It is null when
+the request executed itself (or has no result yet), and otherwise names the request
+whose execution produced the result, exactly the requests the text marks as reused
+and `summary.reused` counts:
+
+```json
+"source": {"runId": "run-Ksl1Qr", "requestId": "run-Ksl1Qr-3", "kind": "cache"}
+```
+
+`kind` is `cache` for a completed record of the reuse key, `joined` for a live
+execution of the key that the request waited for (in another `verify`, or a sibling
+eval in the same Run), and `remote` for a record from the
+[remote review store](../reference/review-store.md#remote-review-store-client).
+`run show`, `request show` and `request list --json` carry it too.
+
 `--json` prints
 full saved results, including payloads, argv, stdout/stderr and runtime details;
 there is no compact projection or `--full` flag. `run show RUN_ID` always prints

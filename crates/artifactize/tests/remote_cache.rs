@@ -295,6 +295,10 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
     let run = bob.json(&repo_b, &["run", "show", id], 0);
     assert_eq!(run["executionsStarted"], 0);
     assert_eq!(run["requests"][0]["origin"]["publisher"], "alice-laptop");
+    assert_eq!(
+        run["requests"][0]["source"],
+        json!({"runId":source,"requestId":run["requests"][0]["provenance"]["requestId"],"kind":"remote"})
+    );
     let key = run["requests"][0]["key"].as_str().unwrap();
     let shown = bob.json(&repo_b, &["cache", "show", key], 0);
     assert_eq!(shown["origin"]["store"], server.url.as_str());

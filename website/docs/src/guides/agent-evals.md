@@ -217,13 +217,24 @@ that every requirement a finding cites was read with a tool:
 - **stdin.** One JSON object:
 
   ```json
-  {"version": 1, "artifactId": "spec", "family": null,
+  {"version": 2, "artifactId": "spec", "family": null,
    "result": {"verdict": "GREEN", "covered": ["R1"]},
    "toolCalls": [{"name": "read_spec", "arguments": {"path": "spec.md"}, "isError": false}]}
   ```
 
-  `family` is the Artifact's family name, or null. `toolCalls` lists every tool
-  call of the review in order, including rejected ones.
+  `family` is null unless the Artifact is a
+  [family instance](../reference/artifactize-json.md#artifact-families). For an
+  instance it is the object that fingerprint scripts and `json` tools receive, with
+  material paths relative to the check's cwd (the shared family folder):
+
+  ```json
+  {"version": 2, "artifactId": "alpha",
+   "family": {"name": "specs", "material": ["alpha.md"]},
+   "result": {"verdict": "GREEN"}, "toolCalls": []}
+  ```
+
+  `toolCalls` lists every tool call of the review in order, including rejected ones.
+  Version 2 (0.5.3) replaced version 1, whose `family` was only the family name.
 - **stdout.** One JSON object, `{"errors": ["...", ...]}`: at most 8 non-empty
   errors and at most 4 KiB. An empty list accepts the result.
 - **Errors.** The first time the check returns errors, they go to the review's one
@@ -264,7 +275,11 @@ artifactize logout codex    # revoke and delete artifactize's tokens
   CLI does. It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`
   (0700 directory, 0600 single-link file, never followed through a symlink, replaced
   atomically). Use the same `--state-dir` for `login`, `models` and `verify`.
-  artifactize refreshes the access token under a lock five minutes before it
+  Tokens are never stored inside a repository: when `$STATE/auth` lies inside a git
+  work tree, an artifactize workspace or `--repo`, `login codex` refuses and names the
+  folder, and `doctor` warns
+  ([State](../reference/state-cache-limits.md#state)). Use a state directory outside
+  it, or `ARTIFACTIZE_CODEX_AUTH_FILE`. artifactize refreshes the access token under a lock five minutes before it
   expires, so concurrent Runs refresh it once. When the server rejects the refresh
   token for good, the tokens are deleted and the review says to sign in again.
 - **An existing Codex sign-in.** With `ARTIFACTIZE_CODEX_AUTH_FILE` set, for example

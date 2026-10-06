@@ -120,8 +120,10 @@ the review store token under `auth/`. The directory is `$ARTIFACTIZE_STATE_HOME`
 
 `--state-dir PATH` moves the whole state for one command. Use the same value for
 `login`, `verify`, `request`, `run` and `monitor`. State must be outside the repository
-under review. Tokens under `auth/` are also refused inside any Git checkout or
-artifactize project, such as a dotfiles repository at `$HOME`.
+under review. Tokens under `auth/` are also refused inside any git work tree or
+artifactize project, such as a dotfiles repository at `$HOME` or a gitignored folder
+in a checkout; `ARTIFACTIZE_CODEX_AUTH_FILE` needs no storage
+([State](../reference/state-cache-limits.md#state)).
 
 ## Backends
 

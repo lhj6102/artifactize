@@ -253,7 +253,11 @@ pub async fn prepare<'a>(
     }
 }
 
+/// Give a request another execution's result. A request that waited for this very
+/// execution (a live owner it joined, or the Human wait it followed) joined it; any other
+/// found a completed record.
 pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String) {
+    request.joined = request.execution_id.as_deref() == Some(execution.id.as_str());
     request.status = execution.status.clone();
     request.execution_id = Some(execution.id.clone());
     request.result = execution.result.clone();

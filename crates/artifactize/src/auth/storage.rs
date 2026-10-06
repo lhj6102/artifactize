@@ -9,6 +9,69 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::platform;
 
+/// Whose tokens a storage holds, which names it in a refusal.
+#[derive(Clone, Copy)]
+pub(super) enum Tokens {
+    Codex,
+    Remote,
+}
+
+/// `$STATE/auth` (canonical) and the repository enclosing it, if any: tokens are never
+/// stored inside a git work tree, an artifactize workspace or the `--repo` folder.
+pub(super) struct Location {
+    pub directory: PathBuf,
+    enclosure: Option<(&'static str, PathBuf)>,
+}
+
+impl Location {
+    pub fn find(state: Option<&Path>, repo: Option<&Path>) -> Result<Self, String> {
+        let directory = crate::store::state_dir(state)?.join("auth");
+        let directory =
+            crate::workspace::canonical_target(&directory).map_err(|e| e.to_string())?;
+        let marked = directory.ancestors().find_map(|ancestor| {
+            [
+                (".git", "git work tree"),
+                ("artifactize.json", "artifactize workspace"),
+            ]
+            .into_iter()
+            .find(|(marker, _)| ancestor.join(marker).exists())
+            .map(|(_, kind)| (kind, ancestor.to_owned()))
+        });
+        let enclosure = match (marked, repo) {
+            (Some(marked), _) => Some(marked),
+            (None, Some(repo)) => {
+                let repo = platform::canonicalize(repo).map_err(|e| e.to_string())?;
+                let repo = match repo.parent() {
+                    Some(parent) if repo.is_file() => parent.to_owned(),
+                    _ => repo,
+                };
+                directory
+                    .starts_with(&repo)
+                    .then_some(("reviewed repository", repo))
+            }
+            (None, None) => None,
+        };
+        Ok(Self {
+            directory,
+            enclosure,
+        })
+    }
+
+    /// Why tokens may not be stored here, if they may not.
+    pub fn refusal(&self, tokens: Tokens) -> Option<String> {
+        let (kind, path) = self.enclosure.as_ref()?;
+        let (storage, variable) = match tokens {
+            Tokens::Codex => ("Codex sign-in storage", "ARTIFACTIZE_CODEX_AUTH_FILE"),
+            Tokens::Remote => ("Remote token storage", "ARTIFACTIZE_REMOTE_TOKEN"),
+        };
+        Some(format!(
+            "{storage} {} is inside the {kind} {}; artifactize keeps tokens outside repositories. Use a state directory outside it, or set {variable}.",
+            self.directory.display(),
+            path.display()
+        ))
+    }
+}
+
 /// An owner-only directory under `$STATE/auth/` of 0600, single-link, no-follow files,
 /// replaced atomically. On Windows, owner-only means a protected DACL for the current user.
 pub(super) struct Storage {
@@ -16,34 +79,29 @@ pub(super) struct Storage {
 }
 
 impl Storage {
-    pub fn new(state: Option<&Path>, repo: Option<&Path>) -> Result<Self, String> {
-        Self::open(state, repo, true)
+    pub fn new(state: Option<&Path>, repo: Option<&Path>, tokens: Tokens) -> Result<Self, String> {
+        Self::open(state, repo, tokens, true)
     }
 
-    pub fn inspect(state: Option<&Path>, repo: Option<&Path>) -> Result<Self, String> {
-        Self::open(state, repo, false)
+    pub fn inspect(
+        state: Option<&Path>,
+        repo: Option<&Path>,
+        tokens: Tokens,
+    ) -> Result<Self, String> {
+        Self::open(state, repo, tokens, false)
     }
 
-    fn open(state: Option<&Path>, repo: Option<&Path>, create: bool) -> Result<Self, String> {
-        let directory = crate::store::state_dir(state)?.join("auth");
-        let directory =
-            crate::workspace::canonical_target(&directory).map_err(|e| e.to_string())?;
-        let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-        let input = platform::canonicalize(repo.unwrap_or(&cwd)).map_err(|e| e.to_string())?;
-        let input = if input.is_file() {
-            input.parent().unwrap()
-        } else {
-            &input
-        };
-        if repo.is_some() {
-            crate::workspace::outside_workspace(input, &directory).map_err(|e| e.to_string())?;
+    fn open(
+        state: Option<&Path>,
+        repo: Option<&Path>,
+        tokens: Tokens,
+        create: bool,
+    ) -> Result<Self, String> {
+        let location = Location::find(state, repo)?;
+        if let Some(refusal) = location.refusal(tokens) {
+            return Err(refusal);
         }
-        for ancestor in input.ancestors().chain(directory.ancestors()) {
-            if ancestor.join(".git").exists() || ancestor.join("artifactize.json").exists() {
-                crate::workspace::outside_workspace(ancestor, &directory)
-                    .map_err(|e| e.to_string())?;
-            }
-        }
+        let directory = location.directory;
         if create {
             platform::create_private_dir_all(&directory).map_err(|e| e.to_string())?;
         }

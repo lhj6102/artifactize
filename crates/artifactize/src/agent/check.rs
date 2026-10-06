@@ -17,8 +17,9 @@ use crate::{
     process, runtime, scope,
 };
 
-/// The stdin protocol version.
-const VERSION: u64 = 1;
+/// The stdin protocol version. 2 gives `family` the `{name, material}` object that
+/// fingerprint scripts and `json` tools receive.
+const VERSION: u64 = 2;
 const MAX_ERRORS: usize = 8;
 const MAX_OUTPUT: usize = 4 * 1024;
 
@@ -56,6 +57,16 @@ pub(super) async fn run(
         check.timeout_ms,
     )
     .map_err(|e| unusable(e.to_string()))?;
+    let family = match &config.artifacts[&eval.target].family {
+        Some(family) => {
+            for material in &family.material {
+                scope::scoped_path(&cwd, Path::new(material))
+                    .map_err(|e| unusable(e.to_string()))?;
+            }
+            json!({"name":family.name,"material":family.material})
+        }
+        None => Value::Null,
+    };
     command.cwd = cwd;
     let timeout = command.timeout();
     let calls: Vec<_> = tool_calls
@@ -65,7 +76,7 @@ pub(super) async fn run(
     let input = json!({
         "version": VERSION,
         "artifactId": eval.target,
-        "family": config.artifacts[&eval.target].family.as_ref().map(|family| &family.name),
+        "family": family,
         "result": result,
         "toolCalls": calls,
     });

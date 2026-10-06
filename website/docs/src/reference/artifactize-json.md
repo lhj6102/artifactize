@@ -113,7 +113,10 @@ All instance scripts use the shared folder as cwd. A parent addresses material a
 material is an ownership declaration, not a sandbox hiding sibling files.
 Discovery keeps each instance's family membership and sorted material, without
 computing any digest. Only a declared `fingerprint` can enter a reuse key.
-Fingerprint scripts receive each selected instance's family name and material paths. A content fingerprint hashes the shared folder without any
+Fingerprint scripts, `json` protocol tools and an Agent eval's
+[`resultCheck`](../guides/agent-evals.md#result-check) receive each instance's
+`"family":{"name":...,"material":[...]}`, with material paths relative to the shared
+family folder. A content fingerprint hashes the shared folder without any
 instance's material, plus the instance's own material. Each review rechecks its
 own instance's fingerprint. No workspace monitoring or automatic reuse is added.
 

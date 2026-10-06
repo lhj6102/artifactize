@@ -224,6 +224,7 @@ fn codex(state: &Path, repo: Option<&Path>) -> (&'static str, String, Value) {
         (Ok(endpoints), Ok(status)) => (endpoints, status),
     };
     let (mut level, mut message) = match (status.source, status.expired) {
+        ("none", _) if status.refused.is_some() => ("WARN", status.refused.clone().unwrap()),
         ("none", _) => (
             "WARN",
             "No Codex sign-in; run `artifactize login codex` or set ARTIFACTIZE_CODEX_AUTH_FILE."
