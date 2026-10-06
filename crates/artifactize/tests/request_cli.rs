@@ -86,7 +86,6 @@ impl Fixture {
             .args([
                 "verify",
                 "--all",
-                "--wait",
                 "--timeout-ms",
                 &support::os::slow(10000).to_string(),
                 "--json",
@@ -151,7 +150,8 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
     let fixture = Fixture::new(true);
     assert_eq!(fixture.json(&["request", "list"], 0), json!([]));
     assert!(!fixture.state.exists());
-    let run = fixture.json(&["verify", "--all"], 4);
+    // The Human wait times out at once; the next verify reuses the submitted result.
+    let run = fixture.json(&["verify", "--all", "--timeout-ms", "1"], 3);
     let list = fixture.json(
         &["request", "list", "--run", run["id"].as_str().unwrap()],
         0,
@@ -280,7 +280,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
         ],
         2,
     );
-    let completed = fixture.json(&["verify", "--all", "--wait"], 0);
+    let completed = fixture.json(&["verify", "--all"], 0);
     assert_ne!(completed["id"], run["id"]);
     assert_eq!(completed["summary"]["executorStarts"], 1);
     assert_eq!(completed["summary"]["counts"]["GREEN"], 2);
@@ -309,7 +309,7 @@ fn fingerprint_cli_claim_tool_correctable_submission_and_next_verify() {
 #[test]
 fn unclaim_releases_the_claimants_lock_for_another_reviewer() {
     let fixture = Fixture::new(true);
-    let run = fixture.json(&["verify", "--all"], 4);
+    let run = fixture.json(&["verify", "--all", "--timeout-ms", "1"], 3);
     let id = run["requests"]
         .as_array()
         .unwrap()
@@ -375,7 +375,6 @@ fn no_fingerprint_submission_from_another_process_continues_the_same_run() {
         .args([
             "verify",
             "--all",
-            "--wait",
             "--max-executions",
             "2",
             "--timeout-ms",
@@ -438,7 +437,7 @@ fn no_fingerprint_submission_from_another_process_continues_the_same_run() {
 #[test]
 fn wait_timeout_leaves_human_claim_and_submission_available() {
     let fixture = Fixture::new(false);
-    let run = fixture.json(&["verify", "--all", "--wait", "--timeout-ms", "40"], 3);
+    let run = fixture.json(&["verify", "--all", "--timeout-ms", "40"], 3);
     assert_eq!(run["status"], "INCOMPLETE");
     assert_eq!(run["waitTimedOut"], true);
     let waiting = fixture.waiting();
@@ -458,9 +457,9 @@ fn wait_timeout_leaves_human_claim_and_submission_available() {
     );
     assert_eq!(fixture.json(&["request", "show", id], 0)["status"], "GREEN");
     for args in [
-        vec!["verify", "--all", "--timeout-ms", "10"],
-        vec!["verify", "--all", "--wait", "--timeout-ms", "0"],
-        vec!["verify", "--all", "--wait", "--timeout-ms", "2147483648"],
+        vec!["verify", "--all", "--wait"],
+        vec!["verify", "--all", "--timeout-ms", "0"],
+        vec!["verify", "--all", "--timeout-ms", "2147483648"],
     ] {
         fixture.json(&args, 2);
     }

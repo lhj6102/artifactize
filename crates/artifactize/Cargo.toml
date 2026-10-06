@@ -12,7 +12,7 @@ readme = "../../README.md"
 keywords = ["collaboration", "ai", "agent", "review", "llm"]
 categories = ["command-line-utilities", "development-tools", "development-tools::testing"]
 # The Windows test stand-in for /bin/sh, which tests build from source on demand.
-exclude = ["tests/support/fixture.rs"]
+exclude = ["tests/support/fixture.rs", "artifactize.json"]
 
 # `cargo binstall artifactize` installs the archive that release.yml attaches to the
 # GitHub release (.github/workflows/binaries.yml builds it) instead of compiling.

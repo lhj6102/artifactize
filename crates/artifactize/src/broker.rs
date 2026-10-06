@@ -15,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     agent::error::{self as agent_error, Code},
     cache,
-    config::{Profile, RepoConfig},
+    config::{ProfileKind, RepoConfig},
     graph::{Evidence, Graph},
     limits::Limits,
     process,
@@ -102,6 +102,14 @@ impl Stops {
             });
         }
     }
+}
+
+/// Why an eval of a `--reuse-only` kind was not executed.
+fn not_reused_reason(kind: ProfileKind) -> String {
+    format!(
+        "Not reused (--reuse-only {}): no cached or stored result, so it was not executed.",
+        kind.name()
+    )
 }
 
 pub(crate) fn budget_reason(run: &Run) -> String {
@@ -197,7 +205,7 @@ impl Scheduler<'_, '_> {
             .map(|ms| tokio::time::Instant::now() + Duration::from_millis(u64::from(ms)));
         loop {
             let completed = evidence.len();
-            // A remote result for a waiting Human key settles it locally (each verify --wait poll).
+            // A remote result for a waiting Human key settles it locally (each Human wait poll).
             // A forced Run never reads from the store.
             if let Some(remote) = &self.remote
                 && !self.cancellation.is_cancelled()
@@ -327,20 +335,24 @@ impl Scheduler<'_, '_> {
                         execution.manifest =
                             self.fingerprints[request.target.as_str()].manifest.clone();
                     }
-                    let human = matches!(
-                        self.config
-                            .evals
-                            .iter()
-                            .find(|eval| eval.id == request.eval_id)
-                            .expect("included eval")
-                            .declaration
-                            .profile,
-                        Profile::Human {}
-                    );
+                    let kind = self
+                        .config
+                        .evals
+                        .iter()
+                        .find(|eval| eval.id == request.eval_id)
+                        .expect("included eval")
+                        .declaration
+                        .profile
+                        .kind();
+                    let human = kind == ProfileKind::Human;
+                    // An eval of a --reuse-only kind starts nothing, joins nothing and requests
+                    // no Human sign-off: it reuses a completed result or is not executed.
+                    let reuse_only = self.run.reuse_only.contains(&kind);
                     // A backend this Run stopped admits no new reviews and takes no slot; reuse and
                     // joining a live execution of the key still work.
                     let mut backend_stopped = stops.of(request);
-                    let allow_start = backend_stopped.is_none()
+                    let allow_start = !reuse_only
+                        && backend_stopped.is_none()
                         && (human
                             || self
                                 .run
@@ -413,6 +425,19 @@ impl Scheduler<'_, '_> {
                             );
                             cache::reuse(request, &execution, now());
                             self.receipts.reuse_execution(request).await?;
+                            evaluation = self
+                                .graph
+                                .evaluate_with_policy(&evidence, self.run.ignore_gates);
+                            continue;
+                        }
+                        // Nothing to reuse: the evidence stays stale, so dependents wait as
+                        // behind any missing evidence, and the Run ends INCOMPLETE.
+                        _ if reuse_only => {
+                            waiting.remove(&index);
+                            request.status = "STALE".into();
+                            request.blocked_reason = Some(not_reused_reason(kind));
+                            self.receipts.save_request(request).await?;
+                            evidence.insert(request.eval_id.clone(), Evidence::Stale);
                             evaluation = self
                                 .graph
                                 .evaluate_with_policy(&evidence, self.run.ignore_gates);

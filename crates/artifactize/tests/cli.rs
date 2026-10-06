@@ -89,7 +89,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     let fixture = Fixture::new();
     let child = fixture
         .command()
-        .args(["verify", "human", "--wait", "--timeout-ms", "20000"])
+        .args(["verify", "human", "--timeout-ms", "20000"])
         .stdout(Stdio::null())
         .spawn()
         .unwrap();
@@ -113,11 +113,15 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         (vec!["verify", "red"], 1, "RED"),
         (vec!["verify", "broken"], 2, "ERROR"),
         (
-            vec!["verify", "human", "--wait", "--timeout-ms", "1"],
+            vec!["verify", "human", "--timeout-ms", "1"],
             3,
             "INCOMPLETE",
         ),
-        (vec!["verify", "human"], 4, "INCOMPLETE"),
+        (
+            vec!["verify", "human", "--reuse-only", "human"],
+            4,
+            "INCOMPLETE",
+        ),
     ] {
         let saved = fixture.json(&args, code);
         assert_eq!(saved["status"], status);
@@ -137,6 +141,9 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
         vec!["verify", "green", "--profile"],
         vec!["verify", "green", "--bogus"],
         vec!["verify", "green", "--jobs", "0"],
+        // Removed: verify waits for Human results by default.
+        vec!["verify", "green", "--wait"],
+        vec!["verify", "green", "--reuse-only", "model"],
         vec!["run"],
         vec!["run", "show", run, "--timeout-ms", "5"],
         vec!["run", "show", run, "--wait", "--timeout-ms", "0"],

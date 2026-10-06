@@ -161,12 +161,7 @@ main() {
     say "installed $installed to $install_dir/artifactize"
 
     case ":${PATH:-}:" in
-        *":$install_dir:"* | *":$install_dir/:"*)
-            found=$(command -v artifactize 2>/dev/null || true)
-            if [ -n "$found" ] && [ "$found" != "$install_dir/artifactize" ]; then
-                say "note: 'artifactize' on PATH is $found, which comes before $install_dir"
-            fi
-            ;;
+        *":$install_dir:"* | *":$install_dir/:"*) ;;
         *)
             say "$install_dir is not on PATH. To use artifactize in this shell, run:"
             # shellcheck disable=SC2016 # $PATH is meant literally
@@ -174,6 +169,29 @@ main() {
             say "and add that line to your shell's startup file (such as ~/.profile, ~/.bashrc or ~/.zshrc)."
             ;;
     esac
+    warn_other_copies "$install_dir/artifactize"
+}
+
+# Every other artifactize on PATH: one that comes first runs instead, and a shell that ran one
+# before may keep running it from its command cache. A warning only; the install succeeded.
+warn_other_copies() {
+    others=$(
+        IFS=:
+        set -f
+        for dir in ${PATH:-}; do
+            other=${dir%/}/artifactize
+            if [ -n "$dir" ] && [ -f "$other" ] && [ -x "$other" ] && ! [ "$other" -ef "$1" ]; then
+                printf '%s\n' "$other"
+            fi
+        done | sort -u
+    )
+    [ -n "$others" ] || return 0
+    say "another artifactize on your PATH may run instead of this one:"
+    printf '%s\n' "$others" | while IFS= read -r other; do
+        printf '    %s (%s)\n' "$other" "$("$other" --version 2>/dev/null || echo 'version unknown')"
+    done
+    say "remove it (a cargo install: cargo uninstall artifactize), or put $(dirname "$1") first on PATH."
+    say "in an open shell, run 'hash -r' (zsh: 'rehash'), or open a new terminal."
 }
 
 main "$@"

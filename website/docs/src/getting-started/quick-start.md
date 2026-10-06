@@ -39,7 +39,8 @@ artifactize verify posts    # the family name selects every instance; all reused
 cd ../agent-tools
 artifactize tools check     # static: schemas, executables and scoped paths
 artifactize tools check --execute --artifact spec --audience agent --tool coverage --args '{}'
-artifactize verify --eval spec/signoff   # records a WAITING_HUMAN request, exit 4
+artifactize verify --eval spec/signoff   # records a WAITING_HUMAN request and waits
+# In a second terminal, in the same directory:
 artifactize request list --run RUN_ID    # shows REQUEST_ID
 artifactize request claim REQUEST_ID
 artifactize request tool REQUEST_ID notes_spec
@@ -51,8 +52,9 @@ artifactize run show RUN_ID
 `--reviewer NAME`; `request unclaim REQUEST_ID` gives a claim back. `artifactize
 review` does the same in a terminal UI: it lists waiting requests, claims on the
 first tool run or submission, asks before a tool's first run and fills the owner
-fields in a form. `verify --all --wait` keeps one Run alive until Human results
-arrive, so dependents continue in the same Run.
+fields in a form. `verify` waits for Human results like any other, so dependents
+continue in the same Run; once the sign-off arrives it exits 4 here, because
+`spec/review` has no result yet.
 
 For a real Agent review, put an exact model ID in the profile you use in
 `examples/agent-tools/spec/artifactize.json`, then run

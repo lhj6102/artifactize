@@ -1,4 +1,4 @@
-# Human review in the terminal: verify --wait waits for a sign-off; in the monitor, o hands
+# Human review in the terminal: verify waits for a sign-off; in the monitor, o hands
 # off to review, which runs an output tool and submits through the form; verify finishes.
 # Record with website/demo/record.sh (from the repository root).
 Output website/demo/media/human.gif
@@ -16,7 +16,7 @@ Sleep 1.5s
 Show
 
 Sleep 600ms
-Type "artifactize verify --all --wait" Sleep 400ms Enter
+Type "artifactize verify --all" Sleep 400ms Enter
 Sleep 2s
 Ctrl+B
 Down

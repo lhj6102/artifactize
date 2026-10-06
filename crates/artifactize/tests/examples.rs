@@ -5,7 +5,9 @@ use std::{
     collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
 
 use serde_json::{Value, json};
@@ -413,14 +415,28 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     let image = execute("view_image", r#"{"path":"diagram.png"}"#);
     assert_eq!(image["mimeType"], "image/png");
 
-    // README: the Human sign-off through request claim, tool and submit.
-    let waiting = session.json(&repo, &["verify", "--eval", "spec/signoff", "--json"], 4);
-    assert_eq!(
-        statuses(&waiting),
-        map(&[("spec/signoff", "WAITING_HUMAN")])
-    );
-    let run_id = waiting["id"].as_str().unwrap();
-    let listed = session.json(&repo, &["request", "list", "--run", run_id, "--json"], 0);
+    // README: the Human sign-off through request claim, tool and submit, while verify waits.
+    let signoff = ["verify", "--eval", "spec/signoff", "--json"];
+    let verify = session
+        .command(&repo, &signoff)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(10));
+    let run_id = loop {
+        let listed = session.json(&repo, &["request", "list", "--json"], 0);
+        if let Some(request) = listed.as_array().unwrap().first() {
+            assert_eq!(request["status"], "WAITING_HUMAN");
+            break request["runId"].as_str().unwrap().to_owned();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the sign-off request did not appear"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    let listed = session.json(&repo, &["request", "list", "--run", &run_id, "--json"], 0);
     assert_eq!(listed.as_array().unwrap().len(), 1);
     let request = listed[0]["id"].as_str().unwrap();
     let reviewer = ["--reviewer", "example"];
@@ -442,9 +458,11 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     ]
     .concat();
     session.output(&repo, &submit, 0);
-    let run = session.json(&repo, &["run", "show", run_id], 0);
-    let signoff = &requests(&run)["spec/signoff"];
-    assert_eq!(signoff["status"], "GREEN");
-    assert_eq!(signoff["result"]["approved"], true);
+    // The waiting verify records the sign-off; the Run stays INCOMPLETE without spec/review.
+    let run = parse(&expect(verify.wait_with_output().unwrap(), &signoff, 4));
+    assert_eq!(run["status"], "INCOMPLETE");
+    assert_eq!(run, session.json(&repo, &["run", "show", &run_id], 0));
+    assert_eq!(statuses(&run), map(&[("spec/signoff", "GREEN")]));
+    assert_eq!(requests(&run)["spec/signoff"]["result"]["approved"], true);
     assert_eq!(files(&repo), before);
 }

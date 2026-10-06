@@ -178,7 +178,8 @@ fn retry_after_reads_milliseconds_seconds_and_http_dates() {
         wait(&[("retry-after", "Wed, 21 Oct 2015 07:27:00 GMT")]),
         Some(Duration::ZERO)
     );
-    for value in ["-1", "soon", "NaN"] {
+    // A finite value too large for a Duration is ignored, not a panic.
+    for value in ["-1", "soon", "NaN", "1e100"] {
         assert_eq!(wait(&[("retry-after", value)]), None, "{value}");
     }
     assert_eq!(wait(&[]), None);

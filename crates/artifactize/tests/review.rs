@@ -156,14 +156,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     let fixture = Fixture::new();
     let child = fixture
         .command()
-        .args([
-            "verify",
-            "--all",
-            "--wait",
-            "--timeout-ms",
-            "30000",
-            "--json",
-        ])
+        .args(["verify", "--all", "--timeout-ms", "30000", "--json"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -288,10 +281,11 @@ async fn review_respects_other_claims_and_releases_its_own() {
     let fixture = Fixture::new();
     let output = fixture
         .command()
-        .args(["verify", "--all"])
+        .args(["verify", "--all", "--timeout-ms", "1"])
         .output()
         .unwrap();
-    assert_eq!(output.status.code(), Some(4));
+    // The Human wait times out at once; the request stays open.
+    assert_eq!(output.status.code(), Some(3));
     let id = fixture.waiting().await;
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &id, "bob").await.unwrap();

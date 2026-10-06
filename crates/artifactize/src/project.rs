@@ -6,7 +6,7 @@ mod status;
 pub use status::{ArtifactState, Counts, EvalState, StatusView, status};
 
 mod verify;
-pub use verify::{VerifyOptions, verify};
+pub use verify::{DEFAULT_HUMAN_WAIT, VerifyOptions, verify};
 
 /// The fingerprint bound `status` and `verify` use: `--fingerprint-jobs`, else the CPUs.
 fn fingerprint_parallelism(options: &VerifyOptions) -> Result<crate::cache::Parallelism, String> {

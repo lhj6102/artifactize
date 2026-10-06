@@ -384,3 +384,23 @@ fn config_check_names_the_removal_of_result_check() {
         "{error}"
     );
 }
+
+#[test]
+fn artifactizeignore_keeps_folders_out_of_discovery() {
+    let fixture = Fixture::new();
+    fixture.write("app/artifactize.json", r#"{"name":"app"}"#);
+    // A test fixture that reuses app's name would break discovery.
+    fixture.write("app/tests/fixtures/artifactize.json", r#"{"name":"app"}"#);
+    fixture.write("examples/demo/artifactize.json", r#"{"name":"demo"}"#);
+    let error = read_workspace_config(&fixture.0).unwrap_err().to_string();
+    assert!(error.contains("Duplicate Artifact name: app"), "{error}");
+
+    fixture.write(
+        ".artifactizeignore",
+        "# fixtures and examples\napp/tests/\nexamples/\n",
+    );
+    let config = read_workspace_config(&fixture.0).unwrap();
+    assert!(config.artifacts.contains_key("app"));
+    assert!(!config.artifacts.contains_key("demo"));
+    assert!(config.artifacts["app"].children.is_empty());
+}

@@ -205,7 +205,7 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
     ] {
         let output = fixture
             .command()
-            .args(["verify", selection, "--wait", "--json"])
+            .args(["verify", selection, "--json"])
             .output()
             .unwrap();
         assert_eq!(output.status.code(), Some(code));
@@ -330,10 +330,66 @@ fn human_waiting_does_not_prevent_runtime_execution() {
     let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     declaration["evals"].as_array_mut().unwrap().push(json!({"id":"review","title":"Human review","profile":{"kind":"human"},"payload":{"instruction":"Review."}}));
     fs::write(path, declaration.to_string()).unwrap();
-    let run = fixture.verify(&["--all"], 4);
+    // The Human wait times out at once, after the runtime eval executed.
+    let run = fixture.verify(&["--all", "--timeout-ms", "1"], 3);
     assert_eq!(run["requests"][0]["status"], "GREEN");
     assert_eq!(run["requests"][1]["status"], "WAITING_HUMAN");
     assert_eq!(run["executionsStarted"], 1);
+}
+
+#[test]
+fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
+    let fixture = Fixture::new();
+    // app/check appends a line to a marker outside the repository each time it executes;
+    // docs/report names app, so it waits for app's GREEN result.
+    let marker = fixture._root.path().join("executed");
+    let fingerprint = json!({"script":{"command":bin("cat"),"args":["version"]}});
+    let check = json!({"kind":"runtime","command":bin("/bin/sh"),
+        "args":["-c","echo run >> \"$1\"","sh",marker.to_str().unwrap()]});
+    let report = json!({"kind":"runtime","command":bin("/bin/true"),"args":[]});
+    fs::write(
+        fixture.repo.join("artifactize.json"),
+        r#"{"name":"root","basis":true}"#,
+    )
+    .unwrap();
+    for (artifact, eval, profile, instruction) in [
+        ("app", "check", check, "Check the app."),
+        ("docs", "report", report, "Report on {app}."),
+    ] {
+        let folder = fixture.repo.join(artifact);
+        fs::create_dir(&folder).unwrap();
+        fs::write(folder.join("version"), "v1\n").unwrap();
+        let declaration = json!({"name":artifact,"fingerprint":fingerprint,"evals":[{"id":eval,
+            "title":eval,"profile":profile,"payload":{"instruction":instruction}}]});
+        fs::write(folder.join("artifactize.json"), declaration.to_string()).unwrap();
+    }
+    let reuse_only = ["--all", "--reuse-only", "runtime"];
+
+    // Nothing is cached: app/check is not executed, and docs/report waits behind it.
+    let missed = fixture.verify(&reuse_only, 4);
+    assert_eq!(missed["status"], "INCOMPLETE");
+    assert_eq!(missed["reuseOnly"], json!(["runtime"]));
+    assert_eq!(missed["executionsStarted"], 0);
+    assert!(!marker.exists());
+    let check = request(&missed, "app/check");
+    assert_eq!(check["status"], "STALE");
+    assert!(
+        check["blockedReason"]
+            .as_str()
+            .unwrap()
+            .starts_with("Not reused (--reuse-only runtime)"),
+        "{check}"
+    );
+    assert_eq!(request(&missed, "docs/report")["status"], "WAIT_DEPENDENCY");
+    assert!(missed["error"].as_str().unwrap().contains("not executed"));
+    assert_eq!(missed["validation"]["satisfied"], false);
+
+    // Once a plain verify has executed both, --reuse-only reuses them and passes.
+    assert_eq!(fixture.verify(&["--all"], 0)["executionsStarted"], 2);
+    let reused = fixture.verify(&reuse_only, 0);
+    assert_eq!(reused["status"], "GREEN");
+    assert_eq!(reused["executionsStarted"], 0);
+    assert_eq!(fs::read_to_string(&marker).unwrap().lines().count(), 1);
 }
 
 fn wait_for(mut child: Child) -> Output {
@@ -989,7 +1045,9 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
         stderr.read_line(&mut line).unwrap();
         let id = line
             .strip_suffix('\n')
-            .and_then(|line| line.strip_prefix("Run: "))
+            .and_then(|line| line.strip_prefix("Started "))
+            .and_then(|line| line.split_once(" ("))
+            .map(|(id, _)| id)
             .unwrap_or_else(|| panic!("{line:?}"))
             .to_owned();
         // The Run is saved and readable while its eval still runs.

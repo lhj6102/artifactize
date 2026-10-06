@@ -66,7 +66,7 @@ recorded with [VHS](https://github.com/charmbracelet/vhs) from the tapes in
 |---|---|---|
 | `reuse.tape` | `status`, then `verify` executes everything and the next `verify` reuses it all | `demo/shop` |
 | `change.tape` | one changed file: `status` predicts one execution and names the file, `verify` re-reviews only that | `demo/shop` |
-| `human.tape` | `verify --wait` waits; in `monitor`, `o` opens `review`, which runs an output tool and submits through the form | `demo/brand` |
+| `human.tape` | `verify` waits; in `monitor`, `o` opens `review`, which runs an output tool and submits through the form | `demo/brand` |
 | `team.tape` | Alice's `verify` publishes to an `artifactize server`; Bob's `status` and `verify` reuse it | `demo/shop` |
 
 ```sh

@@ -15,7 +15,7 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 
 | Command | Flags | Output | Exit |
 |---|---|---|---|
-| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--jobs N` (4), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--wait`, `--timeout-ms MS` (600000, needs `--wait`) | text or JSON | outcome |
+| `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--jobs N` (4), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--timeout-ms MS` (600000), `--reuse-only KINDS` | text or JSON | outcome |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
 | `config check` | | text or JSON | 0 |
 | `config graph [ARTIFACT\|FAMILY]` | | text or JSON | 0 |
@@ -121,6 +121,14 @@ leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
 error. There are no reservations, refunds, admission pools or restart ledger.
 
+`verify` waits for Human results as it waits for runtime and Agent evals: while a
+Human request of the Run waits, the Run stays RUNNING, and a submission resumes the
+evals that depend on it in the same Run
+([Human reviews](../guides/human-reviews.md)). `--timeout-ms MS` (1–2147483647,
+default 600000) bounds the wait. When it expires, the Run ends INCOMPLETE with
+`waitTimedOut: true` and exit 3; the waiting requests stay open for submission,
+and running evals are never interrupted.
+
 Selection files must be regular files no larger than 4 MiB, containing a JSON
 string array or one trimmed ID per line (UTF-8 BOM and CRLF are accepted). They
 must contain 1–100000 IDs before deduplication. Empty lines are ignored; IDs cannot
@@ -142,3 +150,27 @@ variant changes the command or args. Stored request `profile` and `options`
 describe the execution that produced the result; `requestedProfile` retains the
 requested profile when a hit returns another one, and text output then adds
 `profile NAME` to the reuse marker.
+
+## Reuse only
+
+`verify --reuse-only KINDS` takes a comma-separated list of `runtime`, `agent` and
+`human`. An eval of a listed kind may only reuse a result: a completed record of its
+reuse key in the local cache, or in the [review store](review-store.md) when one is
+configured. When there is none, the eval is not executed: no executor start, no
+provider call, no Human request, and no waiting, not even for a live execution of
+the key. A forced eval reads no cached result, so `--force` on a listed kind never
+executes it. Unlisted kinds run as usual. In CI,
+`artifactize verify --all --reuse-only agent,human` runs the tests and takes every
+review from the cache or the store ([CI](../guides/ci.md)).
+
+An eval that was not executed is reported `STALE`, with the reason in its
+`blockedReason`:
+
+```text
+  docs/review [run-Hq2b9X-4]: STALE — Not reused (--reuse-only agent): no cached or stored result, so it was not executed.
+```
+
+Evals that depend on it wait, or are blocked, as they would behind any missing
+evidence. The Run ends INCOMPLETE with a reason (exit 4), even when another eval is
+RED or ERROR, as with an exhausted budget, and records the kinds as `reuseOnly`.
+`status` does not take the flag: it predicts what a plain `verify` would do.
