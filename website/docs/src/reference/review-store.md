@@ -107,7 +107,13 @@ becomes ERROR (`SUPERSEDED`). Text output names the source:
 ```
 
 The producer (`user@host`) and the Human reviewer are what the publishing machine
-recorded; the publisher is the server-authenticated token name. Once the local settle
+recorded; the publisher is the server-authenticated token name. An Agent result's
+`producer` also carries `session`, the reference to its
+[saved conversation](../guides/agent-evals.md#saved-conversations) on the producing
+machine; the conversation itself is never published. Older clients ignore the field,
+and the server stores records as they are, so the protocol and record `schema` (2) are
+unchanged. A reused remote result's request shows the reference, and `session show`
+on it names the machine and state where the conversation lives. Once the local settle
 records a GREEN/RED with a reuse key (after the fingerprint recheck), verify sends
 its summary record, or the full record with share `full`, outside any database
 transaction. Records carry the key, the Eval definition hash, the fingerprint of

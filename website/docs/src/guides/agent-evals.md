@@ -145,6 +145,8 @@ retries and repair turn, sends it as `prompt_cache_key` on `openai` and `codex`,
 prefix that each turn replays from its prompt cache. Every review, including a forced
 re-review, starts a new session. `anthropic` caches by prefix and sends no session.
 The `cacheReadTokens` counter of each attempt in `usage` shows the cached input.
+A [follow-up](#saved-conversations) to a saved review reuses its session id, so it
+hits the same cache.
 
 A failed Agent review records one of these `errorCode` values:
 
@@ -265,6 +267,131 @@ that every requirement a finding cites was read with a tool:
   changing them reviews again. Its `timeoutMs` is a limit, like the profile's: it is
   recorded with each result's execution options as `resultCheckTimeoutMs`, and
   changing only it reuses the result.
+
+## Saved conversations
+
+artifactize keeps each Agent review's conversation on this machine, so you can read
+what the reviewer saw and said, and ask it a follow-up in the same conversation, much
+like continuing a chat. The recorded verdict never changes.
+
+**What is saved.** Each review session gets one owner-only file under
+`$STATE/agent-sessions/` ([layout](../reference/state-cache-limits.md#agent-sessions)).
+It holds the system prompt and instructions, every turn's messages, each tool call
+with its arguments and full result, the repair turn (the prompt that asked for it and
+the answer it replaced), and the encrypted reasoning items (Responses
+`reasoning.encrypted_content`, Anthropic thinking signatures) needed to replay the
+conversation exactly. It also records the backend, model, reasoning, provider
+parameters, budgets and tool definitions, the [`sessionId`](#prompt-caching), and the
+Run and request ids. Every backend is saved, `anthropic` included. Saving never fails
+a review: a write error is reported on stderr and the review goes on without it.
+
+**The reference.** A request whose conversation was saved carries `session` in
+`verify --json`, `run show` and `request show`:
+
+```json
+"session": {
+  "producer": "alice@laptop",
+  "state": "34bb3c3a-9480-4a54-9ab3-3bce54e043b8",
+  "runId": "run-FiVNCV",
+  "requestId": "run-FiVNCV-1",
+  "sessionId": "e83bf374-5136-484c-8d2f-2ce38ee4ca57",
+  "ref": "alice@laptop/34bb3c3a-9480-4a54-9ab3-3bce54e043b8/run-FiVNCV/run-FiVNCV-1/e83bf374-5136-484c-8d2f-2ce38ee4ca57"
+}
+```
+
+`producer` is the `user@host` that ran the review, and `state` the stable id of its
+state database. A request that reuses a result names the review that produced it. The
+[team review store](team-review-store.md) carries the reference with each Agent result
+(as `producer.session`), never the conversation, so a teammate's verdict tells you
+whose state holds its conversation.
+
+**Reading.** `REF` is the `ref`, a request id (`run-FiVNCV-1`) or a `sessionId`:
+
+```sh
+artifactize session show run-FiVNCV-1
+```
+
+```text
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · codex gpt-6-luna (reasoning max)
+Reference: alice@laptop/34bb3c3a-…/run-FiVNCV/run-FiVNCV-1/e83bf374-…
+Request run-FiVNCV-1 (Run run-FiVNCV), eval notes/review: GREEN
+
+── System
+Follow the artifactize review instructions. …
+
+── User (turn 1)
+You are an artifactize evaluator. …
+
+── Assistant (turn 1)
+[reasoning] Reading the notes
+[tool call read_notes] {"path":"notes.md"}
+
+── User (turn 2)
+[tool result read_notes]
+{"artifactId":"notes","lines":[{"number":1,"text":"notes: R1 holds.\n"}], …}
+
+── Assistant (turn 2)
+{"verdict":"GREEN"}
+
+── Repair prompt (turn 3)
+Your final response did not match the required schema: …
+
+── Assistant (turn 3)
+{"verdict":"GREEN","covered":["R1"]}
+
+── Result: {"covered":["R1"],"verdict":"GREEN"}
+```
+
+Text output cuts tool results after 2000 characters and shows only reasoning
+summaries. `--json` prints the stored events as they are, which is also the
+conversation's replayable export.
+
+**Following up.**
+
+```sh
+artifactize session send run-FiVNCV-1 "Which line shows R1, and does it still hold?"
+```
+
+```text
+Session e83bf374-5136-484c-8d2f-2ce38ee4ca57 · follow-up 1 · codex gpt-6-luna (reasoning max) · files changed since this review
+
+notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would change.
+```
+
+- The follow-up uses the review's backend, model and reasoning and its `sessionId`, so
+  `openai` and `codex` send the same `prompt_cache_key` (and `codex` the same
+  `session-id` header) and hit the review's prompt cache.
+- The eval's Agent tools are offered again, resolved against the current files of the
+  Run's repository (or `--repo`). When an Artifact the review's key covered has
+  another fingerprint now, the header says `files changed since this review`, and the
+  model is told so.
+- The answer is free text, with no verdict schema, and each follow-up gets the
+  profile's `maxToolCalls`, `maxTokens` and `timeoutMs` budgets afresh.
+- The message and the answer, tool calls included, are appended to the session, so
+  repeated sends continue one thread. Sends to one session take turns: a second
+  `session send` waits for the first and then continues after its answer.
+- The recorded verdict, result, usage and reuse never change. A request that is still
+  running cannot be followed up yet.
+
+A reference to another machine or state fails with where it lives, for example
+`Session e83bf374-… lives in alice@laptop's state 34bb3c3a-…; this is bob@desk's state
+5d0e…`. A session the size-bound collection deleted reports `was removed by the
+session GC`, and one that was never saved `was not saved`.
+
+**Retention.** The session store is bounded by size in
+[`limits.json`](../reference/state-cache-limits.md#agent-sessions) (`agentSessions`):
+once it exceeds `maxBytes` (1 GiB), the sessions written longest ago are deleted until
+it is at or below `targetBytes` (768 MiB). This runs at the end of every `verify` and in
+`artifactize prune`, and never touches the session of a request that is still running
+or one a `session send` holds. `doctor` shows the store's size. `"enabled": false`
+stops saving new conversations.
+
+**Privacy.** A conversation contains everything the reviewer read through its tools,
+including file contents, and everything it wrote. It stays on this machine in
+owner-only files and is never uploaded, including to the team review store. A
+follow-up sends the conversation to the review's own backend, as each review turn
+does. Turn saving off with `"agentSessions": {"enabled": false}`, and delete
+`$STATE/agent-sessions` to remove what is saved.
 
 ## Codex
 

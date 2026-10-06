@@ -27,6 +27,8 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `request unclaim ID` | `--reviewer NAME` (`$USER`) | JSON | 0 |
 | `request tool ID TOOL` | `--reviewer NAME` | text or JSON | 0; 2 tool error |
 | `request submit ID` | `--verdict GREEN\|RED`, `--fields JSON` \| `--fields-file PATH`, `--reviewer NAME` | JSON | 0, also for RED |
+| `session show REF` | | text, or the stored events as JSON | 0 |
+| `session send REF MESSAGE` | | text or JSON | 0 |
 | `cache list` | `--history` | text or JSON | 0 |
 | `cache show KEY` | `--history` | JSON | 0; 4 missing |
 | `cache rm KEY` | | JSON | 0 |
@@ -53,6 +55,18 @@ Run, exits 3 and leaves the Run running. Every command exits 2 for usage errors
 (unknown, repeated, conflicting or missing options and values) and operational
 errors: text on stderr, or `{"error":"..."}` on stdout with `--json`. There is no
 `plan`, `history`, `run cancel` or `--full`.
+
+`session show` and `session send` read and continue an Agent review's
+[saved conversation](../guides/agent-evals.md#saved-conversations). `REF` is the
+request's `session.ref` (`user@host/STATE_ID/RUN_ID/REQUEST_ID/SESSION_ID`), a request
+id such as `run-Hq2b9X-1`, or a `sessionId`; a request that reused a result names the
+review that produced it. `show` prints the conversation as text, and with `--json` the
+stored events as they are: `{"reference","file","events"}`. `send` prints the answer
+under a header naming the session, the follow-up number and the model, and
+`files changed since this review` when an Artifact the review covered changed; `--json`
+prints `{"reference","sessionId","requestId","send","filesChanged","answer","toolCalls","usage"}`.
+Both exit 2 for a reference to another machine or state, a session the GC removed, one
+that was not saved, a request that is still running (`send`), and a failed follow-up.
 
 ## Runtime CLI
 
