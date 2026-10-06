@@ -264,7 +264,11 @@ artifactize logout codex    # revoke and delete artifactize's tokens
   CLI does. It saves the tokens and the ChatGPT account ID in `$STATE/auth/codex.json`
   (0700 directory, 0600 single-link file, never followed through a symlink, replaced
   atomically). Use the same `--state-dir` for `login`, `models` and `verify`.
-  artifactize refreshes the access token under a lock five minutes before it
+  Tokens are never stored inside a repository: when `$STATE/auth` lies inside a git
+  work tree, an artifactize workspace or `--repo`, `login codex` refuses and names the
+  folder, and `doctor` warns
+  ([State](../reference/state-cache-limits.md#state)). Use a state directory outside
+  it, or `ARTIFACTIZE_CODEX_AUTH_FILE`. artifactize refreshes the access token under a lock five minutes before it
   expires, so concurrent Runs refresh it once. When the server rejects the refresh
   token for good, the tokens are deleted and the review says to sign in again.
 - **An existing Codex sign-in.** With `ARTIFACTIZE_CODEX_AUTH_FILE` set, for example

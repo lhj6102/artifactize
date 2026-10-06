@@ -33,7 +33,7 @@ use tokio::{
     sync::oneshot,
 };
 
-use super::storage::Storage;
+use super::storage::{Location, Storage, Tokens};
 
 /// The Codex CLI's public OAuth client, which Pi's provider uses too.
 pub const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -362,7 +362,7 @@ impl Pending {
 /// stderr, also with --json.
 pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), String> {
     // Check where the tokens will go before anyone signs in.
-    let storage = Storage::new(state, repo)?;
+    let storage = Storage::new(state, repo, Tokens::Codex)?;
     let root = auth_root()?;
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, CALLBACK_PORT))
         .await
@@ -560,7 +560,7 @@ pub async fn access_token(state: Option<&Path>, repo: Option<&Path>) -> Result<T
     if let Some(path) = auth_file() {
         return Ok(read_auth_file(&path)?);
     }
-    stored_token(&Storage::new(state, repo)?, &auth_root()?).await
+    stored_token(&Storage::new(state, repo, Tokens::Codex)?, &auth_root()?).await
 }
 
 async fn stored_token(storage: &Storage, root: &str) -> Result<Token, TokenError> {
@@ -647,6 +647,9 @@ pub struct Status {
     pub auth_file: Option<PathBuf>,
     pub expires_at: Option<u64>,
     pub expired: bool,
+    /// Why `$STATE/auth` may not hold a sign-in, when nothing is stored there yet.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
 }
 
 /// Inspect the sign-in offline: no lock, refresh, network or writes.
@@ -664,21 +667,37 @@ pub fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Status, Strin
             auth_file: Some(path),
             expires_at,
             expired,
+            refused: None,
         });
     }
-    let stored = Storage::inspect(state, repo)?.read::<Credentials>(CREDENTIALS)?;
+    let location = Location::find(state, repo)?;
+    if let Some(refusal) = location.refusal(Tokens::Codex) {
+        // Only a sign-in already stored there is at risk; without one this is advice.
+        return match location.directory.join(CREDENTIALS).symlink_metadata() {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Status {
+                source: "none",
+                auth_file: None,
+                expires_at: None,
+                expired: false,
+                refused: Some(refusal),
+            }),
+            _ => Err(refusal),
+        };
+    }
+    let stored = Storage::inspect(state, repo, Tokens::Codex)?.read::<Credentials>(CREDENTIALS)?;
     Ok(Status {
         source: if stored.is_some() { "stored" } else { "none" },
         auth_file: None,
         expires_at: stored.as_ref().map(|stored| stored.expires_at),
         expired: stored.is_some_and(|stored| stored.expires_at <= now),
+        refused: None,
     })
 }
 
 /// Revoke and remove artifactize's own tokens; a read-only auth file is left alone.
 /// Returns whether the revocation was confirmed.
 pub async fn logout(state: Option<&Path>, repo: Option<&Path>) -> Result<bool, String> {
-    sign_out(&Storage::new(state, repo)?, &auth_root()?).await
+    sign_out(&Storage::new(state, repo, Tokens::Codex)?, &auth_root()?).await
 }
 
 async fn sign_out(storage: &Storage, root: &str) -> Result<bool, String> {

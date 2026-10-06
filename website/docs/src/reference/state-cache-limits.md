@@ -22,7 +22,23 @@ claimed and submitted; its result settles its own Run, and the next `verify` ask
 for a new sign-off. There is no migration from earlier receipt layouts. Saved Runs
 stay readable after the original repository is removed. State/output inside the
 reviewed repository is rejected, including through symlink ancestors; database
-files and their WAL sidecars must be regular files. No writer transaction spans a
+files and their WAL sidecars must be regular files.
+
+Tokens are never stored inside a repository. `$STATE/auth`, which holds the Codex
+sign-in and the review store token, is refused when it lies inside a git work tree or
+an artifactize workspace (any ancestor holding `.git` or `artifactize.json`) or
+inside `--repo`, even where the state itself is accepted, such as a gitignored folder
+in a checkout. `login codex` and `remote login` then fail before signing in, with a
+message naming both folders:
+
+```text
+Codex sign-in storage /work/project/.state/auth is inside the git work tree /work/project; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE.
+```
+
+Use a state directory outside the repository, or `ARTIFACTIZE_CODEX_AUTH_FILE` and
+`ARTIFACTIZE_REMOTE_TOKEN`, which need no storage. `doctor` reports such a state as a
+warning while nothing is stored there, and as a hard error once a sign-in is (for
+example, after `git init` above an existing state). No writer transaction spans a
 subprocess or async suspension. Completed results with a reuse key are shared
 within this database; cross-process claims and polling waiters prevent duplicate
 execution for the same key.
@@ -148,7 +164,9 @@ that reports it as `testEndpoint`; an invalid test endpoint is a hard error. The
 `codex` check reads the sign-in without a lock, refresh or network call: no sign-in
 is a warning, a stored sign-in passes even when its access token has expired (the
 next use refreshes it), and an expired `ARTIFACTIZE_CODEX_AUTH_FILE` token is a
-warning. Its details name the `source` (`stored`, `file` or `none`), `expiresAt` and
+warning. A `$STATE/auth` [inside a repository](#state) is a warning while no sign-in
+is stored there, with `refused` in the details holding the message, and a hard error
+once one is. Its details name the `source` (`stored`, `file` or `none`), `expiresAt` and
 `expired`, and `testEndpoint`/`testAuthEndpoint` when they are set. The remote review
 store check is also offline: it reports the resolved URL, share level and token source; a
 missing token is a warning, and an invalid configuration (including plain HTTP to a

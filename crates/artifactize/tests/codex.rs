@@ -539,6 +539,53 @@ fn doctor_reports_the_sign_in_offline() {
 }
 
 #[test]
+fn sign_in_storage_inside_a_git_work_tree_is_refused_and_doctor_only_warns() {
+    let project = Project::new();
+    fs::create_dir(project.root.path().join(".git")).unwrap();
+    let doctor = |command: &mut Command, code| parsed(command.output().unwrap(), code);
+
+    // Nothing is stored there to protect: a warning, and doctor exits 0.
+    let report = doctor(&mut project.command(&["doctor"]), 0);
+    let entry = check(&report);
+    assert_eq!(entry["status"], "WARN");
+    assert_eq!(entry["details"]["source"], "none");
+    let message = entry["message"].as_str().unwrap().to_owned();
+    assert!(
+        message.starts_with("Codex sign-in storage ")
+            && message.contains(&format!(
+                "{} is inside the git work tree ",
+                Path::new("state").join("auth").display()
+            ))
+            && message.ends_with("; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE."),
+        "{message}"
+    );
+    assert!(!message.contains("reviewed repository"), "{message}");
+    assert_eq!(entry["details"]["refused"], message.as_str());
+
+    // `login codex` refuses before any sign-in, with the same message.
+    let failure = parsed(project.command(&["login", "codex"]).output().unwrap(), 2);
+    assert_eq!(failure["error"], message.as_str());
+    assert!(!project.state.join("auth").exists());
+
+    // A read-only auth file needs no storage.
+    let file = project.auth_file(&codex::jwt("claim-account", now() + 3600));
+    let report = doctor(
+        project
+            .command(&["doctor"])
+            .env("ARTIFACTIZE_CODEX_AUTH_FILE", &file),
+        0,
+    );
+    assert_eq!(check(&report)["status"], "PASS");
+    assert_eq!(check(&report)["details"]["source"], "file");
+
+    // A sign-in stored there before the work tree appeared is at risk: a failure.
+    project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
+    let report = doctor(&mut project.command(&["doctor"]), 1);
+    assert_eq!(check(&report)["status"], "FAIL");
+    assert_eq!(check(&report)["message"], message.as_str());
+}
+
+#[test]
 fn sign_in_endpoints_are_loopback_only_and_guard_the_review_store() {
     let project = Project::new();
     let failure = parsed(

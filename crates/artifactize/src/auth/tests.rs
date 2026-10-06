@@ -10,7 +10,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use super::storage::Storage;
+use super::storage::{Storage, Tokens};
 use crate::test_os::{grant_everyone_read, symlink_dir, symlink_file};
 
 #[derive(Debug, PartialEq, Deserialize, Serialize)]
@@ -126,22 +126,46 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
     let repo = temp.path().join("repo");
     fs::create_dir(&repo).unwrap();
     fs::write(repo.join(".git"), "worktree marker").unwrap();
-    assert!(Storage::new(Some(&repo.join("state")), None).is_err());
+    let Err(refusal) = Storage::new(Some(&repo.join("state")), None, Tokens::Remote) else {
+        panic!("auth storage inside a git work tree");
+    };
+    assert!(refusal.starts_with("Remote token storage "), "{refusal}");
+    assert!(
+        refusal.contains("auth is inside the git work tree ")
+            && refusal.ends_with("; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_REMOTE_TOKEN."),
+        "{refusal}"
+    );
     let alias = temp.path().join("alias");
     if symlink_dir(&repo, &alias).is_some() {
-        assert!(Storage::new(Some(&alias.join("state")), None).is_err());
+        assert!(Storage::new(Some(&alias.join("state")), None, Tokens::Codex).is_err());
     }
     #[cfg(windows)]
     {
         let junction = temp.path().join("junction");
         crate::test_os::junction(&repo, &junction);
-        assert!(Storage::new(Some(&junction.join("state")), None).is_err());
+        assert!(Storage::new(Some(&junction.join("state")), None, Tokens::Codex).is_err());
     }
     fs::remove_file(repo.join(".git")).unwrap();
-    assert!(Storage::new(Some(&repo.join("state")), Some(&repo)).is_err());
+    let Err(refusal) = Storage::new(Some(&repo.join("state")), Some(&repo), Tokens::Codex) else {
+        panic!("auth storage inside --repo");
+    };
+    assert!(
+        refusal.starts_with("Codex sign-in storage ")
+            && refusal.contains("auth is inside the reviewed repository ")
+            && refusal.ends_with("or set ARTIFACTIZE_CODEX_AUTH_FILE."),
+        "{refusal}"
+    );
+    fs::write(repo.join("artifactize.json"), "{}").unwrap();
+    let Err(refusal) = Storage::new(Some(&repo.join("state")), None, Tokens::Codex) else {
+        panic!("auth storage inside an artifactize workspace");
+    };
+    assert!(
+        refusal.contains("auth is inside the artifactize workspace "),
+        "{refusal}"
+    );
     assert!(!repo.join("state").exists());
     let state = temp.path().join("state");
-    let storage = Storage::new(Some(&state), None).unwrap();
+    let storage = Storage::new(Some(&state), None, Tokens::Codex).unwrap();
     assert!(private_dir(&storage.directory));
     #[cfg(unix)]
     {
@@ -150,7 +174,7 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
     }
     #[cfg(windows)]
     grant_everyone_read(&storage.directory);
-    assert!(Storage::new(Some(&state), None).is_err());
+    assert!(Storage::new(Some(&state), None, Tokens::Codex).is_err());
 }
 
 #[tokio::test]
