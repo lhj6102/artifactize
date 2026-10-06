@@ -129,7 +129,8 @@
         var name = tab.getAttribute('data-name');
         frame.style.aspectRatio = '1000 / ' + tab.getAttribute('data-height');
         video.setAttribute('height', tab.getAttribute('data-height'));
-        video.setAttribute('aria-label', tab.getAttribute('data-label'));
+        var caption = demo.querySelector('.demo-caption');
+        if (caption) caption.textContent = tab.getAttribute('data-label');
         video.poster = '/media/demo/' + name + '.webp';
         video.querySelector('source').src = '/media/demo/' + name + '.mp4';
         video.load();
@@ -138,7 +139,19 @@
       });
     });
 
+    // Nothing loads until the recording nears the viewport: the poster (a still
+    // frame) then, and the video only when it plays.
+    function showPoster() {
+      if (!video.poster && video.getAttribute('data-poster')) video.poster = video.getAttribute('data-poster');
+    }
     if ('IntersectionObserver' in window) {
+      var near = new IntersectionObserver(function (entries) {
+        if (entries[0].isIntersecting) {
+          showPoster();
+          near.disconnect();
+        }
+      }, { rootMargin: '300px 0px' });
+      near.observe(video);
       new IntersectionObserver(function (entries) {
         visible = entries[0].isIntersecting;
         if (!visible && !video.paused) {
@@ -147,6 +160,8 @@
           play();
         }
       }, { threshold: 0.35 }).observe(video);
+    } else {
+      showPoster();
     }
   });
 })();

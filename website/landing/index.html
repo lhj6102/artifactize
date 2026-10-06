@@ -31,7 +31,9 @@
     var theme = null;
     try { theme = localStorage.getItem('mdbook-theme'); } catch (e) {}
     if (theme && theme.charAt(0) === '"') theme = theme.slice(1, -1);
-    document.documentElement.setAttribute('data-theme', theme === 'light' ? 'light' : 'dark');
+    // No choice yet: follow the system.
+    var light = theme === 'light' || (theme !== 'navy' && !!window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches);
+    document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
     document.documentElement.classList.add('js');
   })();
 </script>
@@ -107,7 +109,7 @@
             </dl>
             <div class="meter-cost">
               <div class="meter-track"><i class="bar-naive" data-hud-bar="cumNaive"></i><i class="bar-exec" data-hud-bar="cumExecuted"></i></div>
-              <p><b class="c" data-hud="cumExecuted">0</b> executions so far · <b data-hud="cumNaive">0</b> if every eval re-ran</p>
+              <p><b class="c" data-hud="cumExecuted">0</b> executions so far · <b data-hud="cumNaive">0</b> if every eval re-ran at every step</p>
             </div>
             <ul class="legend">
               <li><svg viewBox="0 0 26 12"><path d="M1 6h24" stroke="var(--blue)" stroke-width="1.8" stroke-linecap="round"/></svg>Runtime</li>
@@ -137,13 +139,13 @@
       </div>
 
       <div class="story-steps">
-        <p class="sr">Each step below describes the project and what the decorative graphic beside it shows.</p>
+        <p class="sr">Each step below describes the project at that point; the animated graphic beside it shows the same.</p>
 
         <section class="story-step" data-step="idea" id="step-idea" aria-labelledby="step-idea-h">
           <p class="step-k"><b>01</b>An idea</p>
           <h3 id="step-idea-h">It starts with an idea.</h3>
           <p>A few notes on what to build. Nothing is declared yet, so there is nothing to review and no verdict to reuse.</p>
-          <p class="sr">In the graphic: one dashed node, Idea, with no fingerprint.</p>
+          <p class="sr">At this point there is one note, the Idea: not yet an Artifact, with no fingerprint.</p>
         </section>
 
         <section class="story-step" data-step="artifacts" id="step-artifacts" aria-labelledby="step-artifacts-h">
@@ -151,7 +153,7 @@
           <h3 id="step-artifacts-h">The idea and a spec become Artifacts.</h3>
           <p>A folder with an <code>artifactize.json</code> is an Artifact: a doc, a spec, a module, a website, a style sheet. Each declares a fingerprint, what its reviews depend on; the built-in one hashes the folder's own files. An eval can review one Artifact on its own: here an Agent checks that the Spec is complete.</p>
           <pre class="step-code"><code>"fingerprint": {}</code></pre>
-          <p class="sr">In the graphic: two Artifacts, Idea and Spec, each showing a short fingerprint. An Agent eval loops on the Spec, reviewing it alone, and executes once.</p>
+          <p class="sr">Now there are two Artifacts, Idea and Spec, each with a short fingerprint, and one Agent eval that reviews the Spec alone; it executes once.</p>
         </section>
 
         <section class="story-step" data-step="relations" id="step-relations" aria-labelledby="step-relations-h">
@@ -159,7 +161,7 @@
           <h3 id="step-relations-h">Code arrives, and evals connect the parts.</h3>
           <p>An eval reviews one Artifact, alone or against others: every other Artifact it names becomes a dependency of that review, drawn as an edge. An Agent eval reviews the code against the Spec, another the Spec against the Idea, and Alice signs off the Spec itself as a Human eval.</p>
           <pre class="step-code"><code>"instruction": "Review {code} against {spec}."</code></pre>
-          <p class="sr">In the graphic: Code appears below Idea and Spec. Agent eval edges run from Code to Spec and from Spec to Idea, and a Human eval loops on the Spec, marked with its reviewer, Alice. All three execute once; the Spec's completeness review is reused.</p>
+          <p class="sr">Code joins Idea and Spec. Agent evals review Code against the Spec and the Spec against the Idea, and Alice signs off the Spec alone in a Human eval. All three execute once; the Spec's completeness review is reused.</p>
         </section>
 
         <section class="story-step" data-step="runtime" id="step-runtime" aria-labelledby="step-runtime-h">
@@ -168,21 +170,21 @@
           <p>Inside Code, a runtime eval runs the tests: any command can review an Artifact, and exit code 0 is GREEN. A coding-style sheet becomes an Artifact too: an Agent eval reviews the source against it, and Alice signs the sheet off. The four earlier verdicts still hold, so they are reused.</p>
           <pre class="step-code"><code>"kind": "runtime",
 "command": "cargo", "args": ["test"]</code></pre>
-          <p class="sr">In the graphic: Code opens into a frame holding src and tests. A runtime eval joins src to tests, an Agent eval joins src to the Style sheet, and a Human eval loops on the Style sheet, reviewed by Alice; all three execute. The four earlier evals are reused.</p>
+          <p class="sr">Code now holds src and tests. Three evals execute: src against tests (runtime), src against the Style sheet (Agent), and Alice's sign-off of the Style sheet alone (Human). The four earlier evals are reused.</p>
         </section>
 
         <section class="story-step" data-step="modules" id="step-modules" aria-labelledby="step-modules-h">
           <p class="step-k"><b>05</b>Modules</p>
           <h3 id="step-modules-h">The code splits into modules.</h3>
           <p>src becomes three child Artifacts, core, cli and api, each with its own fingerprint, tests and style review; api, the public interface, also gets a Human sign-off. From now on a change to one module re-reviews that module and what depends on it, not the whole codebase.</p>
-          <p class="sr">In the graphic: src splits into core, cli and api inside the Code frame. Each module gets a runtime eval against tests and an Agent eval against the Style sheet, and a Human eval loops on api, reviewed by Alice. Those seven execute, and so does Code's review, because its children changed; the other four are reused.</p>
+          <p class="sr">src is now three modules, core, cli and api, each reviewed against tests and the Style sheet, and api has a Human sign-off by Alice. Those seven execute, and so does Code's review, because its children changed; the other four are reused.</p>
         </section>
 
         <section class="story-step" data-step="beyond" id="step-beyond" aria-labelledby="step-beyond-h">
           <p class="step-k"><b>06</b>Beyond code</p>
           <h3 id="step-beyond-h">A website and docs pages join the graph.</h3>
           <p>The docs pages are reviewed against the api module, and their build runs as a runtime eval of its own. The website's runtime evals check its links into the docs and run its code samples against api, and Dana, a designer, signs the website off. More Artifacts now depend on the code, so a code change has more to re-review.</p>
-          <p class="sr">In the graphic: Docs pages and Website appear below the code. Five new evals execute: the docs against api, the docs' build (a loop on Docs pages), the website against the docs and against api, and Dana's sign-off of the website (a loop on Website).</p>
+          <p class="sr">Docs pages and Website join. Five new evals execute: the docs against api, the docs' own build, the website against the docs and against api, and Dana's sign-off of the website alone.</p>
         </section>
 
         <section class="story-step" data-step="ripple" id="step-ripple" aria-labelledby="step-ripple-h">
@@ -192,14 +194,14 @@
           <pre class="step-code"><code><span class="t-prompt">$</span> artifactize status
 <span class="t-dim">…</span>
 Verify actions: will execute 3, will reuse 11, wait 3, blocked 0</code></pre>
-          <p class="sr">In the graphic: api's fingerprint changes and a ripple spreads from it. api's tests and style review turn stale and run, its Human review waits for Alice's sign-off, then the three evals that depend on api run. Six evals execute, one of them a sign-off; eleven stay reused.</p>
+          <p class="sr">api's fingerprint changes. Its tests and style review run, its Human review waits for Alice's sign-off, then the three evals that depend on api run. Six evals execute, one of them a sign-off; eleven are reused.</p>
         </section>
 
         <section class="story-step" data-step="grows" id="step-grows" aria-labelledby="step-grows-h">
           <p class="step-k"><b>08</b>It keeps growing</p>
           <h3 id="step-grows-h">New Artifacts and relations keep arriving.</h3>
           <p>A sync module joins the code, a brand guide arrives to review the website against, and the docs pages start covering the CLI. Each addition runs its own evals once; every verdict already earned stays reused.</p>
-          <p class="sr">In the graphic: sync joins the modules, Brand guide joins the website, and the docs gain an eval against cli. Four new evals execute; seventeen are reused.</p>
+          <p class="sr">sync and a Brand guide join, and the docs gain an eval against cli. Four new evals execute; seventeen are reused.</p>
         </section>
 
         <section class="story-step" data-step="parallel" id="step-parallel" aria-labelledby="step-parallel-h">
@@ -207,7 +209,7 @@ Verify actions: will execute 3, will reuse 11, wait 3, blocked 0</code></pre>
           <h3 id="step-parallel-h">Split the work across copies of one repository.</h3>
           <p>Alice changes the docs in her clone, Bob changes api in a worktree and Carol changes cli in another. Each runs <code>verify</code> in their own copy and publishes the verdicts to the team's <code>artifactize server</code>. It is one project with the same Artifacts, and paths are not part of the reuse key, so whatever a change did not touch is reused across the copies. Bob's api change needs Alice's sign-off once, in his copy.</p>
           <pre class="step-code"><code><span class="t-prompt">$</span> artifactize remote login https://reviews.example/</code></pre>
-          <p class="sr">In the graphic: the project zooms out into three copies of the same repository around the review store: app · alice/docs, app · bob/api and app · carol/cli. In each copy the changed Artifact and the evals that depend on it turn stale and run, fourteen in all, one of them the sign-off of Bob's api; the other 49 are reused. Verdicts flow between each copy and the store.</p>
+          <p class="sr">The project now exists as three copies of the same repository around the review store: app · alice/docs, app · bob/api and app · carol/cli. In each copy the changed Artifact and the evals that depend on it run again, fourteen in all, one of them the sign-off of Bob's api; the other 49 are reused. Each copy publishes its verdicts to the store and reuses verdicts from it.</p>
         </section>
 
         <section class="story-step" data-step="merge" id="step-merge" aria-labelledby="step-merge-h">
@@ -217,9 +219,37 @@ Verify actions: will execute 3, will reuse 11, wait 3, blocked 0</code></pre>
           <pre class="step-code"><code><span class="t-dim"># CI on main: store URL and read token in the env</span>
 <span class="t-prompt">$</span> artifactize verify --all
 Summary: executed 3 (runtime 0, agent 3, human 0), reused 18 (runtime 7, agent 7, human 4)</code></pre>
-          <p class="sr">In the graphic: the copies merge back into app · main, so api and cli take their new fingerprints. Their evals turn stale; those the copies already reviewed, api's sign-off included, come back reused from the store, and the three that see two changes at once execute. A CI lane reads verdicts from the store: executed 3, reused 18.</p>
+          <p class="sr">The copies merge back into app · main, so api and cli take their new fingerprints. The evals the copies already reviewed, api's sign-off included, are reused from the store; the three that see two changes at once execute. CI reads verdicts from the store: executed 3, reused 18.</p>
         </section>
       </div>
+    </div>
+  </section>
+
+  <section class="band" id="terminal" aria-labelledby="terminal-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">See it in a terminal</p>
+        <h2 id="terminal-title">The same reuse, in real sessions.</h2>
+      </div>
+      <figure class="demo">
+        <div class="demo-tabs" role="group" aria-label="Choose a recording">
+          <button type="button" class="demo-tab" aria-pressed="true" data-name="change" data-height="830" data-label="After one file changes, artifactize status predicts one execution and four reuses and names guide.md; verify then executes one eval and reuses four.">Change one file</button>
+          <button type="button" class="demo-tab" aria-pressed="false" data-name="reuse" data-height="830" data-label="artifactize status predicts five evals; the first verify executes all five and the second reuses all five.">Run it twice</button>
+          <button type="button" class="demo-tab" aria-pressed="false" data-name="team" data-height="900" data-label="On Alice's laptop verify executes five evals and publishes them to the review store; on Bob's laptop, with his own checkout of the same project, status predicts five reuses and verify reuses all five from remote: alice@laptop.">Two checkouts, one store</button>
+        </div>
+        <div class="demo-frame" style="aspect-ratio: 1000 / 830">
+          <video class="demo-video" muted loop playsinline preload="none" width="1000" height="830" aria-label="Terminal recording"
+                 data-poster="/media/demo/change.webp" aria-describedby="demo-caption">
+            <source src="/media/demo/change.mp4" type="video/mp4">
+          </video>
+          <button type="button" class="vc demo-play" aria-pressed="false" hidden>
+            <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z"/></svg>
+            <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13l10.5-6.5z"/></svg>
+            <span class="vc-label">Pause</span>
+          </button>
+        </div>
+        <figcaption><span id="demo-caption" class="demo-caption">After one file changes, artifactize status predicts one execution and four reuses and names guide.md; verify then executes one eval and reuses four.</span> Recorded with VHS in the <code>shop</code> demo project; the tapes are in <code>website/demo/</code>.</figcaption>
+      </figure>
     </div>
   </section>
 

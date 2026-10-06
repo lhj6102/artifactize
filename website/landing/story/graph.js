@@ -36,7 +36,6 @@ const T = {
   verdict: 380, // a grown edge shows its verdict
   fade: 320,
   ripple: 560, // the ripple starts, after the move
-  hold: 4200, // a finished ripple stays put before it replays
   crossfade: 180, // reduced motion: fade between steps
 };
 
@@ -431,9 +430,6 @@ export class StoryGraph {
         this.els.get(id)?.classList.remove('is-changed');
       }
       this.syncNodeStates();
-    });
-    this.later(end + T.hold, () => {
-      if (this.snap === snap) this.ripple(snap, 400);
     });
   }
 
