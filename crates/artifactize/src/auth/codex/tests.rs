@@ -64,8 +64,20 @@ fn form(body: &Value) -> BTreeMap<String, String> {
 fn authorize_url_carries_pkce_and_the_codex_flow_parameters() {
     let pending = Pending::new().unwrap();
     assert_eq!(pending.verifier.len(), 43);
+    assert_eq!(URL_SAFE_NO_PAD.decode(&pending.verifier).unwrap().len(), 32);
+    assert!(
+        pending
+            .verifier
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    );
     assert_eq!(pending.state.len(), 32);
-    assert!(pending.state.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    assert!(
+        pending
+            .state
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    );
     assert_ne!(pending.state, Pending::new().unwrap().state);
     let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
     assert_eq!(redirect_uri, REDIRECT_URI);

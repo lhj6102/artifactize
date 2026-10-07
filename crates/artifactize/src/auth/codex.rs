@@ -53,6 +53,12 @@ pub const ORIGINATOR: &str = "artifactize";
 const CLAIM: &str = "https://api.openai.com/auth";
 const CREDENTIALS: &str = "codex.json";
 const LOCK: &str = "codex";
+/// 32 random bytes give 256 bits and 43 unpadded base64url characters, within RFC 7636's
+/// permitted 43–128-character code_verifier length; the S256 challenge hashes that text.
+const PKCE_VERIFIER_BYTES: usize = 32;
+/// Choose 128 unpredictable bits for OAuth state/CSRF correlation, encoded as 32 hex
+/// characters. This is this client's chosen size, not an OAuth-mandated exact length.
+const OAUTH_STATE_BYTES: usize = 16;
 /// Refresh this many seconds before expiry, as the Codex CLI's refresh window does.
 const REFRESH_MARGIN: u64 = 300;
 /// A read-only auth file's token must outlive this many seconds.
@@ -183,8 +189,8 @@ struct Pending {
 impl Pending {
     fn new() -> Result<Self, String> {
         Ok(Self {
-            verifier: URL_SAFE_NO_PAD.encode(random(32)?),
-            state: random(16)?
+            verifier: URL_SAFE_NO_PAD.encode(random(PKCE_VERIFIER_BYTES)?),
+            state: random(OAUTH_STATE_BYTES)?
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
                 .collect(),
