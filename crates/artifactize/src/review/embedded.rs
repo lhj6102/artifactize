@@ -192,6 +192,17 @@ impl Review {
         if self.busy() {
             return self.key(key);
         }
+        if matches!(key.code, KeyCode::PageDown | KeyCode::PageUp) {
+            self.scroll_single(
+                if key.code == KeyCode::PageDown {
+                    crate::monitor::input::SCROLL_PAGE as i16
+                } else {
+                    -(crate::monitor::input::SCROLL_PAGE as i16)
+                },
+                !tools_focused,
+            );
+            return Action::None;
+        }
         if self.confirming() {
             return match key.code {
                 KeyCode::Char('y') | KeyCode::Enter => self.control(Control::Confirm),

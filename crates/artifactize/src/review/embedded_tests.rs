@@ -422,3 +422,33 @@ fn human_instruction_is_visible_and_scrollable_before_and_after_claim() {
             && text.contains("Human tools")
     );
 }
+
+#[test]
+fn keyboard_pages_flat_fields_without_mouse_capture() {
+    let mut review = super::tests::opened(Some("alice"), super::tests::demo());
+    let properties: serde_json::Map<String, Value> = (0..30)
+        .map(|n| (format!("field-{n:02}"), json!({"type":"string"})))
+        .collect();
+    review.mode = Mode::Form(Form::new(
+        "RED",
+        Some(&json!({"type":"object","properties":properties})),
+    ));
+    review.key_single(KeyEvent::from(KeyCode::PageDown), false);
+    assert_eq!(review.field_scroll, 10);
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).unwrap();
+    terminal
+        .draw(|frame| {
+            review.draw_single(frame, frame.area(), false);
+        })
+        .unwrap();
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    assert!(text.contains("field-10"), "{text}");
+    review.key_single(KeyEvent::from(KeyCode::PageUp), false);
+    assert_eq!(review.field_scroll, 0);
+}
