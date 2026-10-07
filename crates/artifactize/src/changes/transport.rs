@@ -15,6 +15,11 @@ mod os;
 mod os;
 pub(super) use os::{Listener, Stream};
 
+/// Use 24 SHA-256 hex characters (96 bits) for the shared runtime-directory namespace,
+/// keeping Unix socket paths short. This is not authentication: owner/peer checks and
+/// the registration handshake's complete identity remain authoritative on both platforms.
+const RUNTIME_ID_PREFIX_HEX_CHARS: usize = 24;
+
 #[derive(Clone)]
 pub(super) struct Endpoint {
     pub identity: String,

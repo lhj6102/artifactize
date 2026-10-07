@@ -36,7 +36,10 @@ pub(super) fn validate_directory(path: &Path) -> io::Result<()> {
     Ok(())
 }
 pub(super) fn directory(identity: &str, _user: &str) -> io::Result<PathBuf> {
-    let directory = std::env::temp_dir().join(format!("artifactize-ipc-{}", &identity[..24]));
+    let directory = std::env::temp_dir().join(format!(
+        "artifactize-ipc-{}",
+        &identity[..super::RUNTIME_ID_PREFIX_HEX_CHARS]
+    ));
     match platform::create_private_dir(&directory) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}

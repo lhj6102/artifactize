@@ -17,6 +17,38 @@ async fn registered(subscription: &mut Subscription) {
 }
 
 #[test]
+fn endpoint_names_keep_the_same_twenty_four_hex_character_directory_prefix() {
+    let state = temporary_state();
+    let endpoint = Endpoint::new(state.path()).unwrap();
+    #[cfg(unix)]
+    let directory = endpoint.address.parent().unwrap();
+    #[cfg(unix)]
+    {
+        // SAFETY: geteuid has no preconditions; compare against the existing naming contract.
+        let user = unsafe { libc::geteuid() };
+        assert_eq!(
+            directory,
+            Path::new("/tmp").join(format!(
+                "artifactize-ipc-{user}-{}",
+                &endpoint.identity[..24]
+            ))
+        );
+        assert_eq!(endpoint.address.file_name().unwrap(), "hub.sock");
+    }
+    #[cfg(windows)]
+    {
+        // Pipe names keep the full identity; only their election directory is shortened.
+        assert_eq!(
+            endpoint.address,
+            PathBuf::from(format!(
+                r"\\.\pipe\artifactize-changes-{}",
+                endpoint.identity
+            ))
+        );
+    }
+}
+
+#[test]
 fn dirty_sessions_are_bounded_and_overflow_coalesces_to_resync() {
     let mut dirty = Dirty::default();
     for index in 0..=MAX_DIRTY_SESSIONS {

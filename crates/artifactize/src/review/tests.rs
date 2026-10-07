@@ -6,6 +6,21 @@ use super::*;
 
 const ID: &str = "run-1-3";
 
+#[test]
+fn spinner_frames_keep_the_existing_hundred_millisecond_cadence_and_cast_order() {
+    assert_eq!(view::spinner(Duration::from_millis(0)), "⠋");
+    assert_eq!(view::spinner(Duration::from_millis(99)), "⠋");
+    assert_eq!(view::spinner(Duration::from_millis(100)), "⠙");
+    assert_eq!(view::spinner(Duration::from_millis(999)), "⠏");
+    assert_eq!(view::spinner(Duration::from_millis(1000)), "⠋");
+    let previous_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    let large = Duration::MAX;
+    assert_eq!(
+        view::spinner(large),
+        previous_frames[(large.as_millis() / 100) as usize % previous_frames.len()]
+    );
+}
+
 fn definition(pass: Value, fail: Value) -> Value {
     json!({
         "repo":"/repo",

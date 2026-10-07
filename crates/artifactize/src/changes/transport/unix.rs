@@ -32,7 +32,10 @@ pub(super) fn directory(identity: &str, user: &str) -> io::Result<PathBuf> {
     if !metadata.is_dir() || metadata.mode() & libc::S_ISVTX == 0 {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
-    let directory = root.join(format!("artifactize-ipc-{user}-{}", &identity[..24]));
+    let directory = root.join(format!(
+        "artifactize-ipc-{user}-{}",
+        &identity[..super::RUNTIME_ID_PREFIX_HEX_CHARS]
+    ));
     match platform::create_private_dir(&directory) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}

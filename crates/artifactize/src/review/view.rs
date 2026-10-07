@@ -22,6 +22,10 @@ const MAX_NOTICE_LINES: usize = 4;
 
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+pub(super) fn spinner(elapsed: std::time::Duration) -> &'static str {
+    SPINNER[(elapsed.as_millis() / super::SPIN.as_millis()) as usize % SPINNER.len()]
+}
+
 fn kind(kind: HumanToolKind) -> &'static str {
     match kind {
         HumanToolKind::Launch => "launch",
@@ -164,7 +168,7 @@ impl Review {
     pub(super) fn status_line(&self) -> Vec<Line<'static>> {
         if let Some(busy) = &self.busy {
             let elapsed = busy.since.elapsed();
-            let frame = SPINNER[(elapsed.as_millis() / 100) as usize % SPINNER.len()];
+            let frame = spinner(elapsed);
             return vec![
                 Line::from(format!(
                     "{frame} {}… {}",
