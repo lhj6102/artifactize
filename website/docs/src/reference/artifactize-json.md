@@ -89,7 +89,8 @@ contents are never hashed. Commands share runtime isolation, cancellation, bound
 raw output and a 30,000 ms default timeout (1–2,147,483,647 ms allowed). Their private
 external output, HOME and temporary directories are removed after each invocation.
 Stdout must be exactly 1–128 ASCII characters from `[A-Za-z0-9._:-]`, optionally
-followed by one LF. It is not trimmed or cleaned. Nonzero exit, malformed output,
+followed by one LF, or by one CRLF on Windows. No other whitespace is allowed;
+the value is not otherwise trimmed or cleaned. Nonzero exit, malformed output,
 timeout, cancellation, missing files or cleanup failure abort preparation with
 an operational error, without starting any eval or falling back to an uncached
 review. Stderr is not forwarded as a fingerprint diagnostic.
