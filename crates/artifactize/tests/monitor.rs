@@ -488,7 +488,7 @@ async fn saved_tree_details_without_repository_or_writes() {
         assert!(steps < 40, "family node not reachable");
     }
     assert!(!screen(&mut monitor).contains("checkout  GREEN"));
-    press(&mut monitor, KeyCode::Right);
+    press(&mut monitor, KeyCode::Char('l'));
     screen(&mut monitor);
     press(&mut monitor, KeyCode::Down);
     let expanded = screen(&mut monitor);

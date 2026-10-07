@@ -166,12 +166,14 @@ It has three panes:
   happens before paging, so a repository remains reachable even beyond the latest
   100 global Runs. Moving past the end loads older Runs.
 - **Artifacts and evals.** The selected Run's saved definitions and requests, not
-  a re-evaluation of current files. Families group instances; ←/→ or Space expands
-  or collapses them. `⇐` rows show child/mount/reference inputs and `↻` marks cycles.
+  a re-evaluation of current files. Families group instances; `h`/`l` or Space collapses
+  or expands them. `⇐` rows show child/mount/reference inputs and `↻` marks cycles.
   The Run summary shows validation, request counts, budgets, executed/reused work,
   spent/saved usage and currently running or waiting evals.
 
-Tab/Shift-Tab changes panes, arrows or `j`/`k` select, `r` refreshes and `q` quits.
+Outside a modal, ←/→ moves to the previous/next pane without wrapping at the
+screen edges; Tab/Shift-Tab cycles through panes. ↑/↓ or `j`/`k` selects, `r`
+refreshes and `q` quits. Inside a form, ←/→ retains its editing/choice behavior.
 Enter on a Run focuses its artifact tree; Enter or `o` on a tree item opens its
 modal. Click focuses/selects, double-click opens a tree detail and the wheel
 scrolls the pointed pane. F2 toggles mouse capture so the terminal can select text;

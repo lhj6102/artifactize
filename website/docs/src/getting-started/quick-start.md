@@ -71,8 +71,8 @@ artifactize monitor --all   # Initially select every repository in this state
 
 Start it in a second terminal while `verify` runs to watch progress. Three panes
 show repository/worktree → newest Runs → artifacts/evals; ALL rows switch scope
-without restarting. Tab changes panes, `j`/`k` move, Enter or a double-click opens
-detail, ←/→ expands families and `q` quits. Agent details show saved conversations;
+without restarting. ←/→ moves between panes (Tab cycles), `j`/`k` selects, Enter
+or a double-click opens detail, `h`/`l` or Space expands/collapses families and `q` quits. Agent details show saved conversations;
 Runtime details show saved logs. A waiting Human detail has Claim, tools,
 GREEN/RED fields, Submit and Release in the monitor itself. Ctrl-S submits;
 nested JSON is edited in the TUI (Enter adds a newline). F2 toggles mouse capture

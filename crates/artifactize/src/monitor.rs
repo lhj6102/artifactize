@@ -4,6 +4,8 @@ pub(crate) mod input;
 mod modal;
 mod model;
 #[cfg(test)]
+mod pane_tests;
+#[cfg(test)]
 mod redesign_tests;
 mod terminal;
 #[cfg(test)]
@@ -414,6 +416,28 @@ impl Monitor {
             return Action::Quit;
         }
         match key.code {
+            KeyCode::Left => {
+                self.focus = match self.focus {
+                    Pane::Repositories => Pane::Repositories,
+                    Pane::Runs => Pane::Repositories,
+                    Pane::Artifacts => Pane::Runs,
+                };
+                return Action::None;
+            }
+            KeyCode::Right => {
+                let previous = self.focus;
+                self.focus = match self.focus {
+                    Pane::Repositories => Pane::Runs,
+                    Pane::Runs => Pane::Artifacts,
+                    Pane::Artifacts => Pane::Artifacts,
+                };
+                // Keep the former Runs→Artifacts refresh without dispatching to the tree.
+                return if previous == Pane::Runs {
+                    Action::Refresh
+                } else {
+                    Action::None
+                };
+            }
             KeyCode::Char('r') => return Action::Refresh,
             KeyCode::Tab => {
                 self.focus = match self.focus {
@@ -464,7 +488,7 @@ impl Monitor {
                 KeyCode::Up | KeyCode::Char('k') => {
                     return self.select_run(self.list.selected().unwrap_or(0).saturating_sub(1));
                 }
-                KeyCode::Enter | KeyCode::Right => {
+                KeyCode::Enter => {
                     self.focus = Pane::Artifacts;
                     return Action::Refresh;
                 }
@@ -477,10 +501,10 @@ impl Monitor {
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.tree.key_up();
                 }
-                KeyCode::Left | KeyCode::Char('h') => {
+                KeyCode::Char('h') => {
                     self.tree.key_left();
                 }
-                KeyCode::Right | KeyCode::Char('l') => {
+                KeyCode::Char('l') => {
                     self.tree.key_right();
                 }
                 KeyCode::Char(' ') => {

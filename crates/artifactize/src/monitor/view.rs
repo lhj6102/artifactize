@@ -107,7 +107,7 @@ impl Monitor {
         if let Some(message) = self.error.as_ref().or(self.notice.as_ref()) {
             frame.render_widget(Line::from(message.as_str()).red(), notice);
         }
-        frame.render_widget(Line::from(if self.modal.is_some() { "Esc close/cancel · Tab focus · Ctrl-S Submit · F2 mouse capture · paste works with mouse on/off" } else { "Tab panes · ↑/↓ select · ←/→ tree · Enter/double-click detail · Space expand · r refresh · F2 mouse · q quit" }).dark_gray(), keys);
+        frame.render_widget(Line::from(if self.modal.is_some() { "Esc close/cancel · Tab focus · Ctrl-S Submit · F2 mouse capture · paste works with mouse on/off" } else { "←/→ panes · Tab cycle · ↑/↓ select · h/l/Space tree · Enter/double-click detail · r refresh · F2 mouse · q quit" }).dark_gray(), keys);
         let [repositories, runs, artifacts] = Layout::horizontal([
             Constraint::Percentage(25),
             Constraint::Percentage(30),
