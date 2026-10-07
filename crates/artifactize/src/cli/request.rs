@@ -7,7 +7,11 @@ use clap::Subcommand;
 use serde_json::{Value, json};
 
 use super::{cancellation_listener, print_json};
-use crate::{human, query, store, tools::human::Content};
+use crate::{
+    human, query, store,
+    tools::human::Content,
+    types::{RequestId, RunId},
+};
 
 #[derive(Debug, Subcommand)]
 pub enum RequestCommand {
@@ -15,27 +19,27 @@ pub enum RequestCommand {
     List {
         /// Only requests from this Run.
         #[arg(long, value_name = "RUN_ID")]
-        run: Option<String>,
+        run: Option<RunId>,
     },
     /// Read full saved audit, claim and summary as JSON.
-    Show { id: String },
+    Show { id: RequestId },
     /// Acquire the Human reviewer lock.
     Claim {
-        id: String,
+        id: RequestId,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<String>,
     },
     /// Release your Human reviewer lock while the request still waits.
     Unclaim {
-        id: String,
+        id: RequestId,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<String>,
     },
     /// Run a predefined Human tool as the claimant.
     Tool {
-        id: String,
+        id: RequestId,
         tool: String,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
@@ -43,7 +47,7 @@ pub enum RequestCommand {
     },
     /// Submit a schema-valid Human verdict and owner fields.
     Submit {
-        id: String,
+        id: RequestId,
         #[arg(long, value_parser = ["GREEN", "RED"])]
         verdict: String,
         /// Owner fields as a JSON object (default {}).

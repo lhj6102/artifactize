@@ -55,7 +55,7 @@ pub(super) async fn list(
 
 pub(super) async fn show(
     context: Context,
-    run_id: String,
+    run_id: crate::types::RunId,
     wait: bool,
     timeout_ms: Option<u32>,
 ) -> Result<u8, String> {

@@ -58,6 +58,13 @@ Run, exits 3 and leaves the Run running. Every command exits 2 for usage errors
 errors: text on stderr, or `{"error":"..."}` on stdout with `--json`. There is no
 `plan`, `history`, `run cancel` or `--full`.
 
+Run/request ID arguments (including `request list --run` and `review REQUEST_ID`)
+are validated before reading state: 1–200 ASCII letters, digits, `-`, `_` or `.`,
+never only dots. Reuse-key arguments to `cache show`, `cache rm` and `server rm`
+require exactly 64 lowercase hexadecimal characters. Malformed identities exit 2
+as usage errors; valid but absent cache keys still make `cache show` print `null`
+(or `[]` with `--history`) and exit 4, while `cache rm` reports `removed: false`.
+
 `session show` and `session send` read and continue an Agent review's
 [saved conversation](../guides/agent-evals.md#saved-conversations). `REF` is the
 request's `session.ref` (`user@host/STATE_ID/RUN_ID/REQUEST_ID/SESSION_ID`), a request

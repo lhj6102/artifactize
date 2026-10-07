@@ -24,7 +24,7 @@ pub enum ServerCommand {
         command: TokenCommand,
     },
     /// Remove every stored record of a reuse key.
-    Rm { key: String },
+    Rm { key: crate::types::ReuseKey },
 }
 
 #[derive(Debug, Subcommand)]

@@ -145,6 +145,46 @@ fn typed_policy_rejects_complete_malformed_unknown_foreign_and_accepts_legacy_me
 }
 
 #[test]
+fn version_policy_accepts_current_and_missing_but_rejects_unknown_without_changing_identity_checks()
+{
+    let (_root, source) = fixture();
+    let current = header(&source);
+    assert!(
+        finish(&mut Reader::new(source.clone()), 80, 10, Position::Bottom)
+            .status
+            .is_none()
+    );
+    write(&source, "{\"kind\":\"review\",\"futureMetadata\":7}\n");
+    assert!(
+        finish(&mut Reader::new(source.clone()), 80, 10, Position::Bottom)
+            .status
+            .is_none()
+    );
+    for version in [0, VERSION + 1, u32::MAX] {
+        let mut event: serde_json::Value = serde_json::from_str(current.trim_end()).unwrap();
+        event["version"] = json!(version);
+        write(&source, &(event.to_string() + "\n"));
+        let window = finish(&mut Reader::new(source.clone()), 80, 10, Position::Bottom);
+        assert!(
+            window
+                .status
+                .unwrap()
+                .contains("Unsupported saved session version")
+        );
+    }
+    write(
+        &source,
+        &format!("{{\"kind\":\"review\",\"version\":{VERSION}}}\n"),
+    );
+    assert!(
+        finish(&mut Reader::new(source), 80, 10, Position::Bottom)
+            .status
+            .unwrap()
+            .contains("identity")
+    );
+}
+
+#[test]
 fn huge_small_records_bounded_batches_cache_and_append_byte_accounting() {
     let (_root, source) = fixture();
     let attempt = format!(

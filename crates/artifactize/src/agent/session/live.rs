@@ -400,7 +400,7 @@ impl Reader {
         if mismatch || incomplete {
             return Err("Session header does not match its state, producer, Run, request and session identity.".into());
         }
-        if version.is_some_and(|version| version != 1) {
+        if version.is_some_and(|version| version != super::VERSION) {
             return Err("Unsupported saved session version.".into());
         }
         Ok(())
