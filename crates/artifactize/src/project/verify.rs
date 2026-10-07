@@ -17,6 +17,9 @@ use crate::{
 /// Give Human sign-off ten minutes by default, then return without cancelling
 /// pending requests; later verify/run queries can still observe their settlement.
 pub const DEFAULT_HUMAN_WAIT: Duration = Duration::from_secs(600);
+/// Four concurrent evals keep ordinary machines responsive while overlapping review I/O;
+/// shared by API/CLI defaults and legacy Run decoding, and overridable with --jobs.
+pub const DEFAULT_JOBS: usize = 4;
 
 #[derive(Debug, Clone)]
 pub struct VerifyOptions {
@@ -43,7 +46,7 @@ pub struct VerifyOptions {
 impl Default for VerifyOptions {
     fn default() -> Self {
         Self {
-            jobs: 4,
+            jobs: DEFAULT_JOBS,
             fingerprint_jobs: None,
             announce_run: false,
             max_executions: None,

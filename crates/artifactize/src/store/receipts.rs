@@ -126,7 +126,7 @@ pub struct StoppedBackend {
 }
 
 fn default_jobs() -> usize {
-    4
+    crate::project::DEFAULT_JOBS
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

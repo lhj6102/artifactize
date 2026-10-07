@@ -1,6 +1,8 @@
 //! Command-line parsing, projections, and exit codes.
 
 mod cache;
+#[cfg(test)]
+mod defaults_tests;
 mod dispatch;
 mod interactive;
 mod maintenance;
@@ -28,6 +30,9 @@ use crate::{
     config::ProfileKind,
     project::selection::{ProfileSelection, Selection, read_selection_file},
 };
+
+/// Keep default Run history output readable; --limit/--offset expose older records.
+const DEFAULT_RUN_LIST_LIMIT: u32 = 50;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -102,7 +107,7 @@ pub enum Command {
         #[command(flatten)]
         policy: PolicyArgs,
         /// Maximum concurrent evals, including fingerprint waiters.
-        #[arg(long, value_name = "N", default_value = "4", value_parser = clap::value_parser!(u32).range(1..))]
+        #[arg(long, value_name = "N", default_value_t = crate::project::DEFAULT_JOBS as u32, value_parser = clap::value_parser!(u32).range(1..))]
         jobs: u32,
         /// Limit executor starts in this Run; cache hits and waiters are free.
         #[arg(long, value_name = "N")]
@@ -311,7 +316,7 @@ pub enum RunCommand {
         #[arg(long)]
         all: bool,
         /// Maximum number of Runs to return.
-        #[arg(long, value_name = "N", default_value = "50")]
+        #[arg(long, value_name = "N", default_value_t = DEFAULT_RUN_LIST_LIMIT)]
         limit: u32,
         /// Skip this many Runs before returning results.
         #[arg(long, value_name = "N", default_value = "0")]

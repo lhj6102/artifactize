@@ -23,6 +23,10 @@ const MAX_SLOTS: u32 = 100_000;
 pub const SESSIONS_MAX_BYTES: u64 = 1024 * 1024 * 1024;
 /// The size a collection brings the session store down to by default: 768 MiB.
 pub const SESSIONS_TARGET_BYTES: u64 = 768 * 1024 * 1024;
+/// Collect to three quarters of a small declared maximum to leave growth headroom.
+/// Divide first, preserving quarter-block rounding and avoiding multiplication overflow.
+const SESSION_TARGET_NUMERATOR: u64 = 3;
+const SESSION_TARGET_DENOMINATOR: u64 = 4;
 
 /// Backend names to their machine-wide slot counts; a backend without an entry is unlimited.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -84,7 +88,7 @@ impl DeclaredSessions {
             }
             Some(target) => target,
             None if SESSIONS_TARGET_BYTES < max_bytes => SESSIONS_TARGET_BYTES,
-            None => max_bytes / 4 * 3,
+            None => max_bytes / SESSION_TARGET_DENOMINATOR * SESSION_TARGET_NUMERATOR,
         };
         Ok(AgentSessions {
             enabled: self.enabled.unwrap_or(true),
@@ -193,6 +197,25 @@ mod tests {
                 .agent_sessions()
                 .target_bytes,
             3000
+        );
+        // Quarter-block rounding stays divide-then-multiply, not floor(3*n/4).
+        for (max_bytes, target_bytes) in [(1, 0), (3, 0), (5, 3), (7, 3), (8, 6), (11, 6)] {
+            assert_eq!(
+                read(&format!(
+                    r#"{{"agentSessions":{{"maxBytes":{max_bytes}}}}}"#
+                ))
+                .unwrap()
+                .agent_sessions()
+                .target_bytes,
+                target_bytes
+            );
+        }
+        assert_eq!(
+            read(r#"{"agentSessions":{"maxBytes":18446744073709551615}}"#)
+                .unwrap()
+                .agent_sessions()
+                .target_bytes,
+            805306368
         );
         for (text, error) in [
             (

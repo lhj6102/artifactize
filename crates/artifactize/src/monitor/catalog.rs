@@ -1,4 +1,6 @@
 //! Repository/worktree selection and cached Git discovery; no artifact config is read here.
+#[cfg(test)]
+mod tests;
 use crate::{
     repository::{self, Identity, Worktree},
     store::{CatalogRun, Signoff},
@@ -81,20 +83,38 @@ impl Catalog {
             .clone()
     }
     pub fn initial(&mut self, path: Option<&Path>) -> Scope {
-        let Some(path) = path else {
-            return Scope::All;
-        };
-        if let Some((scope, _)) = self.paths.iter().find(|(scope, workspaces)| matches!(scope, Scope::Worktree(_, tree) if tree == path || workspaces.contains(path))) {
+        path.map_or(Scope::All, |path| {
+            self.initial_path(path, &self.paths.clone())
+        })
+    }
+    fn initial_path(&mut self, path: &Path, paths: &BTreeMap<Scope, BTreeSet<PathBuf>>) -> Scope {
+        if let Some((scope, _)) = paths.iter().find(|(scope, workspaces)| matches!(scope, Scope::Worktree(_, tree) if tree == path || workspaces.contains(path))) {
             return scope.clone();
         }
         let identity = self.identity(path);
-        match (identity.common_dir, identity.worktree_path) {
-            (Some(common), Some(tree)) => Scope::Worktree(Repository::Git(common), tree),
-            _ => Scope::Worktree(
-                Repository::Workspace(path.to_path_buf()),
-                path.to_path_buf(),
-            ),
+        if let (Some(common), Some(tree)) = (identity.common_dir, identity.worktree_path) {
+            return Scope::Worktree(Repository::Git(common), tree);
         }
+        // Initial selection only: a known non-Git workspace can contain cwd. Choose the
+        // closest ancestor by components, never a string prefix or inferred Git grouping.
+        paths
+            .iter()
+            .filter_map(|(scope, workspaces)| match scope {
+                Scope::Worktree(Repository::Workspace(_), _) => workspaces
+                    .iter()
+                    .filter(|workspace| path.starts_with(workspace))
+                    .map(|workspace| (workspace.components().count(), scope))
+                    .max_by_key(|(depth, _)| *depth),
+                _ => None,
+            })
+            .max_by_key(|(depth, _)| *depth)
+            .map(|(_, scope)| scope.clone())
+            .unwrap_or_else(|| {
+                Scope::Worktree(
+                    Repository::Workspace(path.to_path_buf()),
+                    path.to_path_buf(),
+                )
+            })
     }
     /// Cached old-path discovery runs once per workspace, not once per refresh.
     pub fn update(&mut self, runs: &[CatalogRun], initial: Option<&Path>) {
@@ -126,7 +146,7 @@ impl Catalog {
             }
         }
         if let Some(path) = initial {
-            let scope = paths.iter().find(|(scope, workspaces)| matches!(scope, Scope::Worktree(_, tree) if tree == path || workspaces.contains(path))).map(|(scope, _)| scope.clone()).unwrap_or_else(|| self.initial(Some(path)));
+            let scope = self.initial_path(path, &paths);
             if let Scope::Worktree(repository, _) = &scope {
                 paths
                     .entry(Scope::Repository(repository.clone()))
