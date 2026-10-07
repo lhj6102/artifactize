@@ -34,6 +34,31 @@ fn dirty_sessions_are_bounded_and_overflow_coalesces_to_resync() {
     assert_eq!(dirty.pop(), None);
 }
 #[tokio::test]
+async fn unsupported_wire_version_is_refused_before_registration() {
+    let state = temporary_state();
+    let mut subscriber = Subscription::new(state.path()).await;
+    registered(&mut subscriber).await;
+    let endpoint = Endpoint::new(state.path()).unwrap();
+    let mut stream = endpoint.connect().await.unwrap();
+    write_frame(
+        &mut stream,
+        &Frame::Hello {
+            version: VERSION + 1,
+            identity: endpoint.identity.clone(),
+            subscriber: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert!(
+        tokio::time::timeout(DELIVERY_TIMEOUT, read_frame(&mut stream))
+            .await
+            .unwrap()
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn oversized_frames_are_refused_before_reading_the_payload() {
     let (mut writer, mut reader) = tokio::io::duplex(16);
     writer

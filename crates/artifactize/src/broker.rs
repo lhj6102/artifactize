@@ -43,6 +43,19 @@ fn future_deadline(
 #[cfg(test)]
 mod wake_tests {
     use super::*;
+    #[test]
+    fn sortable_rfc3339_year_bounds_keep_fixed_width_utc_text() {
+        assert_eq!(
+            sortable("0000-01-01T00:00:00Z").as_deref(),
+            Some("0000-01-01T00:00:00.000000000Z")
+        );
+        assert_eq!(
+            sortable("9999-12-31T23:59:59Z").as_deref(),
+            Some("9999-12-31T23:59:59.000000000Z")
+        );
+        assert_eq!(sortable("0000-01-01T00:00:00+01:00"), None);
+        assert_eq!(sortable("10000-01-01T00:00:00Z"), None);
+    }
     #[tokio::test(start_paused = true)]
     async fn expired_human_deadline_does_not_spin_while_other_work_drains() {
         let deadline = tokio::time::Instant::now() + Duration::from_millis(10);
@@ -88,11 +101,17 @@ fn timestamp(time: OffsetDateTime) -> String {
     )
 }
 
+/// RFC 3339 uses a four-digit year. Keep UTC years within that width so normalized
+/// timestamps retain the fixed-width representation required by SQLite text ordering.
+const MAX_SORTABLE_YEAR: i32 = 9999;
+
 /// Any RFC 3339 time in the sortable form of [`now`]; `None` when it does not parse.
 pub(crate) fn sortable(value: &str) -> Option<String> {
     OffsetDateTime::parse(value, &Rfc3339)
         .ok()
-        .filter(|time| (0..=9999).contains(&time.to_offset(time::UtcOffset::UTC).year()))
+        .filter(|time| {
+            (0..=MAX_SORTABLE_YEAR).contains(&time.to_offset(time::UtcOffset::UTC).year())
+        })
         .map(timestamp)
 }
 

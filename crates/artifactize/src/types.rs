@@ -13,8 +13,9 @@ pub(crate) const MAX_FINGERPRINT_BYTES: usize = 128;
 /// JSON clients represent numbers as IEEE-754 doubles; larger integer counters
 /// and offsets cannot round-trip exactly through them.
 pub(crate) const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
-/// SHA-256 reuse keys use lowercase hexadecimal on disk and on the wire.
-const REUSE_KEY_BYTES: usize = 64;
+/// A SHA-256 digest has 32 bytes, encoded as 64 lowercase hexadecimal ASCII bytes
+/// in reuse keys and remote definition hashes; this wire width is not a storage limit.
+pub(crate) const SHA256_HEX_BYTES: usize = 64;
 
 fn segment(value: &str) -> bool {
     (1..=MAX_ID_BYTES).contains(&value.len())
@@ -119,7 +120,7 @@ identity!(Fingerprint, |value: &str| (1..=MAX_FINGERPRINT_BYTES)
     && value.bytes().all(
         |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-')
     ));
-identity!(ReuseKey, |value: &str| value.len() == REUSE_KEY_BYTES
+identity!(ReuseKey, |value: &str| value.len() == SHA256_HEX_BYTES
     && value.bytes().all(
         |byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
     ));

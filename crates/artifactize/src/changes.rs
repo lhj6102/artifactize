@@ -34,6 +34,9 @@ const MAX_STATES: usize = 32;
 const MAX_CLIENTS: usize = 64;
 const MAX_BACKLOG: usize = 64;
 const MAX_DIRTY_SESSIONS: usize = 64;
+/// Version 1 is the first ephemeral invalidation wire format, independent of the state
+/// database schema and durable session-event format. The Hello handshake rejects any
+/// unsupported version instead of interpreting incompatible hints; readers reconcile safely.
 const VERSION: u32 = 1;
 
 /// Hints carry no records, credentials, scheduler decisions or remote-store events.
