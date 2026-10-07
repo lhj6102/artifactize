@@ -11,6 +11,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 /// One layout/page-in job scans at most a quarter MiB of formatted text.
 const CHUNK: usize = 256 * 1024;
+/// Bound each layout job even for empty events, which spend no byte budget, so input stays responsive.
+const LAYOUT_EVENTS: usize = 128;
 /// A row offset is two u64s on disk, not a heap Range for every terminal row.
 const ENTRY: u64 = 24;
 
@@ -262,7 +264,7 @@ impl Pages {
     pub(super) fn layout_chunk(&mut self, chunk: usize) -> Result<bool, String> {
         let mut budget = chunk;
         let mut events = 0;
-        while self.current.event < self.texts.len() && budget > 0 && events < 128 {
+        while self.current.event < self.texts.len() && budget > 0 && events < LAYOUT_EVENTS {
             let event = self.current.event;
             if self.current.rows.len() == event {
                 self.current.rows.push(Rows {
