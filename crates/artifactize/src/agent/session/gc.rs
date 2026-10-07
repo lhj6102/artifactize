@@ -6,7 +6,7 @@ use std::{
     collections::BTreeSet,
     fs::{self, File},
     path::Path,
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 use rusqlite::OpenFlags;
@@ -90,7 +90,7 @@ fn running(state: &Path) -> Result<BTreeSet<SessionId>, String> {
     let read = || -> Result<BTreeSet<SessionId>, rusqlite::Error> {
         let db =
             rusqlite::Connection::open_with_flags(&database, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        db.busy_timeout(Duration::from_secs(5))?;
+        db.busy_timeout(crate::store::SQLITE_BUSY_TIMEOUT)?;
         let initialized: bool = db.query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='requests')",
             [],
@@ -164,7 +164,7 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
 
 #[cfg(test)]
 mod tests {
-    use std::time::UNIX_EPOCH;
+    use std::time::{Duration, UNIX_EPOCH};
 
     use super::*;
 

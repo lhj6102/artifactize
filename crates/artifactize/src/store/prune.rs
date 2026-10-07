@@ -84,7 +84,7 @@ pub fn prune(
         OpenFlags::SQLITE_OPEN_READ_ONLY,
     )
     .map_err(|e| e.to_string())?;
-    db.busy_timeout(Duration::from_secs(5))
+    db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)
         .map_err(|e| e.to_string())?;
     let transaction = db.transaction().map_err(|e| e.to_string())?;
     let version: u32 = transaction

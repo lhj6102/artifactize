@@ -2,7 +2,7 @@
 //! (`completed_at`, `bytes`, `last_used`) are set. The latest by completion time is the one
 //! reused; the cache GC and `cache rm` clear the columns and keep the execution.
 
-use std::{path::Path, time::Duration};
+use std::path::Path;
 
 use rusqlite::{OpenFlags, OptionalExtension, params};
 use serde::Serialize;
@@ -68,7 +68,7 @@ async fn open(state: &Path, writable: bool) -> Result<Option<Connection>, String
     .map_err(|e| e.to_string())?;
     let initialized = connection
         .call(|db| -> Result<bool, Error> {
-            db.busy_timeout(Duration::from_secs(5))?;
+            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
             schema_initialized(&transaction)
         })

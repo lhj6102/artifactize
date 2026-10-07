@@ -1,4 +1,4 @@
-use std::{path::Path, time::Duration};
+use std::path::Path;
 
 use rusqlite::params;
 use serde::Serialize;
@@ -118,7 +118,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
         .map(str::parse::<crate::types::SessionId>)
         .transpose()?;
     connection.call(move |db| -> Result<_, Error> {
-        db.busy_timeout(Duration::from_secs(5))?;
+        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
         let transaction = db.transaction()?;
         if !schema_initialized(&transaction)? {
             return Ok(Vec::new());

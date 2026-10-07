@@ -27,6 +27,10 @@ pub use receipts::{
 };
 pub use requests::{RequestView, read_request, read_requests, read_session_request, read_waiting};
 
+/// Let concurrent readers/writers finish short SQLite transactions without an
+/// immediate busy error, while limiting how long one database operation can block.
+pub(crate) const SQLITE_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Resolve the single state directory without creating it.
 pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
     let path = match explicit {

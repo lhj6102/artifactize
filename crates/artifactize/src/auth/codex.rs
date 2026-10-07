@@ -33,7 +33,7 @@ use tokio::{
     sync::oneshot,
 };
 
-use super::storage::{Location, Storage, Tokens};
+use super::storage::{Location, MAX_CREDENTIAL_BYTES, Storage, Tokens};
 
 /// The Codex CLI's public OAuth client, which Pi's provider uses too.
 pub const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -608,10 +608,11 @@ fn read_auth_file(path: &Path) -> Result<Token, String> {
         return Err(unreadable("it is not a regular file"));
     }
     let mut data = Vec::new();
-    file.take(1024 * 1024 + 1)
+    // Match owned credential storage: one extra byte detects oversized imports.
+    file.take(MAX_CREDENTIAL_BYTES as u64 + 1)
         .read_to_end(&mut data)
         .map_err(|error| unreadable(&error.to_string()))?;
-    if data.len() > 1024 * 1024 {
+    if data.len() > MAX_CREDENTIAL_BYTES {
         return Err(unreadable("it is larger than 1 MiB"));
     }
     let auth: Value =

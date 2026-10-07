@@ -70,7 +70,7 @@ pub async fn verify(
     let parallelism = super::fingerprint_parallelism(options)?;
     let wait_timeout_ms = u32::try_from(options.wait_timeout.as_millis())
         .ok()
-        .filter(|ms| (1..=2_147_483_647).contains(ms))
+        .filter(|ms| (1..=crate::config::validation::MAX_TIMEOUT_MS).contains(&u64::from(*ms)))
         .ok_or("wait timeout must be between 1 and 2147483647 ms.")?;
     let config = read_workspace_config(repo).map_err(|e| e.to_string())?;
     let config = Arc::new(select_profiles(

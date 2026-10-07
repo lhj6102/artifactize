@@ -22,6 +22,12 @@ use crate::remote::Record;
 pub const CONFIG: &str = "remote.json";
 const TOKEN: &str = "remote-token.json";
 const LOGIN: &str = "run `artifactize remote login URL` or set ARTIFACTIZE_REMOTE_TOKEN";
+/// Bound bearer-header size while allowing token formats larger than this server's
+/// generated tokens; validation is identical for environment and saved tokens.
+const MAX_TOKEN_BYTES: usize = 4096;
+/// A URL/share declaration is small; bound its read so malformed local config
+/// cannot cause unbounded allocation. The existing parser sees one extra byte.
+const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
@@ -111,7 +117,9 @@ pub fn parse_url(value: &str) -> Result<Url, String> {
 }
 
 fn valid_token(token: &str) -> Result<(), String> {
-    if (1..=4096).contains(&token.len()) && token.bytes().all(|byte| byte.is_ascii_graphic()) {
+    if (1..=MAX_TOKEN_BYTES).contains(&token.len())
+        && token.bytes().all(|byte| byte.is_ascii_graphic())
+    {
         Ok(())
     } else {
         Err("A remote token is 1–4096 printable ASCII characters without spaces.".into())
@@ -131,7 +139,7 @@ fn read_config(state: &Path) -> Result<Option<Config>, String> {
         return Err(format!("{CONFIG} must be a regular file."));
     }
     let mut data = Vec::new();
-    file.take(64 * 1024 + 1)
+    file.take(MAX_CONFIG_BYTES + 1)
         .read_to_end(&mut data)
         .map_err(|e| e.to_string())?;
     serde_json::from_slice(&data).map(Some).map_err(|_| {

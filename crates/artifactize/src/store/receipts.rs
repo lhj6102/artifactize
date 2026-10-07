@@ -215,13 +215,14 @@ impl Receipts {
         let connection = Connection::open(state.join(DATABASE))
             .await
             .map_err(|e| e.to_string())?;
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        // WAL initialization retries share the database contention budget.
+        let deadline = tokio::time::Instant::now() + super::SQLITE_BUSY_TIMEOUT;
         let state_id = crate::agent::uuid()?;
         loop {
             let state_id = state_id.clone();
             let initialized = connection
                 .call(move |db| -> Result<(), Error> {
-                    db.busy_timeout(Duration::from_secs(5))?;
+                    db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
                     db.pragma_update(None, "foreign_keys", true)?;
                     let version: u32 =
                         db.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -403,7 +404,7 @@ pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
-        db.busy_timeout(Duration::from_secs(5))?;
+        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
         db.pragma_query_value(None, "user_version", |row| row.get(0))
     };
     read().map(Some).map_err(|e| e.to_string())
@@ -423,7 +424,7 @@ pub fn read_state_id(state: &Path) -> Result<Option<String>, String> {
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
-        db.busy_timeout(Duration::from_secs(5))?;
+        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
         let transaction = db.transaction()?;
         if !schema_initialized(&transaction)? {
             return Ok(None);
@@ -489,7 +490,7 @@ pub async fn read_latest_requests(
     let repo = repo.to_path_buf();
     connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(Duration::from_secs(5))?;
+            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Default::default());
@@ -536,7 +537,7 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     let id: RunId = id.parse()?;
     connection
         .call(move |db| -> Result<RunView, Error> {
-            db.busy_timeout(Duration::from_secs(5))?;
+            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Err(Error::Invalid("Run not found.".into()));

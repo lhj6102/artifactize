@@ -24,6 +24,11 @@ pub(crate) use os::{
     restrict_file, spawn_detached, spawn_gated, stop_requested, sync_dir,
 };
 
+/// Poll contended process-shared file locks without blocking the async runtime;
+/// 25 ms keeps session sends and credential refreshes responsive without busy-waiting.
+pub(crate) const FILE_LOCK_RETRY_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(25);
+
 /// The type of a directory entry, read without following it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FileKind {

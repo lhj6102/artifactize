@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use rusqlite::params;
@@ -55,7 +54,7 @@ pub async fn read_runs(
     .await
     .map_err(|e| e.to_string())?;
     connection.call(move |db| -> Result<_, Error> {
-        db.busy_timeout(Duration::from_secs(5))?;
+        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
         let transaction = db.transaction()?;
         if !schema_initialized(&transaction)? {
             return Ok(Vec::new());

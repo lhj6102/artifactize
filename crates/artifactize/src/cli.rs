@@ -108,7 +108,7 @@ pub enum Command {
         #[arg(long, value_name = "N")]
         max_executions: Option<u64>,
         /// How long to wait for Human results; does not cancel pending requests (default 600000).
-        #[arg(long, value_name = "MS", value_parser = clap::value_parser!(u32).range(1..=2_147_483_647))]
+        #[arg(long, value_name = "MS", value_parser = clap::value_parser!(u32).range(1..=crate::config::validation::MAX_TIMEOUT_MS as i64))]
         timeout_ms: Option<u32>,
         /// Only reuse results for these kinds (comma-separated); an eval with nothing to reuse is not executed.
         #[arg(long, value_name = "KINDS", value_enum, value_delimiter = ',')]
@@ -324,7 +324,7 @@ pub enum RunCommand {
         #[arg(long)]
         wait: bool,
         /// Wait timeout; never cancels the Run (default 600000).
-        #[arg(long, value_name = "MS", requires = "wait", value_parser = clap::value_parser!(u32).range(1..=2_147_483_647))]
+        #[arg(long, value_name = "MS", requires = "wait", value_parser = clap::value_parser!(u32).range(1..=crate::config::validation::MAX_TIMEOUT_MS as i64))]
         timeout_ms: Option<u32>,
     },
 }

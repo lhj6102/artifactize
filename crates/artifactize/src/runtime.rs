@@ -17,7 +17,8 @@ use tokio_util::sync::CancellationToken;
 use crate::process::{self, ChildIdentity, Output};
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-pub const MAX_TIMEOUT: Duration = Duration::from_millis(2_147_483_647);
+/// Share configuration and CLI's signed 32-bit millisecond protocol bound.
+pub const MAX_TIMEOUT: Duration = Duration::from_millis(crate::config::validation::MAX_TIMEOUT_MS);
 
 /// A single runtime invocation with private writable directories and filtered env.
 /// The caller owns the run directory and retains its contents for receipts/pruning.

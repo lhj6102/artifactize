@@ -32,7 +32,6 @@ use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use rig_core::message::{AssistantContent, Message, ToolResultContent, UserContent};
@@ -500,7 +499,7 @@ pub async fn lock(state: &Path, id: &str) -> Result<File, String> {
         match file.try_lock() {
             Ok(()) => return Ok(file),
             Err(std::fs::TryLockError::WouldBlock) => {
-                tokio::time::sleep(Duration::from_millis(25)).await;
+                tokio::time::sleep(platform::FILE_LOCK_RETRY_INTERVAL).await;
             }
             Err(std::fs::TryLockError::Error(error)) => {
                 return Err(format!("Cannot lock Agent session {id}: {error}"));
@@ -512,6 +511,7 @@ pub async fn lock(state: &Path, id: &str) -> Result<File, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     fn reference() -> SessionRef {
         SessionRef {

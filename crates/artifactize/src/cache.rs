@@ -16,7 +16,7 @@ use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
 pub use crate::store::history::{Entry, list, remove, show};
-pub(crate) use content::ignore_patterns;
+pub(crate) use content::{HASH_BUFFER_BYTES, ignore_patterns};
 
 use crate::{
     config::{Eval, EvalDeclaration, Fingerprint, Profile, RepoConfig},

@@ -25,6 +25,11 @@ use crate::{
 const MAX_ENTRIES: usize = 10_000;
 const MAX_BYTES: u64 = 1024 * 1024 * 1024;
 const GITIGNORE_BYTES: u64 = 1024 * 1024;
+/// Bound user-declared ignore fan-out and compiled matcher work during fingerprinting.
+const MAX_IGNORE_PATTERNS: usize = 64;
+/// Stream hashes in bounded heap memory while amortizing filesystem read calls.
+/// Content fingerprints and executable pins use the same I/O chunk, not a file-size cap.
+pub(crate) const HASH_BUFFER_BYTES: usize = 64 * 1024;
 const BUILTIN_IGNORES: [&str; 5] = [".git", "__pycache__/", "*.pyc", "target/", "node_modules/"];
 
 /// Sorted owner-relative file paths with their SHA-256, and one digest over all of them.
@@ -39,7 +44,9 @@ pub(crate) fn ignore_patterns(patterns: &[String]) -> Result<(), String> {
 }
 
 fn matcher(patterns: &[String]) -> Result<Gitignore, String> {
-    if patterns.len() > 64 || patterns.iter().collect::<BTreeSet<_>>().len() != patterns.len() {
+    if patterns.len() > MAX_IGNORE_PATTERNS
+        || patterns.iter().collect::<BTreeSet<_>>().len() != patterns.len()
+    {
         return Err("fingerprint.ignore must contain at most 64 unique patterns.".into());
     }
     let mut builder = GitignoreBuilder::new(".");
@@ -301,7 +308,7 @@ fn hash_file(mut file: File, path: &str, state: &mut State) -> Result<(), String
         return Err(format!("{path}: Content input must be a regular file."));
     }
     let mut digest = Sha256::new();
-    let mut buffer = vec![0; 64 * 1024];
+    let mut buffer = vec![0; HASH_BUFFER_BYTES];
     loop {
         let read = file.read(&mut buffer).map_err(|e| format!("{path}: {e}"))?;
         if read == 0 {
