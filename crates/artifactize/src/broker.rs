@@ -56,6 +56,21 @@ mod wake_tests {
         assert_eq!(sortable("0000-01-01T00:00:00+01:00"), None);
         assert_eq!(sortable("10000-01-01T00:00:00Z"), None);
     }
+    #[test]
+    fn sortable_rejects_utc_offset_overflow_without_panicking() {
+        assert_eq!(sortable("9999-12-31T23:59:59-01:00"), None);
+        assert_eq!(sortable("0000-01-01T00:00:00+01:00"), None);
+        assert_eq!(sortable("9999-12-31T23:59:59+24:00"), None);
+        assert_eq!(sortable("0000-01-01T00:00:00-24:00"), None);
+        assert_eq!(
+            sortable("9999-12-31T22:59:59-01:00").as_deref(),
+            Some("9999-12-31T23:59:59.000000000Z")
+        );
+        assert_eq!(
+            sortable("0000-01-01T01:00:00+01:00").as_deref(),
+            Some("0000-01-01T00:00:00.000000000Z")
+        );
+    }
     #[tokio::test(start_paused = true)]
     async fn expired_human_deadline_does_not_spin_while_other_work_drains() {
         let deadline = tokio::time::Instant::now() + Duration::from_millis(10);
@@ -109,9 +124,10 @@ const MAX_SORTABLE_YEAR: i32 = 9999;
 pub(crate) fn sortable(value: &str) -> Option<String> {
     OffsetDateTime::parse(value, &Rfc3339)
         .ok()
-        .filter(|time| {
-            (0..=MAX_SORTABLE_YEAR).contains(&time.to_offset(time::UtcOffset::UTC).year())
-        })
+        // An otherwise valid offset can normalize beyond time's representable UTC range.
+        // External record validation must reject it, not panic before the year-width check.
+        .and_then(|time| time.checked_to_offset(time::UtcOffset::UTC))
+        .filter(|time| (0..=MAX_SORTABLE_YEAR).contains(&time.year()))
         .map(timestamp)
 }
 
