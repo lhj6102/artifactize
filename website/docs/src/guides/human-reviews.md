@@ -183,10 +183,25 @@ cancels its running tool first). Modal clicks never reach the underlying lists.
 
 Detail depends on the eval kind:
 
-- **Agent:** summary/result on the left, saved conversation on the right. A missing
-  recorded local session explains session GC and `limits.json`'s `agentSessions`;
-  never-saved and remote/unavailable conversations are distinguished. Display is
-  bounded to 2 MiB; `session show` reads the full file. Live streaming is not added.
+- **Agent:** summary/result on the left, live recorded conversation on the right,
+  including RUNNING reviews and the original local session behind reused evidence.
+  Appended, flushed JSONL events update the view; this is not token-level provider
+  streaming. The initial view follows the bottom. ↑/PgUp or the wheel pauses at the
+  reading position; ↓/PgDn back to the bottom resumes following. Home/End and the
+  Top/Bottom buttons jump through the full history. The bottom border shows the row
+  position, bottom/history and following/paused state. Resize preserves the logical
+  reading anchor while paused and stays at the bottom while following. F2 disables
+  mouse capture without changing keyboard scrolling or paste.
+  Missing recorded local sessions explain session GC; never-saved and remote
+  conversations are distinguished, and remote references never open arbitrary local
+  paths. Replacement, truncation and deletion reset the selected document. Complete
+  malformed events show an error; partial newline/UTF-8 tails wait for the next append.
+  History is indexed incrementally with private ephemeral formatted-text/row files
+  and visible-window page-in, not a permanent first-2-MiB cutoff. One complete typed
+  event temporarily needs memory proportional to that event when decoded once;
+  large history/layout jobs otherwise yield between bounded chunks. Temporary files
+  are removed when the selected reader closes or resets. Later `session send` events
+  remain visible after the review's end event.
 - **Runtime:** saved stdout/stderr, exit code and capture truncation. Running,
   timeout/cancellation and remote summary-only results honestly show logs as
   unavailable; there is no new live-log recorder.
@@ -215,8 +230,10 @@ file-identity probe detect missed commits and database replacement. Clocks and
 busy spinners redraw cached data instead of reloading the database on each tick.
 `verify` separately reconciles dead execution owners/backend slots and optional
 remote results, retaining its existing absolute Human deadline. Session invalidation
-hints are available for future live viewers; this stage does not add live session
-scrolling or remote team-store push events. Only explicit Human actions write or
+hints wake only the selected session reader, without a full database query; a
+five-second file probe also detects missed appends and removal. Rendering performs
+no file I/O, and terminal input takes priority over append/index bursts. This does
+not add remote team-store push events. Only explicit Human actions write or
 run owner tools, through the same atomic claim, fingerprint recheck, schema
 validation and `submit_and_publish` APIs as `review`. Followers resolve to their
 original request. If remote publishing fails after local settlement, the modal

@@ -122,6 +122,7 @@ dependencies = [
  "tokio-rusqlite",
  "tokio-util",
  "tui-tree-widget",
+ "unicode-segmentation",
  "url",
  "windows-sys 0.61.2",
 ]

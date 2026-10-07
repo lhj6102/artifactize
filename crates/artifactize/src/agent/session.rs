@@ -19,8 +19,13 @@
 //! Every event has its time in `at`. Writing never fails a review: an error is reported on
 //! stderr and the review goes on without its conversation.
 
+pub mod document;
 mod events;
 mod gc;
+pub mod live;
+mod pages;
+#[cfg(test)]
+mod pages_tests;
 pub use events::{Answer, Budgets, End, Event, Header, Kind, MessageEvent, Send};
 mod summary;
 
@@ -516,6 +521,8 @@ pub async fn lock(state: &Path, id: &str) -> Result<File, String> {
     }
 }
 
+#[cfg(test)]
+pub(crate) mod live_tests;
 #[cfg(test)]
 mod tests {
     use super::*;

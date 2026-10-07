@@ -19,6 +19,13 @@ pub struct Event {
     #[serde(flatten)]
     pub kind: Kind,
 }
+impl Event {
+    /// The shared typed JSONL boundary. Unknown kinds and malformed known records are errors;
+    /// unknown header metadata remains compatible through Header::extra.
+    pub fn parse(bytes: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_json::from_slice(bytes)
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Kind {

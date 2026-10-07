@@ -295,8 +295,10 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
         "GREEN",
         json!({"profile":{"kind":"agent","backend":"openai","model":"fixture"},"sessionId":"session-1"}),
     );
-    let text = modal::evidence(root.path(), &view).text;
-    assert!(text.contains("never recorded as saved"));
+    let text = crate::agent::session::live::resolve(root.path(), &view)
+        .await
+        .unwrap_err();
+    assert!(text.contains("identity"));
     view.request.session = Some(crate::agent::session::SessionRef {
         producer: store::Producer::current().name,
         state: "fixture-state".into(),
@@ -305,35 +307,48 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
         session_id: "session-1".parse().unwrap(),
     });
     assert!(
-        modal::evidence(root.path(), &view)
-            .text
-            .contains("remote/unavailable")
+        crate::agent::session::live::resolve(root.path(), &view)
+            .await
+            .is_err()
     );
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir_all(&repo).unwrap();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
     view.request.session.as_mut().unwrap().state = receipts.state_id().await.unwrap();
+    use crate::agent::session::{
+        document::Position,
+        live::{Reader, Resolution},
+    };
+    let Resolution::Local(source) = crate::agent::session::live::resolve(&state, &view)
+        .await
+        .unwrap()
+    else {
+        panic!("local session");
+    };
+    let mut reader = Reader::new(source.clone());
     assert!(
-        modal::evidence(&state, &view)
-            .text
+        reader
+            .step(80, 10, Position::Bottom)
+            .status
+            .unwrap()
             .contains("removed by session GC")
     );
-    let session = crate::agent::session::path(&state, "session-1").unwrap();
-    fs::create_dir_all(session.parent().unwrap()).unwrap();
-    let header = json!({"kind":"review","sessionId":"session-1"});
-    let message = json!({"kind":"message","turn":1,"message":{"role":"user","content":[{"type":"text","text":"saved 한글 conversation"}]}});
-    fs::write(&session, format!("{header}\n{message}\n")).unwrap();
+    crate::platform::create_private_dir_all(&crate::agent::session::directory(&state)).unwrap();
+    crate::agent::session::live_tests::write(
+        &source,
+        "{\"kind\":\"review\",\"sessionId\":\"session-1\"}\n",
+    );
+    crate::agent::session::live_tests::append(
+        &source,
+        &crate::agent::session::live_tests::answer("saved 한글 conversation"),
+    );
     assert!(
-        modal::evidence(&state, &view)
-            .text
+        crate::agent::session::live_tests::finish(&mut reader, 80, 20, Position::Bottom)
+            .rows
+            .join("\n")
             .contains("saved 한글 conversation")
     );
-    let mut bytes = format!("{header}\n{message}\n").into_bytes();
-    bytes.extend(vec![b'x'; 3 * 1024 * 1024]);
-    fs::write(&session, bytes).unwrap();
-    let bounded = modal::evidence(&state, &view).text;
-    assert!(bounded.contains("display truncated") && bounded.contains("saved 한글 conversation"));
     let runtime = super::tests::request(
         "app/runtime",
         "GREEN",

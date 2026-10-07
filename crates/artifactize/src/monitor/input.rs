@@ -29,6 +29,8 @@ pub(super) struct Click {
 pub(super) enum Button {
     Review(Control),
     Close,
+    SessionTop,
+    SessionBottom,
 }
 #[derive(Default)]
 pub(super) struct Hits {
@@ -82,6 +84,17 @@ impl Monitor {
                                 return Action::Review(review.control(Control::Cancel));
                             }
                             self.close_modal();
+                            Action::None
+                        }
+                        Button::SessionTop | Button::SessionBottom => {
+                            if let Some(live) = &mut modal.live {
+                                modal.focus = ModalPane::Evidence;
+                                live.movement(if *button == Button::SessionTop {
+                                    crate::agent::session::document::Move::Top
+                                } else {
+                                    crate::agent::session::document::Move::Bottom
+                                });
+                            }
                             Action::None
                         }
                         Button::Review(control) => {
@@ -148,6 +161,15 @@ impl Monitor {
             };
             if let Some(review) = &mut modal.review {
                 review.scroll_single(delta, index == 1);
+            } else if index == 1
+                && let Some(live) = &mut modal.live
+            {
+                modal.focus = ModalPane::Evidence;
+                live.movement(if delta > 0 {
+                    crate::agent::session::document::Move::Down(delta as usize)
+                } else {
+                    crate::agent::session::document::Move::Up(delta.unsigned_abs() as usize)
+                });
             } else {
                 modal.scroll[index] = modal.scroll[index].saturating_add_signed(delta);
             }

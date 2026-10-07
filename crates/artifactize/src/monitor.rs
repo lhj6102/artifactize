@@ -6,10 +6,15 @@ mod model;
 #[cfg(test)]
 mod pane_tests;
 #[cfg(test)]
+mod pty_fixture_tests;
+#[cfg(test)]
 mod redesign_tests;
+mod session;
+#[cfg(test)]
+mod session_tests;
 mod terminal;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod view;
 pub use catalog::{Repository, Scope};
 #[cfg(test)]
@@ -75,6 +80,7 @@ pub struct Modal {
     review: Option<Review>,
     focus: ModalPane,
     scroll: [u16; 2],
+    live: Option<session::Live>,
 }
 
 /// Semantic selection/drafts live here, independently of render geometry.
@@ -93,6 +99,7 @@ pub struct Monitor {
     run: Option<(RunView, Vec<RequestView>)>,
     tree: TreeState<String>,
     modal: Option<Modal>,
+    modal_serial: u64,
     reviews: std::collections::BTreeMap<RequestId, Review>,
     mouse_capture: bool,
     hits: input::Hits,
@@ -121,6 +128,7 @@ impl Monitor {
             run: None,
             tree: TreeState::default(),
             modal: None,
+            modal_serial: 0,
             reviews: std::collections::BTreeMap::new(),
             mouse_capture: true,
             hits: input::Hits::default(),
@@ -197,8 +205,10 @@ impl Monitor {
                         .and_then(|id| requests.iter().find(|view| &view.request.id == id))
                 {
                     let stamp = modal::EvidenceStamp::new(view);
-                    if modal.evidence_stamp.as_ref() != Some(&stamp) {
-                        modal.evidence = modal::evidence(&self.state, view);
+                    if modal.evidence_stamp.as_ref() != Some(&stamp)
+                        || view.request.profile.kind() == ProfileKind::Agent
+                    {
+                        Self::load_evidence(&self.state, self.modal_serial, modal, view).await;
                         modal.evidence_stamp = Some(stamp);
                     }
                 }
@@ -299,6 +309,7 @@ impl Monitor {
             _ => None,
         };
         let saved_detail = model::detail(run, requests, &target, OffsetDateTime::now_utc());
+        self.modal_serial += 1;
         let mut modal = Modal {
             run_id: run.run.id.clone(),
             target,
@@ -309,6 +320,7 @@ impl Monitor {
             review: None,
             focus: ModalPane::Evidence,
             scroll: [0; 2],
+            live: None,
         };
         if let Some(view) = view {
             if view.request.profile.kind() == ProfileKind::Human {
@@ -339,10 +351,49 @@ impl Monitor {
                     Err(error) => self.notice = Some(error),
                 }
             } else {
-                modal.evidence = modal::evidence(&self.state, &view);
+                Self::load_evidence(&self.state, self.modal_serial, &mut modal, &view).await;
             }
         }
         self.modal = Some(modal);
+    }
+    async fn load_evidence(
+        state: &std::path::Path,
+        serial: u64,
+        modal: &mut Modal,
+        view: &RequestView,
+    ) {
+        use crate::agent::session::live::{self, Resolution};
+        if view.request.profile.kind() != ProfileKind::Agent {
+            modal.evidence = modal::evidence(state, view);
+            return;
+        }
+        modal.evidence.title = "Agent session".into();
+        match live::resolve(state, view).await {
+            Ok(Resolution::Local(source)) => {
+                let same = modal
+                    .live
+                    .as_ref()
+                    .is_some_and(|live| live.source.reference == source.reference);
+                if !same {
+                    modal.live = Some(session::Live::new(serial, source));
+                } else if let Some(live) = &mut modal.live {
+                    live.source = source;
+                    if let Some(reader) = &mut live.reader {
+                        reader.source = live.source.clone();
+                    }
+                    live.invalidate();
+                }
+                modal.evidence.text = "Loading session…".into();
+            }
+            Ok(Resolution::Unavailable(text)) => {
+                modal.live = None;
+                modal.evidence.text = text;
+            }
+            Err(error) => {
+                modal.live = None;
+                modal.evidence.text = format!("Conversation unavailable: {error}");
+            }
+        }
     }
     fn close_modal(&mut self) {
         if let Some(modal) = self.modal.take()
@@ -387,6 +438,24 @@ impl Monitor {
                     return Action::None;
                 }
                 return Action::Review(review.key_single(key, modal.focus == ModalPane::Tools));
+            }
+            if modal.focus == ModalPane::Evidence
+                && let Some(live) = &mut modal.live
+            {
+                use crate::agent::session::document::Move;
+                let movement = match key.code {
+                    KeyCode::Up => Some(Move::Up(1)),
+                    KeyCode::Down => Some(Move::Down(1)),
+                    KeyCode::PageUp => Some(Move::Up(live.scroll.height.max(1))),
+                    KeyCode::PageDown => Some(Move::Down(live.scroll.height.max(1))),
+                    KeyCode::Home => Some(Move::Top),
+                    KeyCode::End => Some(Move::Bottom),
+                    _ => None,
+                };
+                if let Some(movement) = movement {
+                    live.movement(movement);
+                    return Action::None;
+                }
             }
             let index = usize::from(modal.focus == ModalPane::Evidence);
             match key.code {

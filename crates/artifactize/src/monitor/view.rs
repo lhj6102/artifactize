@@ -317,14 +317,40 @@ impl Monitor {
                     .block(Block::bordered().title(" Summary / result ")),
                 left,
             );
-            frame.render_widget(
-                Paragraph::new(modal.evidence.text.clone())
-                    .wrap(Wrap { trim: false })
-                    .scroll((modal.scroll[1], 0))
-                    .block(Block::bordered().title(format!(" {} ", modal.evidence.title))),
-                right,
-            );
-            self.draw_buttons(frame, buttons, Vec::new());
+            let controls = if let Some(live) = &mut modal.live {
+                let block = Block::bordered()
+                    .title(" Agent session ")
+                    .title_bottom(format!(" {} ", live.indicator()));
+                let inner = block.inner(right);
+                live.geometry(usize::from(inner.width), usize::from(inner.height));
+                let rows = if let Some(status) = &live.window.status {
+                    vec![Line::from(status.as_str())]
+                } else if live.window.rows.is_empty() {
+                    vec![Line::from("Loading session…")]
+                } else {
+                    live.window
+                        .rows
+                        .iter()
+                        .map(|row| Line::from(row.as_str()))
+                        .collect()
+                };
+                // Already wrapped visible rows: no u16 global scroll or second wrapping pass.
+                frame.render_widget(Paragraph::new(rows).block(block), right);
+                vec![
+                    ("Top (Home)", Button::SessionTop),
+                    ("Bottom (End)", Button::SessionBottom),
+                ]
+            } else {
+                frame.render_widget(
+                    Paragraph::new(modal.evidence.text.as_str())
+                        .wrap(Wrap { trim: false })
+                        .scroll((modal.scroll[1], 0))
+                        .block(Block::bordered().title(format!(" {} ", modal.evidence.title))),
+                    right,
+                );
+                Vec::new()
+            };
+            self.draw_buttons(frame, buttons, controls);
         }
     }
     fn draw_buttons(&mut self, frame: &mut Frame, area: Rect, mut controls: Vec<(&str, Button)>) {

@@ -52,6 +52,8 @@ tokio-rusqlite = "0.8.0"
 tokio-util = { version = "0.7", features = ["rt"] }
 tui-tree-widget = "0.24"
 url = { version = "2", features = ["serde"] }
+# Already used by ratatui; session layout uses the same grapheme boundaries.
+unicode-segmentation = "1.13"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
