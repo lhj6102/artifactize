@@ -29,6 +29,9 @@ use super::{Content, ToolResult, image};
 const READ_BYTES: usize = 64 * 1024;
 /// Cap serialized tool output even when match text or logical paths are very long.
 const RESULT_BYTES: usize = 512 * 1024;
+/// Reserve 1 KiB for serialized list/glob/grep keys, brackets and page metadata before
+/// accumulating entries; the final serialized-result check still enforces RESULT_BYTES.
+const RESULT_ENVELOPE_BYTES: usize = 1024;
 /// Keep list/search pages small enough for a review; pagination exposes later entries.
 const MAX_RESULTS: usize = 200;
 /// Bound directory fan-out and traversal work regardless of the requested result count.
@@ -332,7 +335,7 @@ impl Reader<'_> {
     fn list(&self, path: &str, offset: usize, limit: usize) -> Result<Value, String> {
         let entries = self.entries(path)?;
         let total = entries.len();
-        let mut bytes = 1024 + serde_json::to_vec(path).unwrap().len();
+        let mut bytes = RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).unwrap().len();
         let entries: Vec<_> = entries
             .into_iter()
             .skip(offset)
@@ -410,7 +413,7 @@ impl Reader<'_> {
         }
         let (files, mut truncated) = self.files(path)?;
         let mut matches = Vec::new();
-        let mut bytes = 1024 + serde_json::to_vec(path).unwrap().len();
+        let mut bytes = RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).unwrap().len();
         for file in files {
             self.check_cancelled()?;
             if !matcher.is_match(relative(path, &file)) {
@@ -446,7 +449,7 @@ impl Reader<'_> {
         let (files, mut truncated) = self.files(path)?;
         let mut matches = Vec::new();
         let mut searched = 0;
-        let mut bytes = 1024 + serde_json::to_vec(path).unwrap().len();
+        let mut bytes = RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).unwrap().len();
         let limit = input.max_results;
         'files: for file in files {
             self.check_cancelled()?;
