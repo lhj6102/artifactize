@@ -28,7 +28,7 @@ pub struct Session {
     remote: Remote,
     principal: OnceCell<Option<Principal>>,
     offline: AtomicBool,
-    looked_up: Mutex<HashMap<String, Instant>>,
+    looked_up: Mutex<HashMap<crate::types::ReuseKey, Instant>>,
 }
 
 fn warn(message: &str) {
@@ -80,7 +80,7 @@ impl Session {
 
     /// Read-only: the latest remote record of each key as a self-contained execution, not yet
     /// stored.
-    pub async fn lookup(&self, keys: &[String]) -> Result<Vec<Execution>, String> {
+    pub async fn lookup(&self, keys: &[crate::types::ReuseKey]) -> Result<Vec<Execution>, String> {
         if keys.is_empty() {
             return Ok(Vec::new());
         }
@@ -90,11 +90,15 @@ impl Session {
         if !has_scope(principal, "read") {
             return Ok(Vec::new());
         }
-        let entries = match self.remote.lookup(keys).await {
+        let entries = match self
+            .remote
+            .lookup(&keys.iter().map(ToString::to_string).collect::<Vec<_>>())
+            .await
+        {
             Ok(entries) => entries,
             Err(failure) => return self.failed(failure),
         };
-        let requested: BTreeSet<_> = keys.iter().map(String::as_str).collect();
+        let requested: BTreeSet<_> = keys.iter().map(crate::types::ReuseKey::as_str).collect();
         let mut executions = Vec::new();
         for entry in entries {
             // A record that does not validate is skipped; reviewing locally is always correct.
@@ -119,7 +123,11 @@ impl Session {
     /// Look up the store's latest record of each key and mirror it into the local history when
     /// it completed after the key's latest local record, so the normal reuse path takes the
     /// newer of the two. Each key is looked up at most once per second.
-    pub async fn refresh(&self, receipts: &Receipts, keys: Vec<String>) -> Result<(), String> {
+    pub async fn refresh(
+        &self,
+        receipts: &Receipts,
+        keys: Vec<crate::types::ReuseKey>,
+    ) -> Result<(), String> {
         let now = Instant::now();
         let keys: Vec<_> = {
             let mut looked_up = self.looked_up.lock().expect("lookup times");
@@ -193,7 +201,9 @@ pub(super) fn record(
     principal: &Principal,
     share: Share,
 ) -> Result<Record, String> {
-    if execution.profile["kind"] == "human" && !has_scope(principal, "human") {
+    if execution.profile.kind() == crate::config::ProfileKind::Human
+        && !has_scope(principal, "human")
+    {
         return Err(format!(
             "remote token {} lacks the human scope",
             principal.principal

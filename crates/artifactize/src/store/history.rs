@@ -28,14 +28,14 @@ pub(super) const LATEST: &str = "e.completed_at DESC, e.rowid DESC";
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
-    pub key: String,
+    pub key: crate::types::ReuseKey,
     pub eval_def_hash: String,
-    pub execution_id: String,
-    pub verdict: String,
+    pub execution_id: crate::types::ExecutionId,
+    pub verdict: crate::types::ExecutionStatus,
     pub repo_path: String,
     pub eval_id: String,
     /// The target Artifact's fingerprint.
-    pub fingerprint: Option<String>,
+    pub fingerprint: Option<crate::types::Fingerprint>,
     pub completed_at: Option<String>,
     /// `user@host` of the machine that produced the result.
     pub producer: Option<String>,
@@ -99,7 +99,9 @@ pub async fn show(state: &Path, key: &str, history: bool) -> Result<Vec<Executio
     let Some(connection) = open(state, false).await? else {
         return Ok(Vec::new());
     };
-    let key = key.to_owned();
+    let Ok(key) = key.parse::<crate::types::ReuseKey>() else {
+        return Ok(Vec::new());
+    };
     connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
@@ -119,7 +121,7 @@ pub async fn show(state: &Path, key: &str, history: bool) -> Result<Vec<Executio
 /// The latest locally produced record (never a mirror) of each key after `after`, in key order.
 pub async fn local(
     state: &Path,
-    after: Option<String>,
+    after: Option<crate::types::ReuseKey>,
     limit: usize,
 ) -> Result<Vec<Execution>, String> {
     let Some(connection) = open(state, false).await? else {
@@ -129,7 +131,7 @@ pub async fn local(
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!("SELECT data FROM (SELECT e.key,e.data,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD} AND json_extract(e.data,'$.origin') IS NULL AND e.key>?) WHERE rank=1 ORDER BY key LIMIT ?"))?;
             statement
-                .query_map(params![after.unwrap_or_default(), limit as i64], |row| {
+                .query_map(params![after.as_ref().map_or("", crate::types::ReuseKey::as_str), limit as i64], |row| {
                     row.get::<_, String>(0)
                 })?
                 .map(|row| Ok(serde_json::from_str(&row?)?))
@@ -144,7 +146,9 @@ pub async fn remove(state: &Path, key: &str) -> Result<bool, String> {
     let Some(connection) = open(state, true).await? else {
         return Ok(false);
     };
-    let key = key.to_owned();
+    let Ok(key) = key.parse::<crate::types::ReuseKey>() else {
+        return Ok(false);
+    };
     connection.call(move |db| -> Result<bool, Error> {
         let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let in_use: bool = transaction.query_row(
@@ -181,7 +185,11 @@ pub(super) fn columns(execution: &Execution, bytes: usize) -> Result<Option<(Str
 }
 
 /// Mark a reused record as used now.
-pub(super) fn touch(db: &rusqlite::Connection, execution_id: &str, at: &str) -> Result<(), Error> {
+pub(super) fn touch(
+    db: &rusqlite::Connection,
+    execution_id: &crate::types::ExecutionId,
+    at: &str,
+) -> Result<(), Error> {
     db.execute(
         "UPDATE executions SET last_used=? WHERE id=? AND completed_at IS NOT NULL",
         params![at, execution_id],

@@ -267,7 +267,7 @@ impl Review {
             .request
             .as_ref()
             .ok_or("The request is still loading.")?;
-        if view.request.status != "WAITING_HUMAN" {
+        if view.request.status != crate::types::RequestStatus::WaitingHuman {
             return Err(format!(
                 "The request is {}; there is nothing to review.",
                 view.request.status
@@ -278,7 +278,7 @@ impl Review {
                 "Claimed by {}; read-only for {}.",
                 claim.reviewer, self.reviewer
             )),
-            claim => Ok((view.request.id.clone(), claim.is_none())),
+            claim => Ok((view.request.id.to_string(), claim.is_none())),
         }
     }
 
@@ -426,7 +426,7 @@ impl Review {
             }
             KeyCode::Enter => match self.selected().cloned() {
                 Some(view) => {
-                    self.open = Some(view.request.id.clone());
+                    self.open = Some(view.request.id.to_string());
                     self.request = Some(view);
                     self.mode = Mode::Request;
                     self.tool = 0;

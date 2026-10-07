@@ -73,7 +73,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     );
     let producer_state = root.path().join("producer");
     let produced = verify(&repo, &producer_state).await;
-    assert_eq!(produced.run.status, "GREEN");
+    assert_eq!(produced.run.status.as_str(), "GREEN");
     let key = produced.requests[0].key.clone().unwrap();
     let execution = cache::show(&producer_state, &key, false)
         .await
@@ -83,7 +83,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     assert_eq!(execution.fingerprint.as_deref(), Some("remote-v1"));
     assert_eq!(
         execution.fingerprints,
-        [("app".to_owned(), "remote-v1".to_owned())].into()
+        [("app".to_owned(), "remote-v1".parse().unwrap())].into()
     );
     let producer = execution.producer.clone().unwrap();
     assert_eq!(producer.version, env!("CARGO_PKG_VERSION"));
@@ -133,7 +133,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     let receipts = Receipts::open(&consumer_state, &repo).await.unwrap();
     let mirror = stored.mirror("https://reviews.example/").unwrap();
     let mirrored = receipts.mirror_execution(&mirror).await.unwrap().unwrap();
-    assert_eq!(mirrored.id, format!("remote-{}", execution.id));
+    assert_eq!(mirrored.id.as_str(), format!("remote-{}", execution.id));
     // The same record again is not newer than the local latest, which is now itself.
     assert!(receipts.mirror_execution(&mirror).await.unwrap().is_none());
     assert_eq!(
@@ -159,7 +159,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     );
 
     let reused = verify(&repo, &consumer_state).await;
-    assert_eq!(reused.run.status, "GREEN");
+    assert_eq!(reused.run.status.as_str(), "GREEN");
     assert_eq!(reused.run.executions_started, 0);
     assert_eq!(reused.requests[0].execution_id.as_ref(), Some(&mirrored.id));
 
@@ -186,7 +186,7 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
     let state = root.path().join("state");
     let waiting = verify(&repo, &state).await;
     let request = &waiting.requests[0];
-    assert_eq!(request.status, "WAITING_HUMAN");
+    assert_eq!(request.status.as_str(), "WAITING_HUMAN");
     let receipts = Receipts::open(&state, &repo).await.unwrap();
     human::claim(&receipts, &request.id, "alice").await.unwrap();
     human::submit(
@@ -244,24 +244,27 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     let variant: Profile = serde_json::from_value(fast.clone()).unwrap();
     let completed = "2026-10-04T00:00:01Z".to_owned();
     let produced = Execution {
-        id: "execution-run-elsewhere-1".into(),
+        id: "execution-run-elsewhere-1".parse().unwrap(),
         key: Some(key.value.clone()),
-        fingerprint: Some("remote-v1".into()),
+        fingerprint: Some("remote-v1".parse().unwrap()),
         fingerprints: key.fingerprints.clone(),
         eval_def_hash: key.eval_def_hash.clone(),
         owner_pid: 1,
         owner_start_time: 1,
-        status: "GREEN".into(),
+        status: artifactize::types::ExecutionStatus::Green,
         result: Some(json!({"verdict":"GREEN","approved":true})),
         error: None,
         error_code: None,
-        profile: fast.clone(),
+        profile: serde_json::from_value(fast.clone()).unwrap(),
         options: ExecutionOptions::new(&variant, Some("fast")),
-        usage: Some(json!([{"turn":1,"attempt":1,"usage":{"inputTokens":10}}])),
+        usage: Some(
+            serde_json::from_value(json!([{"turn":1,"attempt":1,"usage":{"inputTokens":10}}]))
+                .unwrap(),
+        ),
         provenance: Provenance {
             repo_path: "/elsewhere".into(),
-            run_id: "run-elsewhere".into(),
-            request_id: "run-elsewhere-1".into(),
+            run_id: "run-elsewhere".parse().unwrap(),
+            request_id: "run-elsewhere-1".parse().unwrap(),
             eval_id: "app/check".into(),
             eval_def_hash: key.eval_def_hash.clone(),
             completed_at: Some(completed.clone()),
@@ -290,12 +293,18 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
 
     // The declared profile (another backend, model, reasoning and timeout) reuses it.
     let reused = verify(&repo, &state).await;
-    assert_eq!(reused.run.status, "GREEN");
+    assert_eq!(reused.run.status.as_str(), "GREEN");
     assert_eq!(reused.run.executions_started, 0);
     let request = &reused.requests[0];
-    assert_eq!(request.profile, fast);
-    assert_eq!(request.requested_profile["model"], declared["model"]);
-    assert_eq!(request.requested_profile["backend"], declared["backend"]);
+    assert_eq!(serde_json::to_value(&request.profile).unwrap(), fast);
+    assert_eq!(
+        serde_json::to_value(&request.requested_profile).unwrap()["model"],
+        declared["model"]
+    );
+    assert_eq!(
+        serde_json::to_value(&request.requested_profile).unwrap()["backend"],
+        declared["backend"]
+    );
     assert_eq!(request.options.variant.as_deref(), Some("fast"));
     assert_eq!(request.options.backend.as_deref(), Some("anthropic"));
     assert_eq!(request.options.max_tokens, Some(500));

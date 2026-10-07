@@ -67,95 +67,141 @@ fn with_source(value: &mut Value, request: &Request) {
     }
 }
 
-pub fn request_output(view: &RequestView) -> Value {
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UsageTotals {
+    attempts: u64,
+    usage_state: UsageState,
+    reported_attempts: u64,
+    unreported_attempts: u64,
+    usage: BTreeMap<String, u64>,
+}
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum UsageState {
+    #[default]
+    None,
+    Unreported,
+    Reported,
+    Partial,
+}
+#[derive(Debug, Default, Serialize)]
+struct Kinds {
+    total: u64,
+    runtime: u64,
+    agent: u64,
+    human: u64,
+}
+impl Kinds {
+    fn add(&mut self, kind: crate::config::ProfileKind) {
+        self.total += 1;
+        match kind {
+            crate::config::ProfileKind::Runtime => self.runtime += 1,
+            crate::config::ProfileKind::Agent => self.agent += 1,
+            crate::config::ProfileKind::Human => self.human += 1,
+        }
+    }
+}
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Reuses {
+    #[serde(flatten)]
+    kinds: Kinds,
+    other_profile: u64,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RequestSummary<'a> {
+    status: crate::types::RequestStatus,
+    wall_ms: Option<u64>,
+    executor_starts: u64,
+    #[serde(flatten)]
+    usage: UsageTotals,
+    execution_source: Option<&'a crate::store::Provenance>,
+}
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RunSummary {
+    counts: BTreeMap<crate::types::RequestStatus, u64>,
+    executed: Kinds,
+    reused: Reuses,
+    wall_ms: Option<u64>,
+    executor_starts: u64,
+    #[serde(flatten)]
+    usage: UsageTotals,
+}
+
+pub fn request_output(view: &RequestView, now: OffsetDateTime) -> Value {
     let mut value = json!(view);
     let request = &view.request;
     with_source(&mut value, request);
-    // A reused request spent nothing; the source's attempts stay with its own request.
-    let spent = (!reused(request)).then_some(request);
-    let (attempts, reported, unreported, usage) = usage_totals(spent);
-    value["summary"] = json!({
-        "status":request.status,
-        "wallMs":wall_ms(&request.created_at, request.completed_at.as_deref()),
-        "executorStarts":u64::from(local_execution(request) && request.started_at.is_some() && request.profile["kind"] != "human"),
-        "attempts":attempts,
-        "usageState":usage_state(reported, unreported),
-        "reportedAttempts":reported,"unreportedAttempts":unreported,"usage":usage,
-        "executionSource":request.provenance,
-    });
+    let summary = RequestSummary {
+        status: request.status,
+        wall_ms: wall_ms(&request.created_at, request.completed_at.as_deref(), now),
+        executor_starts: u64::from(
+            local_execution(request)
+                && request.started_at.is_some()
+                && request.profile.kind() != crate::config::ProfileKind::Human,
+        ),
+        usage: usage_totals((!reused(request)).then_some(request)),
+        execution_source: request.provenance.as_ref(),
+    };
+    value["summary"] = json!(summary);
     value
 }
 
-pub fn run_output(view: &RunView) -> Value {
+pub fn run_output(view: &RunView, now: OffsetDateTime) -> Value {
     let mut value = json!(view);
-    let requests = value["requests"].as_array_mut().expect("requests");
+    let requests = value["requests"]
+        .as_array_mut()
+        .expect("serialized requests are an array");
     for (output, request) in requests.iter_mut().zip(&view.requests) {
         with_source(output, request);
     }
-    let mut counts = BTreeMap::<&str, u64>::new();
+    let mut counts = BTreeMap::new();
     let mut seen = BTreeSet::new();
-    let local: Vec<_> = view
-        .requests
-        .iter()
-        .filter(|request| {
-            *counts.entry(&request.status).or_default() += 1;
-            local_execution(request)
-                && request
-                    .execution_id
-                    .as_ref()
-                    .is_some_and(|id| seen.insert(id))
-        })
-        .collect();
-    let (attempts, reported, unreported, usage) = usage_totals(local.iter().copied());
-    let kinds = || BTreeMap::from([("total", 0u64), ("runtime", 0), ("agent", 0), ("human", 0)]);
-    let (mut executed, mut reuses, mut saved) = (kinds(), kinds(), BTreeMap::new());
-    // Reused results that another profile produced: the key leaves execution options out.
-    reuses.insert("otherProfile", 0);
+    let local = view.requests.iter().filter(|request| {
+        local_execution(request)
+            && request
+                .execution_id
+                .as_ref()
+                .is_some_and(|id| seen.insert(id))
+    });
+    let usage = usage_totals(local);
+    let (mut executed, mut reuses, mut saved) =
+        (Kinds::default(), Reuses::default(), BTreeMap::new());
     for request in &view.requests {
-        let tally = if reused(request) {
-            let original = request.reused_usage.as_ref();
-            for attempt in original.and_then(Value::as_array).into_iter().flatten() {
+        *counts.entry(request.status).or_default() += 1;
+        if reused(request) {
+            for attempt in request.reused_usage.iter().flatten() {
                 add_usage(&mut saved, attempt);
             }
-            if request.profile != request.requested_profile {
-                *reuses.get_mut("otherProfile").expect("tally") += 1;
-            }
-            &mut reuses
+            reuses.other_profile += u64::from(request.profile != request.requested_profile);
+            reuses.kinds.add(request.profile.kind());
         } else if local_execution(request) {
-            &mut executed
-        } else {
-            continue;
-        };
-        for kind in [
-            "total",
-            request.profile["kind"].as_str().unwrap_or_default(),
-        ] {
-            if let Some(count) = tally.get_mut(kind) {
-                *count += 1;
-            }
+            executed.add(request.profile.kind());
         }
     }
-    value["summary"] = json!({
-        "counts":counts,
-        "executed":executed,"reused":reuses,
-        "wallMs":wall_ms(&view.run.created_at, view.run.completed_at.as_deref()),
-        "executorStarts":view.run.executions_started,
-        "attempts":attempts,
-        "usageState":usage_state(reported, unreported),
-        "reportedAttempts":reported,"unreportedAttempts":unreported,"usage":usage,
+    value["usage"] = json!({"spent":usage.usage,"saved":saved});
+    value["summary"] = json!(RunSummary {
+        counts,
+        executed,
+        reused: reuses,
+        wall_ms: wall_ms(&view.run.created_at, view.run.completed_at.as_deref(), now),
+        executor_starts: view.run.executions_started,
+        usage,
     });
-    value["usage"] = json!({"spent":value["summary"]["usage"],"saved":saved});
     value
 }
 
 /// A short name for the profile that produced a request's result: its variant, or its kind
 /// with the Agent backend, model and reasoning.
-pub fn profile_name(profile: &Value, options: &ExecutionOptions) -> String {
+pub fn profile_name(profile: &crate::config::StoredProfile, options: &ExecutionOptions) -> String {
     if let Some(variant) = &options.variant {
         return variant.clone();
     }
-    match profile["kind"].as_str() {
-        Some("agent") => [
+    match profile.kind() {
+        crate::config::ProfileKind::Agent => [
             options.backend.as_deref(),
             options.model.as_deref(),
             options.reasoning.as_deref(),
@@ -164,8 +210,7 @@ pub fn profile_name(profile: &Value, options: &ExecutionOptions) -> String {
         .flatten()
         .collect::<Vec<_>>()
         .join(" "),
-        Some(kind) => kind.to_owned(),
-        None => "unknown".into(),
+        kind => kind.name().to_owned(),
     }
 }
 
@@ -176,23 +221,21 @@ fn local_execution(request: &Request) -> bool {
         .is_some_and(|source| source.request_id == request.id)
 }
 
-fn wall_ms(start: &str, end: Option<&str>) -> Option<u64> {
+fn wall_ms(start: &str, end: Option<&str>, now: OffsetDateTime) -> Option<u64> {
     let start = OffsetDateTime::parse(start, &Rfc3339).ok()?;
     let end = end
         .map(|end| OffsetDateTime::parse(end, &Rfc3339))
         .transpose()
         .ok()?
-        .unwrap_or_else(OffsetDateTime::now_utc);
+        .unwrap_or(now);
     Some((end - start).whole_milliseconds().max(0) as u64)
 }
 
-fn usage_totals<'a>(
-    requests: impl IntoIterator<Item = &'a Request>,
-) -> (u64, u64, u64, BTreeMap<String, u64>) {
+fn usage_totals<'a>(requests: impl IntoIterator<Item = &'a Request>) -> UsageTotals {
     let (mut attempts, mut reported, mut unreported) = (0, 0, 0);
     let mut totals = BTreeMap::<String, u64>::new();
     for request in requests {
-        if let Some(entries) = request.usage.as_ref().and_then(Value::as_array) {
+        if let Some(entries) = request.usage.as_ref() {
             if entries.is_empty() && request.started_at.is_some() {
                 unreported += 1;
             }
@@ -204,18 +247,26 @@ fn usage_totals<'a>(
                     unreported += 1;
                 }
             }
-        } else if request.execution_id.is_some() && request.profile["kind"] != "agent" {
+        } else if request.execution_id.is_some()
+            && request.profile.kind() != crate::config::ProfileKind::Agent
+        {
             attempts += 1;
             unreported += 1;
         }
     }
-    (attempts, reported, unreported, totals)
+    UsageTotals {
+        attempts,
+        usage_state: usage_state(reported, unreported),
+        reported_attempts: reported,
+        unreported_attempts: unreported,
+        usage: totals,
+    }
 }
 
 /// Adds one attempt's reported counters; false when it reported none.
-fn add_usage(totals: &mut BTreeMap<String, u64>, attempt: &Value) -> bool {
+fn add_usage(totals: &mut BTreeMap<String, u64>, attempt: &crate::llm::Attempt) -> bool {
     let mut has_usage = false;
-    for (key, value) in attempt["usage"].as_object().into_iter().flatten() {
+    for (key, value) in &attempt.usage {
         if let Some(value) = value.as_u64() {
             has_usage = true;
             let total = totals.entry(key.clone()).or_default();
@@ -225,11 +276,63 @@ fn add_usage(totals: &mut BTreeMap<String, u64>, attempt: &Value) -> bool {
     has_usage
 }
 
-fn usage_state(reported: u64, unreported: u64) -> &'static str {
+fn usage_state(reported: u64, unreported: u64) -> UsageState {
     match (reported, unreported) {
-        (0, 0) => "none",
-        (0, _) => "unreported",
-        (_, 0) => "reported",
-        _ => "partial",
+        (0, 0) => UsageState::None,
+        (0, _) => UsageState::Unreported,
+        (_, 0) => UsageState::Reported,
+        _ => UsageState::Partial,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    fn view() -> RunView {
+        serde_json::from_value(json!({
+            "id":"run-legacy","repoPath":"/repo","stateDir":"/state","status":"RUNNING",
+            "createdAt":"2026-01-01T00:00:00Z","completedAt":null,"selection":{"kind":"all"},
+            "validation":null,"error":null,"requests":[{
+                "id":"run-legacy-1","runId":"run-legacy","evalId":"app/check","target":"app","title":"Check",
+                "profile":{"kind":"runtime","command":"fixture","args":[]},
+                "requestedProfile":{"kind":"runtime","command":"fixture","args":[],"timeoutMs":null},
+                "evalDefHash":"fixture","executionId":"execution-source-1",
+                "provenance":{"repoPath":"/source","runId":"run-source","requestId":"run-source-1","evalId":"app/check","evalDefHash":"fixture","completedAt":"2026-01-01T00:00:01Z"},
+                "usage":null,"reusedUsage":[{"turn":1,"attempt":1,"usage":{"inputTokens":17,"vendorDetail":{"cache":true}}}],
+                "payload":{},"references":{},"deps":[],"status":"GREEN","createdAt":"2026-01-01T00:00:00Z",
+                "startedAt":null,"completedAt":"2026-01-01T00:00:01Z","cwd":"/repo","runDir":null,"argv":null,
+                "child":null,"result":{"verdict":"GREEN"},"error":null,"errorCode":null,"blockedReason":null
+            }]
+        })).unwrap()
+    }
+    #[test]
+    fn supplied_time_is_deterministic_and_profile_omission_is_not_null() {
+        let now = OffsetDateTime::parse("2026-01-01T00:00:05Z", &Rfc3339).unwrap();
+        let view = view();
+        let output = run_output(&view, now);
+        assert_eq!(output["summary"]["wallMs"], 5000);
+        assert_eq!(output["summary"]["reused"]["otherProfile"], 1);
+        assert_eq!(output["summary"]["reused"]["runtime"], 1);
+        assert_eq!(output["summary"]["attempts"], 0);
+        assert_eq!(output["usage"]["saved"], json!({"inputTokens":17}));
+        assert_eq!(run_output(&view, now), output);
+        assert_eq!(wall_ms("2026-01-01T00:00:06Z", None, now), Some(0));
+        assert_eq!(wall_ms("bad timestamp", None, now), None);
+        let request = RequestView {
+            request: view.requests[0].clone(),
+            claim: None,
+            execution: None,
+            definition: None,
+        };
+        assert_eq!(request_output(&request, now)["summary"]["wallMs"], 1000);
+        assert_eq!(
+            serde_json::to_value(&request.request.profile).unwrap(),
+            json!({"kind":"runtime","command":"fixture","args":[]})
+        );
+        assert_eq!(
+            serde_json::to_value(&request.request.requested_profile).unwrap(),
+            json!({"kind":"runtime","command":"fixture","args":[],"timeoutMs":null})
+        );
     }
 }

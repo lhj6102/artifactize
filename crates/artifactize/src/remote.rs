@@ -29,23 +29,23 @@ pub const MAX_FULL_BYTES: usize = crate::store::history::MAX_ENTRY_BYTES;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Record {
     pub schema: u32,
-    pub key: String,
+    pub key: crate::types::ReuseKey,
     pub eval_def_hash: String,
     /// Each Artifact the key covers, with its fingerprint.
-    pub fingerprints: BTreeMap<String, String>,
-    pub verdict: String,
+    pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
+    pub verdict: crate::types::ExecutionStatus,
     pub eval_id: String,
-    pub run_id: String,
-    pub request_id: String,
-    pub execution_id: String,
-    pub profile: Value,
+    pub run_id: crate::types::RunId,
+    pub request_id: crate::types::RequestId,
+    pub execution_id: crate::types::ExecutionId,
+    pub profile: crate::config::StoredProfile,
     #[serde(default)]
     pub options: ExecutionOptions,
     /// An Agent result's tool `executionPaths` pins.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub execution_paths: crate::tools::pins::Pins,
     pub result: Value,
-    pub usage: Option<Value>,
+    pub usage: Option<Vec<crate::llm::Attempt>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reviewer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -87,7 +87,7 @@ impl Record {
             key: key.clone(),
             eval_def_hash: execution.eval_def_hash.clone(),
             fingerprints: execution.fingerprints.clone(),
-            verdict: execution.status.clone(),
+            verdict: execution.status,
             eval_id: execution.provenance.eval_id.clone(),
             run_id: execution.provenance.run_id.clone(),
             request_id: execution.provenance.request_id.clone(),
@@ -123,10 +123,6 @@ impl Record {
             && crate::cache::key(&self.eval_def_hash, &self.fingerprints) == self.key
             && matches!(self.verdict.as_str(), "GREEN" | "RED")
             && self.result["verdict"] == self.verdict.as_str()
-            && matches!(
-                self.profile["kind"].as_str(),
-                Some("runtime" | "agent" | "human")
-            )
             && valid_id(&self.execution_id)
             && crate::broker::sortable(&self.completed_at).is_some()
             && valid_session(self.producer.as_ref())
@@ -163,7 +159,7 @@ impl Record {
         let mut execution = match self.execution {
             Some(execution) => *execution,
             None => Execution {
-                id: String::new(),
+                id: id.parse()?,
                 key: Some(self.key),
                 // The target is the eval id's Artifact part.
                 fingerprint: self
@@ -199,7 +195,7 @@ impl Record {
                 manifest: None,
             },
         };
-        execution.id = id;
+        execution.id = id.parse()?;
         execution.origin = Some(Origin {
             store: store.into(),
             publisher,
@@ -209,8 +205,8 @@ impl Record {
     }
 }
 
-fn summary_result(profile: &Value, result: &Value) -> Value {
-    if profile["kind"] != "runtime" {
+fn summary_result(profile: &crate::config::StoredProfile, result: &Value) -> Value {
+    if profile.kind() != crate::config::ProfileKind::Runtime {
         // Agent and Human results are the schema-validated owner fields.
         return result.clone();
     }
@@ -222,13 +218,17 @@ fn summary_result(profile: &Value, result: &Value) -> Value {
     })
 }
 
-fn summary_usage(usage: Option<&Value>) -> Option<Value> {
-    let attempts = usage?.as_array()?;
+fn summary_usage(usage: Option<&Vec<crate::llm::Attempt>>) -> Option<Vec<crate::llm::Attempt>> {
+    let attempts = usage?;
     Some(
         attempts
             .iter()
-            .map(|attempt| {
-                json!({"turn": attempt["turn"], "attempt": attempt["attempt"], "usage": attempt["usage"]})
+            .map(|attempt| crate::llm::Attempt {
+                turn: attempt.turn,
+                attempt: attempt.attempt,
+                usage: attempt.usage.clone(),
+                error: None,
+                error_code: None,
             })
             .collect(),
     )

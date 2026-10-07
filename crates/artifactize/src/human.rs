@@ -127,8 +127,8 @@ pub async fn submit(
     recheck(receipts, &mut request, reviewer, &config, cancellation).await?;
     request.status = result["verdict"]
         .as_str()
-        .expect("validated verdict")
-        .into();
+        .ok_or("Validated result has no verdict.")?
+        .parse()?;
     request.result = Some(result);
     receipts.settle_human(&request, reviewer).await
 }
@@ -211,7 +211,7 @@ async fn recheck(
             Err(error) if cancellation.is_cancelled() => return Err(error),
             Err(error) => ("FINGERPRINT_RECHECK_FAILED", error),
         };
-    request.status = "ERROR".into();
+    request.status = crate::types::RequestStatus::Error;
     request.error = Some(error.clone());
     request.error_code = Some(code.into());
     request.result = None;

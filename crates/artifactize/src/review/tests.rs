@@ -29,7 +29,7 @@ fn demo() -> Value {
 
 fn claim(reviewer: &str) -> HumanClaim {
     HumanClaim {
-        request_id: ID.into(),
+        request_id: ID.parse().unwrap(),
         reviewer: reviewer.into(),
         claimed_at: "2026-01-01T00:00:30Z".into(),
     }
@@ -620,7 +620,7 @@ fn a_running_job_only_scrolls_or_cancels() {
 fn list_opens_requests_and_returns() {
     let mut review = Review::new("/state".into(), None, "alice".into(), None);
     let mut other = view("WAITING_HUMAN", Some("bob"), demo());
-    other.request.id = "run-2-1".into();
+    other.request.id = "run-2-1".parse().unwrap();
     review.set_waiting(vec![other, view("WAITING_HUMAN", Some("alice"), demo())]);
     review.refreshed = Some(OffsetDateTime::now_utc());
     let text = screen(&mut review);

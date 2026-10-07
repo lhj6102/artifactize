@@ -1,5 +1,8 @@
 //! Scoped read-only Agent tools.
 
+/// Bound the compiled regex automaton to limit search memory.
+const REGEX_BYTES: usize = 2 * 1024 * 1024;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::File,
@@ -431,7 +434,7 @@ impl Reader<'_> {
     fn grep(&self, path: &str, args: &Value) -> Result<Value, String> {
         let regex = RegexBuilder::new(args["pattern"].as_str().unwrap())
             .case_insensitive(args["caseInsensitive"].as_bool().unwrap_or(false))
-            .size_limit(2 * 1024 * 1024)
+            .size_limit(REGEX_BYTES)
             .build()
             .map_err(|_| "Invalid or oversized regex pattern.")?;
         let filter = args["glob"].as_str().map(glob).transpose()?;

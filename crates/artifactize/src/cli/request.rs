@@ -67,7 +67,12 @@ pub(super) async fn execute(
         RequestCommand::List { run } => {
             let views = store::read_requests(state, run.as_deref()).await?;
             if json {
-                print_json(&views.iter().map(query::request_output).collect::<Vec<_>>())?;
+                print_json(
+                    &views
+                        .iter()
+                        .map(|view| query::request_output(view, time::OffsetDateTime::now_utc()))
+                        .collect::<Vec<_>>(),
+                )?;
             } else {
                 let mut out = io::stdout().lock();
                 writeln!(out, "REQUEST\tRUN\tEVAL\tSTATUS\tREVIEWER").map_err(|e| e.to_string())?;
@@ -90,6 +95,7 @@ pub(super) async fn execute(
         RequestCommand::Show { id } => {
             print_json(&query::request_output(
                 &store::read_request(state, &id).await?,
+                time::OffsetDateTime::now_utc(),
             ))?;
         }
         RequestCommand::Claim { id, reviewer } => {
@@ -148,6 +154,7 @@ pub(super) async fn execute(
             result?;
             print_json(&query::request_output(
                 &store::read_request(state, &id).await?,
+                time::OffsetDateTime::now_utc(),
             ))?;
         }
     }

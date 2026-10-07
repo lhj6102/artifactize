@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// Bound serialized declarations before validating or sending tool schemas to a provider.
+const MAX_DECLARATION_BYTES: usize = 8 * 1024 * 1024;
+/// Keep descriptions usable in provider tool listings, measured as JSON client UTF-16 units.
+const MAX_DESCRIPTION_CHARS: usize = 4000;
+
 use super::validation::{paths, present, script, text, timeout};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,9 +27,10 @@ pub struct CommandTool {
     #[serde(
         default,
         deserialize_with = "timeout",
+        serialize_with = "super::validation::milliseconds::serialize",
         skip_serializing_if = "Option::is_none"
     )]
-    pub timeout_ms: Option<u32>,
+    pub timeout_ms: Option<std::time::Duration>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub execution_paths: Vec<String>,
 }
@@ -60,7 +66,7 @@ pub enum Builtin {
 
 impl AgentTool {
     pub(super) fn validate(&self) -> Result<(), String> {
-        if serde_json::to_vec(self).map_err(|e| e.to_string())?.len() > 8 * 1024 * 1024 {
+        if serde_json::to_vec(self).map_err(|e| e.to_string())?.len() > MAX_DECLARATION_BYTES {
             return Err("Tool declaration exceeds 8 MiB.".into());
         }
         match self {
@@ -111,9 +117,10 @@ pub struct HumanTool {
     #[serde(
         default,
         deserialize_with = "timeout",
+        serialize_with = "super::validation::milliseconds::serialize",
         skip_serializing_if = "Option::is_none"
     )]
-    pub timeout_ms: Option<u32>,
+    pub timeout_ms: Option<std::time::Duration>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -140,7 +147,7 @@ fn empty_schema() -> Value {
 
 pub(super) fn description(value: &str) -> Result<(), String> {
     text(value, "Tool description")?;
-    if value.encode_utf16().count() > 4000
+    if value.encode_utf16().count() > MAX_DESCRIPTION_CHARS
         || value.replace("{artifactName}", "").contains(['{', '}'])
     {
         return Err(

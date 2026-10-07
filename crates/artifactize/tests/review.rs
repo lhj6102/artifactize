@@ -87,7 +87,7 @@ impl Fixture {
                 .await
                 .unwrap();
             if let Some(view) = waiting.first() {
-                return view.request.id.clone();
+                return view.request.id.to_string();
             }
             assert!(Instant::now() < deadline, "Human request did not appear");
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -254,7 +254,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     );
     assert!(matches!(review.mode(), Mode::Form(_)));
     let view = store::read_request(&fixture.state, &id).await.unwrap();
-    assert_eq!(view.request.status, "WAITING_HUMAN");
+    assert_eq!(view.request.status.as_str(), "WAITING_HUMAN");
     press(&mut review, KeyCode::Esc).await;
     press(&mut review, KeyCode::Char('s')).await;
     press(&mut review, KeyCode::Char('g')).await;

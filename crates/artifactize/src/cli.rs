@@ -511,7 +511,10 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             listener.abort();
             let view = result?;
             if cli.json {
-                print_json(&crate::query::run_output(&view))?;
+                print_json(&crate::query::run_output(
+                    &view,
+                    time::OffsetDateTime::now_utc(),
+                ))?;
             } else {
                 let mut stdout = io::stdout().lock();
                 writeln!(
@@ -561,7 +564,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                     )
                     .map_err(|e| e.to_string())?;
                 }
-                let output = crate::query::run_output(&view);
+                let output = crate::query::run_output(&view, time::OffsetDateTime::now_utc());
                 let summary = &output["summary"];
                 writeln!(
                     stdout,
@@ -688,7 +691,7 @@ async fn execute(cli: Cli) -> Result<u8, String> {
             let deadline = tokio::time::Instant::now()
                 + Duration::from_millis(timeout_ms.unwrap_or(600_000).into());
             let mut view = crate::store::read_run(&state, &run_id).await?;
-            while wait && view.run.status == "RUNNING" {
+            while wait && view.run.status == crate::types::RunStatus::Running {
                 let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
                 if remaining.is_zero() {
                     break;
@@ -696,11 +699,14 @@ async fn execute(cli: Cli) -> Result<u8, String> {
                 tokio::time::sleep(remaining.min(Duration::from_millis(200))).await;
                 view = crate::store::read_run(&state, &run_id).await?;
             }
-            print_json(&crate::query::run_output(&view))?;
+            print_json(&crate::query::run_output(
+                &view,
+                time::OffsetDateTime::now_utc(),
+            ))?;
             if !wait {
                 return Ok(0);
             }
-            if view.run.status == "RUNNING" {
+            if view.run.status == crate::types::RunStatus::Running {
                 writeln!(
                     io::stderr().lock(),
                     "Waiting timed out; Run {run_id} is still RUNNING."
@@ -864,7 +870,7 @@ fn reuse_marker(request: &crate::store::Request) -> String {
     };
     match &request.origin {
         None => format!(" (reused from {}{profile})", source.run_id),
-        Some(origin) if request.profile["kind"] == "human" => format!(
+        Some(origin) if request.profile.kind() == crate::config::ProfileKind::Human => format!(
             " (reused from remote: Human sign-off by {}, published by {}, {})",
             request.reviewer.as_deref().unwrap_or("unknown"),
             origin.publisher,

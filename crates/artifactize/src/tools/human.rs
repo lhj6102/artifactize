@@ -1,6 +1,6 @@
 //! Predefined reviewer commands, deliberately outside Agent runtime isolation.
 
-use std::{collections::BTreeMap, ffi::OsString, path::PathBuf, time::Duration};
+use std::{collections::BTreeMap, ffi::OsString, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -11,7 +11,7 @@ use crate::{
     scope::{self, Scope},
 };
 
-use super::{DEFAULT_TIMEOUT_MS, executable};
+use super::{DEFAULT_TIMEOUT, executable};
 
 const TEXT_LIMIT: usize = 64 * 1024;
 
@@ -200,9 +200,7 @@ impl<'a> Registry<'a> {
                     args: args.into_iter().map(Into::into).collect(),
                     cwd,
                     env: std::env::vars_os().collect(),
-                    timeout: Duration::from_millis(u64::from(
-                        declaration.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
-                    )),
+                    timeout: declaration.timeout_ms.unwrap_or(DEFAULT_TIMEOUT),
                 };
                 match process::run(command, cancellation, |_| async { Ok(()) }).await {
                     Ok(output) => output_result(&output),

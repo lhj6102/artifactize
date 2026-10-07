@@ -14,7 +14,7 @@ fn now() -> OffsetDateTime {
 
 fn request(eval: &str, status: &str, extra: Value) -> RequestView {
     let mut value = json!({
-        "id":format!("run-1-{eval}"),"runId":"run-1","evalId":eval,"target":eval.split('/').next(),
+        "id":format!("run-1-{}", eval.replace('/', "-")),"runId":"run-1","evalId":eval,"target":eval.split('/').next(),
         "title":"Title","profile":{"kind":"runtime","command":"true","args":[]},
         "requestedProfile":{"kind":"runtime","command":"true","args":[]},"evalDefHash":"hash",
         "payload":{"instruction":"Check."},"references":{},"deps":[],"status":status,
@@ -222,12 +222,15 @@ fn run_rows_and_durations() {
 
 fn summary(id: &str, green: u64) -> RunSummary {
     RunSummary {
-        id: id.into(),
+        id: id.parse().unwrap(),
         repo_path: "/repo".into(),
         created_at: "2026-01-01T00:00:00Z".into(),
         completed_at: None,
-        status: "RED".into(),
-        counts: BTreeMap::from([("GREEN".into(), green), ("RED".into(), 1)]),
+        status: crate::types::RunStatus::Red,
+        counts: BTreeMap::from([
+            (crate::types::RequestStatus::Green, green),
+            (crate::types::RequestStatus::Red, 1),
+        ]),
     }
 }
 
@@ -267,7 +270,7 @@ fn keys_page_older_runs_open_and_quit() {
     monitor.limit = 2;
     monitor.set_runs(vec![summary("run-a", 1), summary("run-b", 1)]);
     assert_eq!(monitor.key(key(KeyCode::Char('j'))), Action::None);
-    assert_eq!(monitor.selected_run().unwrap().id, "run-b");
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-b");
     assert_eq!(monitor.key(key(KeyCode::Down)), Action::Refresh);
     assert_eq!(monitor.limit, 2 + PAGE);
     // A refresh keeps the selected Run even when newer Runs arrive above it.
@@ -276,7 +279,7 @@ fn keys_page_older_runs_open_and_quit() {
         summary("run-a", 1),
         summary("run-b", 1),
     ]);
-    assert_eq!(monitor.selected_run().unwrap().id, "run-b");
+    assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-b");
     assert_eq!(monitor.key(key(KeyCode::Enter)), Action::Refresh);
     assert_eq!(monitor.open.as_deref(), Some("run-b"));
     assert_eq!(monitor.key(key(KeyCode::Esc)), Action::Refresh);
@@ -325,7 +328,7 @@ fn review_key_hands_off_only_waiting_human_requests() {
         (vec!["a:app"], Action::None),
         (
             vec!["a:app", "e:app/review"],
-            Action::Review("run-1-app/review".into()),
+            Action::Review("run-1-app-review".into()),
         ),
     ] {
         monitor

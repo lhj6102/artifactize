@@ -329,10 +329,10 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
         runtime(json!(["b"]), json!(null))
     );
 
-    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<String, String> {
+    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<String, crate::types::Fingerprint> {
         pairs
             .iter()
-            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .map(|(name, value)| (name.to_string(), value.parse().unwrap()))
             .collect()
     };
     let one = key(&base, &fingerprints(&[("app", "v1"), ("core", "v1")]));
@@ -365,26 +365,28 @@ fn changes_name_target_files_and_dependency_fingerprints() {
                 .collect(),
         ),
     };
-    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<String, String> {
+    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<String, crate::types::Fingerprint> {
         pairs
             .iter()
-            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .map(|(name, value)| (name.to_string(), value.parse().unwrap()))
             .collect()
     };
     let execution = |manifest: Option<Manifest>,
-                     fingerprints: BTreeMap<String, String>|
+                     fingerprints: BTreeMap<String, crate::types::Fingerprint>|
      -> Execution {
         serde_json::from_value(json!({
-            "id":"execution-1","key":"old","fingerprint":"old","fingerprints":fingerprints,
+            "id":"execution-1","key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","fingerprint":"old","fingerprints":fingerprints,
             "evalDefHash":"hash","ownerPid":1,"ownerStartTime":1,
-            "status":"GREEN","result":null,"error":null,"errorCode":null,"profile":null,"usage":null,
+            "status":"GREEN","result":null,"error":null,"errorCode":null,"profile":{"kind":"human"},"usage":null,
             "provenance":{"repoPath":"/repo","runId":"run-1","requestId":"run-1-1","evalId":"a/check","evalDefHash":"hash","completedAt":null},
             "startedAt":"now","completedAt":"now","manifest":manifest
         }))
         .unwrap()
     };
     let current = |pairs: &[(&str, &str)]| Key {
-        value: "new".into(),
+        value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            .parse()
+            .unwrap(),
         eval_def_hash: "hash".into(),
         fingerprints: fingerprints(pairs),
     };
@@ -398,7 +400,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
         &after,
         Some(&new),
     );
-    assert_eq!(changes.since_run_id, "run-1");
+    assert_eq!(changes.since_run_id.as_str(), "run-1");
     assert_eq!(
         changes.files.unwrap(),
         ["+docs/new.md", "-old.md", "src/a.py"]
@@ -459,10 +461,11 @@ fn keys_of_evals_without_a_result_check_are_pinned() {
         "payload":{"instruction":"Run the checks."}
     }))
     .unwrap();
-    let fingerprints: BTreeMap<String, String> = [("app", "content:1111"), ("spec", "script-v2")]
-        .into_iter()
-        .map(|(name, value)| (name.to_owned(), value.to_owned()))
-        .collect();
+    let fingerprints: BTreeMap<String, crate::types::Fingerprint> =
+        [("app", "content:1111"), ("spec", "script-v2")]
+            .into_iter()
+            .map(|(name, value)| (name.to_owned(), value.parse().unwrap()))
+            .collect();
     for (eval, hash, pinned) in [
         (
             &agent,
@@ -476,6 +479,6 @@ fn keys_of_evals_without_a_result_check_are_pinned() {
         ),
     ] {
         assert_eq!(eval_definition_hash(eval), hash);
-        assert_eq!(key(hash, &fingerprints), pinned);
+        assert_eq!(key(hash, &fingerprints).as_str(), pinned);
     }
 }

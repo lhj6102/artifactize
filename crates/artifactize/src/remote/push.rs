@@ -62,7 +62,10 @@ pub async fn push(
         }
         // With the read scope, a record that is already the store's latest is not sent again.
         let existing: BTreeSet<_> = if has_scope(&principal, "read") {
-            let keys: Vec<_> = records.iter().map(|record| record.key.clone()).collect();
+            let keys: Vec<_> = records
+                .iter()
+                .map(|record| record.key.to_string())
+                .collect();
             remote
                 .lookup(&keys)
                 .await
@@ -80,7 +83,8 @@ pub async fn push(
         };
         for record in records {
             // The store keeps each execution once; a resent record answers `created: false`.
-            let created = !existing.contains(&(record.key.clone(), record.execution_id.clone()))
+            let created = !existing
+                .contains(&(record.key.to_string(), record.execution_id.to_string()))
                 && (dry_run
                     || remote
                         .publish(&record)

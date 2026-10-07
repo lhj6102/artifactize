@@ -277,6 +277,8 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
         // Sockets and FIFOs: entries that are neither files nor directories.
         let _socket = std::os::unix::net::UnixListener::bind(a.join("socket")).unwrap();
         let fifo = std::ffi::CString::new(a.join("fifo").to_str().unwrap()).unwrap();
+        // SAFETY: CString supplies a live NUL-terminated path in this test's private
+        // temporary directory; mkfifo retains no pointer and 0600 is a valid mode.
         assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
         paths.extend(["socket", "fifo"]);
     }

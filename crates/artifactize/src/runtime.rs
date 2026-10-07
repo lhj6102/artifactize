@@ -37,9 +37,9 @@ impl Command {
         args: Vec<OsString>,
         workspace: &Path,
         run_dir: &Path,
-        timeout_ms: Option<u32>,
+        timeout: Option<Duration>,
     ) -> Result<Self, Error> {
-        let timeout = timeout_ms.map_or(DEFAULT_TIMEOUT, |ms| Duration::from_millis(ms.into()));
+        let timeout = timeout.unwrap_or(DEFAULT_TIMEOUT);
         if timeout.is_zero() || timeout > MAX_TIMEOUT {
             return Err(Error::InvalidTimeout);
         }

@@ -44,8 +44,11 @@ pub enum Client {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attempt {
+    #[serde(default)]
     pub turn: usize,
+    #[serde(default)]
     pub attempt: usize,
+    #[serde(default)]
     pub usage: Map<String, Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,

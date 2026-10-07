@@ -193,7 +193,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
             let (view, requests) = fixture.load(&run.id).await;
             let progress = monitor::progress(&view, &requests, OffsetDateTime::now_utc());
             if !progress.running.is_empty() && !progress.waiting.is_empty() {
-                assert_eq!(progress.status, "RUNNING");
+                assert_eq!(progress.status.as_str(), "RUNNING");
                 assert_eq!(progress.validation, "pending");
                 assert_eq!(progress.running[0].0, "slow/wait");
                 assert_eq!(
@@ -215,7 +215,10 @@ async fn live_verify_progress_and_runs_across_repositories() {
     all.refresh().await;
     let list = screen(&mut all);
     assert!(list.contains("all repositories"), "{list}");
-    let live_row = list.lines().find(|line| line.contains(&live)).unwrap();
+    let live_row = list
+        .lines()
+        .find(|line| line.contains(live.as_str()))
+        .unwrap();
     assert!(
         live_row.contains("RUNNING") && live_row.contains("beta"),
         "{list}"
@@ -224,7 +227,10 @@ async fn live_verify_progress_and_runs_across_repositories() {
     let mut scoped = Monitor::new(fixture.state.clone(), Some(fixture.alpha.clone()));
     scoped.refresh().await;
     let alpha = screen(&mut scoped);
-    assert!(alpha.contains(&second) && !alpha.contains(&live), "{alpha}");
+    assert!(
+        alpha.contains(&second) && !alpha.contains(live.as_str()),
+        "{alpha}"
+    );
     assert_eq!(
         press(&mut scoped, KeyCode::Char('q')),
         monitor::Action::Quit

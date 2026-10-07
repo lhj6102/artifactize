@@ -36,8 +36,8 @@ fn details(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
     let definition = request.human_definition.as_ref();
     let declaration = definition.map(|definition| &definition["eval"]["declaration"]);
     let mut fields = vec![
-        ("Request", request.id.clone()),
-        ("Run", request.run_id.clone()),
+        ("Request", request.id.to_string()),
+        ("Run", request.run_id.to_string()),
         (
             "Repository",
             definition
@@ -49,11 +49,11 @@ fn details(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
     let status = match (&request.error, &request.error_code) {
         (Some(error), Some(code)) => format!("{} [{code}] {error}", request.status),
         (Some(error), None) => format!("{} {error}", request.status),
-        _ => request.status.clone(),
+        _ => request.status.to_string(),
     };
     fields.push(("Status", status));
     let claim = match &view.claim {
-        None if request.status == "WAITING_HUMAN" => {
+        None if request.status == crate::types::RequestStatus::WaitingHuman => {
             format!("unclaimed; running a tool or submitting claims it for {reviewer}")
         }
         None => "none".into(),
@@ -239,7 +239,7 @@ impl Review {
             let repo = repo.and_then(|definition| definition["repo"].as_str());
             Row::new(vec![
                 Cell::from(request.eval_id.clone()),
-                Cell::from(request.id.clone()),
+                Cell::from(request.id.to_string()),
                 Cell::from(claim),
                 Cell::from(age),
                 Cell::from(repo.unwrap_or("-").to_owned()),

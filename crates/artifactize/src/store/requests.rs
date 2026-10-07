@@ -103,11 +103,20 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
     )
     .await
     .map_err(|e| e.to_string())?;
-    let run = filter.run.map(str::to_owned);
-    let id = filter.id.map(str::to_owned);
+    let run = filter
+        .run
+        .map(str::parse::<crate::types::RunId>)
+        .transpose()?;
+    let id = filter
+        .id
+        .map(str::parse::<crate::types::RequestId>)
+        .transpose()?;
     let repo = repo.map(|repo| repo.to_string_lossy().into_owned());
     let waiting = filter.waiting;
-    let session = filter.session.map(str::to_owned);
+    let session = filter
+        .session
+        .map(str::parse::<crate::types::SessionId>)
+        .transpose()?;
     connection.call(move |db| -> Result<_, Error> {
         db.busy_timeout(Duration::from_secs(5))?;
         let transaction = db.transaction()?;
@@ -128,7 +137,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                 ORDER BY r.rowid DESC,q.ordinal")?;
             statement.query_map(params![run, id, repo, waiting, session], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?,
-                    row.get::<_, Option<String>>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<crate::types::RequestId>>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, Option<String>>(5)?,
                     row.get::<_, Option<String>>(6)?, row.get::<_, Option<String>>(7)?))
             })?.map(|row| {
                 let (data, repo, execution, request_id, reviewer, claimed_at, artifacts, eval) = row?;

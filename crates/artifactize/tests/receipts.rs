@@ -62,10 +62,17 @@ async fn assert_empty_reads(state: &std::path::Path, repo: &std::path::Path) {
     assert!(read_runs(state, None, 10, 0).await.unwrap().is_empty());
     assert!(read_latest_requests(state, repo).await.unwrap().is_empty());
     assert!(
-        read_keyed_executions(state, &["missing".into()])
-            .await
-            .unwrap()
-            .is_empty()
+        read_keyed_executions(
+            state,
+            &[
+                "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                    .parse()
+                    .unwrap()
+            ]
+        )
+        .await
+        .unwrap()
+        .is_empty()
     );
     assert!(
         read_run(state, "missing")
@@ -221,7 +228,10 @@ async fn repositories_share_one_state_database() {
     fs::remove_dir_all(second).unwrap();
     for run in saved {
         let read = read_run(&state, run["id"].as_str().unwrap()).await.unwrap();
-        assert_eq!(artifactize::query::run_output(&read), run);
+        assert_eq!(
+            artifactize::query::run_output(&read, time::OffsetDateTime::now_utc()),
+            run
+        );
     }
     assert!(!root.path().join("unused").exists());
 }
@@ -365,4 +375,73 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
         assert_eq!(fs::read_to_string(&protected).unwrap(), "unchanged");
         fs::remove_file(file).unwrap();
     }
+}
+
+#[tokio::test]
+async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_writes_are_atomic() {
+    use artifactize::{
+        store::RunView,
+        types::{RequestStatus, RunStatus},
+    };
+    use serde_json::json;
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir(&repo).unwrap();
+    let receipts = Receipts::open(&state, &repo).await.unwrap();
+    // Literal schema-5 fixture: optional profile fields were serialized as null.
+    let view: RunView = serde_json::from_value(json!({
+        "id":"run-old","repoPath":repo,"stateDir":state,"status":"RUNNING",
+        "createdAt":"2026-01-01T00:00:00Z","completedAt":null,"selection":{"kind":"all"},"profile":null,
+        "validation":null,"error":null,"requests":[{
+            "id":"run-old-1","runId":"run-old","evalId":"app/check","target":"app","title":"Check",
+            "profile":{"kind":"agent","backend":"openai","model":"fixture","reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null},
+            "requestedProfile":{"kind":"agent","backend":"openai","model":"fixture","reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null},
+            "evalDefHash":"fixture","executionId":null,"provenance":null,"usage":null,
+            "payload":{},"references":{},"deps":[],"status":"QUEUED","createdAt":"2026-01-01T00:00:00Z",
+            "startedAt":null,"completedAt":null,"cwd":repo,"runDir":null,"argv":null,"child":null,"result":null,"error":null,"errorCode":null,"blockedReason":null
+        }]
+    })).unwrap();
+    receipts
+        .create_run(&view.run, &view.requests)
+        .await
+        .unwrap();
+    let before = serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap();
+    assert_eq!(
+        before["requests"][0]["profile"],
+        json!({"kind":"agent","backend":"openai","model":"fixture","reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null})
+    );
+    let mut bad = view.requests[0].clone();
+    bad.status = RequestStatus::Green;
+    bad.completed_at = Some("2026-01-01T00:00:01Z".into());
+    assert!(receipts.save_request(&bad).await.is_err());
+    bad.result = Some(json!({"verdict":"GREEN"}));
+    bad.error = Some("contradiction".into());
+    assert!(receipts.save_request(&bad).await.is_err());
+    bad.status = RequestStatus::Error;
+    assert!(receipts.save_request(&bad).await.is_err());
+    let mut run = view.run.clone();
+    run.status = RunStatus::Green;
+    assert!(receipts.save_run(&run).await.is_err());
+    assert_eq!(
+        serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap(),
+        before
+    );
+    let db = Connection::open(state.join(DATABASE)).unwrap();
+    assert_eq!(
+        db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
+            .unwrap(),
+        5
+    );
+    // Earlier schema-5 writes remain readable, even if their lifecycle fields contradict:
+    // validation gates new writes, not a migration of saved data.
+    db.execute(
+        "UPDATE requests SET status='GREEN',data=json_set(data,'$.status','GREEN')",
+        [],
+    )
+    .unwrap();
+    assert_eq!(
+        read_run(&state, "run-old").await.unwrap().requests[0].status,
+        RequestStatus::Green
+    );
 }

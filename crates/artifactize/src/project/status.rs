@@ -65,11 +65,11 @@ pub struct EvalState {
     /// The Eval definition hash: the eval strategy the key covers.
     pub eval_def_hash: String,
     /// The target's current fingerprint; null without one.
-    pub fingerprint: Option<String>,
+    pub fingerprint: Option<crate::types::Fingerprint>,
     /// Each Artifact the eval depends on, with its current fingerprint or null without one.
-    pub fingerprints: BTreeMap<String, Option<String>>,
+    pub fingerprints: BTreeMap<String, Option<crate::types::Fingerprint>>,
     /// The reuse key composed of the hash and the fingerprints; null when one is missing.
-    pub key: Option<String>,
+    pub key: Option<crate::types::ReuseKey>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last: Option<LastRequest>,
     /// Why the key no longer matches the newest cached result for this Eval definition: the
@@ -280,10 +280,10 @@ pub async fn status(
                     },
                     match claim(&eval.id) {
                         Some(Claim::Reuse(execution))
-                            if Some(&execution.profile)
-                                != serde_json::to_value(&eval.declaration.profile)
-                                    .ok()
-                                    .as_ref() =>
+                            if execution.profile
+                                != crate::config::StoredProfile::from(
+                                    &eval.declaration.profile
+                                ) =>
                             format!(
                                 " produced by profile {}",
                                 crate::query::profile_name(&execution.profile, &execution.options)

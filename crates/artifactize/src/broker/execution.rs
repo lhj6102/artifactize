@@ -20,7 +20,7 @@ pub(super) enum Prepared {
     Runtime(runtime::Command),
     Agent {
         state: PathBuf,
-        session: String,
+        session: crate::types::SessionId,
         /// Where the review's conversation is saved; `None` when saving is off.
         saving: Option<agent::session::Saving>,
     },
@@ -43,12 +43,12 @@ pub(super) async fn execute(
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     if matches!(prepared, Ok(Prepared::Human)) && !cancellation.is_cancelled() {
-        request.status = "WAITING_HUMAN".into();
+        request.status = crate::types::RequestStatus::WaitingHuman;
         request.started_at = Some(now());
         request.execution_id = Some(execution.id.clone());
         request.provenance = Some(execution.provenance.clone());
         request.blocked_reason = Some("Waiting for a Human claim and submission.".into());
-        execution.status = request.status.clone();
+        execution.status = request.status.try_into()?;
         receipts.wait_for_human(&execution, &request).await?;
         return Ok(request);
     }
@@ -84,7 +84,7 @@ pub(super) async fn execute(
                     producer.session = Some(reference.clone());
                 }
             }
-            request.usage = Some(json!(review.attempts));
+            request.usage = Some(review.attempts);
             match review.result {
                 Ok(result) => {
                     let verdict = if result["verdict"] == "GREEN" {
@@ -168,16 +168,15 @@ pub(super) async fn execute(
         outcome
     };
     request.status = match outcome {
-        Some(Verdict::Green) => "GREEN",
-        Some(Verdict::Red) => "RED",
+        Some(Verdict::Green) => crate::types::RequestStatus::Green,
+        Some(Verdict::Red) => crate::types::RequestStatus::Red,
         None => {
             request.result = None;
-            "ERROR"
+            crate::types::RequestStatus::Error
         }
-    }
-    .into();
+    };
     request.completed_at = Some(now());
-    execution.status = request.status.clone();
+    execution.status = request.status.try_into()?;
     execution.result = request.result.clone();
     execution.error = request.error.clone();
     execution.error_code = request.error_code.clone();

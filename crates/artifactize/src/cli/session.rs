@@ -68,7 +68,7 @@ pub(super) async fn execute(
                 print_json(&json!({
                     "reference": located.reference.as_ref().map(ToString::to_string),
                     "file": conversation.path,
-                    "events": conversation.events,
+                    "events": conversation.wire_events,
                 }))?;
             } else {
                 show(&located, &conversation).map_err(|e| e.to_string())?;
@@ -102,8 +102,8 @@ pub(super) async fn execute(
             if json {
                 print_json(&json!({
                     "reference": located.reference.as_ref().map(ToString::to_string),
-                    "sessionId": located.id,
-                    "requestId": located.request.request.id,
+                    "sessionId": located.id.as_str(),
+                    "requestId": located.request.request.id.as_str(),
                     "send": send.number,
                     "filesChanged": send.files_changed,
                     "answer": answer_text,
@@ -131,8 +131,8 @@ struct Located {
     /// The request whose Agent review ran as the session.
     request: RequestView,
     /// The request the reference named, when it reused that review's result.
-    reused_by: Option<String>,
-    id: String,
+    reused_by: Option<crate::types::RequestId>,
+    id: crate::types::SessionId,
     /// Set once the conversation was saved; absent when saving was off.
     reference: Option<SessionRef>,
     path: PathBuf,
@@ -273,19 +273,29 @@ async fn send(
                 repo.display()
             )
         })?;
-    let output =
-        workspace::prepare_directory(&state.join("runs").join(&request.run_id), &config.root)
-            .map_err(|e| e.to_string())?;
+    let output = workspace::prepare_directory(
+        &state.join("runs").join(request.run_id.as_str()),
+        &config.root,
+    )
+    .map_err(|e| e.to_string())?;
     let files_changed = files_changed(&config, request, &output, cancellation.clone()).await;
     let header = conversation.header();
     let sent = Sent {
         number: conversation.sends() + 1,
         model: format!(
             "{} {}{}",
-            header["backend"].as_str().unwrap_or("?"),
-            header["model"].as_str().unwrap_or("?"),
-            header["reasoning"]
-                .as_str()
+            header
+                .backend
+                .map(|backend| serde_json::to_value(backend)
+                    .expect("backend is JSON")
+                    .as_str()
+                    .expect("backend is text")
+                    .to_owned())
+                .unwrap_or_else(|| "?".into()),
+            header.model.as_deref().unwrap_or("?"),
+            header
+                .reasoning
+                .as_deref()
                 .map_or(String::new(), |reasoning| format!(
                     " (reasoning {reasoning})"
                 ))
@@ -449,62 +459,60 @@ fn show_summary(located: &Located, summary: &Summary) -> io::Result<()> {
 
 fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
     let mut out = io::stdout().lock();
-    heading(&mut out, located, conversation.header())?;
+    heading(
+        &mut out,
+        located,
+        &serde_json::to_value(conversation.header()).expect("header is JSON"),
+    )?;
     for event in &conversation.events {
-        let send = event["send"]
-            .as_u64()
+        let send = event
+            .send
             .map_or(String::new(), |send| format!(", follow-up {send}"));
-        match event["kind"].as_str() {
-            Some("message") => {
-                let Ok(message) = serde_json::from_value::<Message>(event["message"].clone())
-                else {
-                    continue;
-                };
-                let turn = event["turn"].as_u64().unwrap_or_default();
-                // A follow-up's question shows the person's words; --json keeps the framing.
-                if let Some(question) = event["question"].as_str() {
+        match &event.kind {
+            session::Kind::Message(event) => {
+                let message = &event.message;
+                let turn = event.turn;
+                if let Some(question) = &event.question {
                     writeln!(out, "\n── Person (turn {turn}{send})\n{question}")?;
                     continue;
                 }
-                let label = match &message {
+                let label = match message {
                     Message::System { .. } => "System".to_owned(),
-                    Message::User { .. } if event["repair"] == true => {
-                        format!("Repair prompt (turn {turn})")
-                    }
+                    Message::User { .. } if event.repair => format!("Repair prompt (turn {turn})"),
                     Message::User { .. } => format!("User (turn {turn}{send})"),
                     Message::Assistant { .. } => format!("Assistant (turn {turn}{send})"),
                 };
                 writeln!(out, "\n── {label}")?;
-                for line in message_lines(&message) {
+                for line in message_lines(message) {
                     writeln!(out, "{line}")?;
                 }
             }
-            Some("end") => match event.get("result") {
+            session::Kind::End(end) => match &end.result {
                 Some(result) => writeln!(out, "\n── Result: {result}")?,
                 None => writeln!(
                     out,
                     "\n── Review failed: {} {}",
-                    event["errorCode"].as_str().unwrap_or_default(),
-                    event["error"].as_str().unwrap_or_default()
+                    end.error_code.as_deref().unwrap_or_default(),
+                    end.error.as_deref().unwrap_or_default()
                 )?,
             },
-            Some("send") => writeln!(
+            session::Kind::Send(sent) => writeln!(
                 out,
                 "\n══ Follow-up {} ({}){}",
-                event["send"],
-                event["at"].as_str().unwrap_or_default(),
-                if event["filesChanged"] == true {
+                event.send.unwrap_or_default(),
+                event.at.as_deref().unwrap_or_default(),
+                if sent.files_changed == Some(true) {
                     " · files changed since this review"
                 } else {
                     ""
                 }
             )?,
-            Some("answer") if event.get("error").is_some() => writeln!(
+            session::Kind::Answer(answer) if answer.error.is_some() => writeln!(
                 out,
                 "\n── Follow-up {} failed: {} {}",
-                event["send"],
-                event["errorCode"].as_str().unwrap_or_default(),
-                event["error"].as_str().unwrap_or_default()
+                event.send.unwrap_or_default(),
+                answer.error_code.as_deref().unwrap_or_default(),
+                answer.error.as_deref().unwrap_or_default()
             )?,
             _ => {}
         }

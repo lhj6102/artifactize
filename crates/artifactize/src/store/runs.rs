@@ -17,12 +17,12 @@ use crate::workspace::{canonical_target, outside_workspace};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunSummary {
-    pub id: String,
+    pub id: crate::types::RunId,
     pub repo_path: PathBuf,
     pub created_at: String,
     pub completed_at: Option<String>,
-    pub status: String,
-    pub counts: BTreeMap<String, u64>,
+    pub status: crate::types::RunStatus,
+    pub counts: BTreeMap<crate::types::RequestStatus, u64>,
 }
 
 /// Saved request-state counts in one read-only snapshot; no repository discovery.

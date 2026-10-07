@@ -47,7 +47,7 @@ impl Scratch {
             args.iter().map(OsString::from).collect(),
             &self.workspace(),
             &self.run_dir(),
-            timeout_ms,
+            timeout_ms.map(|ms| Duration::from_millis(ms.into())),
         )
         .unwrap()
     }
@@ -237,7 +237,7 @@ fn runtime_timeout_defaults_and_bounds_match_current_source() {
                 vec![],
                 &scratch.workspace(),
                 &run_dir,
-                Some(ms)
+                Some(Duration::from_millis(ms.into()))
             ),
             Err(Error::InvalidTimeout)
         ));
