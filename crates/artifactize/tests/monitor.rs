@@ -217,7 +217,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
     assert!(list.contains("all repositories"), "{list}");
     let live_row = list
         .lines()
-        .find(|line| line.contains(live.as_str()))
+        .find(|line| line.contains(live.as_str()) && line.contains("RUNNING"))
         .unwrap();
     assert!(
         live_row.contains("RUNNING") && live_row.contains("beta"),
@@ -296,7 +296,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
         "{done}"
     );
     assert!(!done.contains("running slow/wait"));
-    assert_eq!(press(&mut all, KeyCode::Esc), monitor::Action::Refresh);
+    assert_eq!(press(&mut all, KeyCode::Esc), monitor::Action::None);
     all.refresh().await;
     assert!(screen(&mut all).contains("Runs (3)"));
     assert_eq!(press(&mut all, KeyCode::Esc), monitor::Action::Quit);

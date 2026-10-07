@@ -152,6 +152,7 @@ pub async fn verify(
     let mut run = Run {
         id: id.parse()?,
         repo_path: config.root.clone(),
+        repository: crate::repository::identify(&config.root),
         state_dir: state,
         status: crate::types::RunStatus::Running,
         created_at: now(),

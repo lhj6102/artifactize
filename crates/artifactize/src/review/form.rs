@@ -122,6 +122,8 @@ pub struct Form {
     /// Owner fields as JSON text from `$EDITOR`; once set it replaces `fields`.
     pub json: Option<String>,
     pub selected: usize,
+    /// UTF-8 byte boundary of the in-terminal JSON cursor; standalone editor is unchanged.
+    pub cursor: usize,
     /// The last local or `human::submit` error.
     pub error: Option<String>,
 }
@@ -137,6 +139,7 @@ impl Form {
         Self {
             verdict,
             fields: fields.unwrap_or_default(),
+            cursor: json.as_ref().map_or(0, String::len),
             json,
             selected: 0,
             error: None,
@@ -182,6 +185,132 @@ impl Form {
         }
         object.insert("verdict".into(), json!(self.verdict));
         Ok(Value::Object(object))
+    }
+
+    /// Bounded paste follows the existing Human result limit, without splitting UTF-8.
+    pub fn paste(&mut self, text: &str) {
+        if let Some(json) = &mut self.json {
+            if json.len().saturating_add(text.len()) <= crate::human::MAX_RESULT_BYTES {
+                json.insert_str(self.cursor, text);
+                self.cursor += text.len();
+            } else {
+                self.error = Some("Human fields exceed 256000 bytes.".into());
+            }
+        } else if let Some(Field {
+            input: Input::Text(value) | Input::Integer(value) | Input::Number(value),
+            ..
+        }) = self.fields.get_mut(self.selected)
+        {
+            if value.len().saturating_add(text.len()) <= crate::human::MAX_RESULT_BYTES {
+                value.push_str(text);
+            } else {
+                self.error = Some("Human fields exceed 256000 bytes.".into());
+            }
+        }
+    }
+
+    /// Multiline editing stays inside monitor. Enter inserts a newline, never submits.
+    pub fn inline_key(&mut self, key: KeyEvent) {
+        if self.json.is_none() {
+            let text_field = self.fields.get(self.selected).is_some_and(|field| {
+                matches!(
+                    field.input,
+                    Input::Text(_) | Input::Integer(_) | Input::Number(_)
+                )
+            });
+            match key.code {
+                KeyCode::Char(character)
+                    if text_field
+                        && !key.modifiers.intersects(
+                            crossterm::event::KeyModifiers::CONTROL
+                                | crossterm::event::KeyModifiers::ALT,
+                        ) =>
+                {
+                    self.paste(&character.to_string())
+                }
+                _ if !key.modifiers.intersects(
+                    crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::ALT,
+                ) =>
+                {
+                    self.key(key)
+                }
+                _ => {}
+            }
+            return;
+        }
+        let text = self.json.as_ref().expect("JSON mode");
+        self.cursor = self.cursor.min(text.len());
+        match key.code {
+            KeyCode::Char(character)
+                if !key.modifiers.intersects(
+                    crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::ALT,
+                ) =>
+            {
+                self.paste(&character.to_string())
+            }
+            KeyCode::Enter => self.paste("\n"),
+            KeyCode::Tab => self.paste("  "),
+            KeyCode::Left | KeyCode::Backspace if self.cursor > 0 => {
+                let previous = text[..self.cursor]
+                    .char_indices()
+                    .last()
+                    .map_or(0, |(index, _)| index);
+                if key.code == KeyCode::Backspace {
+                    self.json
+                        .as_mut()
+                        .expect("JSON mode")
+                        .drain(previous..self.cursor);
+                }
+                self.cursor = previous;
+            }
+            KeyCode::Right | KeyCode::Delete if self.cursor < text.len() => {
+                let next = self.cursor
+                    + text[self.cursor..]
+                        .chars()
+                        .next()
+                        .expect("not at end")
+                        .len_utf8();
+                if key.code == KeyCode::Delete {
+                    self.json
+                        .as_mut()
+                        .expect("JSON mode")
+                        .drain(self.cursor..next);
+                } else {
+                    self.cursor = next;
+                }
+            }
+            KeyCode::Home => {
+                self.cursor = text[..self.cursor].rfind('\n').map_or(0, |index| index + 1)
+            }
+            KeyCode::End => {
+                self.cursor += text[self.cursor..]
+                    .find('\n')
+                    .unwrap_or(text.len() - self.cursor)
+            }
+            KeyCode::Up | KeyCode::Down => {
+                let start = text[..self.cursor].rfind('\n').map_or(0, |index| index + 1);
+                let column = text[start..self.cursor].chars().count();
+                let destination = if key.code == KeyCode::Up {
+                    start
+                        .checked_sub(1)
+                        .map(|end| (text[..end].rfind('\n').map_or(0, |index| index + 1), end))
+                } else {
+                    text[self.cursor..].find('\n').map(|offset| {
+                        let start = self.cursor + offset + 1;
+                        let end = start + text[start..].find('\n').unwrap_or(text.len() - start);
+                        (start, end)
+                    })
+                };
+                if let Some((start, end)) = destination {
+                    self.cursor = start
+                        + text[start..end]
+                            .char_indices()
+                            .nth(column)
+                            .map_or(end - start, |(index, _)| index);
+                }
+            }
+            _ => {}
+        }
     }
 
     pub fn key(&mut self, key: KeyEvent) {

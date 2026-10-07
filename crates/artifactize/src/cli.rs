@@ -153,9 +153,9 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
-    /// Watch saved and running Runs in a read-only terminal UI; defaults to the current repository.
+    /// Browse repositories/worktrees, Runs and eval details; initial selection is the current worktree.
     Monitor {
-        /// Show Runs from every repository in the shared state.
+        /// Initially select ALL repositories; every scope remains accessible in the UI.
         #[arg(long)]
         all: bool,
     },

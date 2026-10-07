@@ -1,102 +1,212 @@
-//! Review progress TUI over read-only state queries.
-
+//! Repository/worktree → Run → artifacts/evals, with shared single-request Human review jobs.
+mod catalog;
+pub(crate) mod input;
+mod modal;
 mod model;
+#[cfg(test)]
+mod redesign_tests;
+mod terminal;
 #[cfg(test)]
 mod tests;
 mod view;
-
+pub use catalog::{Repository, Scope};
+#[cfg(test)]
+pub(crate) use modal::original as test_original;
 pub use model::{
     Detail, Node, Progress, RunRow, Target, detail, duration, glyph, progress, run_rows, tree,
 };
+pub use terminal::run;
+pub(crate) use terminal::{repaint, suspend};
 pub(crate) use view::clock;
 
-use std::{future::Future, path::PathBuf, process::Stdio, time::Duration};
-
-use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use futures_util::StreamExt;
+use crate::{
+    config::ProfileKind,
+    review::{self, Review},
+    store::{self, RequestView, RunSummary, RunView},
+    types::{RequestId, RunId},
+    workspace::canonical_target,
+};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::TableState;
+use std::{path::PathBuf, time::Duration};
 use time::OffsetDateTime;
-use tokio_util::sync::CancellationToken;
 use tui_tree_widget::TreeState;
 
-use crate::store::{self, RequestView, RunSummary, RunView};
-
-/// Keep live state reasonably current without continuously querying shared SQLite.
+/// One shared-state snapshot per second; no project rediscovery/fingerprinting on ticks.
 const REFRESH: Duration = Duration::from_secs(1);
-/// Bound one Run query and its retained rows; paging exposes older saved Runs.
+/// Animate cancellable Human jobs without increasing database polling.
+const SPIN: Duration = Duration::from_millis(100);
+/// Bound retained Run pages while allowing the selected scope to page older records.
 const PAGE: u32 = 100;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     None,
     Refresh,
     Quit,
-    /// Hand the terminal to `artifactize review` for this waiting request.
-    Review(String),
+    OpenDetail,
+    Capture(bool),
+    Review(review::Action),
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pane {
+    Repositories,
+    Runs,
+    Artifacts,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModalPane {
+    Summary,
+    Evidence,
+    Tools,
+    Fields,
 }
 
-/// Screen state over saved data; every load opens the state database read-only.
+pub struct Modal {
+    run_id: RunId,
+    target: Target,
+    request: Option<RequestId>,
+    evidence: modal::Evidence,
+    evidence_stamp: Option<modal::EvidenceStamp>,
+    /// Snapshot remains attached to this modal if the selected Run is pruned or shifts pages.
+    detail: Detail,
+    review: Option<Review>,
+    focus: ModalPane,
+    scroll: [u16; 2],
+}
+
+/// Semantic selection/drafts live here, independently of render geometry.
 pub struct Monitor {
     state: PathBuf,
-    repo: Option<PathBuf>,
+    initial: Option<PathBuf>,
+    catalog: catalog::Catalog,
+    pub scope: Scope,
+    pub focus: Pane,
+    initialized: bool,
     limit: u32,
     runs: Vec<RunSummary>,
+    repositories: TableState,
     list: TableState,
-    /// The open Run, if any, and its last successfully loaded data.
-    open: Option<String>,
+    open: Option<RunId>,
     run: Option<(RunView, Vec<RequestView>)>,
     tree: TreeState<String>,
-    scroll: u16,
+    modal: Option<Modal>,
+    reviews: std::collections::BTreeMap<RequestId, Review>,
+    mouse_capture: bool,
+    hits: input::Hits,
+    last_click: Option<input::Click>,
     refreshed: Option<OffsetDateTime>,
     error: Option<String>,
-    /// How the last review handoff ended, until the next key.
     notice: Option<String>,
 }
 
 impl Monitor {
-    /// `repo: None` shows Runs from every repository in the state database.
+    /// cwd/--repo/--all determines only the initial selection; catalog always covers all state.
     pub fn new(state: PathBuf, repo: Option<PathBuf>) -> Self {
+        let initial = repo.map(|path| canonical_target(&path).unwrap_or(path));
         Self {
             state,
-            repo,
+            initial,
+            catalog: catalog::Catalog::default(),
+            scope: Scope::All,
+            focus: Pane::Runs,
+            initialized: false,
             limit: PAGE,
             runs: Vec::new(),
+            repositories: TableState::default(),
             list: TableState::default(),
             open: None,
             run: None,
             tree: TreeState::default(),
-            scroll: 0,
+            modal: None,
+            reviews: std::collections::BTreeMap::new(),
+            mouse_capture: true,
+            hits: input::Hits::default(),
+            last_click: None,
             refreshed: None,
             error: None,
             notice: None,
         }
     }
 
-    /// Reload the visible screen; on failure keep the last-known data and record the error.
     pub async fn refresh(&mut self) {
-        let result = match self.open.clone() {
-            None => store::read_runs(&self.state, self.repo.as_deref(), self.limit, 0)
-                .await
-                .map(|runs| self.set_runs(runs)),
-            Some(id) => match store::read_run(&self.state, &id).await {
-                Ok(run) => store::read_requests(&self.state, Some(&id))
-                    .await
-                    .map(|requests| self.set_run(run, requests)),
-                Err(error) => Err(error),
-            },
-        };
+        let result = self.reload().await;
         let now = OffsetDateTime::now_utc();
         match result {
             Ok(()) => {
                 self.refreshed = Some(now);
                 self.error = None;
             }
-            Err(error) => {
-                self.error = Some(format!("read failed at {}: {error}", view::clock(now)));
-            }
+            Err(error) => self.error = Some(format!("read failed at {}: {error}", clock(now))),
         }
     }
-
+    async fn reload(&mut self) -> Result<(), String> {
+        let catalog = store::read_catalog(&self.state).await?;
+        self.catalog.update(&catalog, self.initial.as_deref());
+        if !self.initialized {
+            self.scope = self.catalog.initial(self.initial.as_deref());
+            self.initialized = true;
+        }
+        let selected = self.repositories.selected().filter(|index| {
+            self.catalog
+                .rows
+                .get(*index)
+                .is_some_and(|row| row.scope == self.scope)
+        });
+        self.repositories.select(selected.or_else(|| {
+            self.catalog
+                .rows
+                .iter()
+                .position(|row| row.scope == self.scope)
+        }));
+        let paths = self.catalog.paths(&self.scope);
+        let selected = self.selected_run().map(|run| run.id.clone());
+        let mut runs =
+            store::read_scoped_runs(&self.state, paths.as_deref(), self.limit, 0).await?;
+        // Newly inserted Runs may push a selected row out of its page; grow only as needed.
+        while selected
+            .as_ref()
+            .is_some_and(|id| !runs.iter().any(|run| &run.id == id))
+            && runs.len() as u32 == self.limit
+        {
+            self.limit = self.limit.saturating_add(PAGE);
+            runs = store::read_scoped_runs(&self.state, paths.as_deref(), self.limit, 0).await?;
+        }
+        self.set_runs(runs);
+        if let Some(id) = self.open.clone() {
+            let run = store::read_run(&self.state, &id).await?;
+            let requests = store::read_requests(&self.state, Some(&id)).await?;
+            self.set_run(run, requests);
+        }
+        if let Some(modal) = &mut self.modal {
+            if let Some((run, requests)) = &self.run
+                && run.run.id == modal.run_id
+                && modal
+                    .request
+                    .as_ref()
+                    .is_none_or(|id| requests.iter().any(|view| &view.request.id == id))
+            {
+                modal.detail =
+                    model::detail(run, requests, &modal.target, OffsetDateTime::now_utc());
+                if modal.review.is_none()
+                    && let Some(view) = modal
+                        .request
+                        .as_ref()
+                        .and_then(|id| requests.iter().find(|view| &view.request.id == id))
+                {
+                    let stamp = modal::EvidenceStamp::new(view);
+                    if modal.evidence_stamp.as_ref() != Some(&stamp) {
+                        modal.evidence = modal::evidence(&self.state, view);
+                        modal.evidence_stamp = Some(stamp);
+                    }
+                }
+            }
+            if let Some(review) = &mut modal.review {
+                let _ = review.refresh().await;
+            }
+        }
+        Ok(())
+    }
     fn set_runs(&mut self, runs: Vec<RunSummary>) {
         let selected = self.selected_run().map(|run| run.id.clone());
         let index = selected
@@ -109,8 +219,11 @@ impl Monitor {
                 .or(Some(0))
                 .filter(|_| !self.runs.is_empty()),
         );
+        self.open = self.selected_run().map(|run| run.id.clone());
+        if self.open.is_none() {
+            self.run = None;
+        }
     }
-
     fn set_run(&mut self, run: RunView, requests: Vec<RequestView>) {
         let first = self
             .run
@@ -127,23 +240,17 @@ impl Monitor {
             if let Some(node) = nodes.first() {
                 self.tree.select(vec![node.id.clone()]);
             }
-            self.scroll = 0;
         }
         self.run = Some((run, requests));
     }
-
     fn selected_run(&self) -> Option<&RunSummary> {
         self.list.selected().and_then(|index| self.runs.get(index))
     }
-
-    /// The detail target for the selected tree node.
     pub fn target(&self) -> Option<Target> {
         self.tree.selected().last().and_then(|id| Target::parse(id))
     }
-
-    /// The waiting Human request behind the selected eval node, if any.
     pub fn waiting(&self) -> Option<&str> {
-        let Some(Target::Eval(eval)) = self.target() else {
+        let Target::Eval(eval) = self.target()? else {
             return None;
         };
         let (_, requests) = self.run.as_ref()?;
@@ -151,196 +258,246 @@ impl Monitor {
         (view.request.status == crate::types::RequestStatus::WaitingHuman)
             .then_some(view.request.id.as_str())
     }
-
+    fn select_scope(&mut self, index: usize) -> Action {
+        let Some(row) = self.catalog.rows.get(index) else {
+            return Action::None;
+        };
+        self.repositories.select(Some(index));
+        if self.scope == row.scope {
+            return Action::None;
+        }
+        self.scope = row.scope.clone();
+        self.limit = PAGE;
+        self.runs.clear();
+        self.list.select(None);
+        self.open = None;
+        self.run = None;
+        Action::Refresh
+    }
+    fn select_run(&mut self, index: usize) -> Action {
+        if index >= self.runs.len() {
+            return Action::None;
+        }
+        self.list.select(Some(index));
+        self.open = self.selected_run().map(|run| run.id.clone());
+        Action::Refresh
+    }
+    pub async fn open_detail(&mut self) {
+        let Some(target) = self.target() else {
+            return;
+        };
+        let Some((run, requests)) = &self.run else {
+            return;
+        };
+        let view = match &target {
+            Target::Eval(eval) => requests
+                .iter()
+                .find(|view| &view.request.eval_id == eval)
+                .cloned(),
+            _ => None,
+        };
+        let saved_detail = model::detail(run, requests, &target, OffsetDateTime::now_utc());
+        let mut modal = Modal {
+            run_id: run.run.id.clone(),
+            target,
+            detail: saved_detail,
+            request: view.as_ref().map(|view| view.request.id.clone()),
+            evidence: modal::Evidence::default(),
+            evidence_stamp: view.as_ref().map(modal::EvidenceStamp::new),
+            review: None,
+            focus: ModalPane::Evidence,
+            scroll: [0; 2],
+        };
+        if let Some(view) = view {
+            if view.request.profile.kind() == ProfileKind::Human {
+                let resolved = if view.request.status == crate::types::RequestStatus::WaitingHuman {
+                    modal::original(&self.state, &view).await
+                } else {
+                    Ok(view)
+                };
+                match resolved {
+                    Ok(view) => match crate::human::default_reviewer() {
+                        Ok(reviewer) => {
+                            let mut review =
+                                self.reviews.remove(&view.request.id).unwrap_or_else(|| {
+                                    Review::new(
+                                        self.state.clone(),
+                                        None,
+                                        reviewer,
+                                        Some(view.request.id.to_string()),
+                                    )
+                                });
+                            modal.request = Some(view.request.id.clone());
+                            review.load_single(view);
+                            modal.review = Some(review);
+                            modal.focus = ModalPane::Fields;
+                        }
+                        Err(error) => self.notice = Some(error),
+                    },
+                    Err(error) => self.notice = Some(error),
+                }
+            } else {
+                modal.evidence = modal::evidence(&self.state, &view);
+            }
+        }
+        self.modal = Some(modal);
+    }
+    fn close_modal(&mut self) {
+        if let Some(modal) = self.modal.take()
+            && let (Some(id), Some(review)) = (modal.request, modal.review)
+        {
+            self.reviews.insert(id, review);
+        }
+    }
     pub fn key(&mut self, key: KeyEvent) -> Action {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
+            if let Some(review) = self.modal.as_mut().and_then(|modal| modal.review.as_mut())
+                && review.busy()
+            {
+                return Action::Review(review.control(review::Control::Cancel));
+            }
+            return Action::Quit;
+        }
+        if key.code == KeyCode::F(2) {
+            self.mouse_capture = !self.mouse_capture;
+            return Action::Capture(self.mouse_capture);
+        }
+        if let Some(modal) = &mut self.modal {
+            if key.code == KeyCode::Esc {
+                if let Some(review) = &mut modal.review
+                    && (review.busy() || review.confirming())
+                {
+                    return Action::Review(review.control(review::Control::Cancel));
+                }
+                self.close_modal();
+                return Action::None;
+            }
+            if let Some(review) = &mut modal.review {
+                if key.code == KeyCode::BackTab
+                    || key.code == KeyCode::Tab
+                        && (modal.focus == ModalPane::Tools || !review.editing())
+                {
+                    modal.focus = if modal.focus == ModalPane::Tools {
+                        ModalPane::Fields
+                    } else {
+                        ModalPane::Tools
+                    };
+                    return Action::None;
+                }
+                return Action::Review(review.key_single(key, modal.focus == ModalPane::Tools));
+            }
+            let index = usize::from(modal.focus == ModalPane::Evidence);
+            match key.code {
+                KeyCode::Tab => {
+                    modal.focus = if modal.focus == ModalPane::Summary {
+                        ModalPane::Evidence
+                    } else {
+                        ModalPane::Summary
+                    }
+                }
+                KeyCode::Down => modal.scroll[index] = modal.scroll[index].saturating_add(1),
+                KeyCode::Up => modal.scroll[index] = modal.scroll[index].saturating_sub(1),
+                KeyCode::PageDown => {
+                    modal.scroll[index] = modal.scroll[index].saturating_add(input::SCROLL_PAGE)
+                }
+                KeyCode::PageUp => {
+                    modal.scroll[index] = modal.scroll[index].saturating_sub(input::SCROLL_PAGE)
+                }
+                _ => {}
+            }
+            return Action::None;
+        }
         self.notice = None;
         if key.code == KeyCode::Char('q')
             || key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c')
         {
             return Action::Quit;
         }
-        if key.code == KeyCode::Char('r') {
-            return Action::Refresh;
+        match key.code {
+            KeyCode::Char('r') => return Action::Refresh,
+            KeyCode::Tab => {
+                self.focus = match self.focus {
+                    Pane::Repositories => Pane::Runs,
+                    Pane::Runs => Pane::Artifacts,
+                    Pane::Artifacts => Pane::Repositories,
+                }
+            }
+            KeyCode::BackTab => {
+                self.focus = match self.focus {
+                    Pane::Repositories => Pane::Artifacts,
+                    Pane::Runs => Pane::Repositories,
+                    Pane::Artifacts => Pane::Runs,
+                }
+            }
+            KeyCode::Esc => {
+                if self.focus == Pane::Runs {
+                    return Action::Quit;
+                }
+                self.focus = Pane::Runs;
+            }
+            _ => {}
         }
-        if self.open.is_none() {
-            match key.code {
-                KeyCode::Esc => return Action::Quit,
+        match self.focus {
+            Pane::Repositories => match key.code {
+                KeyCode::Down | KeyCode::Char('j') => {
+                    return self
+                        .select_scope(self.repositories.selected().unwrap_or(0).saturating_add(1));
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    return self
+                        .select_scope(self.repositories.selected().unwrap_or(0).saturating_sub(1));
+                }
+                KeyCode::Enter => self.focus = Pane::Runs,
+                _ => {}
+            },
+            Pane::Runs => match key.code {
                 KeyCode::Down | KeyCode::Char('j') => {
                     let next = self.list.selected().map_or(0, |index| index + 1);
                     if next < self.runs.len() {
-                        self.list.select(Some(next));
-                    } else if self.runs.len() as u32 == self.limit {
-                        self.limit += PAGE;
+                        return self.select_run(next);
+                    }
+                    if self.runs.len() as u32 == self.limit {
+                        self.limit = self.limit.saturating_add(PAGE);
                         return Action::Refresh;
                     }
                 }
-                KeyCode::Up | KeyCode::Char('k') => self.list.select_previous(),
-                KeyCode::Enter => {
-                    if let Some(run) = self.selected_run() {
-                        self.open = Some(run.id.to_string());
-                        self.run = None;
-                        return Action::Refresh;
-                    }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    return self.select_run(self.list.selected().unwrap_or(0).saturating_sub(1));
+                }
+                KeyCode::Enter | KeyCode::Right => {
+                    self.focus = Pane::Artifacts;
+                    return Action::Refresh;
                 }
                 _ => {}
-            }
-            return Action::None;
-        }
-        let moved = match key.code {
-            KeyCode::Esc | KeyCode::Backspace => {
-                self.open = None;
-                self.run = None;
-                return Action::Refresh;
-            }
-            KeyCode::Down | KeyCode::Char('j') => self.tree.key_down(),
-            KeyCode::Up | KeyCode::Char('k') => self.tree.key_up(),
-            KeyCode::Left | KeyCode::Char('h') => self.tree.key_left(),
-            KeyCode::Right | KeyCode::Char('l') => self.tree.key_right(),
-            KeyCode::Enter | KeyCode::Char(' ') => self.tree.toggle_selected(),
-            KeyCode::Char('o') => {
-                return self
-                    .waiting()
-                    .map_or(Action::None, |id| Action::Review(id.to_owned()));
-            }
-            KeyCode::PageDown => {
-                self.scroll = self.scroll.saturating_add(10);
-                false
-            }
-            KeyCode::PageUp => {
-                self.scroll = self.scroll.saturating_sub(10);
-                false
-            }
-            _ => false,
-        };
-        if moved {
-            self.scroll = 0;
+            },
+            Pane::Artifacts => match key.code {
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.tree.key_down();
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.tree.key_up();
+                }
+                KeyCode::Left | KeyCode::Char('h') => {
+                    self.tree.key_left();
+                }
+                KeyCode::Right | KeyCode::Char('l') => {
+                    self.tree.key_right();
+                }
+                KeyCode::Char(' ') => {
+                    self.tree.toggle_selected();
+                }
+                KeyCode::Enter | KeyCode::Char('o') => return Action::OpenDetail,
+                _ => {}
+            },
         }
         Action::None
     }
-
-    /// `artifactize review` for one request in this terminal, scoped like the monitor.
-    /// The child is the writer; the monitor itself keeps its read-only connections.
-    fn review(&self, id: &str) -> impl Future<Output = Result<(), String>> + 'static {
-        let mut command = tokio::process::Command::new(
-            std::env::current_exe().unwrap_or_else(|_| "artifactize".into()),
-        );
-        command
-            .arg("review")
-            .arg(id)
-            .arg("--state-dir")
-            .arg(&self.state);
-        match &self.repo {
-            Some(repo) => command.arg("--repo").arg(repo),
-            None => command.arg("--all"),
-        };
-        // The review draws on this terminal; only its stderr is kept for the notice.
-        // (`Command::output` would pipe stdout too.)
-        command
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::piped());
-        async move {
-            let output = async { command.spawn()?.wait_with_output().await }
-                .await
-                .map_err(|e| format!("cannot start the review: {e}"))?;
-            if output.status.success() {
-                return Ok(());
-            }
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let reason = stderr.lines().rfind(|line| !line.trim().is_empty());
-            Err(format!(
-                "review exited with {}{}",
-                output.status,
-                reason.map_or(String::new(), |reason| format!(": {reason}"))
-            ))
-        }
-    }
-}
-
-/// Leave the alternate screen for a foreground child, then restore it and repaint every cell.
-/// Callers drop their event stream first, so the child alone reads the terminal.
-pub(crate) async fn suspend<T>(
-    terminal: &mut ratatui::DefaultTerminal,
-    child: impl Future<Output = T>,
-) -> Result<T, String> {
-    terminal.show_cursor().map_err(|e| e.to_string())?;
-    ratatui::try_restore().map_err(|e| e.to_string())?;
-    let result = child.await;
-    crossterm::terminal::enable_raw_mode().map_err(|e| e.to_string())?;
-    crossterm::execute!(std::io::stdout(), crossterm::terminal::EnterAlternateScreen)
-        .map_err(|e| e.to_string())?;
-    repaint(terminal)?;
-    Ok(result)
-}
-
-/// Clear the screen and forget the last frame, so the next draw writes every cell.
-/// Unlike `Terminal::clear`, this sends no cursor position query.
-pub(crate) fn repaint(terminal: &mut ratatui::DefaultTerminal) -> Result<(), String> {
-    crossterm::execute!(
-        std::io::stdout(),
-        crossterm::terminal::Clear(crossterm::terminal::ClearType::All)
-    )
-    .map_err(|e| e.to_string())?;
-    // Both buffers are now blank: the last frame is reset and the next one starts empty.
-    terminal.swap_buffers();
-    Ok(())
-}
-
-/// Run the terminal UI until q, Esc on the Run list, Ctrl-C, or a signal.
-pub async fn run(
-    state: PathBuf,
-    repo: Option<PathBuf>,
-    cancellation: CancellationToken,
-) -> Result<(), String> {
-    // ratatui's panic hook restores the terminal before a panic message is printed.
-    let mut terminal = ratatui::try_init().map_err(|e| {
-        let _ = crossterm::terminal::disable_raw_mode();
-        format!("cannot start the monitor: {e}")
-    })?;
-    let result = watch(&mut terminal, Monitor::new(state, repo), cancellation).await;
-    drop(terminal);
-    ratatui::try_restore().map_err(|e| e.to_string())?;
-    result
-}
-
-async fn watch(
-    terminal: &mut ratatui::DefaultTerminal,
-    mut monitor: Monitor,
-    cancellation: CancellationToken,
-) -> Result<(), String> {
-    let mut events = EventStream::new();
-    let mut tick = tokio::time::interval(REFRESH);
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    loop {
-        terminal
-            .draw(|frame| monitor.draw(frame))
-            .map_err(|e| e.to_string())?;
-        let action = tokio::select! {
-            _ = cancellation.cancelled() => Action::Quit,
-            _ = tick.tick() => Action::Refresh,
-            event = events.next() => match event {
-                Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => monitor.key(key),
-                Some(Ok(_)) => Action::None,
-                Some(Err(error)) => return Err(error.to_string()),
-                None => Action::Quit,
-            },
-        };
-        match action {
-            Action::Quit => return Ok(()),
-            Action::Refresh => {
-                monitor.refresh().await;
-                tick.reset();
-            }
-            Action::Review(id) => {
-                // The review process owns the terminal until it exits.
-                drop(events);
-                let result = suspend(terminal, monitor.review(&id)).await?;
-                events = EventStream::new();
-                monitor.refresh().await;
-                tick.reset();
-                monitor.notice = result.err();
-            }
-            Action::None => {}
+    pub fn paste(&mut self, text: &str) {
+        if let Some(modal) = &mut self.modal
+            && modal.focus == ModalPane::Fields
+            && let Some(review) = &mut modal.review
+        {
+            review.paste_single(text);
         }
     }
 }

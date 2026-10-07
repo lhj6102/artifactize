@@ -1,10 +1,14 @@
 //! Human review TUI: claim, run Human tools and submit, in-process like `request`.
 
+mod embedded;
+#[cfg(test)]
+mod embedded_tests;
 mod form;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 mod view;
 
+pub(crate) use embedded::Control;
 pub use form::{Field, Form, Input, template};
 
 use std::{
@@ -52,6 +56,8 @@ pub enum Mode {
 /// Lifecycle work with owned inputs, so the screen keeps drawing while it runs.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Job {
+    /// Explicit claim for an embedded single-request review.
+    Claim { id: crate::types::RequestId },
     /// Resolve a tool's command line for confirmation; claims nothing.
     Inspect { id: String, tool: String },
     /// Claim first when `claim`, then run the tool.
@@ -72,6 +78,14 @@ pub enum Job {
 
 #[derive(Debug)]
 pub enum Outcome {
+    Claimed {
+        result: Result<HumanClaim, String>,
+    },
+    /// Publishing failed after settlement; never offer to submit the verdict twice.
+    SavedLocally {
+        request: Box<Request>,
+        error: String,
+    },
     Inspected {
         tool: String,
         result: Result<CommandLine, String>,
@@ -128,6 +142,13 @@ struct Busy {
     cancel: CancellationToken,
 }
 
+impl Drop for Busy {
+    fn drop(&mut self) {
+        // A terminal error or unwinding must cancel an active Human tool too.
+        self.cancel.cancel();
+    }
+}
+
 /// Screen state over saved data; only jobs write, through the `human` lifecycle API.
 pub struct Review {
     state: PathBuf,
@@ -153,6 +174,12 @@ pub struct Review {
     error: Option<String>,
     /// Leave once nothing else waits after a submission.
     submitted: bool,
+    /// Embedded mode keeps GREEN and RED drafts separate across verdict switches.
+    drafts: std::collections::BTreeMap<&'static str, Form>,
+    field_scroll: u16,
+    instruction_scroll: u16,
+    /// A Human tool confirmation temporarily replaces, but never discards, its form.
+    tool_draft: Option<Form>,
 }
 
 impl Review {
@@ -186,6 +213,10 @@ impl Review {
             refreshed: None,
             error: None,
             submitted: false,
+            drafts: std::collections::BTreeMap::new(),
+            field_scroll: 0,
+            instruction_scroll: 0,
+            tool_draft: None,
         }
     }
 
@@ -523,6 +554,7 @@ impl Review {
     pub fn start(&mut self, job: Job) -> impl Future<Output = Outcome> + 'static {
         let cancel = CancellationToken::new();
         let label = match &job {
+            Job::Claim { .. } => "Claiming the review".into(),
             Job::Inspect { tool, .. } => format!("Resolving {tool}"),
             Job::Run { tool, .. } => format!("Running {tool}"),
             Job::Submit { result, .. } => {
@@ -555,6 +587,35 @@ impl Review {
     pub fn finish(&mut self, outcome: Outcome) -> Action {
         self.busy = None;
         match outcome {
+            Outcome::SavedLocally { request, error } => {
+                self.taken.retain(|id| id != request.id.as_str());
+                if let Some(view) = &mut self.request {
+                    view.request = *request;
+                    view.claim = None;
+                }
+                self.mode = Mode::Request;
+                self.notice = Some((error, true));
+                Action::Refresh
+            }
+            Outcome::Claimed { result } => {
+                match result {
+                    Ok(claim) => {
+                        self.took(Some(claim.clone()));
+                        if let Some(view) = &mut self.request {
+                            view.claim = Some(claim);
+                        }
+                        if !matches!(self.mode, Mode::Form(_)) {
+                            self.mode = Mode::Request;
+                        }
+                        self.notice = Some((
+                            "Claimed. Fill GREEN or RED fields, then Submit.".into(),
+                            false,
+                        ));
+                    }
+                    Err(error) => self.notice = Some((error, true)),
+                }
+                Action::Refresh
+            }
             Outcome::Inspected { tool, result } => match result {
                 Ok(command) if self.confirmed.contains(&command) => self.run(tool),
                 Ok(command) => {
@@ -660,6 +721,14 @@ impl Job {
     async fn run(self, state: PathBuf, reviewer: String, cancel: CancellationToken) -> Outcome {
         let mut claimed = None;
         match self {
+            Job::Claim { id } => {
+                let result = async {
+                    let (receipts, _) = human::open(&state, &id).await?;
+                    human::claim(&receipts, &id, &reviewer).await
+                }
+                .await;
+                Outcome::Claimed { result }
+            }
             Job::Inspect { id, tool } => {
                 let result = async {
                     let (receipts, _) = human::open(&state, &id).await?;
@@ -704,6 +773,21 @@ impl Job {
                         .map(Box::new)
                 }
                 .await;
+                if let Err(error) = &result
+                    && let Ok(view) = store::read_request(&state, &id).await
+                    && matches!(
+                        view.request.status,
+                        crate::types::RequestStatus::Green | crate::types::RequestStatus::Red
+                    )
+                    && view.execution.as_ref().is_some_and(|execution| {
+                        execution.reviewer.as_deref() == Some(reviewer.as_str())
+                    })
+                {
+                    return Outcome::SavedLocally {
+                        request: Box::new(view.request),
+                        error: error.clone(),
+                    };
+                }
                 Outcome::Submitted {
                     id,
                     claimed,

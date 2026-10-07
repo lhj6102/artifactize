@@ -72,6 +72,9 @@ pub enum Error {
 pub struct Run {
     pub id: RunId,
     pub repo_path: PathBuf,
+    /// Optional display metadata; schema 5 Runs written before this remain readable.
+    #[serde(flatten)]
+    pub repository: crate::repository::Identity,
     pub state_dir: PathBuf,
     pub status: RunStatus,
     pub created_at: String,

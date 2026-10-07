@@ -140,8 +140,8 @@ args. Opening a request claims nothing.
   owner fields; saving submits it, and an empty file submits nothing. A validation
   error keeps the request waiting and returns to the form with the failing paths.
 - After a submission the list returns if more requests wait; otherwise `review`
-  exits, which returns to the monitor when the monitor opened it. Esc goes back
-  and `q` quits.
+  exits. Esc goes back and `q` quits. The monitor embeds the same review controller
+  and lifecycle jobs rather than launching this standalone command.
 
 ## Monitor
 
@@ -149,25 +149,62 @@ args. Opening a request claims nothing.
 artifactize monitor [--repo PATH | --all] [--state-dir PATH]
 ```
 
-A terminal UI for review progress. Like `run list`, it shows the canonical
-`--repo` (default: the current directory) or, with `--all`, every repository.
-The Run list (newest first: ID, repository, status, request counts, age) refreshes
-every second and on `r`; `j`/`k` or arrows move (moving past the end loads older
-Runs), Enter opens a Run, `q` quits. A Run shows state counts, validation,
-durations, budgets, executed and reused counts, spent and saved usage, running
-evals, waiting Human requests and errors above an
-Artifact/eval tree built from the saved definitions: families group their
-instances (collapsed until expanded with `l`/→ or Enter), each eval shows its
-status glyph and dependency Artifacts, `⇐` rows show child/mount/reference inputs,
-and `↻` marks cycles. The right pane details the selected Artifact, family or
-request: result, actual and requested profile, fingerprint, reuse source, claim, tool
-calls, usage and errors (PgUp/PgDn scroll; Esc returns to the list). The monitor
-only reads the state database (read-only connections): it runs no owner code,
-needs no repository, and keeps the last data with an error line if a read fails.
+The monitor always catalogs every repository in this state. The current directory
+(including a Git subdirectory), `--repo`, or `--all` only sets the first selection.
+It has three panes:
 
-On a WAITING_HUMAN eval, `o` hands the terminal to
-[`artifactize review REQUEST_ID`](#review) with the monitor's state directory and
-its `--repo` or `--all` scope. The monitor leaves the alternate screen, waits for
-the review to exit, then restores the screen and refreshes; a failed review leaves
-its last error line until the next key. Claims, tools and submissions happen in
-that separate process; the monitor itself keeps only read-only connections.
+- **Repository / worktree.** Git clones group by their common Git directory, with
+  an ALL row for the entire state and another ALL row for each repository. Git's
+  NUL-delimited worktree list also exposes worktrees with no Runs. Non-Git and
+  deleted legacy paths remain visible without guessing a missing repository
+  identity. New Runs record optional `commonDir`, `worktreePath` and `branch` while
+  preserving their artifactize `repoPath` workspace. Existing schema-5 state needs
+  no migration or reset. `?N`, `RED N` and a running indicator summarize attention
+  independently of the visible Run page; followers of one Human execution count
+  as one waiting sign-off.
+- **Runs.** The selected repository/worktree's Runs, newest first. Scope filtering
+  happens before paging, so a repository remains reachable even beyond the latest
+  100 global Runs. Moving past the end loads older Runs.
+- **Artifacts and evals.** The selected Run's saved definitions and requests, not
+  a re-evaluation of current files. Families group instances; ←/→ or Space expands
+  or collapses them. `⇐` rows show child/mount/reference inputs and `↻` marks cycles.
+  The Run summary shows validation, request counts, budgets, executed/reused work,
+  spent/saved usage and currently running or waiting evals.
+
+Tab/Shift-Tab changes panes, arrows or `j`/`k` select, `r` refreshes and `q` quits.
+Enter on a Run focuses its artifact tree; Enter or `o` on a tree item opens its
+modal. Click focuses/selects, double-click opens a tree detail and the wheel
+scrolls the pointed pane. F2 toggles mouse capture so the terminal can select text;
+bracketed keyboard paste works with capture on or off. Esc closes a modal (or
+cancels its running tool first). Modal clicks never reach the underlying lists.
+
+Detail depends on the eval kind:
+
+- **Agent:** summary/result on the left, saved conversation on the right. A missing
+  recorded local session explains session GC and `limits.json`'s `agentSessions`;
+  never-saved and remote/unavailable conversations are distinguished. Display is
+  bounded to 2 MiB; `session show` reads the full file. Live streaming is not added.
+- **Runtime:** saved stdout/stderr, exit code and capture truncation. Running,
+  timeout/cancellation and remote summary-only results honestly show logs as
+  unavailable; there is no new live-log recorder.
+- **Human:** completed result, or an explicit **CLAIM → REVIEW** flow. Claim (`c`)
+  enables tools on the left and GREEN/RED fields on the right. Request instructions
+  stay visible above them in CLAIM and REVIEW; the wheel there or Ctrl-PgUp/PgDn
+  scrolls long criteria without scrolling the form. GREEN/RED (`g`/`r`
+  before editing, Ctrl-G/Ctrl-R while editing) selects the existing schema form.
+  Flat schemas retain typed fields; nested/array schemas use a JSON template edited
+  inside the TUI, never `$EDITOR`. Enter inserts a JSON newline; Ctrl-S or Submit
+  submits. Shift-Tab switches between tools and fields; Tab moves flat fields or
+  indents JSON. Run tool/Enter in the tool pane preserves first-command
+  confirmation and cancellation. Release (`u`, or Ctrl-U while editing) unclaims.
+  Refresh, closing/reopening a modal and verdict switches retain drafts. Ordinary
+  letters in fields are input, not global shortcuts.
+
+Browsing uses read-only state queries and cached Git discovery, not configuration
+rediscovery or fingerprints on each refresh. Only explicit Human actions write or
+run owner tools, through the same atomic claim, fingerprint recheck, schema
+validation and `submit_and_publish` APIs as `review`. Followers resolve to their
+original request. If remote publishing fails after local settlement, the modal
+shows the completed local result and the publication failure instead of offering
+another submission. Closing a Human modal keeps its claim; Release relinquishes
+it. Terminal modes, cursor, mouse capture and paste are restored on exit.
