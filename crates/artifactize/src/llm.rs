@@ -39,6 +39,9 @@ const ATTEMPTS: usize = 3;
 const RETRY_BACKOFF_BASE: Duration = Duration::from_millis(250);
 /// Bound sanitized provider diagnostics retained in errors and audit records.
 const MAX_DIAGNOSTIC_CHARS: usize = 4096;
+/// Messages requires a per-turn output limit. Allow room for reasoning and verdict text
+/// while bounding one response; this is independent of the review-wide maxTokens budget.
+const ANTHROPIC_OUTPUT_TOKENS: u64 = 16_384;
 
 pub enum Client {
     Openai(Box<Model<openai::responses_api::wire::Responses>>),
@@ -182,8 +185,7 @@ impl Client {
         match self {
             Self::Openai(model) => model.stream_observed(request, observed),
             Self::Anthropic(model) => {
-                // Messages requires a per-turn output cap, unrelated to the review's maxTokens budget.
-                request.max_tokens = Some(16_384);
+                request.max_tokens = Some(ANTHROPIC_OUTPUT_TOKENS);
                 model.stream_observed(request, observed)
             }
             // Each turn reads the credentials afresh, refreshing them when due.

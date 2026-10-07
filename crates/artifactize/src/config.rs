@@ -45,12 +45,13 @@ impl ConfigError {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Backend {
-    Openai,
+    // Preserve lexicographic wire-name ordering in maps that used String keys.
     Anthropic,
     Codex,
+    Openai,
 }
 
 /// Backends that 0.5.0 removed; a declaration naming one fails with its replacements.
@@ -72,6 +73,16 @@ impl<'de> Deserialize<'de> for Backend {
                 &["openai", "anthropic", "codex"],
             )),
         }
+    }
+}
+
+impl std::fmt::Display for Backend {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Openai => "openai",
+            Self::Anthropic => "anthropic",
+            Self::Codex => "codex",
+        })
     }
 }
 

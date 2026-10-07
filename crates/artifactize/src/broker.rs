@@ -371,9 +371,14 @@ impl Scheduler<'_, '_> {
                     // needs one of its slots. The claim is probed first, so a request that would
                     // reuse or join takes no slot; one that would start waits for a slot without
                     // holding a job slot or an executor start.
-                    let limited = request.options.backend.as_deref().and_then(|backend| {
-                        Some((backend.to_owned(), self.limits.limit(backend)?))
-                    });
+                    let limited = match &request.profile {
+                        crate::config::StoredProfile::Agent { backend, .. } => request
+                            .options
+                            .backend
+                            .as_ref()
+                            .and_then(|name| Some((name.clone(), self.limits.limit(*backend)?))),
+                        _ => None,
+                    };
                     let mut claim = claim(
                         self.receipts,
                         self.remote.as_deref(),
