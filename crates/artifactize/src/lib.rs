@@ -10,6 +10,7 @@ pub mod config;
 pub mod diagnostics;
 pub mod graph;
 pub mod human;
+mod json;
 pub mod limits;
 pub mod llm;
 pub mod monitor;

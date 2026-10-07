@@ -134,6 +134,29 @@ fn json_and_line_files_select_the_same_ordered_evals() {
 
 #[test]
 fn selection_files_validate_before_deduplication_and_never_fallback_from_json() {
+    for malformed in [
+        "[broken",
+        "[1,",
+        "[null,]",
+        "[{}] trailing",
+        "[null,1e400]",
+        "[null,{\"nested\":[1e400]}]",
+    ] {
+        assert_eq!(
+            parse_selection_file(malformed).unwrap_err(),
+            "Selection file contains invalid JSON."
+        );
+    }
+    assert_eq!(
+        parse_selection_file("\u{feff}[\"x\",\"y\",\"x\"]\r\n").unwrap(),
+        ["x", "y"]
+    );
+    assert_eq!(
+        parse_selection_file("\u{feff} x\r\n y\r\n").unwrap(),
+        ["x", "y"]
+    );
+    // Non-array-looking input remains the line-file form, not JSON fallback.
+    assert_eq!(parse_selection_file("null\r\n17").unwrap(), ["null", "17"]);
     assert_eq!(
         parse_selection_file("[broken").unwrap_err(),
         "Selection file contains invalid JSON."
@@ -144,6 +167,7 @@ fn selection_files_validate_before_deduplication_and_never_fallback_from_json() 
         "[]",
         "[null]",
         "[1]",
+        "[18446744073709551616]",
         "[{}]",
         "[\"\"]",
         "[\" x\"]",

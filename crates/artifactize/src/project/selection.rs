@@ -7,7 +7,6 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::{
     config::{Eval, RepoConfig, identifier},
@@ -242,21 +241,15 @@ pub fn parse_selection_file(text: &str) -> Result<Vec<String>, String> {
         return Err("Selection file exceeds 4 MiB.".into());
     }
     let ids: Vec<String> = if trim(text).starts_with('[') {
-        let value: Value = serde_json::from_str(text)
-            .map_err(|_| "Selection file contains invalid JSON.".to_owned())?;
-        let values = value.as_array().ok_or(FILE_FORMAT_ERROR)?;
-        if values.is_empty() || values.len() > MAX_IDS {
-            return Err(FILE_FORMAT_ERROR.into());
-        }
-        values
-            .iter()
-            .map(|value| {
-                value
-                    .as_str()
-                    .map(str::to_owned)
-                    .ok_or_else(|| FILE_FORMAT_ERROR.to_owned())
-            })
-            .collect::<Result<_, _>>()?
+        serde_json::from_str::<Vec<String>>(text).map_err(|error| {
+            // A valid array containing a non-string is a format error, not broken JSON.
+            // Validate only syntax after a data error, preserving malformed-array precedence.
+            if error.is_data() && serde_json::from_str::<crate::json::Ignored>(text).is_ok() {
+                FILE_FORMAT_ERROR.to_owned()
+            } else {
+                "Selection file contains invalid JSON.".to_owned()
+            }
+        })?
     } else {
         text.split('\n')
             .map(trim)
