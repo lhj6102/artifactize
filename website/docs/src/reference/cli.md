@@ -33,7 +33,8 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `cache show KEY` | `--history` | JSON | 0; 4 missing |
 | `cache rm KEY` | | JSON | 0 |
 | `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 0 ready, 1 not |
-| `login codex`, `logout codex` | sign-in URL on stderr; a pasted redirect URL on stdin | text or JSON | 0 |
+| `login codex` | sign-in URL on stderr; may read a pasted redirect URL from terminal stdin | text or JSON | 0 |
+| `logout codex` | revokes and removes artifactize's stored tokens; leaves read-only auth files alone | text or JSON | 0 |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
 | `remote logout` | | text or JSON | 0 |
 | `remote status` | | text or JSON | 0 signed in, 1 not |
