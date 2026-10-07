@@ -178,7 +178,7 @@ fn restrict(handle: HANDLE, directory: bool) -> io::Result<()> {
 /// user, or Administrators or SYSTEM, who can take ownership of anything anyway; and every
 /// ACE that grants access to the object names the current user. Deny ACEs and inherit-only
 /// ACEs grant nothing here; any other kind of ACE fails the check, as does a NULL DACL.
-fn is_owner_only(handle: HANDLE) -> io::Result<bool> {
+pub(crate) fn is_owner_only(handle: HANDLE) -> io::Result<bool> {
     let mut owner: PSID = ptr::null_mut();
     let mut dacl: *mut ACL = ptr::null_mut();
     let mut descriptor = ptr::null_mut();
@@ -257,21 +257,9 @@ fn is_owner_only(handle: HANDLE) -> io::Result<bool> {
 /// A protected DACL with one ACE granting the current user full control. A directory's ACE
 /// is inherited by the files and subdirectories created in it.
 fn owner_only(directory: bool) -> io::Result<Local> {
-    let user = current_user()?;
-    let mut text = ptr::null_mut();
-    // SAFETY: a valid SID; the string is allocated by LocalAlloc and freed by `Local`.
-    if unsafe { ConvertSidToStringSidW(user.sid(), &mut text) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    let text = Local(text.cast());
-    // SAFETY: ConvertSidToStringSidW returned a NUL-terminated string.
-    let sid = unsafe {
-        let start = text.0.cast::<u16>();
-        let length = (0..).take_while(|&index| *start.add(index) != 0).count();
-        String::from_utf16_lossy(slice::from_raw_parts(start, length))
-    };
+    let sid = user_identity()?;
     let inheritance = if directory { "OICI" } else { "" };
-    let sddl: Vec<u16> = format!("D:P(A;{inheritance};FA;;;{sid})")
+    let sddl: Vec<u16> = format!("O:{sid}D:P(A;{inheritance};FA;;;{sid})")
         .encode_utf16()
         .chain([0])
         .collect();
@@ -289,6 +277,39 @@ fn owner_only(directory: bool) -> io::Result<Local> {
         return Err(io::Error::last_os_error());
     }
     Ok(Local(descriptor))
+}
+
+/// Stable current-token SID, not an environment-provided username.
+pub(crate) fn user_identity() -> io::Result<String> {
+    let user = current_user()?;
+    let mut text = ptr::null_mut();
+    // SAFETY: a valid SID; the string is allocated by LocalAlloc and freed by `Local`.
+    if unsafe { ConvertSidToStringSidW(user.sid(), &mut text) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let text = Local(text.cast());
+    // SAFETY: ConvertSidToStringSidW returned a NUL-terminated string.
+    let sid = unsafe {
+        let start = text.0.cast::<u16>();
+        let length = (0..).take_while(|&index| *start.add(index) != 0).count();
+        String::from_utf16_lossy(slice::from_raw_parts(start, length))
+    };
+    Ok(sid)
+}
+
+/// Create a named-pipe instance with the same owner-only security used for private files.
+pub(crate) fn private_pipe(
+    options: &tokio::net::windows::named_pipe::ServerOptions,
+    address: &Path,
+) -> io::Result<tokio::net::windows::named_pipe::NamedPipeServer> {
+    let descriptor = owner_only(false)?;
+    let mut attributes = SECURITY_ATTRIBUTES {
+        nLength: mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: descriptor.0,
+        bInheritHandle: 0,
+    };
+    // SAFETY: valid SECURITY_ATTRIBUTES and descriptor kept alive through the create call.
+    unsafe { options.create_with_security_attributes_raw(address, (&raw mut attributes).cast()) }
 }
 
 /// Memory from LocalAlloc, freed on drop.

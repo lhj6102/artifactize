@@ -10,7 +10,7 @@ use tokio_rusqlite::Connection;
 
 use super::{
     DATABASE, Execution,
-    receipts::{Error, schema_initialized},
+    receipts::{Error, NotifyingConnection, schema_initialized},
 };
 
 /// Bound retained cache history, including many tiny results; eviction preserves execution audit.
@@ -52,7 +52,7 @@ pub struct Entry {
     pub last_used: String,
 }
 
-async fn open(state: &Path, writable: bool) -> Result<Option<Connection>, String> {
+async fn open(state: &Path, writable: bool) -> Result<Option<NotifyingConnection>, String> {
     let state = crate::workspace::canonical_target(state).map_err(|e| e.to_string())?;
     super::receipts::check_files(&state)?;
     let path = state.join(DATABASE);
@@ -69,6 +69,7 @@ async fn open(state: &Path, writable: bool) -> Result<Option<Connection>, String
     )
     .await
     .map_err(|e| e.to_string())?;
+    let connection = NotifyingConnection::new(connection, &state);
     let initialized = connection
         .call(|db| -> Result<bool, Error> {
             db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;

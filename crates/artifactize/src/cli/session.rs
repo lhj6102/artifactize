@@ -309,7 +309,7 @@ async fn send(
         ),
         files_changed,
     };
-    let mut recorder = Recorder::append(&conversation.path, &located.id, sent.number)?;
+    let mut recorder = Recorder::append(state, &conversation.path, &located.id, sent.number)?;
     let answer = agent::follow_up(
         &config,
         eval,

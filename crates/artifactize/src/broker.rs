@@ -27,9 +27,47 @@ use crate::{
     tools,
 };
 
-/// Notice shared execution/Human settlements and free backend capacity promptly,
-/// while limiting SQLite polling when this scheduler has no local task to await.
-const SCHEDULER_POLL_INTERVAL: Duration = Duration::from_millis(200);
+/// OS owner death and released machine-wide slots have no reliable writer notification.
+/// Bound their reconciliation independently of immediate commit hints and task completion.
+const OWNER_RECONCILE: Duration = Duration::from_secs(1);
+
+/// Once an absolute Human deadline passed, outstanding work still drains but cannot re-arm
+/// an immediately-ready timer. Its next wake is task completion, cancellation or reconciliation.
+fn future_deadline(
+    deadline: Option<tokio::time::Instant>,
+    human_wait: bool,
+) -> Option<tokio::time::Instant> {
+    deadline.filter(|deadline| human_wait && *deadline > tokio::time::Instant::now())
+}
+
+#[cfg(test)]
+mod wake_tests {
+    use super::*;
+    #[tokio::test(start_paused = true)]
+    async fn expired_human_deadline_does_not_spin_while_other_work_drains() {
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(10);
+        assert_eq!(future_deadline(Some(deadline), true), Some(deadline));
+        tokio::time::advance(Duration::from_millis(11)).await;
+        let mut reconcile = tokio::time::interval(OWNER_RECONCILE);
+        reconcile.tick().await;
+        let finished = tokio::time::Instant::now() + Duration::from_secs(3);
+        let mut iterations = 0;
+        loop {
+            iterations += 1;
+            let wake = future_deadline(Some(deadline), true);
+            tokio::select! {
+                biased;
+                _ = tokio::time::sleep_until(finished) => break,
+                _ = tokio::time::sleep_until(wake.unwrap_or_else(tokio::time::Instant::now)), if wake.is_some() => panic!("expired deadline was re-armed"),
+                _ = reconcile.tick() => {},
+            }
+        }
+        assert!(
+            iterations <= 4,
+            "deadline causes a hot scheduler loop: {iterations}"
+        );
+    }
+}
 
 pub(crate) fn now() -> String {
     timestamp(OffsetDateTime::now_utc())
@@ -184,6 +222,12 @@ struct Scheduler<'a, 'g> {
 
 impl Scheduler<'_, '_> {
     async fn run(&mut self) -> Result<BTreeMap<String, Evidence>, String> {
+        // Registration precedes any baseline/scheduling read; racing commits stay dirty.
+        let mut changes = crate::changes::Subscription::new(&self.run.state_dir).await;
+        let mut reconcile = tokio::time::interval(OWNER_RECONCILE);
+        reconcile.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        reconcile.tick().await;
+        let mut remote_due = tokio::time::Instant::now();
         let owner = process::child_identity(std::process::id()).map_err(|e| e.to_string())?;
         let producer = Producer::current();
         // Agent conversations are saved under the state, named by its id and this producer.
@@ -209,9 +253,10 @@ impl Scheduler<'_, '_> {
             .map(|timeout| tokio::time::Instant::now() + timeout);
         loop {
             let completed = evidence.len();
-            // A remote result for a waiting Human key settles it locally (each Human wait poll).
-            // A forced Run never reads from the store.
+            // Optional team-store lookups retain their separate due cadence; local session
+            // events and cached redraws never schedule remote work. Forced Runs read none.
             if let Some(remote) = &self.remote
+                && tokio::time::Instant::now() >= remote_due
                 && !self.cancellation.is_cancelled()
                 && !self.run.force
             {
@@ -225,6 +270,7 @@ impl Scheduler<'_, '_> {
                     .filter_map(|request| request.key.clone())
                     .collect();
                 remote.refresh(self.receipts, keys).await?;
+                remote_due = tokio::time::Instant::now() + crate::remote::REFRESH_INTERVAL;
             }
             let human_ids: Vec<_> = self
                 .requests
@@ -516,9 +562,16 @@ impl Scheduler<'_, '_> {
                         }
                         Claim::BudgetExhausted => {
                             waiting.remove(&index);
-                            request.status = crate::types::RequestStatus::BudgetExhausted;
-                            request.blocked_reason = Some(budget_reason(self.run));
-                            self.receipts.save_request(request).await?;
+                            let reason = budget_reason(self.run);
+                            // Keep looking for reuse, but an unchanged budget decision cannot
+                            // create a self-notification → write → notification hot loop.
+                            if request.status != crate::types::RequestStatus::BudgetExhausted
+                                || request.blocked_reason.as_deref() != Some(reason.as_str())
+                            {
+                                request.status = crate::types::RequestStatus::BudgetExhausted;
+                                request.blocked_reason = Some(reason);
+                                self.receipts.save_request(request).await?;
+                            }
                             continue;
                         }
                         Claim::Owned => {}
@@ -620,12 +673,10 @@ impl Scheduler<'_, '_> {
                     break;
                 }
             }
-            let poll = deadline
-                .filter(|_| human_wait)
-                .map(|deadline| deadline.saturating_duration_since(tokio::time::Instant::now()))
-                .filter(|remaining| !remaining.is_zero())
-                .unwrap_or(SCHEDULER_POLL_INTERVAL)
-                .min(SCHEDULER_POLL_INTERVAL);
+            let waiting_external =
+                !waiting.is_empty() || !capacity_waiting.is_empty() || human_wait;
+            let wake_deadline = future_deadline(deadline, human_wait);
+            let deadline_at = wake_deadline.unwrap_or_else(tokio::time::Instant::now);
             tokio::select! {
                 biased;
                 result = self.tasks.join_next(), if !self.tasks.is_empty() => {
@@ -646,7 +697,10 @@ impl Scheduler<'_, '_> {
                     self.requests[index] = request;
                 }
                 _ = self.cancellation.cancelled(), if !cancelled => {},
-                _ = tokio::time::sleep(poll), if (!waiting.is_empty() || !capacity_waiting.is_empty() || human_wait) && !cancelled => {},
+                _ = changes.next_state(), if !cancelled => {},
+                _ = reconcile.tick(), if waiting_external && !cancelled => {},
+                _ = tokio::time::sleep_until(deadline_at), if wake_deadline.is_some() && !cancelled => {},
+                _ = tokio::time::sleep_until(remote_due), if human_wait && self.remote.is_some() && !self.run.force && !cancelled => {},
             }
         }
         Ok(evidence)

@@ -113,6 +113,11 @@ fn running(state: &Path) -> Result<BTreeSet<SessionId>, String> {
 /// then found RUNNING were saved after their request turned RUNNING, so a review that starts
 /// during a collection is either seen as running or not listed at all.
 pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Collection, String> {
+    let publisher = if dry_run {
+        crate::changes::Publisher::default()
+    } else {
+        crate::changes::Publisher::new(state)
+    };
     let mut entries = entries(state)?;
     let bytes = entries.iter().map(|entry| entry.bytes).sum();
     let mut collection = Collection {
@@ -146,7 +151,9 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
                 Err(error) => return Err(error.to_string()),
             };
             match fs::remove_file(directory.join(format!("{}.jsonl", entry.id))) {
-                Ok(()) => {}
+                Ok(()) => {
+                    publisher.notify(crate::changes::Change::SessionInvalidated(entry.id.clone()))
+                }
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => {
                     return Err(format!("Cannot remove Agent session {}: {error}", entry.id));

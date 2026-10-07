@@ -58,8 +58,8 @@ use super::FileKind;
 
 pub(crate) use process::{Child, process_start_time, spawn_detached, spawn_gated};
 pub(crate) use security::{
-    create_private_dir, create_private_dir_all, is_private_dir, is_private_file, private_options,
-    private_tempdir_in, restrict_file,
+    create_private_dir, create_private_dir_all, is_owner_only, is_private_dir, is_private_file,
+    private_options, private_pipe, private_tempdir_in, restrict_file, user_identity,
 };
 
 /// Reparse tags with this bit name another file: symbolic links, junctions and mount points.

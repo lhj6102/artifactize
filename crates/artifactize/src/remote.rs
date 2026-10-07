@@ -3,6 +3,7 @@
 mod push;
 mod session;
 pub use push::{Push, push};
+pub(crate) use session::REFRESH as REFRESH_INTERVAL;
 pub use session::Session;
 
 use std::{collections::BTreeMap, path::PathBuf};

@@ -33,7 +33,7 @@ use crate::{
     tools::human::{CommandLine, Content, ToolResult},
 };
 
-/// Observe claim/settlement changes without continuously polling shared SQLite.
+/// Redraw cached claim times and durations; database refresh uses invalidation hints.
 const REFRESH: Duration = Duration::from_secs(1);
 /// Animate running tools at ten frames per second, independently of database refresh.
 const SPIN: Duration = Duration::from_millis(100);
@@ -952,12 +952,13 @@ async fn drive(
     mut review: Review,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
+    let mut changes = crate::changes::Subscription::new(&review.state).await;
     let mut events = EventStream::new();
     let mut tick = tokio::time::interval(REFRESH);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut spin = tokio::time::interval(SPIN);
     let mut pending: Option<Pin<Box<dyn Future<Output = Outcome>>>> = None;
-    let mut action = Action::None;
+    let mut action = Action::Refresh;
     loop {
         loop {
             action = match action {
@@ -994,7 +995,11 @@ async fn drive(
                 review.finish(outcome)
             }
             _ = spin.tick(), if review.busy() => Action::None,
-            _ = tick.tick() => Action::Refresh,
+            _ = tick.tick() => Action::None,
+            change = changes.next() => match change {
+                crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => Action::Refresh,
+                crate::changes::Change::SessionInvalidated(_) => Action::None,
+            },
             event = events.next() => match event {
                 Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => review.key(key),
                 Some(Ok(_)) => Action::None,

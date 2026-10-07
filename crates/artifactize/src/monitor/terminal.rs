@@ -61,6 +61,7 @@ async fn watch(
     mut monitor: Monitor,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
+    let mut changes = crate::changes::Subscription::new(&monitor.state).await;
     let mut events = EventStream::new();
     let mut tick = tokio::time::interval(REFRESH);
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -117,7 +118,12 @@ async fn watch(
                 }
             }
             _ = spin.tick(), if pending.is_some() => Action::None,
-            _ = tick.tick() => Action::Refresh,
+            _ = tick.tick() => Action::None,
+            change = changes.next() => match change {
+                crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => Action::Refresh,
+                // The future live session viewer consumes these without a full DB read.
+                crate::changes::Change::SessionInvalidated(_) => Action::None,
+            },
             event = events.next() => match event {
                 Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => monitor.key(key),
                 Some(Ok(Event::Mouse(mouse))) => monitor.mouse(mouse),

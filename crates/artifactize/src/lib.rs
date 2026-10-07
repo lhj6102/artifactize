@@ -4,6 +4,7 @@ pub mod agent;
 pub mod auth;
 pub mod broker;
 pub mod cache;
+pub mod changes;
 pub mod cli;
 pub mod config;
 pub mod diagnostics;

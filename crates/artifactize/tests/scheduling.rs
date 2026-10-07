@@ -112,6 +112,46 @@ fn signal(child: &Child, signal: &str) {
     }
 }
 
+#[test]
+fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
+    let fixture = Fixture::new(vec![eval("slow", SLOW), eval("over-budget", "true")]);
+    let child = fixture.spawn(&["--jobs", "2", "--max-executions", "1"]);
+    wait_until(|| fixture.starts().len() == 1 && fixture.state.join("state.sqlite").exists());
+    let database = Connection::open(fixture.state.join("state.sqlite")).unwrap();
+    database.busy_timeout(Duration::from_secs(5)).unwrap();
+    database.execute_batch("CREATE TABLE fixture_update_count(count INTEGER); INSERT INTO fixture_update_count VALUES(0); CREATE TRIGGER fixture_budget_updates AFTER UPDATE ON requests WHEN NEW.status='BUDGET_EXHAUSTED' BEGIN UPDATE fixture_update_count SET count=count+1; END;").unwrap();
+    thread::sleep(Duration::from_millis(350));
+    let count: i64 = database
+        .query_row("SELECT count FROM fixture_update_count", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert!(
+        count <= 2,
+        "self-invalidations repeatedly rewrote a budget decision: {count}"
+    );
+    fs::write(fixture.repo.join("release"), "finish").unwrap();
+    let run = finish(child, 4);
+    assert_eq!(run["executionsStarted"], 1);
+    assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
+}
+
+#[test]
+fn expired_human_deadline_still_drains_parallel_runtime_without_rewriting_waiter() {
+    let fixture = Fixture::new(vec![
+        json!({"id":"human","title":"Human","profile":{"kind":"human"},"payload":{"instruction":"Review."}}),
+        eval("slow", SLOW),
+    ]);
+    let child = fixture.spawn(&["--jobs", "2", "--timeout-ms", "10"]);
+    wait_until(|| fixture.starts().len() == 1);
+    thread::sleep(Duration::from_millis(100));
+    fs::write(fixture.repo.join("release"), "finish").unwrap();
+    let run = finish(child, 3);
+    assert_eq!(run["waitTimedOut"], true);
+    assert_eq!(run["requests"][0]["status"], "WAITING_HUMAN");
+    assert_eq!(run["requests"][1]["status"], "GREEN");
+}
+
 const SLOW: &str = "printf 'start %s\n' \"$1\" >> events; while [ ! -e release ]; do sleep 0.02; done; sleep 0.1; printf 'end %s\n' \"$1\" >> events";
 
 #[test]

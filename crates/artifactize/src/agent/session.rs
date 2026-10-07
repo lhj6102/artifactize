@@ -148,6 +148,7 @@ pub struct Recorder {
     file: Option<File>,
     /// The follow-up whose events this appends.
     send: Option<usize>,
+    publisher: crate::changes::Publisher,
 }
 
 impl Recorder {
@@ -159,6 +160,7 @@ impl Recorder {
             reference: None,
             file: None,
             send: None,
+            publisher: crate::changes::Publisher::default(),
         }
     }
 
@@ -193,6 +195,7 @@ impl Recorder {
         };
         Self {
             target: Some((file, identity)),
+            publisher: crate::changes::Publisher::new(&saving.state),
             ..Self::off(id)
         }
     }
@@ -219,6 +222,7 @@ impl Recorder {
 
     /// Append follow-up `send` to the saved conversation at `path`.
     pub(crate) fn append(
+        state: &Path,
         path: &Path,
         id: &crate::types::SessionId,
         send: usize,
@@ -228,6 +232,7 @@ impl Recorder {
         Ok(Self {
             file: Some(file),
             send: Some(send),
+            publisher: crate::changes::Publisher::new(state),
             ..Self::off(id)
         })
     }
@@ -315,6 +320,9 @@ impl Recorder {
         line.push(b'\n');
         if let Err(error) = file.write_all(&line).and_then(|()| file.flush()) {
             self.fail(&error.to_string());
+        } else {
+            self.publisher
+                .notify(crate::changes::Change::SessionInvalidated(self.id.clone()));
         }
     }
 
