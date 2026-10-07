@@ -36,6 +36,9 @@ const FINGERPRINT_INPUT_VERSION: u32 = 1;
 /// Keep per-file change explanations compact with 8 digest bytes (16 hex characters).
 /// This diagnostic prefix is not identity: content fingerprints/reuse keys retain full SHA-256.
 const MANIFEST_DIGEST_PREFIX_BYTES: usize = 8;
+/// Domain-separate and version the reuse-key hash input, including its terminating newline.
+/// Changing these bytes invalidates existing reuse keys; this is not a config/session/DB version.
+const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v1\n";
 
 /// Hash the eval strategy: what is asked and how the answer is judged, never how the eval
 /// is executed. Execution options (backend, model, reasoning, limits, the profile variant),
@@ -134,7 +137,7 @@ pub fn key(
     fingerprints: &BTreeMap<String, crate::types::Fingerprint>,
 ) -> crate::types::ReuseKey {
     let mut digest = Sha256::new();
-    digest.update(format!("artifactize-key-v1\neval {eval_def_hash}\n"));
+    digest.update(format!("{REUSE_KEY_FORMAT_PREFIX}eval {eval_def_hash}\n"));
     // Names are identifiers and fingerprints never contain spaces or line breaks.
     for (name, fingerprint) in fingerprints {
         digest.update(format!("artifact {name} {fingerprint}\n"));
