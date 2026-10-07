@@ -8,8 +8,9 @@ bounded, and the local diagnostics and maintenance commands.
 
 One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 5),
 with the canonical repository path recorded on each Run. The state home is
-`$ARTIFACTIZE_STATE_HOME`, falling back to `$XDG_STATE_HOME/artifactize` or
-`~/.local/state/artifactize`. `--state-dir PATH` moves the whole state, including
+`$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
+`%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
+`--state-dir PATH` moves the whole state, including
 private output directories under `PATH/runs`. Saved Runs stay readable after the
 original repository is removed. State/output inside the reviewed repository is
 rejected, including through symlink ancestors; database files and their WAL sidecars
@@ -32,9 +33,10 @@ id, a random UUID made when the database is created (row `id`), which
 conversation and its tool calls, is not in the state: it is in the review's
 [saved session](#agent-sessions).
 
-There is no migration. A state written by an earlier artifactize (schema 1 to 4,
-artifactize 0.1 to 0.5) is refused by every command that reads or writes it, with
-exit code 2 and this message, and left as it is:
+There is no migration. Commands that read or write a state written by an earlier
+artifactize (schema 1 to 4, artifactize 0.1 to 0.5) refuse it with exit code 2 and
+this message, leaving it as it is. `doctor` instead includes the same message in
+its hard-error report and exits 1:
 
 ```text
 This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). artifactize does not migrate it.
@@ -240,8 +242,8 @@ file. It reports the resolved state directory and tests writability with a tempo
 directory, removed immediately (in the nearest existing ancestor when state does
 not yet exist). It reads the state database's schema without changing the file: a
 database [written by an earlier artifactize](#state) (schema 1 to 4) or by a newer
-one is a hard error, with the message other commands refuse it with and its `schema`
-and the `supported` one in the details. `--repo`
+one is a hard error (exit 1), with the message other commands refuse it with and
+its `schema` and the `supported` one in the details. `--repo`
 additionally runs the same static validation as `config check`. The `limits` check
 reads [`limits.json`](#backend-capacity) and reports the backend capacity (an
 invalid file is a hard error). The `sessions` check reports the

@@ -45,7 +45,8 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `review [REQUEST_ID]` | `--all` (not with `--repo`), `--reviewer NAME` (`$USER`) | terminal UI | 0 |
 | `server run` | `--listen ADDR` (`127.0.0.1:8417`) | listening address | 0 |
 | `server token add NAME` | `--scopes read,publish,human` | the token, once | 0 |
-| `server token list`, `server token revoke NAME` | `--purge` (revoke) | text or JSON | 0 |
+| `server token list` | | text or JSON | 0 |
+| `server token revoke NAME` | `--purge` | JSON (also without `--json`) | 0 |
 | `server rm KEY` | | JSON | 0 |
 
 Run outcome codes (`verify`, `run show --wait`): 0 GREEN, 1 RED, 2 ERROR or
@@ -72,9 +73,10 @@ changed; `--json` prints `{"reference","sessionId","requestId","send","filesChan
 Both exit 2 for a reference to another machine or state, a session the GC removed, one
 that was not saved, a request that is still running (`send`), and a failed follow-up.
 
-Every command that reads or writes the state exits 2 when the state was written by an
-earlier artifactize, which it does not migrate
-([State](state-cache-limits.md#state)); `doctor` reports such a state as a hard error.
+Commands that read or write the state refuse a database written by an earlier
+artifactize with exit 2, without migrating it ([State](state-cache-limits.md#state)).
+`doctor` is the exception: it reports an incompatible schema as a hard error in its
+normal text or JSON report and exits 1.
 
 ## Runtime CLI
 

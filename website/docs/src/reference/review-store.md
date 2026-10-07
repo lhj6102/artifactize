@@ -30,8 +30,8 @@ Scopes are `read` (look up), `publish` (publish runtime and Agent records) and
 `human` (additionally publish Human sign-offs, together with `publish`). Give
 untrusted CI `read` only. `token list` shows names, scopes and creation/revocation
 times, never tokens. `token revoke NAME` rejects the token at once; `--purge`
-also deletes every record it published, and may be repeated later. Names of revoked
-tokens are never reused. `rm KEY` deletes every record of a key and prints
+also deletes every record it published, and may be repeated later. Revocation always
+prints a JSON report, even without `--json`. Names of revoked tokens are never reused. `rm KEY` deletes every record of a key and prints
 `{"removed":true}` (false if absent).
 
 The API takes `Authorization: Bearer TOKEN` and answers JSON (`{"error":...}` on
