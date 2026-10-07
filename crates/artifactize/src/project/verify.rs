@@ -100,8 +100,9 @@ pub async fn verify(
         .into_iter()
         .collect();
     let evals = selection.included_evals(&config, options.recursive)?;
-    let definitions = serde_json::to_value(crate::query::graph(&config, selection)?)
-        .map_err(|error| error.to_string())?;
+    let definitions =
+        store::definitions::Definitions::from_view(&crate::query::graph(&config, selection)?)
+            .map_err(|error| error.to_string())?;
     let state = store::state_dir(state_dir)?;
     let limits = crate::limits::Limits::read(&state)?;
     let receipts = Receipts::open(&state, &config.root).await?;
@@ -167,7 +168,7 @@ pub async fn verify(
         fingerprint_jobs: Some(parallelism.limit()),
         max_executions: options.max_executions,
         executions_started: 0,
-        wait_timeout_ms: Some(wait_timeout_ms),
+        wait_timeout_ms: Some(Duration::from_millis(u64::from(wait_timeout_ms))),
         wait_timed_out: false,
         reuse_only: options.reuse_only.clone(),
         recursive: options.recursive,

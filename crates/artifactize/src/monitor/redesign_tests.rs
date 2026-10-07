@@ -362,7 +362,9 @@ async fn selected_last_page_run_and_artifact_modal_survive_new_runs() {
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
     for n in 0..100 {
         let mut run = saved_run(&format!("run-{n}"), &repo, &state, Default::default());
-        run.definitions = json!({"artifacts":{"artifact":{"path":format!("path-{n}")}}});
+        run.definitions =
+            serde_json::from_value(json!({"artifacts":{"artifact":{"path":format!("path-{n}")}}}))
+                .unwrap();
         receipts.create_run(&run, &[]).await.unwrap();
     }
     let mut monitor = Monitor::new(state.clone(), None);

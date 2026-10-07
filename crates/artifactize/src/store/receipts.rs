@@ -83,7 +83,7 @@ pub struct Run {
     #[serde(default)]
     pub profile: Option<crate::project::selection::ProfileSelection>,
     #[serde(default)]
-    pub definitions: Value,
+    pub definitions: super::definitions::Definitions,
     #[serde(default)]
     pub recursive: bool,
     #[serde(default)]
@@ -99,8 +99,8 @@ pub struct Run {
     pub max_executions: Option<u64>,
     #[serde(default)]
     pub executions_started: u64,
-    #[serde(default)]
-    pub wait_timeout_ms: Option<u32>,
+    #[serde(default, with = "super::wait_timeout")]
+    pub wait_timeout_ms: Option<Duration>,
     #[serde(default)]
     pub wait_timed_out: bool,
     /// Kinds whose evals only reuse a result; one with nothing to reuse is not executed.

@@ -7,6 +7,7 @@ use std::{
 
 use crate::workspace::canonical_target;
 
+pub mod definitions;
 mod executions;
 pub(crate) mod history;
 mod human;
@@ -16,6 +17,7 @@ pub mod prune;
 mod receipts;
 mod runs;
 mod validation;
+mod wait_timeout;
 pub use catalog::{CatalogRun, Signoff, read_catalog};
 pub use runs::{RunSummary, read_runs, read_scoped_runs};
 mod requests;

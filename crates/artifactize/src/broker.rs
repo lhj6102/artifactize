@@ -206,7 +206,7 @@ impl Scheduler<'_, '_> {
         let deadline = self
             .run
             .wait_timeout_ms
-            .map(|ms| tokio::time::Instant::now() + Duration::from_millis(u64::from(ms)));
+            .map(|timeout| tokio::time::Instant::now() + timeout);
         loop {
             let completed = evidence.len();
             // A remote result for a waiting Human key settles it locally (each Human wait poll).

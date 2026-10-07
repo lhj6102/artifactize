@@ -363,11 +363,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     let mut all = Vec::new();
     flatten(&nodes, &mut all);
     let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
-    for id in view.run.definitions["artifacts"]
-        .as_object()
-        .unwrap()
-        .keys()
-    {
+    for (id, _) in view.run.definitions.graph().unwrap().artifacts() {
         assert_eq!(
             all.iter()
                 .filter(|node| node.id == format!("a:{id}"))

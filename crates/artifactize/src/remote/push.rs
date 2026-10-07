@@ -74,12 +74,8 @@ pub async fn push(
                 .await
                 .map_err(|failure| failure.message)?
                 .into_iter()
-                .filter_map(|entry| {
-                    Some((
-                        entry["key"].as_str()?.to_owned(),
-                        entry["executionId"].as_str()?.to_owned(),
-                    ))
-                })
+                .filter_map(Result::ok)
+                .map(|entry| (entry.key.to_string(), entry.execution_id.to_string()))
                 .collect()
         } else {
             BTreeSet::new()
