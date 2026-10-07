@@ -3,7 +3,10 @@
 pub mod selection;
 
 mod status;
-pub use status::{ArtifactState, Counts, EvalState, StatusView, status};
+pub use status::{
+    ArtifactCondition, ArtifactState, Counts, EvalCondition, EvalState, StatusView, VerifyAction,
+    status,
+};
 
 mod verify;
 pub use verify::{DEFAULT_HUMAN_WAIT, DEFAULT_JOBS, VerifyOptions, verify};

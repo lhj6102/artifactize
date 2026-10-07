@@ -1,3 +1,8 @@
+mod states;
+pub use states::{ArtifactCondition, EvalCondition, VerifyAction};
+#[cfg(test)]
+mod tests;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
@@ -9,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     cache,
     config::{DependencyGates, Profile, read_workspace_config},
-    graph::{ArtifactStatus, EvalStatus, Evidence, Graph, Readiness},
+    graph::{Evidence, Graph, Readiness},
     project::{VerifyOptions, selection::select_profiles},
     remote::Session,
     store::{self, Claim, LastRequest},
@@ -38,7 +43,7 @@ pub struct StatusView {
 pub struct ArtifactState {
     pub id: String,
     pub family: Option<String>,
-    pub state: &'static str,
+    pub state: ArtifactCondition,
     pub reason: String,
     pub eval_ids: Vec<String>,
     pub passed: usize,
@@ -57,8 +62,8 @@ pub struct EvalState {
     pub selected: bool,
     pub included: bool,
     pub force: bool,
-    pub state: &'static str,
-    pub action: &'static str,
+    pub state: EvalCondition,
+    pub action: VerifyAction,
     pub reason: String,
     pub blocked_by: Vec<String>,
     pub obligations: Vec<String>,
@@ -80,8 +85,8 @@ pub struct EvalState {
 
 #[derive(Debug, Default, Serialize)]
 pub struct Counts {
-    pub artifacts: BTreeMap<&'static str, usize>,
-    pub evals: BTreeMap<&'static str, usize>,
+    pub artifacts: BTreeMap<ArtifactCondition, usize>,
+    pub evals: BTreeMap<EvalCondition, usize>,
     pub execute: usize,
     pub reuse: usize,
     pub wait: usize,
@@ -216,7 +221,7 @@ pub async fn status(
     let mut artifacts = Vec::new();
     for id in &required {
         let artifact = &evaluation.artifacts[id];
-        let status = artifact_status(artifact.status);
+        let status = ArtifactCondition::from(artifact.status);
         let own = &graph.artifacts()[id];
         let unmet = graph
             .dependency_closure(&[id])
@@ -265,7 +270,7 @@ pub async fn status(
         let (action, reason) = match current.readiness {
             // verify takes cached results before gates resolve, even behind RED; the state keeps the gate.
             _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
-                "reuse",
+                VerifyAction::Reuse,
                 format!(
                     "The current eval and fingerprints have a completed {}{}{}",
                     match claim(&eval.id) {
@@ -304,11 +309,11 @@ pub async fn status(
                 ),
             ),
             Readiness::Blocked => (
-                "blocked",
+                VerifyAction::Blocked,
                 format!("Dependency verdict RED: {}", current.unmet_gates.join(", ")),
             ),
             Readiness::Wait => (
-                "wait",
+                VerifyAction::Wait,
                 format!(
                     "Waiting for current GREEN dependency evidence: {}",
                     current.unmet_gates.join(", ")
@@ -319,17 +324,17 @@ pub async fn status(
                     && matches!(claim(&eval.id), Some(Claim::Wait(_) | Claim::WaitHuman(_))) =>
             {
                 (
-                    "wait",
+                    VerifyAction::Wait,
                     "The current eval and fingerprints have a live execution.".into(),
                 )
             }
             Readiness::Ready => match eval.declaration.profile {
                 Profile::Human { .. } => (
-                    "execute",
+                    VerifyAction::Execute,
                     "Record a request awaiting a Human claim and submission.".into(),
                 ),
                 Profile::Runtime { .. } | Profile::Agent { .. } => (
-                    "execute",
+                    VerifyAction::Execute,
                     if force {
                         "An explicitly forced Eval requires a new execution.".into()
                     } else {
@@ -343,18 +348,13 @@ pub async fn status(
             },
         };
         let status = if !force && matches!(claim(&eval.id), Some(Claim::WaitHuman(_))) {
-            "WAITING_HUMAN"
+            EvalCondition::WaitingHuman
         } else {
-            eval_status(current.status)
+            EvalCondition::from(current.status)
         };
         *counts.evals.entry(status).or_default() += 1;
         if included {
-            match action {
-                "execute" => counts.execute += 1,
-                "reuse" => counts.reuse += 1,
-                "blocked" => counts.blocked += 1,
-                _ => counts.wait += 1,
-            }
+            counts.action(action);
         }
         evals.push(EvalState {
             id: eval.id.clone(),
@@ -419,28 +419,13 @@ pub async fn status(
     })
 }
 
-fn eval_status(status: EvalStatus) -> &'static str {
-    match status {
-        EvalStatus::Green => "PASS",
-        EvalStatus::Red => "RED",
-        EvalStatus::Error => "ERROR",
-        EvalStatus::Stale => "STALE",
-        EvalStatus::Unreviewed => "UNREVIEWED",
-        EvalStatus::Wait => "WAIT_DEPENDENCY",
-        EvalStatus::Blocked => "BLOCKED",
-    }
-}
-
-fn artifact_status(status: ArtifactStatus) -> &'static str {
-    match status {
-        ArtifactStatus::Basis => "BASIS",
-        ArtifactStatus::Green => "PASS",
-        ArtifactStatus::Incomplete => "INCOMPLETE",
-        ArtifactStatus::Error => "ERROR",
-        ArtifactStatus::Red => "RED",
-        ArtifactStatus::Blocked => "BLOCKED",
-        ArtifactStatus::Wait => "WAIT_DEPENDENCY",
-        ArtifactStatus::Stale => "STALE",
-        ArtifactStatus::Unreviewed => "UNREVIEWED",
+impl Counts {
+    fn action(&mut self, action: VerifyAction) {
+        match action {
+            VerifyAction::Execute => self.execute += 1,
+            VerifyAction::Reuse => self.reuse += 1,
+            VerifyAction::Wait => self.wait += 1,
+            VerifyAction::Blocked => self.blocked += 1,
+        }
     }
 }
