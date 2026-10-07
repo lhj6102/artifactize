@@ -179,6 +179,95 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
 }
 
 #[tokio::test]
+async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    write_repo(
+        &repo,
+        json!({"kind":"runtime","command":bin("/bin/true"),"args":[]}),
+    );
+    let producer_state = root.path().join("producer");
+    let produced = verify(&repo, &producer_state).await;
+    let key = produced.requests[0].key.as_ref().unwrap();
+    let original = cache::show(&producer_state, key, false)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+
+    // 193 is the previous passing edge; 194 through the 200-byte wire maximum
+    // need the local-only seven-byte namespace allowance for both record forms.
+    for bytes in [193, 194, 200] {
+        for full in [false, true] {
+            let mut source = original.clone();
+            source.id = "x".repeat(bytes).parse().unwrap();
+            let mut wire = Record::new(&source, full).unwrap();
+            wire.publisher = Some("alice-laptop".into());
+            wire.published_at = Some("2026-10-04T00:00:02Z".into());
+            let wire: Record = serde_json::from_value(serde_json::to_value(wire).unwrap()).unwrap();
+            wire.validate().unwrap();
+            let mirror = wire.mirror("https://reviews.example/").unwrap();
+            assert_eq!(mirror.id.as_str(), format!("remote-{}", source.id));
+            assert_eq!(mirror.id.len(), bytes + "remote-".len());
+            let state = root.path().join(format!("consumer-{bytes}-{full}"));
+            let receipts = Receipts::open(&state, &repo).await.unwrap();
+            receipts.mirror_execution(&mirror).await.unwrap().unwrap();
+            assert!(receipts.mirror_execution(&mirror).await.unwrap().is_none());
+            let saved = cache::show(&state, key, false)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
+            assert_eq!(saved.id, mirror.id);
+            assert_eq!(
+                cache::list(&state, false).await.unwrap()[0].execution_id,
+                mirror.id
+            );
+            let reused = verify(&repo, &state).await;
+            assert_eq!(reused.run.status.as_str(), "GREEN");
+            assert_eq!(reused.run.executions_started, 0);
+            assert_eq!(reused.requests[0].execution_id.as_ref(), Some(&mirror.id));
+        }
+    }
+    let mut too_long = Record::new(&original, false).unwrap();
+    // This is valid only as a stored local mirror, never as a remote wire identity.
+    too_long.execution_id = format!("remote-{}", "x".repeat(194)).parse().unwrap();
+    assert!(too_long.validate().is_err());
+}
+
+#[tokio::test]
+async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
+    // An independent literal schema-5 fixture, not produced by the typed writer.
+    let text = include_str!("fixtures/legacy_remote_execution.json");
+    let execution: artifactize::store::Execution = serde_json::from_str(text).unwrap();
+    assert_eq!(execution.id.len(), 207);
+    let state = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    Receipts::open(state.path(), repo.path()).await.unwrap();
+    let db = Connection::open(state.path().join("state.sqlite")).unwrap();
+    db.execute(
+        "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) VALUES(?1,?2,?3,'GREEN',0,0,?4,?5,?4,?6)",
+        rusqlite::params![execution.id, execution.key, execution.eval_def_hash, execution.completed_at, text.len() as i64, text],
+    ).unwrap();
+    assert_eq!(
+        cache::list(state.path(), false).await.unwrap()[0].execution_id,
+        execution.id
+    );
+    assert_eq!(
+        cache::show(state.path(), execution.key.as_ref().unwrap(), false)
+            .await
+            .unwrap()[0]
+            .id,
+        execution.id
+    );
+    assert_eq!(
+        db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
+            .unwrap(),
+        5
+    );
+}
+
+#[tokio::test]
 async fn human_summary_keeps_owner_fields_and_the_reviewer() {
     let root = tempfile::tempdir().unwrap();
     let repo = root.path().join("repo");

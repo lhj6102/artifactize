@@ -616,9 +616,8 @@ fn prompt(
 ) -> Result<CompletionRequest, String> {
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
     let mut payload = eval.declaration.payload.clone();
-    let instruction = payload["instruction"].as_str().unwrap();
     let instruction: String =
-        scope::parse_artifact_instruction(instruction, &scope, &eval.references)
+        scope::parse_artifact_instruction(&payload.instruction, &scope, &eval.references)
             .into_iter()
             .map(|part| match part {
                 InstructionPart::Text(text) => text,
@@ -632,7 +631,7 @@ fn prompt(
                 }
             })
             .collect();
-    payload.insert("instruction".into(), json!(instruction));
+    payload.instruction = instruction;
     // Follow-ups continue this conversation with the same system prompt, so that their
     // prefix stays cached: it says from the start how they are answered. It is no part of
     // the eval definition hash or the reuse key.
@@ -652,7 +651,7 @@ fn prompt(
         Return the verdict and any fields required by the applicable owner schema, following their descriptions. GREEN owner schema: {}. RED owner schema: {}.",
         eval.declaration.title,
         eval.id,
-        Value::Object(payload),
+        json!(payload),
         eval.target,
         json!(eval.deps),
         json!(artifacts),

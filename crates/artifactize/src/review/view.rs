@@ -80,13 +80,7 @@ fn details(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
             ),
         ));
     }
-    fields.push((
-        "Instruction",
-        request.payload["instruction"]
-            .as_str()
-            .unwrap_or_default()
-            .to_owned(),
-    ));
+    fields.push(("Instruction", request.payload.instruction().to_owned()));
     let schema = |key| compact(declaration.and_then(|declaration| declaration.get(key)));
     fields.push(("GREEN fields", schema("passSchema")));
     fields.push(("RED fields", schema("failSchema")));

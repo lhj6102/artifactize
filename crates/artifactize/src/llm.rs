@@ -103,7 +103,7 @@ impl Witness for ReportedUsage {
 }
 
 fn insert_counter(counters: &mut Map<String, Value>, name: &str, value: Option<u64>) {
-    if let Some(value) = value.filter(|value| *value <= 9_007_199_254_740_991) {
+    if let Some(value) = value.filter(|value| *value <= crate::types::MAX_SAFE_JSON_INTEGER) {
         counters.insert(name.into(), json!(value));
     }
 }

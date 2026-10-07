@@ -4,10 +4,15 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, 
 use serde::{Deserialize, Serialize};
 use std::{borrow::Borrow, fmt, ops::Deref, str::FromStr};
 
-/// Bound path segments used in saved session references, including pre-UUID sessions.
-const MAX_ID_BYTES: usize = 200;
-/// Script fingerprints are deliberately not restricted to cryptographic digests.
-const MAX_FINGERPRINT_BYTES: usize = 128;
+/// Bound external identities and saved session path segments, including pre-UUID sessions.
+pub(crate) const MAX_ID_BYTES: usize = 200;
+/// Mirrors retain the remote wire identity verbatim under this local-only namespace.
+const REMOTE_EXECUTION_PREFIX: &str = "remote-";
+/// Bound script output and reuse-key components without requiring a cryptographic digest.
+pub(crate) const MAX_FINGERPRINT_BYTES: usize = 128;
+/// JSON clients represent numbers as IEEE-754 doubles; larger integer counters
+/// and offsets cannot round-trip exactly through them.
+pub(crate) const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
 /// SHA-256 reuse keys use lowercase hexadecimal on disk and on the wire.
 const REUSE_KEY_BYTES: usize = 64;
 
@@ -88,7 +93,26 @@ macro_rules! identity {
 }
 identity!(RunId, segment);
 identity!(RequestId, segment);
-identity!(ExecutionId, segment);
+// Stored mirrors predate typed identities and can be 207 bytes: the unchanged
+// `remote-` prefix plus a maximum-length 200-byte wire identity. Only that
+// namespace gets the larger bound; all other identities retain their wire limit.
+identity!(ExecutionId, |value: &str| segment(value)
+    || value
+        .strip_prefix(REMOTE_EXECUTION_PREFIX)
+        .is_some_and(segment));
+impl ExecutionId {
+    /// Wire publications never get the extra local mirror namespace allowance.
+    pub(crate) fn valid_wire(&self) -> bool {
+        segment(self.as_str())
+    }
+
+    pub(crate) fn remote_mirror(&self) -> Result<Self, String> {
+        if !self.valid_wire() {
+            return Err("A remote execution ID exceeds the wire identity bound.".into());
+        }
+        format!("{REMOTE_EXECUTION_PREFIX}{self}").parse()
+    }
+}
 identity!(SessionId, segment);
 identity!(Fingerprint, |value: &str| (1..=MAX_FINGERPRINT_BYTES)
     .contains(&value.len())

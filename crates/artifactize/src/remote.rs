@@ -123,7 +123,7 @@ impl Record {
             && crate::cache::key(&self.eval_def_hash, &self.fingerprints) == self.key
             && matches!(self.verdict.as_str(), "GREEN" | "RED")
             && self.result["verdict"] == self.verdict.as_str()
-            && valid_id(&self.execution_id)
+            && self.execution_id.valid_wire()
             && crate::broker::sortable(&self.completed_at).is_some()
             && valid_session(self.producer.as_ref())
             && self.execution.as_ref().is_none_or(|execution| {
@@ -155,11 +155,11 @@ impl Record {
         let (Some(publisher), Some(published_at)) = (self.publisher, self.published_at) else {
             return Err("Remote review record has no server publisher.".into());
         };
-        let id = format!("remote-{}", self.execution_id);
+        let id = self.execution_id.remote_mirror()?;
         let mut execution = match self.execution {
             Some(execution) => *execution,
             None => Execution {
-                id: id.parse()?,
+                id: id.clone(),
                 key: Some(self.key),
                 // The target is the eval id's Artifact part.
                 fingerprint: self
@@ -195,7 +195,7 @@ impl Record {
                 manifest: None,
             },
         };
-        execution.id = id.parse()?;
+        execution.id = id;
         execution.origin = Some(Origin {
             store: store.into(),
             publisher,
@@ -235,10 +235,7 @@ fn summary_usage(usage: Option<&Vec<crate::llm::Attempt>>) -> Option<Vec<crate::
 }
 
 pub(crate) fn valid_fingerprint(value: &str) -> bool {
-    (1..=128).contains(&value.len())
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+    value.parse::<crate::types::Fingerprint>().is_ok()
 }
 
 pub(crate) fn valid_hash(value: &str) -> bool {
@@ -254,11 +251,4 @@ fn valid_session(producer: Option<&Producer>) -> bool {
     producer
         .and_then(|producer| producer.session.as_ref())
         .is_none_or(crate::agent::session::SessionRef::valid)
-}
-
-fn valid_id(value: &str) -> bool {
-    (1..=200).contains(&value.len())
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }

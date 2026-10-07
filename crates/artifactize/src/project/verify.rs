@@ -198,7 +198,7 @@ pub async fn verify(
             session_id: None,
             session: None,
             human_definition: None,
-            payload: json!(eval.declaration.payload),
+            payload: (&eval.declaration.payload).into(),
             references: json!(eval.references),
             deps: eval.deps.clone(),
             force: options.force && selected_ids.contains(eval.id.as_str()),

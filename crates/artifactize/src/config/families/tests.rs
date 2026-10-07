@@ -36,22 +36,22 @@ fn parameters_merge_shallowly_and_substitute_only_exact_json_values() {
         "selected":[{"$param":"/choice"}], "literal":{"$param":"/literal"}
     });
     let mut config = discover(value).unwrap();
-    let alpha = &config.evals[0].declaration.payload;
+    let alpha = &config.evals[0].declaration.payload.extra;
     assert_eq!(alpha["root"]["object"], json!({"instance":true}));
     assert_eq!(alpha["root"]["default"], true);
     assert_eq!(alpha["escaped"], 42);
     assert_eq!(alpha["selected"], json!(["instance"]));
     assert_eq!(alpha["literal"], json!({"$param":"/not-evaluated"}));
-    let beta = &config.evals[1].declaration.payload;
+    let beta = &config.evals[1].declaration.payload.extra;
     assert_eq!(beta["root"]["object"], json!({"variant":true}));
     assert_eq!(beta["selected"], json!(["variant"]));
     assert_eq!(
-        config.evals[2].declaration.payload["root"]["object"],
+        config.evals[2].declaration.payload.extra["root"]["object"],
         json!({"old":true})
     );
-    config.evals[0].declaration.payload["root"]["array"][0] = json!("changed");
+    config.evals[0].declaration.payload.extra["root"]["array"][0] = json!("changed");
     assert_eq!(
-        config.evals[1].declaration.payload["root"]["array"][0],
+        config.evals[1].declaration.payload.extra["root"]["array"][0],
         "first"
     );
 }

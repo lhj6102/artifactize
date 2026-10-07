@@ -267,6 +267,9 @@ impl Pending {
     /// Serve the loopback callback until one completes the sign-in. Requests must be
     /// `GET` with a `Host` of `localhost:PORT` or `127.0.0.1:PORT`.
     async fn serve(&self, listener: TcpListener) -> Result<String, String> {
+        // Allow browser callback headers and the authorization URL while bounding
+        // memory consumed by an untrusted loopback client before HTTP validation.
+        const MAX_CALLBACK_HEADER_BYTES: usize = 16 * 1024;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
         let hosts = [format!("localhost:{port}"), format!("127.0.0.1:{port}")];
         loop {
@@ -274,7 +277,7 @@ impl Pending {
             let head = tokio::time::timeout(Duration::from_secs(5), async {
                 let mut head = Vec::new();
                 let mut byte = [0];
-                while !head.ends_with(b"\r\n\r\n") && head.len() < 16384 {
+                while !head.ends_with(b"\r\n\r\n") && head.len() < MAX_CALLBACK_HEADER_BYTES {
                     if stream.read(&mut byte).await? == 0 {
                         break;
                     }

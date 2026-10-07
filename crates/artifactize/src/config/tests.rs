@@ -25,9 +25,30 @@ fn defaults_and_payload_are_preserved_without_interpolation() {
     let original = eval(json!({ "kind": "human" }));
     let declaration = parse(json!({"name": "review", "evals": [original.clone()]})).unwrap();
     assert_eq!(
-        declaration.evals[0].payload,
-        *original["payload"].as_object().unwrap()
+        serde_json::to_value(&declaration.evals[0].payload).unwrap(),
+        original["payload"]
     );
+}
+
+#[test]
+fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
+    let declared = eval(json!({"kind":"human"}));
+    for invalid in [Value::Null, json!(42), json!(true), json!([]), json!({})] {
+        let mut declaration = declared.clone();
+        declaration["payload"]["instruction"] = invalid;
+        assert!(parse(json!({"name":"a","evals":[declaration]})).is_err());
+    }
+    let mut missing = declared.clone();
+    missing["payload"]
+        .as_object_mut()
+        .unwrap()
+        .remove("instruction");
+    assert!(parse(json!({"name":"a","evals":[missing]})).is_err());
+    let parsed = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
+    let payload = &parsed.evals[0].payload;
+    assert_eq!(payload.instruction, "Inspect {input}.");
+    assert_eq!(payload.extra["ownerData"], declared["payload"]["ownerData"]);
+    assert_eq!(serde_json::to_value(payload).unwrap(), declared["payload"]);
 }
 
 #[test]

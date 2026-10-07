@@ -95,8 +95,10 @@ impl SessionRef {
     /// Bounded, printable fields; the ids are single path segments. A reference from a remote
     /// record is checked before it is kept.
     pub fn valid(&self) -> bool {
-        let printable =
-            |value: &str| (1..=200).contains(&value.len()) && !value.chars().any(char::is_control);
+        let printable = |value: &str| {
+            (1..=crate::types::MAX_ID_BYTES).contains(&value.len())
+                && !value.chars().any(char::is_control)
+        };
         printable(&self.producer)
             && [
                 self.state.as_str(),

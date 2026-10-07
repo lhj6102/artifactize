@@ -172,14 +172,14 @@ fn submission(
             return Err("Human fields must be a regular JSON file.".into());
         }
         let mut bytes = Vec::new();
-        file.take(256_001)
+        file.take(human::FIELDS_READ_BYTES)
             .read_to_end(&mut bytes)
             .map_err(|e| e.to_string())?;
         String::from_utf8(bytes).map_err(|e| e.to_string())?
     } else {
         fields.unwrap_or_else(|| "{}".into())
     };
-    if fields.len() > 256_000 {
+    if fields.len() > human::MAX_RESULT_BYTES {
         return Err("Human fields exceed 256000 bytes.".into());
     }
     let mut result: Value = serde_json::from_str(&fields).map_err(|e| e.to_string())?;

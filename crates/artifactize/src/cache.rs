@@ -531,7 +531,7 @@ fn validate_output(stdout: &[u8]) -> Result<crate::types::Fingerprint, String> {
         Some(value) if cfg!(windows) => value,
         _ => stdout.strip_suffix(b"\n").unwrap_or(stdout),
     };
-    if !(1..=128).contains(&value.len())
+    if !(1..=crate::types::MAX_FINGERPRINT_BYTES).contains(&value.len())
         || !value
             .iter()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))

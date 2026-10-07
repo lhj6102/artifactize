@@ -12,8 +12,7 @@ where
     T::deserialize(deserializer).map(Some)
 }
 
-/// JavaScript-compatible integer precision used by configuration JSON clients.
-const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+use crate::types::MAX_SAFE_JSON_INTEGER as MAX_SAFE_INTEGER;
 /// Bound declaration fan-out and platform-neutral path/id sizes during discovery.
 const MAX_INPUTS: usize = 64;
 const MAX_IDENTIFIER_BYTES: usize = 64;

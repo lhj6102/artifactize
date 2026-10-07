@@ -12,7 +12,7 @@ pub mod families;
 mod stored;
 mod tools;
 pub(crate) mod validation;
-pub use stored::{Field, StoredProfile};
+pub use stored::{Field, StoredPayload, StoredProfile};
 
 pub use tools::{
     AgentTool, Builtin, BuiltinTool, CommandTool, HumanTool, HumanToolKind, ToolProtocol,
@@ -186,6 +186,15 @@ impl ProfileKind {
     }
 }
 
+/// The required instruction is typed at the declaration and saved-request boundaries;
+/// owner-defined context remains extensible JSON with the same object representation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvalPayload {
+    pub instruction: String,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EvalDeclaration {
@@ -194,7 +203,7 @@ pub struct EvalDeclaration {
     pub profile: Profile,
     #[serde(default)]
     pub profile_variants: BTreeMap<String, Profile>,
-    pub payload: Map<String, Value>,
+    pub payload: EvalPayload,
     #[serde(default, deserialize_with = "present")]
     pub pass_schema: Option<Map<String, Value>>,
     #[serde(default, deserialize_with = "present")]
@@ -205,8 +214,7 @@ impl EvalDeclaration {
     fn validate(&self) -> Result<(), String> {
         identifier(&self.id, "Eval id")?;
         text(&self.title, "Eval title")?;
-        let instruction = self.payload.get("instruction").and_then(Value::as_str);
-        text(instruction.unwrap_or_default(), "Eval payload.instruction")?;
+        text(&self.payload.instruction, "Eval payload.instruction")?;
         self.profile.validate()?;
         for schema in [&self.pass_schema, &self.fail_schema].into_iter().flatten() {
             crate::agent::verdict::validate_schema(schema)?;

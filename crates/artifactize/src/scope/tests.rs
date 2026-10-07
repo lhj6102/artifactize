@@ -185,7 +185,7 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
             .unwrap(),
         fixture.0.join("data/file")
     );
-    let source = eval.declaration.payload["instruction"].as_str().unwrap();
+    let source = &eval.declaration.payload.instruction;
     assert_eq!(
         parse_artifact_instruction(source, &scope, &eval.references),
         vec![
@@ -199,7 +199,7 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
         ]
     );
     assert_eq!(
-        eval.declaration.payload["ownerField"]["unchanged"],
+        eval.declaration.payload.extra["ownerField"]["unchanged"],
         "{unknown}"
     );
     assert!(!source.contains("not instruction text"));

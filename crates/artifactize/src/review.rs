@@ -830,9 +830,12 @@ async fn edit(text: String) -> Result<String, String> {
     }
     let mut bytes = Vec::new();
     std::fs::File::open(file.path())
-        .and_then(|file| file.take(256_001).read_to_end(&mut bytes))
+        .and_then(|file| {
+            file.take(crate::human::FIELDS_READ_BYTES)
+                .read_to_end(&mut bytes)
+        })
         .map_err(|e| e.to_string())?;
-    if bytes.len() > 256_000 {
+    if bytes.len() > crate::human::MAX_RESULT_BYTES {
         return Err("Human fields exceed 256000 bytes.".into());
     }
     String::from_utf8(bytes).map_err(|e| e.to_string())

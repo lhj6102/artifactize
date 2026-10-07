@@ -262,7 +262,7 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
     assert!(!body.to_string().contains("import json"));
     assert!(body.to_string().contains("Why it passes"));
     assert_eq!(
-        fixture.config.evals[0].declaration.payload["instruction"],
+        fixture.config.evals[0].declaration.payload.instruction,
         "Check {a}"
     );
     let next: Value = serde_json::from_slice(&requests[1].body).unwrap();

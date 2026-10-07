@@ -168,7 +168,7 @@ pub struct Request {
     pub session: Option<crate::agent::session::SessionRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_definition: Option<Value>,
-    pub payload: Value,
+    pub payload: crate::config::StoredPayload,
     pub references: Value,
     pub deps: Vec<String>,
     #[serde(default)]

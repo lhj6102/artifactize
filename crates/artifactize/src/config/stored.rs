@@ -13,7 +13,7 @@ pub enum Field<T> {
     Value(T),
 }
 impl<T> Field<T> {
-    fn missing(&self) -> bool {
+    pub(crate) fn missing(&self) -> bool {
         matches!(self, Self::Missing)
     }
 }
@@ -33,6 +33,34 @@ impl<'de, T: Deserialize<'de>> Deserialize<'de> for Field<T> {
 impl<T> From<Option<T>> for Field<T> {
     fn from(value: Option<T>) -> Self {
         value.map_or(Self::Null, Self::Value)
+    }
+}
+
+/// Read schema-5 payloads without inventing an instruction field for older audits.
+/// Declarations still require a String; omission/null tolerance belongs only here.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoredPayload {
+    #[serde(default, skip_serializing_if = "Field::missing")]
+    instruction: Field<String>,
+    #[serde(flatten)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
+impl StoredPayload {
+    pub fn instruction(&self) -> &str {
+        match &self.instruction {
+            Field::Value(value) => value,
+            Field::Missing | Field::Null => "",
+        }
+    }
+}
+
+impl From<&super::EvalPayload> for StoredPayload {
+    fn from(payload: &super::EvalPayload) -> Self {
+        Self {
+            instruction: Field::Value(payload.instruction.clone()),
+            extra: payload.extra.clone(),
+        }
     }
 }
 
@@ -139,6 +167,25 @@ mod milliseconds {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn stored_payloads_preserve_schema_5_missing_null_and_owner_context() {
+        for value in [
+            json!({}),
+            json!({"instruction":null,"owner":[true,null,42]}),
+            json!({"instruction":"Inspect {input}.","owner":{"nested":[]}}),
+        ] {
+            let stored: StoredPayload = serde_json::from_value(value.clone()).unwrap();
+            assert_eq!(serde_json::to_value(&stored).unwrap(), value);
+            assert_eq!(
+                stored.instruction(),
+                value["instruction"].as_str().unwrap_or_default()
+            );
+            if value["instruction"].is_null() {
+                assert!(serde_json::from_value::<super::super::EvalPayload>(value).is_err());
+            }
+        }
+    }
+
     #[test]
     fn stored_profiles_preserve_missing_and_null_without_weakening_config() {
         for value in [

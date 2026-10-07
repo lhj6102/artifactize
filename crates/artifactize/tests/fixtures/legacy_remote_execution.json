@@ -1,0 +1,27 @@
+{
+  "id": "remote-0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij0123456789abcdefghij",
+  "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "fingerprint": "remote-v1",
+  "fingerprints": {"app": "remote-v1"},
+  "evalDefHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "ownerPid": 0,
+  "ownerStartTime": 0,
+  "status": "GREEN",
+  "result": {"verdict": "GREEN", "exitCode": 0, "durationMs": 1, "truncated": false},
+  "error": null,
+  "errorCode": null,
+  "profile": {"kind": "runtime", "command": "/bin/true", "args": [], "timeoutMs": null},
+  "options": {},
+  "usage": null,
+  "provenance": {
+    "repoPath": "",
+    "runId": "run-legacy",
+    "requestId": "run-legacy-1",
+    "evalId": "app/check",
+    "evalDefHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "completedAt": "2026-10-04T00:00:01Z"
+  },
+  "startedAt": "2026-10-04T00:00:00Z",
+  "completedAt": "2026-10-04T00:00:01Z",
+  "origin": {"store": "https://reviews.example/", "publisher": "alice-laptop", "publishedAt": "2026-10-04T00:00:02Z"}
+}

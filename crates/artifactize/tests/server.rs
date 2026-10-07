@@ -312,6 +312,50 @@ async fn records_append_per_key_the_latest_wins_and_scopes_are_enforced() {
     assert_eq!(stored(&server.state).len(), 1);
 }
 
+#[tokio::test]
+async fn typed_publish_fields_preserve_extensible_payload_and_wire_id_limits() {
+    let server = Server::start();
+    let token = server.token("typed-boundary", "read,publish");
+    let app = key(7);
+    let mut valid = record(&app, "runtime", "GREEN");
+    valid["executionId"] = json!("x".repeat(200));
+    valid["profile"]["futureOption"] = json!({"items":[1,null,true]});
+    valid["ownerExtension"] = json!({"nested":["a",null,{"ok":true}]});
+    // Server-owned metadata is overwritten even when supplied with another JSON type.
+    valid["publisher"] = json!({"untrusted":true});
+    valid["publishedAt"] = json!(42);
+    valid["execution"] = Value::Null;
+    assert_eq!(
+        server.publish(&token, &app, &valid).await.0,
+        StatusCode::CREATED
+    );
+    let (_, found) = server.lookup(&token, &[&app]).await;
+    let saved = &found["entries"][0];
+    assert_eq!(saved["executionId"], valid["executionId"]);
+    assert_eq!(saved["profile"], valid["profile"]);
+    assert_eq!(saved["ownerExtension"], valid["ownerExtension"]);
+    assert!(saved.as_object().unwrap().contains_key("execution"));
+    assert_eq!(saved["publisher"], "typed-boundary");
+    assert!(saved["publishedAt"].is_string());
+    for (field, value) in [
+        ("schema", json!("2")),
+        ("key", json!(7)),
+        ("verdict", json!("WAITING_HUMAN")),
+        ("executionId", json!("x".repeat(201))),
+        ("executionId", json!(format!("remote-{}", "x".repeat(194)))),
+        ("completedAt", Value::Null),
+        ("profile", json!({"kind":"unknown"})),
+    ] {
+        let mut invalid = valid.clone();
+        invalid[field] = value;
+        assert_eq!(
+            server.publish(&token, &app, &invalid).await.0,
+            StatusCode::BAD_REQUEST,
+            "{field}"
+        );
+    }
+}
+
 fn stored(state: &Path) -> Vec<(String, i64, String)> {
     let db = Connection::open(state.join("review-store.sqlite")).unwrap();
     let mut statement = db

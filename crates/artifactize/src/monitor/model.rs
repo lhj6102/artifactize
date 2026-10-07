@@ -589,10 +589,7 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     detail.push("Request", request.id.as_str());
     detail.push("Reason", request.blocked_reason.clone().unwrap_or_default());
     detail.push("Error", error(view).unwrap_or_default());
-    detail.push(
-        "Instruction",
-        request.payload["instruction"].as_str().unwrap_or_default(),
-    );
+    detail.push("Instruction", request.payload.instruction());
     detail.push("Profile", profile(&request.profile));
     if request.requested_profile != request.profile {
         detail.push("Requested", profile(&request.requested_profile));

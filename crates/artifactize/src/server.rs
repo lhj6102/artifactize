@@ -21,7 +21,32 @@ use tokio_util::sync::CancellationToken;
 use crate::remote::{MAX_FULL_BYTES, MAX_SUMMARY_BYTES, SCHEMA, valid_hash};
 
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8417";
+/// Bound one lookup's SQL work and response fan-out; clients batch larger key sets.
 const MAX_LOOKUP_KEYS: usize = 1000;
+
+/// The fields this store indexes or authorizes are typed at the HTTP edge. The
+/// remaining record is an opaque, extensible payload validated by its consumers.
+#[derive(serde::Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PublishRecord {
+    schema: u32,
+    key: crate::types::ReuseKey,
+    verdict: crate::types::ExecutionStatus,
+    execution_id: crate::types::ExecutionId,
+    completed_at: String,
+    profile: PublishProfile,
+    #[serde(default, skip_serializing_if = "crate::config::Field::missing")]
+    execution: crate::config::Field<Value>,
+    #[serde(flatten)]
+    payload: serde_json::Map<String, Value>,
+}
+
+#[derive(serde::Serialize, Deserialize)]
+struct PublishProfile {
+    kind: crate::config::ProfileKind,
+    #[serde(flatten)]
+    options: serde_json::Map<String, Value>,
+}
 
 struct ApiError(StatusCode, String);
 
@@ -157,27 +182,23 @@ async fn publish(
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
     let principal = authenticate(&store, &headers, Some(Scope::Publish)).await?;
     valid_key(&key)?;
-    let mut record: Value = serde_json::from_slice(&body)
-        .ok()
-        .filter(Value::is_object)
-        .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "Expected a JSON record."))?;
-    let limit = if record.get("execution").is_some() {
+    let mut record: PublishRecord = serde_json::from_slice(&body)
+        .map_err(|_| ApiError::new(StatusCode::BAD_REQUEST, "Expected a JSON record."))?;
+    let limit = if !matches!(record.execution, crate::config::Field::Missing) {
         MAX_FULL_BYTES
     } else {
         MAX_SUMMARY_BYTES
     };
-    let kind = record["profile"]["kind"].as_str();
-    let completed_at = record["completedAt"]
-        .as_str()
-        .and_then(crate::broker::sortable);
-    let execution_id = record["executionId"].as_str().map(str::to_owned);
-    let (true, Some(completed_at), Some(execution_id)) = (
-        record["schema"] == SCHEMA
-            && record["key"] == key.as_str()
-            && matches!(record["verdict"].as_str(), Some("GREEN" | "RED"))
-            && matches!(kind, Some("runtime" | "agent" | "human")),
+    let completed_at = crate::broker::sortable(&record.completed_at);
+    let (true, Some(completed_at)) = (
+        record.schema == SCHEMA
+            && record.key.as_str() == key
+            && matches!(
+                record.verdict,
+                crate::types::ExecutionStatus::Green | crate::types::ExecutionStatus::Red
+            )
+            && record.execution_id.valid_wire(),
         completed_at,
-        execution_id.filter(|id| (1..=200).contains(&id.len())),
     ) else {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
@@ -192,22 +213,29 @@ async fn publish(
             format!("Record exceeds {limit} bytes."),
         ));
     }
-    if kind == Some("human") && !principal.scopes.contains(&Scope::Human) {
+    if record.profile.kind == crate::config::ProfileKind::Human
+        && !principal.scopes.contains(&Scope::Human)
+    {
         return Err(ApiError::new(
             StatusCode::FORBIDDEN,
             "Human sign-offs require the human scope.",
         ));
     }
     // The server, not the client, says who published and when.
-    record["publisher"] = json!(principal.name);
-    record["publishedAt"] = json!(crate::broker::now());
+    record
+        .payload
+        .insert("publisher".into(), json!(principal.name));
+    record
+        .payload
+        .insert("publishedAt".into(), json!(crate::broker::now()));
     let created = store
         .insert(
             &key,
-            &execution_id,
+            &record.execution_id,
             &principal.name,
             &completed_at,
-            record.to_string(),
+            serde_json::to_string(&record)
+                .map_err(|error| ApiError::internal(error.to_string()))?,
         )
         .await
         .map_err(ApiError::internal)?;
