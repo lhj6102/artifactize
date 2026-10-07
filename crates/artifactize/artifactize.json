@@ -20,7 +20,7 @@
         "reasoning": "max",
         "timeoutMs": 1800000,
         "maxToolCalls": 120,
-        "maxTokens": 4000000
+        "maxTokens": 8000000
       },
       "profileVariants": {
         "sol-medium": {
