@@ -218,7 +218,9 @@ pub fn select_profiles(
     Ok(config)
 }
 
+/// Bound selection-file parsing/allocation before resolving any project work.
 const MAX_FILE_BYTES: usize = 4 * 1024 * 1024;
+/// Bound resolution and deduplication work even for files containing many short IDs.
 const MAX_IDS: usize = 100_000;
 const FILE_FORMAT_ERROR: &str =
     "Selection file must contain 1–100000 nonempty IDs, as a JSON string array or one ID per line.";

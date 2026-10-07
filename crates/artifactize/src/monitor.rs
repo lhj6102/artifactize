@@ -21,7 +21,9 @@ use tui_tree_widget::TreeState;
 
 use crate::store::{self, RequestView, RunSummary, RunView};
 
+/// Keep live state reasonably current without continuously querying shared SQLite.
 const REFRESH: Duration = Duration::from_secs(1);
+/// Bound one Run query and its retained rows; paging exposes older saved Runs.
 const PAGE: u32 = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

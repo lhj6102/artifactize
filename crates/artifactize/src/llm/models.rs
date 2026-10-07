@@ -5,6 +5,10 @@ use serde::Serialize;
 
 use crate::config::Backend;
 
+/// Model discovery is interactive metadata, not a review; stop a stalled listing
+/// after thirty seconds for both API-key backends and the Codex account endpoint.
+pub(super) const LIST_TIMEOUT: Duration = Duration::from_secs(30);
+
 #[derive(Serialize)]
 pub struct ListedModel {
     pub slug: String,
@@ -53,7 +57,7 @@ async fn list_at(backend: Backend, key: &str, base: &str) -> Result<Vec<ListedMo
             Backend::Codex => unreachable!("Codex lists its own models"),
         }
     };
-    let models = tokio::time::timeout(Duration::from_secs(30), request)
+    let models = tokio::time::timeout(LIST_TIMEOUT, request)
         .await
         .map_err(|_| "Model listing timed out.".to_owned())?
         .map_err(|error| super::diagnostic(&error).replace(key, "[redacted]"))?;

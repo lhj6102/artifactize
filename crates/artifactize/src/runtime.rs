@@ -16,6 +16,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::process::{self, ChildIdentity, Output};
 
+/// Stop undeclared runtime commands after thirty seconds so a stalled check
+/// cannot occupy a verification job indefinitely; owners can declare a longer timeout.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Share configuration and CLI's signed 32-bit millisecond protocol bound.
 pub const MAX_TIMEOUT: Duration = Duration::from_millis(crate::config::validation::MAX_TIMEOUT_MS);

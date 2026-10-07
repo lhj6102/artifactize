@@ -29,7 +29,9 @@ use crate::{
     tools::human::{CommandLine, Content, ToolResult},
 };
 
+/// Observe claim/settlement changes without continuously polling shared SQLite.
 const REFRESH: Duration = Duration::from_secs(1);
+/// Animate running tools at ten frames per second, independently of database refresh.
 const SPIN: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, PartialEq)]

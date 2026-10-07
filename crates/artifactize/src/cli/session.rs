@@ -354,7 +354,8 @@ async fn files_changed(
     }))
 }
 
-/// Long tool results are cut in text; `--json` prints them whole.
+/// Keep text session transcripts readable with bounded tool excerpts;
+/// the explicit remainder marker directs readers to complete `--json` output.
 const SHOWN_CHARS: usize = 2000;
 
 fn clip(text: &str) -> String {

@@ -16,8 +16,9 @@ use crate::{
     scope,
 };
 
-/// The traversal bounds of one pinned directory, as for content fingerprints.
+/// Bound traversal and retained digest metadata for a tool's executable directory pin.
 const MAX_ENTRIES: usize = 10_000;
+/// Bound total pinning I/O independently of entry count, as for content fingerprints.
 const MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Pins by registered tool name, then by declared workspace-relative path.

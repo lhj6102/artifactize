@@ -10,6 +10,7 @@ const MAX_SCHEMA_BYTES: usize = 8 * 1024 * 1024;
 const MAX_DIAGNOSTICS: usize = 5;
 /// Leave room for a truncation marker in a short diagnostic line.
 const MAX_QUOTED_BYTES: usize = 320;
+/// Reserve the rest of MAX_QUOTED_BYTES for the explicit truncated-value marker.
 const QUOTED_PREFIX_BYTES: usize = 300;
 
 pub(crate) fn compile(schema: &Value) -> Result<Validator, String> {

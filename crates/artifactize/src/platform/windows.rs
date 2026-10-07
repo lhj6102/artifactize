@@ -134,13 +134,18 @@ fn plain(path: &Path) -> Option<PathBuf> {
         }
         plain.push(name);
     }
-    // MAX_PATH counts the terminating NUL.
-    (plain.encode_wide().count() < 260).then(|| PathBuf::from(plain))
+    // Win32's legacy MAX_PATH includes the terminating NUL; longer paths must
+    // retain their verbatim prefix rather than being rewritten to the plain form.
+    const MAX_PLAIN_PATH_UNITS: usize = 260;
+    (plain.encode_wide().count() < MAX_PLAIN_PATH_UNITS).then(|| PathBuf::from(plain))
 }
 
 /// A name the Win32 layer keeps as is: no trailing dot or space, no reserved character, and
 /// no DOS device name such as `NUL` or `com1.txt`.
 fn plain_name(name: &OsStr) -> bool {
+    // Conservatively permit only short UTF-8 components when removing a
+    // verbatim prefix; do not normalize names beyond this existing byte bound.
+    const MAX_PLAIN_NAME_BYTES: usize = 255;
     let Some(name) = name.to_str() else {
         return false;
     };
@@ -160,7 +165,7 @@ fn plain_name(name: &OsStr) -> bool {
         }
     };
     !name.is_empty()
-        && name.len() <= 255
+        && name.len() <= MAX_PLAIN_NAME_BYTES
         && !name.ends_with(['.', ' '])
         && !name
             .chars()
@@ -184,6 +189,7 @@ impl EntryName {
     pub fn new(name: &OsStr) -> Option<Self> {
         let name: Vec<u16> = name.encode_wide().collect();
         let dots = |count| name.len() == count && name.iter().all(|&unit| unit == u16::from(b'.'));
+        // UNICODE_STRING stores its byte length in u16; every UTF-16 unit takes two bytes.
         let valid = !name.is_empty()
             && name.len() <= usize::from(u16::MAX / 2)
             && !dots(1)
@@ -321,6 +327,10 @@ pub(crate) fn is_link_refusal(error: &io::Error) -> bool {
         .is_some_and(|inner| inner.is::<ReparsePoint>())
 }
 
+/// Batch directory records in 64 KiB without unbounded allocation; u64 storage
+/// gives the Windows record structs their required eight-byte alignment.
+const DIRECTORY_BUFFER_WORDS: usize = 8 * 1024;
+
 /// The entries of a pinned directory, read from its handle rather than a path that could
 /// have been replaced by a link.
 pub(crate) fn read_dir(
@@ -328,8 +338,7 @@ pub(crate) fn read_dir(
 ) -> io::Result<impl Iterator<Item = io::Result<DirEntry>> + '_> {
     Ok(ReadDir {
         directory,
-        // 64 KiB, aligned for the 8-byte-aligned records.
-        buffer: vec![0; 8 * 1024],
+        buffer: vec![0; DIRECTORY_BUFFER_WORDS],
         next: None,
         restart: true,
         done: false,

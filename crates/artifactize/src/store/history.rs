@@ -13,8 +13,11 @@ use super::{
     receipts::{Error, schema_initialized},
 };
 
+/// Bound retained cache history, including many tiny results; eviction preserves execution audit.
 pub const MAX_ENTRIES: i64 = 10_000;
+/// Bound cached JSON payload bytes independently of the record-count ceiling.
 pub const MAX_BYTES: i64 = 1024 * 1024 * 1024;
+/// Refuse one oversized reusable record rather than letting it monopolize cache storage.
 pub const MAX_ENTRY_BYTES: usize = 16 * 1024 * 1024;
 
 /// A record of the key history, of executions `e`.

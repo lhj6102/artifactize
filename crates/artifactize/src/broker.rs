@@ -27,6 +27,10 @@ use crate::{
     tools,
 };
 
+/// Notice shared execution/Human settlements and free backend capacity promptly,
+/// while limiting SQLite polling when this scheduler has no local task to await.
+const SCHEDULER_POLL_INTERVAL: Duration = Duration::from_millis(200);
+
 pub(crate) fn now() -> String {
     timestamp(OffsetDateTime::now_utc())
 }
@@ -615,8 +619,8 @@ impl Scheduler<'_, '_> {
                 .filter(|_| human_wait)
                 .map(|deadline| deadline.saturating_duration_since(tokio::time::Instant::now()))
                 .filter(|remaining| !remaining.is_zero())
-                .unwrap_or(Duration::from_millis(200))
-                .min(Duration::from_millis(200));
+                .unwrap_or(SCHEDULER_POLL_INTERVAL)
+                .min(SCHEDULER_POLL_INTERVAL);
             tokio::select! {
                 biased;
                 result = self.tasks.join_next(), if !self.tasks.is_empty() => {

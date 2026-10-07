@@ -17,6 +17,9 @@ use crate::{
 };
 
 pub const DATABASE: &str = "state.sqlite";
+/// Yield between WAL initialization races instead of spinning, still within the
+/// shared SQLite contention deadline used by the outer initialization loop.
+const INITIALIZATION_RETRY_INTERVAL: Duration = Duration::from_millis(20);
 
 /// The four tables of a state and the indexes its lookups use.
 ///
@@ -255,7 +258,7 @@ impl Receipts {
                     && tokio::time::Instant::now() < deadline =>
                 {
                     // Concurrent first opens can race when enabling WAL despite busy_timeout.
-                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    tokio::time::sleep(INITIALIZATION_RETRY_INTERVAL).await;
                 }
                 Err(error) => return Err(error.to_string()),
             }

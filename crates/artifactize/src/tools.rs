@@ -28,6 +28,8 @@ use crate::{
 
 /// A command tool gets two minutes unless its owner declares a deadline.
 const DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+/// Capture enough for an 8 MiB normalized multimodal result plus its wire envelope,
+/// but bound raw tool stdout/stderr; truncated JSON is rejected rather than silently reused.
 const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]

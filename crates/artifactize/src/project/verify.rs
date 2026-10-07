@@ -14,7 +14,8 @@ use crate::{
     workspace,
 };
 
-/// How long a Run waits for Human results unless told otherwise.
+/// Give Human sign-off ten minutes by default, then return without cancelling
+/// pending requests; later verify/run queries can still observe their settlement.
 pub const DEFAULT_HUMAN_WAIT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone)]

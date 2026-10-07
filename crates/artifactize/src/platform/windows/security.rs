@@ -330,7 +330,9 @@ fn current_user() -> io::Result<User> {
             &mut length,
         )
     };
-    let mut buffer = vec![0_u64; (length as usize).div_ceil(8)];
+    // Round the OS-reported byte count up to u64 words so TOKEN_USER/SID
+    // storage remains eight-byte aligned without changing the requested byte length.
+    let mut buffer = vec![0_u64; (length as usize).div_ceil(std::mem::size_of::<u64>())];
     // SAFETY: the buffer holds at least `length` bytes, aligned for TOKEN_USER and its SID.
     if unsafe {
         GetTokenInformation(

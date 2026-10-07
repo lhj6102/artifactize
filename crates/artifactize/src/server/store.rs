@@ -10,7 +10,10 @@ use crate::broker::now;
 
 pub const DATABASE: &str = "review-store.sqlite";
 const SCHEMA_VERSION: u32 = 3;
+/// Bound retained shared-review history, including small records that would not
+/// reach the byte cap; least-recently-used records are evicted above either limit.
 pub const MAX_ENTRIES: i64 = 100_000;
+/// Bound JSON payload storage in the shared review database independently of record count.
 pub const MAX_BYTES: i64 = 4 * 1024 * 1024 * 1024;
 /// Keep persistent principal labels and token-admin output bounded; token names
 /// are printable ASCII identifiers, not the opaque bearer secrets themselves.

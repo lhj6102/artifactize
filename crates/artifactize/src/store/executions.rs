@@ -154,6 +154,9 @@ pub struct Producer {
     pub session: Option<crate::agent::session::SessionRef>,
 }
 
+/// Keep printable producer display metadata bounded in saved records and reuse messages.
+const MAX_PRODUCER_CHARS: usize = 200;
+
 impl Producer {
     pub fn current() -> Self {
         // Windows sets neither, only USERNAME.
@@ -171,7 +174,11 @@ impl Producer {
                 .unwrap_or("unknown")
         );
         Self {
-            name: name.chars().filter(|c| !c.is_control()).take(200).collect(),
+            name: name
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(MAX_PRODUCER_CHARS)
+                .collect(),
             version: env!("CARGO_PKG_VERSION").into(),
             session: None,
         }

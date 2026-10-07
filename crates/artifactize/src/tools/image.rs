@@ -9,6 +9,7 @@ use crate::scope;
 
 use super::Content;
 
+/// Bound decoded image memory and base64 provider payloads while allowing review screenshots.
 pub(super) const IMAGE_LIMIT: usize = 4 * 1024 * 1024;
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 

@@ -1,0 +1,9 @@
+[
+  {"source":"none","expiresAt":null,"expired":false},
+  {"source":"none","expiresAt":null,"expired":false,"refused":"Fixture storage refusal."},
+  {"source":"file","authFile":"fixture-auth.json","expiresAt":null,"expired":false},
+  {"source":"file","authFile":"fixture-auth.json","expiresAt":2000000000,"expired":false},
+  {"source":"file","authFile":"fixture-auth.json","expiresAt":null,"expired":true},
+  {"source":"stored","expiresAt":2000000000,"expired":false},
+  {"source":"stored","expiresAt":1000000000,"expired":true}
+]

@@ -21,9 +21,11 @@ use crate::{
     process, scope,
 };
 
-/// The built-in Agent tools' traversal bound, and the cache's retained-byte cap.
+/// Bound input traversal and retained per-file digest metadata for one fingerprint.
 const MAX_ENTRIES: usize = 10_000;
+/// Bound total hashing I/O so one undeclared large input cannot monopolize preparation.
 const MAX_BYTES: u64 = 1024 * 1024 * 1024;
+/// Bound inherited ignore-file parsing while supporting substantial repository rules.
 const GITIGNORE_BYTES: u64 = 1024 * 1024;
 /// Bound user-declared ignore fan-out and compiled matcher work during fingerprinting.
 const MAX_IGNORE_PATTERNS: usize = 64;

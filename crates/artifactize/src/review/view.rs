@@ -17,6 +17,9 @@ use crate::{
     store::RequestView,
 };
 
+/// Keep a transient notice inside the fixed four-line footer rather than covering review content.
+const MAX_NOTICE_LINES: usize = 4;
+
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 fn kind(kind: HumanToolKind) -> &'static str {
@@ -179,7 +182,7 @@ impl Review {
         let style = if error { Color::Red } else { Color::Green };
         message
             .lines()
-            .take(4)
+            .take(MAX_NOTICE_LINES)
             .map(|line| Line::from(line.to_owned()).fg(style))
             .collect()
     }

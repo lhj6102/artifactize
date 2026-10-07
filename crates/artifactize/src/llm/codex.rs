@@ -14,10 +14,7 @@
 //! fresh `session_id` per request instead (0xPlaygrounds/rig#2719), which artifactize
 //! turns off.
 
-use std::{
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::path::{Path, PathBuf};
 
 use rig_core::{
     Model,
@@ -148,7 +145,7 @@ pub(super) async fn models(
         .header("ChatGPT-Account-Id", &token.account_id)
         .header("originator", ORIGINATOR)
         .header(reqwest::header::USER_AGENT, user_agent())
-        .timeout(Duration::from_secs(30))
+        .timeout(super::models::LIST_TIMEOUT)
         .send()
         .await
         .map_err(|_| "Codex model listing failed; check your connection.".to_owned())?;

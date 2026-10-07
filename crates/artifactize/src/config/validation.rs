@@ -13,9 +13,11 @@ where
 }
 
 use crate::types::MAX_SAFE_JSON_INTEGER as MAX_SAFE_INTEGER;
-/// Bound declaration fan-out and platform-neutral path/id sizes during discovery.
+/// Bound declared-input fan-out and validation work during discovery.
 const MAX_INPUTS: usize = 64;
+/// Keep Artifact/eval/variant names bounded in qualified IDs and graph/audit output.
 const MAX_IDENTIFIER_BYTES: usize = 64;
+/// Bound declared execution paths in JSON-client UTF-16 units before scoped resolution.
 const MAX_PATH_UNITS: usize = 1024;
 
 fn integer<'de, D>(deserializer: D, max: u64, message: &str) -> Result<u64, D::Error>

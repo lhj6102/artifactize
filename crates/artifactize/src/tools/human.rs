@@ -13,6 +13,7 @@ use crate::{
 
 use super::{DEFAULT_TIMEOUT, executable};
 
+/// Keep Human tool transcripts readable and bounded in CLI/TUI output; truncation is explicit.
 const TEXT_LIMIT: usize = 64 * 1024;
 
 #[derive(Debug, Clone, Serialize)]

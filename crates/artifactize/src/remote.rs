@@ -14,9 +14,9 @@ use crate::store::{Execution, ExecutionOptions, Origin, Producer, Provenance};
 
 /// Record schema version: 2 since records carry the 0.5 reuse key.
 pub const SCHEMA: u32 = 2;
-/// JSON byte limit of a summary record.
+/// Bound network/storage cost of reduced records, which omit large captured execution output.
 pub const MAX_SUMMARY_BYTES: usize = 256 * 1024;
-/// JSON byte limit of a full record, the local per-entry cache limit.
+/// Full records must fit the same per-entry budget as the local reusable cache.
 pub const MAX_FULL_BYTES: usize = crate::store::history::MAX_ENTRY_BYTES;
 
 /// One record of a reuse key's history; the store keeps every record and returns the latest.

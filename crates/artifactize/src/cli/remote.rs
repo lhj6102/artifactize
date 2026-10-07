@@ -143,6 +143,10 @@ pub(super) async fn execute(
     }
 }
 
+/// Bound stdin allocation before bearer validation, with room beyond the 4096-byte
+/// token limit for surrounding whitespace and line endings; oversized tokens stay invalid.
+const TOKEN_STDIN_BYTES: u64 = 8192;
+
 fn read_token() -> Result<String, String> {
     let stdin = io::stdin().lock();
     let hidden = if stdin.is_terminal() {
@@ -171,7 +175,7 @@ fn read_token() -> Result<String, String> {
         None
     };
     let mut token = String::new();
-    let read = stdin.take(8192).read_line(&mut token);
+    let read = stdin.take(TOKEN_STDIN_BYTES).read_line(&mut token);
     if hidden.is_some() {
         drop(hidden);
         // The Enter key was not echoed either.

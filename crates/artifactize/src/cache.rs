@@ -25,7 +25,11 @@ use crate::{
     workspace,
 };
 
+/// Keep retained per-file provenance small; the content digest remains complete
+/// even when the optional explain-changes manifest is too large to store.
 const MANIFEST_BYTES: usize = 64 * 1024;
+/// Keep change explanations readable in CLI output; the complete path list remains in Changes.
+const MAX_SUMMARY_PATHS: usize = 10;
 
 /// Hash the eval strategy: what is asked and how the answer is judged, never how the eval
 /// is executed. Execution options (backend, model, reasoning, limits, the profile variant),
@@ -378,13 +382,15 @@ pub fn changes(
                     Some(files) if !files.is_empty() => {
                         let shown = files
                             .iter()
-                            .take(10)
+                            .take(MAX_SUMMARY_PATHS)
                             .cloned()
                             .collect::<Vec<_>>()
                             .join(", ");
                         parts.push(match files.len() {
-                            0..=10 => format!("changed: {shown}"),
-                            total => format!("changed: {shown} and {} more", total - 10),
+                            0..=MAX_SUMMARY_PATHS => format!("changed: {shown}"),
+                            total => {
+                                format!("changed: {shown} and {} more", total - MAX_SUMMARY_PATHS)
+                            }
                         });
                     }
                     _ => parts.push("inputs changed".to_owned()),

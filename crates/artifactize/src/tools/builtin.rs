@@ -37,6 +37,10 @@ const SEARCH_FILE_BYTES: usize = 8 * 1024 * 1024;
 const SEARCH_BYTES: usize = 64 * 1024 * 1024;
 /// Patterns are user input rather than paths, but share their bounded schema size.
 const MAX_PATTERN_UNITS: usize = scope::MAX_PATH_UNITS;
+/// An ordinary read starts with eighty lines; owners can page further or request
+/// up to five hundred without scanning an unbounded number of lines in one call.
+const DEFAULT_READ_LINES: usize = 80;
+const MAX_READ_LINES: usize = 500;
 
 pub(crate) fn description(builtin: Builtin) -> &'static str {
     match builtin {
@@ -65,16 +69,16 @@ pub(crate) fn input_schema(builtin: Builtin) -> Value {
         |min, max, default| json!({"type":"integer","minimum":min,"maximum":max,"default":default});
     let (properties, required) = match builtin {
         Builtin::Read => (
-            json!({"path":path,"offset":integer(1, crate::types::MAX_SAFE_JSON_INTEGER, 1),"limit":integer(1,500,80)}),
+            json!({"path":path,"offset":integer(1, crate::types::MAX_SAFE_JSON_INTEGER, 1),"limit":integer(1,MAX_READ_LINES as u64,DEFAULT_READ_LINES as u64)}),
             vec!["path"],
         ),
         Builtin::List => (
-            json!({"path":path,"offset":integer(0,crate::types::MAX_SAFE_JSON_INTEGER,0),"limit":integer(1,200,200)}),
+            json!({"path":path,"offset":integer(0,crate::types::MAX_SAFE_JSON_INTEGER,0),"limit":integer(1,MAX_RESULTS as u64,MAX_RESULTS as u64)}),
             vec![],
         ),
         Builtin::Glob => (json!({"pattern":pattern,"path":path}), vec!["pattern"]),
         Builtin::Grep => (
-            json!({"pattern":pattern,"path":path,"glob":pattern,"caseInsensitive":{"type":"boolean","default":false},"maxResults":integer(1,200,200)}),
+            json!({"pattern":pattern,"path":path,"glob":pattern,"caseInsensitive":{"type":"boolean","default":false},"maxResults":integer(1,MAX_RESULTS as u64,MAX_RESULTS as u64)}),
             vec!["pattern"],
         ),
         Builtin::ViewImage => (json!({"path":path}), vec!["path"]),
@@ -100,12 +104,16 @@ pub(super) fn call(
     let result = (|| {
         reader.check_cancelled()?;
         let data = match builtin {
-            Builtin::Read => {
-                reader.read(path, number(args, "offset", 1), number(args, "limit", 80))
-            }
-            Builtin::List => {
-                reader.list(path, number(args, "offset", 0), number(args, "limit", 200))
-            }
+            Builtin::Read => reader.read(
+                path,
+                number(args, "offset", 1),
+                number(args, "limit", DEFAULT_READ_LINES),
+            ),
+            Builtin::List => reader.list(
+                path,
+                number(args, "offset", 0),
+                number(args, "limit", MAX_RESULTS),
+            ),
             Builtin::Glob => reader.glob(path, args["pattern"].as_str().unwrap()),
             Builtin::Grep => reader.grep(path, args),
             Builtin::ViewImage => return reader.view_image(path),

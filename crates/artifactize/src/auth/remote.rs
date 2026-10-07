@@ -28,6 +28,12 @@ const MAX_TOKEN_BYTES: usize = 4096;
 /// A URL/share declaration is small; bound its read so malformed local config
 /// cannot cause unbounded allocation. The existing parser sees one extra byte.
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
+/// Remote reuse is optional; fail an unreachable connection quickly so local work resumes.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+/// Bound each review-store request, including response reads, independently of provider work.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// Clip server-supplied client-error explanations before they enter CLI/audit diagnostics.
+const MAX_ERROR_CHARS: usize = 300;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
@@ -195,8 +201,8 @@ pub fn remote(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<Remote
 
 fn client() -> Result<reqwest::Client, Failure> {
     reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(2))
-        .timeout(Duration::from_secs(5))
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| Failure {
@@ -285,7 +291,7 @@ impl Remote {
                             error
                                 .chars()
                                 .filter(|c| !c.is_control())
-                                .take(300)
+                                .take(MAX_ERROR_CHARS)
                                 .collect::<String>()
                         })
                     })
@@ -330,7 +336,7 @@ impl Remote {
             entries: Vec<Value>,
         }
         let mut entries = Vec::new();
-        for chunk in keys.chunks(1000) {
+        for chunk in keys.chunks(crate::server::MAX_LOOKUP_KEYS) {
             let request = self
                 .request(Method::POST, "v1/lookup")?
                 .json(&json!({ "keys": chunk }));

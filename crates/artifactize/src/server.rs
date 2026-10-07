@@ -22,7 +22,10 @@ use crate::remote::{MAX_FULL_BYTES, MAX_SUMMARY_BYTES, SCHEMA, valid_hash};
 
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8417";
 /// Bound one lookup's SQL work and response fan-out; clients batch larger key sets.
-const MAX_LOOKUP_KEYS: usize = 1000;
+pub(crate) const MAX_LOOKUP_KEYS: usize = 1000;
+/// Keep Axum's gross allocation cap slightly above a full record, so per-record
+/// validation can return the existing precise size error within that headroom.
+const BODY_LIMIT_HEADROOM: usize = 64 * 1024;
 
 /// The fields this store indexes or authorizes are typed at the HTTP edge. The
 /// remaining record is an opaque, extensible payload validated by its consumers.
@@ -263,7 +266,7 @@ pub fn router(store: Store) -> Router {
             "/v1/entries/{eval_def_hash}/{fingerprint}",
             put(legacy_publish),
         )
-        .layer(DefaultBodyLimit::max(MAX_FULL_BYTES + 64 * 1024))
+        .layer(DefaultBodyLimit::max(MAX_FULL_BYTES + BODY_LIMIT_HEADROOM))
         .with_state(store)
 }
 

@@ -27,6 +27,8 @@ use crate::{
 };
 
 /// A review's deadline when its profile sets no `timeoutMs`.
+/// Allow multi-turn evidence gathering by default without leaving an unattended
+/// Agent review running indefinitely; declared profile timeouts override this budget.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(240);
 
 /// What every follow-up's question starts with, before the person's message: the review's

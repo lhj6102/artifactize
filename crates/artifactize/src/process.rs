@@ -19,8 +19,12 @@ use tokio_util::sync::CancellationToken;
 
 use crate::platform::{self, Child};
 
+/// Retain bounded stdout/stderr audit per stream while continuing to drain the pipes.
 const OUTPUT_LIMIT: usize = 128 * 1024;
+/// Give interrupted children one second to exit cooperatively before killing/reaping them.
 const CLEANUP_GRACE: Duration = Duration::from_secs(1);
+/// Drain process pipes in small bounded chunks without one read per byte.
+const CAPTURE_BUFFER_BYTES: usize = 8192;
 
 /// Arguments have already been resolved by the caller. No shell is added.
 #[derive(Debug, Clone)]
@@ -303,7 +307,7 @@ async fn terminate(child: &mut Child) -> io::Result<()> {
 
 async fn capture(mut pipe: impl AsyncRead + Unpin, limit: usize) -> io::Result<(Vec<u8>, bool)> {
     let mut output = Vec::new();
-    let mut buffer = [0; 8192];
+    let mut buffer = [0; CAPTURE_BUFFER_BYTES];
     let mut truncated = false;
     loop {
         let count = pipe.read(&mut buffer).await?;

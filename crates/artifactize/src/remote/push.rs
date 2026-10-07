@@ -5,6 +5,9 @@ use serde::Serialize;
 use super::session::{has_scope, record};
 use crate::{auth::remote, store::history};
 
+/// Bound retained local execution payloads per push batch while paging the whole key history.
+const PAGE_ENTRIES: usize = 100;
+
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Push {
@@ -40,7 +43,7 @@ pub async fn push(
     };
     let mut after = None;
     loop {
-        let page = history::local(&state, after.take(), 100).await?;
+        let page = history::local(&state, after.take(), PAGE_ENTRIES).await?;
         let Some(last) = page.last() else {
             break;
         };
