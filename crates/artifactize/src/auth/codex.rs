@@ -43,9 +43,10 @@ pub const AUTH_URL_VARIABLE: &str = "ARTIFACTIZE_CODEX_AUTH_URL";
 /// A Codex auth file (for example `~/.codex/auth.json`) to read instead of
 /// artifactize's own tokens. It is never written, copied or refreshed.
 pub const AUTH_FILE_VARIABLE: &str = "ARTIFACTIZE_CODEX_AUTH_FILE";
+/// Match the localhost callback convention of the Codex public-client flow that Pi
+/// also uses; listener and OAuth redirect must agree for browser/pasted-URL interoperability.
 const CALLBACK_PORT: u16 = 1455;
 const CALLBACK_PATH: &str = "/auth/callback";
-const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const SCOPE: &str = "openid profile email offline_access";
 /// The `originator` that sign-in and every Codex request name.
 pub const ORIGINATOR: &str = "artifactize";
@@ -402,13 +403,14 @@ pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), Stri
         });
         receive
     });
-    sign_in(&storage, &root, listener, REDIRECT_URI, pasted, true, |url, callback| {
+    let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
+    sign_in(&storage, &root, listener, &redirect_uri, pasted, true, |url, callback| {
         let mut err = std::io::stderr().lock();
         let _ = writeln!(err, "Open this URL to sign in with Codex:\n{url}");
         if !callback {
             let _ = writeln!(
                 err,
-                "Port 1455 is in use (another Codex sign-in?), so the browser cannot return here."
+                "Port {CALLBACK_PORT} is in use (another Codex sign-in?), so the browser cannot return here."
             );
         }
         if terminal {
@@ -431,7 +433,9 @@ async fn sign_in(
     show: impl FnOnce(&Url, bool),
 ) -> Result<(), String> {
     if listener.is_none() && pasted.is_none() {
-        return Err("Port 1455 is in use and there is no terminal to paste the redirect URL into; finish the other sign-in and try again.".into());
+        return Err(format!(
+            "Port {CALLBACK_PORT} is in use and there is no terminal to paste the redirect URL into; finish the other sign-in and try again."
+        ));
     }
     let pending = Pending::new()?;
     let url = pending.authorize_url(root, redirect_uri)?;
@@ -792,5 +796,7 @@ async fn revoke(root: &str, refresh_token: &str) -> bool {
         .is_ok_and(|response| response.status().is_success())
 }
 
+#[cfg(test)]
+mod redirect_tests;
 #[cfg(test)]
 mod tests;
