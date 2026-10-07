@@ -40,6 +40,10 @@ use windows_sys::Win32::{
     },
 };
 
+/// Forced job termination uses a nonzero exit code so killed children cannot appear to
+/// have completed successfully; keep the existing generic failure code of one.
+const FORCED_TERMINATION_EXIT_CODE: u32 = 1;
+
 /// The child and its job; every process in the job is killed when this drops.
 pub(crate) struct Child {
     child: tokio::process::Child,
@@ -137,7 +141,8 @@ impl Job {
 
     fn terminate(&self) -> io::Result<()> {
         // SAFETY: the job handle is open.
-        if unsafe { TerminateJobObject(self.0.as_raw_handle(), 1) } == 0 {
+        if unsafe { TerminateJobObject(self.0.as_raw_handle(), FORCED_TERMINATION_EXIT_CODE) } == 0
+        {
             return Err(io::Error::last_os_error());
         }
         Ok(())
