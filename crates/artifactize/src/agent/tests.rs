@@ -14,6 +14,7 @@ use crate::{
 };
 
 mod budgets;
+mod follow_up;
 mod repair;
 
 const SESSION: &str = "0f4c2a9e-review-session";

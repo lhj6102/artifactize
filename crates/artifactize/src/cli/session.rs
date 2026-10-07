@@ -89,9 +89,16 @@ pub(super) async fn execute(
             let result = send(state, repo, &located, &message, cancellation).await;
             listener.abort();
             let (send, answer) = result?;
-            let answer_text = match &answer.answer {
-                Ok(text) => text.clone(),
-                Err(failure) => {
+            let (answer_text, attempts) = match answer {
+                agent::FollowUp::Started {
+                    answer: Ok(text),
+                    attempts,
+                } => (text, attempts),
+                agent::FollowUp::NotStarted(failure)
+                | agent::FollowUp::Started {
+                    answer: Err(failure),
+                    ..
+                } => {
                     return Err(format!(
                         "The follow-up failed ({}): {}",
                         failure.code.as_str(),
@@ -107,7 +114,7 @@ pub(super) async fn execute(
                     "send": send.number,
                     "filesChanged": send.files_changed,
                     "answer": answer_text,
-                    "usage": answer.attempts,
+                    "usage": attempts,
                 }))?;
             } else {
                 let mut out = io::stdout().lock();
