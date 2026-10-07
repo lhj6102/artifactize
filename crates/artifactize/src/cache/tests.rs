@@ -58,6 +58,22 @@ impl Repo {
 }
 
 #[tokio::test]
+async fn manifest_digest_prefix_remains_first_sixteen_hex_characters_not_full_identity() {
+    let repo = Repo::new();
+    repo.artifact("", json!({"name":"root","fingerprint":{}}));
+    repo.write("a.txt", "abc");
+    let fingerprint = repo.fingerprint("root").await.unwrap();
+    let manifest = fingerprint.manifest.unwrap();
+    assert_eq!(manifest.files.unwrap()["a.txt"], "ba7816bf8f01cfea");
+    assert_eq!(manifest.inputs.len(), 64);
+    assert_eq!(fingerprint.value.len(), 72);
+    assert_eq!(
+        fingerprint.value.as_str(),
+        format!("content:{}", manifest.inputs)
+    );
+}
+
+#[tokio::test]
 async fn content_skips_generated_ignored_child_and_declaration_files() {
     let repo = Repo::new();
     repo.artifact(
