@@ -173,8 +173,8 @@ Claim the request, run the tools its owner declared, choose GREEN or RED, and su
 the schema-backed form without leaving the monitor. The Run then finishes.
 
 The monitor follows local state changes without a permanent daemon. Agent eval
-modals show live local sessions with scrolling and expandable tool output; reused
-results keep their original evidence when it is available.
+modals show live local sessions with scrolling and expandable tool activity groups;
+reused results keep their original evidence when it is available.
 
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/human.gif" width="800"
      alt="verify waits by default; the three-pane monitor opens a Human eval modal, explicitly claims the request, runs the notes tool, submits the GREEN schema form and shows the completed GREEN Run.">
