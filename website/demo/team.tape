@@ -11,7 +11,7 @@ Set LoopOffset 95%
 Hide
 Type "exec website/demo/session.sh team" Enter
 Sleep 5s
-Type `tmux new-session -s demo \; select-pane -T "alice's laptop" \; split-window -v -l 15 -e HOME=/home/bob -e USER=bob -e LOGNAME=bob -e ARTIFACTIZE_STATE_HOME=/home/bob/.local/state/artifactize -c /home/bob/shop \; select-pane -T "bob's laptop" \; select-pane -t 0` Enter
+Type `tmux -L artifactize-demo new-session -s demo \; select-pane -T "alice's laptop" \; split-window -v -l 15 -e HOME=/home/bob -e USER=bob -e LOGNAME=bob -e ARTIFACTIZE_STATE_HOME=/home/bob/.local/state/artifactize -c /home/bob/shop \; select-pane -T "bob's laptop" \; select-pane -t 0` Enter
 Sleep 1.5s
 Show
 

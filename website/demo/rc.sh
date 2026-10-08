@@ -16,6 +16,15 @@ set +e
 export HOME=/home/alice USER=alice LOGNAME=alice LANG=C.UTF-8 EDITOR=vi
 export PATH=/home/alice/bin:/usr/local/bin:/usr/bin:/bin
 export ARTIFACTIZE_STATE_HOME=$HOME/.local/state/artifactize
+server_pid=
+cleanup_demo() {
+    tmux -L artifactize-demo kill-server 2>/dev/null || true
+    if [[ -n $server_pid ]]; then
+        kill "$server_pid" 2>/dev/null || true
+        wait "$server_pid" 2>/dev/null || true
+    fi
+}
+trap cleanup_demo EXIT
 
 # Every shell, including tmux panes, gets the same short prompt.
 cat >/home/alice/.pane-rc <<'EOF'
@@ -37,7 +46,8 @@ team)
     srv=/home/alice/.review-store
     alice_token=$(artifactize --state-dir "$srv" server token add alice-laptop --scopes read,publish | head -n 1)
     bob_token=$(artifactize --state-dir "$srv" server token add bob-laptop --scopes read,publish | head -n 1)
-    (artifactize --state-dir "$srv" server run >"$srv.log" 2>&1 &)
+    artifactize --state-dir "$srv" server run >"$srv.log" 2>&1 &
+    server_pid=$!
     for _ in $(seq 50); do
         printf '%s\n' "$alice_token" | artifactize remote login http://127.0.0.1:8417/ >>~/.setup.log 2>&1 && break
         sleep 0.1

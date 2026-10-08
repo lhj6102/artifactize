@@ -13,12 +13,26 @@ export ARTIFACTIZE_BIN=${ARTIFACTIZE_BIN:-target/release/artifactize}
 "$ARTIFACTIZE_BIN" --version
 landing=website/landing/media/demo
 mkdir -p website/demo/media "$landing"
+work=
+cleanup_recording() {
+    if [[ -n $work ]]; then
+        rm -rf -- "$work"
+    fi
+}
+trap cleanup_recording EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 for name in "${@:-reuse change human team}"; do
     for one in $name; do
-        work=$(mktemp -d)
+        case $one in
+            reuse | change | human | team) ;;
+            *) printf 'unknown scenario: %s\n' "$one" >&2; exit 2 ;;
+        esac
+        work=$(mktemp -d "${TMPDIR:-/tmp}/artifactize-demo.XXXXXX")
         DEMO_WORK=$work vhs "website/demo/$one.tape"
-        rm -rf "$work"
+        rm -rf -- "$work"
+        work=
         raw=website/demo/media/$one.mp4
         ffmpeg -hide_banner -loglevel error -y -i "$raw" -an \
             -c:v libx264 -preset veryslow -tune stillimage -crf 26 -pix_fmt yuv420p \
