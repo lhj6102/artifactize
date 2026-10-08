@@ -41,6 +41,7 @@ pub(super) struct Hits {
     pub tools: Rect,
     pub field_rows: Vec<(Rect, usize)>,
     pub buttons: Vec<(Rect, Button)>,
+    pub session_groups: Vec<(Rect, crate::agent::session::transcript::BlockId)>,
 }
 
 pub(super) fn protocols(mouse: bool, paste: bool) -> Result<(), String> {
@@ -103,6 +104,17 @@ impl Monitor {
                             })
                         }
                     };
+                }
+                if let Some((_, id)) = self
+                    .hits
+                    .session_groups
+                    .iter()
+                    .find(|(rect, _)| contains(*rect, point))
+                    && let Some(live) = &mut modal.live
+                {
+                    modal.focus = ModalPane::Evidence;
+                    live.toggle(*id);
+                    return Action::None;
                 }
                 if contains(self.hits.modal_panes[0], point) {
                     modal.focus = if modal.review.is_some() {

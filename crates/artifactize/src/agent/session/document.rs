@@ -1,6 +1,5 @@
 //! Pure session layout and scrolling, shared by terminal and future graphical viewers.
 //! Rows are indexed by logical UTF-8 offsets, not terminal-sized global scroll coordinates.
-use super::{Event, Kind};
 use ratatui::buffer::CellWidth;
 use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
@@ -92,36 +91,6 @@ impl Scroll {
             Mode::Following => Position::Bottom,
             Mode::Paused => Position::Row(self.top),
         }
-    }
-}
-
-pub fn text(event: &Event) -> Result<String, String> {
-    match &event.kind {
-        Kind::Review(header) => Ok(format!(
-            "Session {}\n",
-            header
-                .session_id
-                .as_ref()
-                .map_or("unreported", |id| id.as_str())
-        )),
-        Kind::Message(message) => Ok(format!(
-            "\nTurn {}\n{}\n",
-            message.turn,
-            serde_json::to_string_pretty(&message.message).map_err(|error| error.to_string())?
-        )),
-        Kind::End(end) => Ok(format!(
-            "\nReview end\n{}\n",
-            serde_json::to_string_pretty(end).map_err(|error| error.to_string())?
-        )),
-        Kind::Send(send) => Ok(format!(
-            "\nFollow-up\n{}\n",
-            serde_json::to_string_pretty(send).map_err(|error| error.to_string())?
-        )),
-        Kind::Answer(answer) => Ok(format!(
-            "\nAnswer\n{}\n",
-            serde_json::to_string_pretty(answer).map_err(|error| error.to_string())?
-        )),
-        Kind::Attempt(_) => Ok(String::new()),
     }
 }
 

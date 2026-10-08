@@ -173,17 +173,36 @@ impl Pages {
             bytes_read: 0,
         })
     }
+    #[cfg(test)]
     pub fn append(&mut self, text: &str) -> Result<(), String> {
+        self.set(self.texts.len(), text)
+    }
+    /// Stable semantic block slots are replaced by appending a new private text extent.
+    /// Only layout is rebuilt; original JSONL events are never decoded again.
+    pub fn set(&mut self, id: usize, text: &str) -> Result<(), String> {
+        assert!(
+            id <= self.texts.len(),
+            "semantic block slots are consecutive"
+        );
+        let replacing = id < self.texts.len();
+        if replacing {
+            self.relayout()?;
+        }
         self.text
             .seek(SeekFrom::Start(self.length))
             .map_err(|error| error.to_string())?;
         self.text
             .write_all(text.as_bytes())
             .map_err(|error| error.to_string())?;
-        self.texts.push(Text {
+        let extent = Text {
             offset: self.length,
             bytes: text.len(),
-        });
+        };
+        if replacing {
+            self.texts[id] = extent;
+        } else {
+            self.texts.push(extent);
+        }
         self.length += text.len() as u64;
         Ok(())
     }
@@ -207,15 +226,29 @@ impl Pages {
         self.committed = self.current.generation;
         self.previous = None;
     }
+    fn relayout(&mut self) -> Result<(), String> {
+        self.relayout_width(self.current.width)
+    }
+    fn relayout_width(&mut self, width: usize) -> Result<(), String> {
+        // Multiple semantic updates within one unfinished rebuild need no new generation.
+        if self.current.event == 0
+            && self.current.cursor == 0
+            && self.current.total == 0
+            && self.current.width == width
+        {
+            return Ok(());
+        }
+        self.generation += 1;
+        let next = Index::new(width, self.generation)?;
+        let old = std::mem::replace(&mut self.current, next);
+        if old.generation == self.committed {
+            self.previous = Some(old);
+        }
+        Ok(())
+    }
     pub fn width(&mut self, width: usize) -> Result<(), String> {
         if self.current.width != width {
-            self.generation += 1;
-            let next = Index::new(width, self.generation)?;
-            let old = std::mem::replace(&mut self.current, next);
-            // Keep the last completed display coordinates during one or many interrupted resizes.
-            if old.generation == self.committed {
-                self.previous = Some(old);
-            }
+            self.relayout_width(width)?;
         }
         Ok(())
     }
@@ -357,6 +390,11 @@ impl Pages {
             }
         }
         Ok(self.current.event < self.texts.len())
+    }
+    pub fn anchors(&mut self, top: usize, height: usize) -> Result<Vec<Anchor>, String> {
+        (top..top.saturating_add(height).min(self.current.total))
+            .map(|row| self.current.anchor(row))
+            .collect()
     }
     pub fn window(
         &mut self,

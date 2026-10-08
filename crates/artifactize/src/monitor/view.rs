@@ -10,7 +10,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, Cell, Clear, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
 };
 use time::OffsetDateTime;
 use tui_tree_widget::{Tree, TreeItem};
@@ -318,11 +318,22 @@ impl Monitor {
                 left,
             );
             let controls = if let Some(live) = &mut modal.live {
-                let block = Block::bordered()
-                    .title(" Agent session ")
-                    .title_bottom(format!(" {} ", live.indicator()));
+                let block = Block::new()
+                    .borders(Borders::BOTTOM)
+                    .title_bottom(format!(" {} · Enter/Space tools ", live.indicator()));
                 let inner = block.inner(right);
                 live.geometry(usize::from(inner.width), usize::from(inner.height));
+                self.hits.session_groups = live
+                    .window
+                    .groups
+                    .iter()
+                    .filter_map(|(row, id)| {
+                        (*row < usize::from(inner.height)).then_some((
+                            Rect::new(inner.x, inner.y + *row as u16, inner.width, 1),
+                            *id,
+                        ))
+                    })
+                    .collect();
                 let rows = if let Some(status) = &live.window.status {
                     vec![Line::from(status.as_str())]
                 } else if live.window.rows.is_empty() {

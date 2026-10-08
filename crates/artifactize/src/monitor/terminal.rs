@@ -122,7 +122,9 @@ async fn watch(
         {
             session_job = Some(tokio::task::spawn_blocking(move || {
                 let mut job = job;
-                let window = job.reader.step(job.width, job.height, job.position);
+                let window =
+                    job.reader
+                        .step_expanded(job.width, job.height, job.position, &job.expanded);
                 (job, window)
             }));
         }

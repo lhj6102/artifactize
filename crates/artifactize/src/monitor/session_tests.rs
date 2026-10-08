@@ -9,14 +9,18 @@ fn complete(live: &mut session::Live) {
         let Some(mut job) = live.job() else {
             return;
         };
-        let window = job.reader.step(job.width, job.height, job.position);
+        let window = job
+            .reader
+            .step_expanded(job.width, job.height, job.position, &job.expanded);
         live.finish(job, window);
     }
     panic!("jobs did not quiesce");
 }
 fn run_job(live: &mut session::Live) -> (session::Job, crate::agent::session::live::Window) {
     let mut job = live.job().unwrap();
-    let window = job.reader.step(job.width, job.height, job.position);
+    let window = job
+        .reader
+        .step_expanded(job.width, job.height, job.position, &job.expanded);
     (job, window)
 }
 fn history() -> (tempfile::TempDir, session::Live) {
@@ -35,6 +39,47 @@ fn history() -> (tempfile::TempDir, session::Live) {
     complete(&mut live);
     (root, live)
 }
+#[test]
+fn expanded_activity_remains_open_after_late_completion_and_resize_while_paused() {
+    use rig_core::message::{
+        AssistantContent, Message, ToolCall, ToolFunction, ToolName, ToolResultContent,
+    };
+    let (root, source) = fixture();
+    let call = ToolCall::from_wire(
+        "activity",
+        ToolFunction::new(
+            ToolName::new("read").unwrap(),
+            serde_json::json!({"path":"src/visible.rs"}),
+        ),
+    );
+    let message = serde_json::json!({"kind":"message","message":Message::Assistant {id:None,content:vec![AssistantContent::ToolCall(call.clone())]}});
+    append(&source, &format!("{message}\n"));
+    append(&source, &answer("following prose ".repeat(100).as_str()));
+    let mut live = session::Live::new(1, source);
+    live.geometry(40, 6);
+    complete(&mut live);
+    live.movement(Move::Top);
+    complete(&mut live);
+    let id = live.window.groups[0].1;
+    live.toggle(id);
+    complete(&mut live);
+    assert!(live.expanded(id));
+    let anchor = live.window.anchor;
+    let result = serde_json::json!({"kind":"message","message":Message::tool_results(vec![call.result(vec![ToolResultContent::text("hidden output")])]),"isError":[false]});
+    append(&live.source, &format!("{result}\n"));
+    live.invalidate();
+    complete(&mut live);
+    assert!(live.expanded(id));
+    assert_eq!(live.window.anchor.event, anchor.event);
+    assert!(live.window.rows.join("\n").contains("visible.rs"));
+    assert!(!live.window.rows.join("\n").contains("hidden output"));
+    live.geometry(60, 6);
+    complete(&mut live);
+    assert!(live.expanded(id));
+    assert_eq!(live.scroll.mode, Mode::Paused);
+    drop(root);
+}
+
 #[test]
 fn paused_append_keeps_logical_anchor_bottom_resumes_and_resize_reprojects() {
     let (_root, mut live) = history();
@@ -122,7 +167,12 @@ fn flip_back_partial_widths_do_not_replace_committed_generation() {
     let (_root, mut live) = history();
     live.movement(Move::Up(50));
     complete(&mut live);
-    let before = live.window.anchor;
+    live.movement(Move::Up(1));
+    let (job, expected_window) = run_job(&mut live);
+    let expected = expected_window.anchor;
+    live.finish(job, expected_window);
+    live.movement(Move::Down(1));
+    complete(&mut live);
     for width in [40, 80, 40] {
         live.geometry(width, 10);
         let (job, window) = run_job(&mut live);
@@ -132,8 +182,8 @@ fn flip_back_partial_widths_do_not_replace_committed_generation() {
     live.movement(Move::Up(1));
     complete(&mut live);
     assert!(live.window.status.is_none(), "{:?}", live.window.status);
-    assert_eq!(live.window.anchor.event, before.event);
-    assert!(live.window.anchor.byte <= before.byte);
+    assert_eq!(live.window.anchor.event, expected.event);
+    assert!(live.window.anchor.byte <= expected.byte);
 }
 
 #[test]

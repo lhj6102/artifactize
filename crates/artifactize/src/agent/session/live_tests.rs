@@ -218,11 +218,11 @@ fn huge_small_records_bounded_batches_cache_and_append_byte_accounting() {
         reader.bytes_read - before < 100000,
         "small append reread large history"
     );
-    assert!(finish(&mut reader, 80, 1, Position::Row(0)).rows[0].contains("Session"));
+    assert!(finish(&mut reader, 80, 1, Position::Row(0)).rows[0].contains("history end"));
 }
 
 #[test]
-fn normal_large_tool_result_record_decodes_once_and_disk_rows_page_in_above_u16() {
+fn normal_large_tool_result_decodes_once_but_body_is_not_presented_and_large_prose_pages_in() {
     use rig_core::message::{Message, ToolCall, ToolFunction, ToolName, ToolResultContent};
     let (_root, source) = fixture();
     let results = (0..4)
@@ -251,8 +251,10 @@ fn normal_large_tool_result_record_decodes_once_and_disk_rows_page_in_above_u16(
     let mut reader = Reader::new(source.clone());
     let window = finish(&mut reader, 7, 10, Position::Bottom);
     assert!(window.status.is_none(), "{:?}", window.status);
-    assert!(window.total > 65535);
+    assert!(!window.rows.join("\n").contains("xxxxxxxxxxxxxxxx"));
     assert_eq!(reader.decoded_events, 2);
+    append(&source, &answer(&"visible prose ".repeat(50000)));
+    assert!(finish(&mut reader, 7, 10, Position::Bottom).total > 65535);
     reader.commit(7);
     for position in [Position::Row(0), Position::Bottom, Position::Row(70000)] {
         assert!(finish(&mut reader, 7, 10, position).status.is_none());
@@ -264,7 +266,7 @@ fn normal_large_tool_result_record_decodes_once_and_disk_rows_page_in_above_u16(
             .join("\n")
             .contains("late after large record")
     );
-    assert_eq!(reader.decoded_events, 3);
+    assert_eq!(reader.decoded_events, 4);
 }
 
 #[test]

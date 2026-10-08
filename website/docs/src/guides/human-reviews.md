@@ -191,7 +191,15 @@ Detail depends on the eval kind:
   Top/Bottom buttons jump through the full history. The bottom border shows the row
   position, bottom/history and following/paused state. Resize preserves the logical
   reading anchor while paused and stays at the bottom while following. F2 disables
-  mouse capture without changing keyboard scrolling or paste.
+  mouse capture without changing keyboard scrolling or paste. The transcript shows
+  actual message text with readable Markdown headings/code indentation, not serialized
+  message envelopes. Consecutive tools share a collapsed activity line; click it or
+  press Enter/Space for the first visible group to expand only names, targets and
+  recorded states. Prose separates groups. Running targets and short failure reasons
+  remain visible; explicitly expanded groups stay open across updates and resize.
+  Successful tool output, detailed arguments, reasoning and media payloads stay out
+  of this view. Final verdicts and meaningful errors appear as text. `session show
+  --json` remains the explicit lossless view of the saved record.
   Missing recorded local sessions explain session GC; never-saved and remote
   conversations are distinguished, and remote references never open arbitrary local
   paths. Replacement, truncation and deletion reset the selected document. Complete

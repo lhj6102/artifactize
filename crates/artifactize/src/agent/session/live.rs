@@ -2,7 +2,7 @@
 //! Only byte offsets and row counts survive cache eviction; older history is paged in on demand.
 use super::{
     Event, Header, Kind, SessionRef,
-    document::{self, Anchor, Position},
+    document::{Anchor, Position},
 };
 use crate::{
     platform,
@@ -254,6 +254,7 @@ pub struct Reader {
     guards: (Vec<u8>, Vec<u8>),
     records: usize,
     pages: Option<super::pages::Pages>,
+    transcript: super::transcript::Transcript,
     error: Option<String>,
     pub bytes_read: u64,
     pub decoded_events: usize,
@@ -268,6 +269,7 @@ pub struct Window {
     pub loading: bool,
     pub reset: bool,
     pub status: Option<String>,
+    pub groups: Vec<(usize, super::transcript::BlockId)>,
 }
 impl Reader {
     pub fn new(source: Source) -> Self {
@@ -285,6 +287,7 @@ impl Reader {
             guards: Default::default(),
             records: 0,
             pages: None,
+            transcript: super::transcript::Transcript::default(),
             error: None,
             bytes_read: 0,
             decoded_events: 0,
@@ -313,6 +316,7 @@ impl Reader {
         self.guards = Default::default();
         self.records = 0;
         self.pages = None;
+        self.transcript = super::transcript::Transcript::default();
         self.error = None;
     }
     fn bytes(&mut self, offset: u64, size: usize) -> Result<Vec<u8>, String> {
@@ -446,11 +450,13 @@ impl Reader {
             })?;
             self.validate(&event, self.records)
                 .map_err(ReadError::Data)?;
-            let text = document::text(&event).map_err(ReadError::Data)?;
-            self.pages
-                .as_mut()
-                .expect("pages initialized")
-                .append(&text)?;
+            let patches = self.transcript.apply(&event);
+            for patch in patches {
+                self.pages
+                    .as_mut()
+                    .expect("pages initialized")
+                    .set(patch.id.0, &patch.text)?;
+            }
             self.records += 1;
             self.decoded_events += 1;
             budget += size;
@@ -462,6 +468,15 @@ impl Reader {
     /// Chunk scan and disk layout are bounded; the one-time typed decode of a completed
     /// record necessarily allocates its Event and formatted text, then releases both.
     pub fn step(&mut self, width: usize, height: usize, position: Position) -> Window {
+        self.step_expanded(width, height, position, &std::collections::BTreeSet::new())
+    }
+    pub fn step_expanded(
+        &mut self,
+        width: usize,
+        height: usize,
+        position: Position,
+        expanded: &std::collections::BTreeSet<super::transcript::BlockId>,
+    ) -> Window {
         let result = (|| {
             let (reset, exists) = self.probe()?;
             if !exists {
@@ -484,6 +499,12 @@ impl Reader {
                     .expect("pages initialized")
                     .position(position)?
             };
+            for patch in self.transcript.expansion(expanded) {
+                self.pages
+                    .as_mut()
+                    .expect("pages initialized")
+                    .set(patch.id.0, &patch.text)?;
+            }
             self.pages
                 .as_mut()
                 .expect("pages initialized")
@@ -499,11 +520,21 @@ impl Reader {
                 Window::default()
             } else {
                 let (top, total, anchor, rows) = pages.window(position, height)?;
+                let groups = pages
+                    .anchors(top, height)?
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(row, anchor)| {
+                        let id = super::transcript::BlockId(anchor.event);
+                        self.transcript.is_group(id).then_some((row, id))
+                    })
+                    .collect();
                 Window {
                     top,
                     total,
                     anchor,
                     rows,
+                    groups,
                     ..Window::default()
                 }
             };

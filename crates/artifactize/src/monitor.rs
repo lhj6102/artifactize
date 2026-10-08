@@ -443,6 +443,10 @@ impl Monitor {
                 && let Some(live) = &mut modal.live
             {
                 use crate::agent::session::document::Move;
+                if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ')) {
+                    live.toggle_visible();
+                    return Action::None;
+                }
                 let movement = match key.code {
                     KeyCode::Up => Some(Move::Up(1)),
                     KeyCode::Down => Some(Move::Down(1)),
