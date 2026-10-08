@@ -440,7 +440,11 @@ pub fn run() -> ExitCode {
         Ok(runtime) => runtime,
         Err(error) => return failure(&error.to_string(), json),
     };
-    match runtime.block_on(dispatch::execute(cli)) {
+    match runtime.block_on(async {
+        let result = dispatch::execute(cli).await;
+        crate::changes::drain().await;
+        result
+    }) {
         Ok(code) => ExitCode::from(code),
         Err(error) => failure(&error, json),
     }

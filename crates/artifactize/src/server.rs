@@ -134,11 +134,99 @@ async fn whoami(State(store): State<Store>, headers: HeaderMap) -> Result<Json<V
     ))
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
 struct Lookup {
     keys: Vec<String>,
 }
+
+/// Legacy object keys request an upgrade before current validation, even in mixed arrays
+/// or with unknown fields. Map parsing also retains the previous last-duplicate-key behavior.
+enum LookupRequest {
+    Current(Lookup),
+    Legacy,
+    Invalid,
+}
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum LookupKey {
+    Current(String),
+    Legacy(crate::json::Object<std::collections::BTreeMap<String, crate::json::Ignored>>),
+    Invalid(crate::json::Ignored),
+}
+impl<'de> Deserialize<'de> for LookupRequest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct RequestVisitor;
+        impl<'de> serde::de::Visitor<'de> for RequestVisitor {
+            type Value = LookupRequest;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a lookup object")
+            }
+            fn visit_seq<S: serde::de::SeqAccess<'de>>(
+                self,
+                mut sequence: S,
+            ) -> Result<Self::Value, S::Error> {
+                // The former Lookup derive accepted one positional keys field. Objects here
+                // were ordinary invalid strings, never the map-only legacy upgrade path.
+                let keys = sequence.next_element::<crate::json::Optional<Vec<String>>>()?;
+                let mut extra = false;
+                while sequence.next_element::<crate::json::Ignored>()?.is_some() {
+                    extra = true;
+                }
+                match keys.and_then(|keys| keys.0) {
+                    Some(keys) if !extra => Ok(LookupRequest::Current(Lookup { keys })),
+                    _ => Ok(LookupRequest::Invalid),
+                }
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<Self::Value, M::Error> {
+                let mut keys = crate::json::Optional::<Vec<LookupKey>>::default();
+                let mut unknown = false;
+                while let Some(field) = map.next_key::<String>()? {
+                    if field == "keys" {
+                        keys = map.next_value()?;
+                    } else {
+                        unknown = true;
+                        map.next_value::<crate::json::Ignored>()?;
+                    }
+                }
+                let Some(keys) = keys.0 else {
+                    return Ok(LookupRequest::Invalid);
+                };
+                if keys
+                    .iter()
+                    .any(|key| matches!(key, LookupKey::Legacy(crate::json::Object(_))))
+                {
+                    return Ok(LookupRequest::Legacy);
+                }
+                if unknown {
+                    return Ok(LookupRequest::Invalid);
+                }
+                let mut current = Vec::with_capacity(keys.len());
+                for key in keys {
+                    match key {
+                        LookupKey::Current(key) => current.push(key),
+                        _ => return Ok(LookupRequest::Invalid),
+                    }
+                }
+                Ok(LookupRequest::Current(Lookup { keys: current }))
+            }
+        }
+        deserializer.deserialize_any(RequestVisitor)
+    }
+}
+
+fn parse_lookup(body: &[u8]) -> Result<Lookup, ApiError> {
+    let expected = || ApiError::new(StatusCode::BAD_REQUEST, "Expected {\"keys\":[KEY,...]}.");
+    match serde_json::from_slice::<LookupRequest>(body).map_err(|_| expected())? {
+        LookupRequest::Current(lookup) => Ok(lookup),
+        LookupRequest::Legacy => Err(ApiError::new(StatusCode::GONE, UPGRADE)),
+        LookupRequest::Invalid => Err(expected()),
+    }
+}
+
+#[cfg(test)]
+mod lookup_tests;
 
 async fn lookup(
     State(store): State<Store>,
@@ -146,16 +234,7 @@ async fn lookup(
     body: Bytes,
 ) -> Result<Response, ApiError> {
     authenticate(&store, &headers, Some(Scope::Read)).await?;
-    let expected = || ApiError::new(StatusCode::BAD_REQUEST, "Expected {\"keys\":[KEY,...]}.");
-    let lookup: Value = serde_json::from_slice(&body).map_err(|_| expected())?;
-    // 0.4 and earlier clients send {fingerprint, evalDefHash} objects.
-    if lookup["keys"]
-        .as_array()
-        .is_some_and(|keys| keys.iter().any(Value::is_object))
-    {
-        return Err(ApiError::new(StatusCode::GONE, UPGRADE));
-    }
-    let lookup: Lookup = serde_json::from_value(lookup).map_err(|_| expected())?;
+    let lookup = parse_lookup(&body)?;
     if lookup.keys.len() > MAX_LOOKUP_KEYS {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,

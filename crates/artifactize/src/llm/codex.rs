@@ -129,6 +129,98 @@ impl Codex {
     }
 }
 
+/// The known model catalog fields. Maps retain last duplicate values, while absent/null
+/// or wrong-typed optional fields preserve the picker's existing skip/default behavior.
+#[derive(Default)]
+struct ModelCatalog {
+    models: crate::json::Optional<Vec<crate::json::Optional<crate::json::Object<PickerModel>>>>,
+}
+#[derive(Default)]
+struct PickerModel {
+    visibility: crate::json::Optional<String>,
+    slug: crate::json::Optional<String>,
+    display_name: crate::json::Optional<String>,
+}
+impl<'de> serde::Deserialize<'de> for ModelCatalog {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct CatalogVisitor;
+        impl<'de> serde::de::Visitor<'de> for CatalogVisitor {
+            type Value = ModelCatalog;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a model catalog object")
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<Self::Value, M::Error> {
+                let mut catalog = ModelCatalog::default();
+                while let Some(field) = map.next_key::<String>()? {
+                    if field == "models" {
+                        catalog.models = map.next_value()?;
+                    } else {
+                        map.next_value::<crate::json::Ignored>()?;
+                    }
+                }
+                Ok(catalog)
+            }
+        }
+        deserializer.deserialize_map(CatalogVisitor)
+    }
+}
+impl<'de> serde::Deserialize<'de> for PickerModel {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ModelVisitor;
+        impl<'de> serde::de::Visitor<'de> for ModelVisitor {
+            type Value = PickerModel;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a picker model object")
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<Self::Value, M::Error> {
+                let mut model = PickerModel::default();
+                while let Some(field) = map.next_key::<String>()? {
+                    match field.as_str() {
+                        "visibility" => model.visibility = map.next_value()?,
+                        "slug" => model.slug = map.next_value()?,
+                        "display_name" => model.display_name = map.next_value()?,
+                        _ => {
+                            map.next_value::<crate::json::Ignored>()?;
+                        }
+                    }
+                }
+                Ok(model)
+            }
+        }
+        deserializer.deserialize_map(ModelVisitor)
+    }
+}
+fn picker_models(data: &[u8]) -> Result<Vec<super::models::ListedModel>, String> {
+    let invalid = || "Invalid Codex models response.".to_owned();
+    let crate::json::Object(catalog): crate::json::Object<ModelCatalog> =
+        serde_json::from_slice(data).map_err(|_| invalid())?;
+    catalog
+        .models
+        .0
+        .ok_or_else(invalid)?
+        .into_iter()
+        .filter_map(|model| model.0.map(|crate::json::Object(model)| model))
+        .filter(|model| model.visibility.0.as_deref() == Some("list"))
+        .map(|model| {
+            let slug = model
+                .slug
+                .0
+                .filter(|slug| !slug.is_empty())
+                .ok_or_else(invalid)?;
+            Ok(super::models::ListedModel {
+                display_name: model.display_name.0.unwrap_or_else(|| slug.clone()),
+                slug,
+            })
+        })
+        .collect()
+}
+
 /// The account's Codex models that the Codex picker lists (`visibility: "list"`), in
 /// server order, from `GET <root>/models?client_version=…` as the Codex CLI asks.
 pub(super) async fn models(
@@ -150,29 +242,17 @@ pub(super) async fn models(
         .await
         .map_err(|_| "Codex model listing failed; check your connection.".to_owned())?;
     let status = response.status();
-    let body: Value = response.json().await.unwrap_or(Value::Null);
+    let data = response.bytes().await.unwrap_or_default();
     if !status.is_success() {
+        // Provider error payloads vary by endpoint; the success catalog has a known shape.
+        let body: Value = serde_json::from_slice(&data).unwrap_or(Value::Null);
         return Err(describe(
             Some(status.as_u16()),
             &body,
             "Codex model listing failed.",
         ));
     }
-    let invalid = || "Invalid Codex models response.".to_owned();
-    body["models"]
-        .as_array()
-        .ok_or_else(invalid)?
-        .iter()
-        .filter(|model| model["visibility"] == "list")
-        .map(|model| {
-            let slug = model["slug"].as_str().filter(|slug| !slug.is_empty());
-            let slug = slug.ok_or_else(invalid)?;
-            Ok(super::models::ListedModel {
-                slug: slug.into(),
-                display_name: model["display_name"].as_str().unwrap_or(slug).into(),
-            })
-        })
-        .collect()
+    picker_models(&data)
 }
 
 /// The error object of an HTTP error body or a `response.failed` event.

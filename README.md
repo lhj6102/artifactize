@@ -171,6 +171,20 @@ fingerprints are unchanged and says where each came from.
 opens the waiting request in `artifactize review`: run the tools its owner declared,
 submit the verdict through a form, and the Run finishes.
 
+Local readers share bounded invalidation hints instead of reloading SQLite every second.
+The first subscriber temporarily hosts a hub in its own process: an owner-only Unix socket
+or an owner-only Windows named pipe. There is no permanent daemon. If that subscriber
+exits, surviving readers reconnect, elect a replacement and resync from authoritative
+SQLite/session files. Writers never start a hub and short commands allow a bounded drain.
+An unavailable or unsafe transport falls back to five-second reconciliation, never an
+insecure channel; missed database commits and database replacement are checked using one
+persistent read-only SQLite connection. Monitor/review clocks and Human-tool spinners
+redraw cached data independently. Broker waits wake on state changes, task completion,
+cancellation and absolute deadlines, with bounded owner/slot reconciliation and a separate
+remote lookup cadence. Session-only hints are available for the next live-viewer stage;
+this does not add live session scrolling or remote team-store push events. The state schema
+remains version 5.
+
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/human.gif" width="800"
      alt="Two terminals: verify waits; in the monitor, o opens review, the notes tool prints the design notes, the GREEN form is filled and submitted, and verify finishes GREEN.">
 

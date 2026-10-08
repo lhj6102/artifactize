@@ -19,7 +19,7 @@ use crate::{
 
 /// A key is looked up again at most once per second, however often verify polls,
 /// so concurrent waiters cannot flood the optional remote store with duplicate lookups.
-const REFRESH: Duration = Duration::from_secs(1);
+pub(crate) const REFRESH: Duration = Duration::from_secs(1);
 
 /// One process's use of the remote review store.
 ///

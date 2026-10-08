@@ -179,6 +179,7 @@ async fn json_context_has_private_paths_declared_material_and_owner_cwd() {
 request = json.load(sys.stdin)
 context = request['context']
 assert request['version'] == 1 and request['args'] == {}
+assert type(request['version']) is int
 assert os.getcwd() == context['artifactPath']
 assert os.environ['HOME'] != os.environ['TMPDIR']
 assert context['tmpDir'] == os.environ['TMPDIR']

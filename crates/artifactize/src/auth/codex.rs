@@ -622,6 +622,72 @@ async fn stored_token(storage: &Storage, root: &str) -> Result<Token, TokenError
     })
 }
 
+/// Known read-only import fields. Wrong-typed optional fields retain the old missing/null
+/// behavior; extra fields are ignored and no credential data is echoed in parse errors.
+#[derive(Default)]
+struct AuthFile {
+    tokens: crate::json::Optional<crate::json::Object<AuthFileTokens>>,
+}
+#[derive(Default)]
+struct AuthFileTokens {
+    access_token: crate::json::Optional<String>,
+    account_id: crate::json::Optional<String>,
+}
+impl<'de> Deserialize<'de> for AuthFile {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct AuthVisitor;
+        impl<'de> serde::de::Visitor<'de> for AuthVisitor {
+            type Value = AuthFile;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("an auth-file object")
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<Self::Value, M::Error> {
+                let mut auth = AuthFile::default();
+                while let Some(field) = map.next_key::<String>()? {
+                    if field == "tokens" {
+                        auth.tokens = map.next_value()?;
+                    } else {
+                        map.next_value::<crate::json::Ignored>()?;
+                    }
+                }
+                Ok(auth)
+            }
+        }
+        deserializer.deserialize_map(AuthVisitor)
+    }
+}
+impl<'de> Deserialize<'de> for AuthFileTokens {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct TokensVisitor;
+        impl<'de> serde::de::Visitor<'de> for TokensVisitor {
+            type Value = AuthFileTokens;
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("an auth-file token object")
+            }
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<Self::Value, M::Error> {
+                let mut tokens = AuthFileTokens::default();
+                while let Some(field) = map.next_key::<String>()? {
+                    match field.as_str() {
+                        "access_token" => tokens.access_token = map.next_value()?,
+                        "account_id" => tokens.account_id = map.next_value()?,
+                        _ => {
+                            map.next_value::<crate::json::Ignored>()?;
+                        }
+                    }
+                }
+                Ok(tokens)
+            }
+        }
+        deserializer.deserialize_map(TokensVisitor)
+    }
+}
+
 /// The access token of a Codex auth file (`{"tokens":{"access_token",...}}`), read
 /// once per use and never written. An expiring token is an error, never a refresh.
 fn read_auth_file(path: &Path) -> Result<Token, String> {
@@ -639,11 +705,15 @@ fn read_auth_file(path: &Path) -> Result<Token, String> {
     if data.len() > MAX_CREDENTIAL_BYTES {
         return Err(unreadable("it is larger than 1 MiB"));
     }
-    let auth: Value =
+    let auth: crate::json::Optional<crate::json::Object<AuthFile>> =
         serde_json::from_slice(&data).map_err(|_| unreadable("it is not a Codex auth file"))?;
-    let access_token = auth
-        .pointer("/tokens/access_token")
-        .and_then(Value::as_str)
+    let tokens = auth
+        .0
+        .and_then(|crate::json::Object(auth)| auth.tokens.0)
+        .map(|crate::json::Object(tokens)| tokens);
+    let access_token = tokens
+        .as_ref()
+        .and_then(|tokens| tokens.access_token.0.as_deref())
         .filter(|token| !token.is_empty())
         .ok_or_else(|| unreadable("it holds no ChatGPT sign-in tokens"))?;
     if expiry(access_token)
@@ -653,9 +723,9 @@ fn read_auth_file(path: &Path) -> Result<Token, String> {
             "The Codex access token in {name} has expired; sign in with Codex again (for example `codex login`). artifactize never refreshes that file."
         ));
     }
-    let account_id = auth
-        .pointer("/tokens/account_id")
-        .and_then(Value::as_str)
+    let account_id = tokens
+        .as_ref()
+        .and_then(|tokens| tokens.account_id.0.as_deref())
         .filter(|id| !id.is_empty())
         .map(str::to_owned)
         .or_else(|| account_id(access_token))

@@ -7,7 +7,7 @@ fn conversation(fixture: &Fixture) -> (Conversation, Recorder) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, format!("{}\n{}\n", json!({"kind":"review","backend":"openai","model":"exact-model","budgets":{"timeoutMs":1000}}), json!({"kind":"message","turn":1,"message":{"role":"user","content":[{"type":"text","text":"Original review"}]}}))).unwrap();
     let conversation = Conversation::load(&path).unwrap().unwrap();
-    let recorder = Recorder::append(&path, &SESSION.parse().unwrap(), 1).unwrap();
+    let recorder = Recorder::append(&state, &path, &SESSION.parse().unwrap(), 1).unwrap();
     (conversation, recorder)
 }
 async fn run(

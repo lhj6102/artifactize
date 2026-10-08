@@ -426,6 +426,60 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
     );
 }
 
+#[test]
+fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("fixture-auth.json");
+    let access = jwt("claim-account", now().unwrap() + 3600);
+    for account in [Value::Null, json!(17), json!([]), json!({}), json!("")] {
+        fs::write(&path, json!({"extra":{"ignored":true},"tokens":{"access_token":access,"account_id":account,"refresh_token":42}}).to_string()).unwrap();
+        assert_eq!(read_auth_file(&path).unwrap().account_id, "claim-account");
+    }
+    for contents in [
+        "null",
+        "17",
+        "[]",
+        r#"[{"tokens":{"access_token":"dummy"}}]"#,
+        r#"{"tokens":null}"#,
+        r#"{"tokens":[]}"#,
+        r#"{"tokens":{"access_token":null}}"#,
+        r#"{"tokens":{"access_token":17}}"#,
+        r#"{"tokens":{"access_token":""}}"#,
+    ] {
+        fs::write(&path, contents).unwrap();
+        assert!(
+            read_auth_file(&path)
+                .err()
+                .unwrap()
+                .contains("no ChatGPT sign-in tokens"),
+            "{contents}"
+        );
+    }
+    fs::write(&path, r#"{"tokens":{"access_token":"first","access_token":"last","account_id":"first","account_id":"last"}}"#).unwrap();
+    let token = read_auth_file(&path).unwrap();
+    assert_eq!(
+        (token.access_token.as_str(), token.account_id.as_str()),
+        ("last", "last")
+    );
+    fs::write(
+        &path,
+        r#"{"tokens":17,"tokens":{"access_token":"dummy","account_id":"final"}}"#,
+    )
+    .unwrap();
+    assert_eq!(read_auth_file(&path).unwrap().account_id, "final");
+    fs::write(
+        &path,
+        r#"{"tokens":{"access_token":"dummy","account_id":"final"},"tokens":null}"#,
+    )
+    .unwrap();
+    assert!(
+        read_auth_file(&path)
+            .err()
+            .unwrap()
+            .contains("no ChatGPT sign-in tokens")
+    );
+}
+
 #[tokio::test]
 async fn logout_revokes_the_refresh_token_and_removes_only_own_tokens() {
     let temp = tempfile::tempdir().unwrap();

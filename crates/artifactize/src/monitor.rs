@@ -34,7 +34,7 @@ use std::{path::PathBuf, time::Duration};
 use time::OffsetDateTime;
 use tui_tree_widget::TreeState;
 
-/// One shared-state snapshot per second; no project rediscovery/fingerprinting on ticks.
+/// Cached clock/duration redraw, independent of state invalidation and SQLite reconciliation.
 const REFRESH: Duration = Duration::from_secs(1);
 /// Animate cancellable Human jobs without increasing database polling.
 const SPIN: Duration = Duration::from_millis(100);

@@ -213,6 +213,7 @@ fn protocol_uses_owner_cwd_literal_argv_and_disposable_private_environment() {
 import json, os, pathlib, stat, sys
 context = json.load(sys.stdin)
 assert context == {'version': 1, 'artifactId': 'test'}
+assert type(context['version']) is int
 assert pathlib.Path.cwd().name == 'owner'
 assert 'FINGERPRINT_SECRET' not in os.environ
 assert sys.argv[2] == '$HOME; ../literal $(touch executed)'

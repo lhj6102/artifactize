@@ -49,7 +49,8 @@ at 256000 bytes. Invalid JSON, schemas, reviewer names or verdicts exit 2 and
 leave the request correctable. A successful submission exits 0, even for RED;
 it does not start a separate verifier.
 
-While Human requests wait, `verify` polls their saved states and resumes newly READY
+While Human requests wait, local state-change notifications wake `verify`, which
+reconciles saved states and resumes newly READY
 dependents in the **same Run**, retaining its execution budget and earlier
 results. While waiting the Run remains RUNNING. `--timeout-ms`
 defaults to 600000, and accepts 1–2147483647. The deadline begins when scheduling
@@ -203,7 +204,19 @@ Detail depends on the eval kind:
   letters in fields are input, not global shortcuts.
 
 Browsing uses read-only state queries and cached Git discovery, not configuration
-rediscovery or fingerprints on each refresh. Only explicit Human actions write or
+rediscovery or fingerprints on each refresh. Local monitor/review readers share a
+temporary hub hosted inside the first subscriber process (no permanent daemon),
+using an owner-only Unix socket or Windows named pipe. Registration is acknowledged
+before the initial snapshot. Readers reconnect and resync if the hub exits or
+bounded hint queues overflow; writers never elect a hub. Unsafe or unavailable IPC
+falls back to five-second authoritative reconciliation, without an insecure
+transport fallback. A persistent read-only SQLite `data_version` connection and
+file-identity probe detect missed commits and database replacement. Clocks and
+busy spinners redraw cached data instead of reloading the database on each tick.
+`verify` separately reconciles dead execution owners/backend slots and optional
+remote results, retaining its existing absolute Human deadline. Session invalidation
+hints are available for future live viewers; this stage does not add live session
+scrolling or remote team-store push events. Only explicit Human actions write or
 run owner tools, through the same atomic claim, fingerprint recheck, schema
 validation and `submit_and_publish` APIs as `review`. Followers resolve to their
 original request. If remote publishing fails after local settlement, the modal

@@ -14,7 +14,7 @@ mod human;
 pub use human::HumanClaim;
 mod catalog;
 pub mod prune;
-mod receipts;
+pub(crate) mod receipts;
 mod runs;
 mod validation;
 mod wait_timeout;
@@ -25,6 +25,7 @@ pub use executions::{
     Capacity, Claim, Execution, ExecutionOptions, Origin, Producer, Provenance,
     read_keyed_executions, read_latest_cached,
 };
+pub(crate) use receipts::regular_files as check_probe_files;
 pub use receipts::{
     DATABASE, EARLIER_STATE, LastRequest, Receipts, Request, Run, RunView, StoppedBackend,
     read_latest_requests, read_run, read_state_id, schema_error, state_schema,

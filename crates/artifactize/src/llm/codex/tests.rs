@@ -3,6 +3,59 @@ use serde_json::json;
 use super::*;
 
 #[test]
+fn typed_picker_catalog_preserves_skips_defaults_and_malformed_listed_entry_errors() {
+    let body = json!({"extra":true,"models":[
+        null, 17, [], {"visibility":"hide","slug":null}, {"visibility":17,"slug":"skip"},
+        {"visibility":"list","slug":"first","display_name":null,"extra":17},
+        {"visibility":"list","slug":"second","display_name":42},
+        {"visibility":"list","slug":"third","display_name":""}
+    ]});
+    assert_eq!(
+        serde_json::to_value(picker_models(&serde_json::to_vec(&body).unwrap()).unwrap()).unwrap(),
+        json!([
+            {"slug":"first","display_name":"first"}, {"slug":"second","display_name":"second"}, {"slug":"third","display_name":""}
+        ])
+    );
+    for body in [
+        json!({}),
+        json!({"models":null}),
+        json!({"models":{}}),
+        json!([]),
+        json!({"models":[{"visibility":"list"}]}),
+        json!({"models":[{"visibility":"list","slug":""}]}),
+        json!({"models":[{"visibility":"list","slug":17}]}),
+    ] {
+        assert_eq!(
+            picker_models(&serde_json::to_vec(&body).unwrap())
+                .err()
+                .unwrap(),
+            "Invalid Codex models response."
+        );
+    }
+    for body in [
+        br#"{"models":[],"extra":1e400}"#.as_slice(),
+        br#"{"models":[],"extra":{"nested":[1e400]}}"#.as_slice(),
+        br#"{"models":[],"extra":1e400,"extra":null}"#.as_slice(),
+    ] {
+        assert!(serde_json::from_slice::<Value>(body).is_err());
+        assert_eq!(
+            picker_models(body).err().unwrap(),
+            "Invalid Codex models response."
+        );
+    }
+    assert!(
+        picker_models(br#"{"models":[],"extra":18446744073709551616}"#)
+            .unwrap()
+            .is_empty()
+    );
+    let duplicates = br#"{"models":null,"models":[{"visibility":"hide","visibility":"list","slug":17,"slug":"last","display_name":"old","display_name":null}]}"#;
+    assert_eq!(
+        serde_json::to_value(picker_models(duplicates).unwrap()).unwrap(),
+        json!([{"slug":"last","display_name":"last"}])
+    );
+}
+
+#[test]
 fn usage_limits_name_the_plan_and_reset_and_never_retry() {
     let resets = crate::auth::codex::now().unwrap() + 30 * 60;
     let body = json!({"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"PRO","resets_at":resets}});

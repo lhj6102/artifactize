@@ -211,7 +211,42 @@ pub struct RunView {
 
 #[derive(Clone)]
 pub struct Receipts {
-    pub(super) connection: Connection,
+    pub(super) connection: NotifyingConnection,
+}
+
+/// Notify at the DB-worker completion boundary, even if the awaiting caller was cancelled.
+/// total_changes is conservative (rolled-back changes can invalidate harmlessly). Only a
+/// finished autocommit edge can publish; no event is an audit record or proof of success.
+#[derive(Clone)]
+pub(crate) struct NotifyingConnection {
+    inner: Connection,
+    publisher: crate::changes::Publisher,
+}
+impl NotifyingConnection {
+    pub(crate) fn new(inner: Connection, state: &Path) -> Self {
+        Self {
+            inner,
+            publisher: crate::changes::Publisher::new(state),
+        }
+    }
+    pub(crate) async fn call<F, R, E>(&self, function: F) -> Result<R, tokio_rusqlite::Error<E>>
+    where
+        F: FnOnce(&mut rusqlite::Connection) -> Result<R, E> + Send + 'static,
+        R: Send + 'static,
+        E: Send + 'static,
+    {
+        let publisher = self.publisher.clone();
+        self.inner
+            .call(move |db| {
+                let before = db.total_changes();
+                let result = function(db);
+                if db.is_autocommit() && db.total_changes() != before {
+                    publisher.notify(crate::changes::Change::StateInvalidated);
+                }
+                result
+            })
+            .await
+    }
 }
 
 impl Receipts {
@@ -221,6 +256,7 @@ impl Receipts {
         let connection = Connection::open(state.join(DATABASE))
             .await
             .map_err(|e| e.to_string())?;
+        let connection = NotifyingConnection::new(connection, &state);
         // WAL initialization retries share the database contention budget.
         let deadline = tokio::time::Instant::now() + super::SQLITE_BUSY_TIMEOUT;
         let state_id = crate::agent::uuid()?;
@@ -444,7 +480,7 @@ pub fn read_state_id(state: &Path) -> Result<Option<String>, String> {
     read().map_err(|e| e.to_string())
 }
 
-fn regular_files(state: &Path) -> Result<(), String> {
+pub(crate) fn regular_files(state: &Path) -> Result<(), String> {
     for suffix in ["", "-wal", "-shm"] {
         let path = state.join(format!("{DATABASE}{suffix}"));
         match path.symlink_metadata() {

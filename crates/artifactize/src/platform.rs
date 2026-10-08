@@ -26,6 +26,9 @@ pub(crate) use os::{
     restrict_file, spawn_detached, spawn_gated, stop_requested, sync_dir,
 };
 
+#[cfg(windows)]
+pub(crate) use windows::{is_owner_only, private_pipe, user_identity};
+
 /// Poll contended process-shared file locks without blocking the async runtime;
 /// 25 ms keeps session sends and credential refreshes responsive without busy-waiting.
 pub(crate) const FILE_LOCK_RETRY_INTERVAL: std::time::Duration =

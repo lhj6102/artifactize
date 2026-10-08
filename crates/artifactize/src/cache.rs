@@ -30,6 +30,15 @@ use crate::{
 const MANIFEST_BYTES: usize = 64 * 1024;
 /// Keep change explanations readable in CLI output; the complete path list remains in Changes.
 const MAX_SUMMARY_PATHS: usize = 10;
+/// Fingerprint scripts receive version 1's artifact identity/family stdin envelope. Its
+/// explicit format version lets owner scripts distinguish future envelopes, not DB schemas.
+const FINGERPRINT_INPUT_VERSION: u32 = 1;
+/// Keep per-file change explanations compact with 8 digest bytes (16 hex characters).
+/// This diagnostic prefix is not identity: content fingerprints/reuse keys retain full SHA-256.
+const MANIFEST_DIGEST_PREFIX_BYTES: usize = 8;
+/// Domain-separate and version the reuse-key hash input, including its terminating newline.
+/// Changing these bytes invalidates existing reuse keys; this is not a config/session/DB version.
+const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v1\n";
 
 /// Hash the eval strategy: what is asked and how the answer is judged, never how the eval
 /// is executed. Execution options (backend, model, reasoning, limits, the profile variant),
@@ -128,7 +137,7 @@ pub fn key(
     fingerprints: &BTreeMap<String, crate::types::Fingerprint>,
 ) -> crate::types::ReuseKey {
     let mut digest = Sha256::new();
-    digest.update(format!("artifactize-key-v1\neval {eval_def_hash}\n"));
+    digest.update(format!("{REUSE_KEY_FORMAT_PREFIX}eval {eval_def_hash}\n"));
     // Names are identifiers and fingerprints never contain spaces or line breaks.
     for (name, fingerprint) in fingerprints {
         digest.update(format!("artifact {name} {fingerprint}\n"));
@@ -340,7 +349,12 @@ async fn content(
             files
                 .files
                 .iter()
-                .map(|(path, file)| (path.clone(), content::hex(&file[..8])))
+                .map(|(path, file)| {
+                    (
+                        path.clone(),
+                        content::hex(&file[..MANIFEST_DIGEST_PREFIX_BYTES]),
+                    )
+                })
                 .collect(),
         ),
     };
@@ -485,7 +499,7 @@ async fn script(
     };
     let scope = scope::argv_scope(config, artifact_id, args).map_err(|e| e.to_string())?;
     let args = scope::resolve_argv(config, &scope, artifact_id, args).map_err(|e| e.to_string())?;
-    let mut input = json!({"version":1,"artifactId":artifact_id});
+    let mut input = json!({"version":FINGERPRINT_INPUT_VERSION,"artifactId":artifact_id});
     if let Some(family) = &artifact.family {
         input["family"] = json!({"name":family.name,"material":family.material});
     }

@@ -3,6 +3,7 @@
 mod push;
 mod session;
 pub use push::{Push, push};
+pub(crate) use session::REFRESH as REFRESH_INTERVAL;
 pub use session::Session;
 
 use std::{collections::BTreeMap, path::PathBuf};
@@ -239,10 +240,24 @@ pub(crate) fn valid_fingerprint(value: &str) -> bool {
 }
 
 pub(crate) fn valid_hash(value: &str) -> bool {
-    value.len() == 64
+    value.len() == crate::types::SHA256_HEX_BYTES
         && value
             .bytes()
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+#[cfg(test)]
+#[test]
+fn sha256_hash_wire_format_keeps_exact_width_and_lowercase() {
+    assert!(valid_hash(&"a".repeat(crate::types::SHA256_HEX_BYTES)));
+    for hash in [
+        "a".repeat(63),
+        "a".repeat(65),
+        "A".repeat(64),
+        "g".repeat(64),
+    ] {
+        assert!(!valid_hash(&hash), "{hash}");
+    }
 }
 
 /// A producer's session reference, if any, names its conversation in bounded, printable
