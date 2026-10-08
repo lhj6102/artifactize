@@ -243,17 +243,15 @@ impl Sink {
             _ => {}
         }
     }
+    /// Release the mutex before any completion branch reacquires it.
+    fn ended(&self, kind: DeliveryKind, index: usize) -> bool {
+        self.0.lock().unwrap().ended.contains(&(kind, index))
+    }
     pub fn final_response(&self, choice: &[AssistantContent]) {
         for (index, content) in choice.iter().enumerate() {
             match content {
                 AssistantContent::Text(text) => {
-                    if !self
-                        .0
-                        .lock()
-                        .unwrap()
-                        .ended
-                        .contains(&(DeliveryKind::Text, index))
-                    {
+                    if !self.ended(DeliveryKind::Text, index) {
                         self.complete(
                             DeliveryKind::Text,
                             format!("text-{index}"),
@@ -261,16 +259,8 @@ impl Sink {
                         );
                     }
                 }
-                AssistantContent::Reasoning(_) => {
-                    if !self
-                        .0
-                        .lock()
-                        .unwrap()
-                        .ended
-                        .contains(&(DeliveryKind::Summary, index))
-                    {
-                        self.final_summary(index, content);
-                    }
+                AssistantContent::Reasoning(_) if !self.ended(DeliveryKind::Summary, index) => {
+                    self.final_summary(index, content);
                 }
                 _ => {}
             }
@@ -313,11 +303,10 @@ impl HttpClientExt for Tap {
         let response = self.0.send_streaming(request).await?;
         let (parts, body) = response.into_parts();
         let mut observer = Observer::default();
-        let stream = body.map(move |chunk| {
-            if let (Some(sink), Ok(bytes)) = (&sink, &chunk) {
+        let stream = body.inspect(move |chunk| {
+            if let (Some(sink), Ok(bytes)) = (&sink, chunk) {
                 observer.push(bytes, sink);
             }
-            chunk
         });
         Ok(Response::from_parts(parts, Box::pin(stream)))
     }

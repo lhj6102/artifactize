@@ -15,6 +15,46 @@ fn frame(mut value: serde_json::Value, sequence: usize) -> String {
         value["type"].as_str().unwrap()
     )
 }
+/// Bound fixture input so a malformed request cannot grow an unbounded test buffer.
+const REQUEST_BYTES: usize = 1024 * 1024;
+
+/// Read the complete fake request before answering; TCP may split both headers and body.
+async fn read_request(socket: &mut tokio::net::TcpStream) {
+    tokio::time::timeout(Duration::from_secs(5), read_request_bytes(socket))
+        .await
+        .expect("fixture request read timed out");
+}
+async fn read_request_bytes(socket: &mut tokio::net::TcpStream) {
+    let mut bytes = Vec::new();
+    let header_end = loop {
+        let mut chunk = [0; 4096];
+        let count = socket.read(&mut chunk).await.unwrap();
+        assert_ne!(count, 0, "fixture request ended before its headers");
+        bytes.extend_from_slice(&chunk[..count]);
+        assert!(bytes.len() <= REQUEST_BYTES, "fixture headers exceed bound");
+        if let Some(end) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
+            break end + 4;
+        }
+    };
+    let headers = std::str::from_utf8(&bytes[..header_end]).unwrap();
+    let length = headers
+        .lines()
+        .filter_map(|line| line.split_once(':'))
+        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+        .map(|(_, value)| value.trim().parse::<usize>().unwrap())
+        .unwrap_or(0);
+    let request_end = header_end
+        .checked_add(length)
+        .filter(|end| *end <= REQUEST_BYTES)
+        .expect("fixture request length within bound");
+    while bytes.len() < request_end {
+        let mut chunk = [0; 4096];
+        let count = socket.read(&mut chunk).await.unwrap();
+        assert_ne!(count, 0, "fixture request ended before its body");
+        bytes.extend_from_slice(&chunk[..count]);
+    }
+}
+
 #[tokio::test]
 async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_enters_delivery() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -22,8 +62,7 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
     let (release_tx, release_rx) = oneshot::channel();
     let server = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
-        let mut request = vec![0; 16384];
-        let _ = socket.read(&mut request).await.unwrap();
+        read_request(&mut socket).await;
         socket
             .write_all(
                 b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
@@ -175,8 +214,7 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
     let (stop_tx, stop_rx) = oneshot::channel();
     let server = tokio::spawn(async move {
         let (mut socket, _) = listener.accept().await.unwrap();
-        let mut bytes = [0; 8192];
-        socket.read(&mut bytes).await.unwrap();
+        read_request(&mut socket).await;
         socket
             .write_all(
                 b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n",
