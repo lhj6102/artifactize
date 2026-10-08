@@ -140,7 +140,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
             ..returning()
         })
         .await;
-    assert_eq!(follower.requests[0].status, "WAITING_HUMAN");
+    assert_eq!(follower.requests[0].status.as_str(), "WAITING_HUMAN");
     assert_eq!(
         follower.requests[0].execution_id.as_deref(),
         run["requests"][0]["executionId"].as_str()
@@ -151,7 +151,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
             ..returning()
         })
         .await;
-    assert_eq!(default.requests[0].status, "WAITING_HUMAN");
+    assert_eq!(default.requests[0].status.as_str(), "WAITING_HUMAN");
     assert_eq!(default.run.executions_started, 0);
 }
 
@@ -231,14 +231,15 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
                 .await
                 .unwrap()
                 .requests[0]
-                .status,
+                .status
+                .as_str(),
             "WAITING_HUMAN"
         );
     }
     let result = human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
         .await
         .unwrap();
-    assert_eq!(result.status, "GREEN");
+    assert_eq!(result.status.as_str(), "GREEN");
     assert!(
         human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
             .await
@@ -309,7 +310,7 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
             "{error}"
         );
         let saved = store::read_run(&fixture.state, &run.run.id).await.unwrap();
-        assert_eq!(saved.requests[0].status, "ERROR");
+        assert_eq!(saved.requests[0].status.as_str(), "ERROR");
         assert_eq!(
             saved.requests[0].error_code.as_deref(),
             Some("INPUT_CHANGED")
@@ -378,18 +379,19 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     write_human(&fixture.repo.join("child"), true);
     fs::write(fixture.repo.join("artifactize.json"), json!({"name":"parent","evals":[{"id":"test","title":"Dependent","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Check child."}}]}).to_string()).unwrap();
     let run = fixture.verify(returning()).await;
-    assert_eq!(run.run.status, "INCOMPLETE");
+    assert_eq!(run.run.status.as_str(), "INCOMPLETE");
     let waiting = run
         .requests
         .iter()
-        .find(|r| r.status == "WAITING_HUMAN")
+        .find(|r| r.status == artifactize::types::RequestStatus::WaitingHuman)
         .unwrap();
     assert_eq!(
         run.requests
             .iter()
             .find(|r| r.target == "parent")
             .unwrap()
-            .status,
+            .status
+            .as_str(),
         "WAIT_DEPENDENCY"
     );
     let receipts = fixture.receipts().await;
@@ -404,9 +406,14 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     .await
     .unwrap();
     let complete = fixture.verify(returning()).await;
-    assert_eq!(complete.run.status, "GREEN");
+    assert_eq!(complete.run.status.as_str(), "GREEN");
     assert_eq!(complete.run.executions_started, 1);
-    assert!(complete.requests.iter().all(|r| r.status == "GREEN"));
+    assert!(
+        complete
+            .requests
+            .iter()
+            .all(|r| r.status == artifactize::types::RequestStatus::Green)
+    );
 }
 
 #[tokio::test]
@@ -423,7 +430,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     )
     .await
     .unwrap();
-    assert_eq!(run.requests[0].status, "WAITING_HUMAN");
+    assert_eq!(run.requests[0].status.as_str(), "WAITING_HUMAN");
     let receipts = fixture.receipts().await;
     let follower = &run.requests[0].id;
     let owner = original["requests"][0]["id"].as_str().unwrap();
@@ -431,7 +438,8 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         human::claim(&receipts, follower, "alice")
             .await
             .unwrap()
-            .request_id,
+            .request_id
+            .as_str(),
         owner
     );
     assert!(human::claim(&receipts, owner, "bob").await.is_err());
@@ -470,14 +478,15 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         .is_err()
     );
     let settled = store::read_run(&fixture.state, &run.run.id).await.unwrap();
-    assert_eq!(settled.requests[0].status, "RED");
+    assert_eq!(settled.requests[0].status.as_str(), "RED");
     receipts.finish(&run.run, &run.requests).await.unwrap();
     assert_eq!(
         store::read_run(&fixture.state, &run.run.id)
             .await
             .unwrap()
             .requests[0]
-            .status,
+            .status
+            .as_str(),
         "RED"
     );
     fs::write(other.repo.join("fingerprint"), "human-v1\n").unwrap();
@@ -490,7 +499,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     )
     .await
     .unwrap();
-    assert_eq!(completed.run.status, "RED");
+    assert_eq!(completed.run.status.as_str(), "RED");
     assert_eq!(
         completed.requests[0].result.as_ref().unwrap()["reason"],
         "Needs work"
@@ -558,7 +567,8 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
         human::claim(&receipts, follower, "bob")
             .await
             .unwrap()
-            .request_id,
+            .request_id
+            .as_str(),
         owner
     );
     assert_eq!(
@@ -621,7 +631,7 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
             ..returning()
         })
         .await;
-    assert_eq!(forced.requests[0].status, "WAITING_HUMAN");
+    assert_eq!(forced.requests[0].status.as_str(), "WAITING_HUMAN");
     human::claim(&receipts, &forced.requests[0].id, "alice")
         .await
         .unwrap();
@@ -643,7 +653,7 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
         .unwrap()
         .unwrap();
     assert_eq!(cached.provenance.request_id, run.requests[0].id);
-    assert_eq!(cached.status, "GREEN");
+    assert_eq!(cached.status.as_str(), "GREEN");
 }
 
 #[tokio::test]
@@ -664,7 +674,7 @@ async fn no_fingerprint_results_are_not_reused_by_a_new_verify() {
     .await
     .unwrap();
     let next = fixture.verify(returning()).await;
-    assert_eq!(next.requests[0].status, "WAITING_HUMAN");
+    assert_eq!(next.requests[0].status.as_str(), "WAITING_HUMAN");
     assert_ne!(next.requests[0].execution_id, run.requests[0].execution_id);
 }
 
@@ -704,9 +714,9 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     .await
     .unwrap();
     let saved = store::read_run(&fixture.state, &run.run.id).await.unwrap();
-    assert_eq!(saved.requests[0].status, "GREEN");
-    assert_eq!(saved.requests[1].status, "GREEN");
-    assert_eq!(saved.requests[2].status, "WAITING_HUMAN");
+    assert_eq!(saved.requests[0].status.as_str(), "GREEN");
+    assert_eq!(saved.requests[1].status.as_str(), "GREEN");
+    assert_eq!(saved.requests[2].status.as_str(), "WAITING_HUMAN");
     let status = project::status(
         &fixture.repo,
         Some(&fixture.state),
@@ -723,8 +733,9 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
         human::claim(&receipts, &run.requests[2].id, "bob")
             .await
             .unwrap()
-            .request_id,
-        run.requests[2].id
+            .request_id
+            .as_str(),
+        run.requests[2].id.as_str()
     );
     human::submit(
         &receipts,
@@ -736,9 +747,9 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     .await
     .unwrap();
     let reused = fixture.verify(returning()).await;
-    assert_eq!(reused.requests[0].status, "GREEN");
-    assert_eq!(reused.requests[1].status, "GREEN");
-    assert_eq!(reused.requests[2].status, "RED");
+    assert_eq!(reused.requests[0].status.as_str(), "GREEN");
+    assert_eq!(reused.requests[1].status.as_str(), "GREEN");
+    assert_eq!(reused.requests[2].status.as_str(), "RED");
     for (new, original) in reused.requests.iter().zip(&run.requests) {
         assert_eq!(new.execution_id, original.execution_id);
         assert_eq!(
@@ -784,7 +795,7 @@ async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
         })
         .await;
     let request = &run.requests[0];
-    assert_eq!(request.status, "WAITING_HUMAN");
+    assert_eq!(request.status.as_str(), "WAITING_HUMAN");
     assert_eq!(request.options.variant.as_deref(), Some("lead"));
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &request.id, "alice").await.unwrap();
@@ -797,10 +808,10 @@ async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
     )
     .await
     .unwrap();
-    assert_eq!(settled.status, "GREEN");
+    assert_eq!(settled.status.as_str(), "GREEN");
     // The declared profile reuses the sign-off the variant produced.
     let reused = fixture.verify(returning()).await;
-    assert_eq!(reused.requests[0].status, "GREEN");
+    assert_eq!(reused.requests[0].status.as_str(), "GREEN");
     assert_eq!(reused.requests[0].execution_id, request.execution_id);
     assert_eq!(reused.requests[0].options.variant.as_deref(), Some("lead"));
     assert_eq!(reused.requests[0].reviewer.as_deref(), Some("alice"));

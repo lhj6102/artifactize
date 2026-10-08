@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 
 use rig_core::message::{AssistantContent, Message, UserContent};
 use serde::Serialize;
-use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use super::Conversation;
@@ -54,16 +53,16 @@ pub struct ToolCalls {
 impl Summary {
     pub fn new(conversation: &Conversation) -> Self {
         let header = conversation.header();
-        let text = |name: &str| header[name].as_str().map(str::to_owned);
+
         let (started_at, ended_at) = (
             conversation
                 .events
                 .first()
-                .and_then(|event| event["at"].as_str()),
+                .and_then(|event| event.at.as_deref()),
             conversation
                 .events
                 .last()
-                .and_then(|event| event["at"].as_str()),
+                .and_then(|event| event.at.as_deref()),
         );
         let instant = |text: &str| OffsetDateTime::parse(text, &Rfc3339).ok();
         let duration_ms = started_at
@@ -71,9 +70,15 @@ impl Summary {
             .zip(ended_at.and_then(instant))
             .map(|(start, end)| (end - start).whole_milliseconds().max(0) as u64);
         let mut summary = Self {
-            backend: text("backend"),
-            model: text("model"),
-            reasoning: text("reasoning"),
+            backend: header.backend.map(|backend| {
+                serde_json::to_value(backend)
+                    .expect("backend is JSON")
+                    .as_str()
+                    .expect("backend is text")
+                    .to_owned()
+            }),
+            model: header.model.clone(),
+            reasoning: header.reasoning.clone(),
             started_at: started_at.map(str::to_owned),
             ended_at: ended_at.map(str::to_owned),
             duration_ms,
@@ -85,37 +90,31 @@ impl Summary {
         // Calls by tool, then the results that answered them and those that failed.
         let mut answered = BTreeMap::<String, (u64, u64)>::new();
         for event in &conversation.events {
-            match event["kind"].as_str() {
-                Some("attempt") => summary.attempt(event),
-                Some("message") => {
-                    let Ok(message) = serde_json::from_value::<Message>(event["message"].clone())
-                    else {
-                        continue;
-                    };
-                    match message {
-                        Message::Assistant { content, .. } => {
-                            for part in content {
-                                if let AssistantContent::ToolCall(call) = part {
-                                    let name = call.function.name.as_str().to_owned();
-                                    summary.tool_calls.entry(name).or_default().calls += 1;
-                                }
+            match &event.kind {
+                super::Kind::Attempt(attempt) => summary.attempt(event.send, attempt),
+                super::Kind::Message(event) => match &event.message {
+                    Message::Assistant { content, .. } => {
+                        for part in content {
+                            if let AssistantContent::ToolCall(call) = part {
+                                let name = call.function.name.as_str().to_owned();
+                                summary.tool_calls.entry(name).or_default().calls += 1;
                             }
                         }
-                        Message::User { content } => {
-                            let results = content.iter().filter_map(|part| match part {
-                                UserContent::ToolResult(result) => Some(result),
-                                _ => None,
-                            });
-                            for (index, result) in results.enumerate() {
-                                let (count, failed) =
-                                    answered.entry(result.name.as_str().to_owned()).or_default();
-                                *count += 1;
-                                *failed += u64::from(event["isError"][index] == true);
-                            }
-                        }
-                        Message::System { .. } => {}
                     }
-                }
+                    Message::User { content } => {
+                        let results = content.iter().filter_map(|part| match part {
+                            UserContent::ToolResult(result) => Some(result),
+                            _ => None,
+                        });
+                        for (index, result) in results.enumerate() {
+                            let (count, failed) =
+                                answered.entry(result.name.as_str().to_owned()).or_default();
+                            *count += 1;
+                            *failed += u64::from(event.is_error.get(index) == Some(&true));
+                        }
+                    }
+                    Message::System { .. } => {}
+                },
                 _ => {}
             }
         }
@@ -127,9 +126,9 @@ impl Summary {
     }
 
     /// Count an attempt in its turn and in the totals.
-    fn attempt(&mut self, event: &Value) {
-        let follow_up = event["send"].as_u64();
-        let turn = event["turn"].as_u64().unwrap_or_default();
+    fn attempt(&mut self, send: Option<usize>, attempt: &crate::llm::Attempt) {
+        let follow_up = send.map(|send| send as u64);
+        let turn = attempt.turn as u64;
         if self
             .turns
             .last()
@@ -144,7 +143,7 @@ impl Summary {
         }
         let current = self.turns.last_mut().expect("the attempt's turn");
         current.attempts += 1;
-        for (name, value) in event["usage"].as_object().into_iter().flatten() {
+        for (name, value) in &attempt.usage {
             if let Some(value) = value.as_u64() {
                 for tokens in [&mut current.tokens, &mut self.tokens] {
                     let total = tokens.entry(name.clone()).or_default();
@@ -218,7 +217,11 @@ mod tests {
         ];
         let summary = Summary::new(&Conversation {
             path: "session.jsonl".into(),
-            events,
+            wire_events: Vec::new(),
+            events: events
+                .into_iter()
+                .map(|event| serde_json::from_value(event).unwrap())
+                .collect(),
         });
         assert_eq!(summary.backend.as_deref(), Some("openai"));
         assert_eq!(summary.duration_ms, Some(2500));

@@ -171,9 +171,9 @@ fn span(start: &str, end: Option<&str>, now: OffsetDateTime) -> Option<String> {
 pub fn run_rows(runs: &[RunSummary], now: OffsetDateTime) -> Vec<RunRow> {
     runs.iter()
         .map(|run| RunRow {
-            id: run.id.clone(),
+            id: run.id.to_string(),
             repo: run.repo_path.display().to_string(),
-            status: run.status.clone(),
+            status: run.status.to_string(),
             counts: join(
                 run.counts.iter().map(|(status, n)| format!("{status} {n}")),
                 "  ",
@@ -215,18 +215,18 @@ fn error(view: &RequestView) -> Option<String> {
 
 pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Progress {
     let run = &view.run;
-    let output = query::run_output(view);
+    let output = query::run_output(view, now);
     let summary = &output["summary"];
     let with = |status: &'static str| {
         requests
             .iter()
-            .filter(move |view| view.request.status == status)
+            .filter(move |view| view.request.status.as_str() == status)
     };
     let usage = pairs(&summary["usage"]);
     let saved = pairs(&output["usage"]["saved"]);
     let unmet = join(strs(&run.validation["obligations"]), ", ");
     Progress {
-        status: run.status.clone(),
+        status: run.status.to_string(),
         repo: run.repo_path.display().to_string(),
         validation: match run.validation.get("satisfied") {
             None => "pending".into(),
@@ -445,7 +445,7 @@ fn artifact_node(saved: &Saved, id: &str, now: OffsetDateTime) -> Node {
         .into_iter()
         .map(|(eval, definition)| {
             let request = saved.request(eval);
-            let status = request.map(|view| view.request.status.clone());
+            let status = request.map(|view| view.request.status.to_string());
             let local = eval.rsplit_once('/').map_or(eval, |(_, local)| local);
             let mut text = format!("{local} {}", status.as_deref().unwrap_or(ABSENT));
             if let Some(time) = request.and_then(|view| elapsed(view, now)) {
@@ -528,21 +528,31 @@ pub fn tree(run: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Vec
     nodes
 }
 
-fn profile(profile: &Value) -> String {
-    let text = |key: &str| profile[key].as_str().unwrap_or("?");
-    match text("kind") {
-        "agent" => {
-            let reasoning = profile["reasoning"].as_str();
-            let reasoning = reasoning.map_or(String::new(), |r| format!(" reasoning {r}"));
-            format!("agent {} {}{reasoning}", text("backend"), text("model"))
+fn profile(profile: &crate::config::StoredProfile) -> String {
+    use crate::config::{Field, StoredProfile};
+    match profile {
+        StoredProfile::Agent {
+            backend,
+            model,
+            reasoning,
+            ..
+        } => {
+            let reasoning = match reasoning {
+                Field::Value(reasoning) => format!(" reasoning {reasoning}"),
+                _ => String::new(),
+            };
+            format!(
+                "agent {} {model}{reasoning}",
+                serde_json::to_value(backend)
+                    .expect("backend is JSON")
+                    .as_str()
+                    .expect("backend is a string")
+            )
         }
-        "runtime" => format!(
-            "runtime {} {}",
-            text("command"),
-            join(strs(&profile["args"]), " ")
-        ),
-        "human" => "human".into(),
-        _ => profile.to_string(),
+        StoredProfile::Runtime { command, args, .. } => {
+            format!("runtime {command} {}", args.join(" "))
+        }
+        StoredProfile::Human {} => "human".into(),
     }
 }
 
@@ -567,22 +577,19 @@ fn options(options: &crate::store::ExecutionOptions) -> String {
 
 fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     let request = &view.request;
-    let summary = &query::request_output(view)["summary"];
+    let summary = &query::request_output(view, now)["summary"];
     let mut detail = Detail {
         title: format!("{} · {}", request.eval_id, request.title),
         fields: Vec::new(),
     };
     detail.push(
         "Status",
-        format!("{} — {}", request.status, meaning(&request.status)),
+        format!("{} — {}", request.status, meaning(request.status.as_str())),
     );
     detail.push("Request", request.id.as_str());
     detail.push("Reason", request.blocked_reason.clone().unwrap_or_default());
     detail.push("Error", error(view).unwrap_or_default());
-    detail.push(
-        "Instruction",
-        request.payload["instruction"].as_str().unwrap_or_default(),
-    );
+    detail.push("Instruction", request.payload.instruction());
     detail.push("Profile", profile(&request.profile));
     if request.requested_profile != request.profile {
         detail.push("Requested", profile(&request.requested_profile));
@@ -631,7 +638,7 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             format!("{} {} · owner pid {owner}", execution.id, execution.status),
         );
     }
-    if request.profile["kind"] == "human" || view.claim.is_some() {
+    if request.profile.kind() == crate::config::ProfileKind::Human || view.claim.is_some() {
         detail.push("Claim", claim(view));
     }
     detail.push(
@@ -660,18 +667,16 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     }
     let total = pairs(&summary["usage"]);
     let attempts = request.usage.as_ref().or(request.reused_usage.as_ref());
-    let attempts = attempts
-        .and_then(Value::as_array)
-        .map_or(&[][..], Vec::as_slice);
+    let attempts = attempts.map_or(&[][..], Vec::as_slice);
     let original = attempts.len();
     let attempts = attempts.iter().map(|attempt| {
-        let error = attempt["error"].as_str();
+        let error = attempt.error.as_deref();
         let error = error.map_or(String::new(), |error| format!(" error: {error}"));
         format!(
             "turn {} attempt {}: {}{error}",
-            attempt["turn"],
-            attempt["attempt"],
-            pairs(&attempt["usage"])
+            attempt.turn,
+            attempt.attempt,
+            pairs(&serde_json::to_value(&attempt.usage).expect("usage is JSON"))
         )
     });
     let state = if reused(view) {
@@ -721,7 +726,14 @@ pub fn detail(
                     .as_str()
                     .unwrap_or_default(),
             );
-            detail.push("Profile", profile(&declaration["profile"]));
+            detail.push(
+                "Profile",
+                serde_json::from_value::<crate::config::StoredProfile>(
+                    declaration["profile"].clone(),
+                )
+                .map(|value| profile(&value))
+                .unwrap_or_else(|_| "unknown".into()),
+            );
         }
         Target::Artifact(id) => {
             let artifact = &saved.definitions("artifacts")[id.as_str()];

@@ -23,6 +23,7 @@ pub mod scope;
 pub mod server;
 pub mod store;
 pub mod tools;
+pub mod types;
 pub mod workspace;
 
 /// Links, permissions, processes and the Windows stand-ins for Unix utilities, shared with

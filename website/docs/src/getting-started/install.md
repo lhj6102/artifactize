@@ -95,9 +95,10 @@ artifactize` replaces the binary with the latest stable release, and `cargo inst
 artifactize --locked` rebuilds it (or run the `--git` command with the new release's
 tag, or `git pull` and repeat `cargo install --path`). Your state stays where it is.
 
-0.6.0 starts a new state. Every command refuses a state database that an earlier
-artifactize wrote, with exit code 2, and `artifactize doctor` reports it: set
-`ARTIFACTIZE_STATE_HOME` (or `--state-dir`) to a new directory, or move the old one
+0.6.0 starts a new state. Commands that read or write state refuse a database that
+an earlier artifactize wrote, with exit code 2; `artifactize doctor` instead reports
+it as a hard error and exits 1. Set `ARTIFACTIZE_STATE_HOME` (or `--state-dir`) to a
+new directory, or move the old one
 away. The first `verify` in the new state reviews everything once
 ([Upgrading to 0.6](../concepts/fingerprints-and-reuse.md#upgrading-to-06)). An eval
 that still declares `resultCheck` fails `config check`: remove it. 0.4 calls the reuse

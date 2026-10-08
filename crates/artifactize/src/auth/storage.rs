@@ -2,12 +2,15 @@ use std::{
     fs::{self, File, OpenOptions, TryLockError},
     io::{Read, Write},
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::platform;
+
+/// Allow complete token envelopes while bounding memory for malformed credential
+/// files, consistently for application-owned storage and read-only Codex imports.
+pub(super) const MAX_CREDENTIAL_BYTES: usize = 1024 * 1024;
 
 /// Whose tokens a storage holds, which names it in a refusal.
 #[derive(Clone, Copy)]
@@ -136,7 +139,7 @@ impl Storage {
             match file.try_lock() {
                 Ok(()) => return Ok(file),
                 Err(TryLockError::WouldBlock) => {
-                    tokio::time::sleep(Duration::from_millis(25)).await
+                    tokio::time::sleep(platform::FILE_LOCK_RETRY_INTERVAL).await
                 }
                 Err(TryLockError::Error(error)) => return Err(error.to_string()),
             }
@@ -154,10 +157,11 @@ impl Storage {
         };
         check_private_file(&file)?;
         let mut data = Vec::new();
-        file.take(1024 * 1024 + 1)
+        // One sentinel byte detects an oversized file without reading it in full.
+        file.take(MAX_CREDENTIAL_BYTES as u64 + 1)
             .read_to_end(&mut data)
             .map_err(|e| e.to_string())?;
-        if data.len() > 1024 * 1024 {
+        if data.len() > MAX_CREDENTIAL_BYTES {
             return Err("Credential file is too large.".into());
         }
         serde_json::from_slice(&data)

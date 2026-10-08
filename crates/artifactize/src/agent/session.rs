@@ -19,7 +19,9 @@
 //! Every event has its time in `at`. Writing never fails a review: an error is reported on
 //! stderr and the review goes on without its conversation.
 
+mod events;
 mod gc;
+pub use events::{Answer, Budgets, End, Event, Header, Kind, MessageEvent, Send};
 mod summary;
 
 pub use gc::{Collection, Usage, collect, usage};
@@ -30,12 +32,13 @@ use std::{
     fs::File,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use rig_core::message::{AssistantContent, Message, ToolResultContent, UserContent};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
+#[cfg(test)]
+use serde_json::json;
 
 use crate::{platform, store::Request};
 
@@ -52,9 +55,9 @@ const VERSION: u32 = 1;
 pub struct SessionRef {
     pub producer: String,
     pub state: String,
-    pub run_id: String,
-    pub request_id: String,
-    pub session_id: String,
+    pub run_id: crate::types::RunId,
+    pub request_id: crate::types::RequestId,
+    pub session_id: crate::types::SessionId,
 }
 
 impl fmt::Display for SessionRef {
@@ -81,9 +84,9 @@ impl SessionRef {
         let reference = Self {
             producer: producer.into(),
             state: state.into(),
-            run_id: run_id.into(),
-            request_id: request_id.into(),
-            session_id: session_id.into(),
+            run_id: run_id.parse().ok()?,
+            request_id: request_id.parse().ok()?,
+            session_id: session_id.parse().ok()?,
         };
         reference.valid().then_some(reference)
     }
@@ -91,14 +94,16 @@ impl SessionRef {
     /// Bounded, printable fields; the ids are single path segments. A reference from a remote
     /// record is checked before it is kept.
     pub fn valid(&self) -> bool {
-        let printable =
-            |value: &str| (1..=200).contains(&value.len()) && !value.chars().any(char::is_control);
+        let printable = |value: &str| {
+            (1..=crate::types::MAX_ID_BYTES).contains(&value.len())
+                && !value.chars().any(char::is_control)
+        };
         printable(&self.producer)
             && [
-                &self.state,
-                &self.run_id,
-                &self.request_id,
-                &self.session_id,
+                self.state.as_str(),
+                self.run_id.as_str(),
+                self.request_id.as_str(),
+                self.session_id.as_str(),
             ]
             .into_iter()
             .all(|id| printable(id) && valid_id(id))
@@ -107,11 +112,7 @@ impl SessionRef {
 
 /// A session or state id: letters, digits, `-`, `_` and `.`, never only dots.
 fn valid_id(id: &str) -> bool {
-    (1..=200).contains(&id.len())
-        && id.bytes().any(|byte| byte != b'.')
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+    id.parse::<crate::types::SessionId>().is_ok()
 }
 
 /// The session store of a state.
@@ -121,9 +122,7 @@ pub fn directory(state: &Path) -> PathBuf {
 
 /// The conversation file of a session id.
 pub fn path(state: &Path, id: &str) -> Result<PathBuf, String> {
-    if !valid_id(id) {
-        return Err(format!("Invalid Agent session id: {id:?}."));
-    }
+    let id: crate::types::SessionId = id.parse()?;
     Ok(directory(state).join(format!("{id}.jsonl")))
 }
 
@@ -143,8 +142,8 @@ fn warn(message: &str) {
 /// Appends one session's events. It writes nothing when saving is off, and after a failed
 /// write it reports the error once and writes nothing more.
 pub struct Recorder {
-    id: String,
-    target: Option<(PathBuf, Value)>,
+    id: crate::types::SessionId,
+    target: Option<(PathBuf, Header)>,
     reference: Option<SessionRef>,
     file: Option<File>,
     /// The follow-up whose events this appends.
@@ -153,9 +152,9 @@ pub struct Recorder {
 
 impl Recorder {
     /// A session that is not saved.
-    pub fn off(id: &str) -> Self {
+    pub fn off(id: &crate::types::SessionId) -> Self {
         Self {
-            id: id.into(),
+            id: id.clone(),
             target: None,
             reference: None,
             file: None,
@@ -164,7 +163,7 @@ impl Recorder {
     }
 
     /// The recorder of a request's new review session `id`.
-    pub fn new(saving: Option<&Saving>, request: &Request, id: &str) -> Self {
+    pub fn new(saving: Option<&Saving>, request: &Request, id: &crate::types::SessionId) -> Self {
         let Some(saving) = saving else {
             return Self::off(id);
         };
@@ -180,11 +179,18 @@ impl Recorder {
             state: saving.state_id.clone(),
             run_id: request.run_id.clone(),
             request_id: request.id.clone(),
-            session_id: id.into(),
+            session_id: id.clone(),
         };
-        let mut identity = json!(reference);
-        identity["evalId"] = json!(request.eval_id);
-        identity["target"] = json!(request.target);
+        let identity = Header {
+            producer: Some(reference.producer),
+            state: Some(reference.state),
+            run_id: Some(reference.run_id),
+            request_id: Some(reference.request_id),
+            session_id: Some(reference.session_id),
+            eval_id: Some(request.eval_id.clone()),
+            target: Some(request.target.clone()),
+            ..Header::default()
+        };
         Self {
             target: Some((file, identity)),
             ..Self::off(id)
@@ -194,21 +200,29 @@ impl Recorder {
     /// A session saved below `state` for no Run.
     #[cfg(test)]
     pub(crate) fn test(state: &Path, id: &str) -> Self {
+        let id: crate::types::SessionId = id.parse().unwrap();
         let reference = SessionRef {
             producer: "tester@host".into(),
             state: "state".into(),
-            run_id: "run".into(),
-            request_id: "request".into(),
-            session_id: id.into(),
+            run_id: "run".parse().unwrap(),
+            request_id: "request".parse().unwrap(),
+            session_id: id.clone(),
         };
         Self {
-            target: Some((path(state, id).unwrap(), json!(reference))),
-            ..Self::off(id)
+            target: Some((
+                path(state, &id).unwrap(),
+                serde_json::from_value(json!(reference)).unwrap(),
+            )),
+            ..Self::off(&id)
         }
     }
 
     /// Append follow-up `send` to the saved conversation at `path`.
-    pub(crate) fn append(path: &Path, id: &str, send: usize) -> Result<Self, String> {
+    pub(crate) fn append(
+        path: &Path,
+        id: &crate::types::SessionId,
+        send: usize,
+    ) -> Result<Self, String> {
         let file = platform::open_no_follow(File::options().append(true), path)
             .map_err(|error| format!("Cannot open Agent session {id}: {error}"))?;
         Ok(Self {
@@ -228,24 +242,29 @@ impl Recorder {
     }
 
     /// Create the session file with its `review` event: the identity, then `details`.
-    pub(crate) fn start(&mut self, details: Value) {
+    pub(crate) fn start(&mut self, mut details: Header) {
         let Some((path, identity)) = self.target.take() else {
             return;
         };
-        let reference = serde_json::from_value(identity.clone()).expect("a session reference");
+        let reference = SessionRef {
+            producer: identity.producer.clone().expect("recorder producer"),
+            state: identity.state.clone().expect("recorder state"),
+            run_id: identity.run_id.clone().expect("recorder Run"),
+            request_id: identity.request_id.clone().expect("recorder request"),
+            session_id: self.id.clone(),
+        };
         match create(&path) {
             Ok(file) => {
                 self.file = Some(file);
-                let mut event = json!({"kind":"review","version":VERSION});
-                for (name, value) in identity
-                    .as_object()
-                    .into_iter()
-                    .chain(details.as_object())
-                    .flatten()
-                {
-                    event[name] = value.clone();
-                }
-                self.event(event);
+                details.version = Some(VERSION);
+                details.producer = identity.producer;
+                details.state = identity.state;
+                details.run_id = identity.run_id;
+                details.request_id = identity.request_id;
+                details.session_id = identity.session_id;
+                details.eval_id = identity.eval_id;
+                details.target = identity.target;
+                self.event(Kind::Review(Box::new(details)));
                 if self.file.is_some() {
                     self.reference = Some(reference);
                 }
@@ -259,11 +278,13 @@ impl Recorder {
         if self.file.is_none() {
             return;
         }
-        let mut event = json!({"kind":"message","turn":turn,"message":message});
-        if repair {
-            event["repair"] = json!(true);
-        }
-        self.event(event);
+        self.event(Kind::Message(MessageEvent {
+            turn,
+            message: message.clone(),
+            repair,
+            is_error: Vec::new(),
+            question: None,
+        }));
     }
 
     /// The message of tool results that `turn` sends, with whether each failed.
@@ -271,18 +292,25 @@ impl Recorder {
         if self.file.is_none() {
             return;
         }
-        self.event(json!({"kind":"message","turn":turn,"message":message,"isError":failed}));
+        self.event(Kind::Message(MessageEvent {
+            turn,
+            message: message.clone(),
+            repair: false,
+            is_error: failed.to_vec(),
+            question: None,
+        }));
     }
 
     /// Append an event, stamped with its time and the follow-up it belongs to.
-    pub(crate) fn event(&mut self, mut event: Value) {
+    pub(crate) fn event(&mut self, kind: Kind) {
         let Some(file) = &mut self.file else {
             return;
         };
-        if let Some(send) = self.send {
-            event["send"] = json!(send);
-        }
-        event["at"] = json!(crate::broker::now());
+        let event = Event {
+            kind,
+            send: self.send,
+            at: Some(crate::broker::now()),
+        };
         let mut line = serde_json::to_vec(&event).expect("session events are JSON");
         line.push(b'\n');
         if let Err(error) = file.write_all(&line).and_then(|()| file.flush()) {
@@ -322,7 +350,9 @@ fn create(path: &Path) -> Result<File, String> {
 #[derive(Debug)]
 pub struct Conversation {
     pub path: PathBuf,
-    pub events: Vec<Value>,
+    pub events: Vec<Event>,
+    /// Original events for the lossless --json output; computations use events.
+    pub wire_events: Vec<Value>,
 }
 
 impl Conversation {
@@ -343,11 +373,22 @@ impl Conversation {
             .map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
         let count = lines.len();
         let mut events = Vec::new();
+        let mut wire_events = Vec::new();
         for (index, line) in lines.into_iter().enumerate() {
             match serde_json::from_str::<Value>(&line) {
-                Ok(event) if event.is_object() => events.push(event),
-                _ if index + 1 == count => {}
-                _ => {
+                Ok(value) => {
+                    let event: Event = serde_json::from_value(value.clone()).map_err(|error| {
+                        format!(
+                            "{} line {} is not a session event: {error}",
+                            path.display(),
+                            index + 1
+                        )
+                    })?;
+                    wire_events.push(value);
+                    events.push(event);
+                }
+                Err(error) if error.is_eof() && index + 1 == count => {}
+                Err(_) => {
                     return Err(format!(
                         "{} line {} is not a session event.",
                         path.display(),
@@ -356,25 +397,32 @@ impl Conversation {
                 }
             }
         }
-        if events.first().is_none_or(|event| event["kind"] != "review") {
+        if events
+            .first()
+            .is_none_or(|event| !matches!(event.kind, Kind::Review(_)))
+        {
             return Err(format!("{} has no review event.", path.display()));
         }
         Ok(Some(Self {
             path: path.into(),
             events,
+            wire_events,
         }))
     }
 
     /// The `review` event.
-    pub fn header(&self) -> &Value {
-        &self.events[0]
+    pub fn header(&self) -> &Header {
+        let Kind::Review(header) = &self.events[0].kind else {
+            unreachable!("load requires a review header")
+        };
+        header
     }
 
     /// How many follow-ups were sent.
     pub fn sends(&self) -> usize {
         self.events
             .iter()
-            .filter(|event| event["kind"] == "send")
+            .filter(|event| matches!(event.kind, Kind::Send(_)))
             .count()
     }
 
@@ -385,10 +433,11 @@ impl Conversation {
         let mut messages = self
             .events
             .iter()
-            .filter(|event| event["kind"] == "message")
-            .map(|event| serde_json::from_value::<Message>(event["message"].clone()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("{}: {e}", self.path.display()))?;
+            .filter_map(|event| match &event.kind {
+                Kind::Message(event) => Some(event.message.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         let Some(last) = messages
             .iter()
             .rposition(|message| matches!(message, Message::Assistant { .. }))
@@ -450,7 +499,7 @@ pub async fn lock(state: &Path, id: &str) -> Result<File, String> {
         match file.try_lock() {
             Ok(()) => return Ok(file),
             Err(std::fs::TryLockError::WouldBlock) => {
-                tokio::time::sleep(Duration::from_millis(25)).await;
+                tokio::time::sleep(platform::FILE_LOCK_RETRY_INTERVAL).await;
             }
             Err(std::fs::TryLockError::Error(error)) => {
                 return Err(format!("Cannot lock Agent session {id}: {error}"));
@@ -462,14 +511,15 @@ pub async fn lock(state: &Path, id: &str) -> Result<File, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     fn reference() -> SessionRef {
         SessionRef {
             producer: "alice@laptop".into(),
             state: "6f1c0a52-8d1e-4c43-9a55-31f6a7f2d0e4".into(),
-            run_id: "run-Hq2b9X".into(),
-            request_id: "run-Hq2b9X-3".into(),
-            session_id: "0e8c7c2e-2a49-4b8e-9f7a-5d7a0c3b1f20".into(),
+            run_id: "run-Hq2b9X".parse().unwrap(),
+            request_id: "run-Hq2b9X-3".parse().unwrap(),
+            session_id: "0e8c7c2e-2a49-4b8e-9f7a-5d7a0c3b1f20".parse().unwrap(),
         }
     }
 
@@ -522,7 +572,7 @@ mod tests {
             call("c1").result(vec![ToolResultContent::text("ran")]),
         ]);
         let replay = |messages: &[&Message]| {
-            let events = std::iter::once(json!({"kind":"review"}))
+            let events: Vec<Value> = std::iter::once(json!({"kind":"review"}))
                 .chain(
                     messages
                         .iter()
@@ -531,7 +581,11 @@ mod tests {
                 .collect();
             Conversation {
                 path: "session.jsonl".into(),
-                events,
+                wire_events: Vec::new(),
+                events: events
+                    .into_iter()
+                    .map(|event| serde_json::from_value(event).unwrap())
+                    .collect(),
             }
             .history()
             .unwrap()
@@ -582,14 +636,54 @@ mod tests {
         let mut recorder = Recorder {
             target: Some((
                 path(&state, &reference.session_id).unwrap(),
-                json!(reference),
+                serde_json::from_value(json!(reference)).unwrap(),
             )),
             ..Recorder::off(&reference.session_id)
         };
-        recorder.start(json!({"backend":"openai"}));
+        recorder.start(Header {
+            backend: Some(crate::config::Backend::Openai),
+            ..Header::default()
+        });
         recorder.message(1, &Message::user("still recorded nowhere"), false);
-        recorder.event(json!({"kind":"end"}));
+        recorder.event(Kind::End(End::default()));
         assert!(recorder.reference().is_none());
         assert!(std::fs::metadata(directory(&state)).unwrap().is_file());
+    }
+    #[test]
+    fn jsonl_edges_keep_wire_events_and_reject_invalid_complete_records() {
+        let root = tempfile::tempdir().unwrap();
+        let file = root.path().join("legacy.jsonl");
+        let header = r#"{"kind":"review","version":1,"sessionId":"legacy.session","runId":"run-old","requestId":"run-old-1","backend":"openai","model":"fixture","reasoning":null,"parameters":{"vendor":true},"budgets":{"timeoutMs":1000,"maxToolCalls":null,"maxTokens":null},"tools":[],"unknownSavedField":7,"at":"2026-01-01T00:00:00Z"}"#;
+        let message = r#"{"kind":"message","turn":1,"message":{"role":"user","content":[{"type":"text","text":"hello"}]},"at":"2026-01-01T00:00:01Z"}"#;
+        std::fs::write(&file, format!("{header}\n{message}\n{{\"kind\":")).unwrap();
+        let conversation = Conversation::load(&file).unwrap().unwrap();
+        assert_eq!(conversation.events.len(), 2);
+        assert_eq!(
+            conversation.header().session_id.as_ref().unwrap().as_str(),
+            "legacy.session"
+        );
+        assert_eq!(
+            conversation.header().budgets.as_ref().unwrap().timeout_ms,
+            Some(Duration::from_millis(1000))
+        );
+        assert_eq!(
+            conversation.wire_events[0],
+            serde_json::from_str::<Value>(header).unwrap()
+        );
+        assert_eq!(
+            conversation.wire_events[1],
+            serde_json::from_str::<Value>(message).unwrap()
+        );
+        assert_eq!(conversation.history().unwrap().len(), 1);
+        for invalid in [
+            r#"{"kind":"message","message":17}"#,
+            r#"{"kind":"attempt","turn":"bad","attempt":1,"usage":{}}"#,
+            r#"{"kind":"unknown"}"#,
+        ] {
+            std::fs::write(&file, format!("{header}\n{invalid}\n")).unwrap();
+            assert!(Conversation::load(&file).is_err(), "{invalid}");
+        }
+        std::fs::write(&file, header.replace("legacy.session", "../escape")).unwrap();
+        assert!(Conversation::load(&file).is_err());
     }
 }

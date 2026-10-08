@@ -14,7 +14,8 @@ use crate::{
     workspace,
 };
 
-/// How long a Run waits for Human results unless told otherwise.
+/// Give Human sign-off ten minutes by default, then return without cancelling
+/// pending requests; later verify/run queries can still observe their settlement.
 pub const DEFAULT_HUMAN_WAIT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone)]
@@ -70,7 +71,7 @@ pub async fn verify(
     let parallelism = super::fingerprint_parallelism(options)?;
     let wait_timeout_ms = u32::try_from(options.wait_timeout.as_millis())
         .ok()
-        .filter(|ms| (1..=2_147_483_647).contains(ms))
+        .filter(|ms| (1..=crate::config::validation::MAX_TIMEOUT_MS).contains(&u64::from(*ms)))
         .ok_or("wait timeout must be between 1 and 2147483647 ms.")?;
     let config = read_workspace_config(repo).map_err(|e| e.to_string())?;
     let config = Arc::new(select_profiles(
@@ -97,7 +98,7 @@ pub async fn verify(
         .collect();
     let evals = selection.included_evals(&config, options.recursive)?;
     let definitions = serde_json::to_value(crate::query::graph(&config, selection)?)
-        .expect("definitions are JSON");
+        .map_err(|error| error.to_string())?;
     let state = store::state_dir(state_dir)?;
     let limits = crate::limits::Limits::read(&state)?;
     let receipts = Receipts::open(&state, &config.root).await?;
@@ -149,14 +150,14 @@ pub async fn verify(
         .into_owned();
     let _ = directory.keep();
     let mut run = Run {
-        id,
+        id: id.parse()?,
         repo_path: config.root.clone(),
         state_dir: state,
-        status: "RUNNING".into(),
+        status: crate::types::RunStatus::Running,
         created_at: now(),
         completed_at: None,
-        selection: serde_json::to_value(selection).expect("selection is JSON"),
-        profile: json!(options.profile),
+        selection: selection.clone(),
+        profile: options.profile.clone(),
         definitions,
         jobs: options.jobs,
         fingerprint_jobs: Some(parallelism.limit()),
@@ -176,14 +177,15 @@ pub async fn verify(
         .iter()
         .enumerate()
         .map(|(ordinal, eval)| Request {
-            id: format!("{}-{}", run.id, ordinal + 1),
+            id: format!("{}-{}", run.id, ordinal + 1)
+                .parse()
+                .expect("generated request id is a safe segment"),
             run_id: run.id.clone(),
             eval_id: eval.id.clone(),
             target: eval.target.clone(),
             title: eval.declaration.title.clone(),
-            profile: serde_json::to_value(&eval.declaration.profile).expect("profile is JSON"),
-            requested_profile: serde_json::to_value(&eval.declaration.profile)
-                .expect("profile is JSON"),
+            profile: (&eval.declaration.profile).into(),
+            requested_profile: (&eval.declaration.profile).into(),
             eval_def_hash: cache::eval_definition_hash(&eval.declaration),
             options: ExecutionOptions::new(&eval.declaration.profile, eval.variant.as_deref()),
             execution_id: None,
@@ -197,7 +199,7 @@ pub async fn verify(
             session_id: None,
             session: None,
             human_definition: None,
-            payload: json!(eval.declaration.payload),
+            payload: (&eval.declaration.payload).into(),
             references: json!(eval.references),
             deps: eval.deps.clone(),
             force: options.force && selected_ids.contains(eval.id.as_str()),
@@ -209,7 +211,7 @@ pub async fn verify(
                 .get(eval.id.as_str())
                 .map(|key| key.fingerprints.clone())
                 .unwrap_or_default(),
-            status: "QUEUED".into(),
+            status: crate::types::RequestStatus::Queued,
             created_at: run.created_at.clone(),
             started_at: None,
             completed_at: None,
@@ -250,7 +252,7 @@ pub async fn verify(
         Ok(evidence) => evidence,
         Err(error) => {
             // A failing Run, for example on a rejected remote token, does not stay RUNNING.
-            run.status = "ERROR".into();
+            run.status = crate::types::RunStatus::Error;
             run.error = Some(error.clone());
             run.completed_at = Some(now());
             let _ = receipts.save_run(&run).await;
@@ -259,20 +261,24 @@ pub async fn verify(
     };
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
-        if evidence.contains_key(&request.eval_id) || request.status == "WAITING_HUMAN" {
+        if evidence.contains_key(&request.eval_id)
+            || request.status == crate::types::RequestStatus::WaitingHuman
+        {
             continue;
         }
         let eval = &evaluation.evals[request.eval_id.as_str()];
         if cancellation.is_cancelled() {
-            request.status = "ERROR".into();
+            request.status = crate::types::RequestStatus::Error;
             request.error = Some("Run was cancelled.".into());
             request.error_code = Some("CANCELLED".into());
             request.completed_at = Some(now());
             evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
-        } else if request.status == "BUDGET_EXHAUSTED" && eval.can_execute() {
+        } else if request.status == crate::types::RequestStatus::BudgetExhausted
+            && eval.can_execute()
+        {
             continue;
         } else {
-            request.status = status(eval.status).into();
+            request.status = status(eval.status);
             request.blocked_reason = Some(format!(
                 "{}: {}",
                 if eval.status == EvalStatus::Blocked {
@@ -293,32 +299,31 @@ pub async fn verify(
     let satisfied = required.iter().all(|id| evaluation.artifacts[id].satisfied);
     let budget_exhausted = requests
         .iter()
-        .any(|request| request.status == "BUDGET_EXHAUSTED");
+        .any(|request| request.status == crate::types::RequestStatus::BudgetExhausted);
     // Only a --reuse-only eval that had nothing to reuse leaves stale evidence in a Run.
     let not_reused = evidence
         .values()
         .filter(|evidence| matches!(evidence, Evidence::Stale))
         .count();
     run.status = if cancellation.is_cancelled() {
-        "ERROR"
+        crate::types::RunStatus::Error
     } else if run.wait_timed_out || budget_exhausted || not_reused > 0 {
-        "INCOMPLETE"
+        crate::types::RunStatus::Incomplete
     } else if required_evals
         .iter()
         .any(|(_, c)| c.status == EvalStatus::Error)
     {
-        "ERROR"
+        crate::types::RunStatus::Error
     } else if required_evals
         .iter()
         .any(|(_, c)| c.status == EvalStatus::Red)
     {
-        "RED"
+        crate::types::RunStatus::Red
     } else if satisfied {
-        "GREEN"
+        crate::types::RunStatus::Green
     } else {
-        "INCOMPLETE"
-    }
-    .into();
+        crate::types::RunStatus::Incomplete
+    };
     if cancellation.is_cancelled() {
         run.error = Some("Run was cancelled.".into());
     } else if run.wait_timed_out {
@@ -373,14 +378,14 @@ pub async fn verify(
     store::read_run(&run.state_dir, &run.id).await
 }
 
-fn status(status: EvalStatus) -> &'static str {
+fn status(status: EvalStatus) -> crate::types::RequestStatus {
     match status {
-        EvalStatus::Green => "GREEN",
-        EvalStatus::Red => "RED",
-        EvalStatus::Error => "ERROR",
-        EvalStatus::Stale => "STALE",
-        EvalStatus::Unreviewed => "UNREVIEWED",
-        EvalStatus::Wait => "WAIT_DEPENDENCY",
-        EvalStatus::Blocked => "BLOCKED",
+        EvalStatus::Green => crate::types::RequestStatus::Green,
+        EvalStatus::Red => crate::types::RequestStatus::Red,
+        EvalStatus::Error => crate::types::RequestStatus::Error,
+        EvalStatus::Stale => crate::types::RequestStatus::Stale,
+        EvalStatus::Unreviewed => crate::types::RequestStatus::Unreviewed,
+        EvalStatus::Wait => crate::types::RequestStatus::WaitDependency,
+        EvalStatus::Blocked => crate::types::RequestStatus::Blocked,
     }
 }

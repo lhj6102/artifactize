@@ -5,6 +5,9 @@ use serde::Serialize;
 use super::session::{has_scope, record};
 use crate::{auth::remote, store::history};
 
+/// Bound retained local execution payloads per push batch while paging the whole key history.
+const PAGE_ENTRIES: usize = 100;
+
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Push {
@@ -40,7 +43,7 @@ pub async fn push(
     };
     let mut after = None;
     loop {
-        let page = history::local(&state, after.take(), 100).await?;
+        let page = history::local(&state, after.take(), PAGE_ENTRIES).await?;
         let Some(last) = page.last() else {
             break;
         };
@@ -62,7 +65,10 @@ pub async fn push(
         }
         // With the read scope, a record that is already the store's latest is not sent again.
         let existing: BTreeSet<_> = if has_scope(&principal, "read") {
-            let keys: Vec<_> = records.iter().map(|record| record.key.clone()).collect();
+            let keys: Vec<_> = records
+                .iter()
+                .map(|record| record.key.to_string())
+                .collect();
             remote
                 .lookup(&keys)
                 .await
@@ -80,7 +86,8 @@ pub async fn push(
         };
         for record in records {
             // The store keeps each execution once; a resent record answers `created: false`.
-            let created = !existing.contains(&(record.key.clone(), record.execution_id.clone()))
+            let created = !existing
+                .contains(&(record.key.to_string(), record.execution_id.to_string()))
                 && (dry_run
                     || remote
                         .publish(&record)

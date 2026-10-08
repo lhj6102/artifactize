@@ -13,8 +13,16 @@ pub fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<Value, S
     Ok(value.clone())
 }
 
+/// Bound the raw model response before parsing; prose/whitespace can exceed the semantic result.
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+/// Keep the normalized owner result bounded in saved receipts, in UTF-16 units for JSON clients.
 const MAX_RESULT_CHARS: usize = 256_000;
+/// Bound schema compilation and the schema sent in the review prompt.
+const MAX_SCHEMA_BYTES: usize = 8 * 1024 * 1024;
+/// Five diagnostics give an actionable repair without flooding the next provider turn.
+const MAX_DIAGNOSTICS: usize = 5;
+/// Bound each diagnostic so an owner property/value cannot dominate the repair prompt.
+const MAX_DIAGNOSTIC_CHARS: usize = 200;
 const RESERVED: &[&str] = &[
     "verdict",
     "reference",
@@ -34,7 +42,7 @@ pub(crate) fn validate_schema(schema: &Map<String, Value>) -> Result<(), String>
     if schema.get("type").is_some_and(|kind| kind != "object") {
         return Err("Response schema type must be object when declared.".into());
     }
-    if serde_json::to_vec(&value).expect("schema is JSON").len() > 8 * 1024 * 1024 {
+    if serde_json::to_vec(&value).expect("schema is JSON").len() > MAX_SCHEMA_BYTES {
         return Err("Response schema exceeds 8 MiB.".into());
     }
     if ["allOf", "anyOf", "oneOf", "not"]
@@ -139,7 +147,7 @@ impl VerdictSchema {
                     bounded(error.to_string())
                 )
             })
-            .take(5)
+            .take(MAX_DIAGNOSTICS)
             .collect();
         if paths.is_empty() {
             let fields = value.as_object().into_iter().flatten();
@@ -148,7 +156,7 @@ impl VerdictSchema {
                 .map(|(key, _)| {
                     format!("- field {} is not declared.", quoted(&bounded(key.clone())))
                 })
-                .take(5)
+                .take(MAX_DIAGNOSTICS)
                 .collect();
         }
         std::iter::once(error.to_owned())
@@ -184,8 +192,8 @@ impl VerdictSchema {
 }
 
 fn bounded(mut text: String) -> String {
-    if text.chars().count() > 200 {
-        text = text.chars().take(200).collect::<String>() + "… (truncated)";
+    if text.chars().count() > MAX_DIAGNOSTIC_CHARS {
+        text = text.chars().take(MAX_DIAGNOSTIC_CHARS).collect::<String>() + "… (truncated)";
     }
     text
 }

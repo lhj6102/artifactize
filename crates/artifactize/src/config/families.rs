@@ -10,6 +10,8 @@ use serde_json::{Map, Value};
 use super::{ArtifactDeclaration, CONFIG_FILE, identifier, validation};
 use crate::scope::scoped_path;
 
+/// Bound static expansion, discovery and the per-instance Artifact/eval graph
+/// while still allowing large scenario catalogs without generating unbounded state.
 pub const MAX_FAMILY_INSTANCES: usize = 10_000;
 
 #[derive(Debug, Clone, Deserialize)]

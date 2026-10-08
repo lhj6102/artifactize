@@ -65,7 +65,7 @@ impl Fixture {
             return Vec::new();
         };
         let (mut ids, mut calls) = (Vec::new(), Vec::<Call>::new());
-        for event in &conversation.events {
+        for event in &conversation.wire_events {
             let Ok(message) = serde_json::from_value::<Message>(event["message"].clone()) else {
                 continue;
             };
@@ -262,7 +262,7 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
     assert!(!body.to_string().contains("import json"));
     assert!(body.to_string().contains("Why it passes"));
     assert_eq!(
-        fixture.config.evals[0].declaration.payload["instruction"],
+        fixture.config.evals[0].declaration.payload.instruction,
         "Check {a}"
     );
     let next: Value = serde_json::from_slice(&requests[1].body).unwrap();
@@ -467,7 +467,7 @@ async fn deadline_stops_retry_without_extra_requests() {
     let Profile::Agent { timeout_ms, .. } = &mut fixture.config.evals[0].declaration.profile else {
         unreachable!()
     };
-    *timeout_ms = Some(20);
+    *timeout_ms = Some(std::time::Duration::from_millis(20));
     let (review, http) = fixture
         .run(vec![
             MockHttpResponse::error(StatusCode::SERVICE_UNAVAILABLE, "unavailable"),

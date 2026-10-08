@@ -16,6 +16,10 @@ mod instruction;
 pub(crate) use human::{resolve_human_argv, validate_human_args};
 pub use instruction::instruction_references;
 
+/// Bound logical tool paths in UTF-16 units, matching JSON Schema string limits
+/// across supported clients without tying scoped paths to an OS-specific PATH_MAX.
+pub(crate) const MAX_PATH_UNITS: usize = 4096;
+
 #[derive(Debug, Error)]
 #[error("{0}")]
 pub struct ScopeError(pub String);
@@ -263,7 +267,7 @@ pub fn argv_scope<'a>(
 }
 
 fn logical_path(path: &str) -> Result<(), ScopeError> {
-    if path.encode_utf16().count() > 4096
+    if path.encode_utf16().count() > MAX_PATH_UNITS
         || path
             .bytes()
             .any(|byte| byte.is_ascii_control() || matches!(byte, b'\\' | b':'))
@@ -538,8 +542,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         };
         let mut references = BTreeMap::new();
         let mut deps = BTreeSet::new();
-        let instruction = eval.declaration.payload["instruction"].as_str().unwrap();
-        for name in instruction_references(instruction) {
+        for name in instruction_references(&eval.declaration.payload.instruction) {
             let source = reference_target(config, &eval.target, name).map_err(error)?;
             references.insert(name.to_owned(), source.to_owned());
             if source != eval.target {

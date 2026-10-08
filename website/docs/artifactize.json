@@ -20,7 +20,7 @@
         "reasoning": "max",
         "timeoutMs": 1800000,
         "maxToolCalls": 120,
-        "maxTokens": 4000000
+        "maxTokens": 8000000
       },
       "payload": {
         "instruction": "Check that the mdBook documentation in {docs} (src/, starting from src/SUMMARY.md) matches the code of {cli}. Compare what the docs state about commands, flags, defaults, exit codes, output, artifactize.json fields, tool declarations and state behavior with the code, using list_docs, glob_docs, grep_docs and read_docs for the docs and list_cli, glob_cli, grep_cli and read_cli for the code (start from src/cli.rs and src/config.rs). Tool paths are relative to each Artifact, for example src/reference/cli.md in docs. Submit GREEN when no statement clearly contradicts the code or describes something the code no longer has. Otherwise submit RED with up to 20 mismatches, the most misleading first, each with the doc path:line, the code path:line and one sentence on how to fix the doc."

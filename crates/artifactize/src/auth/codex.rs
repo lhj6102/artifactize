@@ -33,7 +33,7 @@ use tokio::{
     sync::oneshot,
 };
 
-use super::storage::{Location, Storage, Tokens};
+use super::storage::{Location, MAX_CREDENTIAL_BYTES, Storage, Tokens};
 
 /// The Codex CLI's public OAuth client, which Pi's provider uses too.
 pub const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
@@ -56,7 +56,21 @@ const LOCK: &str = "codex";
 const REFRESH_MARGIN: u64 = 300;
 /// A read-only auth file's token must outlive this many seconds.
 const FILE_MARGIN: u64 = 60;
+/// Give a person five minutes to finish browser or pasted-redirect sign-in,
+/// without leaving an unattended callback listener alive indefinitely.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+/// Bound individual token-exchange HTTP calls independently of the interactive login wait.
+const AUTH_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
+/// Release the callback listener from a client that stops sending its request headers.
+const CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(5);
+/// A stalled browser must not hold up a completed callback while receiving its short reply.
+const CALLBACK_WRITE_TIMEOUT: Duration = Duration::from_secs(2);
+/// Fall back to the printed authorization URL if the OS browser launcher hangs.
+const BROWSER_OPEN_TIMEOUT: Duration = Duration::from_secs(3);
+/// Best-effort logout should finish sooner than an ordinary token exchange.
+const REVOCATION_TIMEOUT: Duration = Duration::from_secs(10);
+/// OAuth error codes are diagnostics, not arbitrary provider text; keep them short.
+const MAX_OAUTH_ERROR_CHARS: usize = 64;
 const LOGIN_REQUIRED: &str =
     "Codex is not signed in; run `artifactize login codex` or set ARTIFACTIZE_CODEX_AUTH_FILE.";
 
@@ -121,7 +135,7 @@ fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .retry(reqwest::retry::never())
-        .timeout(Duration::from_secs(30))
+        .timeout(AUTH_HTTP_TIMEOUT)
         .build()
         .map_err(|_| "Cannot initialize the Codex sign-in HTTP client.".into())
 }
@@ -246,7 +260,7 @@ impl Pending {
             let error: String = error
                 .chars()
                 .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .take(64)
+                .take(MAX_OAUTH_ERROR_CHARS)
                 .collect();
             return (
                 "400 Bad Request",
@@ -267,14 +281,17 @@ impl Pending {
     /// Serve the loopback callback until one completes the sign-in. Requests must be
     /// `GET` with a `Host` of `localhost:PORT` or `127.0.0.1:PORT`.
     async fn serve(&self, listener: TcpListener) -> Result<String, String> {
+        // Allow browser callback headers and the authorization URL while bounding
+        // memory consumed by an untrusted loopback client before HTTP validation.
+        const MAX_CALLBACK_HEADER_BYTES: usize = 16 * 1024;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
         let hosts = [format!("localhost:{port}"), format!("127.0.0.1:{port}")];
         loop {
             let (mut stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
-            let head = tokio::time::timeout(Duration::from_secs(5), async {
+            let head = tokio::time::timeout(CALLBACK_READ_TIMEOUT, async {
                 let mut head = Vec::new();
                 let mut byte = [0];
-                while !head.ends_with(b"\r\n\r\n") && head.len() < 16384 {
+                while !head.ends_with(b"\r\n\r\n") && head.len() < MAX_CALLBACK_HEADER_BYTES {
                     if stream.read(&mut byte).await? == 0 {
                         break;
                     }
@@ -316,7 +333,7 @@ impl Pending {
                 body.len()
             );
             let _ = tokio::time::timeout(
-                Duration::from_secs(2),
+                CALLBACK_WRITE_TIMEOUT,
                 stream.write_all(response.as_bytes()),
             )
             .await;
@@ -457,7 +474,7 @@ async fn open_browser(url: &Url) {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-        if let Ok(Ok(status)) = tokio::time::timeout(Duration::from_secs(3), command.status()).await
+        if let Ok(Ok(status)) = tokio::time::timeout(BROWSER_OPEN_TIMEOUT, command.status()).await
             && status.success()
         {
             break;
@@ -605,10 +622,11 @@ fn read_auth_file(path: &Path) -> Result<Token, String> {
         return Err(unreadable("it is not a regular file"));
     }
     let mut data = Vec::new();
-    file.take(1024 * 1024 + 1)
+    // Match owned credential storage: one extra byte detects oversized imports.
+    file.take(MAX_CREDENTIAL_BYTES as u64 + 1)
         .read_to_end(&mut data)
         .map_err(|error| unreadable(&error.to_string()))?;
-    if data.len() > 1024 * 1024 {
+    if data.len() > MAX_CREDENTIAL_BYTES {
         return Err(unreadable("it is larger than 1 MiB"));
     }
     let auth: Value =
@@ -638,18 +656,68 @@ fn read_auth_file(path: &Path) -> Result<Token, String> {
     })
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Status {
-    /// `file`, `stored` or `none`.
-    pub source: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auth_file: Option<PathBuf>,
-    pub expires_at: Option<u64>,
-    pub expired: bool,
-    /// Why `$STATE/auth` may not hold a sign-in, when nothing is stored there yet.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub refused: Option<String>,
+/// A read-only file can carry a usable token without an expiry claim. An expired
+/// file reports no timestamp because the existing reader refuses it before returning a token.
+#[derive(Debug)]
+pub enum FileExpiry {
+    Usable { expires_at: Option<u64> },
+    Expired,
+}
+
+/// Owned credentials always carry the expiry saved by the token exchange.
+#[derive(Debug)]
+pub enum StoredExpiry {
+    Usable { expires_at: u64 },
+    Expired { expires_at: u64 },
+}
+
+/// Offline sign-in states: only file states have a path, only stored states have
+/// a mandatory expiry, and a storage refusal can only accompany an absent sign-in.
+#[derive(Debug)]
+pub enum Status {
+    Absent,
+    Refused { reason: String },
+    File { path: PathBuf, expiry: FileExpiry },
+    Stored { expiry: StoredExpiry },
+}
+
+impl Serialize for Status {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        // Keep the pre-enum JSON contract exactly at the serialization boundary.
+        let (source, file, expires_at, expired, refused) = match self {
+            Self::Absent => ("none", None, None, false, None),
+            Self::Refused { reason } => ("none", None, None, false, Some(reason)),
+            Self::File {
+                path,
+                expiry: FileExpiry::Usable { expires_at },
+            } => ("file", Some(path), *expires_at, false, None),
+            Self::File {
+                path,
+                expiry: FileExpiry::Expired,
+            } => ("file", Some(path), None, true, None),
+            Self::Stored {
+                expiry: StoredExpiry::Usable { expires_at },
+            } => ("stored", None, Some(*expires_at), false, None),
+            Self::Stored {
+                expiry: StoredExpiry::Expired { expires_at },
+            } => ("stored", None, Some(*expires_at), true, None),
+        };
+        let mut wire = serializer.serialize_struct(
+            "Status",
+            3 + usize::from(file.is_some()) + usize::from(refused.is_some()),
+        )?;
+        wire.serialize_field("source", source)?;
+        if let Some(file) = file {
+            wire.serialize_field("authFile", file)?;
+        }
+        wire.serialize_field("expiresAt", &expires_at)?;
+        wire.serialize_field("expired", &expired)?;
+        if let Some(reason) = refused {
+            wire.serialize_field("refused", reason)?;
+        }
+        wire.end()
+    }
 }
 
 /// Inspect the sign-in offline: no lock, refresh, network or writes.
@@ -657,40 +725,39 @@ pub fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Status, Strin
     let now = now()?;
     if let Some(path) = auth_file() {
         // Reading fails on an expiring token; that is a state to report, not an error.
-        let (expires_at, expired) = match read_auth_file(&path) {
-            Ok(token) => (expiry(&token.access_token), false),
-            Err(error) if error.starts_with("The Codex access token") => (None, true),
+        let expiry = match read_auth_file(&path) {
+            Ok(token) => FileExpiry::Usable {
+                expires_at: expiry(&token.access_token),
+            },
+            Err(error) if error.starts_with("The Codex access token") => FileExpiry::Expired,
             Err(error) => return Err(error),
         };
-        return Ok(Status {
-            source: "file",
-            auth_file: Some(path),
-            expires_at,
-            expired,
-            refused: None,
-        });
+        return Ok(Status::File { path, expiry });
     }
     let location = Location::find(state, repo)?;
     if let Some(refusal) = location.refusal(Tokens::Codex) {
         // Only a sign-in already stored there is at risk; without one this is advice.
         return match location.directory.join(CREDENTIALS).symlink_metadata() {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Status {
-                source: "none",
-                auth_file: None,
-                expires_at: None,
-                expired: false,
-                refused: Some(refusal),
-            }),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(Status::Refused { reason: refusal })
+            }
             _ => Err(refusal),
         };
     }
     let stored = Storage::inspect(state, repo, Tokens::Codex)?.read::<Credentials>(CREDENTIALS)?;
-    Ok(Status {
-        source: if stored.is_some() { "stored" } else { "none" },
-        auth_file: None,
-        expires_at: stored.as_ref().map(|stored| stored.expires_at),
-        expired: stored.is_some_and(|stored| stored.expires_at <= now),
-        refused: None,
+    Ok(match stored {
+        None => Status::Absent,
+        Some(stored) => Status::Stored {
+            expiry: if stored.expires_at <= now {
+                StoredExpiry::Expired {
+                    expires_at: stored.expires_at,
+                }
+            } else {
+                StoredExpiry::Usable {
+                    expires_at: stored.expires_at,
+                }
+            },
+        },
     })
 }
 
@@ -716,7 +783,7 @@ async fn revoke(root: &str, refresh_token: &str) -> bool {
     };
     client
         .post(format!("{root}/oauth/revoke"))
-        .timeout(Duration::from_secs(10))
+        .timeout(REVOCATION_TIMEOUT)
         .json(
             &json!({"token":refresh_token,"token_type_hint":"refresh_token","client_id":CLIENT_ID}),
         )

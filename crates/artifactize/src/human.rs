@@ -15,6 +15,15 @@ use crate::{
     tools::human::{CommandLine, Registry, ToolResult},
 };
 
+/// Keep reviewer labels bounded in audit records and terminal layouts while allowing
+/// printable Unicode user names rather than restricting them to path identities.
+const MAX_REVIEWER_BYTES: usize = 200;
+/// Bound owner fields and serialized Human results consistently across CLI, editor
+/// and submission so untrusted JSON cannot grow the review audit without limit.
+pub(crate) const MAX_RESULT_BYTES: usize = 256_000;
+/// Read one sentinel byte beyond the bound to detect oversized files without loading them.
+pub(crate) const FIELDS_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
+
 pub fn default_reviewer() -> Result<String, String> {
     // Windows names the signed-in user in USERNAME and sets no USER.
     let reviewer = std::env::var("USER")
@@ -31,7 +40,9 @@ pub fn default_reviewer() -> Result<String, String> {
 }
 
 pub(crate) fn validate_reviewer(reviewer: &str) -> Result<(), String> {
-    if reviewer.trim().is_empty() || reviewer.len() > 200 || reviewer.chars().any(char::is_control)
+    if reviewer.trim().is_empty()
+        || reviewer.len() > MAX_REVIEWER_BYTES
+        || reviewer.chars().any(char::is_control)
     {
         return Err("A reviewer id of 1–200 bytes without control characters is required.".into());
     }
@@ -120,15 +131,15 @@ pub async fn submit(
         .iter()
         .find(|eval| eval.id == request.eval_id)
         .expect("reconnected eval");
-    if serde_json::to_vec(result).map_err(|e| e.to_string())?.len() > 256_000 {
+    if serde_json::to_vec(result).map_err(|e| e.to_string())?.len() > MAX_RESULT_BYTES {
         return Err("Human result exceeds 256000 bytes.".into());
     }
     let result = validate_result(&eval.declaration, result)?;
     recheck(receipts, &mut request, reviewer, &config, cancellation).await?;
     request.status = result["verdict"]
         .as_str()
-        .expect("validated verdict")
-        .into();
+        .ok_or("Validated result has no verdict.")?
+        .parse()?;
     request.result = Some(result);
     receipts.settle_human(&request, reviewer).await
 }
@@ -211,7 +222,7 @@ async fn recheck(
             Err(error) if cancellation.is_cancelled() => return Err(error),
             Err(error) => ("FINGERPRINT_RECHECK_FAILED", error),
         };
-    request.status = "ERROR".into();
+    request.status = crate::types::RequestStatus::Error;
     request.error = Some(error.clone());
     request.error_code = Some(code.into());
     request.result = None;

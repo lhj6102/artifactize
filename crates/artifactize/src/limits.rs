@@ -14,7 +14,10 @@ use serde::{Deserialize, Serialize};
 use crate::config::Backend;
 
 pub const FILE: &str = "limits.json";
+/// Machine-wide limits are a small declaration; reject oversized files before JSON allocation.
 const MAX_BYTES: u64 = 64 * 1024;
+/// Reject implausible capacity declarations while allowing large hosts; absent backends
+/// remain unlimited rather than being silently clamped to this declared-slot bound.
 const MAX_SLOTS: u32 = 100_000;
 /// The session store's default size that starts a collection: 1 GiB.
 pub const SESSIONS_MAX_BYTES: u64 = 1024 * 1024 * 1024;

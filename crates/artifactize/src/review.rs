@@ -29,7 +29,9 @@ use crate::{
     tools::human::{CommandLine, Content, ToolResult},
 };
 
+/// Observe claim/settlement changes without continuously polling shared SQLite.
 const REFRESH: Duration = Duration::from_secs(1);
+/// Animate running tools at ten frames per second, independently of database refresh.
 const SPIN: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -267,7 +269,7 @@ impl Review {
             .request
             .as_ref()
             .ok_or("The request is still loading.")?;
-        if view.request.status != "WAITING_HUMAN" {
+        if view.request.status != crate::types::RequestStatus::WaitingHuman {
             return Err(format!(
                 "The request is {}; there is nothing to review.",
                 view.request.status
@@ -278,7 +280,7 @@ impl Review {
                 "Claimed by {}; read-only for {}.",
                 claim.reviewer, self.reviewer
             )),
-            claim => Ok((view.request.id.clone(), claim.is_none())),
+            claim => Ok((view.request.id.to_string(), claim.is_none())),
         }
     }
 
@@ -426,7 +428,7 @@ impl Review {
             }
             KeyCode::Enter => match self.selected().cloned() {
                 Some(view) => {
-                    self.open = Some(view.request.id.clone());
+                    self.open = Some(view.request.id.to_string());
                     self.request = Some(view);
                     self.mode = Mode::Request;
                     self.tool = 0;
@@ -830,9 +832,12 @@ async fn edit(text: String) -> Result<String, String> {
     }
     let mut bytes = Vec::new();
     std::fs::File::open(file.path())
-        .and_then(|file| file.take(256_001).read_to_end(&mut bytes))
+        .and_then(|file| {
+            file.take(crate::human::FIELDS_READ_BYTES)
+                .read_to_end(&mut bytes)
+        })
         .map_err(|e| e.to_string())?;
-    if bytes.len() > 256_000 {
+    if bytes.len() > crate::human::MAX_RESULT_BYTES {
         return Err("Human fields exceed 256000 bytes.".into());
     }
     String::from_utf8(bytes).map_err(|e| e.to_string())

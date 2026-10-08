@@ -218,6 +218,8 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     #[cfg(unix)]
     {
         let fifo = std::ffi::CString::new(output.join("fifo").to_str().unwrap()).unwrap();
+        // SAFETY: CString supplies a live NUL-terminated path in this test's private
+        // temporary directory; mkfifo retains no pointer and 0600 is a valid mode.
         assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
         paths.push("fifo");
     }

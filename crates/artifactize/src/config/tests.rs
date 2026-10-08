@@ -25,9 +25,30 @@ fn defaults_and_payload_are_preserved_without_interpolation() {
     let original = eval(json!({ "kind": "human" }));
     let declaration = parse(json!({"name": "review", "evals": [original.clone()]})).unwrap();
     assert_eq!(
-        declaration.evals[0].payload,
-        *original["payload"].as_object().unwrap()
+        serde_json::to_value(&declaration.evals[0].payload).unwrap(),
+        original["payload"]
     );
+}
+
+#[test]
+fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
+    let declared = eval(json!({"kind":"human"}));
+    for invalid in [Value::Null, json!(42), json!(true), json!([]), json!({})] {
+        let mut declaration = declared.clone();
+        declaration["payload"]["instruction"] = invalid;
+        assert!(parse(json!({"name":"a","evals":[declaration]})).is_err());
+    }
+    let mut missing = declared.clone();
+    missing["payload"]
+        .as_object_mut()
+        .unwrap()
+        .remove("instruction");
+    assert!(parse(json!({"name":"a","evals":[missing]})).is_err());
+    let parsed = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
+    let payload = &parsed.evals[0].payload;
+    assert_eq!(payload.instruction, "Inspect {input}.");
+    assert_eq!(payload.extra["ownerData"], declared["payload"]["ownerData"]);
+    assert_eq!(serde_json::to_value(payload).unwrap(), declared["payload"]);
 }
 
 #[test]
@@ -135,7 +156,7 @@ fn fixed_scripts_preserve_literal_args_but_reject_invalid_process_fields() {
         panic!()
     };
     assert_eq!(serde_json::to_value(actual).unwrap(), args);
-    assert_eq!(*timeout_ms, Some(1000));
+    assert_eq!(*timeout_ms, Some(std::time::Duration::from_millis(1000)));
     let bad_command = eval(json!({"kind": "runtime", "command": "sh\n", "args": []}));
     assert!(parse(json!({"name": "a", "evals": [bad_command]})).is_err());
     let bad_arg = eval(json!({"kind": "runtime", "command": "sh", "args": ["\u{0}"]}));
@@ -222,7 +243,7 @@ fn fingerprint_scripts_are_inert_declarations() {
     assert_eq!(command, "missing.sh");
     assert_eq!(args, ["literal"]);
     assert_eq!(files, ["missing-input"]);
-    assert_eq!(timeout_ms, Some(1000));
+    assert_eq!(timeout_ms, Some(std::time::Duration::from_millis(1000)));
     let minimum = json!({"script":{"command":"missing.sh","args":[]}});
     let declaration = parse(json!({"name":"a","fingerprint":minimum})).unwrap();
     let fingerprint = declaration.fingerprint.unwrap();
@@ -455,6 +476,74 @@ fn a_result_check_names_its_removal() {
         assert!(
             error.contains("Eval check: resultCheck was removed in 0.6.0"),
             "{error}"
+        );
+    }
+}
+
+#[test]
+fn duration_timeouts_keep_integral_millisecond_json_at_every_config_edge() {
+    for (number, millis) in [
+        ("1", 1),
+        ("1.0", 1),
+        ("1e3", 1000),
+        ("2147483647", 2147483647),
+    ] {
+        for kind in ["agent", "runtime"] {
+            let profile = if kind == "agent" {
+                format!(
+                    r#"{{"kind":"agent","backend":"openai","model":"fixture","timeoutMs":{number}}}"#
+                )
+            } else {
+                format!(
+                    r#"{{"kind":"runtime","command":"fixture","args":[],"timeoutMs":{number}}}"#
+                )
+            };
+            let profile: Profile = serde_json::from_str(&profile).unwrap();
+            assert_eq!(
+                serde_json::to_value(&profile).unwrap()["timeoutMs"],
+                json!(millis)
+            );
+            let duration = match profile {
+                Profile::Agent { timeout_ms, .. } | Profile::Runtime { timeout_ms, .. } => {
+                    timeout_ms.unwrap()
+                }
+                _ => unreachable!(),
+            };
+            assert_eq!(duration, std::time::Duration::from_millis(millis));
+        }
+        let tool: CommandTool = serde_json::from_str(&format!(r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeoutMs":{number}}}"#)).unwrap();
+        assert_eq!(
+            serde_json::to_value(tool).unwrap()["timeoutMs"],
+            json!(millis)
+        );
+        let tool: HumanTool = serde_json::from_str(&format!(r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeoutMs":{number}}}"#)).unwrap();
+        assert_eq!(
+            serde_json::to_value(tool).unwrap()["timeoutMs"],
+            json!(millis)
+        );
+        let fingerprint: Fingerprint = serde_json::from_str(&format!(
+            r#"{{"script":{{"command":"fixture","args":[],"timeoutMs":{number}}}}}"#
+        ))
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(fingerprint).unwrap()["script"]["timeoutMs"],
+            json!(millis)
+        );
+    }
+    for invalid in ["null", "0", "-1", "1.5", "2147483648", "1e99", "\"1000\""] {
+        assert!(
+            serde_json::from_str::<Profile>(&format!(
+                r#"{{"kind":"runtime","command":"fixture","args":[],"timeoutMs":{invalid}}}"#
+            ))
+            .is_err()
+        );
+        assert!(serde_json::from_str::<CommandTool>(&format!(r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeoutMs":{invalid}}}"#)).is_err());
+        assert!(serde_json::from_str::<HumanTool>(&format!(r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeoutMs":{invalid}}}"#)).is_err());
+        assert!(
+            serde_json::from_str::<Fingerprint>(&format!(
+                r#"{{"script":{{"command":"fixture","args":[],"timeoutMs":{invalid}}}}}"#
+            ))
+            .is_err()
         );
     }
 }

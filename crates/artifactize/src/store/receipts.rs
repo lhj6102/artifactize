@@ -1,3 +1,4 @@
+use crate::types::{Fingerprint, RequestId, RequestStatus, ReuseKey, RunId, RunStatus, SessionId};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
@@ -16,6 +17,9 @@ use crate::{
 };
 
 pub const DATABASE: &str = "state.sqlite";
+/// Yield between WAL initialization races instead of spinning, still within the
+/// shared SQLite contention deadline used by the outer initialization loop.
+const INITIALIZATION_RETRY_INTERVAL: Duration = Duration::from_millis(20);
 
 /// The four tables of a state and the indexes its lookups use.
 ///
@@ -66,15 +70,15 @@ pub enum Error {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Run {
-    pub id: String,
+    pub id: RunId,
     pub repo_path: PathBuf,
     pub state_dir: PathBuf,
-    pub status: String,
+    pub status: RunStatus,
     pub created_at: String,
     pub completed_at: Option<String>,
-    pub selection: Value,
+    pub selection: crate::project::selection::Selection,
     #[serde(default)]
-    pub profile: Value,
+    pub profile: Option<crate::project::selection::ProfileSelection>,
     #[serde(default)]
     pub definitions: Value,
     #[serde(default)]
@@ -114,7 +118,7 @@ pub struct StoppedBackend {
     pub backend: String,
     pub error_code: String,
     pub eval_id: String,
-    pub request_id: String,
+    pub request_id: RequestId,
     pub error: String,
 }
 
@@ -125,24 +129,24 @@ fn default_jobs() -> usize {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Request {
-    pub id: String,
-    pub run_id: String,
+    pub id: RequestId,
+    pub run_id: RunId,
     pub eval_id: String,
     pub target: String,
     pub title: String,
-    pub profile: Value,
-    pub requested_profile: Value,
+    pub profile: crate::config::StoredProfile,
+    pub requested_profile: crate::config::StoredProfile,
     pub eval_def_hash: String,
     /// The requested execution options, or a reused result's.
     #[serde(default)]
     pub options: ExecutionOptions,
-    pub execution_id: Option<String>,
+    pub execution_id: Option<crate::types::ExecutionId>,
     pub provenance: Option<Provenance>,
     /// Usage spent by this request; a reused request spent none.
-    pub usage: Option<Value>,
+    pub usage: Option<Vec<crate::llm::Attempt>>,
     /// The reused execution's original usage, never counted as spent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reused_usage: Option<Value>,
+    pub reused_usage: Option<Vec<crate::llm::Attempt>>,
     /// The reused result came from the live execution this request waited for, not a
     /// completed record. Saved only; output reports it as `source.kind` ([`crate::query::source`]).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -160,28 +164,28 @@ pub struct Request {
     /// the review sends as its prompt-cache identity. Absent when no Agent review ran, as on
     /// reuse, and on requests saved before it existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
+    pub session_id: Option<SessionId>,
     /// Where the saved conversation behind this request's result lives: its own review's,
     /// or for a reused result the producing review's. Absent when none was saved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<crate::agent::session::SessionRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_definition: Option<Value>,
-    pub payload: Value,
+    pub payload: crate::config::StoredPayload,
     pub references: Value,
     pub deps: Vec<String>,
     #[serde(default)]
     pub force: bool,
     /// The target Artifact's fingerprint.
     #[serde(default)]
-    pub fingerprint: Option<String>,
+    pub fingerprint: Option<Fingerprint>,
     /// The reuse key; absent without a fingerprint on every Artifact the eval depends on.
     #[serde(default)]
-    pub key: Option<String>,
+    pub key: Option<ReuseKey>,
     /// Each Artifact the key covers, with its fingerprint.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub fingerprints: std::collections::BTreeMap<String, String>,
-    pub status: String,
+    pub fingerprints: std::collections::BTreeMap<String, Fingerprint>,
+    pub status: RequestStatus,
     pub created_at: String,
     pub started_at: Option<String>,
     pub completed_at: Option<String>,
@@ -214,13 +218,14 @@ impl Receipts {
         let connection = Connection::open(state.join(DATABASE))
             .await
             .map_err(|e| e.to_string())?;
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        // WAL initialization retries share the database contention budget.
+        let deadline = tokio::time::Instant::now() + super::SQLITE_BUSY_TIMEOUT;
         let state_id = crate::agent::uuid()?;
         loop {
             let state_id = state_id.clone();
             let initialized = connection
                 .call(move |db| -> Result<(), Error> {
-                    db.busy_timeout(Duration::from_secs(5))?;
+                    db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
                     db.pragma_update(None, "foreign_keys", true)?;
                     let version: u32 =
                         db.pragma_query_value(None, "user_version", |row| row.get(0))?;
@@ -253,7 +258,7 @@ impl Receipts {
                     && tokio::time::Instant::now() < deadline =>
                 {
                     // Concurrent first opens can race when enabling WAL despite busy_timeout.
-                    tokio::time::sleep(Duration::from_millis(20)).await;
+                    tokio::time::sleep(INITIALIZATION_RETRY_INTERVAL).await;
                 }
                 Err(error) => return Err(error.to_string()),
             }
@@ -276,6 +281,13 @@ impl Receipts {
     }
 
     pub async fn create_run(&self, run: &Run, requests: &[Request]) -> Result<(), String> {
+        run.validate()?;
+        for request in requests {
+            request.validate()?;
+            if request.run_id != run.id {
+                return Err("Request belongs to another Run.".into());
+            }
+        }
         let run = run.clone();
         let requests = requests.to_vec();
         self.connection.call(move |db| -> Result<(), Error> {
@@ -298,6 +310,7 @@ impl Receipts {
     }
 
     pub async fn save_run(&self, run: &Run) -> Result<(), String> {
+        run.validate()?;
         let run = run.clone();
         self.connection
             .call(move |db| -> Result<(), Error> {
@@ -312,6 +325,7 @@ impl Receipts {
     }
 
     pub async fn finish(&self, run: &Run, requests: &[Request]) -> Result<(), String> {
+        run.validate()?;
         let run = run.clone();
         let requests = requests.to_vec();
         self.connection
@@ -319,7 +333,7 @@ impl Receipts {
                 let transaction = db.transaction()?;
                 for request in requests {
                     // A concurrent submission may already have settled this saved request.
-                    if request.status == "WAITING_HUMAN" {
+                    if request.status == crate::types::RequestStatus::WaitingHuman {
                         continue;
                     }
                     update_request(&transaction, &request)?;
@@ -337,6 +351,7 @@ impl Receipts {
 }
 
 pub(super) fn update_request(db: &rusqlite::Connection, request: &Request) -> Result<(), Error> {
+    request.validate().map_err(Error::Invalid)?;
     if db.execute(
         "UPDATE requests SET status=?,data=?,execution_id=? WHERE id=?",
         params![
@@ -392,7 +407,7 @@ pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
-        db.busy_timeout(Duration::from_secs(5))?;
+        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
         db.pragma_query_value(None, "user_version", |row| row.get(0))
     };
     read().map(Some).map_err(|e| e.to_string())
@@ -412,7 +427,7 @@ pub fn read_state_id(state: &Path) -> Result<Option<String>, String> {
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
         )?;
-        db.busy_timeout(Duration::from_secs(5))?;
+        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
         let transaction = db.transaction()?;
         if !schema_initialized(&transaction)? {
             return Ok(None);
@@ -448,10 +463,10 @@ fn regular_files(state: &Path) -> Result<(), String> {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LastRequest {
-    pub run_id: String,
-    pub verdict: String,
+    pub run_id: RunId,
+    pub verdict: RequestStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub fingerprint: Option<String>,
+    pub fingerprint: Option<Fingerprint>,
 }
 
 /// Last attempts are audit pointers, never evidence for a new current-input query.
@@ -478,7 +493,7 @@ pub async fn read_latest_requests(
     let repo = repo.to_path_buf();
     connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(Duration::from_secs(5))?;
+            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Default::default());
@@ -522,10 +537,10 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
     )
     .await
     .map_err(|e| e.to_string())?;
-    let id = id.to_owned();
+    let id: RunId = id.parse()?;
     connection
         .call(move |db| -> Result<RunView, Error> {
-            db.busy_timeout(Duration::from_secs(5))?;
+            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Err(Error::Invalid("Run not found.".into()));

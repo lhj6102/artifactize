@@ -1,5 +1,8 @@
 //! Scoped read-only Agent tools.
 
+/// Bound the compiled regex automaton to limit search memory.
+const REGEX_BYTES: usize = 2 * 1024 * 1024;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::File,
@@ -20,12 +23,24 @@ use crate::{
 
 use super::{Content, ToolResult, image};
 
+/// Bound one read's contribution to the Agent context while preserving complete lines.
 const READ_BYTES: usize = 64 * 1024;
+/// Cap serialized tool output even when match text or logical paths are very long.
 const RESULT_BYTES: usize = 512 * 1024;
+/// Keep list/search pages small enough for a review; pagination exposes later entries.
 const MAX_RESULTS: usize = 200;
+/// Bound directory fan-out and traversal work regardless of the requested result count.
 const MAX_ENTRIES: usize = 10_000;
+/// Skip individual oversized files so one input cannot monopolize a search.
 const SEARCH_FILE_BYTES: usize = 8 * 1024 * 1024;
+/// Bound total search I/O across files; exhausting the budget reports truncation.
 const SEARCH_BYTES: usize = 64 * 1024 * 1024;
+/// Patterns are user input rather than paths, but share their bounded schema size.
+const MAX_PATTERN_UNITS: usize = scope::MAX_PATH_UNITS;
+/// An ordinary read starts with eighty lines; owners can page further or request
+/// up to five hundred without scanning an unbounded number of lines in one call.
+const DEFAULT_READ_LINES: usize = 80;
+const MAX_READ_LINES: usize = 500;
 
 pub(crate) fn description(builtin: Builtin) -> &'static str {
     match builtin {
@@ -48,22 +63,22 @@ pub(crate) fn description(builtin: Builtin) -> &'static str {
 }
 
 pub(crate) fn input_schema(builtin: Builtin) -> Value {
-    let path = json!({"type":"string","maxLength":4096,"description":"Logical path relative to the tool's Artifact, without the Artifact's name; no absolute paths, dot components, backslashes or symlinks. Empty means the root."});
-    let pattern = json!({"type":"string","minLength":1,"maxLength":4096});
+    let path = json!({"type":"string","maxLength":scope::MAX_PATH_UNITS,"description":"Logical path relative to the tool's Artifact, without the Artifact's name; no absolute paths, dot components, backslashes or symlinks. Empty means the root."});
+    let pattern = json!({"type":"string","minLength":1,"maxLength":MAX_PATTERN_UNITS});
     let integer =
         |min, max, default| json!({"type":"integer","minimum":min,"maximum":max,"default":default});
     let (properties, required) = match builtin {
         Builtin::Read => (
-            json!({"path":path,"offset":integer(1, 9_007_199_254_740_991u64, 1),"limit":integer(1,500,80)}),
+            json!({"path":path,"offset":integer(1, crate::types::MAX_SAFE_JSON_INTEGER, 1),"limit":integer(1,MAX_READ_LINES as u64,DEFAULT_READ_LINES as u64)}),
             vec!["path"],
         ),
         Builtin::List => (
-            json!({"path":path,"offset":integer(0,9_007_199_254_740_991,0),"limit":integer(1,200,200)}),
+            json!({"path":path,"offset":integer(0,crate::types::MAX_SAFE_JSON_INTEGER,0),"limit":integer(1,MAX_RESULTS as u64,MAX_RESULTS as u64)}),
             vec![],
         ),
         Builtin::Glob => (json!({"pattern":pattern,"path":path}), vec!["pattern"]),
         Builtin::Grep => (
-            json!({"pattern":pattern,"path":path,"glob":pattern,"caseInsensitive":{"type":"boolean","default":false},"maxResults":integer(1,200,200)}),
+            json!({"pattern":pattern,"path":path,"glob":pattern,"caseInsensitive":{"type":"boolean","default":false},"maxResults":integer(1,MAX_RESULTS as u64,MAX_RESULTS as u64)}),
             vec!["pattern"],
         ),
         Builtin::ViewImage => (json!({"path":path}), vec!["path"]),
@@ -89,12 +104,16 @@ pub(super) fn call(
     let result = (|| {
         reader.check_cancelled()?;
         let data = match builtin {
-            Builtin::Read => {
-                reader.read(path, number(args, "offset", 1), number(args, "limit", 80))
-            }
-            Builtin::List => {
-                reader.list(path, number(args, "offset", 0), number(args, "limit", 200))
-            }
+            Builtin::Read => reader.read(
+                path,
+                number(args, "offset", 1),
+                number(args, "limit", DEFAULT_READ_LINES),
+            ),
+            Builtin::List => reader.list(
+                path,
+                number(args, "offset", 0),
+                number(args, "limit", MAX_RESULTS),
+            ),
             Builtin::Glob => reader.glob(path, args["pattern"].as_str().unwrap()),
             Builtin::Grep => reader.grep(path, args),
             Builtin::ViewImage => return reader.view_image(path),
@@ -431,7 +450,7 @@ impl Reader<'_> {
     fn grep(&self, path: &str, args: &Value) -> Result<Value, String> {
         let regex = RegexBuilder::new(args["pattern"].as_str().unwrap())
             .case_insensitive(args["caseInsensitive"].as_bool().unwrap_or(false))
-            .size_limit(2 * 1024 * 1024)
+            .size_limit(REGEX_BYTES)
             .build()
             .map_err(|_| "Invalid or oversized regex pattern.")?;
         let filter = args["glob"].as_str().map(glob).transpose()?;

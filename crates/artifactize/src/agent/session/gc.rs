@@ -6,14 +6,14 @@ use std::{
     collections::BTreeSet,
     fs::{self, File},
     path::Path,
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 use rusqlite::OpenFlags;
 use serde::Serialize;
 
 use super::directory;
-use crate::{limits::AgentSessions, store::DATABASE};
+use crate::{limits::AgentSessions, store::DATABASE, types::SessionId};
 
 /// What one collection found and did.
 #[derive(Debug, Default, Clone, Serialize)]
@@ -35,7 +35,7 @@ pub struct Usage {
 }
 
 struct Entry {
-    id: String,
+    id: SessionId,
     bytes: u64,
     written: SystemTime,
 }
@@ -55,12 +55,16 @@ fn entries(state: &Path) -> Result<Vec<Entry>, String> {
         let Some(id) = name.to_str().and_then(|name| name.strip_suffix(".jsonl")) else {
             continue;
         };
+        let Ok(id) = id.parse::<SessionId>() else {
+            // Not a session path; never collect arbitrary files in this directory.
+            continue;
+        };
         let metadata = entry.metadata().map_err(|e| e.to_string())?;
         if !metadata.is_file() {
             continue;
         }
         entries.push(Entry {
-            id: id.into(),
+            id,
             bytes: metadata.len(),
             written: metadata.modified().map_err(|e| e.to_string())?,
         });
@@ -78,15 +82,15 @@ pub fn usage(state: &Path) -> Result<Usage, String> {
 }
 
 /// The sessions of requests that are still RUNNING, read without a writer lock.
-fn running(state: &Path) -> Result<BTreeSet<String>, String> {
+fn running(state: &Path) -> Result<BTreeSet<SessionId>, String> {
     let database = state.join(DATABASE);
     if !database.try_exists().map_err(|e| e.to_string())? {
         return Ok(BTreeSet::new());
     }
-    let read = || -> Result<BTreeSet<String>, rusqlite::Error> {
+    let read = || -> Result<BTreeSet<SessionId>, rusqlite::Error> {
         let db =
             rusqlite::Connection::open_with_flags(&database, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        db.busy_timeout(Duration::from_secs(5))?;
+        db.busy_timeout(crate::store::SQLITE_BUSY_TIMEOUT)?;
         let initialized: bool = db.query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='requests')",
             [],
@@ -99,7 +103,7 @@ fn running(state: &Path) -> Result<BTreeSet<String>, String> {
             "SELECT json_extract(data,'$.sessionId') FROM requests WHERE status='RUNNING' AND json_extract(data,'$.sessionId') IS NOT NULL",
         )?;
         statement
-            .query_map([], |row| row.get::<_, String>(0))?
+            .query_map([], |row| row.get::<_, SessionId>(0))?
             .collect()
     };
     read().map_err(|e| format!("Cannot read running Agent reviews: {e}"))
@@ -153,14 +157,14 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
             }
         }
         collection.remaining = collection.remaining.saturating_sub(entry.bytes);
-        collection.removed.push(entry.id);
+        collection.removed.push(entry.id.into());
     }
     Ok(collection)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::UNIX_EPOCH;
+    use std::time::{Duration, UNIX_EPOCH};
 
     use super::*;
 
@@ -222,6 +226,33 @@ mod tests {
                 .into_iter()
                 .collect()
         );
+    }
+
+    #[test]
+    fn invalid_session_filenames_are_not_collected() {
+        let state = store(&[("valid", 100), ("..", 100), ("bad name", 100)]);
+        assert_eq!(usage(state.path()).unwrap().sessions, 1);
+        let collection = collect(state.path(), bounds(1, 0), false).unwrap();
+        assert_eq!(collection.removed, ["valid"]);
+        assert!(directory(state.path()).join("...jsonl").is_file());
+        assert!(directory(state.path()).join("bad name.jsonl").is_file());
+    }
+
+    #[test]
+    fn running_session_ids_are_validated_at_the_sql_edge() {
+        let state = store(&[("active", 100), ("finished", 100)]);
+        let db = rusqlite::Connection::open(state.path().join(DATABASE)).unwrap();
+        db.execute_batch(
+            "CREATE TABLE requests(status TEXT, data TEXT);
+            INSERT INTO requests VALUES('RUNNING','{\"sessionId\":\"active\"}');",
+        )
+        .unwrap();
+        let collection = collect(state.path(), bounds(1, 0), false).unwrap();
+        assert_eq!(collection.removed, ["finished"]);
+        db.execute_batch("UPDATE requests SET data='{\"sessionId\":\"../invalid\"}';")
+            .unwrap();
+        assert!(running(state.path()).is_err());
+        assert!(directory(state.path()).join("active.jsonl").is_file());
     }
 
     #[test]

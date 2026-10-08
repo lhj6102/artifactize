@@ -26,7 +26,10 @@ use crate::{
     workspace,
 };
 
-const DEFAULT_TIMEOUT_MS: u32 = 120_000;
+/// A command tool gets two minutes unless its owner declares a deadline.
+const DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+/// Capture enough for an 8 MiB normalized multimodal result plus its wire envelope,
+/// but bound raw tool stdout/stderr; truncated JSON is rejected rather than silently reused.
 const OUTPUT_LIMIT: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
@@ -49,7 +52,7 @@ struct Invocation {
     argv: Vec<OsString>,
     context: Value,
     protocol: ToolProtocol,
-    timeout_ms: u32,
+    timeout_ms: std::time::Duration,
 }
 
 /// Borrows the resolved declarations; discovery and listing never execute owner code.
@@ -267,7 +270,7 @@ impl<'a> Registry<'a> {
             argv: argv.into_iter().map(Into::into).collect(),
             context,
             protocol: tool.protocol,
-            timeout_ms: tool.timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS),
+            timeout_ms: tool.timeout_ms.unwrap_or(DEFAULT_TIMEOUT),
         })
     }
 }

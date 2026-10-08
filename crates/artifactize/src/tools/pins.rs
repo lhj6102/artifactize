@@ -16,8 +16,9 @@ use crate::{
     scope,
 };
 
-/// The traversal bounds of one pinned directory, as for content fingerprints.
+/// Bound traversal and retained digest metadata for a tool's executable directory pin.
 const MAX_ENTRIES: usize = 10_000;
+/// Bound total pinning I/O independently of entry count, as for content fingerprints.
 const MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Pins by registered tool name, then by declared workspace-relative path.
@@ -118,7 +119,7 @@ fn walk(
 fn hash_file(path: &Path, bytes: &mut u64) -> Result<[u8; 32], String> {
     let mut file = File::open(path).map_err(|e| e.to_string())?;
     let mut digest = Sha256::new();
-    let mut buffer = vec![0; 64 * 1024];
+    let mut buffer = vec![0; crate::cache::HASH_BUFFER_BYTES];
     loop {
         let read = file.read(&mut buffer).map_err(|e| e.to_string())?;
         if read == 0 {

@@ -16,8 +16,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::process::{self, ChildIdentity, Output};
 
+/// Stop undeclared runtime commands after thirty seconds so a stalled check
+/// cannot occupy a verification job indefinitely; owners can declare a longer timeout.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-pub const MAX_TIMEOUT: Duration = Duration::from_millis(2_147_483_647);
+/// Share configuration and CLI's signed 32-bit millisecond protocol bound.
+pub const MAX_TIMEOUT: Duration = Duration::from_millis(crate::config::validation::MAX_TIMEOUT_MS);
 
 /// A single runtime invocation with private writable directories and filtered env.
 /// The caller owns the run directory and retains its contents for receipts/pruning.
@@ -37,9 +40,9 @@ impl Command {
         args: Vec<OsString>,
         workspace: &Path,
         run_dir: &Path,
-        timeout_ms: Option<u32>,
+        timeout: Option<Duration>,
     ) -> Result<Self, Error> {
-        let timeout = timeout_ms.map_or(DEFAULT_TIMEOUT, |ms| Duration::from_millis(ms.into()));
+        let timeout = timeout.unwrap_or(DEFAULT_TIMEOUT);
         if timeout.is_zero() || timeout > MAX_TIMEOUT {
             return Err(Error::InvalidTimeout);
         }

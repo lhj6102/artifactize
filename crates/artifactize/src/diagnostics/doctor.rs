@@ -258,32 +258,43 @@ fn codex(state: &Path, repo: Option<&Path>) -> (&'static str, String, Value) {
         (Err(error), _) | (_, Err(error)) => return ("FAIL", error, Value::Null),
         (Ok(endpoints), Ok(status)) => (endpoints, status),
     };
-    let (mut level, mut message) = match (status.source, status.expired) {
-        ("none", _) if status.refused.is_some() => ("WARN", status.refused.clone().unwrap()),
-        ("none", _) => (
+    use auth::codex::{FileExpiry, Status, StoredExpiry};
+    let (mut level, mut message) = match &status {
+        Status::Refused { reason } => ("WARN", reason.clone()),
+        Status::Absent => (
             "WARN",
             "No Codex sign-in; run `artifactize login codex` or set ARTIFACTIZE_CODEX_AUTH_FILE."
                 .to_owned(),
         ),
-        ("file", false) => (
+        Status::File {
+            path,
+            expiry: FileExpiry::Usable { .. },
+        } => (
             "PASS",
             format!(
                 "ARTIFACTIZE_CODEX_AUTH_FILE is read, never refreshed: {}.",
-                status.auth_file.as_ref().unwrap().display()
+                path.display()
             ),
         ),
-        ("file", true) => (
+        Status::File {
+            path,
+            expiry: FileExpiry::Expired,
+        } => (
             "WARN",
             format!(
                 "The Codex access token in {} has expired; sign in with Codex again.",
-                status.auth_file.as_ref().unwrap().display()
+                path.display()
             ),
         ),
-        (_, false) => (
+        Status::Stored {
+            expiry: StoredExpiry::Usable { .. },
+        } => (
             "PASS",
             "Codex sign-in is present; no provider validation or refresh was attempted.".to_owned(),
         ),
-        (_, true) => (
+        Status::Stored {
+            expiry: StoredExpiry::Expired { .. },
+        } => (
             "PASS",
             "Codex sign-in is present; its access token has expired and is refreshed on next use."
                 .to_owned(),

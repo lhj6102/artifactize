@@ -212,7 +212,7 @@ async fn repair_shares_original_deadline_and_cancellation_precedes_budget() {
         else {
             unreachable!()
         };
-        *timeout_ms = Some(100);
+        *timeout_ms = Some(std::time::Duration::from_millis(100));
         *max_tokens = Some(1);
         let http = SequencedHttpClient::new(vec![final_text("invalid"), final_openai()]);
         let client = Client::Openai(Box::new(
@@ -237,7 +237,7 @@ async fn repair_shares_original_deadline_and_cancellation_precedes_budget() {
             &fixture.config,
             &fixture.config.evals[0],
             &fixture.output,
-            &mut session::Recorder::off(SESSION),
+            &mut session::Recorder::off(&SESSION.parse().unwrap()),
             cancellation,
         )
         .await;

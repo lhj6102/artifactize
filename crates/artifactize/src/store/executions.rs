@@ -1,3 +1,4 @@
+use crate::types::{ExecutionStatus, Fingerprint, RequestId, ReuseKey, RunId};
 use std::{collections::BTreeMap, path::PathBuf};
 
 use rusqlite::{OptionalExtension, params};
@@ -16,8 +17,8 @@ pub enum Claim {
     /// Every machine-wide slot of the execution's backend is held.
     Full,
     Reuse(Box<Execution>),
-    Wait(String),
-    WaitHuman(String),
+    Wait(crate::types::ExecutionId),
+    WaitHuman(crate::types::ExecutionId),
 }
 
 /// The machine-wide limit (`limits.json`) of the backend an execution would start on.
@@ -33,8 +34,8 @@ pub struct Capacity {
 #[serde(rename_all = "camelCase")]
 pub struct Provenance {
     pub repo_path: PathBuf,
-    pub run_id: String,
-    pub request_id: String,
+    pub run_id: RunId,
+    pub request_id: RequestId,
     pub eval_id: String,
     pub eval_def_hash: String,
     pub completed_at: Option<String>,
@@ -49,27 +50,27 @@ pub struct Provenance {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Execution {
-    pub id: String,
+    pub id: crate::types::ExecutionId,
     /// The reuse key; absent without a fingerprint on every Artifact the eval depends on.
     #[serde(default)]
-    pub key: Option<String>,
+    pub key: Option<ReuseKey>,
     /// The target Artifact's fingerprint.
-    pub fingerprint: Option<String>,
+    pub fingerprint: Option<Fingerprint>,
     /// Each Artifact the key covers, the target included, with its fingerprint.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub fingerprints: BTreeMap<String, String>,
+    pub fingerprints: BTreeMap<String, Fingerprint>,
     pub eval_def_hash: String,
     pub owner_pid: u32,
     pub owner_start_time: u64,
-    pub status: String,
+    pub status: ExecutionStatus,
     pub result: Option<Value>,
     pub error: Option<String>,
     pub error_code: Option<String>,
-    pub profile: Value,
+    pub profile: crate::config::StoredProfile,
     /// How this result was produced; never part of the key.
     #[serde(default)]
     pub options: ExecutionOptions,
-    pub usage: Option<Value>,
+    pub usage: Option<Vec<crate::llm::Attempt>>,
     pub provenance: Provenance,
     pub started_at: String,
     pub completed_at: Option<String>,
@@ -97,7 +98,8 @@ pub struct ExecutionOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_ms: Option<u32>,
+    #[serde(with = "crate::config::validation::milliseconds")]
+    pub timeout_ms: Option<std::time::Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_tool_calls: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -152,6 +154,9 @@ pub struct Producer {
     pub session: Option<crate::agent::session::SessionRef>,
 }
 
+/// Keep printable producer display metadata bounded in saved records and reuse messages.
+const MAX_PRODUCER_CHARS: usize = 200;
+
 impl Producer {
     pub fn current() -> Self {
         // Windows sets neither, only USERNAME.
@@ -169,7 +174,11 @@ impl Producer {
                 .unwrap_or("unknown")
         );
         Self {
-            name: name.chars().filter(|c| !c.is_control()).take(200).collect(),
+            name: name
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(MAX_PRODUCER_CHARS)
+                .collect(),
             version: env!("CARGO_PKG_VERSION").into(),
             session: None,
         }
@@ -207,16 +216,19 @@ impl Execution {
     }
 
     pub fn verdict(&self) -> Option<Verdict> {
-        match self.status.as_str() {
-            "GREEN" => Some(Verdict::Green),
-            "RED" => Some(Verdict::Red),
+        match self.status {
+            ExecutionStatus::Green => Some(Verdict::Green),
+            ExecutionStatus::Red => Some(Verdict::Red),
             _ => None,
         }
     }
 }
 
 /// The latest completed record of a key.
-pub(super) fn lookup(db: &rusqlite::Connection, key: &str) -> Result<Option<Execution>, Error> {
+pub(super) fn lookup(
+    db: &rusqlite::Connection,
+    key: &ReuseKey,
+) -> Result<Option<Execution>, Error> {
     let data: Option<String> = db
         .query_row(
             &format!(
@@ -234,7 +246,11 @@ pub(super) fn lookup(db: &rusqlite::Connection, key: &str) -> Result<Option<Exec
 }
 
 /// End a RUNNING execution whose owner process is gone, which frees its key and its slot.
-fn owner_died(db: &rusqlite::Connection, id: &str, at: &str) -> Result<(), Error> {
+fn owner_died(
+    db: &rusqlite::Connection,
+    id: &crate::types::ExecutionId,
+    at: &str,
+) -> Result<(), Error> {
     db.execute(
         "UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Execution owner died.','$.errorCode','OWNER_DIED','$.completedAt',?1,'$.provenance.completedAt',?1) WHERE id=?2 AND status='RUNNING'",
         params![at, id],
@@ -252,7 +268,7 @@ fn held_slots(db: &rusqlite::Connection, backend: &str, at: &str) -> Result<u32,
         statement
             .query_map([backend], |row| {
                 Ok((
-                    row.get::<_, String>(0)?,
+                    row.get::<_, crate::types::ExecutionId>(0)?,
                     process::ChildIdentity {
                         pid: row.get(1)?,
                         start_time: row.get::<_, i64>(2)? as u64,
@@ -274,8 +290,15 @@ fn held_slots(db: &rusqlite::Connection, backend: &str, at: &str) -> Result<u32,
 
 fn active_owner(
     db: &rusqlite::Connection,
-    key: &str,
-) -> Result<Option<(String, process::ChildIdentity, String)>, Error> {
+    key: &ReuseKey,
+) -> Result<
+    Option<(
+        crate::types::ExecutionId,
+        process::ChildIdentity,
+        ExecutionStatus,
+    )>,
+    Error,
+> {
     db.query_row(
         "SELECT id,owner_pid,owner_start_time,status FROM executions WHERE key=? AND status IN ('RUNNING','WAITING_HUMAN')",
         [key],
@@ -285,8 +308,8 @@ fn active_owner(
 
 fn available_to_waiter(
     db: &rusqlite::Connection,
-    key: &str,
-    waiting_for: Option<&str>,
+    key: &ReuseKey,
+    waiting_for: Option<&crate::types::ExecutionId>,
 ) -> Result<Option<Claim>, Error> {
     if let Some(id) = waiting_for {
         let data: Option<String> = db
@@ -303,12 +326,12 @@ fn available_to_waiter(
     available(db, key)
 }
 
-fn available(db: &rusqlite::Connection, key: &str) -> Result<Option<Claim>, Error> {
+fn available(db: &rusqlite::Connection, key: &ReuseKey) -> Result<Option<Claim>, Error> {
     if let Some(execution) = lookup(db, key)? {
         return Ok(Some(Claim::Reuse(Box::new(execution))));
     }
     if let Some((id, owner, status)) = active_owner(db, key)? {
-        if status == "WAITING_HUMAN" {
+        if status == ExecutionStatus::WaitingHuman {
             return Ok(Some(Claim::WaitHuman(id)));
         }
         if process::is_alive(owner).map_err(|e| Error::Invalid(e.to_string()))? {
@@ -343,8 +366,8 @@ async fn open_read_only(
 /// changing the database.
 pub async fn read_keyed_executions(
     state: &std::path::Path,
-    keys: &[String],
-) -> Result<std::collections::BTreeMap<String, Claim>, String> {
+    keys: &[ReuseKey],
+) -> Result<std::collections::BTreeMap<ReuseKey, Claim>, String> {
     if keys.is_empty() {
         return Ok(Default::default());
     }
@@ -354,7 +377,7 @@ pub async fn read_keyed_executions(
     let keys = keys.to_vec();
     connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(std::time::Duration::from_secs(5))?;
+            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Default::default());
@@ -387,7 +410,7 @@ pub async fn read_latest_cached(
     let keys = keys.to_vec();
     connection
         .call(move |db| -> Result<_, Error> {
-            db.busy_timeout(std::time::Duration::from_secs(5))?;
+            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
             let transaction = db.transaction()?;
             if !schema_initialized(&transaction)? {
                 return Ok(Default::default());
@@ -418,7 +441,7 @@ pub async fn read_latest_cached(
 impl Receipts {
     /// The key's latest record; a hit updates its last use.
     pub async fn cached_execution(&self, key: &str) -> Result<Option<Execution>, String> {
-        let key = key.to_owned();
+        let key: ReuseKey = key.parse()?;
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let execution = lookup(db, &key)?;
@@ -436,7 +459,7 @@ impl Receipts {
         &self,
         execution_id: &str,
     ) -> Result<Option<Execution>, String> {
-        let execution_id = execution_id.to_owned();
+        let execution_id: crate::types::ExecutionId = execution_id.parse()?;
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let data: Option<String> = db
@@ -468,17 +491,18 @@ impl Receipts {
         &self,
         execution: &Execution,
         keyed: bool,
-        waiting_for: Option<&str>,
+        waiting_for: Option<&crate::types::ExecutionId>,
         allow_start: bool,
         capacity: Option<Capacity>,
     ) -> Result<Claim, String> {
+        execution.validate()?;
         let execution = execution.clone();
-        let waiting_for = waiting_for.map(str::to_owned);
+        let waiting_for = waiting_for.cloned();
         self.connection.call(move |db| -> Result<Claim, Error> {
-            let key = execution.key.as_deref().filter(|_| keyed);
+            let key = execution.key.as_ref().filter(|_| keyed);
             if let Some(key) = key {
                 let transaction = db.transaction()?;
-                if let Some(claim) = available_to_waiter(&transaction, key, waiting_for.as_deref())? {
+                if let Some(claim) = available_to_waiter(&transaction, key, waiting_for.as_ref())? {
                     return Ok(claim);
                 }
             }
@@ -491,7 +515,7 @@ impl Receipts {
             }
             let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
             if let Some(key) = key
-                && let Some(claim) = available_to_waiter(&transaction, key, waiting_for.as_deref())?
+                && let Some(claim) = available_to_waiter(&transaction, key, waiting_for.as_ref())?
             {
                 return Ok(claim);
             }
@@ -571,6 +595,7 @@ impl Receipts {
         &self,
         execution: &Execution,
     ) -> Result<Option<Execution>, String> {
+        execution.validate()?;
         let execution = execution.clone();
         self.connection
             .call(move |db| -> Result<Option<Execution>, Error> {
@@ -630,6 +655,18 @@ pub(super) fn settle(
     execution: &Execution,
     request: &Request,
 ) -> Result<bool, Error> {
+    execution.validate().map_err(Error::Invalid)?;
+    request.validate().map_err(Error::Invalid)?;
+    if request.status != execution.status.into()
+        || request.execution_id.as_ref() != Some(&execution.id)
+        || request.result != execution.result
+        || request.error != execution.error
+        || request.error_code != execution.error_code
+    {
+        return Err(Error::Invalid(
+            "Execution and request settlement disagree.".into(),
+        ));
+    }
     let data = serde_json::to_string(execution)?;
     let record = history::columns(execution, data.len())?;
     let last_used = record.as_ref().and(execution.completed_at.as_deref());

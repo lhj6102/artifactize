@@ -7,8 +7,14 @@ use crate::{process::Output, runtime};
 
 use super::image;
 
+/// Text stays readable in the next provider turn rather than filling its whole context.
 const TEXT_LIMIT: usize = 64 * 1024;
+/// Bound one dynamic JSON block before it reaches the provider.
 const JSON_LIMIT: usize = 512 * 1024;
+/// Cap the whole result, including base64 images and JSON envelope overhead.
+const RESULT_LIMIT: usize = 8 * 1024 * 1024;
+/// Bound multimodal block fan-out and per-block validation work even when each block is small.
+const MAX_CONTENT_BLOCKS: usize = 32;
 
 /// Self-contained tool content for persistence and multimodal Agent turns.
 /// Registry results contain validated images, never references to temporary files.
@@ -79,7 +85,7 @@ enum WireContent {
 
 pub(super) fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, ()> {
     let wire: WireResult = serde_json::from_slice(stdout).map_err(|_| ())?;
-    if !(1..=32).contains(&wire.content.len())
+    if !(1..=MAX_CONTENT_BLOCKS).contains(&wire.content.len())
         || wire.is_error
             && !matches!(wire.content.as_slice(), [WireContent::Text { text }] if !text.trim().is_empty())
     {
@@ -111,12 +117,12 @@ pub(super) fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, ()> 
             _ => return Err(()),
         };
         size += serde_json::to_vec(&block).map_err(|_| ())?.len();
-        if size > 8 * 1024 * 1024 {
+        if size > RESULT_LIMIT {
             return Err(());
         }
         result.content.push(block);
     }
-    if serde_json::to_vec(&result).map_err(|_| ())?.len() > 8 * 1024 * 1024 {
+    if serde_json::to_vec(&result).map_err(|_| ())?.len() > RESULT_LIMIT {
         return Err(());
     }
     Ok(result)

@@ -34,6 +34,11 @@ use crate::{
 
 /// Attempts per turn: the first and up to two retries.
 const ATTEMPTS: usize = 3;
+/// Start transient retries at 250 ms and double per attempt when the provider
+/// sends no Retry-After; cancellation and the review deadline still bound every wait.
+const RETRY_BACKOFF_BASE: Duration = Duration::from_millis(250);
+/// Bound sanitized provider diagnostics retained in errors and audit records.
+const MAX_DIAGNOSTIC_CHARS: usize = 4096;
 
 pub enum Client {
     Openai(Box<Model<openai::responses_api::wire::Responses>>),
@@ -44,8 +49,11 @@ pub enum Client {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Attempt {
+    #[serde(default)]
     pub turn: usize,
+    #[serde(default)]
     pub attempt: usize,
+    #[serde(default)]
     pub usage: Map<String, Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -100,7 +108,7 @@ impl Witness for ReportedUsage {
 }
 
 fn insert_counter(counters: &mut Map<String, Value>, name: &str, value: Option<u64>) {
-    if let Some(value) = value.filter(|value| *value <= 9_007_199_254_740_991) {
+    if let Some(value) = value.filter(|value| *value <= crate::types::MAX_SAFE_JSON_INTEGER) {
         counters.insert(name.into(), json!(value));
     }
 }
@@ -324,7 +332,7 @@ impl Client {
             }
             let wait = failure
                 .retry_after
-                .unwrap_or(Duration::from_millis(250 << (attempt - 1)));
+                .unwrap_or(RETRY_BACKOFF_BASE * (1 << (attempt - 1)));
             // A wait too long to add to now is past any deadline.
             if failure.retry_after.is_some()
                 && Instant::now()
@@ -549,6 +557,6 @@ fn clean_diagnostic(message: &str) -> String {
     String::from_utf8(crate::runtime::clean_output(message.as_bytes()))
         .expect("clean output is UTF-8")
         .chars()
-        .take(4096)
+        .take(MAX_DIAGNOSTIC_CHARS)
         .collect()
 }

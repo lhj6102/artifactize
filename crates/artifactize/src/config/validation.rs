@@ -12,6 +12,14 @@ where
     T::deserialize(deserializer).map(Some)
 }
 
+use crate::types::MAX_SAFE_JSON_INTEGER as MAX_SAFE_INTEGER;
+/// Bound declared-input fan-out and validation work during discovery.
+const MAX_INPUTS: usize = 64;
+/// Keep Artifact/eval/variant names bounded in qualified IDs and graph/audit output.
+const MAX_IDENTIFIER_BYTES: usize = 64;
+/// Bound declared execution paths in JSON-client UTF-16 units before scoped resolution.
+const MAX_PATH_UNITS: usize = 1024;
+
 fn integer<'de, D>(deserializer: D, max: u64, message: &str) -> Result<u64, D::Error>
 where
     D: Deserializer<'de>,
@@ -31,27 +39,58 @@ where
 {
     integer(
         deserializer,
-        9_007_199_254_740_991,
+        MAX_SAFE_INTEGER,
         "Expected a positive safe integer (1–9007199254740991).",
     )
     .map(Some)
 }
 
-pub(super) fn timeout<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+/// Millisecond timeouts retain the signed 32-bit external protocol bound.
+pub(crate) const MAX_TIMEOUT_MS: u64 = 2_147_483_647;
+
+pub(super) fn timeout_number<E: Error>(number: Number) -> Result<std::time::Duration, E> {
+    let value = number
+        .as_f64()
+        .ok_or_else(|| E::custom("Invalid timeoutMs."))?;
+    if value < 1.0 || value > MAX_TIMEOUT_MS as f64 || value.fract() != 0.0 {
+        return Err(E::custom(
+            "timeoutMs must be an integer from 1 through 2147483647.",
+        ));
+    }
+    Ok(std::time::Duration::from_millis(value as u64))
+}
+
+pub(super) fn timeout<'de, D>(deserializer: D) -> Result<Option<std::time::Duration>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    integer(
-        deserializer,
-        2_147_483_647,
-        "timeoutMs must be an integer from 1 through 2147483647.",
-    )
-    .map(|value| Some(value as u32))
+    timeout_number::<D::Error>(Number::deserialize(deserializer)?).map(Some)
+}
+
+pub(crate) mod milliseconds {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+    pub fn serialize<S: Serializer>(
+        value: &Option<Duration>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Some(value) => serializer.serialize_u128(value.as_millis()),
+            None => serializer.serialize_none(),
+        }
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Option<Duration>, D::Error> {
+        Option::<serde_json::Number>::deserialize(deserializer)?
+            .map(super::timeout_number::<D::Error>)
+            .transpose()
+    }
 }
 
 pub(crate) fn identifier(value: &str, label: &str) -> Result<(), String> {
     if value.is_empty()
-        || value.len() > 64
+        || value.len() > MAX_IDENTIFIER_BYTES
         || !value.as_bytes()[0].is_ascii_alphanumeric()
         || !value
             .bytes()
@@ -88,7 +127,7 @@ pub(super) fn path(value: &str) -> Result<(), String> {
         .is_some_and(u8::is_ascii_alphabetic)
         && value.as_bytes().get(1) == Some(&b':')
         && value.as_bytes().get(2) == Some(&b'/');
-    if value.encode_utf16().count() > 1024
+    if value.encode_utf16().count() > MAX_PATH_UNITS
         || windows_absolute
         || value
             .bytes()
@@ -103,7 +142,7 @@ pub(super) fn path(value: &str) -> Result<(), String> {
 }
 
 pub(super) fn paths(values: &[String], label: &str) -> Result<(), String> {
-    if values.len() > 64 || values.iter().collect::<BTreeSet<_>>().len() != values.len() {
+    if values.len() > MAX_INPUTS || values.iter().collect::<BTreeSet<_>>().len() != values.len() {
         return Err(format!(
             "{label} must contain at most 64 unique project-relative paths."
         ));

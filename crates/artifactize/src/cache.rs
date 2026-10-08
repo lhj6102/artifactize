@@ -16,7 +16,7 @@ use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 
 pub use crate::store::history::{Entry, list, remove, show};
-pub(crate) use content::ignore_patterns;
+pub(crate) use content::{HASH_BUFFER_BYTES, ignore_patterns};
 
 use crate::{
     config::{Eval, EvalDeclaration, Fingerprint, Profile, RepoConfig},
@@ -25,7 +25,11 @@ use crate::{
     workspace,
 };
 
+/// Keep retained per-file provenance small; the content digest remains complete
+/// even when the optional explain-changes manifest is too large to store.
 const MANIFEST_BYTES: usize = 64 * 1024;
+/// Keep change explanations readable in CLI output; the complete path list remains in Changes.
+const MAX_SUMMARY_PATHS: usize = 10;
 
 /// Hash the eval strategy: what is asked and how the answer is judged, never how the eval
 /// is executed. Execution options (backend, model, reasoning, limits, the profile variant),
@@ -55,7 +59,7 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
 /// A prepared fingerprint; a content fingerprint also carries its manifest.
 #[derive(Debug, Clone)]
 pub struct PreparedFingerprint {
-    pub value: String,
+    pub value: crate::types::Fingerprint,
     pub manifest: Option<Manifest>,
 }
 
@@ -74,10 +78,10 @@ pub struct Manifest {
 /// depends on)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Key {
-    pub value: String,
+    pub value: crate::types::ReuseKey,
     pub eval_def_hash: String,
     /// Each Artifact the eval depends on, its target included, with its fingerprint.
-    pub fingerprints: BTreeMap<String, String>,
+    pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
 }
 
 /// Why an eval has no reuse key: an Artifact it depends on declares no fingerprint.
@@ -94,7 +98,7 @@ pub enum Unkeyed {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Changes {
-    pub since_run_id: String,
+    pub since_run_id: crate::types::RunId,
     /// The target's own files: `path` changed, `+path` added, `-path` removed; absent when
     /// not comparable.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -119,7 +123,10 @@ pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a 
 }
 
 /// The reuse key of an Eval definition hash over these fingerprints.
-pub fn key(eval_def_hash: &str, fingerprints: &BTreeMap<String, String>) -> String {
+pub fn key(
+    eval_def_hash: &str,
+    fingerprints: &BTreeMap<String, crate::types::Fingerprint>,
+) -> crate::types::ReuseKey {
     let mut digest = Sha256::new();
     digest.update(format!("artifactize-key-v1\neval {eval_def_hash}\n"));
     // Names are identifiers and fingerprints never contain spaces or line breaks.
@@ -127,6 +134,8 @@ pub fn key(eval_def_hash: &str, fingerprints: &BTreeMap<String, String>) -> Stri
         digest.update(format!("artifact {name} {fingerprint}\n"));
     }
     content::hex(&digest.finalize())
+        .parse()
+        .expect("SHA-256 is a reuse key")
 }
 
 /// The eval's reuse key from prepared fingerprints. Without a fingerprint on every Artifact
@@ -252,8 +261,8 @@ pub async fn prepare<'a>(
 /// execution (a live owner it joined, or the Human wait it followed) joined it; any other
 /// found a completed record.
 pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String) {
-    request.joined = request.execution_id.as_deref() == Some(execution.id.as_str());
-    request.status = execution.status.clone();
+    request.joined = request.execution_id.as_ref() == Some(&execution.id);
+    request.status = execution.status.into();
     request.execution_id = Some(execution.id.clone());
     request.result = execution.result.clone();
     request.profile = execution.profile.clone();
@@ -280,7 +289,7 @@ pub async fn recheck(
     output_root: &Path,
     parallelism: &Parallelism,
     cancellation: CancellationToken,
-) -> Result<Option<String>, String> {
+) -> Result<Option<crate::types::ReuseKey>, String> {
     let fingerprints = prepare(
         config,
         dependencies(config, eval),
@@ -343,7 +352,9 @@ async fn content(
         manifest.files = None;
     }
     Ok(PreparedFingerprint {
-        value: format!("content:{}", files.digest),
+        value: format!("content:{}", files.digest)
+            .parse()
+            .expect("content digest is a fingerprint"),
         manifest: Some(manifest),
     })
 }
@@ -371,13 +382,15 @@ pub fn changes(
                     Some(files) if !files.is_empty() => {
                         let shown = files
                             .iter()
-                            .take(10)
+                            .take(MAX_SUMMARY_PATHS)
                             .cloned()
                             .collect::<Vec<_>>()
                             .join(", ");
                         parts.push(match files.len() {
-                            0..=10 => format!("changed: {shown}"),
-                            total => format!("changed: {shown} and {} more", total - 10),
+                            0..=MAX_SUMMARY_PATHS => format!("changed: {shown}"),
+                            total => {
+                                format!("changed: {shown} and {} more", total - MAX_SUMMARY_PATHS)
+                            }
                         });
                     }
                     _ => parts.push("inputs changed".to_owned()),
@@ -388,7 +401,7 @@ pub fn changes(
     }
     let dependencies = (!previous.fingerprints.is_empty())
         .then(|| {
-            let others = |map: &BTreeMap<String, String>| {
+            let others = |map: &BTreeMap<String, crate::types::Fingerprint>| {
                 map.iter()
                     .filter(|(name, _)| *name != target)
                     .map(|(name, value)| (name.clone(), value.clone()))
@@ -420,7 +433,7 @@ pub fn changes(
     }
 }
 
-fn diff(old: &BTreeMap<String, String>, new: &BTreeMap<String, String>) -> Vec<String> {
+fn diff<T: PartialEq>(old: &BTreeMap<String, T>, new: &BTreeMap<String, T>) -> Vec<String> {
     old.keys()
         .chain(new.keys())
         .collect::<BTreeSet<_>>()
@@ -439,7 +452,7 @@ async fn script(
     artifact_id: &str,
     output_root: &Path,
     cancellation: CancellationToken,
-) -> Result<String, String> {
+) -> Result<crate::types::Fingerprint, String> {
     if cancellation.is_cancelled() {
         return Err(process::Error::Cancelled.to_string());
     }
@@ -517,14 +530,14 @@ async fn script(
     Ok(value)
 }
 
-fn validate_output(stdout: &[u8]) -> Result<String, String> {
+fn validate_output(stdout: &[u8]) -> Result<crate::types::Fingerprint, String> {
     // Windows programs end a line with CRLF, as Python's print does there; the value is the
     // same as from an LF-ending Unix script.
     let value = match stdout.strip_suffix(b"\r\n") {
         Some(value) if cfg!(windows) => value,
         _ => stdout.strip_suffix(b"\n").unwrap_or(stdout),
     };
-    if !(1..=128).contains(&value.len())
+    if !(1..=crate::types::MAX_FINGERPRINT_BYTES).contains(&value.len())
         || !value
             .iter()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
@@ -535,7 +548,9 @@ fn validate_output(stdout: &[u8]) -> Result<String, String> {
             "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF.".into()
         });
     }
-    Ok(String::from_utf8(value.to_vec()).expect("validated ASCII fingerprint"))
+    String::from_utf8(value.to_vec())
+        .map_err(|error| error.to_string())?
+        .parse()
 }
 
 #[cfg(test)]

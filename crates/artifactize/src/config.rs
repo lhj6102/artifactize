@@ -9,8 +9,10 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 
 pub mod families;
+mod stored;
 mod tools;
-mod validation;
+pub(crate) mod validation;
+pub use stored::{Field, StoredPayload, StoredProfile};
 
 pub use tools::{
     AgentTool, Builtin, BuiltinTool, CommandTool, HumanTool, HumanToolKind, ToolProtocol,
@@ -23,6 +25,8 @@ use validation::{path, paths, positive_integer, present, script, text, timeout};
 pub const CONFIG_FORMAT_VERSION: u32 = 1;
 pub const CONFIG_FILE: &str = "artifactize.json";
 /// Gitignore-style folder patterns, at the workspace root, that discovery skips.
+/// Bound named variants and declared input lists to keep discovery and preparation finite.
+const MAX_DECLARED_ITEMS: usize = 64;
 pub const IGNORE_FILE: &str = ".artifactizeignore";
 
 #[derive(Debug, Error)]
@@ -99,8 +103,13 @@ pub enum Profile {
         model: String,
         #[serde(default, deserialize_with = "present")]
         reasoning: Option<String>,
-        #[serde(rename = "timeoutMs", default, deserialize_with = "timeout")]
-        timeout_ms: Option<u32>,
+        #[serde(
+            rename = "timeoutMs",
+            default,
+            deserialize_with = "timeout",
+            serialize_with = "validation::milliseconds::serialize"
+        )]
+        timeout_ms: Option<std::time::Duration>,
         #[serde(
             rename = "maxToolCalls",
             default,
@@ -114,8 +123,13 @@ pub enum Profile {
     Runtime {
         command: String,
         args: Vec<String>,
-        #[serde(rename = "timeoutMs", default, deserialize_with = "timeout")]
-        timeout_ms: Option<u32>,
+        #[serde(
+            rename = "timeoutMs",
+            default,
+            deserialize_with = "timeout",
+            serialize_with = "validation::milliseconds::serialize"
+        )]
+        timeout_ms: Option<std::time::Duration>,
     },
 }
 
@@ -172,6 +186,15 @@ impl ProfileKind {
     }
 }
 
+/// The required instruction is typed at the declaration and saved-request boundaries;
+/// owner-defined context remains extensible JSON with the same object representation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvalPayload {
+    pub instruction: String,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EvalDeclaration {
@@ -180,7 +203,7 @@ pub struct EvalDeclaration {
     pub profile: Profile,
     #[serde(default)]
     pub profile_variants: BTreeMap<String, Profile>,
-    pub payload: Map<String, Value>,
+    pub payload: EvalPayload,
     #[serde(default, deserialize_with = "present")]
     pub pass_schema: Option<Map<String, Value>>,
     #[serde(default, deserialize_with = "present")]
@@ -191,13 +214,12 @@ impl EvalDeclaration {
     fn validate(&self) -> Result<(), String> {
         identifier(&self.id, "Eval id")?;
         text(&self.title, "Eval title")?;
-        let instruction = self.payload.get("instruction").and_then(Value::as_str);
-        text(instruction.unwrap_or_default(), "Eval payload.instruction")?;
+        text(&self.payload.instruction, "Eval payload.instruction")?;
         self.profile.validate()?;
         for schema in [&self.pass_schema, &self.fail_schema].into_iter().flatten() {
             crate::agent::verdict::validate_schema(schema)?;
         }
-        if self.profile_variants.len() > 64 {
+        if self.profile_variants.len() > MAX_DECLARED_ITEMS {
             return Err("profileVariants must contain at most 64 named profiles.".into());
         }
         for (name, profile) in &self.profile_variants {
@@ -245,7 +267,7 @@ pub enum Fingerprint {
         args: Vec<String>,
         /// Owner-relative paths that must exist on every call; never hashed.
         files: Vec<String>,
-        timeout_ms: Option<u32>,
+        timeout_ms: Option<std::time::Duration>,
     },
     Content {
         files: Vec<String>,
@@ -266,8 +288,12 @@ struct ScriptFields {
     args: Vec<String>,
     #[serde(default)]
     files: Vec<String>,
-    #[serde(default, deserialize_with = "timeout")]
-    timeout_ms: Option<u32>,
+    #[serde(
+        default,
+        deserialize_with = "timeout",
+        serialize_with = "validation::milliseconds::serialize"
+    )]
+    timeout_ms: Option<std::time::Duration>,
 }
 
 #[derive(Deserialize)]
@@ -324,7 +350,7 @@ impl From<Fingerprint> for Value {
                 files,
                 timeout_ms,
             } => serde_json::json!({"script": {
-                "command": command, "args": args, "files": files, "timeoutMs": timeout_ms,
+                "command": command, "args": args, "files": files, "timeoutMs": timeout_ms.map(|value| value.as_millis()),
             }}),
             Fingerprint::Content { files, ignore } => {
                 serde_json::json!({"files": files, "ignore": ignore})
@@ -347,7 +373,7 @@ impl Fingerprint {
             }
             Self::Content { files, ignore, .. } => {
                 if files.is_empty()
-                    || files.len() > 64
+                    || files.len() > MAX_DECLARED_ITEMS
                     || files.iter().collect::<BTreeSet<_>>().len() != files.len()
                 {
                     return Err(

@@ -63,7 +63,7 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
         args.into_iter().map(Into::into).collect(),
         root,
         &output.0,
-        Some(5000),
+        Some(std::time::Duration::from_millis(5000)),
     )
     .unwrap();
     command.cwd = cwd;

@@ -1,4 +1,4 @@
-use std::{path::Path, time::Duration};
+use std::path::Path;
 
 use base64::Engine;
 use rusqlite::{OptionalExtension, TransactionBehavior, params};
@@ -10,8 +10,14 @@ use crate::broker::now;
 
 pub const DATABASE: &str = "review-store.sqlite";
 const SCHEMA_VERSION: u32 = 3;
+/// Bound retained shared-review history, including small records that would not
+/// reach the byte cap; least-recently-used records are evicted above either limit.
 pub const MAX_ENTRIES: i64 = 100_000;
+/// Bound JSON payload storage in the shared review database independently of record count.
 pub const MAX_BYTES: i64 = 4 * 1024 * 1024 * 1024;
+/// Keep persistent principal labels and token-admin output bounded; token names
+/// are printable ASCII identifiers, not the opaque bearer secrets themselves.
+const MAX_TOKEN_NAME_BYTES: usize = 64;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, clap::ValueEnum,
@@ -105,7 +111,7 @@ impl Store {
             .map_err(|e| e.to_string())?;
         connection
             .call(|db| -> Result<(), Error> {
-                db.busy_timeout(Duration::from_secs(5))?;
+                db.busy_timeout(crate::store::SQLITE_BUSY_TIMEOUT)?;
                 let version: u32 = db.pragma_query_value(None, "user_version", |row| row.get(0))?;
                 if version > SCHEMA_VERSION {
                     return Err(Error::Invalid(format!(
@@ -139,7 +145,7 @@ impl Store {
 
     /// Create a token; only its SHA-256 is stored, so the caller prints it once.
     pub async fn add_token(&self, name: &str, scopes: &[Scope]) -> Result<String, String> {
-        if !(1..=64).contains(&name.len())
+        if !(1..=MAX_TOKEN_NAME_BYTES).contains(&name.len())
             || !name
                 .bytes()
                 .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))

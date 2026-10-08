@@ -21,7 +21,9 @@ use tui_tree_widget::TreeState;
 
 use crate::store::{self, RequestView, RunSummary, RunView};
 
+/// Keep live state reasonably current without continuously querying shared SQLite.
 const REFRESH: Duration = Duration::from_secs(1);
+/// Bound one Run query and its retained rows; paging exposes older saved Runs.
 const PAGE: u32 = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,7 +148,8 @@ impl Monitor {
         };
         let (_, requests) = self.run.as_ref()?;
         let view = requests.iter().find(|view| view.request.eval_id == eval)?;
-        (view.request.status == "WAITING_HUMAN").then_some(view.request.id.as_str())
+        (view.request.status == crate::types::RequestStatus::WaitingHuman)
+            .then_some(view.request.id.as_str())
     }
 
     pub fn key(&mut self, key: KeyEvent) -> Action {
@@ -174,7 +177,7 @@ impl Monitor {
                 KeyCode::Up | KeyCode::Char('k') => self.list.select_previous(),
                 KeyCode::Enter => {
                     if let Some(run) = self.selected_run() {
-                        self.open = Some(run.id.clone());
+                        self.open = Some(run.id.to_string());
                         self.run = None;
                         return Action::Refresh;
                     }

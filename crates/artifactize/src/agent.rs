@@ -20,14 +20,16 @@ use crate::{
         error::{Code, Failure},
         session::{Conversation, Recorder},
     },
-    config::{Backend, Eval, Profile, RepoConfig},
+    config::{Eval, Profile, RepoConfig},
     llm::{self, Attempt, Client},
     scope::{self, InstructionPart},
     tools::{Content, Registry, ToolResult},
 };
 
 /// A review's deadline when its profile sets no `timeoutMs`.
-const DEFAULT_TIMEOUT_MS: u32 = 240_000;
+/// Allow multi-turn evidence gathering by default without leaving an unattended
+/// Agent review running indefinitely; declared profile timeouts override this budget.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(240);
 
 /// What every follow-up's question starts with, before the person's message: the review's
 /// system prompt still asks for a JSON verdict, and this turn sets that aside.
@@ -40,8 +42,8 @@ pub struct Review {
 
 /// A new review's session id, a random UUID: every request of the review, its turns,
 /// retries and repair turn, carries it as the provider's prompt-cache identity.
-pub fn session_id() -> Result<String, String> {
-    uuid()
+pub fn session_id() -> Result<crate::types::SessionId, String> {
+    uuid()?.parse()
 }
 
 /// A random version 4 UUID in its lowercase hyphenated form.
@@ -110,10 +112,15 @@ async fn review(
     )
     .await;
     recorder.event(match &review.result {
-        Ok(result) => json!({"kind":"end","result":result}),
-        Err(failure) => {
-            json!({"kind":"end","errorCode":failure.code.as_str(),"error":failure.message})
-        }
+        Ok(result) => session::Kind::End(session::End {
+            result: Some(result.clone()),
+            ..session::End::default()
+        }),
+        Err(failure) => session::Kind::End(session::End {
+            error_code: Some(failure.code.as_str().into()),
+            error: Some(failure.message.clone()),
+            ..session::End::default()
+        }),
     });
     review
 }
@@ -164,9 +171,7 @@ impl Turns<'_> {
             )
             .await;
         for attempt in &attempts[first..] {
-            let mut event = json!(attempt);
-            event["kind"] = json!("attempt");
-            self.recorder.event(event);
+            self.recorder.event(session::Kind::Attempt(attempt.clone()));
         }
         let response = response?;
         check_deadline(self.cancellation, self.deadline)?;
@@ -306,8 +311,8 @@ async fn run(
     else {
         unreachable!()
     };
-    let timeout_ms = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
-    let deadline = Instant::now() + Duration::from_millis(timeout_ms.into());
+    let timeout_ms = timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
+    let deadline = Instant::now() + timeout_ms;
     let registry = Registry::new(config, &eval.id)?;
     let verdict = verdict::VerdictSchema::new(
         eval.declaration.pass_schema.as_ref(),
@@ -319,12 +324,19 @@ async fn run(
         reasoning.as_deref(),
         recorder.id(),
     )?);
-    recorder.start(json!({
-        "backend":backend, "model":model, "reasoning":reasoning,
-        "parameters":request.additional_params,
-        "budgets":{"timeoutMs":timeout_ms, "maxToolCalls":max_tool_calls, "maxTokens":max_tokens},
-        "tools":request.tools,
-    }));
+    recorder.start(session::Header {
+        backend: Some(*backend),
+        model: Some(model.clone()),
+        reasoning: reasoning.clone(),
+        parameters: json!(request.additional_params),
+        budgets: Some(session::Budgets {
+            timeout_ms: Some(timeout_ms),
+            max_tool_calls: *max_tool_calls,
+            max_tokens: *max_tokens,
+        }),
+        tools: Some(request.tools.clone()),
+        ..session::Header::default()
+    });
     let mut turns = Turns {
         client,
         registry: &registry,
@@ -454,10 +466,15 @@ pub async fn follow_up(
         return follow_up;
     }
     recorder.event(match &follow_up.answer {
-        Ok(text) => json!({"kind":"answer","text":text}),
-        Err(failure) => {
-            json!({"kind":"answer","errorCode":failure.code.as_str(),"error":failure.message})
-        }
+        Ok(text) => session::Kind::Answer(session::Answer {
+            text: Some(text.clone()),
+            ..session::Answer::default()
+        }),
+        Err(failure) => session::Kind::Answer(session::Answer {
+            error_code: Some(failure.code.as_str().into()),
+            error: Some(failure.message.clone()),
+            ..session::Answer::default()
+        }),
     });
     follow_up
 }
@@ -478,15 +495,12 @@ async fn continue_conversation(
             "The saved session does not name its backend and model.",
         )
     };
-    let backend: Backend =
-        serde_json::from_value(header["backend"].clone()).map_err(|_| invalid())?;
-    let model = header["model"].as_str().ok_or_else(invalid)?;
-    let reasoning = header["reasoning"].as_str();
-    let budgets = &header["budgets"];
-    let timeout_ms = budgets["timeoutMs"]
-        .as_u64()
-        .unwrap_or(DEFAULT_TIMEOUT_MS.into());
-    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    let backend = header.backend.ok_or_else(invalid)?;
+    let model = header.model.as_deref().ok_or_else(invalid)?;
+    let reasoning = header.reasoning.as_deref();
+    let defaults = session::Budgets::default();
+    let budgets = header.budgets.as_ref().unwrap_or(&defaults);
+    let deadline = Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
     let client = Client::new(backend, model, continuation.state, &config.root)?;
     let registry = Registry::new(config, &eval.id)?;
     let history = continuation
@@ -510,13 +524,19 @@ async fn continue_conversation(
     request.chat_history.push(question.clone());
     request.tools = definitions(&registry);
     request.additional_params = Some(Client::parameters(backend, reasoning, recorder.id())?);
-    recorder.event(json!({
-        "kind":"send", "text":message, "framing":framing,
-        "filesChanged":continuation.files_changed,
-        "tools":request.tools.iter().map(|tool| &tool.name).collect::<Vec<_>>(),
+    recorder.event(session::Kind::Send(session::Send {
+        text: Some(message.into()),
+        framing: Some(framing),
+        files_changed: continuation.files_changed,
+        tools: Some(request.tools.iter().map(|tool| tool.name.clone()).collect()),
     }));
-    // The question as sent, and the person's own words for `session show`.
-    recorder.event(json!({"kind":"message","turn":1,"message":question,"question":message}));
+    recorder.event(session::Kind::Message(session::MessageEvent {
+        turn: 1,
+        message: question,
+        question: Some(message.into()),
+        repair: false,
+        is_error: Vec::new(),
+    }));
     follow_up.started = true;
     let mut turns = Turns {
         client: &client,
@@ -525,8 +545,8 @@ async fn continue_conversation(
         output: continuation.output,
         deadline,
         cancellation,
-        max_tokens: budgets["maxTokens"].as_u64(),
-        max_tool_calls: budgets["maxToolCalls"].as_u64(),
+        max_tokens: budgets.max_tokens,
+        max_tool_calls: budgets.max_tool_calls,
         turn: 0,
         tokens_used: 0,
         calls_issued: 0,
@@ -598,9 +618,8 @@ fn prompt(
 ) -> Result<CompletionRequest, String> {
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
     let mut payload = eval.declaration.payload.clone();
-    let instruction = payload["instruction"].as_str().unwrap();
     let instruction: String =
-        scope::parse_artifact_instruction(instruction, &scope, &eval.references)
+        scope::parse_artifact_instruction(&payload.instruction, &scope, &eval.references)
             .into_iter()
             .map(|part| match part {
                 InstructionPart::Text(text) => text,
@@ -614,7 +633,7 @@ fn prompt(
                 }
             })
             .collect();
-    payload.insert("instruction".into(), json!(instruction));
+    payload.instruction = instruction;
     // Follow-ups continue this conversation with the same system prompt, so that their
     // prefix stays cached: it says from the start how they are answered. It is no part of
     // the eval definition hash or the reuse key.
@@ -634,7 +653,7 @@ fn prompt(
         Return the verdict and any fields required by the applicable owner schema, following their descriptions. GREEN owner schema: {}. RED owner schema: {}.",
         eval.declaration.title,
         eval.id,
-        Value::Object(payload),
+        json!(payload),
         eval.target,
         json!(eval.deps),
         json!(artifacts),

@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use rusqlite::params;
@@ -17,12 +16,12 @@ use crate::workspace::{canonical_target, outside_workspace};
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunSummary {
-    pub id: String,
+    pub id: crate::types::RunId,
     pub repo_path: PathBuf,
     pub created_at: String,
     pub completed_at: Option<String>,
-    pub status: String,
-    pub counts: BTreeMap<String, u64>,
+    pub status: crate::types::RunStatus,
+    pub counts: BTreeMap<crate::types::RequestStatus, u64>,
 }
 
 /// Saved request-state counts in one read-only snapshot; no repository discovery.
@@ -55,7 +54,7 @@ pub async fn read_runs(
     .await
     .map_err(|e| e.to_string())?;
     connection.call(move |db| -> Result<_, Error> {
-        db.busy_timeout(Duration::from_secs(5))?;
+        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
         let transaction = db.transaction()?;
         if !schema_initialized(&transaction)? {
             return Ok(Vec::new());

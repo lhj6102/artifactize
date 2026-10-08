@@ -73,7 +73,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     );
     let producer_state = root.path().join("producer");
     let produced = verify(&repo, &producer_state).await;
-    assert_eq!(produced.run.status, "GREEN");
+    assert_eq!(produced.run.status.as_str(), "GREEN");
     let key = produced.requests[0].key.clone().unwrap();
     let execution = cache::show(&producer_state, &key, false)
         .await
@@ -83,7 +83,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     assert_eq!(execution.fingerprint.as_deref(), Some("remote-v1"));
     assert_eq!(
         execution.fingerprints,
-        [("app".to_owned(), "remote-v1".to_owned())].into()
+        [("app".to_owned(), "remote-v1".parse().unwrap())].into()
     );
     let producer = execution.producer.clone().unwrap();
     assert_eq!(producer.version, env!("CARGO_PKG_VERSION"));
@@ -133,7 +133,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     let receipts = Receipts::open(&consumer_state, &repo).await.unwrap();
     let mirror = stored.mirror("https://reviews.example/").unwrap();
     let mirrored = receipts.mirror_execution(&mirror).await.unwrap().unwrap();
-    assert_eq!(mirrored.id, format!("remote-{}", execution.id));
+    assert_eq!(mirrored.id.as_str(), format!("remote-{}", execution.id));
     // The same record again is not newer than the local latest, which is now itself.
     assert!(receipts.mirror_execution(&mirror).await.unwrap().is_none());
     assert_eq!(
@@ -159,7 +159,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     );
 
     let reused = verify(&repo, &consumer_state).await;
-    assert_eq!(reused.run.status, "GREEN");
+    assert_eq!(reused.run.status.as_str(), "GREEN");
     assert_eq!(reused.run.executions_started, 0);
     assert_eq!(reused.requests[0].execution_id.as_ref(), Some(&mirrored.id));
 
@@ -179,6 +179,95 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
 }
 
 #[tokio::test]
+async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    write_repo(
+        &repo,
+        json!({"kind":"runtime","command":bin("/bin/true"),"args":[]}),
+    );
+    let producer_state = root.path().join("producer");
+    let produced = verify(&repo, &producer_state).await;
+    let key = produced.requests[0].key.as_ref().unwrap();
+    let original = cache::show(&producer_state, key, false)
+        .await
+        .unwrap()
+        .pop()
+        .unwrap();
+
+    // 193 is the previous passing edge; 194 through the 200-byte wire maximum
+    // need the local-only seven-byte namespace allowance for both record forms.
+    for bytes in [193, 194, 200] {
+        for full in [false, true] {
+            let mut source = original.clone();
+            source.id = "x".repeat(bytes).parse().unwrap();
+            let mut wire = Record::new(&source, full).unwrap();
+            wire.publisher = Some("alice-laptop".into());
+            wire.published_at = Some("2026-10-04T00:00:02Z".into());
+            let wire: Record = serde_json::from_value(serde_json::to_value(wire).unwrap()).unwrap();
+            wire.validate().unwrap();
+            let mirror = wire.mirror("https://reviews.example/").unwrap();
+            assert_eq!(mirror.id.as_str(), format!("remote-{}", source.id));
+            assert_eq!(mirror.id.len(), bytes + "remote-".len());
+            let state = root.path().join(format!("consumer-{bytes}-{full}"));
+            let receipts = Receipts::open(&state, &repo).await.unwrap();
+            receipts.mirror_execution(&mirror).await.unwrap().unwrap();
+            assert!(receipts.mirror_execution(&mirror).await.unwrap().is_none());
+            let saved = cache::show(&state, key, false)
+                .await
+                .unwrap()
+                .pop()
+                .unwrap();
+            assert_eq!(saved.id, mirror.id);
+            assert_eq!(
+                cache::list(&state, false).await.unwrap()[0].execution_id,
+                mirror.id
+            );
+            let reused = verify(&repo, &state).await;
+            assert_eq!(reused.run.status.as_str(), "GREEN");
+            assert_eq!(reused.run.executions_started, 0);
+            assert_eq!(reused.requests[0].execution_id.as_ref(), Some(&mirror.id));
+        }
+    }
+    let mut too_long = Record::new(&original, false).unwrap();
+    // This is valid only as a stored local mirror, never as a remote wire identity.
+    too_long.execution_id = format!("remote-{}", "x".repeat(194)).parse().unwrap();
+    assert!(too_long.validate().is_err());
+}
+
+#[tokio::test]
+async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
+    // An independent literal schema-5 fixture, not produced by the typed writer.
+    let text = include_str!("fixtures/legacy_remote_execution.json");
+    let execution: artifactize::store::Execution = serde_json::from_str(text).unwrap();
+    assert_eq!(execution.id.len(), 207);
+    let state = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    Receipts::open(state.path(), repo.path()).await.unwrap();
+    let db = Connection::open(state.path().join("state.sqlite")).unwrap();
+    db.execute(
+        "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) VALUES(?1,?2,?3,'GREEN',0,0,?4,?5,?4,?6)",
+        rusqlite::params![execution.id, execution.key, execution.eval_def_hash, execution.completed_at, text.len() as i64, text],
+    ).unwrap();
+    assert_eq!(
+        cache::list(state.path(), false).await.unwrap()[0].execution_id,
+        execution.id
+    );
+    assert_eq!(
+        cache::show(state.path(), execution.key.as_ref().unwrap(), false)
+            .await
+            .unwrap()[0]
+            .id,
+        execution.id
+    );
+    assert_eq!(
+        db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
+            .unwrap(),
+        5
+    );
+}
+
+#[tokio::test]
 async fn human_summary_keeps_owner_fields_and_the_reviewer() {
     let root = tempfile::tempdir().unwrap();
     let repo = root.path().join("repo");
@@ -186,7 +275,7 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
     let state = root.path().join("state");
     let waiting = verify(&repo, &state).await;
     let request = &waiting.requests[0];
-    assert_eq!(request.status, "WAITING_HUMAN");
+    assert_eq!(request.status.as_str(), "WAITING_HUMAN");
     let receipts = Receipts::open(&state, &repo).await.unwrap();
     human::claim(&receipts, &request.id, "alice").await.unwrap();
     human::submit(
@@ -244,24 +333,27 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     let variant: Profile = serde_json::from_value(fast.clone()).unwrap();
     let completed = "2026-10-04T00:00:01Z".to_owned();
     let produced = Execution {
-        id: "execution-run-elsewhere-1".into(),
+        id: "execution-run-elsewhere-1".parse().unwrap(),
         key: Some(key.value.clone()),
-        fingerprint: Some("remote-v1".into()),
+        fingerprint: Some("remote-v1".parse().unwrap()),
         fingerprints: key.fingerprints.clone(),
         eval_def_hash: key.eval_def_hash.clone(),
         owner_pid: 1,
         owner_start_time: 1,
-        status: "GREEN".into(),
+        status: artifactize::types::ExecutionStatus::Green,
         result: Some(json!({"verdict":"GREEN","approved":true})),
         error: None,
         error_code: None,
-        profile: fast.clone(),
+        profile: serde_json::from_value(fast.clone()).unwrap(),
         options: ExecutionOptions::new(&variant, Some("fast")),
-        usage: Some(json!([{"turn":1,"attempt":1,"usage":{"inputTokens":10}}])),
+        usage: Some(
+            serde_json::from_value(json!([{"turn":1,"attempt":1,"usage":{"inputTokens":10}}]))
+                .unwrap(),
+        ),
         provenance: Provenance {
             repo_path: "/elsewhere".into(),
-            run_id: "run-elsewhere".into(),
-            request_id: "run-elsewhere-1".into(),
+            run_id: "run-elsewhere".parse().unwrap(),
+            request_id: "run-elsewhere-1".parse().unwrap(),
             eval_id: "app/check".into(),
             eval_def_hash: key.eval_def_hash.clone(),
             completed_at: Some(completed.clone()),
@@ -290,12 +382,18 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
 
     // The declared profile (another backend, model, reasoning and timeout) reuses it.
     let reused = verify(&repo, &state).await;
-    assert_eq!(reused.run.status, "GREEN");
+    assert_eq!(reused.run.status.as_str(), "GREEN");
     assert_eq!(reused.run.executions_started, 0);
     let request = &reused.requests[0];
-    assert_eq!(request.profile, fast);
-    assert_eq!(request.requested_profile["model"], declared["model"]);
-    assert_eq!(request.requested_profile["backend"], declared["backend"]);
+    assert_eq!(serde_json::to_value(&request.profile).unwrap(), fast);
+    assert_eq!(
+        serde_json::to_value(&request.requested_profile).unwrap()["model"],
+        declared["model"]
+    );
+    assert_eq!(
+        serde_json::to_value(&request.requested_profile).unwrap()["backend"],
+        declared["backend"]
+    );
     assert_eq!(request.options.variant.as_deref(), Some("fast"));
     assert_eq!(request.options.backend.as_deref(), Some("anthropic"));
     assert_eq!(request.options.max_tokens, Some(500));

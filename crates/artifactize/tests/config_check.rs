@@ -236,7 +236,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     );
     assert_eq!(config.artifacts["review"].path, Path::new("review"));
     assert_eq!(
-        config.evals[0].declaration.payload["instruction"],
+        config.evals[0].declaration.payload.instruction,
         "Check {source}."
     );
 

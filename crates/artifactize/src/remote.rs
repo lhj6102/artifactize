@@ -14,9 +14,9 @@ use crate::store::{Execution, ExecutionOptions, Origin, Producer, Provenance};
 
 /// Record schema version: 2 since records carry the 0.5 reuse key.
 pub const SCHEMA: u32 = 2;
-/// JSON byte limit of a summary record.
+/// Bound network/storage cost of reduced records, which omit large captured execution output.
 pub const MAX_SUMMARY_BYTES: usize = 256 * 1024;
-/// JSON byte limit of a full record, the local per-entry cache limit.
+/// Full records must fit the same per-entry budget as the local reusable cache.
 pub const MAX_FULL_BYTES: usize = crate::store::history::MAX_ENTRY_BYTES;
 
 /// One record of a reuse key's history; the store keeps every record and returns the latest.
@@ -29,23 +29,23 @@ pub const MAX_FULL_BYTES: usize = crate::store::history::MAX_ENTRY_BYTES;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Record {
     pub schema: u32,
-    pub key: String,
+    pub key: crate::types::ReuseKey,
     pub eval_def_hash: String,
     /// Each Artifact the key covers, with its fingerprint.
-    pub fingerprints: BTreeMap<String, String>,
-    pub verdict: String,
+    pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
+    pub verdict: crate::types::ExecutionStatus,
     pub eval_id: String,
-    pub run_id: String,
-    pub request_id: String,
-    pub execution_id: String,
-    pub profile: Value,
+    pub run_id: crate::types::RunId,
+    pub request_id: crate::types::RequestId,
+    pub execution_id: crate::types::ExecutionId,
+    pub profile: crate::config::StoredProfile,
     #[serde(default)]
     pub options: ExecutionOptions,
     /// An Agent result's tool `executionPaths` pins.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub execution_paths: crate::tools::pins::Pins,
     pub result: Value,
-    pub usage: Option<Value>,
+    pub usage: Option<Vec<crate::llm::Attempt>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reviewer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -87,7 +87,7 @@ impl Record {
             key: key.clone(),
             eval_def_hash: execution.eval_def_hash.clone(),
             fingerprints: execution.fingerprints.clone(),
-            verdict: execution.status.clone(),
+            verdict: execution.status,
             eval_id: execution.provenance.eval_id.clone(),
             run_id: execution.provenance.run_id.clone(),
             request_id: execution.provenance.request_id.clone(),
@@ -123,11 +123,7 @@ impl Record {
             && crate::cache::key(&self.eval_def_hash, &self.fingerprints) == self.key
             && matches!(self.verdict.as_str(), "GREEN" | "RED")
             && self.result["verdict"] == self.verdict.as_str()
-            && matches!(
-                self.profile["kind"].as_str(),
-                Some("runtime" | "agent" | "human")
-            )
-            && valid_id(&self.execution_id)
+            && self.execution_id.valid_wire()
             && crate::broker::sortable(&self.completed_at).is_some()
             && valid_session(self.producer.as_ref())
             && self.execution.as_ref().is_none_or(|execution| {
@@ -159,11 +155,11 @@ impl Record {
         let (Some(publisher), Some(published_at)) = (self.publisher, self.published_at) else {
             return Err("Remote review record has no server publisher.".into());
         };
-        let id = format!("remote-{}", self.execution_id);
+        let id = self.execution_id.remote_mirror()?;
         let mut execution = match self.execution {
             Some(execution) => *execution,
             None => Execution {
-                id: String::new(),
+                id: id.clone(),
                 key: Some(self.key),
                 // The target is the eval id's Artifact part.
                 fingerprint: self
@@ -209,8 +205,8 @@ impl Record {
     }
 }
 
-fn summary_result(profile: &Value, result: &Value) -> Value {
-    if profile["kind"] != "runtime" {
+fn summary_result(profile: &crate::config::StoredProfile, result: &Value) -> Value {
+    if profile.kind() != crate::config::ProfileKind::Runtime {
         // Agent and Human results are the schema-validated owner fields.
         return result.clone();
     }
@@ -222,23 +218,24 @@ fn summary_result(profile: &Value, result: &Value) -> Value {
     })
 }
 
-fn summary_usage(usage: Option<&Value>) -> Option<Value> {
-    let attempts = usage?.as_array()?;
+fn summary_usage(usage: Option<&Vec<crate::llm::Attempt>>) -> Option<Vec<crate::llm::Attempt>> {
+    let attempts = usage?;
     Some(
         attempts
             .iter()
-            .map(|attempt| {
-                json!({"turn": attempt["turn"], "attempt": attempt["attempt"], "usage": attempt["usage"]})
+            .map(|attempt| crate::llm::Attempt {
+                turn: attempt.turn,
+                attempt: attempt.attempt,
+                usage: attempt.usage.clone(),
+                error: None,
+                error_code: None,
             })
             .collect(),
     )
 }
 
 pub(crate) fn valid_fingerprint(value: &str) -> bool {
-    (1..=128).contains(&value.len())
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
+    value.parse::<crate::types::Fingerprint>().is_ok()
 }
 
 pub(crate) fn valid_hash(value: &str) -> bool {
@@ -254,11 +251,4 @@ fn valid_session(producer: Option<&Producer>) -> bool {
     producer
         .and_then(|producer| producer.session.as_ref())
         .is_none_or(crate::agent::session::SessionRef::valid)
-}
-
-fn valid_id(value: &str) -> bool {
-    (1..=200).contains(&value.len())
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }

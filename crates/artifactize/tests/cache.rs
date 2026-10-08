@@ -151,10 +151,11 @@ impl Fixture {
         let mut db = Connection::open(self.state.join("state.sqlite")).unwrap();
         let transaction = db.transaction().unwrap();
         for i in 0..count {
-            let key = format!("seed-{i:05}");
+            let id = format!("seed-{i:05}");
+            let key = format!("{i:064x}");
             transaction.execute(
-                "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT ?1,?1,'seed',status,owner_pid,owner_start_time,?2,?3,?2,json_set(data,'$.id',?1,'$.key',?1) FROM executions LIMIT 1",
-                rusqlite::params![key, format!("2000-01-01T00:00:00.{i:09}Z"), bytes],
+                "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT ?1,?4,'seed',status,owner_pid,owner_start_time,?2,?3,?2,json_set(data,'$.id',?1,'$.key',?4) FROM executions LIMIT 1",
+                rusqlite::params![id, format!("2000-01-01T00:00:00.{i:09}Z"), bytes, key],
             ).unwrap();
         }
         transaction.commit().unwrap();
@@ -1090,7 +1091,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     // The oldest seed holds the repository's key.
     let current = key(&original, 0);
     db.execute(
-        "UPDATE executions SET key=? WHERE key='seed-00000'",
+        "UPDATE executions SET key=? WHERE key='0000000000000000000000000000000000000000000000000000000000000000'",
         [&current],
     )
     .unwrap();
@@ -1112,7 +1113,15 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     let new = key(&fixture.command(&repo, &["verify", "--all"], 0), 0);
     assert_eq!(fixture.records(), 10_000);
     assert_eq!(
-        fixture.command(&repo, &["cache", "show", "seed-00001"], 4),
+        fixture.command(
+            &repo,
+            &[
+                "cache",
+                "show",
+                "0000000000000000000000000000000000000000000000000000000000000001"
+            ],
+            4
+        ),
         Value::Null
     );
     for key in [&current, &new] {
@@ -1144,9 +1153,12 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
     )
     .unwrap();
     fixture.seed_entries(65, 16 * MIB);
-    db.execute("INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES ('active','seed-00000','seed','WAITING_HUMAN',1,1,'{}')", []).unwrap();
+    db.execute("INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES ('active','0000000000000000000000000000000000000000000000000000000000000000','seed','WAITING_HUMAN',1,1,'{}')", []).unwrap();
     db.execute("INSERT INTO requests(id,run_id,eval_id,ordinal,execution_id,status,data) VALUES ('waiter',?,'waiter',1,'seed-00001','QUEUED','{}')", [original["id"].as_str().unwrap()]).unwrap();
-    for key in ["seed-00000", "seed-00001"] {
+    for key in [
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000001",
+    ] {
         assert!(
             fixture.command(&repo, &["cache", "rm", key], 2)["error"]
                 .as_str()
@@ -1162,14 +1174,22 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
             .unwrap()
             <= 1024 * MIB
     );
-    for key in ["seed-00000", "seed-00001", "seed-00004", &first] {
+    for key in [
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000000001",
+        "0000000000000000000000000000000000000000000000000000000000000004",
+        &first,
+    ] {
         assert!(
             fixture
                 .command(&repo, &["cache", "show", key], 0)
                 .is_object()
         );
     }
-    for key in ["seed-00002", "seed-00003"] {
+    for key in [
+        "0000000000000000000000000000000000000000000000000000000000000002",
+        "0000000000000000000000000000000000000000000000000000000000000003",
+    ] {
         assert_eq!(
             fixture.command(&repo, &["cache", "show", key], 4),
             Value::Null
@@ -1207,8 +1227,8 @@ fn automatic_gc_enforces_bytes_and_preserves_active_executions_and_waiters() {
         keys(),
         sorted(vec![
             second.clone(),
-            "seed-00000".into(),
-            "seed-00001".into()
+            "0000000000000000000000000000000000000000000000000000000000000000".into(),
+            "0000000000000000000000000000000000000000000000000000000000000001".into()
         ]),
         "protected rows survive even when oversized"
     );
@@ -1299,11 +1319,11 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     owner.wait().unwrap();
     kill_orphans(&fs::read_to_string(fixture.root.path().join("starts")).unwrap());
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
-    execution.status = "GREEN".into();
+    execution.status = artifactize::types::ExecutionStatus::Green;
     execution.result = Some(json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)}));
     execution.completed_at = Some("2026-10-04T00:00:00Z".into());
     execution.provenance.completed_at = execution.completed_at.clone();
-    request.status = execution.status.clone();
+    request.status = execution.status.into();
     request.result = execution.result.clone();
     request.completed_at = execution.completed_at.clone();
     request.provenance = Some(execution.provenance.clone());
@@ -1327,13 +1347,13 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
         joined["requests"][0]["result"],
         serde_json::to_value(execution.result).unwrap()
     );
-    assert_eq!(joined["requests"][0]["executionId"], execution.id);
+    assert_eq!(joined["requests"][0]["executionId"], execution.id.as_str());
     assert_eq!(joined["executionsStarted"], 0);
     assert_eq!(fixture.records(), 0);
     assert_eq!(fixture.count("executions"), 1);
     assert_eq!(fixture.starts(), 1);
     let later = fixture.command(&target, &["verify", "--all"], 0);
-    assert_ne!(later["requests"][0]["executionId"], execution.id);
+    assert_ne!(later["requests"][0]["executionId"], execution.id.as_str());
     assert_eq!(later["requests"][0]["result"]["stdout"], "unexpected");
 }
 
