@@ -340,8 +340,7 @@ pub(crate) fn read_dir(
         directory,
         buffer: vec![0; DIRECTORY_BUFFER_WORDS],
         next: None,
-        restart: true,
-        done: false,
+        scan: super::directory_scan::DirectoryScan::First,
     })
 }
 
@@ -365,8 +364,7 @@ struct ReadDir<'a> {
     buffer: Vec<u64>,
     /// Byte offset of the next record in `buffer`.
     next: Option<usize>,
-    restart: bool,
-    done: bool,
+    scan: super::directory_scan::DirectoryScan,
 }
 
 impl Iterator for ReadDir<'_> {
@@ -381,15 +379,10 @@ impl Iterator for ReadDir<'_> {
                     Err(error) => return Some(Err(error)),
                 }
             }
-            if self.done {
-                return None;
-            }
-            let class = if self.restart {
-                FileIdBothDirectoryRestartInfo
-            } else {
-                FileIdBothDirectoryInfo
+            let class = match self.scan.query()? {
+                super::directory_scan::Query::Restart => FileIdBothDirectoryRestartInfo,
+                super::directory_scan::Query::Continue => FileIdBothDirectoryInfo,
             };
-            self.restart = false;
             // SAFETY: the buffer is writable for the length passed.
             let ok = unsafe {
                 GetFileInformationByHandleEx(
@@ -400,7 +393,7 @@ impl Iterator for ReadDir<'_> {
                 )
             };
             if ok == 0 {
-                self.done = true;
+                self.scan.finish();
                 let error = io::Error::last_os_error();
                 if error.raw_os_error() == Some(ERROR_NO_MORE_FILES as i32) {
                     return None;
@@ -418,7 +411,7 @@ impl ReadDir<'_> {
         let size = mem::size_of_val(self.buffer.as_slice());
         let header = mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName);
         if !offset.is_multiple_of(8) || offset + header > size {
-            self.done = true;
+            self.scan.finish();
             self.next = None;
             return Err(io::Error::other("malformed directory listing"));
         }
@@ -442,7 +435,7 @@ impl ReadDir<'_> {
             )
         };
         if offset + header + length > size {
-            self.done = true;
+            self.scan.finish();
             self.next = None;
             return Err(io::Error::other("malformed directory listing"));
         }
@@ -552,6 +545,56 @@ mod tests {
     use std::process::Stdio;
 
     use super::*;
+
+    #[test]
+    fn directory_records_drain_then_continue_and_malformed_record_ends_iteration() {
+        use super::super::directory_scan::{DirectoryScan, Query};
+        let directory = tempfile::tempdir().unwrap();
+        let handle = open_directory(directory.path()).unwrap();
+        let mut reader = ReadDir {
+            directory: &handle,
+            buffer: vec![0; DIRECTORY_BUFFER_WORDS],
+            next: None,
+            scan: DirectoryScan::First,
+        };
+        assert_eq!(reader.scan.query(), Some(Query::Restart));
+        let header = mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName);
+        let next_offset = (header + 2).next_multiple_of(8);
+        for (offset, next, character) in [(0, next_offset, b'a'), (next_offset, 0, b'b')] {
+            // SAFETY: test records fit inside the u64-aligned buffer, just as OS records do.
+            let info = unsafe {
+                reader
+                    .buffer
+                    .as_mut_ptr()
+                    .cast::<u8>()
+                    .add(offset)
+                    .cast::<FILE_ID_BOTH_DIR_INFO>()
+            };
+            // SAFETY: the fixed header and one UTF-16 name unit fit at the checked offsets.
+            unsafe {
+                (*info).NextEntryOffset = next as u32;
+                (*info).FileNameLength = 2;
+                (*info).FileAttributes = 0;
+                (*info).FileName[0] = u16::from(character);
+            }
+        }
+        reader.next = Some(0);
+        assert_eq!(
+            reader.next().unwrap().unwrap().file_name(),
+            OsString::from("a")
+        );
+        assert_eq!(
+            reader.next().unwrap().unwrap().file_name(),
+            OsString::from("b")
+        );
+        assert_eq!(reader.next, None);
+        assert_eq!(reader.scan.query(), Some(Query::Continue));
+        reader.next = Some(1); // Invalid record alignment is terminal, not retried.
+        assert!(reader.next().unwrap().is_err());
+        assert_eq!(reader.scan, DirectoryScan::Done);
+        assert!(reader.next().is_none());
+        assert!(reader.next().is_none());
+    }
 
     #[tokio::test]
     async fn the_editor_runs_through_cmd_and_gets_the_file_as_one_word() {

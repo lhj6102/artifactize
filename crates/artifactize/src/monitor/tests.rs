@@ -12,7 +12,7 @@ fn now() -> OffsetDateTime {
     OffsetDateTime::parse("2026-01-01T00:01:05Z", &Rfc3339).unwrap()
 }
 
-fn request(eval: &str, status: &str, extra: Value) -> RequestView {
+pub(super) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
     let mut value = json!({
         "id":format!("run-1-{}", eval.replace('/', "-")),"runId":"run-1","evalId":eval,"target":eval.split('/').next(),
         "title":"Title","profile":{"kind":"runtime","command":"true","args":[]},
@@ -49,7 +49,7 @@ fn run(definitions: Value) -> RunView {
     }
 }
 
-fn live() -> (RunView, Vec<RequestView>) {
+pub(super) fn live() -> (RunView, Vec<RequestView>) {
     let definitions = json!({
         "artifacts":{
             "lib":{"path":"lib","basis":true},"dep":{"path":"dep"},"app":{"path":""},
@@ -220,7 +220,7 @@ fn run_rows_and_durations() {
     assert_eq!(rows[0].counts, "GREEN 2  RED 1");
 }
 
-fn summary(id: &str, green: u64) -> RunSummary {
+pub(super) fn summary(id: &str, green: u64) -> RunSummary {
     RunSummary {
         id: id.parse().unwrap(),
         repo_path: "/repo".into(),
@@ -235,7 +235,7 @@ fn summary(id: &str, green: u64) -> RunSummary {
 }
 
 fn screen(monitor: &mut Monitor) -> String {
-    let mut terminal = Terminal::new(TestBackend::new(120, 20)).unwrap();
+    let mut terminal = Terminal::new(TestBackend::new(220, 40)).unwrap();
     terminal.draw(|frame| monitor.draw(frame)).unwrap();
     let buffer = terminal.backend().buffer();
     let rows = buffer.content().chunks(buffer.area.width as usize);
@@ -269,7 +269,7 @@ fn keys_page_older_runs_open_and_quit() {
     let mut monitor = Monitor::new("/state".into(), None);
     monitor.limit = 2;
     monitor.set_runs(vec![summary("run-a", 1), summary("run-b", 1)]);
-    assert_eq!(monitor.key(key(KeyCode::Char('j'))), Action::None);
+    assert_eq!(monitor.key(key(KeyCode::Char('j'))), Action::Refresh);
     assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-b");
     assert_eq!(monitor.key(key(KeyCode::Down)), Action::Refresh);
     assert_eq!(monitor.limit, 2 + PAGE);
@@ -282,8 +282,8 @@ fn keys_page_older_runs_open_and_quit() {
     assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-b");
     assert_eq!(monitor.key(key(KeyCode::Enter)), Action::Refresh);
     assert_eq!(monitor.open.as_deref(), Some("run-b"));
-    assert_eq!(monitor.key(key(KeyCode::Esc)), Action::Refresh);
-    assert_eq!(monitor.open, None);
+    assert_eq!(monitor.key(key(KeyCode::Esc)), Action::None);
+    assert_eq!(monitor.focus, Pane::Runs);
     assert_eq!(monitor.key(key(KeyCode::Char('r'))), Action::Refresh);
     assert_eq!(monitor.key(key(KeyCode::Esc)), Action::Quit);
     assert_eq!(
@@ -296,19 +296,17 @@ fn keys_page_older_runs_open_and_quit() {
 fn run_screen_renders_progress_tree_and_detail() {
     let (view, requests) = live();
     let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
-    monitor.open = Some("run-1".into());
+    monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     let text = screen(&mut monitor);
     for expected in [
-        "repo /repo",
         "Run run-1",
         "running app/check",
         "waiting Human app/review · claimed by alice",
-        "error p2/check · [SPAWN] spawn failed",
         "◇ lib  BASIS",
         "▶ ! family pages  ERROR · 2 instances",
         "▼ ◐ app  RUNNING 0/2",
-        "Artifact lib [basis]",
+        "Artifacts and evals",
     ] {
         assert!(text.contains(expected), "{expected}\n{text}");
     }
@@ -321,22 +319,20 @@ fn review_key_hands_off_only_waiting_human_requests() {
     let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
     let review = KeyEvent::from(KeyCode::Char('o'));
     assert_eq!(monitor.key(review), Action::None, "no Run is open");
-    monitor.open = Some("run-1".into());
+    monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
+    monitor.focus = Pane::Artifacts;
     for (path, action) in [
-        (vec!["a:app", "e:app/check"], Action::None),
-        (vec!["a:app"], Action::None),
-        (
-            vec!["a:app", "e:app/review"],
-            Action::Review("run-1-app-review".into()),
-        ),
+        (vec!["a:app", "e:app/check"], Action::OpenDetail),
+        (vec!["a:app"], Action::OpenDetail),
+        (vec!["a:app", "e:app/review"], Action::OpenDetail),
     ] {
         monitor
             .tree
             .select(path.iter().map(|id| (*id).to_owned()).collect());
         assert_eq!(monitor.key(review), action, "{path:?}");
     }
-    assert!(screen(&mut monitor).contains("o review waiting Human"));
+    assert!(screen(&mut monitor).contains("detail"));
     monitor.notice = Some("review exited with exit status: 2: Review request not found.".into());
     assert!(screen(&mut monitor).contains("review exited with exit status: 2"));
     monitor.key(KeyEvent::from(KeyCode::Char('j')));

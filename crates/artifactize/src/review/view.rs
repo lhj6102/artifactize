@@ -34,7 +34,7 @@ fn compact(schema: Option<&Value>) -> String {
 }
 
 /// Request facts shown before any claim; a follower names the request its actions go to.
-fn details(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
+pub(super) fn details(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
     let request = &view.request;
     let definition = request.human_definition.as_ref();
     let declaration = definition.map(|definition| &definition["eval"]["declaration"]);
@@ -90,7 +90,7 @@ fn details(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
     fields
 }
 
-fn lines(fields: Vec<(&'static str, String)>) -> Vec<Line<'static>> {
+pub(super) fn lines(fields: Vec<(&'static str, String)>) -> Vec<Line<'static>> {
     let mut text = Vec::new();
     for (key, value) in fields {
         let mut values = value.lines();
@@ -161,7 +161,7 @@ impl Review {
         }
     }
 
-    fn status_line(&self) -> Vec<Line<'static>> {
+    pub(super) fn status_line(&self) -> Vec<Line<'static>> {
         if let Some(busy) = &self.busy {
             let elapsed = busy.since.elapsed();
             let frame = SPINNER[(elapsed.as_millis() / 100) as usize % SPINNER.len()];
@@ -334,7 +334,7 @@ impl Review {
         }
     }
 
-    fn draw_tools(&self, frame: &mut Frame, area: Rect) {
+    pub(super) fn draw_tools(&self, frame: &mut Frame, area: Rect) {
         let tools = self.tools();
         let block = Block::bordered().title(format!(" Human tools ({}) ", tools.len()));
         if tools.is_empty() {
@@ -360,7 +360,7 @@ impl Review {
         frame.render_widget(Paragraph::new(text).scroll((scroll, 0)).block(block), area);
     }
 
-    fn draw_output(&self, frame: &mut Frame, area: Rect) {
+    pub(super) fn draw_output(&self, frame: &mut Frame, area: Rect) {
         let Some(output) = &self.output else {
             frame.render_widget(
                 Paragraph::new(
@@ -390,7 +390,113 @@ impl Review {
     }
 }
 
-fn draw_form(frame: &mut Frame, area: Rect, form: &Form) {
+fn field_line(field: &super::Field, selected: bool) -> Line<'static> {
+    let marker = if field.required { "*" } else { "" };
+    let mut value = field.display();
+    if selected
+        && matches!(
+            field.input,
+            Input::Text(_) | Input::Integer(_) | Input::Number(_)
+        )
+    {
+        value.push('▏');
+    }
+    let line = Line::from(vec![
+        Span::styled(format!("{}{marker}: ", field.name), Modifier::BOLD),
+        Span::raw(value),
+        Span::styled(format!("   {}", field.hint), Style::new().dark_gray()),
+    ]);
+    let line = if selected {
+        line.add_modifier(Modifier::REVERSED)
+    } else {
+        line
+    };
+    if matches!(field.input, Input::Fixed(_)) {
+        line.dark_gray()
+    } else {
+        line
+    }
+}
+
+/// Same ratatui wrapping as rendering, so a continuation line belongs to its actual field.
+pub(super) fn field_hits(area: Rect, form: &Form, scroll: u16) -> Vec<(Rect, usize)> {
+    if form.json.is_some() {
+        return Vec::new();
+    }
+    let inner = Block::bordered().inner(area);
+    let mut row = 0usize;
+    form.fields
+        .iter()
+        .enumerate()
+        .filter_map(|(index, field)| {
+            let height = Paragraph::new(field_line(field, index == form.selected))
+                .wrap(Wrap { trim: false })
+                .line_count(inner.width);
+            let first = row.saturating_sub(usize::from(scroll));
+            let last = row
+                .saturating_add(height)
+                .saturating_sub(usize::from(scroll))
+                .min(usize::from(inner.height));
+            let visible = row.saturating_add(height) > usize::from(scroll) && first < last;
+            row += height;
+            visible.then(|| {
+                (
+                    Rect::new(
+                        inner.x,
+                        inner.y + first as u16,
+                        inner.width,
+                        (last - first) as u16,
+                    ),
+                    index,
+                )
+            })
+        })
+        .collect()
+}
+
+pub(super) fn draw_inline_form(frame: &mut Frame, area: Rect, form: &Form, scroll: u16) {
+    let Some(json) = &form.json else {
+        draw_fields(frame, area, form, scroll, true);
+        return;
+    };
+    let cursor = form.cursor.min(json.len());
+    let before = &json[..cursor];
+    let row = before
+        .chars()
+        .filter(|character| *character == '\n')
+        .count();
+    let height = usize::from(area.height.saturating_sub(3));
+    let scroll = if scroll == 0 {
+        row.saturating_sub(height.saturating_sub(1))
+    } else {
+        usize::from(scroll)
+    };
+    let column = Line::from(before.rsplit('\n').next().unwrap_or_default()).width();
+    let visible_width = usize::from(area.width.saturating_sub(3));
+    let horizontal = column.saturating_sub(visible_width.saturating_sub(1));
+    let mut text = format!("{}▏{}", before, &json[cursor..]);
+    if let Some(error) = &form.error {
+        text.push_str(&format!("\n{error}"));
+    }
+    frame.render_widget(
+        Paragraph::new(text)
+            .scroll((
+                u16::try_from(scroll).unwrap_or(u16::MAX),
+                u16::try_from(horizontal).unwrap_or(u16::MAX),
+            ))
+            .block(Block::bordered().title(format!(
+                " {} JSON · Enter newline · Ctrl-S submit ",
+                form.verdict
+            ))),
+        area,
+    );
+}
+
+pub(super) fn draw_form(frame: &mut Frame, area: Rect, form: &Form) {
+    draw_fields(frame, area, form, 0, false);
+}
+
+fn draw_fields(frame: &mut Frame, area: Rect, form: &Form, scroll: u16, inline: bool) {
     let color = if form.verdict == "GREEN" {
         Color::Green
     } else {
@@ -405,33 +511,15 @@ fn draw_form(frame: &mut Frame, area: Rect, form: &Form) {
         text.push(Line::from("Owner fields as JSON (e opens $EDITOR, Enter submits):").bold());
         text.extend(json.lines().map(|line| Line::from(format!("  {line}"))));
     } else if form.fields.is_empty() {
-        text.push(Line::from(
-            "This verdict has no owner fields; Enter submits it.",
-        ));
+        text.push(Line::from(if inline {
+            "No owner fields; Ctrl-S or Submit records this verdict."
+        } else {
+            "This verdict has no owner fields; Enter submits it."
+        }));
     }
     if form.json.is_none() {
         for (index, field) in form.fields.iter().enumerate() {
-            let marker = if field.required { "*" } else { "" };
-            let mut value = field.display();
-            let editable = matches!(
-                field.input,
-                Input::Text(_) | Input::Integer(_) | Input::Number(_)
-            );
-            if index == form.selected && editable {
-                value.push('▏');
-            }
-            let mut line = Line::from(vec![
-                Span::styled(format!("{}{marker}: ", field.name), Modifier::BOLD),
-                Span::raw(value),
-                Span::styled(format!("   {}", field.hint), Style::new().dark_gray()),
-            ]);
-            if index == form.selected {
-                line = line.add_modifier(Modifier::REVERSED);
-            }
-            if matches!(field.input, Input::Fixed(_)) {
-                line = line.dark_gray();
-            }
-            text.push(line);
+            text.push(field_line(field, index == form.selected));
         }
     }
     if let Some(error) = &form.error {
@@ -439,7 +527,10 @@ fn draw_form(frame: &mut Frame, area: Rect, form: &Form) {
         text.extend(error.lines().map(|line| Line::from(line.to_owned()).red()));
     }
     frame.render_widget(
-        Paragraph::new(text).wrap(Wrap { trim: false }).block(block),
+        Paragraph::new(text)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll, 0))
+            .block(block),
         area,
     );
 }

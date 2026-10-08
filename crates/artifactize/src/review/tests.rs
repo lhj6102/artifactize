@@ -20,14 +20,14 @@ fn definition(pass: Value, fail: Value) -> Value {
 }
 
 /// The review-demo schemas: GREEN needs `approved: const true`, RED a non-empty reason.
-fn demo() -> Value {
+pub(crate) fn demo() -> Value {
     definition(
         json!({"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false}),
         json!({"type":"object","properties":{"reason":{"type":"string","minLength":1}},"required":["reason"],"additionalProperties":false}),
     )
 }
 
-fn claim(reviewer: &str) -> HumanClaim {
+pub(crate) fn claim(reviewer: &str) -> HumanClaim {
     HumanClaim {
         request_id: ID.parse().unwrap(),
         reviewer: reviewer.into(),
@@ -50,7 +50,7 @@ fn view(status: &str, reviewer: Option<&str>, definition: Value) -> RequestView 
     }
 }
 
-fn opened(reviewer: Option<&str>, definition: Value) -> Review {
+pub(crate) fn opened(reviewer: Option<&str>, definition: Value) -> Review {
     let mut review = Review::new(
         "/state".into(),
         Some("/repo".into()),

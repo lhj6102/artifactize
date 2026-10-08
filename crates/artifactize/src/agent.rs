@@ -412,13 +412,20 @@ async fn run(
     }
 }
 
-/// A follow-up's free-text answer and the attempts it took.
-pub struct FollowUp {
-    pub answer: Result<String, Failure>,
-    pub attempts: Vec<Attempt>,
-    /// Whether the message was sent; one that failed before, such as on a missing API key,
-    /// leaves the saved conversation as it was.
-    pub started: bool,
+/// Preparation failure leaves the saved conversation unchanged; a recorded send has an
+/// answer (including failure/cancellation) and attempts. This internal result is not serialized.
+pub enum FollowUp {
+    NotStarted(Failure),
+    Started {
+        answer: Result<String, Failure>,
+        attempts: Vec<Attempt>,
+    },
+}
+
+/// Only constructed after Send/Message events have been recorded, before the first turn.
+struct StartedFollowUp {
+    answer: Result<String, Failure>,
+    attempts: Vec<Attempt>,
 }
 
 /// What a follow-up knows besides the person's message.
@@ -444,28 +451,28 @@ pub async fn follow_up(
     recorder: &mut Recorder,
     cancellation: CancellationToken,
 ) -> FollowUp {
-    let mut follow_up = FollowUp {
-        answer: Err(Failure::new(
-            Code::AgentError,
-            "The follow-up did not complete.",
-        )),
-        attempts: Vec::new(),
-        started: false,
-    };
-    follow_up.answer = continue_conversation(
+    let result = continue_conversation(
         config,
         eval,
         &continuation,
         message,
         recorder,
         &cancellation,
-        &mut follow_up,
+        Client::new,
     )
     .await;
-    if !follow_up.started {
-        return follow_up;
-    }
-    recorder.event(match &follow_up.answer {
+    complete_follow_up(recorder, result)
+}
+
+fn complete_follow_up(
+    recorder: &mut Recorder,
+    result: Result<StartedFollowUp, Failure>,
+) -> FollowUp {
+    let started = match result {
+        Ok(started) => started,
+        Err(failure) => return FollowUp::NotStarted(failure),
+    };
+    recorder.event(match &started.answer {
         Ok(text) => session::Kind::Answer(session::Answer {
             text: Some(text.clone()),
             ..session::Answer::default()
@@ -476,7 +483,10 @@ pub async fn follow_up(
             ..session::Answer::default()
         }),
     });
-    follow_up
+    FollowUp::Started {
+        answer: started.answer,
+        attempts: started.attempts,
+    }
 }
 
 async fn continue_conversation(
@@ -486,8 +496,8 @@ async fn continue_conversation(
     message: &str,
     recorder: &mut Recorder,
     cancellation: &CancellationToken,
-    follow_up: &mut FollowUp,
-) -> Result<String, Failure> {
+    client: impl FnOnce(crate::config::Backend, &str, &Path, &Path) -> Result<Client, Failure>,
+) -> Result<StartedFollowUp, Failure> {
     let header = continuation.conversation.header();
     let invalid = || {
         Failure::new(
@@ -501,7 +511,7 @@ async fn continue_conversation(
     let defaults = session::Budgets::default();
     let budgets = header.budgets.as_ref().unwrap_or(&defaults);
     let deadline = Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
-    let client = Client::new(backend, model, continuation.state, &config.root)?;
+    let client = client(backend, model, continuation.state, &config.root)?;
     let registry = Registry::new(config, &eval.id)?;
     let history = continuation
         .conversation
@@ -537,7 +547,6 @@ async fn continue_conversation(
         repair: false,
         is_error: Vec::new(),
     }));
-    follow_up.started = true;
     let mut turns = Turns {
         client: &client,
         registry: &registry,
@@ -553,8 +562,19 @@ async fn continue_conversation(
         call_ids: HashSet::new(),
         recorder,
     };
+    // The send is recorded at this point, even if cancellation prevents an HTTP attempt.
+    let mut attempts = Vec::new();
+    let answer = answer_follow_up(&mut turns, request, &mut attempts).await;
+    Ok(StartedFollowUp { answer, attempts })
+}
+
+async fn answer_follow_up(
+    turns: &mut Turns<'_>,
+    mut request: CompletionRequest,
+    attempts: &mut Vec<Attempt>,
+) -> Result<String, Failure> {
     loop {
-        let response = turns.next(&request, &mut follow_up.attempts).await?;
+        let response = turns.next(&request, attempts).await?;
         let calls = calls_of(&response);
         if calls.is_empty() {
             if response.finish_reason() != Some(FinishReason::Stop) {

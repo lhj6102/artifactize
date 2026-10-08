@@ -299,12 +299,24 @@ struct Saved<'a> {
 }
 
 impl<'a> Saved<'a> {
-    fn definitions(&self, key: &str) -> &'a Value {
-        &self.run.run.definitions[key]
+    fn definitions(&self) -> Option<&'a crate::store::definitions::Graph> {
+        self.run.run.definitions.graph()
     }
-
-    fn list(&self, key: &str) -> &'a [Value] {
-        self.definitions(key).as_array().map_or(&[], Vec::as_slice)
+    fn artifacts(
+        &self,
+    ) -> impl Iterator<Item = (&'a String, &'a crate::store::definitions::Artifact)> {
+        self.definitions()
+            .into_iter()
+            .flat_map(|graph| graph.artifacts())
+    }
+    fn artifact(&self, id: &str) -> Option<&'a crate::store::definitions::Artifact> {
+        self.definitions().and_then(|graph| graph.artifact(id))
+    }
+    fn eval_definitions(&self) -> &'a [crate::store::definitions::Eval] {
+        self.definitions().map_or(&[], |graph| graph.evals())
+    }
+    fn components(&self) -> &'a [crate::store::definitions::Component] {
+        self.definitions().map_or(&[], |graph| graph.components())
     }
 
     fn request(&self, eval: &str) -> Option<&'a RequestView> {
@@ -319,15 +331,17 @@ impl<'a> Saved<'a> {
 
     /// Dependency-first component order, then any other saved or requested Artifact.
     fn artifact_ids(&self) -> Vec<&'a str> {
-        let components = self.list("components").iter();
+        let components = self.components().iter();
         let saved = components
-            .flat_map(|component| strs(&component["artifacts"]))
-            .chain(
-                self.definitions("artifacts")
-                    .as_object()
+            .flat_map(|component| {
+                component
+                    .artifacts
+                    .value()
                     .into_iter()
-                    .flat_map(|a| a.keys().map(String::as_str)),
-            )
+                    .flatten()
+                    .map(String::as_str)
+            })
+            .chain(self.artifacts().map(|(id, _)| id.as_str()))
             .chain(
                 self.requests
                     .iter()
@@ -343,12 +357,12 @@ impl<'a> Saved<'a> {
     }
 
     /// Saved Eval definitions targeting the Artifact, then requests without one.
-    fn evals(&self, artifact: &str) -> Vec<(&'a str, Option<&'a Value>)> {
+    fn evals(&self, artifact: &str) -> Vec<(&'a str, Option<&'a crate::store::definitions::Eval>)> {
         let mut evals: Vec<_> = self
-            .list("evals")
+            .eval_definitions()
             .iter()
-            .filter(|eval| eval["target"] == artifact)
-            .filter_map(|eval| Some((eval["id"].as_str()?, Some(eval))))
+            .filter(|eval| eval.target == artifact)
+            .map(|eval| (eval.id.as_str(), Some(eval)))
             .collect();
         for request in self.requests.iter().map(|view| &view.request) {
             if request.target == artifact && !evals.iter().any(|(id, _)| *id == request.eval_id) {
@@ -377,7 +391,12 @@ impl<'a> Saved<'a> {
         }
         let evals = self.evals(id);
         let statuses: Vec<_> = evals.iter().filter_map(|(id, _)| self.status(id)).collect();
-        let status = if self.definitions("artifacts")[id]["basis"] == true {
+        let status = if self
+            .artifact(id)
+            .and_then(|artifact| artifact.basis.value())
+            .copied()
+            == Some(true)
+        {
             Some("BASIS".into())
         } else if evals.is_empty() {
             Some("UNREVIEWED".into())
@@ -388,19 +407,33 @@ impl<'a> Saved<'a> {
         (status, passed as u64, evals.len() as u64)
     }
 
-    fn component(&self, id: &str) -> &'a Value {
-        let mut components = self.list("components").iter();
-        let found = components.find(|component| strs(&component["artifacts"]).any(|a| a == id));
-        found.unwrap_or(&Value::Null)
+    fn component(&self, id: &str) -> Option<&'a crate::store::definitions::Component> {
+        self.components().iter().find(|component| {
+            component
+                .artifacts
+                .value()
+                .is_some_and(|artifacts| artifacts.iter().any(|artifact| artifact == id))
+        })
     }
 
     fn family(&self, id: &str) -> Option<&'a str> {
-        self.definitions("artifacts")[id]["family"]["name"].as_str()
+        self.artifact(id)?
+            .family
+            .value()?
+            .name
+            .value()
+            .map(String::as_str)
     }
 
     fn family_members(&self, name: &str) -> Vec<&'a str> {
-        let mut members: Vec<_> =
-            strs(&self.definitions("families")[name]["artifactIds"]).collect();
+        let mut members: Vec<_> = self
+            .definitions()
+            .and_then(|graph| graph.family(name))
+            .and_then(|family| family.artifact_ids.value())
+            .into_iter()
+            .flatten()
+            .map(String::as_str)
+            .collect();
         for id in self.artifact_ids() {
             if self.family(id) == Some(name) && !members.contains(&id) {
                 members.push(id);
@@ -409,29 +442,44 @@ impl<'a> Saved<'a> {
         members
     }
 
-    fn relations(&self, artifact: &str, side: &str) -> Vec<&'a Value> {
-        let relations = self.list("relations").iter();
-        relations
-            .filter(|relation| relation[side] == artifact)
+    fn relations(
+        &self,
+        artifact: &str,
+        input: bool,
+    ) -> Vec<&'a crate::store::definitions::Relation> {
+        self.definitions()
+            .into_iter()
+            .flat_map(|graph| graph.relations())
+            .filter(|relation| {
+                if input {
+                    relation.target == artifact
+                } else {
+                    relation.source == artifact
+                }
+            })
             .collect()
     }
 }
 
-fn relation_kind(relation: &Value) -> String {
-    let field = |key: &str| relation[key].as_str().unwrap_or_default();
-    let kind = match field("kind") {
-        "child" => format!("child {}", field("path")),
-        "mount" => format!("mount {}", field("alias")),
-        "instruction" => format!("{{{}}} in {}", field("name"), field("evalId")),
-        "argv" => format!(
-            "argv {}[{}] {{{}}}",
-            field("evalId"),
-            relation["index"],
-            field("name")
-        ),
-        _ => relation.to_string(),
+fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
+    use crate::store::definitions::RelationKind;
+    let kind = match &relation.kind {
+        RelationKind::Unknown { .. } => serde_json::to_string(relation).unwrap_or_default(),
+        RelationKind::Child { path } => {
+            format!("child {}", path.value().map_or("", String::as_str))
+        }
+        RelationKind::Mount { alias } => {
+            format!("mount {}", alias.value().map_or("", String::as_str))
+        }
+        RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
+        RelationKind::Argument {
+            eval_id,
+            index,
+            name,
+            ..
+        } => format!("argv {eval_id}[{index}] {{{name}}}"),
     };
-    if relation["cyclic"] == true {
+    if relation.cyclic.value() == Some(&true) {
         format!("{kind} ↻")
     } else {
         kind
@@ -453,7 +501,13 @@ fn artifact_node(saved: &Saved, id: &str, now: OffsetDateTime) -> Node {
             }
             let deps = match request {
                 Some(view) => join(&view.request.deps, ", "),
-                None => join(strs(&definition.unwrap_or(&Value::Null)["deps"]), ", "),
+                None => join(
+                    definition
+                        .and_then(|eval| eval.deps.value())
+                        .into_iter()
+                        .flatten(),
+                    ", ",
+                ),
             };
             if !deps.is_empty() {
                 text = format!("{text}  ← {deps}");
@@ -467,8 +521,8 @@ fn artifact_node(saved: &Saved, id: &str, now: OffsetDateTime) -> Node {
         })
         .collect();
     let mut inputs: Vec<(&str, Vec<String>)> = Vec::new();
-    for relation in saved.relations(id, "target") {
-        let source = relation["source"].as_str().unwrap_or_default();
+    for relation in saved.relations(id, true) {
+        let source = relation.source.as_str();
         match inputs.iter_mut().find(|(id, _)| *id == source) {
             Some((_, kinds)) => kinds.push(relation_kind(relation)),
             None => inputs.push((source, vec![relation_kind(relation)])),
@@ -480,7 +534,11 @@ fn artifact_node(saved: &Saved, id: &str, now: OffsetDateTime) -> Node {
         text: format!("⇐ {source} ({})", kinds.join(", ")),
         children: Vec::new(),
     }));
-    let cycle = if saved.component(id)["cyclic"] == true {
+    let cycle = if saved
+        .component(id)
+        .and_then(|component| component.cyclic.value())
+        == Some(&true)
+    {
         " ↻"
     } else {
         ""
@@ -710,34 +768,34 @@ pub fn detail(
             if let Some(view) = saved.request(id) {
                 return request_detail(view, now);
             }
-            let definition = saved
-                .list("evals")
+            let declaration = saved
+                .eval_definitions()
                 .iter()
-                .find(|eval| eval["id"] == id.as_str());
-            let declaration = definition.map_or(&Value::Null, |eval| &eval["declaration"]);
+                .find(|eval| &eval.id == id)
+                .and_then(|eval| eval.declaration.value());
             detail.title = format!(
                 "{id} · {}",
-                declaration["title"].as_str().unwrap_or_default()
+                declaration
+                    .and_then(|declaration| declaration.title.value())
+                    .map_or("", String::as_str)
             );
             detail.push("Status", "not in this Run (outside the selection)");
             detail.push(
                 "Instruction",
-                declaration["payload"]["instruction"]
-                    .as_str()
-                    .unwrap_or_default(),
+                declaration
+                    .and_then(|declaration| declaration.payload.value())
+                    .map_or("", |payload| payload.instruction()),
             );
             detail.push(
                 "Profile",
-                serde_json::from_value::<crate::config::StoredProfile>(
-                    declaration["profile"].clone(),
-                )
-                .map(|value| profile(&value))
-                .unwrap_or_else(|_| "unknown".into()),
+                declaration
+                    .and_then(|declaration| declaration.profile.value())
+                    .map_or_else(|| "unknown".into(), |saved| profile(&saved.known)),
             );
         }
         Target::Artifact(id) => {
-            let artifact = &saved.definitions("artifacts")[id.as_str()];
-            let basis = if artifact["basis"] == true {
+            let artifact = saved.artifact(id);
+            let basis = if artifact.and_then(|artifact| artifact.basis.value()) == Some(&true) {
                 " [basis]"
             } else {
                 ""
@@ -748,10 +806,18 @@ pub fn detail(
             detail.push("Status", format!("{status} · {passed}/{total} Evals GREEN"));
             detail.push(
                 "Path",
-                match artifact["path"].as_str() {
-                    Some("") => ".",
-                    path => path.unwrap_or("-"),
-                },
+                artifact
+                    .and_then(|artifact| artifact.path.value())
+                    .map_or_else(
+                        || "-".into(),
+                        |path| {
+                            if path.as_os_str().is_empty() {
+                                ".".into()
+                            } else {
+                                path.display().to_string()
+                            }
+                        },
+                    ),
             );
             detail.push("Family", saved.family(id).unwrap_or_default());
             detail.push(
@@ -761,28 +827,42 @@ pub fn detail(
                     .unwrap_or_default(),
             );
             let component = saved.component(id);
-            if component["cyclic"] == true {
+            if component.and_then(|component| component.cyclic.value()) == Some(&true) {
                 detail.push(
                     "Cycle",
-                    format!("↻ {}", join(strs(&component["artifacts"]), ", ")),
+                    format!(
+                        "↻ {}",
+                        join(
+                            component
+                                .and_then(|component| component.artifacts.value())
+                                .into_iter()
+                                .flatten(),
+                            ", "
+                        )
+                    ),
                 );
             }
-            let gates = strs(&component["gates"]).map(|gate| mark(gate, saved.status(gate)));
+            let gates = component
+                .and_then(|component| component.gates.value())
+                .into_iter()
+                .flatten()
+                .map(|gate| mark(gate, saved.status(gate)));
             detail.push("Gates", join(gates, "\n"));
             let evals = saved.evals(id).into_iter();
             detail.push(
                 "Evals",
                 join(evals.map(|(eval, _)| mark(eval, saved.status(eval))), "\n"),
             );
-            for (key, side, other) in [
-                ("Inputs", "target", "source"),
-                ("Used by", "source", "target"),
-            ] {
-                let relations = saved.relations(id, side).into_iter();
+            for (key, input) in [("Inputs", true), ("Used by", false)] {
+                let relations = saved.relations(id, input).into_iter();
                 let relations = relations.map(|relation| {
                     format!(
                         "{} — {}",
-                        relation[other].as_str().unwrap_or_default(),
+                        if input {
+                            &relation.source
+                        } else {
+                            &relation.target
+                        },
                         relation_kind(relation)
                     )
                 });
@@ -793,9 +873,11 @@ pub fn detail(
             detail.title = format!("Family {name}");
             detail.push(
                 "Path",
-                saved.definitions("families")[name.as_str()]["path"]
-                    .as_str()
-                    .unwrap_or("-"),
+                saved
+                    .definitions()
+                    .and_then(|graph| graph.family(name))
+                    .and_then(|family| family.path.value())
+                    .map_or_else(|| "-".into(), |path| path.display().to_string()),
             );
             let members = saved.family_members(name).into_iter().map(|member| {
                 let (status, passed, total) = saved.artifact_state(member);

@@ -6,6 +6,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use super::*;
 use crate::llm::tests::Server;
 
+// Pin the public scheme/host/port/path independently of implementation constants.
+const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
+
 /// An unsigned JWT with the ChatGPT account claim, as the token endpoint issues them.
 pub(crate) fn jwt(account: &str, exp: u64) -> String {
     let encode = |value: Value| URL_SAFE_NO_PAD.encode(value.to_string());
@@ -61,11 +64,25 @@ fn form(body: &Value) -> BTreeMap<String, String> {
 fn authorize_url_carries_pkce_and_the_codex_flow_parameters() {
     let pending = Pending::new().unwrap();
     assert_eq!(pending.verifier.len(), 43);
+    assert_eq!(URL_SAFE_NO_PAD.decode(&pending.verifier).unwrap().len(), 32);
+    assert!(
+        pending
+            .verifier
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    );
     assert_eq!(pending.state.len(), 32);
-    assert!(pending.state.bytes().all(|byte| byte.is_ascii_hexdigit()));
+    assert!(
+        pending
+            .state
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    );
     assert_ne!(pending.state, Pending::new().unwrap().state);
+    let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
+    assert_eq!(redirect_uri, REDIRECT_URI);
     let url = pending
-        .authorize_url("https://auth.openai.com", REDIRECT_URI)
+        .authorize_url("https://auth.openai.com", &redirect_uri)
         .unwrap();
     assert_eq!(url.path(), "/oauth/authorize");
     let query: BTreeMap<_, _> = url.query_pairs().into_owned().collect();

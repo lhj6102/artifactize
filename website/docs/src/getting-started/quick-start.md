@@ -65,15 +65,20 @@ For a real Agent review, put an exact model ID in the profile you use in
 ## Monitor
 
 ```sh
-artifactize monitor         # Runs of the current directory's repository
-artifactize monitor --all   # Runs of every repository in this state
+artifactize monitor         # Initially select this repository and worktree
+artifactize monitor --all   # Initially select every repository in this state
 ```
 
-The monitor reads the state database only. Start it in a second terminal while
-`verify` runs to watch progress. Keys: `j`/`k` move, Enter opens a Run, `h`/`l`
-collapse and expand families, PgUp/PgDn scroll details, Esc goes back, `r`
-refreshes, `q` quits. On a WAITING_HUMAN eval, `o` opens `artifactize review` for
-it in the same terminal and returns to the monitor when the review exits.
+Start it in a second terminal while `verify` runs to watch progress. Three panes
+show repository/worktree → newest Runs → artifacts/evals; ALL rows switch scope
+without restarting. ←/→ moves between panes (Tab cycles), `j`/`k` selects, Enter
+or a double-click opens detail, `h`/`l` or Space expands/collapses families and `q` quits. Agent details show saved conversations;
+Runtime details show saved logs. A waiting Human detail has Claim, tools,
+GREEN/RED fields, Submit and Release in the monitor itself. Ctrl-S submits;
+nested JSON is edited in the TUI (Enter adds a newline). F2 toggles mouse capture
+for terminal text selection; keyboard paste works either way. Browsing does not
+execute owner code; explicit Human tools and submissions use the review APIs.
+See [Human reviews and monitor](../guides/human-reviews.md#monitor).
 
 ## Team review store (optional)
 

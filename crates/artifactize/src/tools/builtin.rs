@@ -1,4 +1,6 @@
 //! Scoped read-only Agent tools.
+mod input;
+pub(super) use input::Input;
 
 /// Bound the compiled regex automaton to limit search memory.
 const REGEX_BYTES: usize = 2 * 1024 * 1024;
@@ -27,6 +29,9 @@ use super::{Content, ToolResult, image};
 const READ_BYTES: usize = 64 * 1024;
 /// Cap serialized tool output even when match text or logical paths are very long.
 const RESULT_BYTES: usize = 512 * 1024;
+/// Reserve 1 KiB for serialized list/glob/grep keys, brackets and page metadata before
+/// accumulating entries; the final serialized-result check still enforces RESULT_BYTES.
+const RESULT_ENVELOPE_BYTES: usize = 1024;
 /// Keep list/search pages small enough for a review; pagination exposes later entries.
 const MAX_RESULTS: usize = 200;
 /// Bound directory fan-out and traversal work regardless of the requested result count.
@@ -87,11 +92,10 @@ pub(crate) fn input_schema(builtin: Builtin) -> Value {
 }
 
 pub(super) fn call(
-    builtin: Builtin,
+    input: Input,
     root: &Path,
     scope: &Scope<'_>,
     owner: &str,
-    args: &Value,
     cancellation: &CancellationToken,
 ) -> ToolResult {
     let reader = Reader {
@@ -100,23 +104,14 @@ pub(super) fn call(
         owner,
         cancellation,
     };
-    let path = args["path"].as_str().unwrap_or("");
     let result = (|| {
         reader.check_cancelled()?;
-        let data = match builtin {
-            Builtin::Read => reader.read(
-                path,
-                number(args, "offset", 1),
-                number(args, "limit", DEFAULT_READ_LINES),
-            ),
-            Builtin::List => reader.list(
-                path,
-                number(args, "offset", 0),
-                number(args, "limit", MAX_RESULTS),
-            ),
-            Builtin::Glob => reader.glob(path, args["pattern"].as_str().unwrap()),
-            Builtin::Grep => reader.grep(path, args),
-            Builtin::ViewImage => return reader.view_image(path),
+        let data = match input {
+            Input::Read(input) => reader.read(&input.path, input.offset, input.limit),
+            Input::List(input) => reader.list(&input.path, input.offset, input.limit),
+            Input::Glob(input) => reader.glob(&input.path, &input.pattern),
+            Input::Grep(input) => reader.grep(&input),
+            Input::ViewImage(input) => return reader.view_image(&input.path),
         }?;
         if serde_json::to_vec(&data).unwrap().len() > RESULT_BYTES {
             return Err("Built-in result exceeds 512 KiB; narrow the path or range.".into());
@@ -130,10 +125,6 @@ pub(super) fn call(
         },
         Err(message) => ToolResult::error(message),
     }
-}
-
-fn number(args: &Value, name: &str, default: usize) -> usize {
-    args[name].as_f64().map_or(default, |value| value as usize)
 }
 
 struct Reader<'a> {
@@ -344,7 +335,7 @@ impl Reader<'_> {
     fn list(&self, path: &str, offset: usize, limit: usize) -> Result<Value, String> {
         let entries = self.entries(path)?;
         let total = entries.len();
-        let mut bytes = 1024 + serde_json::to_vec(path).unwrap().len();
+        let mut bytes = RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).unwrap().len();
         let entries: Vec<_> = entries
             .into_iter()
             .skip(offset)
@@ -422,7 +413,7 @@ impl Reader<'_> {
         }
         let (files, mut truncated) = self.files(path)?;
         let mut matches = Vec::new();
-        let mut bytes = 1024 + serde_json::to_vec(path).unwrap().len();
+        let mut bytes = RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).unwrap().len();
         for file in files {
             self.check_cancelled()?;
             if !matcher.is_match(relative(path, &file)) {
@@ -447,18 +438,19 @@ impl Reader<'_> {
         Ok(json!({"path":path,"files":matches,"truncated":truncated}))
     }
 
-    fn grep(&self, path: &str, args: &Value) -> Result<Value, String> {
-        let regex = RegexBuilder::new(args["pattern"].as_str().unwrap())
-            .case_insensitive(args["caseInsensitive"].as_bool().unwrap_or(false))
+    fn grep(&self, input: &input::Grep) -> Result<Value, String> {
+        let path = input.path.as_str();
+        let regex = RegexBuilder::new(&input.pattern)
+            .case_insensitive(input.case_insensitive)
             .size_limit(REGEX_BYTES)
             .build()
             .map_err(|_| "Invalid or oversized regex pattern.")?;
-        let filter = args["glob"].as_str().map(glob).transpose()?;
+        let filter = input.glob.as_deref().map(glob).transpose()?;
         let (files, mut truncated) = self.files(path)?;
         let mut matches = Vec::new();
         let mut searched = 0;
-        let mut bytes = 1024 + serde_json::to_vec(path).unwrap().len();
-        let limit = number(args, "maxResults", MAX_RESULTS);
+        let mut bytes = RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).unwrap().len();
+        let limit = input.max_results;
         'files: for file in files {
             self.check_cancelled()?;
             if filter

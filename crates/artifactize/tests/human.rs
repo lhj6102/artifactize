@@ -728,7 +728,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     .unwrap();
     assert_eq!(status.counts.reuse, 2);
     assert_eq!(status.counts.wait, 1);
-    assert_eq!(status.evals[2].state, "WAITING_HUMAN");
+    assert_eq!(status.evals[2].state, project::EvalCondition::WaitingHuman);
     assert_eq!(
         human::claim(&receipts, &run.requests[2].id, "bob")
             .await
@@ -778,7 +778,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     .await
     .unwrap();
     assert_eq!(status.counts.reuse, 3);
-    assert_eq!(status.evals[2].state, "RED");
+    assert_eq!(status.evals[2].state, project::EvalCondition::Red);
 }
 
 #[tokio::test]

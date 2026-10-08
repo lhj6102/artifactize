@@ -103,14 +103,12 @@ impl Session {
         let mut executions = Vec::new();
         for entry in entries {
             // A record that does not validate is skipped; reviewing locally is always correct.
-            let mirrored = serde_json::from_value::<Record>(entry)
-                .map_err(|e| e.to_string())
-                .and_then(|record| {
-                    if !requested.contains(record.key.as_str()) {
-                        return Err("the store returned an unrequested key".into());
-                    }
-                    record.mirror(self.remote.url.as_str())
-                });
+            let mirrored = entry.and_then(|record| {
+                if !requested.contains(record.key.as_str()) {
+                    return Err("the store returned an unrequested key".into());
+                }
+                record.mirror(self.remote.url.as_str())
+            });
             match mirrored {
                 Ok(execution) => executions.push(execution),
                 Err(error) => warn(&format!(

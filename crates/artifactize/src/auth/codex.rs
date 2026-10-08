@@ -43,15 +43,22 @@ pub const AUTH_URL_VARIABLE: &str = "ARTIFACTIZE_CODEX_AUTH_URL";
 /// A Codex auth file (for example `~/.codex/auth.json`) to read instead of
 /// artifactize's own tokens. It is never written, copied or refreshed.
 pub const AUTH_FILE_VARIABLE: &str = "ARTIFACTIZE_CODEX_AUTH_FILE";
+/// Match the localhost callback convention of the Codex public-client flow that Pi
+/// also uses; listener and OAuth redirect must agree for browser/pasted-URL interoperability.
 const CALLBACK_PORT: u16 = 1455;
 const CALLBACK_PATH: &str = "/auth/callback";
-const REDIRECT_URI: &str = "http://localhost:1455/auth/callback";
 const SCOPE: &str = "openid profile email offline_access";
 /// The `originator` that sign-in and every Codex request name.
 pub const ORIGINATOR: &str = "artifactize";
 const CLAIM: &str = "https://api.openai.com/auth";
 const CREDENTIALS: &str = "codex.json";
 const LOCK: &str = "codex";
+/// 32 random bytes give 256 bits and 43 unpadded base64url characters, within RFC 7636's
+/// permitted 43–128-character code_verifier length; the S256 challenge hashes that text.
+const PKCE_VERIFIER_BYTES: usize = 32;
+/// Choose 128 unpredictable bits for OAuth state/CSRF correlation, encoded as 32 hex
+/// characters. This is this client's chosen size, not an OAuth-mandated exact length.
+const OAUTH_STATE_BYTES: usize = 16;
 /// Refresh this many seconds before expiry, as the Codex CLI's refresh window does.
 const REFRESH_MARGIN: u64 = 300;
 /// A read-only auth file's token must outlive this many seconds.
@@ -182,8 +189,8 @@ struct Pending {
 impl Pending {
     fn new() -> Result<Self, String> {
         Ok(Self {
-            verifier: URL_SAFE_NO_PAD.encode(random(32)?),
-            state: random(16)?
+            verifier: URL_SAFE_NO_PAD.encode(random(PKCE_VERIFIER_BYTES)?),
+            state: random(OAUTH_STATE_BYTES)?
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
                 .collect(),
@@ -402,13 +409,14 @@ pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), Stri
         });
         receive
     });
-    sign_in(&storage, &root, listener, REDIRECT_URI, pasted, true, |url, callback| {
+    let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
+    sign_in(&storage, &root, listener, &redirect_uri, pasted, true, |url, callback| {
         let mut err = std::io::stderr().lock();
         let _ = writeln!(err, "Open this URL to sign in with Codex:\n{url}");
         if !callback {
             let _ = writeln!(
                 err,
-                "Port 1455 is in use (another Codex sign-in?), so the browser cannot return here."
+                "Port {CALLBACK_PORT} is in use (another Codex sign-in?), so the browser cannot return here."
             );
         }
         if terminal {
@@ -431,7 +439,9 @@ async fn sign_in(
     show: impl FnOnce(&Url, bool),
 ) -> Result<(), String> {
     if listener.is_none() && pasted.is_none() {
-        return Err("Port 1455 is in use and there is no terminal to paste the redirect URL into; finish the other sign-in and try again.".into());
+        return Err(format!(
+            "Port {CALLBACK_PORT} is in use and there is no terminal to paste the redirect URL into; finish the other sign-in and try again."
+        ));
     }
     let pending = Pending::new()?;
     let url = pending.authorize_url(root, redirect_uri)?;
@@ -792,5 +802,7 @@ async fn revoke(root: &str, refresh_token: &str) -> bool {
         .is_ok_and(|response| response.status().is_success())
 }
 
+#[cfg(test)]
+mod redirect_tests;
 #[cfg(test)]
 mod tests;

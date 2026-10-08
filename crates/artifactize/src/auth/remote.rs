@@ -2,6 +2,8 @@
 //!
 //! The remote is configured only by `$STATE/remote.json` and the environment, never by
 //! `artifactize.json`. Callers must never print or log the token.
+#[cfg(test)]
+mod lookup_tests;
 
 use std::{
     env, fs,
@@ -329,8 +331,8 @@ impl Remote {
         Self::json(response, "whoami").await
     }
 
-    /// The latest stored record of each found key, unvalidated; at most 1000 keys per request.
-    pub async fn lookup(&self, keys: &[String]) -> Result<Vec<Value>, Failure> {
+    /// Decode each record at the HTTP boundary; malformed entries remain individually skippable.
+    pub async fn lookup(&self, keys: &[String]) -> Result<Vec<Result<Record, String>>, Failure> {
         #[derive(Deserialize)]
         struct Found {
             entries: Vec<Value>,
@@ -341,7 +343,9 @@ impl Remote {
                 .request(Method::POST, "v1/lookup")?
                 .json(&json!({ "keys": chunk }));
             let found: Found = Self::json(self.send(request).await?, "lookup").await?;
-            entries.extend(found.entries);
+            entries.extend(found.entries.into_iter().map(|entry| {
+                serde_json::from_value::<Record>(entry).map_err(|error| error.to_string())
+            }));
         }
         Ok(entries)
     }

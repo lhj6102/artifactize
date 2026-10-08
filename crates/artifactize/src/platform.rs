@@ -6,6 +6,8 @@
 //! protected owner-only DACLs, handle-relative opens that refuse every reparse point, and
 //! kill-on-close Job Objects.
 
+#[cfg(any(windows, test))]
+mod directory_scan;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]

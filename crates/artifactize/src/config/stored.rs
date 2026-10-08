@@ -13,6 +13,12 @@ pub enum Field<T> {
     Value(T),
 }
 impl<T> Field<T> {
+    pub fn value(&self) -> Option<&T> {
+        match self {
+            Self::Value(value) => Some(value),
+            _ => None,
+        }
+    }
     pub(crate) fn missing(&self) -> bool {
         matches!(self, Self::Missing)
     }

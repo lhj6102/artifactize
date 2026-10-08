@@ -445,6 +445,25 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
         ("glob_a", json!({"pattern":""})),
         ("grep_a", json!({"pattern":"a","maxResults":201})),
         ("grep_a", json!({"pattern":"a","caseInsensitive":1})),
+        ("read_a", json!({"path":null})),
+        ("read_a", json!({"path":"x","offset":null})),
+        ("read_a", json!({"path":"x","limit":null})),
+        ("read_a", json!({"path":"x","offset":1.5})),
+        ("read_a", json!({"path":"x","offset":9007199254740992_u64})),
+        ("list_a", json!({"path":null})),
+        ("list_a", json!({"offset":null})),
+        ("list_a", json!({"limit":0})),
+        ("list_a", json!({"limit":null})),
+        ("glob_a", json!({})),
+        ("glob_a", json!({"pattern":null})),
+        ("glob_a", json!({"pattern":"*","extra":true})),
+        ("grep_a", json!({})),
+        ("grep_a", json!({"pattern":null})),
+        ("grep_a", json!({"pattern":"a","glob":null})),
+        ("grep_a", json!({"pattern":"a","maxResults":null})),
+        ("grep_a", json!({"pattern":"a","caseInsensitive":null})),
+        ("grep_a", json!({"pattern":"a","maxResults":0})),
+        ("view_image_a", json!({"path":null})),
     ] {
         let result = fixture.call(tool, args).await;
         assert!(result.is_error);
@@ -670,4 +689,36 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
         .await;
     assert_eq!(data["matches"].as_array().unwrap().len(), 1);
     assert_eq!(data["truncated"], true);
+}
+
+#[tokio::test]
+async fn typed_inputs_preserve_defaults_integral_float_pages_and_grep_options() {
+    let fixture = Fixture::new();
+    fixture.write("a/page.txt", "first\nSECOND\nlast\n");
+    let read = fixture
+        .data(
+            "read_a",
+            json!({"path":"page.txt","offset":2.0,"limit":1.0}),
+        )
+        .await;
+    assert_eq!(read["lines"], json!([{"number":2,"text":"SECOND\n"}]));
+    let read = fixture.data("read_a", json!({"path":"page.txt"})).await;
+    assert_eq!(read["startLine"], 1);
+    assert_eq!(read["lineCount"], 3);
+    let list = fixture.data("list_a", json!({})).await;
+    assert_eq!(list["path"], "");
+    let grep = fixture
+        .data(
+            "grep_a",
+            json!({"pattern":"second","glob":"*.txt","caseInsensitive":true,"maxResults":1.0}),
+        )
+        .await;
+    assert_eq!(
+        grep["matches"],
+        json!([{"path":"page.txt","line":2,"text":"SECOND"}])
+    );
+    let grep = fixture.data("grep_a", json!({"pattern":"second"})).await;
+    assert_eq!(grep["matches"], json!([]));
+    let glob = fixture.data("glob_a", json!({"pattern":"*.txt"})).await;
+    assert_eq!(glob["files"], json!(["page.txt"]));
 }

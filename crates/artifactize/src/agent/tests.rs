@@ -14,6 +14,7 @@ use crate::{
 };
 
 mod budgets;
+mod follow_up;
 mod repair;
 
 const SESSION: &str = "0f4c2a9e-review-session";
@@ -461,7 +462,10 @@ fn profiles_reject_remapped_effort() {
     );
 }
 
-#[tokio::test]
+// Preparation is synchronous and the client is in-memory; pause Tokio time so host
+// scheduling cannot consume the deadline before the first fake request. Timer waits
+// still auto-advance, preserving the exact deadline and no-second-request assertion.
+#[tokio::test(start_paused = true)]
 async fn deadline_stops_retry_without_extra_requests() {
     let mut fixture = Fixture::new("openai");
     let Profile::Agent { timeout_ms, .. } = &mut fixture.config.evals[0].declaration.profile else {

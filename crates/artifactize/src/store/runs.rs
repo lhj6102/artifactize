@@ -31,14 +31,34 @@ pub async fn read_runs(
     limit: u32,
     offset: u32,
 ) -> Result<Vec<RunSummary>, String> {
+    let repos = repo.map(|path| vec![path.to_path_buf()]);
+    read_scoped_runs(state, repos.as_deref(), limit, offset).await
+}
+
+/// Filter workspace paths before sorting and paging; an empty scope has no Runs.
+pub async fn read_scoped_runs(
+    state: &Path,
+    repos: Option<&[PathBuf]>,
+    limit: u32,
+    offset: u32,
+) -> Result<Vec<RunSummary>, String> {
     let state = canonical_target(state).map_err(|e| e.to_string())?;
-    let repo = repo
-        .map(canonical_target)
+    let repos = repos
+        .map(|paths| {
+            paths
+                .iter()
+                .map(|path| {
+                    let path = canonical_target(path).map_err(|error| error.to_string())?;
+                    outside_workspace(&path, &state).map_err(|error| error.to_string())?;
+                    Ok(path)
+                })
+                .collect::<Result<Vec<_>, String>>()
+        })
+        .transpose()?;
+    let repos = repos
+        .map(|paths| serde_json::to_string(&paths))
         .transpose()
-        .map_err(|e| e.to_string())?;
-    if let Some(repo) = &repo {
-        outside_workspace(repo, &state).map_err(|e| e.to_string())?;
-    }
+        .map_err(|error| error.to_string())?;
     check_files(&state)?;
     if !state
         .join(DATABASE)
@@ -62,10 +82,10 @@ pub async fn read_runs(
         let mut runs = {
             let mut statement = transaction.prepare(
                 "SELECT id,repo,json_extract(data,'$.createdAt'),json_extract(data,'$.completedAt'),status
-                 FROM runs WHERE (?1 IS NULL OR repo=?1)
+                 FROM runs WHERE (?1 IS NULL OR repo IN (SELECT value FROM json_each(?1)))
                  ORDER BY json_extract(data,'$.createdAt') DESC,rowid DESC LIMIT ?2 OFFSET ?3",
             )?;
-            statement.query_map(params![repo.as_ref().map(|path| path.to_string_lossy()), limit, offset], |row| {
+            statement.query_map(params![repos, limit, offset], |row| {
                 Ok(RunSummary {
                     id: row.get(0)?,
                     repo_path: PathBuf::from(row.get::<_, String>(1)?),

@@ -17,6 +17,9 @@ use crate::{
 /// Give Human sign-off ten minutes by default, then return without cancelling
 /// pending requests; later verify/run queries can still observe their settlement.
 pub const DEFAULT_HUMAN_WAIT: Duration = Duration::from_secs(600);
+/// Four concurrent evals keep ordinary machines responsive while overlapping review I/O;
+/// shared by API/CLI defaults and legacy Run decoding, and overridable with --jobs.
+pub const DEFAULT_JOBS: usize = 4;
 
 #[derive(Debug, Clone)]
 pub struct VerifyOptions {
@@ -43,7 +46,7 @@ pub struct VerifyOptions {
 impl Default for VerifyOptions {
     fn default() -> Self {
         Self {
-            jobs: 4,
+            jobs: DEFAULT_JOBS,
             fingerprint_jobs: None,
             announce_run: false,
             max_executions: None,
@@ -97,8 +100,9 @@ pub async fn verify(
         .into_iter()
         .collect();
     let evals = selection.included_evals(&config, options.recursive)?;
-    let definitions = serde_json::to_value(crate::query::graph(&config, selection)?)
-        .map_err(|error| error.to_string())?;
+    let definitions =
+        store::definitions::Definitions::from_view(&crate::query::graph(&config, selection)?)
+            .map_err(|error| error.to_string())?;
     let state = store::state_dir(state_dir)?;
     let limits = crate::limits::Limits::read(&state)?;
     let receipts = Receipts::open(&state, &config.root).await?;
@@ -152,6 +156,7 @@ pub async fn verify(
     let mut run = Run {
         id: id.parse()?,
         repo_path: config.root.clone(),
+        repository: crate::repository::identify(&config.root),
         state_dir: state,
         status: crate::types::RunStatus::Running,
         created_at: now(),
@@ -163,7 +168,7 @@ pub async fn verify(
         fingerprint_jobs: Some(parallelism.limit()),
         max_executions: options.max_executions,
         executions_started: 0,
-        wait_timeout_ms: Some(wait_timeout_ms),
+        wait_timeout_ms: Some(Duration::from_millis(u64::from(wait_timeout_ms))),
         wait_timed_out: false,
         reuse_only: options.reuse_only.clone(),
         recursive: options.recursive,

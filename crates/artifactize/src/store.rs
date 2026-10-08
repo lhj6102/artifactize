@@ -7,15 +7,19 @@ use std::{
 
 use crate::workspace::canonical_target;
 
+pub mod definitions;
 mod executions;
 pub(crate) mod history;
 mod human;
 pub use human::HumanClaim;
+mod catalog;
 pub mod prune;
 mod receipts;
 mod runs;
 mod validation;
-pub use runs::{RunSummary, read_runs};
+mod wait_timeout;
+pub use catalog::{CatalogRun, Signoff, read_catalog};
+pub use runs::{RunSummary, read_runs, read_scoped_runs};
 mod requests;
 pub use executions::{
     Capacity, Claim, Execution, ExecutionOptions, Origin, Producer, Provenance,

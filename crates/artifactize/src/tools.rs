@@ -170,7 +170,10 @@ impl<'a> Registry<'a> {
         let command = match tool.declaration {
             AgentTool::Command(command) => command,
             AgentTool::Builtin(tool_declaration) => {
-                let builtin = tool_declaration.builtin;
+                let input = match builtin::Input::parse(tool_declaration.builtin, args) {
+                    Ok(input) => input,
+                    Err(error) => return ToolResult::error(error),
+                };
                 let root = self.config.root.clone();
                 let owner = tool.definition.artifact_id.clone();
                 let artifacts: BTreeMap<_, _> = self
@@ -188,7 +191,7 @@ impl<'a> Registry<'a> {
                             .map(|(id, artifact)| (id.as_str(), artifact))
                             .collect(),
                     };
-                    builtin::call(builtin, &root, &scope, &owner, &args, &cancellation)
+                    builtin::call(input, &root, &scope, &owner, &cancellation)
                 })
                 .await
                 .unwrap_or_else(|_| ToolResult::error("Built-in Agent tool execution failed."));

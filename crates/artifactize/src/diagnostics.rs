@@ -1,7 +1,7 @@
 //! Backend readiness and tool checks.
 
 mod doctor;
-pub use doctor::{DoctorReport, doctor};
+pub use doctor::{CheckStatus, DoctorReport, doctor};
 
 use std::path::Path;
 

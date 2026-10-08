@@ -12,6 +12,8 @@ use std::{collections::BTreeMap, fs, path::Path};
 use serde::{Deserialize, Serialize};
 
 use crate::config::Backend;
+#[cfg(test)]
+mod backend_tests;
 
 pub const FILE: &str = "limits.json";
 /// Machine-wide limits are a small declaration; reject oversized files before JSON allocation.
@@ -23,11 +25,15 @@ const MAX_SLOTS: u32 = 100_000;
 pub const SESSIONS_MAX_BYTES: u64 = 1024 * 1024 * 1024;
 /// The size a collection brings the session store down to by default: 768 MiB.
 pub const SESSIONS_TARGET_BYTES: u64 = 768 * 1024 * 1024;
+/// Collect to three quarters of a small declared maximum to leave growth headroom.
+/// Divide first, preserving quarter-block rounding and avoiding multiplication overflow.
+const SESSION_TARGET_NUMERATOR: u64 = 3;
+const SESSION_TARGET_DENOMINATOR: u64 = 4;
 
 /// Backend names to their machine-wide slot counts; a backend without an entry is unlimited.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Limits {
-    backends: BTreeMap<String, u32>,
+    backends: BTreeMap<Backend, u32>,
     agent_sessions: AgentSessions,
 }
 
@@ -54,10 +60,32 @@ impl Default for AgentSessions {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Declared {
-    #[serde(default)]
-    backends: BTreeMap<String, u32>,
+    #[serde(default, deserialize_with = "backend_limits")]
+    backends: BTreeMap<Backend, u32>,
     #[serde(default, rename = "agentSessions")]
     agent_sessions: Option<DeclaredSessions>,
+}
+
+fn backend_limits<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<Backend, u32>, D::Error> {
+    // Parse each external name once, retain its Backend, and preserve existing diagnostics
+    // and lexicographic validation order at this declaration boundary.
+    let names = BTreeMap::<String, u32>::deserialize(deserializer)?;
+    names
+        .into_iter()
+        .map(|(name, limit)| {
+            let backend =
+                serde_json::from_value::<Backend>(serde_json::Value::String(name.clone()))
+                    .map_err(|error| serde::de::Error::custom(format!("backends: {error}")))?;
+            if !(1..=MAX_SLOTS).contains(&limit) {
+                return Err(serde::de::Error::custom(format!(
+                    "backends.{name} must be between 1 and {MAX_SLOTS}."
+                )));
+            }
+            Ok((backend, limit))
+        })
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -84,7 +112,7 @@ impl DeclaredSessions {
             }
             Some(target) => target,
             None if SESSIONS_TARGET_BYTES < max_bytes => SESSIONS_TARGET_BYTES,
-            None => max_bytes / 4 * 3,
+            None => max_bytes / SESSION_TARGET_DENOMINATOR * SESSION_TARGET_NUMERATOR,
         };
         Ok(AgentSessions {
             enabled: self.enabled.unwrap_or(true),
@@ -114,17 +142,23 @@ impl Limits {
             ));
         }
         let text = fs::read_to_string(&path).map_err(|e| invalid(e.to_string()))?;
-        let declared: Declared = serde_json::from_str(&text).map_err(|e| invalid(e.to_string()))?;
-        for (name, limit) in &declared.backends {
-            // Any backend artifactize knows, by the name a profile declares it with.
-            serde_json::from_value::<Backend>(serde_json::Value::String(name.clone()))
-                .map_err(|e| invalid(format!("backends: {e}")))?;
-            if !(1..=MAX_SLOTS).contains(limit) {
-                return Err(invalid(format!(
-                    "backends.{name} must be between 1 and {MAX_SLOTS}."
-                )));
-            }
-        }
+        let declared: Declared = serde_json::from_str(&text).map_err(|error| {
+            let message = error.to_string();
+            // Backend validation previously followed decoding, so its diagnostics had no
+            // JSON location suffix. Preserve that contract when parsing names at the edge.
+            let message = if message.starts_with("backends:") || message.starts_with("backends.") {
+                message
+                    .strip_suffix(&format!(
+                        " at line {} column {}",
+                        error.line(),
+                        error.column()
+                    ))
+                    .unwrap_or(&message)
+            } else {
+                &message
+            };
+            invalid(message.to_owned())
+        })?;
         let agent_sessions = declared
             .agent_sessions
             .map(DeclaredSessions::resolve)
@@ -137,12 +171,12 @@ impl Limits {
         })
     }
 
-    /// The slot count of a backend, by name; `None` when it is unlimited.
-    pub fn limit(&self, backend: &str) -> Option<u32> {
-        self.backends.get(backend).copied()
+    /// The slot count of a parsed backend; `None` when it is unlimited.
+    pub fn limit(&self, backend: Backend) -> Option<u32> {
+        self.backends.get(&backend).copied()
     }
 
-    pub fn backends(&self) -> &BTreeMap<String, u32> {
+    pub fn backends(&self) -> &BTreeMap<Backend, u32> {
         &self.backends
     }
 
@@ -193,6 +227,25 @@ mod tests {
                 .agent_sessions()
                 .target_bytes,
             3000
+        );
+        // Quarter-block rounding stays divide-then-multiply, not floor(3*n/4).
+        for (max_bytes, target_bytes) in [(1, 0), (3, 0), (5, 3), (7, 3), (8, 6), (11, 6)] {
+            assert_eq!(
+                read(&format!(
+                    r#"{{"agentSessions":{{"maxBytes":{max_bytes}}}}}"#
+                ))
+                .unwrap()
+                .agent_sessions()
+                .target_bytes,
+                target_bytes
+            );
+        }
+        assert_eq!(
+            read(r#"{"agentSessions":{"maxBytes":18446744073709551615}}"#)
+                .unwrap()
+                .agent_sessions()
+                .target_bytes,
+            805306368
         );
         for (text, error) in [
             (

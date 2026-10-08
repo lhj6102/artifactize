@@ -217,7 +217,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
     assert!(list.contains("all repositories"), "{list}");
     let live_row = list
         .lines()
-        .find(|line| line.contains(live.as_str()))
+        .find(|line| line.contains(live.as_str()) && line.contains("RUNNING"))
         .unwrap();
     assert!(
         live_row.contains("RUNNING") && live_row.contains("beta"),
@@ -296,7 +296,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
         "{done}"
     );
     assert!(!done.contains("running slow/wait"));
-    assert_eq!(press(&mut all, KeyCode::Esc), monitor::Action::Refresh);
+    assert_eq!(press(&mut all, KeyCode::Esc), monitor::Action::None);
     all.refresh().await;
     assert!(screen(&mut all).contains("Runs (3)"));
     assert_eq!(press(&mut all, KeyCode::Esc), monitor::Action::Quit);
@@ -363,11 +363,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     let mut all = Vec::new();
     flatten(&nodes, &mut all);
     let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
-    for id in view.run.definitions["artifacts"]
-        .as_object()
-        .unwrap()
-        .keys()
-    {
+    for (id, _) in view.run.definitions.graph().unwrap().artifacts() {
         assert_eq!(
             all.iter()
                 .filter(|node| node.id == format!("a:{id}"))
@@ -492,7 +488,7 @@ async fn saved_tree_details_without_repository_or_writes() {
         assert!(steps < 40, "family node not reachable");
     }
     assert!(!screen(&mut monitor).contains("checkout  GREEN"));
-    press(&mut monitor, KeyCode::Right);
+    press(&mut monitor, KeyCode::Char('l'));
     screen(&mut monitor);
     press(&mut monitor, KeyCode::Down);
     let expanded = screen(&mut monitor);

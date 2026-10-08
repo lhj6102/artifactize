@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod tests;
+
 use std::{
     env, fs,
     path::{Path, PathBuf},
@@ -20,17 +23,42 @@ pub struct DoctorReport {
     pub checks: Vec<Check>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CheckStatus {
+    Pass,
+    Warn,
+    Fail,
+}
+impl CheckStatus {
+    fn ready(self) -> bool {
+        match self {
+            Self::Pass | Self::Warn => true,
+            Self::Fail => false,
+        }
+    }
+}
+impl std::fmt::Display for CheckStatus {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Pass => "PASS",
+            Self::Warn => "WARN",
+            Self::Fail => "FAIL",
+        })
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct Check {
     pub name: &'static str,
-    pub status: &'static str,
+    pub status: CheckStatus,
     pub message: String,
     pub details: Value,
 }
 
 impl DoctorReport {
-    fn add(&mut self, name: &'static str, status: &'static str, message: &str, details: Value) {
-        self.ok &= status != "FAIL";
+    fn add(&mut self, name: &'static str, status: CheckStatus, message: &str, details: Value) {
+        self.ok &= status.ready();
         self.checks.push(Check {
             name,
             status,
@@ -53,11 +81,11 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         match &config {
             Ok(Some(config)) => report.add(
                 "config",
-                "PASS",
+                CheckStatus::Pass,
                 "Folder configuration is valid.",
                 json!({"artifacts": config.artifacts.len(), "evals": config.evals.len()}),
             ),
-            Err(error) => report.add("config", "FAIL", &error.to_string(), Value::Null),
+            Err(error) => report.add("config", CheckStatus::Fail, &error.to_string(), Value::Null),
             _ => unreachable!(),
         }
     }
@@ -76,13 +104,13 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
     match writable {
         Ok(()) => report.add(
             "state",
-            "PASS",
+            CheckStatus::Pass,
             "State directory is writable or can be created.",
             json!({"writable":true}),
         ),
         Err(error) => report.add(
             "state",
-            "FAIL",
+            CheckStatus::Fail,
             &error.to_string(),
             json!({"writable":false}),
         ),
@@ -92,40 +120,40 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
     match store::state_schema(&state) {
         Ok(None) => report.add(
             "schema",
-            "PASS",
+            CheckStatus::Pass,
             "No state database yet.",
             json!({"schema":null}),
         ),
         Ok(Some(0)) => report.add(
             "schema",
-            "PASS",
+            CheckStatus::Pass,
             "The state database is not initialized yet.",
             json!({"schema":0}),
         ),
         Ok(Some(found)) if found == current => report.add(
             "schema",
-            "PASS",
+            CheckStatus::Pass,
             &format!("State database schema {current}."),
             json!({"schema":current}),
         ),
         Ok(Some(found)) => report.add(
             "schema",
-            "FAIL",
+            CheckStatus::Fail,
             &store::schema_error(found),
             json!({"schema":found,"supported":current}),
         ),
-        Err(error) => report.add("schema", "FAIL", &error, Value::Null),
+        Err(error) => report.add("schema", CheckStatus::Fail, &error, Value::Null),
     }
     match crate::limits::Limits::read(&state) {
         Ok(limits) if limits.backends().is_empty() => report.add(
             "limits",
-            "PASS",
+            CheckStatus::Pass,
             "No backend capacity limits (limits.json).",
             json!({"backends":{}}),
         ),
         Ok(limits) => report.add(
             "limits",
-            "PASS",
+            CheckStatus::Pass,
             &format!(
                 "Backend capacity on this machine: {}.",
                 limits
@@ -137,7 +165,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             ),
             json!({"backends":limits.backends()}),
         ),
-        Err(error) => report.add("limits", "FAIL", &error, Value::Null),
+        Err(error) => report.add("limits", CheckStatus::Fail, &error, Value::Null),
     }
     let (status, message, details) = sessions(&state);
     report.add("sessions", status, &message, details);
@@ -154,21 +182,21 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         match llm::test_endpoint(backend) {
             Ok(None) => report.add(
                 name,
-                if present { "PASS" } else { "WARN" },
+                if present { CheckStatus::Pass } else { CheckStatus::Warn },
                 &format!("{key}."),
                 json!({"present":present}),
             ),
             // A test endpoint is never a production setup, so it always warns.
             Ok(Some(endpoint)) => report.add(
                 name,
-                "WARN",
+                CheckStatus::Warn,
                 &format!(
                     "{key}; {} sends this backend's requests to the local test endpoint {endpoint}.",
                     llm::base_url_variable(backend)
                 ),
                 json!({"present":present,"testEndpoint":endpoint}),
             ),
-            Err(error) => report.add(name, "FAIL", &error, json!({"present":present})),
+            Err(error) => report.add(name, CheckStatus::Fail, &error, json!({"present":present})),
         }
     }
     let (status, message, details) = codex(&state, repo);
@@ -177,7 +205,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
     match auth::remote::remote(Some(&state), repo) {
         Ok(None) => report.add(
             "remote",
-            "PASS",
+            CheckStatus::Pass,
             "No remote review store is configured.",
             json!({"configured":false}),
         ),
@@ -186,32 +214,32 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             if remote.token_source == auth::remote::TokenSource::None {
                 report.add(
                     "remote",
-                    "WARN",
+                    CheckStatus::Warn,
                     "No remote token; run `artifactize remote login URL` or set ARTIFACTIZE_REMOTE_TOKEN.",
                     details,
                 );
             } else {
                 report.add(
                     "remote",
-                    "PASS",
+                    CheckStatus::Pass,
                     "Remote review store is configured; `remote status` checks reachability.",
                     details,
                 );
             }
         }
-        Err(error) => report.add("remote", "FAIL", &error, Value::Null),
+        Err(error) => report.add("remote", CheckStatus::Fail, &error, Value::Null),
     }
     Ok(report)
 }
 
 /// The saved Agent conversations: whether new ones are saved, the store's size against its
 /// bounds, and the state id their references name.
-fn sessions(state: &Path) -> (&'static str, String, Value) {
+fn sessions(state: &Path) -> (CheckStatus, String, Value) {
     let bounds = match crate::limits::Limits::read(state) {
         Ok(limits) => limits.agent_sessions(),
         Err(_) => {
             return (
-                "FAIL",
+                CheckStatus::Fail,
                 "limits.json is invalid; see limits.".into(),
                 Value::Null,
             );
@@ -219,7 +247,7 @@ fn sessions(state: &Path) -> (&'static str, String, Value) {
     };
     let usage = match crate::agent::session::usage(state) {
         Ok(usage) => usage,
-        Err(error) => return ("FAIL", error, Value::Null),
+        Err(error) => return (CheckStatus::Fail, error, Value::Null),
     };
     // A database the schema check refuses has no id to report here.
     let state_id = store::read_state_id(state).ok().flatten();
@@ -242,12 +270,12 @@ fn sessions(state: &Path) -> (&'static str, String, Value) {
         "maxBytes": bounds.max_bytes, "targetBytes": bounds.target_bytes,
         "directory": crate::agent::session::directory(state), "stateId": state_id,
     });
-    ("PASS", message, details)
+    (CheckStatus::Pass, message, details)
 }
 
 /// The Codex sign-in, read offline: no lock, refresh or network, and an auth file is
 /// only read.
-fn codex(state: &Path, repo: Option<&Path>) -> (&'static str, String, Value) {
+fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Value) {
     let endpoints = llm::test_endpoint(Backend::Codex).and_then(|base| {
         Ok((
             base,
@@ -255,14 +283,14 @@ fn codex(state: &Path, repo: Option<&Path>) -> (&'static str, String, Value) {
         ))
     });
     let ((base, sign_in), status) = match (endpoints, auth::codex::status(Some(state), repo)) {
-        (Err(error), _) | (_, Err(error)) => return ("FAIL", error, Value::Null),
+        (Err(error), _) | (_, Err(error)) => return (CheckStatus::Fail, error, Value::Null),
         (Ok(endpoints), Ok(status)) => (endpoints, status),
     };
     use auth::codex::{FileExpiry, Status, StoredExpiry};
     let (mut level, mut message) = match &status {
-        Status::Refused { reason } => ("WARN", reason.clone()),
+        Status::Refused { reason } => (CheckStatus::Warn, reason.clone()),
         Status::Absent => (
-            "WARN",
+            CheckStatus::Warn,
             "No Codex sign-in; run `artifactize login codex` or set ARTIFACTIZE_CODEX_AUTH_FILE."
                 .to_owned(),
         ),
@@ -270,7 +298,7 @@ fn codex(state: &Path, repo: Option<&Path>) -> (&'static str, String, Value) {
             path,
             expiry: FileExpiry::Usable { .. },
         } => (
-            "PASS",
+            CheckStatus::Pass,
             format!(
                 "ARTIFACTIZE_CODEX_AUTH_FILE is read, never refreshed: {}.",
                 path.display()
@@ -280,7 +308,7 @@ fn codex(state: &Path, repo: Option<&Path>) -> (&'static str, String, Value) {
             path,
             expiry: FileExpiry::Expired,
         } => (
-            "WARN",
+            CheckStatus::Warn,
             format!(
                 "The Codex access token in {} has expired; sign in with Codex again.",
                 path.display()
@@ -289,13 +317,13 @@ fn codex(state: &Path, repo: Option<&Path>) -> (&'static str, String, Value) {
         Status::Stored {
             expiry: StoredExpiry::Usable { .. },
         } => (
-            "PASS",
+            CheckStatus::Pass,
             "Codex sign-in is present; no provider validation or refresh was attempted.".to_owned(),
         ),
         Status::Stored {
             expiry: StoredExpiry::Expired { .. },
         } => (
-            "PASS",
+            CheckStatus::Pass,
             "Codex sign-in is present; its access token has expired and is refreshed on next use."
                 .to_owned(),
         ),
@@ -307,7 +335,7 @@ fn codex(state: &Path, repo: Option<&Path>) -> (&'static str, String, Value) {
     ] {
         if let Some(endpoint) = endpoint {
             // A test endpoint is never a production setup, so it always warns.
-            level = "WARN";
+            level = CheckStatus::Warn;
             message.push_str(&format!(
                 " {variable} points at the local test endpoint {endpoint}."
             ));
