@@ -19,7 +19,9 @@ crates/app/tests/
 examples/
 ```
 
-Discovery validates these fields without opening or executing scripts or inputs.
+Discovery validates these fields without executing fingerprint scripts or computing
+fingerprints. Family expansion does read a declared instance-list JSON file and
+checks that declared material paths exist inside the family folder without symlinks.
 There is no implicit or always-stale mode: an Artifact without `fingerprint` has no
 reuse, and neither does an eval that depends on it, so every `verify` reviews them
 again. The former `staleKey` (0.2 and 0.3) and `stale` (0.1) fields fail
