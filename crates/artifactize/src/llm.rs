@@ -2,6 +2,9 @@
 //! loopback-only test endpoint override for offline fake providers.
 
 pub mod codex;
+mod delivery;
+#[cfg(test)]
+mod delivery_tests;
 pub mod models;
 #[cfg(test)]
 pub(crate) mod tests;
@@ -125,7 +128,7 @@ impl Client {
         }
         let key = api_key(backend, "for this Agent backend")
             .map_err(|message| Failure::new(Code::Authentication, message))?;
-        let http = rig_reqwest::ReqwestClient::from(http_client()?);
+        let http = delivery::Tap::new(http_client()?);
         Ok(match backend {
             Backend::Openai => Self::Openai(Box::new(
                 openai::OpenAIConfig::new(key)
@@ -261,6 +264,18 @@ impl Client {
         context: Turn<'_>,
         attempts: &mut Vec<Attempt>,
     ) -> Result<CompletionResponse, Failure> {
+        self.turn_observed(request, context, attempts, &mut |_| {})
+            .await
+    }
+
+    /// Optional display delivery leaves the provider/retry/budget contract unchanged.
+    pub async fn turn_observed(
+        &self,
+        request: &CompletionRequest,
+        context: Turn<'_>,
+        attempts: &mut Vec<Attempt>,
+        observe: &mut impl FnMut(crate::agent::session::Delivery),
+    ) -> Result<CompletionResponse, Failure> {
         for attempt in 1..=ATTEMPTS {
             if context.cancellation.is_cancelled() {
                 return Err(Failure::cancelled());
@@ -275,38 +290,46 @@ impl Client {
                 format!("turn-{}", context.number),
             );
             let mut emitted = false;
-            let opened = tokio::select! {
-                biased;
-                _ = context.cancellation.cancelled() => return Err(Failure::cancelled()),
-                _ = tokio::time::sleep_until(context.deadline) => return Err(Failure::timeout()),
-                opened = self.stream(request.clone(), observed) => opened,
-            };
-            let (result, partial) = match opened {
-                Err(failure) => (Err(failure), None),
-                Ok(mut stream) => {
-                    let read = tokio::select! {
-                        biased;
-                        _ = context.cancellation.cancelled() => Err(Failure::cancelled()),
-                        _ = tokio::time::sleep_until(context.deadline) => Err(Failure::timeout()),
-                        result = async {
-                            while let Some(item) = stream.next().await {
-                                match item {
-                                    Ok(_) => emitted = true,
-                                    Err(error) => return Err(error),
+            let sink = delivery::Sink::default();
+            // Task-local registration encloses opening AND every poll, not just request creation.
+            let (result,partial)=sink.scope(async {
+                let opened = tokio::select! {
+                    biased;
+                    _ = context.cancellation.cancelled() => return (Err(Classified::from(Failure::cancelled())),None),
+                    _ = tokio::time::sleep_until(context.deadline) => return (Err(Classified::from(Failure::timeout())),None),
+                    opened = self.stream(request.clone(), observed) => opened,
+                };
+                match opened {
+                    Err(failure)=>(Err(failure),None),
+                    Ok(mut stream)=>{
+                        let mut cadence=tokio::time::interval(delivery::CADENCE);
+                        cadence.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                        let read=loop {
+                            tokio::select! {
+                                biased;
+                                _=context.cancellation.cancelled()=>break Err(Classified::from(Failure::cancelled())),
+                                _=tokio::time::sleep_until(context.deadline)=>break Err(Classified::from(Failure::timeout())),
+                                _=cadence.tick()=>{for event in sink.take(context.number,attempt){observe(event);}},
+                                item=stream.next()=>match item {
+                                    Some(Ok(item))=>{emitted=true;sink.normalized(&item);if sink.ready(){for event in sink.take(context.number,attempt){observe(event);}}},
+                                    Some(Err(error))=>break Err(self.classify(&error)),
+                                    None=>break Ok(()),
                                 }
                             }
-                            Ok(())
-                        } => Ok(result),
-                    };
-                    let partial = stream.partial();
-                    let result = match read {
-                        Ok(Ok(())) => stream.finish().await.map_err(|error| self.classify(&error)),
-                        Ok(Err(error)) => Err(self.classify(&error)),
-                        Err(failure) => Err(Classified::from(failure)),
-                    };
-                    (result, Some(partial))
+                        };
+                        for event in sink.take(context.number,attempt){observe(event);}
+                        let partial=stream.partial();
+                        let result=match read {Ok(())=>stream.finish().await.map_err(|error|self.classify(&error)),Err(error)=>Err(error)};
+                        let final_response=result.as_ref().ok().unwrap_or(&partial);
+                        if result.is_ok(){sink.final_response(&final_response.choice);}
+                        for event in sink.take(context.number,attempt){observe(event);}
+                        if let Err(error)=&result {
+                            observe(crate::agent::session::Delivery {turn:context.number,attempt,block:"attempt".into(),kind:crate::agent::session::DeliveryKind::Text,text:error.message.clone(),state:crate::agent::session::DeliveryState::Interrupted});
+                        }
+                        (result,Some(partial))
+                    }
                 }
-            };
+            }).await;
             let mut counters = usage.0.lock().unwrap().clone();
             if let Some(partial) = &partial {
                 add_cache_usage(&mut counters, partial);

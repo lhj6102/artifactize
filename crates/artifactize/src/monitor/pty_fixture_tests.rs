@@ -61,6 +61,13 @@ async fn live_session_pty_fixture() {
                 token.cancel();
                 break;
             }
+            if let Ok(text) = fs::read_to_string(control.join("delivery")) {
+                let _ = fs::remove_file(control.join("delivery"));
+                let delivery: saved::Delivery = serde_json::from_str(&text).unwrap();
+                recorder.event(Kind::Delivery(delivery));
+                crate::changes::drain().await;
+                fs::write(control.join("delivered"), "flushed and notified").unwrap();
+            }
             if let Ok(text) = fs::read_to_string(control.join("append")) {
                 let _ = fs::remove_file(control.join("append"));
                 recorder.event(Kind::Answer(Answer {

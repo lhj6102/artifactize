@@ -183,10 +183,19 @@ cancels its running tool first). Modal clicks never reach the underlying lists.
 
 Detail depends on the eval kind:
 
-- **Agent:** summary/result on the left, live recorded conversation on the right,
-  including RUNNING reviews and the original local session behind reused evidence.
-  Appended, flushed JSONL events update the view; this is not token-level provider
-  streaming. The initial view follows the bottom. ↑/PgUp or the wheel pauses at the
+- **Agent:** a full-width live transcript, including RUNNING reviews and the original
+  local session behind reused evidence. Summary/result details are opt-in with `d`
+  or Details; `d`/Esc returns to the transcript. Provider-normalized text and public
+  reasoning summaries update the active block before the turn finishes, coalesced
+  about every 100 ms. Public summaries appear under a subdued Thinking label only
+  when the provider/model supplies them; their absence is not simulated. Encrypted,
+  redacted and raw reasoning payloads never enter this view. OpenAI/Codex public
+  summary SSE frames are observed without changing bytes delivered to rig, since
+  rig's generic reasoning delta does not distinguish public summaries from raw
+  reasoning. Typed completed summaries are the safe fallback. Display-only delivery
+  events are not fed back into model history; final content replaces provisional
+  content instead of duplicating it, and interrupted partial output is labeled.
+  The initial view follows the bottom. ↑/PgUp or the wheel pauses at the
   reading position; ↓/PgDn back to the bottom resumes following. Home/End and the
   Top/Bottom buttons jump through the full history. The bottom border shows the row
   position, bottom/history and following/paused state. Resize preserves the logical
@@ -197,7 +206,7 @@ Detail depends on the eval kind:
   press Enter/Space for the first visible group to expand only names, targets and
   recorded states. Prose separates groups. Running targets and short failure reasons
   remain visible; explicitly expanded groups stay open across updates and resize.
-  Successful tool output, detailed arguments, reasoning and media payloads stay out
+  Successful tool output, detailed arguments, private reasoning and media payloads stay out
   of this view. Final verdicts and meaningful errors appear as text. `session show
   --json` remains the explicit lossless view of the saved record.
   Missing recorded local sessions explain session GC; never-saved and remote

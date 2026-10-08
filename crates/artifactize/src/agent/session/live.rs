@@ -270,6 +270,7 @@ pub struct Window {
     pub reset: bool,
     pub status: Option<String>,
     pub groups: Vec<(usize, super::transcript::BlockId)>,
+    pub thinking: Vec<usize>,
 }
 impl Reader {
     pub fn new(source: Source) -> Self {
@@ -529,12 +530,23 @@ impl Reader {
                         self.transcript.is_group(id).then_some((row, id))
                     })
                     .collect();
+                let thinking = pages
+                    .anchors(top, height)?
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(row, anchor)| {
+                        self.transcript
+                            .is_thinking(super::transcript::BlockId(anchor.event))
+                            .then_some(row)
+                    })
+                    .collect();
                 Window {
                     top,
                     total,
                     anchor,
                     rows,
                     groups,
+                    thinking,
                     ..Window::default()
                 }
             };

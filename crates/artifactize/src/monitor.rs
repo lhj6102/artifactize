@@ -81,6 +81,7 @@ pub struct Modal {
     focus: ModalPane,
     scroll: [u16; 2],
     live: Option<session::Live>,
+    show_details: bool,
 }
 
 /// Semantic selection/drafts live here, independently of render geometry.
@@ -321,6 +322,7 @@ impl Monitor {
             focus: ModalPane::Evidence,
             scroll: [0; 2],
             live: None,
+            show_details: false,
         };
         if let Some(view) = view {
             if view.request.profile.kind() == ProfileKind::Human {
@@ -417,6 +419,11 @@ impl Monitor {
         }
         if let Some(modal) = &mut self.modal {
             if key.code == KeyCode::Esc {
+                if modal.show_details {
+                    modal.show_details = false;
+                    modal.focus = ModalPane::Evidence;
+                    return Action::None;
+                }
                 if let Some(review) = &mut modal.review
                     && (review.busy() || review.confirming())
                 {
@@ -438,6 +445,18 @@ impl Monitor {
                     return Action::None;
                 }
                 return Action::Review(review.key_single(key, modal.focus == ModalPane::Tools));
+            }
+            if modal.live.is_some() && key.code == KeyCode::Char('d') {
+                modal.show_details = !modal.show_details;
+                modal.focus = if modal.show_details {
+                    ModalPane::Summary
+                } else {
+                    ModalPane::Evidence
+                };
+                return Action::None;
+            }
+            if modal.live.is_some() && !modal.show_details {
+                modal.focus = ModalPane::Evidence;
             }
             if modal.focus == ModalPane::Evidence
                 && let Some(live) = &mut modal.live

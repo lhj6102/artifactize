@@ -124,7 +124,7 @@ impl Codex {
             user_agent: user_agent(),
         });
         Ok(config
-            .connect(rig_reqwest::ReqwestClient::from(self.http.clone()))
+            .connect(super::delivery::Tap::new(self.http.clone()))
             .responses(&self.model))
     }
 }

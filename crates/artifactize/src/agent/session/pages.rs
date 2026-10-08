@@ -31,6 +31,30 @@ struct Text {
 struct Rows {
     first: usize,
     count: usize,
+    rendered_end: u64,
+}
+fn rendered_row(file: &mut File, rendered: &mut File, row: usize) -> Result<String, String> {
+    file.seek(SeekFrom::Start(row as u64 * ENTRY + 8))
+        .map_err(|error| error.to_string())?;
+    let mut entry = [0; 16];
+    file.read_exact(&mut entry)
+        .map_err(|error| error.to_string())?;
+    let offset = u64::from_le_bytes(entry[..8].try_into().expect("rendered offset"));
+    let size = u64::from_le_bytes(entry[8..].try_into().expect("rendered length")) as usize;
+    rendered
+        .seek(SeekFrom::Start(offset))
+        .map_err(|error| error.to_string())?;
+    let mut bytes = vec![0; size];
+    rendered
+        .read_exact(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    String::from_utf8(bytes).map_err(|error| error.to_string())
+}
+struct Segment {
+    first: usize,
+    end: usize,
+    file: File,
+    rendered: File,
 }
 struct Index {
     generation: u64,
@@ -46,6 +70,7 @@ struct Index {
     rendered: File,
     output: String,
     output_offset: u64,
+    prefix: Vec<Segment>,
 }
 impl Index {
     fn new(width: usize, generation: u64) -> Result<Self, String> {
@@ -63,6 +88,7 @@ impl Index {
             rendered: temporary()?,
             output: String::new(),
             output_offset: 0,
+            prefix: Vec::new(),
         })
     }
     fn append(&mut self, range: Range<usize>) -> Result<(), String> {
@@ -87,9 +113,27 @@ impl Index {
         self.output.clear();
         self.total += 1;
         self.rows[self.event].count += 1;
+        self.rows[self.event].rendered_end = self.output_offset;
         Ok(())
     }
     fn range(&mut self, row: usize) -> Result<Range<usize>, String> {
+        if let Some(segment) = self
+            .prefix
+            .iter_mut()
+            .find(|segment| row >= segment.first && row < segment.end)
+        {
+            segment
+                .file
+                .seek(SeekFrom::Start(row as u64 * ENTRY))
+                .map_err(|error| error.to_string())?;
+            let mut bytes = [0; 8];
+            segment
+                .file
+                .read_exact(&mut bytes)
+                .map_err(|error| error.to_string())?;
+            let start = u64::from_le_bytes(bytes) as usize;
+            return Ok(start..start);
+        }
         self.file
             .seek(SeekFrom::Start(row as u64 * ENTRY))
             .map_err(|error| error.to_string())?;
@@ -103,6 +147,13 @@ impl Index {
         )
     }
     fn rendered(&mut self, row: usize) -> Result<String, String> {
+        if let Some(segment) = self
+            .prefix
+            .iter_mut()
+            .find(|segment| row >= segment.first && row < segment.end)
+        {
+            return rendered_row(&mut segment.file, &mut segment.rendered, row);
+        }
         self.file
             .seek(SeekFrom::Start(row as u64 * ENTRY + 8))
             .map_err(|error| error.to_string())?;
@@ -186,7 +237,7 @@ impl Pages {
         );
         let replacing = id < self.texts.len();
         if replacing {
-            self.relayout()?;
+            self.relayout_from(id)?;
         }
         self.text
             .seek(SeekFrom::Start(self.length))
@@ -226,8 +277,89 @@ impl Pages {
         self.committed = self.current.generation;
         self.previous = None;
     }
-    fn relayout(&mut self) -> Result<(), String> {
-        self.relayout_width(self.current.width)
+    /// Updating a growing tail reuses indexed history. Keep only the displayed generation
+    /// and one in-progress generation, restarting at the changed stable block, not row zero.
+    fn relayout_from(&mut self, id: usize) -> Result<(), String> {
+        if id >= self.current.event && self.current.cursor == 0 {
+            return Ok(());
+        }
+        if self.current.generation == self.committed {
+            self.relayout_width(self.current.width)?;
+            let previous = self.previous.as_ref().expect("displayed generation pinned");
+            let count = id.min(previous.event);
+            let total = previous
+                .rows
+                .get(count)
+                .map_or(previous.total, |row| row.first);
+            let mut prefix = Vec::new();
+            for segment in &previous.prefix {
+                let end = segment.end.min(total);
+                if segment.first < end {
+                    prefix.push(Segment {
+                        first: segment.first,
+                        end,
+                        file: segment
+                            .file
+                            .try_clone()
+                            .map_err(|error| error.to_string())?,
+                        rendered: segment
+                            .rendered
+                            .try_clone()
+                            .map_err(|error| error.to_string())?,
+                    });
+                }
+            }
+            let first = prefix.last().map_or(0, |segment| segment.end);
+            if first < total {
+                prefix.push(Segment {
+                    first,
+                    end: total,
+                    file: previous
+                        .file
+                        .try_clone()
+                        .map_err(|error| error.to_string())?,
+                    rendered: previous
+                        .rendered
+                        .try_clone()
+                        .map_err(|error| error.to_string())?,
+                });
+            }
+            self.current.prefix = prefix;
+            self.current.rows = previous.rows[..count].to_vec();
+            self.current.visible = previous
+                .visible
+                .iter()
+                .copied()
+                .take_while(|event| *event < count)
+                .collect();
+            self.current.total = total;
+            self.current.event = count;
+            self.current.output_offset = 0;
+        } else {
+            let count = id.min(self.current.event);
+            let total = self
+                .current
+                .rows
+                .get(count)
+                .map_or(self.current.total, |row| row.first);
+            let rendered = count
+                .checked_sub(1)
+                .map_or(0, |index| self.current.rows[index].rendered_end);
+            self.current.prefix.retain(|segment| segment.first < total);
+            for segment in &mut self.current.prefix {
+                segment.end = segment.end.min(total);
+            }
+            self.current.rows.truncate(count);
+            self.current.visible.retain(|event| *event < count);
+            self.current.total = total;
+            self.current.event = count;
+            self.current.cursor = 0;
+            self.current.start = 0;
+            self.current.columns = 0;
+            self.current.output.clear();
+            self.current.output_offset = rendered;
+        }
+        Ok(())
     }
     fn relayout_width(&mut self, width: usize) -> Result<(), String> {
         // Multiple semantic updates within one unfinished rebuild need no new generation.
@@ -304,6 +436,7 @@ impl Pages {
                 self.current.rows.push(Rows {
                     first: self.current.total,
                     count: 0,
+                    rendered_end: self.current.output_offset,
                 });
             }
             let length = self.texts[event].bytes;

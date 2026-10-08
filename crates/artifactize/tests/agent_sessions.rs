@@ -393,7 +393,13 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         for earlier in ["Why GREEN?", "Because R1 holds.", "enc-send-1", "Still?"] {
             assert!(second.contains(earlier), "{earlier} in {second}");
         }
-        let events = project.events(&session);
+        let recorded = project.events(&session);
+        assert!(recorded.iter().any(|event| event["kind"] == "delivery"));
+        // Display-only delivery must not alter authoritative replay/message order.
+        let events = recorded
+            .into_iter()
+            .filter(|event| event["kind"] != "delivery")
+            .collect::<Vec<_>>();
         let end = events
             .iter()
             .position(|event| event["kind"] == "end")

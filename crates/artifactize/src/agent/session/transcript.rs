@@ -1,6 +1,6 @@
 //! Semantic, minimal session presentation. Stored events remain lossless; this view keeps only
 //! prose and bounded activity headers, never tool output, arguments, reasoning or media payloads.
-use super::{Event, Kind};
+use super::{Delivery, DeliveryKind, DeliveryState, Event, Kind};
 use rig_core::message::{
     AssistantContent, Message, ToolCall, ToolResult, ToolResultContent, UserContent,
 };
@@ -56,22 +56,42 @@ impl Group {
             .collect::<Vec<_>>();
         let mut text = match active {
             Some(activity) => format!(
-                "{} Tools ({}) · {} {} — running",
+                "{} {} {} — running{}",
                 if expanded { "▾" } else { "▸" },
-                self.activities.len(),
-                activity.name,
-                activity.target
-            ),
-            None => format!(
-                "{} Tools ({}) · {}",
-                if expanded { "▾" } else { "▸" },
-                self.activities.len(),
-                if failed.is_empty() {
-                    "completed"
+                activity_label(&activity.name),
+                activity.target,
+                if self.activities.len() > 1 {
+                    format!(" · {} activities", self.activities.len())
                 } else {
-                    "failed"
+                    String::new()
                 }
             ),
+            None => {
+                let label = self
+                    .activities
+                    .first()
+                    .map(|activity| activity_label(&activity.name))
+                    .unwrap_or("Tools");
+                let target = self
+                    .activities
+                    .first()
+                    .map(|activity| activity.target.as_str())
+                    .unwrap_or_default();
+                format!(
+                    "{} {label} {target} — {}{}",
+                    if expanded { "▾" } else { "▸" },
+                    if failed.is_empty() {
+                        "completed"
+                    } else {
+                        "failed"
+                    },
+                    if self.activities.len() > 1 {
+                        format!(" · {} activities", self.activities.len())
+                    } else {
+                        String::new()
+                    }
+                )
+            }
         };
         // Failures remain visible even when collapsed. Only recorded failure flags qualify.
         for activity in failed {
@@ -120,6 +140,11 @@ pub struct Patch {
     pub text: String,
 }
 
+struct LiveBlock {
+    id: BlockId,
+    text: String,
+}
+
 #[derive(Default)]
 pub struct Transcript {
     blocks: usize,
@@ -131,6 +156,9 @@ pub struct Transcript {
     question: Option<(Option<usize>, [u8; 32])>,
     /// A JSON-looking assistant message is unchanged until an identical authoritative End arrives.
     result_candidate: Option<(BlockId, [u8; 32])>,
+    deliveries: BTreeMap<(Option<usize>, usize, usize, DeliveryKind, String), LiveBlock>,
+    delivered_turns: BTreeSet<(Option<usize>, usize)>,
+    thinking: BTreeSet<BlockId>,
 }
 impl Transcript {
     fn slot(&mut self) -> BlockId {
@@ -241,10 +269,111 @@ impl Transcript {
         }
         self.active = None;
     }
+    fn delivery(&mut self, send: Option<usize>, delivery: &Delivery) -> Vec<Patch> {
+        let mut patches = Vec::new();
+        if delivery.block == "attempt" && delivery.state == DeliveryState::Interrupted {
+            for ((follow, turn, attempt, kind, _), block) in &self.deliveries {
+                if (*follow, *turn, *attempt) == (send, delivery.turn, delivery.attempt)
+                    && !block.text.is_empty()
+                {
+                    let label = if *kind == DeliveryKind::Summary {
+                        "Thinking · partial"
+                    } else {
+                        "Partial response"
+                    };
+                    patches.push(Patch {
+                        id: block.id,
+                        text: format!("{label} (interrupted)\n{}\n\n", block.text),
+                    });
+                }
+            }
+            return patches;
+        }
+        self.active = None;
+        let key = (
+            send,
+            delivery.turn,
+            delivery.attempt,
+            delivery.kind,
+            delivery.block.clone(),
+        );
+        let id = if let Some(block) = self.deliveries.get(&key) {
+            block.id
+        } else {
+            let id = self.slot();
+            self.deliveries.insert(
+                key.clone(),
+                LiveBlock {
+                    id,
+                    text: String::new(),
+                },
+            );
+            id
+        };
+        let block = self
+            .deliveries
+            .get_mut(&key)
+            .expect("delivery block exists");
+        match delivery.state {
+            DeliveryState::Delta => block.text.push_str(&delivery.text),
+            DeliveryState::Complete | DeliveryState::Interrupted => {
+                block.text = delivery.text.clone()
+            }
+        }
+        let text = block.text.clone();
+        if delivery.kind == DeliveryKind::Summary {
+            self.thinking.insert(id);
+        }
+        if delivery.kind == DeliveryKind::Text {
+            self.delivered_turns.insert((send, delivery.turn));
+        }
+        if delivery.kind == DeliveryKind::Text && delivery.state == DeliveryState::Complete {
+            let value = serde_json::from_str::<serde_json::Value>(&text)
+                .ok()
+                .filter(|value| {
+                    value
+                        .get("verdict")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|verdict| matches!(verdict, "GREEN" | "RED"))
+                });
+            self.result_candidate =
+                value.map(|value| (id, Sha256::digest(value.to_string().as_bytes()).into()));
+            self.assistant = Some(Sha256::digest(markdown(&text).trim().as_bytes()).into());
+        }
+        if delivery.state == DeliveryState::Complete {
+            self.deliveries
+                .get_mut(&key)
+                .expect("delivery exists")
+                .text
+                .clear();
+        }
+        patches.push(Patch {
+            id,
+            text: format!(
+                "{}{}{}\n\n",
+                if delivery.kind == DeliveryKind::Summary {
+                    "Thinking\n"
+                } else {
+                    ""
+                },
+                markdown(&text),
+                if delivery.state == DeliveryState::Interrupted {
+                    "\n[partial, interrupted]"
+                } else {
+                    ""
+                }
+            ),
+        });
+        patches
+    }
+    pub fn is_thinking(&self, id: BlockId) -> bool {
+        self.thinking.contains(&id)
+    }
     pub fn apply(&mut self, event: &Event) -> Vec<Patch> {
         let mut patches = Vec::new();
         let mut dirty = BTreeSet::new();
         match &event.kind {
+            Kind::Delivery(delivery) => return self.delivery(event.send, delivery),
             Kind::Review(_) | Kind::Attempt(_) => {}
             Kind::Send(send) => {
                 self.active = None;
@@ -272,7 +401,12 @@ impl Transcript {
                             for part in content {
                                 match part {
                                     AssistantContent::Text(text) => {
-                                        self.prose(&text.text, false, &mut patches)
+                                        if !self
+                                            .delivered_turns
+                                            .contains(&(event.send, message.turn))
+                                        {
+                                            self.prose(&text.text, false, &mut patches);
+                                        }
                                     }
                                     AssistantContent::ToolCall(call) => {
                                         self.call(event.send, call, &mut dirty)
@@ -394,6 +528,23 @@ fn header(text: &str) -> String {
         })
         .take(HEADER_CHARS)
         .collect()
+}
+fn activity_label(name: &str) -> &str {
+    if name == "read" || name.starts_with("read_") {
+        "Read"
+    } else if name == "grep"
+        || name == "glob"
+        || name.starts_with("grep_")
+        || name.starts_with("glob_")
+    {
+        "Search"
+    } else if name == "list" || name.starts_with("list_") {
+        "List"
+    } else if name == "view_image" || name.starts_with("view_image_") {
+        "View image"
+    } else {
+        name
+    }
 }
 fn target(call: &ToolCall) -> String {
     let name = call.function.name.as_str();

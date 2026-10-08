@@ -31,6 +31,7 @@ pub(super) enum Button {
     Close,
     SessionTop,
     SessionBottom,
+    SessionDetails,
 }
 #[derive(Default)]
 pub(super) struct Hits {
@@ -85,6 +86,15 @@ impl Monitor {
                                 return Action::Review(review.control(Control::Cancel));
                             }
                             self.close_modal();
+                            Action::None
+                        }
+                        Button::SessionDetails => {
+                            modal.show_details = !modal.show_details;
+                            modal.focus = if modal.show_details {
+                                ModalPane::Summary
+                            } else {
+                                ModalPane::Evidence
+                            };
                             Action::None
                         }
                         Button::SessionTop | Button::SessionBottom => {

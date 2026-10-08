@@ -29,7 +29,10 @@ mod pages_tests;
 pub mod transcript;
 #[cfg(test)]
 mod transcript_tests;
-pub use events::{Answer, Budgets, End, Event, Header, Kind, MessageEvent, Send};
+pub use events::{
+    Answer, Budgets, Delivery, DeliveryKind, DeliveryState, End, Event, Header, Kind, MessageEvent,
+    Send,
+};
 #[cfg(test)]
 mod recorder_tests;
 mod summary;

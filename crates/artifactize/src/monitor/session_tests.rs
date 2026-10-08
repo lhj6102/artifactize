@@ -250,6 +250,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         focus: ModalPane::Evidence,
         scroll: [0; 2],
         live: Some(live),
+        show_details: false,
     });
     let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
     terminal.draw(|frame| monitor.draw(frame)).unwrap();
@@ -360,7 +361,8 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     monitor.key(KeyEvent::from(KeyCode::PageUp));
     let live = monitor.modal.as_ref().unwrap().live.as_ref().unwrap();
     assert_eq!(live.scroll.top, top - live.scroll.height);
-    monitor.modal.as_mut().unwrap().focus = ModalPane::Summary;
+    monitor.key(KeyEvent::from(KeyCode::Char('d')));
+    assert!(monitor.modal.as_ref().unwrap().show_details);
     let position = monitor
         .modal
         .as_ref()
