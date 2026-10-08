@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1254 1254" role="img" aria-labelledby="title desc">
+  <title id="title">Artifactize emerald artifact icon</title>
+  <desc id="desc">A left-pointing rounded triangular artifact, angled in perspective, with layered ivory, silver and charcoal borders and a raised, round faceted emerald. Transparent background.</desc>
+  <defs>
+    <linearGradient id="outer-metal" x1="950" y1="271" x2="435" y2="963" gradientUnits="userSpaceOnUse"><stop stop-color="#f5f0e5"/><stop offset=".48" stop-color="#d4cfc9"/><stop offset="1" stop-color="#a09b9e"/></linearGradient>
+    <linearGradient id="charcoal" x1="500" y1="439" x2="1030" y2="891" gradientUnits="userSpaceOnUse"><stop stop-color="#4b4b56"/><stop offset="1" stop-color="#30313d"/></linearGradient>
+    <linearGradient id="inner-metal" x1="720" y1="419" x2="836" y2="974" gradientUnits="userSpaceOnUse"><stop stop-color="#d4cec7"/><stop offset=".55" stop-color="#e8e1d5"/><stop offset="1" stop-color="#aaa6ad"/></linearGradient>
+    <linearGradient id="face" x1="903" y1="421" x2="570" y2="800" gradientUnits="userSpaceOnUse"><stop stop-color="#e1dbd2"/><stop offset="1" stop-color="#d2cbc5"/></linearGradient>
+    <linearGradient id="bezel-side" x1="580" y1="672" x2="835" y2="761" gradientUnits="userSpaceOnUse"><stop stop-color="#aaa4a7"/><stop offset=".5" stop-color="#c8c2bd"/><stop offset="1" stop-color="#9c979e"/></linearGradient>
+    <linearGradient id="emerald" x1="654" y1="500" x2="805" y2="742" gradientUnits="userSpaceOnUse"><stop stop-color="#008f78"/><stop offset=".5" stop-color="#027965"/><stop offset="1" stop-color="#00665b"/></linearGradient>
+    <clipPath id="gem-clip"><path d="M735 481 C813 478 871 532 878 606 C886 680 829 746 753 759 C681 773 608 734 584 670 C556 601 592 540 650 506 C676 490 706 482 735 481Z"/></clipPath>
+    <clipPath id="mount-clip"><path d="M560 607 C578 532 651 481 725 480 C807 478 876 532 892 608 C912 688 872 760 801 787 C723 821 647 790 600 741 C565 705 551 661 560 607Z"/></clipPath>
+  </defs>
+  <g id="triangular-frame" stroke-linejoin="round" stroke-linecap="round">
+    <path id="outer-silhouette" fill="url(#outer-metal)" stroke="#160d1b" stroke-width="11" d="M973 245 C1059 243 1099 270 1105 356 C1117 474 1065 772 995 1008 C974 1078 934 1108 875 1087 C787 1058 598 946 423 824 C302 741 199 666 175 636 C159 614 175 587 202 565 C355 442 644 320 853 263 C902 250 941 245 973 245Z"/>
+    <path id="outer-lower-cel" fill="#aba6aa" d="M177 610 C182 640 295 729 443 832 C610 948 784 1053 875 1083 C917 1097 950 1080 972 1037 C941 1075 906 1080 864 1062 C651 961 399 789 202 627Z"/>
+    <path id="outer-right-cel" fill="#c5bfc0" d="M1045 372 Q1072 381 1085 366 C1083 529 1021 828 970 982 C957 1015 939 1043 920 1051 L938 1080 Q976 1061 995 1005 C1045 837 1110 546 1085 324Z"/>
+    <path id="outer-ivory-rim" fill="none" stroke="#fff6e2" stroke-width="12" d="M974 258 C1050 256 1086 283 1090 355 C1102 474 1045 780 984 975 C968 1024 947 1064 921 1073 M187 616 C185 602 198 585 214 572 C369 450 646 334 855 275 C903 261 945 258 974 258"/>
+    <path id="outer-lower-rim" fill="none" stroke="#fff7e6" stroke-width="9" d="M190 613 C214 661 407 796 570 903 C701 989 823 1055 870 1072"/>
+    <path id="recess-channel" fill="url(#charcoal)" stroke="#1c1521" stroke-width="8" d="M937 293 C1002 290 1033 319 1043 370 C1059 443 995 798 943 940 C926 984 905 1015 874 1015 C811 1016 586 868 438 766 C333 694 262 638 244 613 C231 595 238 580 257 561 C379 453 714 330 896 299 C912 296 925 294 937 293Z"/>
+    <path id="channel-edge" fill="none" stroke="#5b5a63" stroke-width="9" opacity=".48" d="M937 301 C997 298 1024 326 1034 373 C1044 440 988 782 937 927 C920 974 897 1005 874 1006 C809 1003 592 860 445 758 C342 687 271 635 255 610 C244 592 253 577 271 562"/>
+    <path id="inner-frame" fill="url(#inner-metal)" stroke="#1d1420" stroke-width="7" d="M918 339 C967 333 993 354 997 398 C1004 455 953 769 920 914 C910 959 898 979 871 979 C821 979 660 873 537 791 C416 711 322 643 306 621 C292 602 299 582 314 567 C375 506 733 382 896 343 Q909 340 918 339Z"/>
+    <path id="inner-ivory-rim" fill="none" stroke="#fff7e7" stroke-width="9" d="M937 345 C974 345 988 365 989 401 C993 465 946 773 912 915 C902 958 891 974 870 972 C823 969 663 863 543 783 C423 704 327 636 313 615 C304 601 310 584 323 573 C388 516 739 390 899 351 Q925 344 937 345"/>
+    <path id="inner-left-cel" fill="#b9b5bb" d="M899 377 C792 403 449 518 353 567 C329 579 329 591 351 607 L435 666 C391 624 354 600 364 582 C388 551 799 415 906 389Z"/>
+    <path id="recessed-face" fill="url(#face)" stroke="#302833" stroke-width="4" d="M905 388 C934 382 948 398 948 426 C944 511 903 806 882 901 C877 925 871 933 853 929 C800 916 654 817 535 738 C442 676 378 621 367 603 C358 590 365 579 378 573 C494 521 787 420 905 388Z"/>
+    <path id="face-upper-cel" fill="#fff6e6" d="M380 574 C492 524 787 422 894 399 C917 401 933 418 941 463 L903 421 C788 452 529 542 408 580Z"/>
+    <path id="face-left-cel" fill="#b9b5bb" d="M370 582 Q385 578 408 580 L467 674 C417 639 382 610 370 595 Q365 588 370 582Z"/>
+    <path id="face-right-cel" fill="#fbf3e5" d="M903 421 L940 462 C928 582 902 763 880 889 C855 833 832 798 806 779 L873 567Z"/>
+    <path id="face-bottom-cel" fill="#b9b5bc" d="M786 894 Q849 913 869 902 L883 887 Q879 929 866 928 C847 925 823 914 786 894Z"/>
+    <g id="metal-glints" fill="#fff7e6">
+      <path d="M1048 290 C1063 300 1076 318 1080 331 C1068 350 1050 326 1048 290Z"/>
+      <path d="M571 369 C597 356 628 345 653 338 C683 346 641 362 615 371 C585 380 559 382 571 369Z"/>
+      <path d="M195 598 C207 591 199 611 210 627 L225 642 C209 646 195 631 189 619 C184 608 187 602 195 598Z"/>
+      <path d="M969 352 C978 359 984 375 980 383 C974 396 958 381 956 371 C953 362 957 354 969 352Z"/>
+      <path d="M1023 702 C1038 698 1028 740 1021 762 C1005 806 997 755 1008 726 C1013 713 1017 705 1023 702Z"/>
+      <path d="M976 941 C991 938 973 987 956 1017 C939 1048 932 1031 944 998 C954 970 967 946 976 941Z"/>
+      <path d="M473 814 Q497 839 507 860 Q477 850 455 825Z"/>
+      <path d="M594 887 Q630 912 674 936 L669 949 Q630 931 599 914 Q588 902 594 887Z"/>
+      <path d="M811 931 L846 950 Q843 966 830 958Z"/>
+    </g>
+  </g>
+  <g id="raised-emerald">
+    <path id="mount-shadow" fill="#a59fa5" d="M559 622 C574 545 644 495 719 494 C804 488 878 544 895 623 C918 707 875 782 803 808 C726 838 649 812 600 763 C559 722 547 674 559 622Z"/>
+    <path id="bezel-sidewall" fill="url(#bezel-side)" stroke="#2b222d" stroke-width="5" d="M560 607 C578 532 651 481 725 480 C807 478 876 532 892 608 C912 688 872 760 801 787 C723 821 647 790 600 741 C565 705 551 661 560 607Z"/>
+    <g id="bezel-cel-facets" clip-path="url(#mount-clip)">
+      <path fill="#e7e1d6" d="M557 604 L600 707 L588 724 L551 680Z"/>
+      <path fill="#b3adb1" d="M600 709 L653 757 L635 780 L584 737Z"/>
+      <path fill="#d5cfc7" d="M764 738 L791 796 L819 780 L797 727Z"/>
+      <path fill="#f1e9da" d="M821 705 L852 752 L872 729 L847 685Z"/>
+      <path fill="#817b86" d="M878 633 L903 666 L891 703 L865 673Z"/>
+    </g>
+    <path id="ivory-bezel-top" fill="#fff7e5" stroke="#2d2430" stroke-width="4.5" d="M734 468 C817 465 883 522 896 601 C910 682 849 757 765 773 C684 789 606 748 572 682 C539 615 567 544 625 500 C656 478 696 467 734 468Z"/>
+    <path id="bezel-top-highlight" fill="none" stroke="#fffdf3" stroke-width="5" d="M578 625 C577 553 643 482 727 476 C784 472 835 499 864 540"/>
+    <path id="emerald-base" fill="url(#emerald)" d="M735 481 C813 478 871 532 878 606 C886 680 829 746 753 759 C681 773 608 734 584 670 C556 601 592 540 650 506 C676 490 706 482 735 481Z"/>
+    <g id="emerald-facets" clip-path="url(#gem-clip)">
+      <path fill="#009b84" d="M617 520 L691 480 L690 530 L628 574Z"/>
+      <path fill="#39bba6" d="M691 480 L735 480 L791 561 L690 530Z"/>
+      <path fill="#a3efd1" d="M735 480 L811 491 L869 553 L878 610 L845 582 L791 561Z"/>
+      <path fill="#07574f" d="M578 578 L618 520 L628 574 L579 629 L568 641Z"/>
+      <path fill="#00a58c" d="M579 629 L628 574 L678 685 L656 671 L609 678Z"/>
+      <path fill="#06c7a3" d="M576 629 L609 678 L595 723 L574 680Z"/>
+      <path fill="#4ceac1" d="M609 678 L657 671 L678 685 L704 762 L650 755 L595 723Z"/>
+      <path fill="#00a38a" d="M678 685 L768 715 L742 764 L704 762Z"/>
+      <path fill="#006254" d="M768 715 L805 703 L854 682 L826 738 L742 764Z"/>
+      <path fill="#35c2ae" d="M805 703 L826 637 L854 682Z"/>
+      <path fill="#79dfc8" d="M791 561 L845 582 L826 637Z"/>
+      <path fill="#008675" d="M845 582 L878 610 L869 665 L854 682 L826 637Z"/>
+      <path fill="#004f47" d="M854 682 L883 649 L877 709 L816 754 L826 738Z"/>
+      <path id="emerald-shine" fill="#e6ffeb" d="M782 501 C805 498 837 532 845 557 C859 591 839 591 813 576 C790 563 776 537 773 518 C770 506 773 502 782 501Z"/>
+    </g>
+    <path id="emerald-outline" fill="none" stroke="#113c35" stroke-width="4" stroke-linejoin="round" d="M735 481 C813 478 871 532 878 606 C886 680 829 746 753 759 C681 773 608 734 584 670 C556 601 592 540 650 506 C676 490 706 482 735 481Z"/>
+  </g>
+</svg>

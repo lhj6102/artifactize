@@ -66,7 +66,7 @@ recorded with [VHS](https://github.com/charmbracelet/vhs) from the tapes in
 |---|---|---|
 | `reuse.tape` | `status`, then `verify` executes everything and the next `verify` reuses it all | `demo/shop` |
 | `change.tape` | one changed file: `status` predicts one execution and names the file, `verify` re-reviews only that | `demo/shop` |
-| `human.tape` | `verify` waits; in `monitor`, `o` opens `review`, which runs an output tool and submits through the form | `demo/brand` |
+| `human.tape` | `verify` waits by default; the three-pane `monitor` opens an eval modal, explicitly claims the request, runs an output tool and submits the GREEN schema form | `demo/brand` |
 | `team.tape` | Alice's `verify` publishes to an `artifactize server`; Bob's `status` and `verify` reuse it | `demo/shop` |
 
 ```sh
@@ -78,9 +78,12 @@ website/demo/record.sh               # or: website/demo/record.sh human
 `target/release/artifactize` (set `ARTIFACTIZE_BIN` for another build). It writes
 `demo/media/NAME.gif` for the README and `landing/media/demo/NAME.{mp4,webp}` for the
 landing page. Each tape starts `demo/session.sh`, which runs the shell in private
-user, mount, UTS and network namespaces: user alice on host `laptop` with a
+user, mount, UTS, network and PID namespaces: user alice on host `laptop` with a
 throwaway home, state and `/tmp`, a loopback-only network for the review store, and
-no provider calls or GUI programs. The tapes use JetBrains Mono, so make it visible
+no provider calls or GUI programs in the fixture. VHS itself needs a Chromium
+browser. `DEMO_WORK` must be empty; `record.sh` creates it under `TMPDIR` and cleans
+it on exit, and closing the fixture also stops its private tmux and server children.
+The tapes use JetBrains Mono, so make it visible
 to fontconfig (for example through `FONTCONFIG_FILE`) or change `FontFamily` in
 `demo/settings.tape`.
 

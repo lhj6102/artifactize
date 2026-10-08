@@ -1,4 +1,4 @@
-# Artifactize
+# <img src="website/landing/media/artifactize-icon.svg" width="48" height="48" align="middle" alt=""> Artifactize
 
 **The AI-native collaboration layer for one-of-a-kind teammates and their agents.**
 
@@ -64,8 +64,8 @@ re-reviews only that Artifact.
 - **Know what a change will cost before you run it.** `status` predicts what
   `verify` will execute, reuse or wait for, and names the files and dependencies
   that changed.
-- **Human review in the terminal.** `artifactize monitor` shows Runs as they
-  progress and hands a waiting sign-off to `artifactize review`.
+- **Human review in the terminal.** `artifactize monitor` shows live Runs and
+  opens Human sign-offs in an embedded eval modal: claim, run tools and submit.
 
 ## Install
 
@@ -160,33 +160,24 @@ continues with `status`, a family of Artifacts and a Human sign-off.
 fingerprints are unchanged and says where each came from.
 
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/reuse.gif" width="800"
-     alt="artifactize status predicts five evals; the first verify executes all five, the second reuses all five and its summary reads executed 0, reused 5.">
+     alt="artifactize status lists unreviewed evals and a waiting dependency; the first verify executes all five, the second reuses all five and its summary reads executed 0, reused 5.">
 
 [Fingerprints and reuse](https://artifactize.dev/docs/concepts/fingerprints-and-reuse.html) ·
 [Runs, status and validation](https://artifactize.dev/docs/concepts/runs-and-status.html)
 
 ## Human review in the terminal
 
-`verify` keeps the Run alive while a Human eval waits. In the monitor, `o`
-opens the waiting request in `artifactize review`: run the tools its owner declared,
-submit the verdict through a form, and the Run finishes.
+`verify` waits by default while a Human eval needs a sign-off. The monitor's
+repository, Run and Artifact panes lead to the eval: `o` opens its embedded modal.
+Claim the request, run the tools its owner declared, choose GREEN or RED, and submit
+the schema-backed form without leaving the monitor. The Run then finishes.
 
-Local readers share bounded invalidation hints instead of reloading SQLite every second.
-The first subscriber temporarily hosts a hub in its own process: an owner-only Unix socket
-or an owner-only Windows named pipe. There is no permanent daemon. If that subscriber
-exits, surviving readers reconnect, elect a replacement and resync from authoritative
-SQLite/session files. Writers never start a hub and short commands allow a bounded drain.
-An unavailable or unsafe transport falls back to five-second reconciliation, never an
-insecure channel; missed database commits and database replacement are checked using one
-persistent read-only SQLite connection. Monitor/review clocks and Human-tool spinners
-redraw cached data independently. Broker waits wake on state changes, task completion,
-cancellation and absolute deadlines, with bounded owner/slot reconciliation and a separate
-remote lookup cadence. Session-only hints are available for the next live-viewer stage;
-this does not add live session scrolling or remote team-store push events. The state schema
-remains version 5.
+The monitor follows local state changes without a permanent daemon. Agent eval
+modals show live local sessions with scrolling and expandable tool output; reused
+results keep their original evidence when it is available.
 
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/human.gif" width="800"
-     alt="Two terminals: verify waits; in the monitor, o opens review, the notes tool prints the design notes, the GREEN form is filled and submitted, and verify finishes GREEN.">
+     alt="verify waits by default; the three-pane monitor opens a Human eval modal, explicitly claims the request, runs the notes tool, submits the GREEN schema form and shows the completed GREEN Run.">
 
 [Human reviews](https://artifactize.dev/docs/guides/human-reviews.html)
 
