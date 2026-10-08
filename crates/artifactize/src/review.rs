@@ -5,6 +5,8 @@ mod embedded;
 mod embedded_tests;
 mod form;
 #[cfg(test)]
+mod identity_tests;
+#[cfg(test)]
 pub(crate) mod tests;
 mod view;
 
@@ -31,12 +33,15 @@ use crate::{
     human,
     store::{self, HumanClaim, Request, RequestView},
     tools::human::{CommandLine, Content, ToolResult},
+    types::RequestId,
 };
 
 /// Redraw cached claim times and durations; database refresh uses invalidation hints.
 const REFRESH: Duration = Duration::from_secs(1);
 /// Animate running tools at ten frames per second, independently of database refresh.
 const SPIN: Duration = Duration::from_millis(100);
+/// Page keys move ten output rows in idle and busy views, preserving existing navigation.
+const SCROLL_PAGE: u16 = 10;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
@@ -57,23 +62,23 @@ pub enum Mode {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Job {
     /// Explicit claim for an embedded single-request review.
-    Claim { id: crate::types::RequestId },
+    Claim { id: RequestId },
     /// Resolve a tool's command line for confirmation; claims nothing.
-    Inspect { id: String, tool: String },
+    Inspect { id: RequestId, tool: String },
     /// Claim first when `claim`, then run the tool.
     Run {
-        id: String,
+        id: RequestId,
         tool: String,
         claim: bool,
     },
     /// Claim first when `claim`, then submit and publish like `request submit`.
     Submit {
-        id: String,
+        id: RequestId,
         result: Value,
         claim: bool,
     },
     /// Release the reviewer's remaining claims; quit afterwards when `quit`.
-    Release { ids: Vec<String>, quit: bool },
+    Release { ids: Vec<RequestId>, quit: bool },
 }
 
 #[derive(Debug)]
@@ -96,15 +101,15 @@ pub enum Outcome {
         result: Result<ToolResult, String>,
     },
     Submitted {
-        id: String,
+        id: RequestId,
         claimed: Option<HumanClaim>,
         result: Result<Box<Request>, String>,
     },
     Released {
-        ids: Vec<String>,
+        ids: Vec<RequestId>,
         quit: bool,
         /// Request IDs whose release failed, with the error.
-        failed: Vec<(String, String)>,
+        failed: Vec<(RequestId, String)>,
     },
 }
 
@@ -158,13 +163,15 @@ pub struct Review {
     waiting: Vec<RequestView>,
     list: TableState,
     /// The open request, if any, and its last successfully loaded view.
-    open: Option<String>,
+    open: Option<RequestId>,
+    /// An invalid compatibility constructor ID never enters state reads or jobs.
+    invalid_open: Option<String>,
     request: Option<RequestView>,
     tool: usize,
     output: Option<Output>,
     scroll: u16,
     /// Requests this session claimed and has neither submitted nor released.
-    taken: Vec<String>,
+    taken: Vec<RequestId>,
     /// Command lines the reviewer confirmed in this session.
     confirmed: Vec<CommandLine>,
     busy: Option<Busy>,
@@ -190,11 +197,15 @@ impl Review {
         reviewer: String,
         open: Option<String>,
     ) -> Self {
+        let (open, invalid_open) = match open.map(|id| id.parse::<RequestId>()).transpose() {
+            Ok(open) => (open, None),
+            Err(error) => (None, Some(error)),
+        };
         Self {
             state,
             repo,
             reviewer,
-            mode: if open.is_some() {
+            mode: if open.is_some() || invalid_open.is_some() {
                 Mode::Request
             } else {
                 Mode::List
@@ -202,6 +213,7 @@ impl Review {
             waiting: Vec::new(),
             list: TableState::default(),
             open,
+            invalid_open,
             request: None,
             tool: 0,
             output: None,
@@ -230,6 +242,10 @@ impl Review {
 
     /// Reload the visible screen read-only; on failure keep the last-known data.
     pub async fn refresh(&mut self) -> Action {
+        if let Some(error) = &self.invalid_open {
+            self.error = Some(error.clone());
+            return Action::None;
+        }
         let result = match self.open.clone() {
             Some(id) => store::read_request(&self.state, &id)
                 .await
@@ -295,7 +311,7 @@ impl Review {
     }
 
     /// The open request when this reviewer may act on it.
-    fn actionable(&self) -> Result<(String, bool), String> {
+    fn actionable(&self) -> Result<(RequestId, bool), String> {
         let view = self
             .request
             .as_ref()
@@ -311,7 +327,7 @@ impl Review {
                 "Claimed by {}; read-only for {}.",
                 claim.reviewer, self.reviewer
             )),
-            claim => Ok((view.request.id.to_string(), claim.is_none())),
+            claim => Ok((view.request.id.clone(), claim.is_none())),
         }
     }
 
@@ -343,8 +359,8 @@ impl Review {
             match key.code {
                 KeyCode::Esc => busy.cancel.cancel(),
                 _ if interrupt => busy.cancel.cancel(),
-                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(10),
-                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(10),
+                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(SCROLL_PAGE),
+                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(SCROLL_PAGE),
                 _ => {}
             }
             return Action::None;
@@ -459,7 +475,7 @@ impl Review {
             }
             KeyCode::Enter => match self.selected().cloned() {
                 Some(view) => {
-                    self.open = Some(view.request.id.to_string());
+                    self.open = Some(view.request.id.clone());
                     self.request = Some(view);
                     self.mode = Mode::Request;
                     self.tool = 0;
@@ -478,6 +494,7 @@ impl Review {
             KeyCode::Char('q') => self.quit(),
             KeyCode::Esc | KeyCode::Backspace => {
                 self.open = None;
+                self.invalid_open = None;
                 self.request = None;
                 self.output = None;
                 self.mode = Mode::List;
@@ -493,11 +510,11 @@ impl Review {
                 Action::None
             }
             KeyCode::PageDown => {
-                self.scroll = self.scroll.saturating_add(10);
+                self.scroll = self.scroll.saturating_add(SCROLL_PAGE);
                 Action::None
             }
             KeyCode::PageUp => {
-                self.scroll = self.scroll.saturating_sub(10);
+                self.scroll = self.scroll.saturating_sub(SCROLL_PAGE);
                 Action::None
             }
             KeyCode::Enter | KeyCode::Char('t') => {
@@ -588,7 +605,7 @@ impl Review {
         self.busy = None;
         match outcome {
             Outcome::SavedLocally { request, error } => {
-                self.taken.retain(|id| id != request.id.as_str());
+                self.taken.retain(|id| id != &request.id);
                 if let Some(view) = &mut self.request {
                     view.request = *request;
                     view.claim = None;

@@ -135,7 +135,7 @@ async fn whoami(State(store): State<Store>, headers: HeaderMap) -> Result<Json<V
 }
 
 struct Lookup {
-    keys: Vec<String>,
+    keys: Vec<crate::types::ReuseKey>,
 }
 
 /// Legacy object keys request an upgrade before current validation, even in mixed arrays
@@ -144,6 +144,31 @@ enum LookupRequest {
     Current(Lookup),
     Legacy,
     Invalid,
+    TooMany,
+    MalformedKey,
+}
+impl LookupRequest {
+    /// Classify the complete envelope before validating identities: shape errors precede
+    /// count/key errors, and map-only legacy objects are handled by the visitor first.
+    fn current(keys: Vec<LookupKey>) -> Self {
+        if keys.iter().any(|key| !matches!(key, LookupKey::Current(_))) {
+            return Self::Invalid;
+        }
+        if keys.len() > MAX_LOOKUP_KEYS {
+            return Self::TooMany;
+        }
+        let keys = keys
+            .into_iter()
+            .map(|key| match key {
+                LookupKey::Current(key) => key.parse::<crate::types::ReuseKey>(),
+                _ => unreachable!("current lookup strings checked above"),
+            })
+            .collect::<Result<Vec<_>, _>>();
+        match keys {
+            Ok(keys) => Self::Current(Lookup { keys }),
+            Err(_) => Self::MalformedKey,
+        }
+    }
 }
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -166,13 +191,13 @@ impl<'de> Deserialize<'de> for LookupRequest {
             ) -> Result<Self::Value, S::Error> {
                 // The former Lookup derive accepted one positional keys field. Objects here
                 // were ordinary invalid strings, never the map-only legacy upgrade path.
-                let keys = sequence.next_element::<crate::json::Optional<Vec<String>>>()?;
+                let keys = sequence.next_element::<crate::json::Optional<Vec<LookupKey>>>()?;
                 let mut extra = false;
                 while sequence.next_element::<crate::json::Ignored>()?.is_some() {
                     extra = true;
                 }
                 match keys.and_then(|keys| keys.0) {
-                    Some(keys) if !extra => Ok(LookupRequest::Current(Lookup { keys })),
+                    Some(keys) if !extra => Ok(LookupRequest::current(keys)),
                     _ => Ok(LookupRequest::Invalid),
                 }
             }
@@ -202,14 +227,7 @@ impl<'de> Deserialize<'de> for LookupRequest {
                 if unknown {
                     return Ok(LookupRequest::Invalid);
                 }
-                let mut current = Vec::with_capacity(keys.len());
-                for key in keys {
-                    match key {
-                        LookupKey::Current(key) => current.push(key),
-                        _ => return Ok(LookupRequest::Invalid),
-                    }
-                }
-                Ok(LookupRequest::Current(Lookup { keys: current }))
+                Ok(LookupRequest::current(keys))
             }
         }
         deserializer.deserialize_any(RequestVisitor)
@@ -222,9 +240,19 @@ fn parse_lookup(body: &[u8]) -> Result<Lookup, ApiError> {
         LookupRequest::Current(lookup) => Ok(lookup),
         LookupRequest::Legacy => Err(ApiError::new(StatusCode::GONE, UPGRADE)),
         LookupRequest::Invalid => Err(expected()),
+        LookupRequest::TooMany => Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            format!("At most {MAX_LOOKUP_KEYS} keys per lookup."),
+        )),
+        LookupRequest::MalformedKey => Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "Keys are lowercase SHA-256 reuse keys.",
+        )),
     }
 }
 
+#[cfg(test)]
+mod lookup_identity_tests;
 #[cfg(test)]
 mod lookup_tests;
 
@@ -235,15 +263,6 @@ async fn lookup(
 ) -> Result<Response, ApiError> {
     authenticate(&store, &headers, Some(Scope::Read)).await?;
     let lookup = parse_lookup(&body)?;
-    if lookup.keys.len() > MAX_LOOKUP_KEYS {
-        return Err(ApiError::new(
-            StatusCode::BAD_REQUEST,
-            format!("At most {MAX_LOOKUP_KEYS} keys per lookup."),
-        ));
-    }
-    for key in &lookup.keys {
-        valid_key(key)?;
-    }
     let entries = store
         .lookup(lookup.keys)
         .await

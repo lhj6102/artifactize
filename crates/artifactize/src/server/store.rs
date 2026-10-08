@@ -286,7 +286,10 @@ impl Store {
     }
 
     /// The latest record of each found key; hits update that record's last use.
-    pub(super) async fn lookup(&self, keys: Vec<String>) -> Result<Vec<String>, String> {
+    pub(super) async fn lookup(
+        &self,
+        keys: Vec<crate::types::ReuseKey>,
+    ) -> Result<Vec<String>, String> {
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
