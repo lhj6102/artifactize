@@ -167,7 +167,7 @@ fn tools_and_details_come_from_the_saved_definition_without_claiming() {
 fn first_run_of_each_command_line_is_confirmed_then_claims_once() {
     let mut review = opened(None, demo());
     let inspect = Action::Start(Job::Inspect {
-        id: ID.into(),
+        id: ID.parse().unwrap(),
         tool: "notes_release".into(),
     });
     assert_eq!(press(&mut review, KeyCode::Enter), inspect);
@@ -195,7 +195,7 @@ fn first_run_of_each_command_line_is_confirmed_then_claims_once() {
     assert_eq!(
         press(&mut review, KeyCode::Char('y')),
         Action::Start(Job::Run {
-            id: ID.into(),
+            id: ID.parse().unwrap(),
             tool: "notes_release".into(),
             claim: true
         })
@@ -206,7 +206,7 @@ fn first_run_of_each_command_line_is_confirmed_then_claims_once() {
         result: printed("# Release notes\n", false),
     });
     assert_eq!(ran, Action::Refresh);
-    assert_eq!(review.taken, [ID]);
+    assert_eq!(review.taken, [ID.parse::<RequestId>().unwrap()]);
     review.request = Some(view("WAITING_HUMAN", Some("alice"), demo()));
     let text = screen(&mut review);
     assert!(text.contains("Output · notes_release") && text.contains("# Release notes"));
@@ -217,7 +217,7 @@ fn first_run_of_each_command_line_is_confirmed_then_claims_once() {
     assert_eq!(
         review.finish(inspected(&notes)),
         Action::Start(Job::Run {
-            id: ID.into(),
+            id: ID.parse().unwrap(),
             tool: "notes_release".into(),
             claim: false
         })
@@ -300,7 +300,7 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
     press(&mut review, KeyCode::Char('x'));
     let submit = |result: Value, claim| {
         Action::Start(Job::Submit {
-            id: ID.into(),
+            id: ID.parse().unwrap(),
             result,
             claim,
         })
@@ -312,14 +312,14 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
     let error = "schema_mismatch: result must match the selected verdict's owner schema\n- instancePath \"\": \"approved\" is a required property";
     assert_eq!(
         review.finish(Outcome::Submitted {
-            id: ID.into(),
+            id: ID.parse().unwrap(),
             claimed: Some(claim("alice")),
             result: Err(error.into()),
         }),
         Action::Refresh
     );
     assert_eq!(form(&review).error.as_deref(), Some(error));
-    assert_eq!(review.taken, [ID]);
+    assert_eq!(review.taken, [ID.parse::<RequestId>().unwrap()]);
     let text = screen(&mut review);
     assert!(
         text.contains("GREEN fields") && text.contains("instancePath"),
@@ -348,7 +348,7 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
     let settled = view("RED", None, demo()).request;
     assert_eq!(
         review.finish(Outcome::Submitted {
-            id: ID.into(),
+            id: ID.parse().unwrap(),
             claimed: None,
             result: Ok(Box::new(settled)),
         }),
@@ -396,7 +396,7 @@ fn other_schemas_and_the_form_request_open_the_editor() {
     assert_eq!(
         review.edited(Ok(r#"{"approved":true,"checks":["a"]}"#.into())),
         Action::Start(Job::Submit {
-            id: ID.into(),
+            id: ID.parse().unwrap(),
             result: json!({"approved":true,"checks":["a"],"verdict":"GREEN"}),
             claim: true
         })
@@ -540,12 +540,12 @@ fn quitting_keeps_or_releases_only_the_claims_this_session_took() {
     assert_eq!(
         press(&mut review, KeyCode::Char('u')),
         Action::Start(Job::Release {
-            ids: vec![ID.into()],
+            ids: vec![ID.parse().unwrap()],
             quit: false
         })
     );
     review.finish(Outcome::Released {
-        ids: vec![ID.into()],
+        ids: vec![ID.parse().unwrap()],
         quit: false,
         failed: Vec::new(),
     });
@@ -574,24 +574,24 @@ fn quitting_keeps_or_releases_only_the_claims_this_session_took() {
     press(&mut review, KeyCode::Char('q'));
     assert_eq!(press(&mut review, KeyCode::Char('k')), Action::Quit);
     let release = Action::Start(Job::Release {
-        ids: vec![ID.into()],
+        ids: vec![ID.parse().unwrap()],
         quit: true,
     });
     assert_eq!(press(&mut review, KeyCode::Char('u')), release);
     assert_eq!(
         review.finish(Outcome::Released {
-            ids: vec![ID.into()],
+            ids: vec![ID.parse().unwrap()],
             quit: true,
-            failed: vec![(ID.into(), "database is locked".into())],
+            failed: vec![(ID.parse().unwrap(), "database is locked".into())],
         }),
         Action::Refresh
     );
-    assert_eq!(review.taken, [ID]);
+    assert_eq!(review.taken, [ID.parse::<RequestId>().unwrap()]);
     assert!(screen(&mut review).contains("run-1-3: database is locked"));
     assert_eq!(press(&mut review, KeyCode::Char('u')), release);
     assert_eq!(
         review.finish(Outcome::Released {
-            ids: vec![ID.into()],
+            ids: vec![ID.parse().unwrap()],
             quit: true,
             failed: Vec::new(),
         }),
@@ -604,7 +604,7 @@ fn quitting_keeps_or_releases_only_the_claims_this_session_took() {
 fn a_running_job_only_scrolls_or_cancels() {
     let mut review = opened(None, demo());
     drop(review.start(Job::Run {
-        id: ID.into(),
+        id: ID.parse().unwrap(),
         tool: "notes_release".into(),
         claim: true,
     }));

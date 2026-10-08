@@ -21,7 +21,7 @@ pub(super) async fn monitor(context: Context, all: bool) -> Result<u8, String> {
 
 pub(super) async fn review(
     context: Context,
-    request: Option<String>,
+    request: Option<crate::types::RequestId>,
     all: bool,
     reviewer: Option<String>,
 ) -> Result<u8, String> {
@@ -41,7 +41,14 @@ pub(super) async fn review(
     }
     let repo = (!all).then(|| context.repo.unwrap_or_else(|| PathBuf::from(".")));
     let (cancellation, listener) = cancellation_listener()?;
-    let result = crate::review::run(state, repo, reviewer, request, cancellation).await;
+    let result = crate::review::run(
+        state,
+        repo,
+        reviewer,
+        request.map(String::from),
+        cancellation,
+    )
+    .await;
     listener.abort();
     result?;
     Ok(0)

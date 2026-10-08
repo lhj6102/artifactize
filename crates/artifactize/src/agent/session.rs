@@ -19,9 +19,22 @@
 //! Every event has its time in `at`. Writing never fails a review: an error is reported on
 //! stderr and the review goes on without its conversation.
 
+pub mod document;
 mod events;
 mod gc;
-pub use events::{Answer, Budgets, End, Event, Header, Kind, MessageEvent, Send};
+pub mod live;
+mod pages;
+#[cfg(test)]
+mod pages_tests;
+pub mod transcript;
+#[cfg(test)]
+mod transcript_tests;
+pub use events::{
+    Answer, Budgets, Delivery, DeliveryKind, DeliveryState, End, Event, Header, Kind, MessageEvent,
+    Send,
+};
+#[cfg(test)]
+mod recorder_tests;
 mod summary;
 
 pub use gc::{Collection, Usage, collect, usage};
@@ -143,12 +156,25 @@ fn warn(message: &str) {
 /// write it reports the error once and writes nothing more.
 pub struct Recorder {
     id: crate::types::SessionId,
-    target: Option<(PathBuf, Header)>,
-    reference: Option<SessionRef>,
-    file: Option<File>,
-    /// The follow-up whose events this appends.
-    send: Option<usize>,
+    state: Recording,
     publisher: crate::changes::Publisher,
+}
+
+/// Only a successfully flushed review owns a saved reference. Follow-ups have a send number
+/// instead; a later write failure retains the review's reference but drops its file.
+enum Recording {
+    Off,
+    Pending(Box<Pending>),
+    Review { file: File, reference: SessionRef },
+    FollowUp { file: File, send: usize },
+    Failed,
+    SavedFailure(SessionRef),
+}
+struct Pending {
+    path: PathBuf,
+    reference: SessionRef,
+    eval_id: Option<String>,
+    target: Option<String>,
 }
 
 impl Recorder {
@@ -156,47 +182,38 @@ impl Recorder {
     pub fn off(id: &crate::types::SessionId) -> Self {
         Self {
             id: id.clone(),
-            target: None,
-            reference: None,
-            file: None,
-            send: None,
+            state: Recording::Off,
             publisher: crate::changes::Publisher::default(),
         }
     }
 
-    /// The recorder of a request's new review session `id`.
+    /// The recorder of a request's new review session `id`. No file is created until start.
     pub fn new(saving: Option<&Saving>, request: &Request, id: &crate::types::SessionId) -> Self {
         let Some(saving) = saving else {
             return Self::off(id);
         };
-        let file = match path(&saving.state, id) {
+        let path = match path(&saving.state, id) {
             Ok(path) => path,
             Err(error) => {
                 warn(&error);
                 return Self::off(id);
             }
         };
-        let reference = SessionRef {
-            producer: saving.producer.clone(),
-            state: saving.state_id.clone(),
-            run_id: request.run_id.clone(),
-            request_id: request.id.clone(),
-            session_id: id.clone(),
-        };
-        let identity = Header {
-            producer: Some(reference.producer),
-            state: Some(reference.state),
-            run_id: Some(reference.run_id),
-            request_id: Some(reference.request_id),
-            session_id: Some(reference.session_id),
-            eval_id: Some(request.eval_id.clone()),
-            target: Some(request.target.clone()),
-            ..Header::default()
-        };
         Self {
-            target: Some((file, identity)),
+            id: id.clone(),
+            state: Recording::Pending(Box::new(Pending {
+                path,
+                reference: SessionRef {
+                    producer: saving.producer.clone(),
+                    state: saving.state_id.clone(),
+                    run_id: request.run_id.clone(),
+                    request_id: request.id.clone(),
+                    session_id: id.clone(),
+                },
+                eval_id: Some(request.eval_id.clone()),
+                target: Some(request.target.clone()),
+            })),
             publisher: crate::changes::Publisher::new(&saving.state),
-            ..Self::off(id)
         }
     }
 
@@ -204,23 +221,24 @@ impl Recorder {
     #[cfg(test)]
     pub(crate) fn test(state: &Path, id: &str) -> Self {
         let id: crate::types::SessionId = id.parse().unwrap();
-        let reference = SessionRef {
-            producer: "tester@host".into(),
-            state: "state".into(),
-            run_id: "run".parse().unwrap(),
-            request_id: "request".parse().unwrap(),
-            session_id: id.clone(),
-        };
         Self {
-            target: Some((
-                path(state, &id).unwrap(),
-                serde_json::from_value(json!(reference)).unwrap(),
-            )),
+            state: Recording::Pending(Box::new(Pending {
+                path: path(state, &id).unwrap(),
+                reference: SessionRef {
+                    producer: "tester@host".into(),
+                    state: "state".into(),
+                    run_id: "run".parse().unwrap(),
+                    request_id: "request".parse().unwrap(),
+                    session_id: id.clone(),
+                },
+                eval_id: None,
+                target: None,
+            })),
             ..Self::off(&id)
         }
     }
 
-    /// Append follow-up `send` to the saved conversation at `path`.
+    /// Append follow-up `send` to the saved conversation at `path` without a new review header.
     pub(crate) fn append(
         state: &Path,
         path: &Path,
@@ -230,10 +248,9 @@ impl Recorder {
         let file = platform::open_no_follow(File::options().append(true), path)
             .map_err(|error| format!("Cannot open Agent session {id}: {error}"))?;
         Ok(Self {
-            file: Some(file),
-            send: Some(send),
+            id: id.clone(),
+            state: Recording::FollowUp { file, send },
             publisher: crate::changes::Publisher::new(state),
-            ..Self::off(id)
         })
     }
 
@@ -241,46 +258,65 @@ impl Recorder {
         &self.id
     }
 
-    /// The saved conversation's reference, once its first event is written.
+    /// The saved review's reference, after its header flush, even if a later append fails.
     pub fn reference(&self) -> Option<&SessionRef> {
-        self.reference.as_ref()
+        match &self.state {
+            Recording::Review { reference, .. } | Recording::SavedFailure(reference) => {
+                Some(reference)
+            }
+            Recording::Off
+            | Recording::Pending(_)
+            | Recording::FollowUp { .. }
+            | Recording::Failed => None,
+        }
     }
 
     /// Create the session file with its `review` event: the identity, then `details`.
     pub(crate) fn start(&mut self, mut details: Header) {
-        let Some((path, identity)) = self.target.take() else {
-            return;
-        };
-        let reference = SessionRef {
-            producer: identity.producer.clone().expect("recorder producer"),
-            state: identity.state.clone().expect("recorder state"),
-            run_id: identity.run_id.clone().expect("recorder Run"),
-            request_id: identity.request_id.clone().expect("recorder request"),
-            session_id: self.id.clone(),
-        };
-        match create(&path) {
-            Ok(file) => {
-                self.file = Some(file);
-                details.version = Some(VERSION);
-                details.producer = identity.producer;
-                details.state = identity.state;
-                details.run_id = identity.run_id;
-                details.request_id = identity.request_id;
-                details.session_id = identity.session_id;
-                details.eval_id = identity.eval_id;
-                details.target = identity.target;
-                self.event(Kind::Review(Box::new(details)));
-                if self.file.is_some() {
-                    self.reference = Some(reference);
-                }
+        let state = std::mem::replace(&mut self.state, Recording::Off);
+        let pending = match state {
+            Recording::Pending(pending) => pending,
+            other => {
+                self.state = other;
+                return;
             }
+        };
+        let reference = pending.reference;
+        details.version = Some(VERSION);
+        details.producer = Some(reference.producer.clone());
+        details.state = Some(reference.state.clone());
+        details.run_id = Some(reference.run_id.clone());
+        details.request_id = Some(reference.request_id.clone());
+        details.session_id = Some(reference.session_id.clone());
+        details.eval_id = pending.eval_id;
+        details.target = pending.target;
+        match create(&pending.path) {
+            Ok(file) => self.start_file(file, reference, details),
             Err(error) => self.fail(&error),
         }
     }
 
+    /// Promote the reference only after the initial header has been flushed.
+    fn start_file(&mut self, mut file: File, reference: SessionRef, details: Header) {
+        match write_event(&mut file, None, Kind::Review(Box::new(details))) {
+            Ok(()) => {
+                self.state = Recording::Review { file, reference };
+                self.notify();
+            }
+            Err(error) => self.fail(&error.to_string()),
+        }
+    }
+
+    fn active(&self) -> bool {
+        matches!(
+            self.state,
+            Recording::Review { .. } | Recording::FollowUp { .. }
+        )
+    }
+
     /// One message of `turn`; `repair` marks the prompt that asked for the verdict again.
     pub(crate) fn message(&mut self, turn: usize, message: &Message, repair: bool) {
-        if self.file.is_none() {
+        if !self.active() {
             return;
         }
         self.event(Kind::Message(MessageEvent {
@@ -294,7 +330,7 @@ impl Recorder {
 
     /// The message of tool results that `turn` sends, with whether each failed.
     pub(crate) fn tool_results(&mut self, turn: usize, message: &Message, failed: &[bool]) {
-        if self.file.is_none() {
+        if !self.active() {
             return;
         }
         self.event(Kind::Message(MessageEvent {
@@ -306,33 +342,55 @@ impl Recorder {
         }));
     }
 
-    /// Append an event, stamped with its time and the follow-up it belongs to.
+    /// Append an event, stamped with its time and the follow-up it belongs to. End events do
+    /// not close the writer; the caller owns its lifetime and session GC scheduling.
     pub(crate) fn event(&mut self, kind: Kind) {
-        let Some(file) = &mut self.file else {
-            return;
+        let result = match &mut self.state {
+            Recording::Review { file, .. } => write_event(file, None, kind),
+            Recording::FollowUp { file, send } => write_event(file, Some(*send), kind),
+            Recording::Off
+            | Recording::Pending(_)
+            | Recording::Failed
+            | Recording::SavedFailure(_) => return,
         };
-        let event = Event {
-            kind,
-            send: self.send,
-            at: Some(crate::broker::now()),
-        };
-        let mut line = serde_json::to_vec(&event).expect("session events are JSON");
-        line.push(b'\n');
-        if let Err(error) = file.write_all(&line).and_then(|()| file.flush()) {
-            self.fail(&error.to_string());
-        } else {
-            self.publisher
-                .notify(crate::changes::Change::SessionInvalidated(self.id.clone()));
+        match result {
+            Ok(()) => self.notify(),
+            Err(error) => self.fail(&error.to_string()),
         }
     }
 
+    fn notify(&self) {
+        self.publisher
+            .notify(crate::changes::Change::SessionInvalidated(self.id.clone()));
+    }
+
     fn fail(&mut self, error: &str) {
-        self.file = None;
+        self.state = match std::mem::replace(&mut self.state, Recording::Failed) {
+            Recording::Review { reference, .. } | Recording::SavedFailure(reference) => {
+                Recording::SavedFailure(reference)
+            }
+            Recording::Off
+            | Recording::Pending(_)
+            | Recording::FollowUp { .. }
+            | Recording::Failed => Recording::Failed,
+        };
         warn(&format!(
             "Cannot save Agent session {}: {error}; the review goes on without saving it.",
             self.id
         ));
     }
+}
+
+/// A successful flush is the single write boundary for both headers and later events.
+fn write_event(file: &mut File, send: Option<usize>, kind: Kind) -> std::io::Result<()> {
+    let event = Event {
+        kind,
+        send,
+        at: Some(crate::broker::now()),
+    };
+    let mut line = serde_json::to_vec(&event).expect("session events are JSON");
+    line.push(b'\n');
+    file.write_all(&line).and_then(|()| file.flush())
 }
 
 /// A new owner-only session file in an owner-only session store.
@@ -517,6 +575,8 @@ pub async fn lock(state: &Path, id: &str) -> Result<File, String> {
 }
 
 #[cfg(test)]
+pub(crate) mod live_tests;
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Duration;
@@ -642,10 +702,12 @@ mod tests {
         std::fs::write(directory(&state), "not a directory").unwrap();
         let reference = reference();
         let mut recorder = Recorder {
-            target: Some((
-                path(&state, &reference.session_id).unwrap(),
-                serde_json::from_value(json!(reference)).unwrap(),
-            )),
+            state: Recording::Pending(Box::new(Pending {
+                path: path(&state, &reference.session_id).unwrap(),
+                reference: reference.clone(),
+                eval_id: None,
+                target: None,
+            })),
             ..Recorder::off(&reference.session_id)
         };
         recorder.start(Header {

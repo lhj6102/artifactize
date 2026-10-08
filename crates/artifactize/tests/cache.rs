@@ -964,6 +964,7 @@ fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget()
 fn cache_commands_are_inert_for_missing_and_empty_state() {
     let fixture = Fixture::new();
     let missing_repo = fixture.root.path().join("missing-repo");
+    let missing_key = "f".repeat(64);
     for empty in [false, true] {
         if empty {
             fs::create_dir(&fixture.state).unwrap();
@@ -974,11 +975,11 @@ fn cache_commands_are_inert_for_missing_and_empty_state() {
             json!([])
         );
         assert_eq!(
-            fixture.command(&missing_repo, &["cache", "show", "missing"], 4),
+            fixture.command(&missing_repo, &["cache", "show", &missing_key], 4),
             Value::Null
         );
         assert_eq!(
-            fixture.command(&missing_repo, &["cache", "rm", "missing"], 0),
+            fixture.command(&missing_repo, &["cache", "rm", &missing_key], 0),
             json!({"removed":false})
         );
         if empty {

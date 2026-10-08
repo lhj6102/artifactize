@@ -12,7 +12,7 @@ fn now() -> OffsetDateTime {
     OffsetDateTime::parse("2026-01-01T00:01:05Z", &Rfc3339).unwrap()
 }
 
-pub(super) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
+pub(crate) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
     let mut value = json!({
         "id":format!("run-1-{}", eval.replace('/', "-")),"runId":"run-1","evalId":eval,"target":eval.split('/').next(),
         "title":"Title","profile":{"kind":"runtime","command":"true","args":[]},

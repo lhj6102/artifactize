@@ -4,6 +4,8 @@ mod cache;
 #[cfg(test)]
 mod defaults_tests;
 mod dispatch;
+#[cfg(test)]
+mod identity_tests;
 mod interactive;
 mod maintenance;
 mod remote;
@@ -29,6 +31,7 @@ use serde_json::json;
 use crate::{
     config::ProfileKind,
     project::selection::{ProfileSelection, Selection, read_selection_file},
+    types::{RequestId, ReuseKey, RunId},
 };
 
 /// Keep default Run history output readable; --limit/--offset expose older records.
@@ -168,7 +171,7 @@ pub enum Command {
     Review {
         /// Open this request instead of the waiting list.
         #[arg(value_name = "REQUEST_ID")]
-        request: Option<String>,
+        request: Option<RequestId>,
         /// List waiting requests from every repository in the shared state.
         #[arg(long)]
         all: bool,
@@ -324,7 +327,7 @@ pub enum RunCommand {
     },
     /// Read the full saved audit as JSON, even without --json.
     Show {
-        run_id: String,
+        run_id: RunId,
         /// Follow a RUNNING Run until it finishes and exit with its outcome code.
         #[arg(long)]
         wait: bool,
@@ -344,13 +347,13 @@ pub enum CacheCommand {
     },
     /// Read a key's latest record (result, profile, options, provenance) as JSON.
     Show {
-        key: String,
+        key: ReuseKey,
         /// Print every record of the key as a JSON array, latest first.
         #[arg(long)]
         history: bool,
     },
     /// Remove every record of an unused key, preserving saved Runs and executions.
-    Rm { key: String },
+    Rm { key: ReuseKey },
 }
 
 #[derive(Debug, Subcommand)]

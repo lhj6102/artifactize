@@ -94,7 +94,7 @@ artifactize --state-dir /srv/artifactize server run   # loopback; put a TLS prox
 On each machine:
 
 ```sh
-artifactize remote login https://reviews.example/     # paste the token; it is not echoed
+artifactize remote login https://reviews.example/     # paste the token; input is hidden when the terminal supports it
 artifactize remote status
 ```
 

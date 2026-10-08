@@ -71,8 +71,10 @@ artifactize remote logout
 
 A client is configured only through the state directory and the environment,
 never `artifactize.json`, so a cloned repository cannot redirect a token. `remote
-login URL` reads one token line from stdin (never argv; a terminal does not echo
-it), verifies it with `GET /v1/whoami`, then stores it in
+login URL` reads one token line from stdin (never argv). It attempts to hide
+terminal input; on Windows, if that fails, it warns that the token will be visible
+and continues reading. Non-terminal stdin is read without changing terminal echo.
+It verifies the token with `GET /v1/whoami`, then stores it in
 `$STATE/auth/remote-token.json` (0700 directory,
 0600 single-link file, never followed through a symlink) and writes
 `$STATE/remote.json`: `{"url":"https://reviews.example/","share":"summary"}`.

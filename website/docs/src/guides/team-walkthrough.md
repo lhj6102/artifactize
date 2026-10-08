@@ -32,7 +32,7 @@ tunnel in front, because clients accept plain HTTP only on loopback.
 ```sh
 cd "$WALK/alice"
 export ARTIFACTIZE_STATE_HOME="$WALK/state-alice"
-artifactize remote login http://127.0.0.1:8417/   # paste alice-laptop's token; it is not echoed
+artifactize remote login http://127.0.0.1:8417/   # paste alice-laptop's token; input is hidden when supported
 artifactize verify --all
 ```
 

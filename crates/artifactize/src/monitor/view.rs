@@ -305,6 +305,84 @@ impl Monitor {
                 vec![("Claim", Button::Review(Control::Claim))]
             };
             self.draw_buttons(frame, buttons, controls);
+        } else if let Some(live) = &mut modal.live {
+            let [header, transcript, footer] = Layout::vertical([
+                Constraint::Length(1),
+                Constraint::Fill(1),
+                Constraint::Length(1),
+            ])
+            .areas(content);
+            frame.render_widget(Line::from("Agent conversation").bold(), header);
+            self.hits.modal_panes = [Rect::default(), transcript];
+            live.geometry(
+                usize::from(transcript.width),
+                usize::from(transcript.height),
+            );
+            self.hits.session_groups = live
+                .window
+                .groups
+                .iter()
+                .filter_map(|(row, id)| {
+                    (*row < usize::from(transcript.height)).then_some((
+                        Rect::new(
+                            transcript.x,
+                            transcript.y + *row as u16,
+                            transcript.width,
+                            1,
+                        ),
+                        *id,
+                    ))
+                })
+                .collect();
+            let rows = if let Some(status) = &live.window.status {
+                vec![Line::from(status.as_str())]
+            } else if live.window.rows.is_empty() {
+                vec![Line::from(
+                    "Waiting for provider text; public thinking summary may be unavailable.",
+                )]
+            } else {
+                live.window
+                    .rows
+                    .iter()
+                    .enumerate()
+                    .map(|(row, text)| {
+                        let line = Line::from(text.as_str());
+                        if live.window.thinking.contains(&row)
+                            || live.window.groups.iter().any(|(group, _)| *group == row)
+                        {
+                            line.dark_gray()
+                        } else {
+                            line
+                        }
+                    })
+                    .collect()
+            };
+            frame.render_widget(Paragraph::new(rows), transcript);
+            frame.render_widget(
+                Line::from(format!("{} · Space tools · d details", live.indicator())).dark_gray(),
+                footer,
+            );
+            if modal.show_details {
+                frame.render_widget(Clear, transcript);
+                frame.render_widget(
+                    Paragraph::new(lines(detail))
+                        .wrap(Wrap { trim: false })
+                        .scroll((modal.scroll[0], 0))
+                        .block(Block::bordered().title(" Details · d / Esc return ")),
+                    transcript,
+                );
+                self.hits.modal_panes = [transcript, Rect::default()];
+                self.hits.session_groups.clear();
+            }
+            self.draw_buttons(
+                frame,
+                buttons,
+                vec![
+                    ("Top", Button::SessionTop),
+                    ("Bottom", Button::SessionBottom),
+                    ("Details (d)", Button::SessionDetails),
+                ],
+            );
         } else {
             let [left, right] =
                 Layout::horizontal([Constraint::Percentage(45), Constraint::Fill(1)])
@@ -318,7 +396,7 @@ impl Monitor {
                 left,
             );
             frame.render_widget(
-                Paragraph::new(modal.evidence.text.clone())
+                Paragraph::new(modal.evidence.text.as_str())
                     .wrap(Wrap { trim: false })
                     .scroll((modal.scroll[1], 0))
                     .block(Block::bordered().title(format!(" {} ", modal.evidence.title))),

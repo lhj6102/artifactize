@@ -63,7 +63,8 @@ The internal library exposes asynchronous operations with an open `store::Receip
   and only while the request still waits.
 - `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation)`
   authorizes the claimant, reopens the recorded Artifact/eval scope and declarations,
-  and checks the fingerprint before invoking a registered Human tool. The tool takes
+  and, only when the request has a reuse key, checks the fingerprint before invoking a
+  registered Human tool; requests without a reuse key skip that check. The tool takes
   no free arguments and uses the reviewer's real environment. Ordinary tool errors
   are correctable actions, not verdicts. Human tool runs are not recorded.
 - `human::tool_command(receipts, request_id, tool)` resolves what that tool would
@@ -72,8 +73,9 @@ The internal library exposes asynchronous operations with an open `store::Receip
   GREEN/RED with fields matching `passSchema`/`failSchema`, using the Agent result
   validator without repair. Invalid or oversized results (over 256000 JSON bytes)
   leave the request waiting for correction; schema errors list up to five failing
-  instance paths. A valid submission recomputes the
-  fingerprint: a changed value settles ERROR/INPUT_CHANGED instead of the verdict.
+  instance paths. A valid submission recomputes the fingerprint only when the request
+  has a reuse key; requests without one skip the recheck. A changed value settles
+  ERROR/INPUT_CHANGED instead of the verdict.
   Settlement rechecks the claimant and waiting state transactionally, so a second
   submission fails. It releases the reviewer lock, completes saved followers, and
   publishes only GREEN/RED results with a fingerprint to the cache.

@@ -160,7 +160,7 @@ impl Turns<'_> {
         let first = attempts.len();
         let response = self
             .client
-            .turn(
+            .turn_observed(
                 request,
                 llm::Turn {
                     number: self.turn,
@@ -168,6 +168,7 @@ impl Turns<'_> {
                     cancellation: self.cancellation,
                 },
                 attempts,
+                &mut |delivery| self.recorder.event(session::Kind::Delivery(delivery)),
             )
             .await;
         for attempt in &attempts[first..] {

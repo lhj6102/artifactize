@@ -68,6 +68,11 @@ async fn watch(
     let mut spin = tokio::time::interval(SPIN);
     let mut pending: Option<Pin<Box<dyn Future<Output = review::Outcome>>>> = None;
     let mut action = Action::Refresh;
+    let mut session_job: Option<
+        tokio::task::JoinHandle<(super::session::Job, crate::agent::session::live::Window)>,
+    > = None;
+    let mut session_probe = tokio::time::interval(std::time::Duration::from_secs(5));
+    session_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         match action {
             Action::Quit => {
@@ -106,8 +111,51 @@ async fn watch(
         terminal
             .draw(|frame| monitor.draw(frame))
             .map_err(|error| error.to_string())?;
+        // A modal switch drops the obsolete job's result. There is at most one bounded job;
+        // render only marks geometry dirty and never performs I/O or spawns tasks.
+        if session_job.is_none()
+            && let Some(job) = monitor
+                .modal
+                .as_mut()
+                .and_then(|modal| modal.live.as_mut())
+                .and_then(super::session::Live::job)
+        {
+            session_job = Some(tokio::task::spawn_blocking(move || {
+                let mut job = job;
+                let window =
+                    job.reader
+                        .step_expanded(job.width, job.height, job.position, &job.expanded);
+                (job, window)
+            }));
+        }
         action = tokio::select! {
+            biased;
             _ = cancellation.cancelled() => Action::Quit,
+            event = events.next() => match event {
+                Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => monitor.key(key),
+                Some(Ok(Event::Mouse(mouse))) => monitor.mouse(mouse),
+                Some(Ok(Event::Paste(text))) => { monitor.paste(&text); Action::None }
+                Some(Ok(Event::Resize(_, _))) => { monitor.hits = input::Hits::default(); Action::None }
+                Some(Ok(_)) => Action::None,
+                Some(Err(error)) => return Err(error.to_string()),
+                None => Action::Quit,
+            },
+            outcome = async { session_job.as_mut().expect("active session job").await }, if session_job.is_some() => {
+                session_job = None;
+                match outcome {
+                    Ok((job, window)) => {
+                        if let Some(live) = monitor.modal.as_mut().and_then(|modal| modal.live.as_mut())
+                            && live.serial == job.serial && live.source.reference == job.reader.source.reference
+                        { live.finish(job, window); }
+                    }
+                    Err(error) => return Err(format!("Session reader job failed: {error}")),
+                }
+                Action::None
+            }
+            _ = session_probe.tick() => {
+                if let Some(live) = monitor.modal.as_mut().and_then(|modal| modal.live.as_mut()) { live.invalidate(); }
+                Action::None
+            },
             outcome = async { match &mut pending { Some(job) => Some(job.await), None => None } }, if pending.is_some() => {
                 pending = None;
                 // Publishing may have emitted a fail-open warning on stderr.
@@ -121,18 +169,11 @@ async fn watch(
             _ = tick.tick() => Action::None,
             change = changes.next() => match change {
                 crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => Action::Refresh,
-                // The future live session viewer consumes these without a full DB read.
-                crate::changes::Change::SessionInvalidated(_) => Action::None,
+                crate::changes::Change::SessionInvalidated(id) => {
+                    if let Some(live) = monitor.modal.as_mut().and_then(|modal| modal.live.as_mut()) && live.source.reference.session_id == id { live.invalidate(); }
+                    Action::None
+                }
             },
-            event = events.next() => match event {
-                Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => monitor.key(key),
-                Some(Ok(Event::Mouse(mouse))) => monitor.mouse(mouse),
-                Some(Ok(Event::Paste(text))) => { monitor.paste(&text); Action::None }
-                Some(Ok(Event::Resize(_, _))) => { monitor.hits = input::Hits::default(); Action::None }
-                Some(Ok(_)) => Action::None,
-                Some(Err(error)) => return Err(error.to_string()),
-                None => Action::Quit,
-            }
         };
     }
 }

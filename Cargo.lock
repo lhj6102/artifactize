@@ -96,6 +96,7 @@ version = "0.0.0-dev"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "bytes",
  "clap",
  "crossterm",
  "futures-util",
@@ -122,6 +123,7 @@ dependencies = [
  "tokio-rusqlite",
  "tokio-util",
  "tui-tree-widget",
+ "unicode-segmentation",
  "url",
  "windows-sys 0.61.2",
 ]

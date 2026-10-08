@@ -67,6 +67,55 @@ impl Fixture {
     }
 }
 
+#[test]
+fn malformed_identity_usage_errors_precede_state_access_and_missing_keys_keep_their_codes() {
+    let fixture = Fixture::new();
+    for args in [
+        vec!["run", "show", "../escape"],
+        vec!["request", "list", "--run", ".."],
+        vec!["request", "show", "a/b"],
+        vec!["request", "claim", "a/b"],
+        vec!["request", "unclaim", "a/b"],
+        vec!["request", "tool", "a/b", "inspect"],
+        vec!["request", "submit", "a/b", "--verdict", "GREEN"],
+        vec!["review", "a/b"],
+        vec!["cache", "show", "missing"],
+        vec!["cache", "rm", "missing"],
+        vec!["server", "rm", "missing"],
+    ] {
+        let json = fixture.json(&args, 2);
+        assert!(
+            json["error"].as_str().unwrap().contains("Invalid"),
+            "{args:?}: {json}"
+        );
+        let output = fixture.command().args(&args).output().unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("invalid value")
+                && stderr.contains("Invalid")
+                && stderr.contains("--help"),
+            "{args:?}: {stderr}"
+        );
+        assert!(
+            !fixture.state.exists(),
+            "malformed identity created state: {args:?}"
+        );
+    }
+    let key = "f".repeat(64);
+    assert_eq!(fixture.json(&["cache", "show", &key], 4), Value::Null);
+    assert_eq!(
+        fixture.json(&["cache", "show", &key, "--history"], 4),
+        json!([])
+    );
+    assert_eq!(
+        fixture.json(&["cache", "rm", &key], 0),
+        json!({"removed":false})
+    );
+    assert!(!fixture.state.exists());
+}
+
 fn parse(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).unwrap_or_else(|e| panic!("{e}: {output:?}"))
 }
@@ -131,7 +180,7 @@ fn exit_codes_cover_outcomes_waits_and_usage_errors() {
     }
     fixture.json(&["status", "green"], 0);
     fixture.json(&["status", "red"], 1);
-    fixture.json(&["cache", "show", "missing"], 4);
+    fixture.json(&["cache", "show", &"f".repeat(64)], 4);
 
     for args in [
         vec!["--json", "status"],

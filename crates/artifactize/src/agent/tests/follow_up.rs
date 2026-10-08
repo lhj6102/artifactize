@@ -89,9 +89,45 @@ async fn recorded_send_success_retains_usage_and_event_order() {
     assert_eq!(attempts[0].usage["inputTokens"], 10);
     let kinds: Vec<_> = saved.wire_events[2..]
         .iter()
+        .filter(|event| event["kind"] != "delivery")
         .map(|event| event["kind"].as_str().unwrap())
         .collect();
     assert_eq!(kinds, ["send", "message", "attempt", "message", "answer"]);
+    let deliveries = saved
+        .events
+        .iter()
+        .filter_map(|event| match &event.kind {
+            session::Kind::Delivery(delivery) => Some(delivery),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(!deliveries.is_empty());
+    assert!(deliveries.iter().any(
+        |delivery| delivery.state == session::DeliveryState::Complete
+            && delivery.text == "Free-text answer"
+    ));
+    assert!(
+        deliveries
+            .iter()
+            .all(|delivery| delivery.state != session::DeliveryState::Interrupted)
+    );
+    assert_eq!(
+        saved
+            .events
+            .iter()
+            .filter(|event| matches!(event.kind, session::Kind::Answer(_)))
+            .count(),
+        1
+    );
+    let history = saved.history().unwrap();
+    assert_eq!(history.len(), 3);
+    assert_eq!(
+        history
+            .iter()
+            .filter(|message| matches!(message, Message::Assistant { .. }))
+            .count(),
+        1
+    );
     assert_eq!(
         saved.wire_events.last().unwrap()["text"],
         "Free-text answer"
@@ -130,6 +166,7 @@ async fn recorded_send_provider_error_and_cancellation_always_record_answer() {
         assert_eq!(attempts.len(), usize::from(!cancel));
         let kinds: Vec<_> = saved.wire_events[2..]
             .iter()
+            .filter(|event| event["kind"] != "delivery")
             .map(|event| event["kind"].as_str().unwrap())
             .collect();
         assert_eq!(
@@ -145,5 +182,36 @@ async fn recorded_send_provider_error_and_cancellation_always_record_answer() {
             error.code.as_str()
         );
         assert_eq!(http.requests().len(), usize::from(!cancel));
+        let deliveries = saved
+            .events
+            .iter()
+            .filter_map(|event| match &event.kind {
+                session::Kind::Delivery(delivery) => Some(delivery),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            deliveries.is_empty(),
+            cancel,
+            "pre-request cancellation creates no provider delivery"
+        );
+        assert!(
+            deliveries
+                .iter()
+                .all(|delivery| delivery.state == session::DeliveryState::Interrupted)
+        );
+        assert_eq!(
+            saved
+                .events
+                .iter()
+                .filter(|event| matches!(event.kind, session::Kind::Answer(_)))
+                .count(),
+            1
+        );
+        assert_eq!(
+            saved.history().unwrap().len(),
+            2,
+            "no provisional events in replay"
+        );
     }
 }

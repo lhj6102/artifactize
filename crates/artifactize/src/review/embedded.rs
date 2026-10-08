@@ -23,7 +23,8 @@ pub enum Control {
 
 impl Review {
     pub(crate) fn load_single(&mut self, view: RequestView) {
-        self.open = Some(view.request.id.to_string());
+        self.open = Some(view.request.id.clone());
+        self.invalid_open = None;
         self.request = Some(view);
     }
 
@@ -107,10 +108,7 @@ impl Review {
         }
         if control == Control::Claim {
             return match self.actionable() {
-                Ok((id, true)) => match id.parse() {
-                    Ok(id) => Action::Start(Job::Claim { id }),
-                    Err(error) => self.notify(error, true),
-                },
+                Ok((id, true)) => Action::Start(Job::Claim { id }),
                 Ok(_) => Action::None,
                 Err(error) => self.notify(error, true),
             };

@@ -19,6 +19,13 @@ pub struct Event {
     #[serde(flatten)]
     pub kind: Kind,
 }
+impl Event {
+    /// The shared typed JSONL boundary. Unknown kinds and malformed known records are errors;
+    /// unknown header metadata remains compatible through Header::extra.
+    pub fn parse(bytes: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_json::from_slice(bytes)
+    }
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Kind {
@@ -28,7 +35,34 @@ pub enum Kind {
     End(End),
     Send(Send),
     Answer(Answer),
+    /// Display-only provider delivery; never part of replay history or usage calculations.
+    Delivery(Delivery),
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeliveryKind {
+    Text,
+    Summary,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeliveryState {
+    Delta,
+    Complete,
+    Interrupted,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Delivery {
+    pub turn: usize,
+    pub attempt: usize,
+    pub block: String,
+    #[serde(rename = "contentKind")]
+    pub kind: DeliveryKind,
+    pub text: String,
+    pub state: DeliveryState,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Header {

@@ -29,6 +29,9 @@ pub(super) struct Click {
 pub(super) enum Button {
     Review(Control),
     Close,
+    SessionTop,
+    SessionBottom,
+    SessionDetails,
 }
 #[derive(Default)]
 pub(super) struct Hits {
@@ -39,6 +42,7 @@ pub(super) struct Hits {
     pub tools: Rect,
     pub field_rows: Vec<(Rect, usize)>,
     pub buttons: Vec<(Rect, Button)>,
+    pub session_groups: Vec<(Rect, crate::agent::session::transcript::BlockId)>,
 }
 
 pub(super) fn protocols(mouse: bool, paste: bool) -> Result<(), String> {
@@ -84,12 +88,43 @@ impl Monitor {
                             self.close_modal();
                             Action::None
                         }
+                        Button::SessionDetails => {
+                            modal.show_details = !modal.show_details;
+                            modal.focus = if modal.show_details {
+                                ModalPane::Summary
+                            } else {
+                                ModalPane::Evidence
+                            };
+                            Action::None
+                        }
+                        Button::SessionTop | Button::SessionBottom => {
+                            if let Some(live) = &mut modal.live {
+                                modal.focus = ModalPane::Evidence;
+                                live.movement(if *button == Button::SessionTop {
+                                    crate::agent::session::document::Move::Top
+                                } else {
+                                    crate::agent::session::document::Move::Bottom
+                                });
+                            }
+                            Action::None
+                        }
                         Button::Review(control) => {
                             modal.review.as_mut().map_or(Action::None, |review| {
                                 Action::Review(review.control(*control))
                             })
                         }
                     };
+                }
+                if let Some((_, id)) = self
+                    .hits
+                    .session_groups
+                    .iter()
+                    .find(|(rect, _)| contains(*rect, point))
+                    && let Some(live) = &mut modal.live
+                {
+                    modal.focus = ModalPane::Evidence;
+                    live.toggle(*id);
+                    return Action::None;
                 }
                 if contains(self.hits.modal_panes[0], point) {
                     modal.focus = if modal.review.is_some() {
@@ -148,6 +183,15 @@ impl Monitor {
             };
             if let Some(review) = &mut modal.review {
                 review.scroll_single(delta, index == 1);
+            } else if index == 1
+                && let Some(live) = &mut modal.live
+            {
+                modal.focus = ModalPane::Evidence;
+                live.movement(if delta > 0 {
+                    crate::agent::session::document::Move::Down(delta as usize)
+                } else {
+                    crate::agent::session::document::Move::Up(delta.unsigned_abs() as usize)
+                });
             } else {
                 modal.scroll[index] = modal.scroll[index].saturating_add_signed(delta);
             }

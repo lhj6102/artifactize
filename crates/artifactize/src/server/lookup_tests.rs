@@ -1,7 +1,7 @@
 use super::*;
 
 /// Frozen pre-refactor parser used only as an acceptance/error oracle for fake wire fixtures.
-fn previous_lookup(body: &[u8]) -> Result<Vec<String>, (StatusCode, String)> {
+pub(super) fn previous_lookup(body: &[u8]) -> Result<Vec<String>, (StatusCode, String)> {
     #[derive(Deserialize)]
     #[serde(deny_unknown_fields)]
     struct PreviousLookup {
@@ -21,6 +21,25 @@ fn previous_lookup(body: &[u8]) -> Result<Vec<String>, (StatusCode, String)> {
         return Err((StatusCode::GONE, UPGRADE.to_owned()));
     }
     let lookup: PreviousLookup = serde_json::from_value(lookup).map_err(|_| expected())?;
+    // Preserve the pre-typed HTTP handler's validation order after envelope parsing.
+    if lookup.keys.len() > MAX_LOOKUP_KEYS {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("At most {MAX_LOOKUP_KEYS} keys per lookup."),
+        ));
+    }
+    for key in &lookup.keys {
+        if key.len() != 64
+            || !key
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+        {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Keys are lowercase SHA-256 reuse keys.".into(),
+            ));
+        }
+    }
     Ok(lookup.keys)
 }
 
@@ -42,7 +61,13 @@ fn typed_lookup_matches_previous_parser_for_positional_and_numeric_edges() {
     for body in fixtures {
         let expected = previous_lookup(body.as_bytes());
         let actual = parse_lookup(body.as_bytes())
-            .map(|lookup| lookup.keys)
+            .map(|lookup| {
+                lookup
+                    .keys
+                    .into_iter()
+                    .map(String::from)
+                    .collect::<Vec<_>>()
+            })
             .map_err(|error| (error.0, error.1));
         assert_eq!(actual, expected, "{body}");
     }
@@ -50,12 +75,13 @@ fn typed_lookup_matches_previous_parser_for_positional_and_numeric_edges() {
 
 #[test]
 fn lookup_wire_shapes_keep_legacy_priority_and_current_unknown_field_policy() {
+    let hash = "a".repeat(64);
     for body in [
-        r#"{"keys":[]}"#,
-        r#"{"keys":["a"]}"#,
-        r#"{"keys":17,"keys":["a"]}"#,
-        r#"[[]]"#,
-        r#"[["a"]]"#,
+        r#"{"keys":[]}"#.to_owned(),
+        format!(r#"{{"keys":["{hash}"]}}"#),
+        format!(r#"{{"keys":17,"keys":["{hash}"]}}"#),
+        r#"[[]]"#.to_owned(),
+        format!(r#"[["{hash}"]]"#),
     ] {
         assert!(parse_lookup(body.as_bytes()).is_ok(), "{body}");
     }
