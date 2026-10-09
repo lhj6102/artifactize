@@ -506,7 +506,7 @@ async fn script(
     else {
         unreachable!("fingerprint script")
     };
-    let cwd = scope::scoped_path(&config.root, &artifact.path).map_err(|e| e.to_string())?;
+    let cwd = scope::scoped_path(&config.root, artifact.folder()).map_err(|e| e.to_string())?;
     for input in files {
         scope::scoped_path(&cwd, Path::new(input)).map_err(|e| e.to_string())?;
     }

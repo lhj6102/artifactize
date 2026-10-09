@@ -153,9 +153,7 @@ impl<'a> Registry<'a> {
             .ok_or("Unknown registered Human tool.")?;
         let owner = &tool.definition.artifact_id;
         let declaration = tool.declaration;
-        let cwd = self
-            .scope
-            .resolve_input(&self.config.root, owner, "")
+        let cwd = scope::scoped_path(&self.config.root, self.config.artifacts[owner].folder())
             .map_err(|e| e.to_string())?;
         let program = executable(&self.config.root, &self.scope, owner, &declaration.command)
             .map_err(|()| "Tool executable path is unavailable or outside scope.".to_owned())?;

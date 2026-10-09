@@ -768,7 +768,14 @@ pub fn detail(
             } else {
                 ""
             };
-            detail.title = format!("Artifact {id}{basis}");
+            let kind = if artifact.and_then(|artifact| artifact.kind.value())
+                == Some(&crate::config::ArtifactKind::File)
+            {
+                " [file]"
+            } else {
+                ""
+            };
+            detail.title = format!("Artifact {id}{basis}{kind}");
             detail.push(
                 "Tags",
                 artifact

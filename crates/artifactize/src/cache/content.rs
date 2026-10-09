@@ -116,9 +116,10 @@ impl Walk {
         ignore: &[String],
     ) -> Result<Self, String> {
         let artifact = &config.artifacts[id];
-        let owner = scope::scoped_path(&config.root, &artifact.path).map_err(|e| e.to_string())?;
+        let owner =
+            scope::scoped_path(&config.root, artifact.folder()).map_err(|e| e.to_string())?;
         let prefix = artifact
-            .path
+            .folder()
             .to_str()
             .ok_or("Artifact paths must be UTF-8.")?
             .to_owned();

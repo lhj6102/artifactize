@@ -42,6 +42,8 @@ pub struct StatusView {
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactState {
     pub id: String,
+    pub kind: crate::config::ArtifactKind,
+    pub path: std::path::PathBuf,
     pub tags: Vec<String>,
     pub state: ArtifactCondition,
     pub reason: String,
@@ -240,6 +242,8 @@ pub async fn status(
         };
         *counts.artifacts.entry(status).or_default() += 1;
         artifacts.push(ArtifactState {
+            kind: config.artifacts[*id].kind,
+            path: config.artifacts[*id].path.clone(),
             id: (*id).to_owned(),
             tags: config.artifacts[*id].tags.clone(),
             state: status,

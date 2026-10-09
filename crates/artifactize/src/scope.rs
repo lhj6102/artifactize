@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::config::{Artifact, CONFIG_FILE, ConfigError, Eval, Fingerprint, Profile, RepoConfig};
+use crate::config::{Artifact, ConfigError, Eval, Fingerprint, Profile, RepoConfig};
 use crate::platform;
 
 mod human;
@@ -106,6 +106,8 @@ impl Scope<'_> {
             }
             break;
         }
+        let artifact = self.artifacts[current];
+        file_input(artifact, remaining)?;
         Ok(ScopedPath {
             artifact_id: current.to_owned(),
             path: remaining.to_owned(),
@@ -121,8 +123,19 @@ impl Scope<'_> {
     ) -> Result<PathBuf, ScopeError> {
         let location = self.resolve_path(artifact_id, path)?;
         let artifact = self.artifacts[location.artifact_id.as_str()];
-        let owner = scoped_path(root, &artifact.path)?;
-        scoped_path(&owner, Path::new(&location.path))
+        let owner = scoped_path(root, artifact.folder())?;
+        let path = if location.path.is_empty() {
+            artifact.file_name().unwrap_or("")
+        } else {
+            &location.path
+        };
+        let resolved = scoped_path(&owner, Path::new(path))?;
+        if artifact.file_name().is_some() && !resolved.is_file() {
+            return Err(ScopeError(
+                "File Artifact target must remain a regular file.".into(),
+            ));
+        }
+        Ok(resolved)
     }
 }
 
@@ -143,7 +156,41 @@ pub(crate) fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result
             ScopeError("Artifact roots must be absolute and owner paths relative.".into()).into(),
         );
     }
-    open_scoped(&root.join(&artifact.path), path)
+    file_input(artifact, path)?;
+    let file = open_scoped(&root.join(artifact.folder()), path)?;
+    if artifact.file_name().is_some()
+        && !path.is_empty()
+        && !file
+            .metadata()
+            .map_err(|e| ScopeError(e.to_string()))?
+            .is_file()
+    {
+        return Err(ScopeError("File Artifact target must remain a regular file.".into()).into());
+    }
+    Ok(file)
+}
+
+/// A file Artifact exposes a virtual root containing only its target and mounts.
+fn file_input(artifact: &Artifact, path: &str) -> Result<(), ScopeError> {
+    if let Some(target) = artifact.file_name()
+        && !path.is_empty()
+        && path != target
+    {
+        return Err(ScopeError(format!(
+            "File Artifact {} exposes only its target {target} and mounts.",
+            artifact.name
+        )));
+    }
+    Ok(())
+}
+
+fn reference_path(config: &RepoConfig, id: &str, path: &str) -> Result<(), ScopeError> {
+    if config.artifacts[id].file_name().is_some() && !path.is_empty() {
+        return Err(ScopeError(format!(
+            "File Artifact {{{id}}} cannot have a /path suffix."
+        )));
+    }
+    Ok(())
 }
 
 /// Open a relative path below an absolute root without following any symlink components.
@@ -404,6 +451,7 @@ pub fn resolve_argv(
                 return Ok(argument.clone());
             };
             let id = reference_target(config, owner, reference.name)?;
+            reference_path(config, id, reference.path)?;
             let path = scope.resolve_input(&config.root, id, reference.path)?;
             let path = path
                 .to_str()
@@ -419,7 +467,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
     for (id, artifact) in &config.artifacts {
         let error = |keys: &[&str], message: String| {
             ConfigError::declaration(
-                config.root.join(&artifact.path).join(CONFIG_FILE),
+                config.root.join(artifact.declaration_path()),
                 keys,
                 message,
             )
@@ -432,12 +480,13 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                         format!("fingerprint.script: {failure}"),
                     )
                 })? {
-                    reference_target(config, id, reference.name).map_err(|failure| {
+                    let target = reference_target(config, id, reference.name).map_err(|failure| {
                         error(
                             &["fingerprint", "script", "args"],
                             format!("fingerprint.script: {failure}"),
                         )
                     })?;
+                    reference_path(config, target, reference.path).map_err(|failure| error(&["fingerprint", "script", "args"], format!("fingerprint.script: {failure}")))?;
                 }
             }
         }
@@ -461,7 +510,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     format!("Ambiguous mount alias {alias} in {id}."),
                 ));
             }
-            match fs::symlink_metadata(config.root.join(&artifact.path).join(alias)) {
+            match fs::symlink_metadata(config.root.join(artifact.folder()).join(alias)) {
                 Ok(_) => {
                     return Err(error(
                         &["mounts", alias],
@@ -486,7 +535,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         };
         let error = |message: String| {
             ConfigError::declaration(
-                config.root.join(&artifact.path).join(CONFIG_FILE),
+                config.root.join(artifact.declaration_path()),
                 &["fingerprint", "files"],
                 format!("fingerprint.files: {message}"),
             )
@@ -494,7 +543,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         let scope = artifact_scope(config, &[id]).map_err(|failure| error(failure.0))?;
         for input in inputs.iter().filter(|input| *input != ".") {
             if input.ends_with(".artf")
-                && !fs::symlink_metadata(config.root.join(&artifact.path).join(input))
+                && !fs::symlink_metadata(config.root.join(artifact.folder()).join(input))
                     .is_ok_and(|metadata| metadata.is_dir())
             {
                 return Err(error("Artifact declarations (*.artf) cannot be explicit artifactsum inputs; declarations are excluded from artifactsum.".into()));
@@ -518,8 +567,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             ConfigError::declaration(
                 config
                     .root
-                    .join(&config.artifacts[&eval.target].path)
-                    .join(CONFIG_FILE),
+                    .join(config.artifacts[&eval.target].declaration_path()),
                 &keys,
                 format!("Eval {}: {failure}", eval.id),
             )
@@ -555,15 +603,14 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 });
             }
         }
-        for name in eval
-            .declaration
-            .payload
-            .as_ref()
-            .into_iter()
-            .flat_map(|payload| instruction_references(&payload.instruction))
-        {
+        let instruction = eval.declaration.payload.as_ref().map_or("", |payload| payload.instruction.as_str());
+        for reference in instruction::references(instruction) {
+            let name = reference.name;
             let source = reference_target(config, &eval.target, name)
                 .map_err(|failure| error(&["payload", "instruction"], failure))?;
+            if instruction[reference.end..].starts_with('/') {
+                reference_path(config, source, "/").map_err(|failure| error(&["payload", "instruction"], failure))?;
+            }
             references.insert(name.to_owned(), source.to_owned());
             if source != eval.target {
                 deps.insert(source.to_owned());
@@ -586,6 +633,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 };
                 let source = reference_target(config, &eval.target, reference.name)
                     .map_err(|failure| error(&["profile", "args"], failure))?;
+                reference_path(config, source, reference.path).map_err(|failure| error(&["profile", "args"], failure))?;
                 if source != eval.target {
                     deps.insert(source.to_owned());
                     relations.push(Relation {

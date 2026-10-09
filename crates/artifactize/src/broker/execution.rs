@@ -256,8 +256,7 @@ pub(super) fn prepare(
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
     let args =
         scope::resolve_argv(config, &scope, &eval.target, args).map_err(|e| e.to_string())?;
-    let cwd = scope
-        .resolve_input(&config.root, &eval.target, "")
+    let cwd = scope::scoped_path(&config.root, config.artifacts[&eval.target].folder())
         .map_err(|e| e.to_string())?;
     let mut prepared = runtime::Command::prepare(
         command.into(),

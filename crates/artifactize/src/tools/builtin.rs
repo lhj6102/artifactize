@@ -245,31 +245,41 @@ impl Reader<'_> {
         }
         let owner = self.scope.artifacts[location.artifact_id.as_str()];
         let mut entries = BTreeMap::new();
-        // Enumerate the pinned directory, not a path that could have been replaced by a link.
-        let directory = platform::read_dir(&file).map_err(|_| "Cannot list Artifact directory.")?;
-        for entry in directory {
-            self.check_cancelled()?;
-            if entries.len() >= MAX_ENTRIES {
-                return Err(
-                    "Directory exceeds the 10,000-entry listing limit; choose a narrower path."
-                        .into(),
-                );
+        if let Some(name) = owner.file_name() {
+            let target = scope::open_child(&file, std::ffi::OsStr::new(name))
+                .map_err(|error| error.to_string())?;
+            if !target.metadata().map_err(|e| e.to_string())?.is_file() {
+                return Err("File Artifact target must remain a regular file.".into());
             }
-            let entry = entry.map_err(|_| "Cannot list Artifact entry.")?;
-            let name = entry
-                .file_name()
-                .into_string()
-                .map_err(|_| "Artifact paths must be UTF-8.")?;
-            let kind = entry
-                .file_type()
-                .map_err(|_| "Cannot inspect Artifact entry.")?;
-            let value = json!({"name":name,"kind":match kind {
-                FileKind::File => "file",
-                FileKind::Directory => "directory",
-                FileKind::Symlink => "symlink",
-                FileKind::Other => "other",
-            }});
-            entries.insert(name, value);
+            entries.insert(name.to_owned(), json!({"name":name,"kind":"file"}));
+        } else {
+            // Enumerate the pinned directory, not a path that could have been replaced by a link.
+            let directory =
+                platform::read_dir(&file).map_err(|_| "Cannot list Artifact directory.")?;
+            for entry in directory {
+                self.check_cancelled()?;
+                if entries.len() >= MAX_ENTRIES {
+                    return Err(
+                        "Directory exceeds the 10,000-entry listing limit; choose a narrower path."
+                            .into(),
+                    );
+                }
+                let entry = entry.map_err(|_| "Cannot list Artifact entry.")?;
+                let name = entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| "Artifact paths must be UTF-8.")?;
+                let kind = entry
+                    .file_type()
+                    .map_err(|_| "Cannot inspect Artifact entry.")?;
+                let value = json!({"name":name,"kind":match kind {
+                    FileKind::File => "file",
+                    FileKind::Directory => "directory",
+                    FileKind::Symlink => "symlink",
+                    FileKind::Other => "other",
+                }});
+                entries.insert(name, value);
+            }
         }
         if location.path.is_empty() {
             for (alias, id) in &owner.mounts {

@@ -183,9 +183,14 @@ pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
     for artifact in &view.artifacts {
         writeln!(
             out,
-            "  Artifact {}{}: {} ({}/{} Evals)",
+            "  Artifact {}{}{}: {} ({}/{} Evals)",
             artifact.id,
             tags(&artifact.tags),
+            if artifact.kind == crate::config::ArtifactKind::File {
+                format!(" [file: {}]", artifact.path.display())
+            } else {
+                String::new()
+            },
             artifact.state,
             artifact.passed,
             artifact.total
@@ -264,8 +269,13 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
             let artifact = view.artifacts[id];
             writeln!(
                 out,
-                "    Artifact {id}{}{} ({})",
+                "    Artifact {id}{}{}{} ({})",
                 tags(&artifact.tags),
+                if artifact.kind == crate::config::ArtifactKind::File {
+                    " [file]"
+                } else {
+                    ""
+                },
                 if artifact.basis == Some(true) {
                     " [basis]"
                 } else {

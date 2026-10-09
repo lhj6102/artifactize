@@ -28,17 +28,20 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
         for (name, tool) in &artifact.views.human_tools {
             let validate = || {
                 for argument in &tool.args {
-                    if let Some(reference) = reference(argument)?
-                        && reference.name != "artifactPath"
-                    {
-                        reference_target(config, owner, reference.name)?;
+                    if let Some(reference) = reference(argument)? {
+                        let target = if reference.name == "artifactPath" {
+                            owner
+                        } else {
+                            reference_target(config, owner, reference.name)?
+                        };
+                        super::reference_path(config, target, reference.path)?;
                     }
                 }
                 Ok::<_, ScopeError>(())
             };
             validate().map_err(|error| {
                 super::ConfigError::declaration(
-                    config.root.join(&artifact.path).join(super::CONFIG_FILE),
+                    config.root.join(artifact.declaration_path()),
                     &["views", "human_tools", name, "args"],
                     format!("Human tool {name}: {error}"),
                 )
@@ -64,6 +67,7 @@ pub(crate) fn resolve_human_argv(
             } else {
                 reference_target(config, owner, reference.name)?
             };
+            super::reference_path(config, id, reference.path)?;
             let path = scope.resolve_input(&config.root, id, reference.path)?;
             let path = path
                 .to_str()

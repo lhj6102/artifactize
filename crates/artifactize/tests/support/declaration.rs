@@ -50,7 +50,9 @@ pub fn read(contents: impl AsRef<[u8]>) -> Result<Value, String> {
 /// Ordinary fixture files are untouched; JSON declaration builders become TOML.
 pub fn write(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) -> io::Result<()> {
     let path = path.as_ref();
-    if path.file_name().is_some_and(|name| name == "index.artf")
+    if path
+        .extension()
+        .is_some_and(|extension| extension == "artf")
         && let Ok(value) = serde_json::from_slice(contents.as_ref())
     {
         let declaration = to_toml(value).map_err(io::Error::other)?;

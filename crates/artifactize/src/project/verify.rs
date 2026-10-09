@@ -225,7 +225,7 @@ pub async fn verify(
             created_at: run.created_at.clone(),
             started_at: None,
             completed_at: None,
-            cwd: config.root.join(&config.artifacts[&eval.target].path),
+            cwd: config.root.join(config.artifacts[&eval.target].folder()),
             run_dir: None,
             argv: None,
             child: None,
