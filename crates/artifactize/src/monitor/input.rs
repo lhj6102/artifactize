@@ -57,7 +57,7 @@ impl Hits {
     }
 }
 
-pub(super) fn protocols(mouse: bool, paste: bool) -> Result<(), String> {
+pub(crate) fn protocols(mouse: bool, paste: bool) -> Result<(), String> {
     let mut out = std::io::stdout();
     if mouse {
         crossterm::execute!(out, EnableMouseCapture)

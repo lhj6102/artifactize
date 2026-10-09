@@ -35,8 +35,7 @@ impl Review {
         if self.settled() {
             self.stop_editing();
             if matches!(self.mode, Mode::Confirm { .. }) {
-                self.mode = Mode::Request;
-                self.tool_draft = None;
+                self.drop_confirmation();
             }
         }
     }

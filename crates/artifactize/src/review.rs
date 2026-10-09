@@ -381,6 +381,7 @@ impl Review {
         }
         // The prompt never discards a form; Esc returns and g or r reopens the draft.
         self.stop_editing();
+        self.drop_confirmation();
         self.mode = Mode::Leave;
         Action::None
     }
@@ -392,6 +393,17 @@ impl Review {
             return;
         }
         if let Mode::Form(form) = std::mem::replace(&mut self.mode, Mode::Request) {
+            self.drafts.insert(form.verdict, form);
+        }
+    }
+
+    /// Drop a pending tool confirmation without running it. The form set aside for the tool
+    /// goes back to the per-verdict drafts, so the same verdict reopens it.
+    fn drop_confirmation(&mut self) {
+        if matches!(self.mode, Mode::Confirm { .. }) {
+            self.mode = Mode::Request;
+        }
+        if let Some(form) = self.tool_draft.take() {
             self.drafts.insert(form.verdict, form);
         }
     }
@@ -517,17 +529,17 @@ impl Review {
         else {
             return Action::None;
         };
-        // The claim may have been released or the request settled while the prompt was open.
-        let owned = self.owned_request();
-        if (!run || owned.is_err())
-            && let Some(form) = self.tool_draft.take()
-        {
-            self.mode = Mode::Form(form);
-        }
         if !run {
+            // Declined: back to the form the tool interrupted.
+            if let Some(form) = self.tool_draft.take() {
+                self.mode = Mode::Form(form);
+            }
             return Action::None;
         }
-        if let Err(error) = owned {
+        // The claim may have been released or the request settled while the prompt was open;
+        // the form waits in the drafts until this reviewer claims again.
+        if let Err(error) = self.owned_request() {
+            self.drop_confirmation();
             return self.notify(error, true);
         }
         self.confirmed.push(command);
@@ -737,6 +749,13 @@ impl Review {
                 }
                 Action::Refresh
             }
+        }
+    }
+
+    /// A bracketed paste goes to the focused field of the open review, as in monitor.
+    pub fn paste(&mut self, text: &str) {
+        if self.focus == Focus::Detail && self.area == Area::Fields {
+            self.paste_single(text);
         }
     }
 
@@ -985,8 +1004,15 @@ pub async fn run(
         let _ = crossterm::terminal::disable_raw_mode();
         format!("cannot start the review: {e}")
     })?;
-    let review = Review::new(state, repo, reviewer, open);
-    let result = drive(&mut terminal, review, cancellation).await;
+    // Bracketed paste, like monitor: a pasted block reaches a field whole, never as keys.
+    let guard = crate::monitor::InputGuard;
+    let result = async {
+        crate::monitor::input::protocols(false, true)?;
+        let review = Review::new(state, repo, reviewer, open);
+        drive(&mut terminal, review, cancellation).await
+    }
+    .await;
+    drop(guard);
     drop(terminal);
     ratatui::try_restore().map_err(|e| e.to_string())?;
     result
@@ -1021,6 +1047,7 @@ async fn drive(
                     // The editor owns the terminal; no event reader may compete for its input.
                     drop(events);
                     let edited = crate::monitor::suspend(terminal, edit(text)).await;
+                    crate::monitor::input::protocols(false, true)?;
                     events = EventStream::new();
                     review.edited(edited?)
                 }
@@ -1047,6 +1074,10 @@ async fn drive(
             },
             event = events.next() => match event {
                 Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => review.key(key),
+                Some(Ok(Event::Paste(text))) => {
+                    review.paste(&text);
+                    Action::None
+                }
                 Some(Ok(_)) => Action::None,
                 Some(Err(error)) => return Err(error.to_string()),
                 None => Action::Quit,

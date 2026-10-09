@@ -159,7 +159,9 @@ the selected tool shows its command and description.
   Tab indents; Enter never submits a flat form. Ctrl-S or Submit submits. A
   validation error keeps the request waiting and shows the failing paths.
 - **Editing.** Ordinary letters (`q`, `c`, `i`, `t`, …), ←/→ and Tab belong to the
-  fields, not navigation. Ctrl-G/Ctrl-R switches verdicts, keeping separate drafts.
+  fields, not navigation. A bracketed keyboard paste goes into the focused field as
+  one edit, in standalone `review` as in the monitor. Ctrl-G/Ctrl-R switches
+  verdicts, keeping separate drafts.
   Editing, tool work and confirmation lock focus moves outside Detail. Esc closes
   one thing at a time: cancel a job or confirmation, then stop editing with its
   draft kept, then leave Detail. The same verdict reopens the draft. Refresh and

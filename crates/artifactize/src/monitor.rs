@@ -32,7 +32,7 @@ pub use model::{
 };
 pub(crate) use rows::{fit, plain, width};
 pub use terminal::run;
-pub(crate) use terminal::{repaint, suspend};
+pub(crate) use terminal::{InputGuard, repaint, suspend};
 pub(crate) use view::{clock, crumbs};
 
 use crate::{

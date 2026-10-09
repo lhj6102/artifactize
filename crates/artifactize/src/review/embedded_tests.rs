@@ -376,6 +376,71 @@ async fn a_confirmation_after_an_outside_release_neither_claims_nor_runs() {
 }
 
 #[tokio::test]
+async fn a_confirmation_dropped_by_an_outside_submission_keeps_the_draft() {
+    let (_root, repo, state) = fixture();
+    let view = waiting(&repo, &state).await;
+    let id = view.request.id.clone();
+    let mut review = opened(&state, view, "alice");
+    let outcome = perform(&mut review, Control::Claim).await;
+    review.finish_single(outcome);
+    review.refresh().await;
+    review.control(Control::Red);
+    review.paste_single("draft with 한글");
+    // The RED form now lives only beside the tool's confirmation.
+    let outcome = perform(&mut review, Control::RunTool).await;
+    review.finish_single(outcome);
+    assert!(review.confirming() && review.tool_draft.is_some());
+    human::submit_and_publish(
+        &state,
+        id.as_str(),
+        "alice",
+        &json!({"verdict":"GREEN","approved":true}),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    review.refresh().await;
+    assert!(review.settled() && !review.confirming());
+    assert_eq!(review.mode(), &Mode::Request);
+    assert!(review.tool_draft.is_none());
+    assert_eq!(review.drafts["RED"].fields[0].display(), "draft with 한글");
+}
+
+#[test]
+fn quitting_from_a_confirmation_keeps_the_draft() {
+    let mut review = super::tests::opened(Some("alice"), super::tests::demo());
+    review.control(Control::Red);
+    review.paste_single("kept");
+    let form = match review.mode() {
+        Mode::Form(form) => form.clone(),
+        _ => panic!("form"),
+    };
+    review.tool_draft = Some(form);
+    review.mode = Mode::Confirm {
+        tool: "notes_release".into(),
+        command: crate::tools::human::CommandLine {
+            repo: "/repo".into(),
+            kind: crate::config::HumanToolKind::Output,
+            program: "cat".into(),
+            args: Vec::new(),
+            cwd: "/repo".into(),
+        },
+    };
+    review.taken = vec!["run-1-3".parse().unwrap()];
+    review.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+    assert_eq!(review.mode(), &Mode::Leave);
+    review.key(KeyEvent::from(KeyCode::Esc));
+    review.control(Control::Red);
+    assert_eq!(
+        match review.mode() {
+            Mode::Form(form) => form.fields[0].display(),
+            _ => panic!("form"),
+        },
+        "kept"
+    );
+}
+
+#[tokio::test]
 async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;

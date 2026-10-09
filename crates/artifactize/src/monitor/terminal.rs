@@ -6,7 +6,7 @@ use std::{future::Future, path::PathBuf, pin::Pin};
 use tokio_util::sync::CancellationToken;
 
 /// Restore every input protocol when leaving, including errors, signals and panic unwinding.
-struct InputGuard;
+pub(crate) struct InputGuard;
 impl Drop for InputGuard {
     fn drop(&mut self) {
         let _ = input::protocols(false, false);

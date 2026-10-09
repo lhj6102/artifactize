@@ -985,7 +985,7 @@ fn a_tool_confirmation_never_claims_once_the_claim_is_gone() {
     assert_eq!(review.mode(), &Mode::Request);
     assert!(review.confirmed.is_empty());
     assert!(screen(&mut review).contains("Claim this request before reviewing it."));
-    // A form set aside for the tool comes back instead of a run.
+    // A form set aside for the tool goes back to the drafts instead of a run.
     let mut review = opened(Some("alice"), demo());
     press(&mut review, KeyCode::Char('r'));
     press(&mut review, KeyCode::Char('x'));
@@ -993,7 +993,13 @@ fn a_tool_confirmation_never_claims_once_the_claim_is_gone() {
     confirm(&mut review);
     review.show(view("WAITING_HUMAN", Some("bob"), demo()));
     assert_eq!(review.control(Control::Confirm), Action::None);
-    assert_eq!(form(&review).fields[0].display(), "x");
+    assert_eq!(review.mode(), &Mode::Request);
+    assert_eq!(
+        review.drafts["RED"].fields[0].display(),
+        "x",
+        "kept for the next claim"
+    );
+    assert!(review.tool_draft.is_none());
     // A request settled meanwhile drops the prompt; y then runs nothing.
     let mut review = opened(Some("alice"), demo());
     press(&mut review, KeyCode::Tab);
@@ -1012,6 +1018,31 @@ fn a_tool_confirmation_never_claims_once_the_claim_is_gone() {
     assert_eq!(
         form(&review).error.as_deref(),
         Some("Claim this request before reviewing it.")
+    );
+}
+
+#[test]
+fn a_bracketed_paste_reaches_only_the_focused_field() {
+    let mut review = opened(Some("alice"), demo());
+    // Without a form, on the tools or from the list, a paste changes nothing.
+    review.paste("ignored");
+    press(&mut review, KeyCode::Char('r'));
+    press(&mut review, KeyCode::BackTab);
+    review.paste("ignored");
+    press(&mut review, KeyCode::Tab);
+    review.paste("needs 한글\nwork");
+    assert_eq!(form(&review).fields[0].display(), "needs 한글\nwork");
+    // One paste is one edit, never keys: q and Esc inside it neither quit nor step back.
+    review.paste(" q\u{1b}");
+    assert!(review.editing());
+    assert_eq!(review.focus(), Focus::Detail);
+    press(&mut review, KeyCode::Esc);
+    press(&mut review, KeyCode::Esc);
+    assert_eq!(review.focus(), Focus::List);
+    review.paste("ignored");
+    assert_eq!(
+        review.drafts["RED"].fields[0].display(),
+        "needs 한글\nwork q\u{1b}"
     );
 }
 
