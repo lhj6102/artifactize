@@ -726,7 +726,7 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
     fixture.write("files/input.txt", "input");
     fixture.write(
         "files/inspect",
-        "#!/usr/bin/env python3\nimport os,sys\nsys.stdout.write(os.path.basename(os.getcwd()))\n",
+        "#!/bin/sh\ntest -f input.txt && printf files\n",
     );
     support::os::make_executable(&fixture.repo.join("files/inspect"));
     fixture.declare("files/input.txt.artf", json!({"name":"file","views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"plain","command":"./inspect","args":[]}}}}));
@@ -748,10 +748,7 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
             text: "files".into()
         }]
     );
-    fixture.write(
-        "tools/inspect",
-        "#!/usr/bin/env python3\nimport sys\nsys.stdout.write('mounted')\n",
-    );
+    fixture.write("tools/inspect", "#!/bin/sh\nprintf mounted\n");
     support::os::make_executable(&fixture.repo.join("tools/inspect"));
     fixture.declare("tools/index.artf", json!({"name":"tools","basis":true}));
     fixture.declare("files/input.txt.artf", json!({"name":"file","mounts":{"bin":"tools"},"views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"plain","command":"bin/inspect","args":[]}}}}));
