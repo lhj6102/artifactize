@@ -24,7 +24,11 @@ const LIST_COMPACT: u16 = 30;
 /// Fixed columns of the Full waiting list: claim and waiting time.
 const CLAIM_WIDTH: u16 = 16;
 const WAITING_WIDTH: u16 = 8;
+/// A long repository path counts only this far towards the Full list's width, so one deep
+/// checkout does not push the Preview off a wide terminal.
 const REPO_WIDTH: u16 = 40;
+/// The Full waiting list's column titles; a column is never narrower than its title.
+const HEADERS: [&str; 5] = ["EVAL", "REQUEST", "CLAIM", "WAITING", "REPO"];
 
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -315,7 +319,7 @@ impl Review {
                 Constraint::Fill(1),
             ],
         )
-        .header(Row::new(["EVAL", "REQUEST", "CLAIM", "WAITING", "REPO"]).bold())
+        .header(Row::new(HEADERS).bold())
         .row_highlight_style(highlight)
         .block(block);
         frame.render_stateful_widget(table, area, &mut self.list);
@@ -383,7 +387,9 @@ impl Review {
 /// Widths of the Full list's columns; claim and waiting time keep fixed widths, and a long
 /// repository path counts only up to `REPO_WIDTH` towards the natural width.
 fn column_widths(rows: &[[String; 5]]) -> [u16; 5] {
-    let mut widths = [4, 7, CLAIM_WIDTH, WAITING_WIDTH, 4];
+    let mut widths = HEADERS.map(text_width);
+    widths[2] = CLAIM_WIDTH;
+    widths[3] = WAITING_WIDTH;
     for row in rows {
         for column in [0, 1, 4] {
             widths[column] = widths[column].max(text_width(&row[column]));

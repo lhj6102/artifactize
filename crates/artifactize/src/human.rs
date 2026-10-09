@@ -137,7 +137,7 @@ pub async fn submit(
         .find(|eval| eval.id == request.eval_id)
         .expect("reconnected eval");
     if serde_json::to_vec(result).map_err(|e| e.to_string())?.len() > MAX_RESULT_BYTES {
-        return Err("Human result exceeds 256000 bytes.".into());
+        return Err(format!("Human result exceeds {MAX_RESULT_BYTES} bytes."));
     }
     let result = validate_result(&eval.declaration, result)?;
     recheck(receipts, &mut request, reviewer, &config, cancellation).await?;

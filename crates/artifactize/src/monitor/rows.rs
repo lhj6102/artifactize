@@ -14,10 +14,21 @@ use time::OffsetDateTime;
 use tui_tree_widget::{Tree, TreeItem, TreeState};
 use unicode_segmentation::UnicodeSegmentation;
 
-/// The marker column, then two columns of fold symbol.
+/// The selection marker takes one column at the start of each row.
 const MARKER: usize = 1;
+/// The fold symbol and its space take two columns before a node's glyph.
 const FOLD: usize = 2;
+/// Each level of depth indents its children by two columns, as the tree widget draws them.
 const INDENT: usize = 2;
+/// A node's state glyph and the space after it.
+const GLYPH: usize = 2;
+/// The gap between the widest name and the status column.
+const STATUS_GAP: usize = 2;
+/// The mark after a changed node's status; every row keeps room for it once any node shows it.
+const CHANGED_MARK: &str = " *";
+/// A full-width row's name column never narrows below its glyph and the status gap, so a deep
+/// node keeps its glyph even when the tree is barely wider than the indentation.
+const MIN_COLUMN: usize = GLYPH + STATUS_GAP;
 
 pub(super) fn color(tone: Tone) -> Color {
     match tone {
@@ -87,8 +98,7 @@ fn column(nodes: &[Node], depth: usize, total: usize) -> usize {
     let widest = nodes
         .iter()
         .map(|node| {
-            // Glyph and space, name and marks, then a two-column gap.
-            let own = lead(depth) + 2 + width(&node.name) + width(&node.marks) + 2;
+            let own = lead(depth) + GLYPH + width(&node.name) + width(&node.marks) + STATUS_GAP;
             own.max(column(&node.children, depth + 1, total))
         })
         .max()
@@ -109,11 +119,11 @@ fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -
     let lead = lead(depth);
     let available = layout.total.saturating_sub(lead);
     let right = &node.right_at(layout.now, layout.compact);
-    let tail = width(right) + if star { 2 } else { 0 };
+    let tail = width(right) + if star { width(CHANGED_MARK) } else { 0 };
     let budget = if layout.compact {
         available.saturating_sub(tail + 1)
     } else {
-        column.saturating_sub(lead).max(4).min(available)
+        column.saturating_sub(lead).max(MIN_COLUMN).min(available)
     };
     let artifact = node.id.strip_prefix("a:");
     let emphasized = artifact.is_some_and(|id| {
@@ -133,7 +143,11 @@ fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -
         name_style = name_style.add_modifier(Modifier::BOLD);
     }
     // The glyph and its space, and in the full tree the gap before the status text.
-    let room = budget.saturating_sub(if layout.compact { 2 } else { 4 });
+    let room = budget.saturating_sub(if layout.compact {
+        GLYPH
+    } else {
+        GLYPH + STATUS_GAP
+    });
     let (name, marks) = if width(&node.name) + width(&node.marks) <= room {
         (
             plain(&node.name).into_owned(),
@@ -145,7 +159,7 @@ fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -
     } else {
         (fit(&node.name, room), String::new())
     };
-    let used = 2 + width(&name) + width(&marks);
+    let used = GLYPH + width(&name) + width(&marks);
     let mut spans = vec![
         Span::styled(
             format!("{} ", node.glyph),
@@ -188,7 +202,7 @@ fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -
         spans.push(Span::styled(plain(right).into_owned(), right_style));
         if node.changed {
             spans.push(Span::styled(
-                " *",
+                CHANGED_MARK,
                 Style::new().fg(Color::DarkGray).add_modifier(Modifier::DIM),
             ));
         }

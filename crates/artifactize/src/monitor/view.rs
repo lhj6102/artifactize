@@ -884,10 +884,17 @@ pub(super) fn breadcrumb(segments: &[String], room: usize) -> String {
     crumbs("artifactize", segments, room)
 }
 
+/// The widths that every segment but the last is clipped to, tried in turn until the
+/// breadcrumb fits: whole names first, then 24 columns (a typical Artifact or eval name), 16,
+/// and 10 (still enough to tell a Run id or a short name apart).
+const CRUMB_LIMITS: [usize; 4] = [usize::MAX, 24, 16, 10];
+/// The narrowest clip, after which the program name goes and then the start of the path.
+const CRUMB_FLOOR: usize = CRUMB_LIMITS[CRUMB_LIMITS.len() - 1];
+
 /// A breadcrumb under any program name, such as `artifactize review`.
 pub(crate) fn crumbs(root: &str, segments: &[String], room: usize) -> String {
     let fits = |text: &str| Line::from(text).width() <= room;
-    for limit in [usize::MAX, 24, 16, 10] {
+    for limit in CRUMB_LIMITS {
         let shown: Vec<String> = segments
             .iter()
             .enumerate()
@@ -904,7 +911,7 @@ pub(crate) fn crumbs(root: &str, segments: &[String], room: usize) -> String {
         if fits(&full) {
             return full;
         }
-        if limit == 10 {
+        if limit == CRUMB_FLOOR {
             if fits(&path) {
                 return path;
             }
