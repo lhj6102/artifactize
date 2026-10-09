@@ -1,4 +1,4 @@
-# <img src="website/landing/media/artifactize-icon-h56.png" width="31" height="28" align="middle" alt=""> Artifactize
+# <img src="assets/brand/artifactize-icon-h56.png" width="31" height="28" align="middle" alt=""> Artifactize
 
 **The AI-native collaboration layer for one-of-a-kind teammates and their agents.**
 
