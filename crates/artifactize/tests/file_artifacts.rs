@@ -624,7 +624,7 @@ async fn dependency_evals_can_live_on_files_and_target_files() {
 async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_metadata() {
     let fixture = Fixture::new();
     fixture.write("files/input.txt", "input");
-    fixture.write("files/tool.py", "import json,os,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':{'cwd':os.getcwd(),'argv':sys.argv[1:],'scope':x['context']['scope']}}]}))\n");
+    fixture.write("files/tool.py", "import json,os,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':{'cwd':os.getcwd(),'argv':sys.argv[1:],'artifactPath':x['context']['artifactPath'],'scope':x['context']['scope']}}]}))\n");
     fixture.declare("files/input.txt.artf", json!({"name":"file","views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"json","command":"python3","args":["tool.py","{file}"]}}}}));
     let config = fixture.config();
     let registry = Registry::for_artifact(&config, "file").unwrap();
@@ -633,6 +633,10 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
     assert_eq!(data["cwd"], config.root.join("files").to_str().unwrap());
     assert_eq!(
         data["argv"][0],
+        config.root.join("files/input.txt").to_str().unwrap()
+    );
+    assert_eq!(
+        data["artifactPath"],
         config.root.join("files/input.txt").to_str().unwrap()
     );
     assert_eq!(data["scope"]["file"]["kind"], "file");
@@ -714,4 +718,59 @@ fn artfignore_skips_sidecars_in_excluded_folders() {
     fixture.write("excluded/missing.artf", "invalid TOML");
     fixture.write(".artfignore", "excluded/\n");
     assert_eq!(fixture.config().artifacts.len(), 1);
+}
+
+#[tokio::test]
+async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
+    let fixture = Fixture::new();
+    fixture.write("files/input.txt", "input");
+    fixture.write(
+        "files/inspect",
+        "#!/usr/bin/env python3\nimport os,sys\nsys.stdout.write(os.path.basename(os.getcwd()))\n",
+    );
+    support::os::make_executable(&fixture.repo.join("files/inspect"));
+    fixture.declare("files/input.txt.artf", json!({"name":"file","views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"plain","command":"./inspect","args":[]}}}}));
+    let config = fixture.config();
+    let registry = Registry::for_artifact(&config, "file").unwrap();
+    registry.preflight("inspect_file").unwrap();
+    let result = registry
+        .call(
+            "inspect_file",
+            json!({}),
+            &fixture.state,
+            CancellationToken::new(),
+        )
+        .await;
+    assert!(!result.is_error, "{result:?}");
+    assert_eq!(
+        result.content,
+        vec![Content::Text {
+            text: "files".into()
+        }]
+    );
+    fixture.write(
+        "tools/inspect",
+        "#!/usr/bin/env python3\nimport sys\nsys.stdout.write('mounted')\n",
+    );
+    support::os::make_executable(&fixture.repo.join("tools/inspect"));
+    fixture.declare("tools/index.artf", json!({"name":"tools","basis":true}));
+    fixture.declare("files/input.txt.artf", json!({"name":"file","mounts":{"bin":"tools"},"views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"plain","command":"bin/inspect","args":[]}}}}));
+    let config = fixture.config();
+    let registry = Registry::for_artifact(&config, "file").unwrap();
+    registry.preflight("inspect_file").unwrap();
+    let result = registry
+        .call(
+            "inspect_file",
+            json!({}),
+            &fixture.state,
+            CancellationToken::new(),
+        )
+        .await;
+    assert!(!result.is_error, "{result:?}");
+    assert_eq!(
+        result.content,
+        vec![Content::Text {
+            text: "mounted".into()
+        }]
+    );
 }
