@@ -70,9 +70,9 @@
 
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap hero-copy">
-      <p class="eyebrow"><span class="k-runtime">Runtime</span><span class="k-agent">Agent</span><span class="k-human">Human</span><span class="eb-tail">evals, one graph</span></p>
+      <p class="eyebrow"><span class="k-runtime">Runtime</span><span class="k-agent">Agent</span><span class="k-human">Human</span><span>Dependency</span><span class="eb-tail">evals, one graph</span></p>
       <h1 id="hero-title">The AI-native collaboration layer for <em><span class="nowrap">one-of-a-kind</span> teammates</em> and their agents.</h1>
-      <p class="lede">Split a project into Artifacts, each with its own evals: tests, LLM reviews and human sign-offs. Every teammate, human or agent, works their own way, and integrating their work never pays for the same review twice.</p>
+      <p class="lede">Split a project into Artifacts, each with its own evals: tests, LLM reviews, human sign-offs and derived dependency checks. Every teammate, human or agent, works their own way, and integrating their work never pays for the same review twice.</p>
       <div class="cta">
         <a class="btn btn-primary" href="/docs/">Read the docs <span aria-hidden="true">→</span></a>
         <a class="btn btn-ghost" href="/docs/getting-started/quick-start.html">5-minute quick start</a>
@@ -160,16 +160,21 @@
         <section class="story-step" data-step="artifacts" id="step-artifacts" aria-labelledby="step-artifacts-h">
           <p class="step-k"><b>02</b>Artifacts</p>
           <h3 id="step-artifacts-h">The idea and a spec become Artifacts.</h3>
-          <p>A folder with an <code>artifactize.json</code> is an Artifact: a doc, a spec, a module, a website, a style sheet. Each declares a fingerprint, what its reviews depend on; the built-in one hashes the folder's own files. An eval can review one Artifact on its own: here an Agent checks that the Spec is complete.</p>
-          <pre class="step-code"><code>"fingerprint": {}</code></pre>
+          <p>A folder with <code>index.artf</code> is an Artifact; a sidecar such as <code>spec.md.artf</code> declares a single file. Both use TOML and require a name. The default fingerprint is artifactsum: it hashes the Artifact's own files, excluding <code>*.artf</code> declarations. <code>fingerprint = false</code> disables reuse. Here an Agent checks that the Spec is complete.</p>
+          <pre class="step-code"><code>name = "spec"
+# fingerprint omitted: artifactsum is the default</code></pre>
           <p class="sr">Now there are two Artifacts, Idea and Spec, each with a short fingerprint, and one Agent eval that reviews the Spec alone; it executes once.</p>
         </section>
 
         <section class="story-step" data-step="relations" id="step-relations" aria-labelledby="step-relations-h">
           <p class="step-k"><b>03</b>Evals</p>
           <h3 id="step-relations-h">Code arrives, and evals connect the parts.</h3>
-          <p>An eval reviews one Artifact, alone or against others: every other Artifact it names becomes a dependency of that review, drawn as an edge. An Agent eval reviews the code against the Spec, another the Spec against the Idea, and Alice signs off the Spec itself as a Human eval.</p>
-          <pre class="step-code"><code>"instruction": "Review {code} against {spec}."</code></pre>
+          <p>An eval reviews one Artifact, alone or against others: every other Artifact it names becomes a dependency of that review, drawn as an edge. An Agent eval reviews the code against the Spec, another the Spec against the Idea, and Alice signs off the Spec itself as a Human eval. A dependency eval can instead derive readiness from other Artifacts' required evals: it runs nothing, is never cached or published, and appears separately as derived work.</p>
+          <pre class="step-code"><code>payload.instruction = "Review {code} against {spec}."</code></pre>
+          <p>A derived readiness condition uses the same eval table, with no payload or verdict schema. <code>artifactize verify player/ready</code> includes the required dependency evals automatically. Missing evidence gives WAIT_DEPENDENCY; RED evidence gives BLOCKED. This optional eval is not part of the story's execution counts.</p>
+          <pre class="step-code"><code>[evals.ready]
+title = "Movement and art are ready"
+profile = { kind = "dependency", depends_on = ["player-movement", "hero-art"] }</code></pre>
           <p class="sr">Code joins Idea and Spec. Agent evals review Code against the Spec and the Spec against the Idea, and Alice signs off the Spec alone in a Human eval. All three execute once; the Spec's completeness review is reused.</p>
         </section>
 
@@ -177,15 +182,14 @@
           <p class="step-k"><b>04</b>Tests and style</p>
           <h3 id="step-runtime-h">Tests run as runtime evals, and a style sheet reviews the code.</h3>
           <p>Inside Code, a runtime eval runs the tests: any command can review an Artifact, and exit code 0 is GREEN. A coding-style sheet becomes an Artifact too: an Agent eval reviews the source against it, and Alice signs the sheet off. The four earlier verdicts still hold, so they are reused.</p>
-          <pre class="step-code"><code>"kind": "runtime",
-"command": "cargo", "args": ["test"]</code></pre>
+          <pre class="step-code"><code>profile = { kind = "runtime", command = "cargo", args = ["test"] }</code></pre>
           <p class="sr">Code now holds src and tests. Three evals execute: src against tests (runtime), src against the Style sheet (Agent), and Alice's sign-off of the Style sheet alone (Human). The four earlier evals are reused.</p>
         </section>
 
         <section class="story-step" data-step="modules" id="step-modules" aria-labelledby="step-modules-h">
           <p class="step-k"><b>05</b>Modules</p>
           <h3 id="step-modules-h">The code splits into modules.</h3>
-          <p>src becomes three child Artifacts, core, cli and api, each with its own fingerprint, tests and style review; api, the public interface, also gets a Human sign-off. From now on a change to one module re-reviews that module and what depends on it, not the whole codebase.</p>
+          <p>src becomes three child Artifacts, core, cli and api, each with its own fingerprint, tests and style review; api, the public interface, also gets a Human sign-off. From now on a change to one module re-reviews that module and what depends on it, not the whole codebase. Tags such as <code>tags = ["type:code"]</code> label Artifacts in status, graph and monitor output; they change neither relations nor reuse keys.</p>
           <p class="sr">src is now three modules, core, cli and api, each reviewed against tests and the Style sheet, and api has a Human sign-off by Alice. Those seven execute, and so does Code's review, because its children changed; the other four are reused.</p>
         </section>
 
@@ -216,7 +220,7 @@ Verify actions: will execute 3, will reuse 11, wait 3, blocked 0</code></pre>
         <section class="story-step" data-step="parallel" id="step-parallel" aria-labelledby="step-parallel-h">
           <p class="step-k"><b>09</b>Work in parallel</p>
           <h3 id="step-parallel-h">Split the work across copies of one repository.</h3>
-          <p>Alice changes the docs in her clone, Bob changes api in a worktree and Carol changes cli in another. Each runs <code>verify</code> in their own copy and publishes the verdicts to the team's <code>artifactize server</code>. It is one project with the same Artifacts, and paths are not part of the reuse key, so whatever a change did not touch is reused across the copies. Bob's api change needs Alice's sign-off once, in his copy.</p>
+          <p>Alice changes the docs in her clone, Bob changes api in a worktree and Carol changes cli in another. Each runs <code>verify</code> in their own copy and publishes the verdicts to the team's <code>artifactize server</code>. It is one project with the same Artifact names and kinds (file or folder), and paths are not part of the reuse key, so whatever a change did not touch is reused across the copies. Bob's api change needs Alice's sign-off once, in his copy.</p>
           <pre class="step-code"><code><span class="t-prompt">$</span> artifactize remote login https://reviews.example/</code></pre>
           <p class="sr">The project now exists as three copies of the same repository around the review store: app · alice/docs, app · bob/api and app · carol/cli. In each copy the changed Artifact and the evals that depend on it run again, fourteen in all, one of them the sign-off of Bob's api; the other 49 are reused. Each copy publishes its verdicts to the store and reuses verdicts from it.</p>
         </section>
@@ -292,6 +296,7 @@ Summary: executed 3 (runtime 0, agent 3, human 0), reused 18 (runtime 7, agent 7
           <p class="install-note">macOS support is coming. Follow its progress in <a href="https://github.com/lhj6102/artifactize/issues/111">issue #111</a>.</p>
         </div>
       </div>
+      <p>Upgrading to 0.9: declarations move to TOML <code>.artf</code>, families are removed, state schema 6 requires a new state, and reuse-key v2 reuses no earlier verdict. Every executable eval needs one new review, Human sign-offs included. <a href="/docs/concepts/fingerprints-and-reuse.html#upgrading-to-09">Upgrade instructions</a>.</p>
       <div class="cta center">
         <a class="btn btn-primary" href="/docs/getting-started/install.html">Install <span aria-hidden="true">→</span></a>
         <a class="btn btn-ghost" href="/docs/getting-started/quick-start.html">Quick start</a>

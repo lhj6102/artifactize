@@ -13,11 +13,14 @@ claim on the key after the verifier exits. Cross-repository followers refer to t
 same execution and forward Human actions to its original request and repository.
 
 A submission that arrives while `verify` waits runs the Human eval's dependents in
-the same Run. For a Human eval with a reuse key (a fingerprint on its Artifact and on
-every Artifact it depends on), a later `verify` also reuses the submitted result and
-runs its dependents. **No fingerprint means no reuse**: submission settles only that
-Run, and a later `verify` asks for a new Human review, so the dependents of a Human
-eval without a fingerprint continue only in the Run that waits for it.
+the same Run. Human sign-offs reuse by default: artifactsum supplies the target and
+dependency fingerprints. A later `verify` reuses the submitted result and runs its
+dependents. **`fingerprint = false` means no reuse** when declared by the target or any
+dependency: submission settles only that Run, and a later `verify` asks for a new
+Human review. Those dependents continue only in the Run that waits for it.
+Dependency evals wait with WAIT_DEPENDENCY while required Human evidence waits, then
+derive GREEN or BLOCKED from the submission. Later submissions never rewrite a
+historical derived request; a new `status` or `verify` derives current evidence.
 
 ```sh
 artifactize verify --all --timeout-ms 600000
@@ -50,52 +53,35 @@ leave the request correctable. A successful submission exits 0, even for RED;
 it does not start a separate verifier.
 
 While Human requests wait, local state-change notifications wake `verify`, which
-reconciles saved states and resumes newly READY
-dependents in the **same Run**, retaining its execution budget and earlier
-results. While waiting the Run remains RUNNING. `--timeout-ms`
-defaults to 600000, and accepts 1–2147483647. The deadline begins when scheduling
-starts and is checked when foreground execution is idle with pending Human work;
-it never interrupts running evals or cancels Human requests. On timeout the Run
-ends INCOMPLETE with `waitTimedOut: true` and exit 3. Claims and submissions remain
-available, but no background worker continues dependents. Without a fingerprint,
-use a new verify and submit its new request to complete those dependents.
+reconciles saved states and resumes newly READY dependents in the **same Run**,
+retaining its execution budget and earlier results. While waiting the Run remains
+RUNNING. `--timeout-ms` defaults to 600000, and accepts 1–2147483647. The deadline
+begins when scheduling starts and is checked when foreground execution is idle with
+pending Human work; it never interrupts running evals or cancels Human requests. On
+timeout the Run ends INCOMPLETE with `waitTimedOut: true` and exit 3. Claims and submissions
+remain available, but no background worker continues dependents. With reuse
+disabled, use a new verify and submit its new request to complete those dependents.
 Ctrl-C/SIGTERM exits 2, cleans owned processes, and ends the Run as cancelled;
 previously created Human requests remain available. Missing non-Human obligations
-without any pending Human request return INCOMPLETE (4) immediately.
-`verify --reuse-only human` never records a Human request or waits: a Human eval
-reuses a sign-off or is [not executed](../reference/cli.md#reuse-only), as CI wants.
+without any pending Human request return INCOMPLETE (4) immediately. `verify --reuse-only human`
+never records a Human request or waits: a Human eval reuses a sign-off or is
+[not executed](../reference/cli.md#reuse-only), as CI wants.
 
 The [reference](../reference/human-tools.md#human-reviews) has the library API, the
 `request list` and `request show` fields and Run summaries.
 
 ## Human tools
 
-`views.humanTools` is a separate safe-name map of predefined commands. Each entry
-requires exactly `description`, `kind: "launch" | "output"`, `command` and `args`,
-with optional `timeoutMs` (1–2147483647). No `inputSchema`, free call arguments,
-`protocol`, `executionPaths`, `metadata` or `script` wrappers are accepted.
-Descriptions follow the Agent description rules, including `{artifactName}`.
+`views.human_tools` is a separate safe-name map of predefined commands. Each entry requires
+exactly `description`, `kind = "launch"` or `kind = "output"`, `command` and `args`, with
+optional `timeout_ms` (1–2147483647). No `input_schema`, free call arguments, `protocol`,
+`execution_paths`, `metadata` or `script` wrappers are accepted. Descriptions follow
+the Agent description rules, including `{artifactName}`.
 
-```json
-{
-  "views": {
-    "humanTools": {
-      "open": {
-        "description": "Open {artifactName} for review.",
-        "kind": "launch",
-        "command": "code",
-        "args": ["{artifactPath}"]
-      },
-      "show": {
-        "description": "Show the review notes for {artifactName}.",
-        "kind": "output",
-        "command": "cat",
-        "args": ["{artifactPath}/notes.txt"],
-        "timeoutMs": 120000
-      }
-    }
-  }
-}
+```toml
+[views.human_tools]
+open = { description = "Open {artifactName} for review.", kind = "launch", command = "code", args = ["{artifactPath}"] }
+show = { description = "Show the review notes for {artifactName}.", kind = "output", command = "cat", args = ["{artifactPath}/notes.txt"], timeout_ms = 120000 }
 ```
 
 Placeholders, executable resolution and the `launch` and `output` kinds are in the
@@ -159,18 +145,19 @@ It has three panes:
   NUL-delimited worktree list also exposes worktrees with no Runs. Non-Git and
   deleted legacy paths remain visible without guessing a missing repository
   identity. New Runs record optional `commonDir`, `worktreePath` and `branch` while
-  preserving their artifactize `repoPath` workspace. Existing schema-5 state needs
-  no migration or reset. `?N`, `RED N` and a running indicator summarize attention
+  preserving their artifactize `repoPath` workspace. State schema 6 needs a new state when upgrading from 0.8 or earlier
+  ([Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09)). `?N`, `RED N` and a running indicator summarize attention
   independently of the visible Run page; followers of one Human execution count
   as one waiting sign-off.
 - **Runs.** The selected repository/worktree's Runs, newest first. Scope filtering
   happens before paging, so a repository remains reachable even beyond the latest
   100 global Runs. Moving past the end loads older Runs.
 - **Artifacts and evals.** The selected Run's saved definitions and requests, not
-  a re-evaluation of current files. Families group instances; `h`/`l` or Space collapses
-  or expands them. `⇐` rows show child/mount/reference inputs and `↻` marks cycles.
+  a re-evaluation of current files. Artifact rows show their tags. `⇐` rows show
+  child/mount/reference/dependency inputs and `↻` marks cycles.
   The Run summary shows validation, request counts, budgets, executed/reused work,
-  spent/saved usage and currently running or waiting evals.
+  spent/saved usage, derived dependency eval counts and currently running or
+  waiting evals.
 
 Outside a modal, ←/→ moves to the previous/next pane without wrapping at the
 screen edges; Tab/Shift-Tab cycles through panes. ↑/↓ or `j`/`k` selects, `r`
@@ -222,6 +209,8 @@ Detail depends on the eval kind:
 - **Runtime:** saved stdout/stderr, exit code and capture truncation. Running,
   timeout/cancellation and remote summary-only results honestly show logs as
   unavailable; there is no new live-log recorder.
+- **Dependency:** the saved derived state and `blockedBy` requirements, marked
+  `derived (no execution)`. It has no claim, tools or verdict form.
 - **Human:** completed result, or an explicit **CLAIM → REVIEW** flow. Claim (`c`)
   enables tools on the left and GREEN/RED fields on the right. Request instructions
   stay visible above them in CLAIM and REVIEW; the wheel there or Ctrl-PgUp/PgDn

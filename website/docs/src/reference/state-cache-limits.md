@@ -6,15 +6,26 @@ bounded, and the local diagnostics and maintenance commands.
 
 ## State
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 5),
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 6),
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
 `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
 `--state-dir PATH` moves the whole state, including
 private output directories under `PATH/runs`. Saved Runs stay readable after the
-original repository is removed. State/output inside the reviewed repository is
-rejected, including through symlink ancestors; database files and their WAL sidecars
-must be regular files.
+original repository is removed. State/output inside the reviewed repository or
+another artifactize workspace is rejected, including through symlink ancestors.
+For this safety check, any ancestor containing a `.artf` declaration, legacy
+`artifactize.json` or legacy `.artifactizeignore` marks a workspace, even though
+legacy declarations are not read. Sidecar-only workspaces are protected too.
+Database files and their WAL sidecars must be
+regular files.
+
+Known limitation: a search-only ancestor can be traversed but not listed. When
+listing fails with permission denied, the guard falls back to fixed-marker
+probes for `.git`, `index.artf`, legacy `artifactize.json` and legacy
+`.artifactizeignore`. It cannot discover a sidecar-only workspace in that
+ancestor. Keep state and credentials outside such workspaces explicitly; do not
+rely on sidecar detection where directory listing is unavailable.
 
 The state keeps what was reviewed, with which verdict, and how it was executed, in
 four tables:
@@ -26,7 +37,11 @@ four tables:
 | `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), and the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used` |
 | `state_meta` | named value of the state | `name`, `value` |
 
-A Run has one request per eval and per ordinal. One execution per reuse key can be
+A Run has one request per eval and per ordinal. Dependency requests save their
+derived state and `blockedBy`, but have no execution row, key, run output, usage
+or backend-capacity slot. They count under `summary.derived`, not executed or
+reused work. They never enter cache inspection or team-store lookup/publication.
+One execution per reuse key can be
 active (RUNNING or WAITING_HUMAN) at a time. `state_meta` holds the state's stable
 id, a random UUID made when the database is created (row `id`), which
 [Agent session references](#agent-sessions) name. How a review went, its
@@ -34,7 +49,7 @@ conversation and its tool calls, is not in the state: it is in the review's
 [saved session](#agent-sessions).
 
 There is no migration. Commands that read or write a state written by an earlier
-artifactize (schema 1 to 4, artifactize 0.1 to 0.5) refuse it with exit code 2 and
+artifactize (schemas 1–5, through artifactize 0.8) refuse it with exit code 2 and
 this message, leaving it as it is. `doctor` instead includes the same message in
 its hard-error report and exits 1:
 
@@ -42,16 +57,20 @@ its hard-error report and exits 1:
 This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). artifactize does not migrate it.
 ```
 
-A new state reviews every eval once and then reuses as before.
+A new 0.9 state reviews every executable eval once, Human sign-offs included,
+and then reuses as before. Reuse-key v2 matches no earlier records, including
+script fingerprints and team-store records. Dependency evals derive current
+evidence; they have no execution or reusable record. See
+[Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
 [`doctor`](#doctor-models-and-prune) reports such a state as a hard error, and a
 database written by a newer artifactize the same way.
 
 Tokens are never stored inside a repository. `$STATE/auth`, which holds the Codex
 sign-in and the review store token, is refused when it lies inside a git work tree or
-an artifactize workspace (any ancestor holding `.git` or `artifactize.json`) or
-inside `--repo`, even where the state itself is accepted, such as a gitignored folder
-in a checkout. `login codex` and `remote login` then fail before signing in, with a
-message naming both folders:
+an artifactize workspace (an ancestor with any current or legacy marker above) or
+inside `--repo`, even in a gitignored folder. The `.git` check protects Git work
+trees separately from Artifact declaration markers. `login codex` and
+`remote login` then fail before signing in, with a message naming both folders:
 
 ```text
 Codex sign-in storage /work/project/.state/auth is inside the git work tree /work/project; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE.
@@ -82,7 +101,8 @@ text table, or a JSON array that also carries the Eval definition hash, the targ
 fingerprint and the profile variant). `--history` lists every record, latest first
 within each key. `show` prints the key's latest saved execution as JSON, with
 result, actual `profile`, `options` (backend, model, reasoning, limits and
-variant), `fingerprints` (each Artifact the key covers), provenance, usage and
+variant), `fingerprints` (each Artifact the key covers), additive `artifactKinds`
+(the covered names mapped to `folder`/`file`), provenance, usage and
 `producer` (`user@host` and artifactize version; submitted Human results also
 record their `reviewer`); a missing key prints `null` and exits 4. `show
 --history` prints all of the key's records as a JSON array, latest first. Entries
@@ -240,8 +260,11 @@ removes are in the [reference](#doctor-models-and-prune).
 `doctor` makes no provider calls and creates no Run, verdict, cache entry or auth
 file. It reports the resolved state directory and tests writability with a temporary
 directory, removed immediately (in the nearest existing ancestor when state does
-not yet exist). It reads the state database's schema without changing the file: a
-database [written by an earlier artifactize](#state) (schema 1 to 4) or by a newer
+not yet exist). Before the writable probe it enforces the same current/legacy
+workspace-marker safety boundary, even without `--repo`; unsafe state fails
+without writing a probe inside that workspace. It reads the state database's
+schema without changing the file: a
+database [written by an earlier artifactize](#state) (schemas 1–5) or by a newer
 one is a hard error (exit 1), with the message other commands refuse it with and
 its `schema` and the `supported` one in the details. `--repo`
 additionally runs the same static validation as `config check`. The `limits` check
@@ -279,7 +302,10 @@ Only known scratch directories below `state/runs/<run-id>` are removed: runtime
 `output`/`tmp`/`home`/`cache` and leftover tool output.
 Run roots, unknown files/directories, database rows, results and reuse records
 remain. Symlinks (including nested links), non-directory targets and
-repository content are refused before deletion. Database reads have a five-second
-busy timeout and finish before deletion; prune holds no writer lock. This is plain
+repository content are refused before deletion. `.git` and the current/legacy
+Artifact markers above protect workspace copies, including Git-less projects
+copied inside Run output. Both `--dry-run` and real prune enforce this boundary.
+Database reads have a five-second busy timeout and finish before deletion; prune
+holds no writer lock. This is plain
 prune, without quarantine, crash-recovery machinery or hostile filesystem-race
 protection. Saved `run show` and `request show` remain readable after pruning.

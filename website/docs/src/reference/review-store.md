@@ -48,7 +48,9 @@ verdict, a profile kind, an execution ID and an RFC 3339 `completedAt`) and size
 256 KiB for a summary, 16 MiB for a full record carrying `execution`. It stamps
 `publisher` (the token name) and `publishedAt` (server clock), replacing any client
 values. Clients check that a record's key matches its `evalDefHash` and
-`fingerprints` before they use it. Lookups update the last use of the record they
+`fingerprints` and additive `artifactKinds` before they use it. The kind map
+covers exactly the fingerprint names for new keys. Changing or dropping it
+cannot satisfy a kind-aware key. Lookups update the last use of the record they
 return; inserts evict least-recently-used records above 100,000 records or 4 GiB.
 
 **Upgrading.** A schema 1 or 2 `review-store.sqlite` (artifactize 0.3 or 0.4) is
@@ -60,6 +62,11 @@ anew. A 0.5 server answers 0.4 and 0.3 clients (their lookup keys and their
 upgrade; the 0.3 `staleKey` alias is gone. Upgrade the server and its clients
 together.
 
+0.9 uses reuse-key v2, so it reuses no pre-0.9 record, including script-fingerprint
+results and Human sign-offs. Existing store records cannot satisfy the new keys;
+clients review once and publish new records. This is separate from local state
+schema 6, which requires a new state without migration.
+
 ## Remote review store client
 
 ```sh
@@ -70,7 +77,7 @@ artifactize remote logout
 ```
 
 A client is configured only through the state directory and the environment,
-never `artifactize.json`, so a cloned repository cannot redirect a token. `remote
+never `.artf` declarations, so a cloned repository cannot redirect a token. `remote
 login URL` reads one token line from stdin (never argv). It attempts to hide
 terminal input; on Windows, if that fails, it warns that the token will be visible
 and continues reading. Non-terminal stdin is read without changing terminal echo.
@@ -119,12 +126,15 @@ on it names the machine and state where the conversation lives. Once the local s
 records a GREEN/RED with a reuse key (after the fingerprint recheck), verify sends
 its summary record, or the full record with share `full`, outside any database
 transaction. Records carry the key, the Eval definition hash, the fingerprint of
-each Artifact the key covers, the execution `options` (backend, model,
+each Artifact the key covers, its `artifactKinds` map (`folder`/`file`), and the
+execution `options` (backend, model,
 reasoning, limits and profile variant) and an Agent result's `executionPaths` pins. `request submit` publishes Human sign-offs.
 A token without `read` looks nothing up and one without `publish` publishes nothing,
 so a read-only CI token only reuses. Human sign-offs also need `human`; with any
 other token they stay local with a warning. Nothing is published for evals without a
-reuse key. `--force` never reads from the store, but a forced result is a new record
+reuse key. Dependency evals have no key or store record and are derived locally
+from current required evidence, not looked up or published. `--force` never reads
+from the store, but a forced result is a new record
 and is published like any other, so it becomes the store's latest too (unless a
 newer one exists). `status` makes the same comparison with a read-only lookup,
 without mirroring, so its `reuse` prediction includes newer remote results;

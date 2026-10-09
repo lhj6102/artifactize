@@ -20,11 +20,11 @@
 </p>
 
 Artifactize splits a project into Artifacts (code, docs, designs, images), each with
-its own evals: tests, LLM reviews and human sign-offs. Every teammate, human or
-agent, works their own way on their part, and integrating that work never pays for
-the same review twice: while an Artifact's fingerprint is unchanged, its GREEN or RED
-result is reused. Artifactize is open source under the Apache License 2.0 and runs on
-Linux and WSL 2.
+its own evals: tests, LLM reviews, human sign-offs and derived dependency checks.
+Every teammate, human or agent, works their own way on their part, and integrating
+that work reuses each review while its eval definition, covered Artifact kinds
+and fingerprints match. Earlier GREEN or RED results are reused. Artifactize is open source under the
+Apache License 2.0 and runs on Linux and WSL 2.
 
 ## Why I built it
 
@@ -51,11 +51,13 @@ re-reviews only that Artifact.
 - **Each part carries its own bar.** An Artifact declares the evals that judge it:
   runtime evals run commands; Agent evals ask one exact model (OpenAI or Anthropic API
   key, or a ChatGPT/Codex sign-in) with the read-only tools you declare; Human evals
-  wait for a sign-off. RED blocks what depends on it. Whoever works on a part, in
+  wait for a sign-off; dependency evals derive readiness from other Artifacts'
+  required evals without executing anything. RED blocks what depends on it. Whoever works on a part, in
   whatever style, meets the same bar.
 - **Integration reuses every review that still holds.** You define each Artifact's
-  fingerprint; the built-in one hashes the Artifact's own files. While the eval and
-  the fingerprints of the Artifacts it depends on are unchanged, `verify` reuses the
+  fingerprint; by default, artifactsum hashes the Artifact's own files.
+  `fingerprint = false` disables reuse. While the eval and
+  the kinds and fingerprints of the Artifacts it depends on are unchanged, `verify` reuses the
   earlier verdict, from any profile, and reports what it executed, what it reused and
   the tokens reuse saved. Review cost follows the size of a change.
 - **Centralize the reviews, not the repo.** One `artifactize server` shares verdicts
@@ -114,31 +116,18 @@ prerequisites, the Agent backends, state and uninstalling.
 
 ## A tiny example
 
-A folder with an `artifactize.json` is an Artifact. This one, from
-[`examples/runtime-relations`](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations), checks that a
-page has a heading, and `"fingerprint": {}` makes the result reusable while the
-folder is unchanged:
+A folder with an `index.artf` is an Artifact. A sidecar such as `page.md.artf` declares
+the neighboring file. Both use TOML and require a `name`. This folder Artifact,
+from [`examples/runtime-relations`](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations), checks that a page has a heading. Omitting `fingerprint` uses
+artifactsum, so the result is reusable while the inputs are unchanged:
 
-```json
-{
-  "name": "usage",
-  "fingerprint": {},
-  "evals": [
-    {
-      "id": "heading",
-      "title": "The page has a top-level heading",
-      "profile": {
-        "kind": "runtime",
-        "command": "grep",
-        "args": ["-m", "1", "^# ", "page.md"],
-        "timeoutMs": 5000
-      },
-      "payload": {
-        "instruction": "Check that {usage} starts with a top-level heading."
-      }
-    }
-  ]
-}
+```toml
+name = "usage"
+
+[evals.heading]
+title = "The page has a top-level heading"
+profile = { kind = "runtime", command = "grep", args = ["-m", "1", "^# ", "page.md"], timeout_ms = 5000 }
+payload.instruction = "Check that {usage} starts with a top-level heading."
 ```
 
 No model or API key is needed to try it:
@@ -151,13 +140,42 @@ artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused
 ```
 
-The [Quick start](https://artifactize.dev/docs/getting-started/quick-start.html)
-continues with `status`, a family of Artifacts and a Human sign-off.
+The [Quick start](https://artifactize.dev/docs/getting-started/quick-start.html) continues with `status`, file Artifacts, dependency evals and a
+Human sign-off.
+
+A dependency eval can collect readiness without another review:
+
+```toml
+# player/index.artf
+name = "player"
+tags = ["scope:player"]
+
+[evals.ready]
+title = "Movement and art are ready"
+profile = { kind = "dependency", depends_on = ["player-movement", "hero-art"] }
+```
+
+`artifactize verify player/ready` includes the required dependency evals without `--recursive`. The result is
+derived from current evidence, not cached or published to the team store. Tags
+appear in status, graph and monitor output; they do not change reuse keys. See
+[Declarations (.artf)](https://artifactize.dev/docs/reference/declarations.html).
+
+## Upgrading to 0.9
+
+Declarations move to TOML `index.artf` and `<file>.artf`, with snake_case keys; the
+ignore file becomes `.artfignore`. There is no converter: have an agent rewrite the
+declarations and commit them. Families are removed; projects that want templates
+generate and commit their own `.artf` files.
+
+State schema 6 requires a new state directory; there is no migration. Reuse-key v2
+matches no earlier result, including in a team review store or with a script
+fingerprint. The first full `verify` reviews every executable eval once, Human
+sign-offs included; dependency evals derive their current verdicts. See [Upgrading to 0.9](https://artifactize.dev/docs/concepts/fingerprints-and-reuse.html#upgrading-to-09).
 
 ## Reuse
 
 `verify` reviews once; the next `verify` reuses every result whose eval and
-fingerprints are unchanged and says where each came from.
+Artifact kinds and fingerprints are unchanged and says where each came from.
 
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/reuse.gif" width="800"
      alt="artifactize status lists unreviewed evals and a waiting dependency; the first verify executes all five, the second reuses all five and its summary reads executed 0, reused 5.">
@@ -200,8 +218,8 @@ Everything else is at **[artifactize.dev/docs](https://artifactize.dev/docs/)**:
 
 - [Concepts](https://artifactize.dev/docs/concepts/artifacts-and-evals.html): Artifacts, evals, fingerprints, Runs and status.
 - [Guides](https://artifactize.dev/docs/guides/agent-evals.html): Agent evals and backends, Human reviews, the team review store and CI.
-- [Reference](https://artifactize.dev/docs/reference/overview.html): every command and flag, `artifactize.json`, tools, state, limits and the review store protocol.
-- [Examples](https://artifactize.dev/docs/getting-started/examples.html): runtime relations, Agent and Human tools, families.
+- [Reference](https://artifactize.dev/docs/reference/overview.html): every command and flag, `index.artf`, tools, state, limits and the review store protocol.
+- [Examples](https://artifactize.dev/docs/getting-started/examples.html): runtime relations, Agent and Human tools, file Artifacts and dependency evals.
 
 The recordings above are reproducible: their VHS tapes and demo projects are in
 [`website/demo`](https://github.com/lhj6102/artifactize/tree/main/website/demo) ([how to record](https://github.com/lhj6102/artifactize/blob/main/website/README.md#recordings)).

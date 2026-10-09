@@ -65,8 +65,8 @@ Verify actions: will execute 0, will reuse 3, wait 0, blocked 0
 Summary: executed 0 (runtime 0, agent 0, human 0), reused 3 (runtime 3, agent 0, human 0)
 ```
 
-Bob's checkout has the same Artifacts and content, so the fingerprints, the Eval
-definition hashes and therefore the reuse keys match. Paths do not matter. `status` asked the store without
+Bob's checkout has the same Artifact names, kinds and content, so the fingerprints,
+Eval definition hashes and therefore the reuse keys match. Paths do not matter. `status` asked the store without
 changing anything. `verify` mirrored the three records into Bob's local cache:
 `artifactize cache list` shows them with the store as their origin. A later
 `verify` reuses them locally, even without the store.
@@ -129,13 +129,20 @@ A rejected token, by contrast, fails the job with exit 2.
 
 ## Human sign-offs
 
-A Human verdict is reused only when its Artifact has a fingerprint. Here is a
-one-file project with a Human sign-off, with a copy for Bob:
+A Human verdict reuses by default through artifactsum; `fingerprint = false` disables it. Here
+is a one-file project with a Human sign-off, with a copy for Bob:
 
 ```sh
 mkdir "$WALK/brand" && cd "$WALK/brand"
 echo 'logo v1' > logo.txt
-echo '{"name":"brand","fingerprint":{},"evals":[{"id":"signoff","title":"Sign off","profile":{"kind":"human"},"payload":{"instruction":"Approve the logo."}}]}' > artifactize.json
+cat > index.artf <<'TOML'
+name = "brand"
+
+[evals.signoff]
+title = "Sign off"
+profile = { kind = "human" }
+payload.instruction = "Approve the logo."
+TOML
 cp -r "$WALK/brand" "$WALK/brand-bob"
 ```
 

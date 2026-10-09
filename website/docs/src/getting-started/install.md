@@ -12,7 +12,7 @@ open source under the
 - Linux (x86_64 or aarch64) or WSL 2. Windows (x64) is experimental.
 - `python3` and `grep` for the example projects.
 - Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
-  `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime and Human evals
+  `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime, Human and dependency evals
   need none.
 
 The install script needs no Rust toolchain. `cargo install` needs Rust 1.95 or later,
@@ -95,16 +95,20 @@ artifactize` replaces the binary with the latest stable release, and `cargo inst
 artifactize --locked` rebuilds it (or run the `--git` command with the new release's
 tag, or `git pull` and repeat `cargo install --path`). Your state stays where it is.
 
-0.6.0 starts a new state. Commands that read or write state refuse a database that
-an earlier artifactize wrote, with exit code 2; `artifactize doctor` instead reports
-it as a hard error and exits 1. Set `ARTIFACTIZE_STATE_HOME` (or `--state-dir`) to a
-new directory, or move the old one
-away. The first `verify` in the new state reviews everything once
-([Upgrading to 0.6](../concepts/fingerprints-and-reuse.md#upgrading-to-06)). An eval
-that still declares `resultCheck` fails `config check`: remove it. 0.4 calls the reuse
-declaration `fingerprint`; `config check` shows the new shape for each
-`artifactize.json` that still uses the old field, or the content form's
-`dependencies` option that 0.5 removed.
+### Upgrading to 0.9
+
+Rewrite declarations as TOML `index.artf` for folders and `<file>.artf` for files. Keys
+are snake_case and evals are `[evals.<id>]` tables; `.artfignore` replaces the old ignore
+file. There is no converter. Have an agent rewrite and commit the files, remove the
+legacy markers and run `artifactize config check`. Families are removed; use your own generator if
+you want templates and commit its `.artf` output. See [Declarations (.artf)](../reference/declarations.md).
+
+State schema 6 requires a new state. Earlier state is refused with exit 2;
+`artifactize doctor` reports a hard error and exits 1. Set `ARTIFACTIZE_STATE_HOME` or `--state-dir` to a new
+directory, or move the old one away. Reuse-key v2 matches no earlier result, even in
+a team review store or with a script fingerprint. The first full `verify` reviews
+every executable eval once, Human sign-offs included. Dependency evals derive
+current evidence without execution. See [Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
 
 0.5.0 removes the `chatgpt` and `claude` Agent backends, with `login chatgpt`,
 `logout chatgpt` and the internal `mcp` command, and adds `codex` for ChatGPT plan
