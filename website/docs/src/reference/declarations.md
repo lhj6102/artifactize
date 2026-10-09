@@ -11,7 +11,9 @@ neighboring file whose complete name is `<filename>`, including its extension.
 Both use standard TOML and require `name`.
 
 Discovery walks from the repository root and skips `.git`, `node_modules`, and
-paths listed in an optional root `.artfignore` (gitignore syntax). List folders
+paths listed in an optional root `.artfignore` (gitignore syntax), including
+individual sidecar files. An ignored sidecar is not parsed or target-checked; its
+target remains an ordinary file unless another declaration includes it. List folders
 that hold separate projects, fixtures or examples:
 
 ```gitignore
@@ -108,6 +110,8 @@ option is also rejected.
 `hero.png.artf` declares the regular file `hero.png` in the same folder. Its
 `name` is required and independent of any surrounding folder Artifact. Missing
 targets, directories, symlinks and special files are not valid targets.
+Target filenames containing `:` are rejected at discovery because scoped tool
+paths cannot represent them.
 The `.artf` declaration itself must also be a regular file: symlinks, special files
 and directories such as `bundle.artf` fail discovery. A file named `index` cannot have a sidecar because `index.artf` always declares the folder;
 `.artf` files are declarations and are never targets.
@@ -123,7 +127,9 @@ have a `/path` suffix. Built-in tools expose only the target file, mounts and
 referenced Artifacts, not unrelated siblings. `list .` names the virtual file
 Artifact root; it lists the target filename and mounts. Paths within that root
 remain relative to the containing folder.
-Mount aliases must not shadow the target filename. Default artifactsum covers
+Mount aliases must not shadow the target filename, but may shadow unrelated
+sibling entries: those siblings are not visible in the file Artifact's virtual
+root. Ordinary global-name ambiguity checks still apply. Default artifactsum covers
 only the target file. The containing folder is a working directory, not an
 implicit grant of built-in-tool access to its other files. A workspace can have
 only file Artifacts; it does not need a folder declaration.
@@ -137,6 +143,14 @@ filename is allowed. `fingerprint = {}` and `files = ["."]` are rejected, as is
 JSON command-tool `context.artifactPath` names the file, while the process cwd is
 its containing folder. Scope entries carry `kind = "file"` or `"folder"`.
 `execution_paths` stay workspace-relative provenance pins for both kinds.
+
+The target must remain an existing regular file with no symlink traversal, not
+just at discovery. It is validated at fingerprint preparation/recheck, before
+reuse, at eval start/end and on every Agent/Human tool call, including with
+`fingerprint = false`. A file invalid before eval admission produces
+ERROR/PREPARATION_FAILED; a target that becomes invalid during an eval produces
+ERROR/INPUT_CHANGED instead of a semantic verdict. Preparation failures abort
+before reuse or execution; tool calls return an error without running the tool.
 
 ## Dependency evals
 
@@ -229,7 +243,8 @@ Every executable eval on an Artifact receives the same literal value, saved on
 its request and in the Run's Artifact validation. artifactize adds no repository,
 eval, profile, tool-view, dependency or content salt to script output. The eval's
 [reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key) combines it with the
-Artifact name, dependency fingerprints and Eval definition hash. Artifactsum
+Artifact names and kinds (`folder`/`file`), dependency fingerprints and Eval
+definition hash. Physical paths never enter the reuse key. Artifactsum
 failures abort preparation in the same way.
 
 The command runs from its owner's working directory with JSON on stdin:
@@ -259,8 +274,9 @@ After runtime or Agent review, covered fingerprints are recomputed before
 accepting GREEN or RED. A changed value records ERROR/INPUT_CHANGED with no
 semantic result; a failed recheck records ERROR. Force skips neither preparation
 nor recheck. An Artifact with `fingerprint = false` has no fingerprint to prepare;
-unkeyed evals skip the end-of-review recheck. Other required Artifacts can still
-have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
+unkeyed evals skip the fingerprint-value recheck. File-target validation remains
+mandatory at preparation, eval start/end and tool calls, including for unkeyed
+evals. Other required Artifacts can still have fingerprints prepared. There is no workspace monitoring: artifactsum hashes
 only at preparation and recheck.
 
 ## Scoped input library

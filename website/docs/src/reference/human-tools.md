@@ -12,7 +12,9 @@ there are no arbitrary string templates or escaped-brace interpolation. Unknown
 names and invalid operand syntax are rejected when loading the workspace. Tool
 operands never add dependencies or expand the review's admitted scope; an existing
 but out-of-scope Artifact, missing input or symlink fails before execution. Input
-metadata is checked at each call, not during inert config discovery.
+metadata is checked at each call. File-target regularity/existence and no-symlink
+checks happen at discovery and on every tool call too, even with
+`fingerprint = false`; a failed check runs no command.
 
 Executable resolution is identical to Agent tools: bare names use PATH, relative
 names containing `/` are owner-relative scoped paths (`./tool` is accepted), and
@@ -67,7 +69,8 @@ The internal library exposes asynchronous operations with an open `store::Receip
 - `human::run_human_tool(receipts, request_id, reviewer, tool, cancellation)`
   authorizes the claimant, reopens the recorded Artifact/eval scope and declarations,
   and, only when the request has a reuse key, checks the fingerprint before invoking a
-  registered Human tool; requests without a reuse key skip that check. The tool takes
+  registered Human tool; requests without a reuse key skip the fingerprint-value
+  check, not the file-target validation on each tool call. The tool takes
   no free arguments and uses the reviewer's real environment. Ordinary tool errors
   are correctable actions, not verdicts. Human tool runs are not recorded.
 - `human::tool_command(receipts, request_id, tool)` resolves what that tool would

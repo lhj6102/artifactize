@@ -20,6 +20,13 @@ legacy declarations are not read. Sidecar-only workspaces are protected too.
 Database files and their WAL sidecars must be
 regular files.
 
+Known limitation: a search-only ancestor can be traversed but not listed. When
+listing fails with permission denied, the guard falls back to fixed-marker
+probes for `.git`, `index.artf`, legacy `artifactize.json` and legacy
+`.artifactizeignore`. It cannot discover a sidecar-only workspace in that
+ancestor. Keep state and credentials outside such workspaces explicitly; do not
+rely on sidecar detection where directory listing is unavailable.
+
 The state keeps what was reviewed, with which verdict, and how it was executed, in
 four tables:
 
@@ -94,7 +101,8 @@ text table, or a JSON array that also carries the Eval definition hash, the targ
 fingerprint and the profile variant). `--history` lists every record, latest first
 within each key. `show` prints the key's latest saved execution as JSON, with
 result, actual `profile`, `options` (backend, model, reasoning, limits and
-variant), `fingerprints` (each Artifact the key covers), provenance, usage and
+variant), `fingerprints` (each Artifact the key covers), additive `artifactKinds`
+(the covered names mapped to `folder`/`file`), provenance, usage and
 `producer` (`user@host` and artifactize version; submitted Human results also
 record their `reviewer`); a missing key prints `null` and exits 4. `show
 --history` prints all of the key's records as a JSON array, latest first. Entries

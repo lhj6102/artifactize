@@ -57,7 +57,7 @@ re-reviews only that Artifact.
 - **Integration reuses every review that still holds.** You define each Artifact's
   fingerprint; by default, artifactsum hashes the Artifact's own files.
   `fingerprint = false` disables reuse. While the eval and
-  the fingerprints of the Artifacts it depends on are unchanged, `verify` reuses the
+  the kinds and fingerprints of the Artifacts it depends on are unchanged, `verify` reuses the
   earlier verdict, from any profile, and reports what it executed, what it reused and
   the tokens reuse saved. Review cost follows the size of a change.
 - **Centralize the reviews, not the repo.** One `artifactize server` shares verdicts
@@ -175,7 +175,7 @@ sign-offs included; dependency evals derive their current verdicts. See [Upgradi
 ## Reuse
 
 `verify` reviews once; the next `verify` reuses every result whose eval and
-fingerprints are unchanged and says where each came from.
+Artifact kinds and fingerprints are unchanged and says where each came from.
 
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/reuse.gif" width="800"
      alt="artifactize status lists unreviewed evals and a waiting dependency; the first verify executes all five, the second reuses all five and its summary reads executed 0, reused 5.">

@@ -48,7 +48,9 @@ verdict, a profile kind, an execution ID and an RFC 3339 `completedAt`) and size
 256 KiB for a summary, 16 MiB for a full record carrying `execution`. It stamps
 `publisher` (the token name) and `publishedAt` (server clock), replacing any client
 values. Clients check that a record's key matches its `evalDefHash` and
-`fingerprints` before they use it. Lookups update the last use of the record they
+`fingerprints` and additive `artifactKinds` before they use it. The kind map
+covers exactly the fingerprint names for new keys. Changing or dropping it
+cannot satisfy a kind-aware key. Lookups update the last use of the record they
 return; inserts evict least-recently-used records above 100,000 records or 4 GiB.
 
 **Upgrading.** A schema 1 or 2 `review-store.sqlite` (artifactize 0.3 or 0.4) is
@@ -124,7 +126,8 @@ on it names the machine and state where the conversation lives. Once the local s
 records a GREEN/RED with a reuse key (after the fingerprint recheck), verify sends
 its summary record, or the full record with share `full`, outside any database
 transaction. Records carry the key, the Eval definition hash, the fingerprint of
-each Artifact the key covers, the execution `options` (backend, model,
+each Artifact the key covers, its `artifactKinds` map (`folder`/`file`), and the
+execution `options` (backend, model,
 reasoning, limits and profile variant) and an Agent result's `executionPaths` pins. `request submit` publishes Human sign-offs.
 A token without `read` looks nothing up and one without `publish` publishes nothing,
 so a read-only CI token only reuses. Human sign-offs also need `human`; with any

@@ -38,7 +38,12 @@ Mounts have kind `mount`. A file Artifact exposes only its target file, mounts a
 referenced Artifacts, not unrelated siblings in its working directory.
 `list` with no path or `path: "."` lists that virtual root's target file and
 declared mounts. Read the target by its filename; file paths remain relative to
-the containing folder.
+the containing folder. A mount alias may shadow an unrelated physical sibling,
+but not the target filename.
+
+Every call validates admitted file targets before invoking a built-in or command
+tool, even when reuse is disabled. A missing, non-regular or symlink-replaced
+target returns an error without running the command.
 
 Read returns at most 64 KiB of **complete original line bytes**, preserving LF,
 CRLF and a UTF-8 BOM in each line's `text`. Only requested lines are decoded;

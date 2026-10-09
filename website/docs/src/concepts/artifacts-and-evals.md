@@ -62,7 +62,14 @@ are containing-folder-relative. Its default artifactsum hashes just that file.
 An explicit artifactsum `files` list may name only `hero.png`; `ignore`, even an
 empty list, is rejected. `fingerprint = {}` is not a file default: omit the field.
 The sidecar itself must be a regular file, so a directory named `bundle.artf`
-also fails discovery.
+also fails discovery. Filenames containing `:` are rejected. `.artfignore` can
+exclude an individual sidecar as well as whole folders.
+
+A mount alias may shadow unrelated sibling entries, but not the target filename.
+File targets must remain regular, present and free of symlink traversal. They are
+validated at preparation/recheck, before reuse, at eval start/end and on every
+tool call, even with `fingerprint = false`. Invalid input is an operational error,
+not a RED review.
 
 A file Artifact is not a child or dependency of the surrounding folder Artifact. The
 folder's artifactsum still includes the target file and excludes all `*.artf`
@@ -119,7 +126,8 @@ Artifact folders; a file Artifact hashes its one target file.
 - `fingerprint = false` disables reuse for this Artifact and executable evals
   whose keys would depend on it. `fingerprint = true` is rejected.
 
-While the eval definition and all fingerprints in its key are unchanged, the prior
+While the eval definition, Artifact kinds and all fingerprints in its key are
+unchanged, the prior
 GREEN or RED verdict is reused. See [Fingerprints and reuse](fingerprints-and-reuse.md). Dependency verdicts are derived
 again rather than reused.
 

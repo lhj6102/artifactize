@@ -49,7 +49,8 @@ See [Remote review store client](../reference/review-store.md#remote-review-stor
 - the schema-validated owner fields (for runtime evals, only the exit code,
   duration and truncation flag);
 - the reuse key, the Eval definition hash and the fingerprint of each Artifact
-  the key covers;
+  the key covers, including each covered Artifact's `folder`/`file` kind
+  (`artifactKinds` in the record);
 - the profile, its execution options (backend, model, reasoning, limits, variant)
   and usage counters;
 - the producer (`user@host`), the Human reviewer and timestamps;

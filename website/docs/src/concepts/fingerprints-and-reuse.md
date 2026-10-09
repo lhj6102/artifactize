@@ -66,11 +66,14 @@ connections away matters is up to how you define fingerprints: a fingerprint
 script can read a file of any Artifact it names in its args. The key is
 
 ```text
-hash(Eval definition hash, sorted (Artifact name, fingerprint) of each Artifact the eval depends on)
+hash(Eval definition hash, sorted (Artifact name, kind, fingerprint) of each covered Artifact)
 ```
 
-Artifact names are part of the key, so two Artifacts never share a result, even
-when their fingerprints are equal. The **Eval definition hash** is lowercase
+Artifact names and kinds (`folder` or `file`) are part of the key, for the
+target and every covered dependency. A change from folder to file never reuses
+the former result, even if a script emits the same fingerprint. Physical paths
+are never key inputs, so copies with matching names, kinds and fingerprints reuse.
+Different Artifact names never share a result. The **Eval definition hash** is lowercase
 SHA-256 of canonical JSON with recursively sorted keys over the eval strategy:
 
 - the eval kind (runtime, agent or human);
@@ -112,7 +115,14 @@ JSON/state field names, not snake_case declaration keys:
 - `profile`: the effective profile;
 - `producer` (`user@host` and artifactize version), the Human `reviewer`, and for
   a remote record its `origin` with the publisher;
-- `completedAt`, `fingerprints` (each Artifact the key covers) and `key`.
+- `completedAt`, `fingerprints` (each Artifact the key covers), `artifactKinds`
+  (the same names mapped to `folder` or `file`) and `key`. The kind map is an
+  additive execution/team-store field, not a declaration option.
+
+Before accepting reuse, artifactize validates admitted file targets again:
+they must exist as regular files without symlink traversal. `fingerprint = false`
+disables reuse, not these file-target safety checks. Targets are checked during
+fingerprint preparation/recheck, at eval start/end and on every tool call too.
 
 A hit returns the original result without running the eval or re-validating it
 against the requested profile or schema. The request saves the original execution
