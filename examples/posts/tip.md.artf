@@ -1,0 +1,8 @@
+name = "tip"
+tags = ["type:post", "length:brief"]
+mounts = { style = "house-style" }
+
+[evals.style]
+title = "The brief post fits in 40 words and follows the house style"
+profile = { kind = "runtime", command = "python3", args = ["{style}/check.py", "{tip}", "{style}/banned.txt", "40"], timeout_ms = 10000 }
+payload.instruction = "Check that {tip} starts with a title, stays within 40 words, and avoids every word banned in {style}."

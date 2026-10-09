@@ -1,0 +1,8 @@
+name = "release-notes"
+tags = ["type:post"]
+mounts = { style = "house-style" }
+
+[evals.style]
+title = "The post fits in 120 words and follows the house style"
+profile = { kind = "runtime", command = "python3", args = ["{style}/check.py", "{release-notes}", "{style}/banned.txt", "120"], timeout_ms = 10000 }
+payload.instruction = "Check that {release-notes} starts with a title, stays within 120 words, and avoids every word banned in {style}."
