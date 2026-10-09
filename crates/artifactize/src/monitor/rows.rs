@@ -37,7 +37,7 @@ fn width(text: &str) -> usize {
 }
 
 /// At most `max` columns, ending in `…` when cut.
-fn fit(text: &str, max: usize) -> String {
+pub(super) fn fit(text: &str, max: usize) -> String {
     if width(text) <= max {
         return text.to_owned();
     }

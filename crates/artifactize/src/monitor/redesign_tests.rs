@@ -628,3 +628,69 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
         Action::Quit
     );
 }
+
+#[tokio::test]
+async fn claim_and_completed_human_details_keep_help_attention_back_and_quit() {
+    for settled in [false, true] {
+        let (view, requests) = super::tests::live();
+        let mut monitor = Monitor::new("/fixture-state".into(), None);
+        monitor.open = Some("run-1".parse().unwrap());
+        monitor.set_run(view, requests);
+        let open = |monitor: &mut Monitor| {
+            let review = if settled {
+                let mut review =
+                    review::Review::new("/fixture-state".into(), None, "alice".into(), None);
+                review.load_single(super::tests::request(
+                    "app/review",
+                    "GREEN",
+                    json!({"profile":{"kind":"human"},"result":{"verdict":"GREEN"}}),
+                ));
+                review
+            } else {
+                crate::review::tests::opened(None, crate::review::tests::demo())
+            };
+            let pane = monitor.detail.as_mut().unwrap();
+            pane.review = Some(review);
+            pane.focus = DetailArea::Fields;
+        };
+        monitor
+            .tree
+            .select(vec!["a:app".into(), "e:app/review".into()]);
+        monitor.open_detail().await;
+        open(&mut monitor);
+        assert_eq!(
+            monitor.key(KeyEvent::from(KeyCode::Char('?'))),
+            Action::None
+        );
+        assert!(monitor.help, "settled {settled}");
+        monitor.key(KeyEvent::from(KeyCode::Esc));
+        assert_eq!(monitor.focus, Pane::Detail);
+        if !settled {
+            // Its own keys still reach the review: `c` claims.
+            assert!(matches!(
+                monitor.key(KeyEvent::from(KeyCode::Char('c'))),
+                Action::Review(_)
+            ));
+        }
+        assert_eq!(monitor.key(KeyEvent::from(KeyCode::Left)), Action::None);
+        assert_eq!(monitor.focus, Pane::Artifacts);
+        assert!(monitor.detail.is_none());
+        monitor.open_detail().await;
+        open(&mut monitor);
+        assert_eq!(
+            monitor.key(KeyEvent::from(KeyCode::Char('!'))),
+            Action::OpenDetail
+        );
+        assert!(monitor.detail.is_none() && monitor.focus == Pane::Artifacts);
+        assert_ne!(monitor.target(), Some(Target::Eval("app/review".into())));
+        monitor
+            .tree
+            .select(vec!["a:app".into(), "e:app/review".into()]);
+        monitor.open_detail().await;
+        open(&mut monitor);
+        assert_eq!(
+            monitor.key(KeyEvent::from(KeyCode::Char('q'))),
+            Action::Quit
+        );
+    }
+}

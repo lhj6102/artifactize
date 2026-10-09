@@ -4,6 +4,7 @@ use super::{
     input::{Button, Hits},
     layout::{self, Density, Hints},
     model::{self, Section},
+    rows::fit,
 };
 use crate::review::Control;
 use ratatui::{
@@ -24,6 +25,8 @@ const PEEK_ROWS: usize = 4;
 /// The peek lays the transcript out this wide, so its last row is a whole line, not the end
 /// of a wrapped one; the row is then cut to the pane.
 const PEEK_WIDTH: usize = 512;
+/// Rows the Run tree keeps under the headline: its rule and three rows.
+const TREE_ROWS: u16 = 4;
 /// Compact Run ids keep this many trailing characters.
 const SHORT_ID: usize = 6;
 
@@ -156,11 +159,16 @@ fn highlight(focused: bool) -> Style {
         Modifier::BOLD.into()
     }
 }
-fn width(text: &str) -> u16 {
-    u16::try_from(Line::from(text).width()).unwrap_or(u16::MAX)
+/// Display columns. Natural widths add up in `usize` and become `u16` only through `cap`, so a
+/// saved text of any length cannot overflow them.
+fn width(text: &str) -> usize {
+    Line::from(text).width()
+}
+fn cap(columns: usize) -> u16 {
+    u16::try_from(columns).unwrap_or(u16::MAX)
 }
 /// Widest tree row: indentation, the fold marker, the glyph and the text.
-fn tree_width(nodes: &[model::Node], depth: u16) -> u16 {
+fn tree_width(nodes: &[model::Node], depth: usize) -> usize {
     nodes
         .iter()
         .map(|node| {
@@ -190,8 +198,8 @@ fn run_cells(row: &model::RunRow, workspace: bool) -> [String; 7] {
 }
 /// Column widths of non-empty columns; narrow widths drop workspace, took, counts and then
 /// the status word, so glyph, id and age always remain.
-fn run_widths(rows: &[[String; 7]], available: u16) -> [u16; 7] {
-    let mut widths = [0u16; 7];
+fn run_widths(rows: &[[String; 7]], available: usize) -> [usize; 7] {
+    let mut widths = [0usize; 7];
     for row in rows {
         for (column, cell) in row.iter().enumerate() {
             widths[column] = widths[column].max(width(cell));
@@ -205,30 +213,16 @@ fn run_widths(rows: &[[String; 7]], available: u16) -> [u16; 7] {
     }
     widths
 }
-fn total(widths: &[u16]) -> u16 {
-    let shown = widths.iter().filter(|width| **width > 0).count() as u16;
-    widths.iter().sum::<u16>() + shown.saturating_sub(1)
-}
-/// Cut text to `width` columns with a trailing ellipsis.
-fn fit(text: &str, width: usize) -> String {
-    if Line::from(text).width() <= width {
-        return text.to_owned();
-    }
-    let mut out = String::new();
-    for character in text.chars() {
-        if Line::from(format!("{out}{character}…").as_str()).width() > width {
-            break;
-        }
-        out.push(character);
-    }
-    format!("{out}…")
+fn total(widths: &[usize]) -> usize {
+    let shown = widths.iter().filter(|width| **width > 0).count();
+    widths.iter().sum::<usize>() + shown.saturating_sub(1)
 }
 /// The Run pane's natural width covers its tree rows and headline up to this bound; rows cut
 /// their status text, and the rest of a wide terminal goes to the Detail peek.
-const RUN_BOUND: u16 = 80;
+const RUN_BOUND: usize = 80;
 
 /// Columns of the Run headline and its attention lines.
-fn strip_width(strip: &model::Strip) -> u16 {
+fn strip_width(strip: &model::Strip) -> usize {
     let headline = width(&strip.status) + width(&strip.headline) + 5;
     let attention = strip
         .attention
@@ -279,7 +273,7 @@ impl Monitor {
                 let strip = self.run.as_ref().map_or(0, |(run, requests)| {
                     strip_width(&model::strip(&model::progress(run, requests, now)))
                 });
-                (tree_width(nodes, 0).max(strip) + 3).min(RUN_BOUND)
+                cap((tree_width(nodes, 0).max(strip) + 3).min(RUN_BOUND))
             }),
         };
         let plan = layout::plan(body, self.focus, hints);
@@ -412,7 +406,7 @@ impl Monitor {
             .catalog
             .rows
             .iter()
-            .map(|row| row.depth as u16 * 2 + width(&row.label))
+            .map(|row| row.depth * 2 + width(&row.label))
             .max()
             .unwrap_or(0);
         let badge = self
@@ -422,7 +416,7 @@ impl Monitor {
             .map(|row| width(&row.badge.text()))
             .max()
             .unwrap_or(0);
-        label + badge + 4
+        cap(label + badge + 4)
     }
     fn draw_scope(&mut self, frame: &mut Frame, area: Rect, density: Density) {
         let focused = self.focus == Pane::Repositories;
@@ -482,7 +476,7 @@ impl Monitor {
             .iter()
             .map(|row| run_cells(row, workspace))
             .collect();
-        total(&run_widths(&rows, u16::MAX)) + 3
+        cap(total(&run_widths(&rows, usize::MAX)) + 3)
     }
     fn draw_runs(&mut self, frame: &mut Frame, area: Rect, density: Density, now: OffsetDateTime) {
         let focused = self.focus == Pane::Runs;
@@ -518,7 +512,7 @@ impl Monitor {
             )
         } else {
             let cells: Vec<_> = rows.iter().map(|row| run_cells(row, workspace)).collect();
-            let widths = run_widths(&cells, area.width.saturating_sub(3));
+            let widths = run_widths(&cells, usize::from(area.width.saturating_sub(3)));
             let rows = rows.iter().zip(&cells).map(|(row, cells)| {
                 Row::new(
                     cells
@@ -538,7 +532,7 @@ impl Monitor {
                 widths
                     .iter()
                     .filter(|width| **width > 0)
-                    .map(|width| Constraint::Length(*width))
+                    .map(|width| Constraint::Length(cap(*width)))
                     .collect(),
             )
         };
@@ -590,34 +584,46 @@ impl Monitor {
             format!(" · {headline}").into(),
         ]))
         .wrap(Wrap { trim: false });
-        // One row per attention item; its full text is in the peek and the Run detail.
-        let mut attention: Vec<Line> = Vec::new();
-        if density != Density::Compact {
-            attention.extend(strip.attention.iter().map(|(state, text)| {
-                Line::from(vec![
-                    glyph(state),
-                    format!(" {}", fit(text, usize::from(inner.width).saturating_sub(2))).into(),
-                ])
-            }));
-            if strip.more > 0 {
-                attention.push(
-                    Line::from(format!("+{} more · Enter on the Run node", strip.more)).dark_gray(),
-                );
-            }
-        }
-        // Height after wrapping, so the last attention line is never pushed off.
+        // The headline wraps into at most a third of the pane; its height is measured after
+        // wrapping, so nothing below it is pushed off.
         let cap = if density == Density::Compact {
             1
         } else {
             (inner.height / 3).max(1)
         };
         let wrapped = u16::try_from(headline.line_count(inner.width)).unwrap_or(u16::MAX);
+        let headline_height = wrapped.clamp(1, cap);
+        // One row per attention item; its full text is in the peek and the Run detail. The tree
+        // keeps its rule and a few rows; items that do not fit are counted in `+N more`.
+        let mut attention: Vec<Line> = Vec::new();
+        if density != Density::Compact {
+            let room = usize::from(
+                inner
+                    .height
+                    .saturating_sub(headline_height)
+                    .saturating_sub(TREE_ROWS),
+            );
+            let items = strip.attention.len() + strip.more;
+            let shown = if strip.attention.len() + usize::from(strip.more > 0) <= room {
+                strip.attention.len()
+            } else {
+                room.saturating_sub(1)
+            };
+            attention.extend(strip.attention.iter().take(shown).map(|(state, text)| {
+                Line::from(vec![
+                    glyph(state),
+                    format!(" {}", fit(text, usize::from(inner.width).saturating_sub(2))).into(),
+                ])
+            }));
+            if shown < items && room > 0 {
+                attention.push(
+                    Line::from(format!("+{} more · Enter on the Run node", items - shown))
+                        .dark_gray(),
+                );
+            }
+        }
         let attention_height = u16::try_from(attention.len()).unwrap_or(u16::MAX);
-        // Attention lines keep their rows first; the headline wraps into what is left.
-        let headline_height = wrapped.min(cap.saturating_sub(attention_height).max(1));
-        let height = headline_height
-            .saturating_add(attention_height)
-            .min(cap.max(headline_height));
+        let height = headline_height.saturating_add(attention_height);
         let [top, rows] =
             Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(inner);
         let [headline_area, attention_area] =

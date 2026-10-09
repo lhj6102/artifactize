@@ -650,3 +650,86 @@ fn review_key_hands_off_only_waiting_human_requests() {
     monitor.key(KeyEvent::from(KeyCode::Char('j')));
     assert!(!screen(&mut monitor).contains("review exited"));
 }
+
+#[test]
+fn saved_texts_of_any_length_never_overflow_natural_widths() {
+    let long = "X".repeat(usize::from(u16::MAX));
+    let (view, mut requests) = live();
+    for view in &mut requests {
+        if view.request.eval_id == "p2/check" {
+            view.request.error = Some(long.clone());
+        }
+        if view.request.eval_id == "app/check" {
+            view.request.profile = serde_json::from_value(
+                json!({"kind":"runtime","command":long.clone(),"args":[long.clone()]}),
+            )
+            .unwrap();
+        }
+    }
+    let mut monitor = Monitor::new("/state".into(), None);
+    monitor.catalog.update(
+        &[crate::store::CatalogRun {
+            repo_path: format!("/work/{long}").into(),
+            repository: Default::default(),
+            status: crate::types::RunStatus::Running,
+            red: 0,
+            error: 1,
+            waiting: Vec::new(),
+        }],
+        None,
+    );
+    let mut row = summary("run-1", 1);
+    row.repo_path = format!("/work/{long}").into();
+    monitor.set_runs(vec![row]);
+    monitor.open = Some("run-1".parse().unwrap());
+    monitor.set_run(view, requests);
+    for focus in [Pane::Repositories, Pane::Runs, Pane::Artifacts] {
+        monitor.focus = focus;
+        for (width, height) in [(160, 30), (100, 24), (80, 24)] {
+            // Natural widths of the scope label, the Run headline and the tree rows are capped.
+            assert!(!sized(&mut monitor, width, height).is_empty());
+        }
+    }
+    monitor.focus = Pane::Artifacts;
+    monitor
+        .tree
+        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    let text = sized(&mut monitor, 160, 30);
+    assert!(text.contains("! p2/check  [SPAWN] XXX"), "{text}");
+}
+
+#[test]
+fn short_terminals_keep_every_attention_line_or_count_the_rest() {
+    for height in [15, 18] {
+        for focus in [Pane::Runs, Pane::Artifacts] {
+            let (view, requests) = live();
+            let mut monitor = Monitor::new("/state".into(), None);
+            monitor.open = Some("run-1".parse().unwrap());
+            monitor.set_run(view, requests);
+            monitor.focus = focus;
+            let text = sized(&mut monitor, 160, height);
+            for expected in [
+                "! p2/check  [SPAWN] spawn failed",
+                "? app/review  waiting Human",
+                "◐ app/check  running",
+            ] {
+                assert!(
+                    text.contains(expected),
+                    "{height} {focus:?}: {expected}\n{text}"
+                );
+            }
+        }
+    }
+    // Rows that do not fit are counted, including the ones beyond the first three.
+    let (view, mut requests) = live();
+    for eval in ["x/one", "x/two"] {
+        requests.push(request(eval, "ERROR", json!({"error":"boom"})));
+    }
+    let mut monitor = Monitor::new("/state".into(), None);
+    monitor.open = Some("run-1".parse().unwrap());
+    monitor.set_run(view, requests);
+    monitor.focus = Pane::Artifacts;
+    let text = sized(&mut monitor, 160, 12);
+    assert!(text.contains("+3 more · Enter on the Run node"), "{text}");
+    assert_eq!(text.matches("  boom").count(), 1, "{text}");
+}

@@ -452,6 +452,7 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
     let id = monitor.selected_request().unwrap().request.id.clone();
     monitor.peek = Some(Peek {
         request: id,
+        stamp: evidence::EvidenceStamp::new(monitor.selected_request().unwrap()),
         live: Some(session::Live::new(7, source)),
         text: String::new(),
     });
@@ -521,4 +522,77 @@ async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
         monitor.peek.is_none(),
         "only a running Agent has a transcript peek"
     );
+}
+
+#[tokio::test]
+async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_readers_stay() {
+    use serde_json::json;
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir_all(&repo).unwrap();
+    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let run: store::Run = serde_json::from_value(json!({"id":"run-1","repoPath":repo,
+        "stateDir":state,"status":"RUNNING","createdAt":"2026-01-01T00:00:00Z",
+        "selection":{"kind":"all"},"validation":null}))
+    .unwrap();
+    let mut request = tests::request(
+        "app/check",
+        "RUNNING",
+        json!({"profile":{"kind":"agent","backend":"openai","model":"m"},
+            "startedAt":"2026-01-01T00:00:00Z"}),
+    )
+    .request;
+    request.cwd = repo.clone();
+    receipts.create_run(&run, &[request.clone()]).await.unwrap();
+    let mut monitor = Monitor::new(state.clone(), None);
+    monitor.refresh().await;
+    monitor.focus = Pane::Artifacts;
+    monitor.size = ratatui::layout::Rect::new(0, 0, 160, 30);
+    monitor
+        .tree
+        .select(vec!["a:app".into(), "e:app/check".into()]);
+    monitor.sync_peek().await;
+    let failed = monitor.peek.as_ref().unwrap();
+    assert!(failed.live.is_none() && !failed.text.is_empty());
+    // A refresh lets the next frame resolve the failed peek again.
+    monitor.refresh().await;
+    assert!(monitor.peek.is_none());
+    monitor.sync_peek().await;
+    assert!(monitor.peek.as_ref().unwrap().live.is_none());
+    // The session appears: the peek reads it after the refresh that brings it.
+    let session = |id: &str| crate::agent::session::SessionRef {
+        producer: store::Producer::current().name,
+        state: String::new(),
+        run_id: "run-1".parse().unwrap(),
+        request_id: request.id.clone(),
+        session_id: id.parse().unwrap(),
+    };
+    let state_id = receipts.state_id().await.unwrap();
+    request.session = Some(crate::agent::session::SessionRef {
+        state: state_id.clone(),
+        ..session("session-1")
+    });
+    receipts.save_request(&request).await.unwrap();
+    monitor.refresh().await;
+    monitor.sync_peek().await;
+    let serial = monitor.peek.as_ref().unwrap().live.as_ref().unwrap().serial;
+    // Unchanged facts keep the reader; nothing is resolved per frame or per refresh.
+    monitor.refresh().await;
+    monitor.sync_peek().await;
+    assert_eq!(
+        monitor.peek.as_ref().unwrap().live.as_ref().unwrap().serial,
+        serial
+    );
+    // A replaced session is resolved again and read from the start.
+    request.session = Some(crate::agent::session::SessionRef {
+        state: state_id,
+        ..session("session-2")
+    });
+    receipts.save_request(&request).await.unwrap();
+    monitor.refresh().await;
+    monitor.sync_peek().await;
+    let live = monitor.peek.as_ref().unwrap().live.as_ref().unwrap();
+    assert_ne!(live.serial, serial);
+    assert_eq!(live.source.reference.session_id.as_str(), "session-2");
 }

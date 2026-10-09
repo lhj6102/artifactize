@@ -103,7 +103,10 @@ pub struct DetailPane {
 /// The tree-focused peek of a running Agent: only its last transcript line is read.
 struct Peek {
     request: RequestId,
+    /// The request's session facts when it was resolved; a change resolves it again.
+    stamp: evidence::EvidenceStamp,
     live: Option<session::Live>,
+    /// Why there is no session to read; a refresh resolves it again.
     text: String,
 }
 
@@ -240,6 +243,8 @@ impl Monitor {
             let requests = store::read_requests(&self.state, Some(&id)).await?;
             self.set_run(run, requests);
         }
+        // A peek without a session (unavailable or failed) resolves again after a refresh.
+        self.peek = self.peek.take().filter(|peek| peek.live.is_some());
         if let Some(live) = self.peek.as_mut().and_then(|peek| peek.live.as_mut()) {
             live.invalidate();
         }
@@ -485,23 +490,41 @@ impl Monitor {
             self.peek = None;
             return;
         };
-        if self
-            .peek
-            .as_ref()
-            .is_some_and(|peek| peek.request == view.request.id)
+        let stamp = evidence::EvidenceStamp::new(&view);
+        // A resolved session is read incrementally; only a new request or new session facts
+        // resolve it again, so drawing never queries the state.
+        if let Some(peek) = &self.peek
+            && peek.request == view.request.id
+            && peek.stamp == stamp
         {
             return;
         }
-        self.serial += 1;
+        let kept = self
+            .peek
+            .take()
+            .filter(|peek| peek.request == view.request.id)
+            .and_then(|peek| peek.live);
         let (live, text) = match live::resolve(&self.state, &view).await {
-            Ok(Resolution::Local(source)) => {
-                (Some(session::Live::new(self.serial, source)), String::new())
-            }
+            Ok(Resolution::Local(source)) => match kept {
+                Some(mut live) if live.source.reference == source.reference => {
+                    live.source = source;
+                    if let Some(reader) = &mut live.reader {
+                        reader.source = live.source.clone();
+                    }
+                    live.invalidate();
+                    (Some(live), String::new())
+                }
+                _ => {
+                    self.serial += 1;
+                    (Some(session::Live::new(self.serial, source)), String::new())
+                }
+            },
             Ok(Resolution::Unavailable(text)) => (None, text),
             Err(error) => (None, format!("Conversation unavailable: {error}")),
         };
         self.peek = Some(Peek {
             request: view.request.id.clone(),
+            stamp,
             live,
             text,
         });
@@ -720,6 +743,38 @@ impl Monitor {
             self.leave_detail();
             return Action::None;
         }
+        // A Human review owns every key only while it edits, works or confirms; otherwise the
+        // common Detail keys come first and its own keys (c, g, r, u, Ctrl-S…) follow.
+        let exclusive = pane
+            .review
+            .as_ref()
+            .is_some_and(|review| review.editing() || review.busy() || review.confirming());
+        if !exclusive {
+            match key.code {
+                KeyCode::Char('q') => return Action::Quit,
+                KeyCode::Char('?') => {
+                    self.help = true;
+                    return Action::None;
+                }
+                KeyCode::Left => {
+                    self.leave_detail();
+                    return Action::None;
+                }
+                // The next attention item opens in Detail, so causes read one after another.
+                KeyCode::Char('!') => {
+                    self.leave_detail();
+                    return if self.next_attention() {
+                        Action::OpenDetail
+                    } else {
+                        Action::None
+                    };
+                }
+                _ => {}
+            }
+        }
+        let Some(pane) = &mut self.detail else {
+            return Action::None;
+        };
         if let Some(review) = &mut pane.review {
             if key.code == KeyCode::BackTab
                 || key.code == KeyCode::Tab
@@ -735,24 +790,6 @@ impl Monitor {
             return Action::Review(review.key_single(key, pane.focus == DetailArea::Tools));
         }
         match key.code {
-            KeyCode::Char('q') => return Action::Quit,
-            KeyCode::Char('?') => {
-                self.help = true;
-                return Action::None;
-            }
-            KeyCode::Left => {
-                self.leave_detail();
-                return Action::None;
-            }
-            // The next attention item opens in Detail, so causes read one after another.
-            KeyCode::Char('!') => {
-                self.leave_detail();
-                return if self.next_attention() {
-                    Action::OpenDetail
-                } else {
-                    Action::None
-                };
-            }
             KeyCode::Char('t') if pane.live.is_none() || pane.show_details => {
                 pane.technical = !pane.technical;
                 return Action::None;
