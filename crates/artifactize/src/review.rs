@@ -1,5 +1,6 @@
 //! Human review TUI: claim, run Human tools and submit, in-process like `request`.
 
+mod detail;
 mod embedded;
 #[cfg(test)]
 mod embedded_tests;
@@ -10,6 +11,7 @@ mod identity_tests;
 pub(crate) mod tests;
 mod view;
 
+pub(crate) use detail::{Handled, Hits};
 pub(crate) use embedded::Control;
 pub use form::{Field, Form, Input, template};
 
@@ -45,17 +47,31 @@ const SCROLL_PAGE: u16 = 10;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
-    List,
+    /// The open request without a form: claim, choose a verdict or run a tool.
     Request,
     /// The first run of a command line in this session waits for confirmation.
     Confirm {
         tool: String,
         command: CommandLine,
     },
-    Verdict,
     Form(Form),
     /// Keep or release the claims this session took without submitting.
     Leave,
+}
+
+/// The standalone review's two levels: the waiting list and the Detail of one request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Focus {
+    List,
+    Detail,
+}
+
+/// Sub-areas of a Human review Detail; the focused one grows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Area {
+    Instruction,
+    Tools,
+    Fields,
 }
 
 /// Lifecycle work with owned inputs, so the screen keeps drawing while it runs.
@@ -160,6 +176,13 @@ pub struct Review {
     repo: Option<PathBuf>,
     reviewer: String,
     mode: Mode,
+    /// The standalone level with focus; monitor keeps its own panes.
+    focus: Focus,
+    area: Area,
+    /// The folded Technical section is shown.
+    technical: bool,
+    /// The standalone `review` owns the waiting list and may suspend for `$EDITOR`.
+    standalone: bool,
     waiting: Vec<RequestView>,
     list: TableState,
     /// The open request, if any, and its last successfully loaded view.
@@ -205,11 +228,15 @@ impl Review {
             state,
             repo,
             reviewer,
-            mode: if open.is_some() || invalid_open.is_some() {
-                Mode::Request
+            mode: Mode::Request,
+            focus: if open.is_some() || invalid_open.is_some() {
+                Focus::Detail
             } else {
-                Mode::List
+                Focus::List
             },
+            area: Area::Fields,
+            technical: false,
+            standalone: true,
             waiting: Vec::new(),
             list: TableState::default(),
             open,
@@ -236,6 +263,14 @@ impl Review {
         &self.mode
     }
 
+    pub fn focus(&self) -> Focus {
+        self.focus
+    }
+
+    pub fn area(&self) -> Area {
+        self.area
+    }
+
     pub fn busy(&self) -> bool {
         self.busy.is_some()
     }
@@ -246,14 +281,18 @@ impl Review {
             self.error = Some(error.clone());
             return Action::None;
         }
-        let result = match self.open.clone() {
-            Some(id) => store::read_request(&self.state, &id)
+        // The standalone list stays beside the open request; monitor reads only the request.
+        let mut result = Ok(());
+        if self.standalone {
+            result = store::read_waiting(&self.state, self.repo.as_deref())
                 .await
-                .map(|view| self.request = Some(view)),
-            None => store::read_waiting(&self.state, self.repo.as_deref())
+                .map(|waiting| self.set_waiting(waiting));
+        }
+        if let (Ok(()), Some(id)) = (&result, self.open.clone()) {
+            result = store::read_request(&self.state, &id)
                 .await
-                .map(|waiting| self.set_waiting(waiting)),
-        };
+                .map(|view| self.show(view));
+        }
         let now = OffsetDateTime::now_utc();
         match result {
             Ok(()) => {
@@ -340,30 +379,33 @@ impl Review {
         if self.taken.is_empty() {
             return Action::Quit;
         }
+        // The prompt never discards a form; Esc returns and g or r reopens the draft.
+        self.stop_editing();
         self.mode = Mode::Leave;
         Action::None
     }
 
-    fn back(&self) -> Mode {
-        if self.open.is_some() {
-            Mode::Request
-        } else {
-            Mode::List
+    /// Leave the form without discarding it; the same verdict reopens the draft.
+    /// Only a form is set aside; any other mode, such as the quit prompt, stays.
+    fn stop_editing(&mut self) {
+        if !matches!(self.mode, Mode::Form(_)) {
+            return;
+        }
+        if let Mode::Form(form) = std::mem::replace(&mut self.mode, Mode::Request) {
+            self.drafts.insert(form.verdict, form);
         }
     }
 
+    /// Standalone keys: the waiting list, then the shared Human review Detail. Esc steps back
+    /// and never quits; q and Ctrl-C quit and offer to release this session's claims.
     pub fn key(&mut self, key: KeyEvent) -> Action {
         let interrupt =
             key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c');
-        if let Some(busy) = &self.busy {
-            match key.code {
-                KeyCode::Esc => busy.cancel.cancel(),
-                _ if interrupt => busy.cancel.cancel(),
-                KeyCode::PageDown => self.scroll = self.scroll.saturating_add(SCROLL_PAGE),
-                KeyCode::PageUp => self.scroll = self.scroll.saturating_sub(SCROLL_PAGE),
-                _ => {}
-            }
-            return Action::None;
+        if self.busy.is_some() {
+            return match self.key_detail(key) {
+                Handled::Action(action) => action,
+                Handled::Back | Handled::Quit | Handled::Pass => Action::None,
+            };
         }
         if interrupt {
             return if self.mode == Mode::Leave {
@@ -375,92 +417,38 @@ impl Review {
         if !matches!(self.mode, Mode::Form(_)) {
             self.notice = None;
         }
-        match &mut self.mode {
-            Mode::List => self.list_key(key),
-            Mode::Request => self.request_key(key),
-            Mode::Confirm { tool, command } => match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => {
-                    let tool = tool.clone();
-                    self.confirmed.push(command.clone());
-                    self.mode = Mode::Request;
-                    self.run(tool)
-                }
-                KeyCode::Char('n' | 'q') | KeyCode::Esc => {
-                    self.mode = Mode::Request;
-                    Action::None
-                }
-                _ => Action::None,
-            },
-            Mode::Verdict => {
-                let verdict = match key.code {
-                    KeyCode::Char('g') => "GREEN",
-                    KeyCode::Char('r') => "RED",
-                    KeyCode::Esc | KeyCode::Char('q') => {
-                        self.mode = Mode::Request;
-                        return Action::None;
-                    }
-                    _ => return Action::None,
-                };
-                let definition = self
-                    .request
-                    .as_ref()
-                    .and_then(|view| view.request.human_definition.as_ref());
-                let key = if verdict == "GREEN" {
-                    "passSchema"
-                } else {
-                    "failSchema"
-                };
-                let schema =
-                    definition.and_then(|definition| definition["eval"]["declaration"].get(key));
-                let form = Form::new(verdict, schema);
-                let edit = form.json.clone();
-                self.mode = Mode::Form(form);
-                edit.map_or(Action::None, Action::Edit)
-            }
-            Mode::Form(form) => {
-                let editor = key.code == KeyCode::Char('e')
-                    && (form.json.is_some() || key.modifiers.contains(KeyModifiers::CONTROL));
-                match key.code {
-                    KeyCode::Esc => {
-                        self.mode = Mode::Request;
-                        Action::None
-                    }
-                    _ if editor => {
-                        let draft = form.draft();
-                        form.json = Some(draft.clone());
-                        Action::Edit(draft)
-                    }
-                    KeyCode::Enter => match form.result() {
-                        Ok(result) => self.submit(result),
-                        Err(error) => {
-                            form.error = Some(error);
-                            Action::None
-                        }
-                    },
-                    _ => {
-                        form.key(key);
-                        Action::None
-                    }
-                }
-            }
-            Mode::Leave => match key.code {
+        if self.mode == Mode::Leave {
+            return match key.code {
                 KeyCode::Char('k' | 'n' | 'q') => Action::Quit,
                 KeyCode::Char('u' | 'r' | 'y') => Action::Start(Job::Release {
                     ids: self.taken.clone(),
                     quit: true,
                 }),
                 KeyCode::Esc => {
-                    self.mode = self.back();
+                    self.mode = Mode::Request;
                     Action::None
                 }
                 _ => Action::None,
+            };
+        }
+        match self.focus {
+            Focus::List => self.list_key(key),
+            Focus::Detail => match self.key_detail(key) {
+                Handled::Action(action) => action,
+                Handled::Back => {
+                    self.focus = Focus::List;
+                    Action::Refresh
+                }
+                Handled::Quit => self.quit(),
+                // The standalone review has no help overlay or attention order.
+                Handled::Pass => Action::None,
             },
         }
     }
 
     fn list_key(&mut self, key: KeyEvent) -> Action {
         match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => self.quit(),
+            KeyCode::Char('q') => self.quit(),
             KeyCode::Char('r') => Action::Refresh,
             KeyCode::Down | KeyCode::Char('j') => {
                 let next = self.list.selected().map_or(0, |index| index + 1);
@@ -473,91 +461,117 @@ impl Review {
                 self.list.select_previous();
                 Action::None
             }
-            KeyCode::Enter => match self.selected().cloned() {
-                Some(view) => {
-                    self.open = Some(view.request.id.clone());
-                    self.request = Some(view);
-                    self.mode = Mode::Request;
-                    self.tool = 0;
-                    self.output = None;
-                    self.scroll = 0;
-                    Action::Refresh
-                }
+            KeyCode::Enter | KeyCode::Right => match self.selected().cloned() {
+                Some(view) => self.open_view(view),
                 None => Action::None,
             },
             _ => Action::None,
         }
     }
 
-    fn request_key(&mut self, key: KeyEvent) -> Action {
-        match key.code {
-            KeyCode::Char('q') => self.quit(),
-            KeyCode::Esc | KeyCode::Backspace => {
-                self.open = None;
-                self.invalid_open = None;
-                self.request = None;
-                self.output = None;
-                self.mode = Mode::List;
-                Action::Refresh
-            }
-            KeyCode::Char('r') => Action::Refresh,
-            KeyCode::Down | KeyCode::Char('j') => {
-                self.tool = (self.tool + 1).min(self.tools().len().saturating_sub(1));
-                Action::None
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.tool = self.tool.saturating_sub(1);
-                Action::None
-            }
-            KeyCode::PageDown => {
-                self.scroll = self.scroll.saturating_add(SCROLL_PAGE);
-                Action::None
-            }
-            KeyCode::PageUp => {
-                self.scroll = self.scroll.saturating_sub(SCROLL_PAGE);
-                Action::None
-            }
-            KeyCode::Enter | KeyCode::Char('t') => {
-                let Some(tool) = self.tools().into_iter().nth(self.tool) else {
-                    return self.notify("This request declares no Human tools.", true);
-                };
-                match self.actionable() {
-                    Ok((id, _)) => Action::Start(Job::Inspect {
-                        id,
-                        tool: tool.name,
-                    }),
-                    Err(error) => self.notify(error, true),
-                }
-            }
-            KeyCode::Char('s') => match self.actionable() {
-                Ok(_) => {
-                    self.mode = Mode::Verdict;
-                    Action::None
-                }
-                Err(error) => self.notify(error, true),
-            },
-            KeyCode::Char('u') => match (self.actionable(), self.mine()) {
-                (Ok((id, _)), true) => Action::Start(Job::Release {
-                    ids: vec![id],
-                    quit: false,
-                }),
-                (Ok(_), false) => self.notify("The request is not claimed.", true),
-                (Err(error), _) => self.notify(error, true),
-            },
-            _ => Action::None,
+    /// Open a listed request in Detail; another request starts from a clean review.
+    fn open_view(&mut self, view: RequestView) -> Action {
+        if self.open.as_ref() != Some(&view.request.id) {
+            self.mode = Mode::Request;
+            self.area = Area::Fields;
+            self.tool = 0;
+            self.output = None;
+            self.scroll = 0;
+            self.field_scroll = 0;
+            self.instruction_scroll = 0;
+            self.drafts.clear();
+            self.tool_draft = None;
+        }
+        self.open = Some(view.request.id.clone());
+        self.invalid_open = None;
+        self.request = Some(view);
+        self.focus = Focus::Detail;
+        Action::Refresh
+    }
+
+    fn move_tool(&mut self, down: bool) {
+        self.tool = if down {
+            (self.tool + 1).min(self.tools().len().saturating_sub(1))
+        } else {
+            self.tool.saturating_sub(1)
+        };
+    }
+
+    /// Resolve the selected tool's command line; the run waits for its confirmation.
+    fn inspect(&mut self) -> Action {
+        let Some(tool) = self.tools().into_iter().nth(self.tool) else {
+            return self.notify("This request declares no Human tools.", true);
+        };
+        match self.actionable() {
+            Ok((id, _)) => Action::Start(Job::Inspect {
+                id,
+                tool: tool.name,
+            }),
+            Err(error) => self.notify(error, true),
+        }
+    }
+
+    /// Answer the first-run confirmation; declining brings back a form set aside for the tool.
+    fn confirm(&mut self, run: bool) -> Action {
+        let Mode::Confirm { tool, command } = std::mem::replace(&mut self.mode, Mode::Request)
+        else {
+            return Action::None;
+        };
+        // The claim may have been released or the request settled while the prompt was open.
+        let owned = self.owned_request();
+        if (!run || owned.is_err())
+            && let Some(form) = self.tool_draft.take()
+        {
+            self.mode = Mode::Form(form);
+        }
+        if !run {
+            return Action::None;
+        }
+        if let Err(error) = owned {
+            return self.notify(error, true);
+        }
+        self.confirmed.push(command);
+        self.run(tool)
+    }
+
+    /// The open request when this reviewer holds its claim. Jobs never claim implicitly: a
+    /// claim is always the explicit `c`.
+    fn owned_request(&self) -> Result<RequestId, String> {
+        match self.actionable()? {
+            (id, false) => Ok(id),
+            (_, true) => Err("Claim this request before reviewing it.".into()),
+        }
+    }
+
+    fn release(&mut self) -> Action {
+        match (self.actionable(), self.mine()) {
+            (Ok((id, _)), true) => Action::Start(Job::Release {
+                ids: vec![id],
+                quit: false,
+            }),
+            (Ok(_), false) => self.notify("The request is not claimed.", true),
+            (Err(error), _) => self.notify(error, true),
         }
     }
 
     fn run(&mut self, tool: String) -> Action {
-        match self.actionable() {
-            Ok((id, claim)) => Action::Start(Job::Run { id, tool, claim }),
+        match self.owned_request() {
+            Ok(id) => Action::Start(Job::Run {
+                id,
+                tool,
+                claim: false,
+            }),
             Err(error) => self.notify(error, true),
         }
     }
 
     fn submit(&mut self, result: Value) -> Action {
-        match self.actionable() {
-            Ok((id, claim)) => Action::Start(Job::Submit { id, result, claim }),
+        match self.owned_request() {
+            Ok(id) => Action::Start(Job::Submit {
+                id,
+                result,
+                claim: false,
+            }),
             Err(error) => {
                 if let Mode::Form(form) = &mut self.mode {
                     form.error = Some(error);
@@ -601,7 +615,20 @@ impl Review {
         }
     }
 
+    /// Apply a job's outcome; a form set aside for a tool run comes back afterwards.
     pub fn finish(&mut self, outcome: Outcome) -> Action {
+        let restore_form = matches!(
+            &outcome,
+            Outcome::Ran { .. } | Outcome::Inspected { result: Err(_), .. }
+        );
+        let action = self.settle(outcome);
+        if restore_form && let Some(form) = self.tool_draft.take() {
+            self.mode = Mode::Form(form);
+        }
+        action
+    }
+
+    fn settle(&mut self, outcome: Outcome) -> Action {
         self.busy = None;
         match outcome {
             Outcome::SavedLocally { request, error } => {
@@ -682,7 +709,8 @@ impl Review {
                         self.open = None;
                         self.request = None;
                         self.output = None;
-                        self.mode = Mode::List;
+                        self.mode = Mode::Request;
+                        self.focus = Focus::List;
                         self.submitted = true;
                     }
                     Err(error) => {
@@ -723,7 +751,7 @@ impl Review {
                 form.error = Some("The edited file was empty; nothing was submitted.".into())
             }
             Ok(text) => {
-                form.json = Some(text);
+                form.set_json(text);
                 match form.result() {
                     Ok(result) => return self.submit(result),
                     Err(error) => form.error = Some(error),

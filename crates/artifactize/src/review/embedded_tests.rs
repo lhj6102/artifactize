@@ -39,6 +39,13 @@ fn opened(state: &std::path::Path, view: RequestView, reviewer: &str) -> Review 
     review.load_single(view);
     review
 }
+/// A key in the shared Detail component that stays in the Detail.
+fn press(review: &mut Review, key: KeyEvent) -> Action {
+    match review.key_detail(key) {
+        Handled::Action(action) => action,
+        other => panic!("the key left the Detail: {other:?}"),
+    }
+}
 async fn perform(review: &mut Review, control: Control) -> Outcome {
     let Action::Start(job) = review.control(control) else {
         panic!("expected lifecycle job");
@@ -158,7 +165,7 @@ async fn embedded_drafts_survive_refresh_verdict_switch_and_ownership_loss() {
     review.control(Control::Red);
     for character in "qrg한글".chars() {
         assert_eq!(
-            review.key_single(KeyEvent::from(KeyCode::Char(character)), false),
+            press(&mut review, KeyEvent::from(KeyCode::Char(character))),
             Action::None
         );
     }
@@ -201,7 +208,7 @@ async fn embedded_drafts_survive_refresh_verdict_switch_and_ownership_loss() {
         Mode::Form(form) => form.draft(),
         _ => panic!("draft retained"),
     };
-    review.key_single(KeyEvent::from(KeyCode::Char('x')), false);
+    press(&mut review, KeyEvent::from(KeyCode::Char('x')));
     assert_eq!(
         match review.mode() {
             Mode::Form(form) => form.draft(),
@@ -210,9 +217,9 @@ async fn embedded_drafts_survive_refresh_verdict_switch_and_ownership_loss() {
         draft
     );
     assert_eq!(
-        review.key_single(
-            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
-            false
+        press(
+            &mut review,
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::CONTROL)
         ),
         Action::None
     );
@@ -282,7 +289,7 @@ async fn tool_confirmation_and_cancel_restore_the_existing_draft() {
     let outcome = perform(&mut review, Control::RunTool).await;
     review.finish_single(outcome);
     assert!(review.confirming());
-    review.key_single(KeyEvent::from(KeyCode::Char('n')), false);
+    press(&mut review, KeyEvent::from(KeyCode::Char('n')));
     assert_eq!(
         match review.mode() {
             Mode::Form(form) => form.draft(),
@@ -304,6 +311,106 @@ async fn tool_confirmation_and_cancel_restore_the_existing_draft() {
 }
 
 #[tokio::test]
+async fn an_external_submission_ends_editing_and_frees_the_detail_keys() {
+    let (_root, repo, state) = fixture();
+    let view = waiting(&repo, &state).await;
+    let mut review = opened(&state, view.clone(), "alice");
+    let outcome = perform(&mut review, Control::Claim).await;
+    review.finish_single(outcome);
+    review.refresh().await;
+    review.control(Control::Red);
+    review.paste_single("draft");
+    assert!(review.editing());
+    assert_eq!(
+        review.key_detail(KeyEvent::from(KeyCode::Char('q'))),
+        Handled::Action(Action::None),
+        "q is text in the form"
+    );
+    // The same reviewer submits from another terminal; the review reloads the request.
+    human::submit_and_publish(
+        &state,
+        view.request.id.as_str(),
+        "alice",
+        &json!({"verdict":"GREEN","approved":true}),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    review.refresh().await;
+    assert!(review.settled());
+    assert!(!review.editing());
+    assert_eq!(review.mode(), &Mode::Request);
+    review.paste_single("ignored");
+    for (code, handled) in [
+        (KeyCode::Char('?'), Handled::Pass),
+        (KeyCode::Char('!'), Handled::Pass),
+        (KeyCode::Left, Handled::Back),
+        (KeyCode::Char('q'), Handled::Quit),
+        (KeyCode::Esc, Handled::Back),
+    ] {
+        assert_eq!(review.key_detail(KeyEvent::from(code)), handled, "{code:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_confirmation_after_an_outside_release_neither_claims_nor_runs() {
+    let (_root, repo, state) = fixture();
+    let view = waiting(&repo, &state).await;
+    let id = view.request.id.clone();
+    let mut review = opened(&state, view, "alice");
+    let outcome = perform(&mut review, Control::Claim).await;
+    review.finish_single(outcome);
+    review.refresh().await;
+    let outcome = perform(&mut review, Control::RunTool).await;
+    review.finish_single(outcome);
+    assert!(review.confirming());
+    // Another terminal releases the claim; the monitor refreshes under the open prompt.
+    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    human::unclaim(&receipts, &id, "alice").await.unwrap();
+    review.refresh().await;
+    assert!(!review.owned());
+    assert_eq!(review.control(Control::Confirm), Action::None);
+    assert!(!review.confirming());
+    let saved = store::read_request(&state, &id).await.unwrap();
+    assert!(saved.claim.is_none(), "confirming never claims");
+}
+
+#[tokio::test]
+async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
+    let (_root, repo, state) = fixture();
+    let view = waiting(&repo, &state).await;
+    let id = view.request.id.clone();
+    let mut review = Review::new(state.clone(), None, "alice".into(), Some(id.to_string()));
+    review.refresh().await;
+    let Action::Start(job) = review.key(KeyEvent::from(KeyCode::Char('c'))) else {
+        panic!("claim job");
+    };
+    let outcome = review.start(job).await;
+    review.finish(outcome);
+    review.refresh().await;
+    // Another terminal settles it; this session still holds the claim it took on a second one.
+    human::submit_and_publish(
+        &state,
+        id.as_str(),
+        "alice",
+        &json!({"verdict":"GREEN","approved":true}),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    review.refresh().await;
+    assert!(review.settled());
+    review.taken.push("run-held-1".parse().unwrap());
+    assert_eq!(
+        review.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+        Action::None
+    );
+    assert_eq!(review.mode(), &Mode::Leave);
+    review.refresh().await;
+    assert_eq!(review.mode(), &Mode::Leave, "a refresh keeps the prompt");
+}
+
+#[tokio::test]
 async fn keyboard_reclaim_restores_the_release_draft() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;
@@ -316,7 +423,7 @@ async fn keyboard_reclaim_restores_the_release_draft() {
     let outcome = perform(&mut review, Control::Release).await;
     review.finish_single(outcome);
     review.refresh().await;
-    let Action::Start(job) = review.key_single(KeyEvent::from(KeyCode::Char('c')), false) else {
+    let Action::Start(job) = press(&mut review, KeyEvent::from(KeyCode::Char('c'))) else {
         panic!("keyboard claim");
     };
     let outcome = review.start(job).await;
@@ -371,7 +478,7 @@ fn long_json_line_keeps_unicode_cursor_visible() {
     form.cursor = form.json.as_ref().unwrap().len();
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(32, 8)).unwrap();
     terminal
-        .draw(|frame| view::draw_inline_form(frame, frame.area(), &form, 0))
+        .draw(|frame| view::draw_inline_form(frame, frame.area(), &form, 0, true))
         .unwrap();
     let text: String = terminal
         .backend()
@@ -399,7 +506,7 @@ fn human_instruction_is_visible_and_scrollable_before_and_after_claim() {
             ratatui::Terminal::new(ratatui::backend::TestBackend::new(140, 40)).unwrap();
         terminal
             .draw(|frame| {
-                review.draw_single(frame, frame.area(), false);
+                review.draw_detail(frame, frame.area(), true);
             })
             .unwrap();
         terminal
@@ -410,16 +517,25 @@ fn human_instruction_is_visible_and_scrollable_before_and_after_claim() {
             .map(|cell| cell.symbol())
             .collect::<String>()
     };
-    assert!(draw(&mut review).contains("criterion-0"));
+    // Before a claim the instruction is the body: most of the criteria show at once.
+    let text = draw(&mut review);
+    assert!(
+        text.contains("criterion-0") && text.contains("criterion-30"),
+        "{text}"
+    );
     review.scroll_instruction(15);
-    assert!(draw(&mut review).contains("criterion-15"));
+    assert!(draw(&mut review).contains("criterion-39"));
+    // In REVIEW it folds to two rows above the tools and fields, and keeps its scroll.
     review.request.as_mut().unwrap().claim = Some(super::tests::claim("alice"));
     review.control(Control::Red);
     let text = draw(&mut review);
     assert!(
         text.contains("criterion-15")
+            && text.contains("criterion-16")
+            && !text.contains("criterion-17")
             && text.contains("RED fields")
-            && text.contains("Human tools")
+            && text.contains("Tools (2)"),
+        "{text}"
     );
 }
 
@@ -433,12 +549,12 @@ fn keyboard_pages_flat_fields_without_mouse_capture() {
         "RED",
         Some(&json!({"type":"object","properties":properties})),
     ));
-    review.key_single(KeyEvent::from(KeyCode::PageDown), false);
+    press(&mut review, KeyEvent::from(KeyCode::PageDown));
     assert_eq!(review.field_scroll, 10);
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(120, 24)).unwrap();
     terminal
         .draw(|frame| {
-            review.draw_single(frame, frame.area(), false);
+            review.draw_detail(frame, frame.area(), true);
         })
         .unwrap();
     let text: String = terminal
@@ -449,6 +565,6 @@ fn keyboard_pages_flat_fields_without_mouse_capture() {
         .map(|cell| cell.symbol())
         .collect();
     assert!(text.contains("field-10"), "{text}");
-    review.key_single(KeyEvent::from(KeyCode::PageUp), false);
+    press(&mut review, KeyEvent::from(KeyCode::PageUp));
     assert_eq!(review.field_scroll, 0);
 }

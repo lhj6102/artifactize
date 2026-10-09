@@ -1,13 +1,9 @@
-//! Single-request controller used by monitor; jobs and ownership protocol are shared with review.
-use super::{Action, Form, Job, Mode, Outcome, Review, shell, view};
+//! Lifecycle controls of one open request: claim, verdict forms, tools, submit and release.
+//! The shared Detail component and monitor's buttons drive them; jobs and the ownership
+//! protocol are the same for monitor and the standalone review.
+use super::{Action, Area, Form, Job, Mode, Outcome, Review, view};
 use crate::{store::RequestView, types::RequestStatus};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{
-    Frame,
-    layout::{Constraint, Layout, Rect},
-    text::Line,
-    widgets::{Block, Paragraph, Wrap},
-};
+use ratatui::layout::Rect;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Control {
@@ -22,10 +18,27 @@ pub enum Control {
 }
 
 impl Review {
+    /// Monitor's single-request review: monitor owns the terminal, so no `$EDITOR`, and the
+    /// waiting list is not read.
     pub(crate) fn load_single(&mut self, view: RequestView) {
+        self.standalone = false;
         self.open = Some(view.request.id.clone());
         self.invalid_open = None;
+        self.show(view);
+    }
+
+    /// Take the latest saved view of the open request. Once it is settled (here or by an
+    /// external submission) nothing is left to edit or confirm: the form is set aside and a
+    /// pending tool confirmation is dropped, so keys act on the completed Detail again.
+    pub(super) fn show(&mut self, view: RequestView) {
         self.request = Some(view);
+        if self.settled() {
+            self.stop_editing();
+            if matches!(self.mode, Mode::Confirm { .. }) {
+                self.mode = Mode::Request;
+                self.tool_draft = None;
+            }
+        }
     }
 
     pub(crate) fn owned(&self) -> bool {
@@ -36,14 +49,17 @@ impl Review {
             .as_ref()
             .is_some_and(|view| view.request.status != RequestStatus::WaitingHuman)
     }
+    /// A form takes the keys only while the request can still be reviewed.
     pub(crate) fn editing(&self) -> bool {
-        matches!(self.mode, Mode::Form(_))
+        matches!(self.mode, Mode::Form(_)) && !self.settled()
     }
+    /// A tool confirmation holds the keys (and monitor's focus) only while the request can
+    /// still be reviewed.
     pub(crate) fn confirming(&self) -> bool {
-        matches!(self.mode, Mode::Confirm { .. })
+        matches!(self.mode, Mode::Confirm { .. }) && !self.settled()
     }
-    pub(crate) fn tool_index(&self) -> usize {
-        self.tool
+    pub(crate) fn select_area(&mut self, area: Area) {
+        self.area = area;
     }
     pub(crate) fn selected_tool(&mut self, index: usize) {
         self.tool = index.min(self.tools().len().saturating_sub(1));
@@ -60,6 +76,7 @@ impl Review {
     }
     pub(crate) fn paste_single(&mut self, text: &str) {
         if !self.busy()
+            && self.editing()
             && self.owned()
             && let Mode::Form(form) = &mut self.mode
         {
@@ -91,17 +108,11 @@ impl Review {
             return Action::None;
         }
         if self.confirming() {
-            let action = match control {
-                Control::Confirm => self.key(KeyEvent::from(KeyCode::Enter)),
-                Control::Cancel => self.key(KeyEvent::from(KeyCode::Esc)),
+            return match control {
+                Control::Confirm => self.confirm(true),
+                Control::Cancel => self.confirm(false),
                 _ => Action::None,
             };
-            if control == Control::Cancel
-                && let Some(form) = self.tool_draft.take()
-            {
-                self.mode = Mode::Form(form);
-            }
-            return action;
         }
         if self.settled() {
             return Action::None;
@@ -113,6 +124,10 @@ impl Review {
                 Err(error) => self.notify(error, true),
             };
         }
+        if control == Control::Cancel {
+            self.stop_editing();
+            return Action::None;
+        }
         if self.actionable().is_err() || !self.owned() {
             return self.notify("Claim this request before reviewing it.", true);
         }
@@ -123,6 +138,8 @@ impl Review {
                 } else {
                     "RED"
                 };
+                // Typing goes to the form, so the fields take focus.
+                self.area = Area::Fields;
                 if matches!(&self.mode, Mode::Form(form) if form.verdict == verdict) {
                     return Action::None;
                 }
@@ -161,94 +178,22 @@ impl Review {
                     }
                 }
             }
-            Control::Release => self.request_key(KeyEvent::from(KeyCode::Char('u'))),
+            Control::Release => self.release(),
             Control::RunTool => {
                 if let Mode::Form(form) = &self.mode {
                     self.tool_draft = Some(form.clone());
                 }
-                self.request_key(KeyEvent::from(KeyCode::Char('t')))
-            }
-            Control::Cancel => {
-                self.mode = Mode::Request;
-                Action::None
+                let action = self.inspect();
+                if !matches!(action, Action::Start(_)) {
+                    self.tool_draft = None;
+                }
+                action
             }
             _ => Action::None,
         }
     }
 
-    pub(crate) fn key_single(&mut self, key: KeyEvent, tools_focused: bool) -> Action {
-        if key.modifiers.contains(KeyModifiers::CONTROL)
-            && matches!(key.code, KeyCode::PageDown | KeyCode::PageUp)
-        {
-            self.scroll_instruction(if key.code == KeyCode::PageDown {
-                crate::monitor::input::SCROLL_PAGE as i16
-            } else {
-                -(crate::monitor::input::SCROLL_PAGE as i16)
-            });
-            return Action::None;
-        }
-        if self.busy() {
-            return self.key(key);
-        }
-        if matches!(key.code, KeyCode::PageDown | KeyCode::PageUp) {
-            self.scroll_single(
-                if key.code == KeyCode::PageDown {
-                    crate::monitor::input::SCROLL_PAGE as i16
-                } else {
-                    -(crate::monitor::input::SCROLL_PAGE as i16)
-                },
-                !tools_focused,
-            );
-            return Action::None;
-        }
-        if self.confirming() {
-            return match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => self.control(Control::Confirm),
-                KeyCode::Char('n' | 'q') | KeyCode::Esc => self.control(Control::Cancel),
-                _ => Action::None,
-            };
-        }
-        if !self.owned() && key.code == KeyCode::Char('c') {
-            return self.control(Control::Claim);
-        }
-        if !self.editing() {
-            match key.code {
-                KeyCode::Char('c') => return self.control(Control::Claim),
-                KeyCode::Char('g') => return self.control(Control::Green),
-                KeyCode::Char('r') => return self.control(Control::Red),
-                KeyCode::Char('u') => return self.control(Control::Release),
-                _ => {}
-            }
-        }
-        if key.modifiers.contains(KeyModifiers::CONTROL) {
-            match key.code {
-                KeyCode::Char('g') => return self.control(Control::Green),
-                KeyCode::Char('r') => return self.control(Control::Red),
-                KeyCode::Char('u') => return self.control(Control::Release),
-                _ => {}
-            }
-        }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s') {
-            return self.control(Control::Submit);
-        }
-        if key.code == KeyCode::Esc {
-            return self.control(Control::Cancel);
-        }
-        if tools_focused {
-            return match key.code {
-                KeyCode::Enter => self.control(Control::RunTool),
-                KeyCode::Up | KeyCode::Down => self.request_key(key),
-                _ => Action::None,
-            };
-        }
-        if self.owned()
-            && let Mode::Form(form) = &mut self.mode
-        {
-            form.inline_key(key);
-        }
-        Action::None
-    }
-
+    /// Monitor keeps a completed request open instead of returning to a list.
     pub(crate) fn finish_single(&mut self, outcome: Outcome) -> Action {
         let submitted = match &outcome {
             Outcome::Submitted {
@@ -257,15 +202,8 @@ impl Review {
             } => Some((**request).clone()),
             _ => None,
         };
-        let restore_form = matches!(
-            &outcome,
-            Outcome::Ran { .. } | Outcome::Inspected { result: Err(_), .. }
-        );
         let old = self.request.clone();
         let action = self.finish(outcome);
-        if restore_form && let Some(form) = self.tool_draft.take() {
-            self.mode = Mode::Form(form);
-        }
         if let Some(request) = submitted
             && let Some(mut view) = old
         {
@@ -282,111 +220,5 @@ impl Review {
         if let Some(busy) = &self.busy {
             busy.cancel.cancel();
         }
-    }
-
-    /// Tools and their saved output on the left; the existing field form on the right.
-    pub(crate) fn draw_single(
-        &mut self,
-        frame: &mut Frame,
-        area: Rect,
-        tools_focused: bool,
-    ) -> (Rect, Rect, Rect) {
-        let instruction = self.request.as_ref().map_or_else(Vec::new, |request| {
-            let mut facts = vec![(
-                "Instruction",
-                request.request.payload.instruction().to_owned(),
-            )];
-            facts.extend(
-                view::details(request, &self.reviewer)
-                    .into_iter()
-                    .filter(|(name, _)| *name != "Instruction"),
-            );
-            view::lines(facts)
-        });
-        // One quarter of the modal keeps criteria visible without taking over tools or fields.
-        let height = u16::try_from(instruction.len())
-            .unwrap_or(u16::MAX)
-            .saturating_add(2)
-            .min(area.height / 4);
-        let [summary, body] =
-            Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
-        frame.render_widget(
-            Paragraph::new(instruction)
-                .wrap(Wrap { trim: false })
-                .scroll((self.instruction_scroll, 0))
-                .block(
-                    Block::bordered().title(" Request / instruction · wheel or Ctrl-PgUp/PgDn "),
-                ),
-            summary,
-        );
-        let [left, right] =
-            Layout::horizontal([Constraint::Percentage(45), Constraint::Fill(1)]).areas(body);
-        let tool_height = u16::try_from(self.tools().len())
-            .unwrap_or(u16::MAX)
-            .saturating_mul(3)
-            .saturating_add(2)
-            .min(left.height / 2);
-        let [tools, output] =
-            Layout::vertical([Constraint::Length(tool_height), Constraint::Fill(1)]).areas(left);
-        self.draw_tools(frame, tools);
-        self.draw_output(frame, output);
-        if self.settled() {
-            let text = self.request.as_ref().map(|view| &view.request).map_or_else(
-                String::new,
-                |request| {
-                    format!(
-                        "{}\n{}",
-                        request.status,
-                        request.result.as_ref().map_or_else(
-                            || request.error.clone().unwrap_or_default(),
-                            |result| serde_json::to_string_pretty(result).unwrap_or_default()
-                        )
-                    )
-                },
-            );
-            frame.render_widget(
-                Paragraph::new(text)
-                    .wrap(Wrap { trim: false })
-                    .scroll((self.field_scroll, 0))
-                    .block(Block::bordered().title(" Completed result ")),
-                right,
-            );
-        } else if self.confirming() {
-            if let Mode::Confirm { tool, command } = &self.mode {
-                let words = std::iter::once(command.program.to_string_lossy().into_owned())
-                    .chain(command.args.iter().cloned())
-                    .collect::<Vec<_>>();
-                frame.render_widget(Paragraph::new(format!("Run {tool}?\nRepository: {}\nDirectory: {}\n$ {}\nEnter/Confirm runs; Esc/Cancel returns.", command.repo.display(), command.cwd.display(), shell(words.iter().map(String::as_str)))).wrap(Wrap { trim: false }).block(Block::bordered().title(" Confirm Human tool ")), right);
-            }
-        } else if self.owned() {
-            if let Mode::Form(form) = &self.mode {
-                view::draw_inline_form(frame, right, form, self.field_scroll);
-            } else {
-                frame.render_widget(Paragraph::new("REVIEW\nChoose GREEN or RED, fill its fields, then Submit.\nTab switches tools and fields.").block(Block::bordered().title(" Result fields ")), right);
-            }
-        } else {
-            let claim = self
-                .request
-                .as_ref()
-                .and_then(|view| view.claim.as_ref())
-                .map_or("Unclaimed. Claim to enter REVIEW.".into(), |claim| {
-                    format!("Claimed by {}. Read-only until released.", claim.reviewer)
-                });
-            frame.render_widget(
-                Paragraph::new(format!("CLAIM\n{claim}"))
-                    .wrap(Wrap { trim: false })
-                    .block(Block::bordered().title(" Human sign-off ")),
-                right,
-            );
-        }
-        let status = self.status_line();
-        if !status.is_empty() && area.height > 0 {
-            frame.render_widget(
-                status.first().cloned().unwrap_or_else(Line::default),
-                Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
-            );
-        }
-        let _ = tools_focused;
-        (tools, right, summary)
     }
 }

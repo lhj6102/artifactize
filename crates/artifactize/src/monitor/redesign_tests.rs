@@ -538,7 +538,6 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
     review.control(review::Control::Red);
     monitor.detail.as_mut().unwrap().review = Some(review);
-    monitor.detail.as_mut().unwrap().focus = DetailArea::Fields;
     monitor.paste("qrg한글");
     let draft = |monitor: &Monitor| match monitor
         .detail
@@ -554,11 +553,31 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     };
     let before = draft(&monitor);
     monitor.key(KeyEvent::from(KeyCode::BackTab));
-    assert_eq!(monitor.detail.as_ref().unwrap().focus, DetailArea::Tools);
+    assert_eq!(
+        monitor
+            .detail
+            .as_ref()
+            .unwrap()
+            .review
+            .as_ref()
+            .unwrap()
+            .area(),
+        review::Area::Tools
+    );
     monitor.paste("must not modify hidden field");
     assert_eq!(draft(&monitor), before);
     monitor.key(KeyEvent::from(KeyCode::Tab));
-    assert_eq!(monitor.detail.as_ref().unwrap().focus, DetailArea::Fields);
+    assert_eq!(
+        monitor
+            .detail
+            .as_ref()
+            .unwrap()
+            .review
+            .as_ref()
+            .unwrap()
+            .area(),
+        review::Area::Fields
+    );
     render(&mut monitor, 160, 40);
     for control in [review::Control::Green, review::Control::Red] {
         let area = monitor
@@ -596,13 +615,23 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     let before = draft(&monitor);
     // Ctrl-S submits only inside a Human review, and the keys line says so only there.
     assert!(render_text(&mut monitor, 160, 40).contains("Ctrl-S submit"));
-    // Esc steps back to the tree and keeps the draft for the next open.
+    // Esc first stops editing and stays in Detail; the next Esc steps back to the tree.
+    monitor.key(KeyEvent::from(KeyCode::Esc));
+    assert_eq!(monitor.focus, Pane::Detail);
+    assert!(
+        !monitor.locked(),
+        "focus may move once the form is set aside"
+    );
     monitor.key(KeyEvent::from(KeyCode::Esc));
     assert_eq!(monitor.focus, Pane::Artifacts);
     assert!(monitor.detail.is_none());
     assert!(!render_text(&mut monitor, 160, 40).contains("Ctrl-S"));
+    // The draft survives for the next open: the same verdict brings it back.
     let id = monitor.reviews.keys().next().unwrap().clone();
-    match monitor.reviews[&id].mode() {
+    let mut kept = monitor.reviews.remove(&id).unwrap();
+    assert_eq!(kept.mode(), &review::Mode::Request);
+    kept.control(review::Control::Red);
+    match kept.mode() {
         review::Mode::Form(form) => assert_eq!(form.draft(), before),
         _ => panic!("form"),
     }
@@ -615,7 +644,6 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
     review.control(review::Control::Red);
     monitor.detail.as_mut().unwrap().review = Some(review);
-    monitor.detail.as_mut().unwrap().focus = DetailArea::Fields;
     assert_eq!(monitor.focus, Pane::Detail);
     monitor.key(KeyEvent::from(KeyCode::F(2)));
     monitor.paste(" off");
@@ -629,140 +657,289 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     );
 }
 
-#[tokio::test]
-async fn claim_and_completed_human_details_keep_help_attention_back_and_quit() {
-    for settled in [false, true] {
-        let (view, requests) = super::tests::live();
-        let mut monitor = Monitor::new("/fixture-state".into(), None);
-        monitor.open = Some("run-1".parse().unwrap());
-        monitor.set_run(view, requests);
-        let open = |monitor: &mut Monitor| {
-            let review = if settled {
-                let mut review =
-                    review::Review::new("/fixture-state".into(), None, "alice".into(), None);
-                review.load_single(super::tests::request(
-                    "app/review",
-                    "GREEN",
-                    json!({"profile":{"kind":"human"},"result":{"verdict":"GREEN"}}),
-                ));
-                review
-            } else {
-                crate::review::tests::opened(None, crate::review::tests::demo())
-            };
-            let pane = monitor.detail.as_mut().unwrap();
-            pane.review = Some(review);
-            pane.focus = DetailArea::Fields;
-        };
-        monitor
-            .tree
-            .select(vec!["a:app".into(), "e:app/review".into()]);
-        monitor.open_detail().await;
-        open(&mut monitor);
-        assert_eq!(
-            monitor.key(KeyEvent::from(KeyCode::Char('?'))),
-            Action::None
-        );
-        assert!(monitor.help, "settled {settled}");
-        monitor.key(KeyEvent::from(KeyCode::Esc));
-        assert_eq!(monitor.focus, Pane::Detail);
-        if !settled {
-            // Its own keys still reach the review: `c` claims.
-            assert!(matches!(
-                monitor.key(KeyEvent::from(KeyCode::Char('c'))),
-                Action::Review(_)
-            ));
-        }
-        assert_eq!(monitor.key(KeyEvent::from(KeyCode::Left)), Action::None);
-        assert_eq!(monitor.focus, Pane::Artifacts);
-        assert!(monitor.detail.is_none());
-        monitor.open_detail().await;
-        open(&mut monitor);
-        assert_eq!(
-            monitor.key(KeyEvent::from(KeyCode::Char('!'))),
-            Action::OpenDetail
-        );
-        assert!(monitor.detail.is_none() && monitor.focus == Pane::Artifacts);
-        assert_ne!(monitor.target(), Some(Target::Eval("app/review".into())));
-        monitor
-            .tree
-            .select(vec!["a:app".into(), "e:app/review".into()]);
-        monitor.open_detail().await;
-        open(&mut monitor);
-        assert_eq!(
-            monitor.key(KeyEvent::from(KeyCode::Char('q'))),
-            Action::Quit
-        );
-    }
-}
-
-#[tokio::test]
-async fn a_form_settled_by_an_outside_submission_releases_keys_and_focus() {
+/// Open the tree's waiting Human eval in Detail with this review in place of the saved one.
+async fn human_detail(review: review::Review) -> Monitor {
     let (view, requests) = super::tests::live();
     let mut monitor = Monitor::new("/fixture-state".into(), None);
-    monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     monitor
         .tree
         .select(vec!["a:app".into(), "e:app/review".into()]);
     monitor.open_detail().await;
-    let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
-    review.control(review::Control::Red);
     monitor.detail.as_mut().unwrap().review = Some(review);
-    monitor.detail.as_mut().unwrap().focus = DetailArea::Fields;
-    // While the request waits, the form owns the keys and keeps focus.
-    monitor.key(KeyEvent::from(KeyCode::Char('?')));
-    assert!(!monitor.help);
-    // Another command submits it; a refresh loads the settled request under the open form.
-    let review = monitor.detail.as_mut().unwrap().review.as_mut().unwrap();
-    review.load_single(super::tests::request(
-        "app/review",
-        "GREEN",
-        json!({"profile":{"kind":"human"},"result":{"verdict":"GREEN"}}),
+    monitor.notice = None;
+    monitor
+}
+
+/// Columns `from..` of every row but the header and the key line.
+fn region(text: &str, from: usize) -> Vec<String> {
+    let rows: Vec<&str> = text.lines().collect();
+    rows[1..rows.len() - 1]
+        .iter()
+        .map(|row| row.chars().skip(from).collect())
+        .collect()
+}
+
+#[tokio::test]
+async fn monitor_and_review_draw_the_same_human_review_component() {
+    use crate::review::tests::{demo, embedded, opened, sized};
+    for owner in [None, Some("alice")] {
+        let mut standalone = opened(owner, demo());
+        let mut inside = embedded(owner, demo());
+        if owner.is_some() {
+            for review in [&mut standalone, &mut inside] {
+                review.control(review::Control::Red);
+                review.paste_single("needs work");
+            }
+        }
+        let mut monitor = human_detail(inside).await;
+        let monitor_text = render_text(&mut monitor, 160, 40);
+        let review_text = sized(&mut standalone, 160, 40);
+        // Both put a 30-column list or tree beside the same 130-column Detail.
+        let detail = region(&monitor_text, 30);
+        assert_eq!(
+            detail,
+            region(&review_text, 30),
+            "{monitor_text}\n{review_text}"
+        );
+        let stage = if owner.is_some() {
+            "REVIEW (yours)"
+        } else {
+            "CLAIM"
+        };
+        assert!(detail[0].contains(stage), "{monitor_text}");
+        assert!(
+            monitor_text.contains("Approve the notes."),
+            "{monitor_text}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn human_detail_keys_follow_the_shared_protocol() {
+    use crate::review::tests::{demo, embedded};
+    let ctrl = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+    let mut monitor = human_detail(embedded(None, demo())).await;
+    let review = |monitor: &Monitor| {
+        monitor
+            .detail
+            .as_ref()
+            .unwrap()
+            .review
+            .as_ref()
+            .unwrap()
+            .mode()
+            .clone()
+    };
+    // Before a claim, Ctrl-S, Ctrl-G and Ctrl-R start nothing and open no form.
+    for c in ['s', 'g', 'r'] {
+        assert_eq!(monitor.key(ctrl(c)), Action::Review(review::Action::None));
+        assert_eq!(review(&monitor), review::Mode::Request);
+    }
+    assert!(render_text(&mut monitor, 160, 40).contains("Claim this request before reviewing it."));
+    // c claims here, in the focused Detail.
+    assert!(matches!(
+        monitor.key(KeyEvent::from(KeyCode::Char('c'))),
+        Action::Review(review::Action::Start(review::Job::Claim { .. }))
     ));
-    assert!(review.editing() && review.settled());
+    // Tab focuses the tools, and a click on a tool's row selects it.
+    monitor.key(KeyEvent::from(KeyCode::Tab));
     render(&mut monitor, 160, 40);
-    assert!(!monitor.locked());
-    let tree = monitor.hits.tree;
+    let (row, index) = *monitor.hits.review.tool_rows.last().unwrap();
+    assert_eq!(index, 1);
     monitor.mouse(mouse(
         MouseEventKind::Down(MouseButton::Left),
-        tree.x + 2,
-        tree.y + 1,
+        row.x + 1,
+        row.y,
     ));
+    assert!(render_text(&mut monitor, 160, 40).contains("$ xdg-open {artifactPath}"));
+    // The wheel over the instruction scrolls it without moving focus.
+    let instruction = monitor.hits.review.instruction;
+    monitor.mouse(mouse(
+        MouseEventKind::ScrollDown,
+        instruction.x + 2,
+        instruction.y + 1,
+    ));
+    assert_eq!(monitor.focus, Pane::Detail);
+    // Outside a form, q quits and Left steps back to the tree.
     assert_eq!(
-        monitor.focus,
-        Pane::Artifacts,
-        "clicks leave a settled form"
+        monitor.key(KeyEvent::from(KeyCode::Char('q'))),
+        Action::Quit
     );
-    monitor.open_detail().await;
-    let review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
-    monitor.detail.as_mut().unwrap().review = Some(review);
-    let review = monitor.detail.as_mut().unwrap().review.as_mut().unwrap();
-    review.control(review::Control::Red);
-    review.load_single(super::tests::request(
-        "app/review",
-        "GREEN",
-        json!({"profile":{"kind":"human"},"result":{"verdict":"GREEN"}}),
-    ));
+    assert_eq!(monitor.key(KeyEvent::from(KeyCode::Left)), Action::None);
+    assert_eq!(monitor.focus, Pane::Artifacts);
+    assert!(monitor.detail.is_none());
+}
+
+#[tokio::test]
+async fn a_review_settled_while_editing_gives_its_keys_back_to_monitor() {
+    use crate::review::tests::settled_while_editing;
+    let mut monitor = human_detail(settled_while_editing()).await;
+    assert!(!monitor.locked());
+    let text = render_text(&mut monitor, 160, 40);
+    assert!(text.contains("Completed result"), "{text}");
+    assert!(!text.contains("Ctrl-S submit"), "{text}");
     assert_eq!(
         monitor.key(KeyEvent::from(KeyCode::Char('?'))),
         Action::None
     );
     assert!(monitor.help);
-    monitor.key(KeyEvent::from(KeyCode::Esc));
+    monitor.key(KeyEvent::from(KeyCode::Char('x')));
+    assert_eq!(
+        monitor.key(KeyEvent::from(KeyCode::Char('!'))),
+        Action::OpenDetail
+    );
+    assert!(monitor.detail.is_none());
+    let mut monitor = human_detail(settled_while_editing()).await;
     assert_eq!(monitor.key(KeyEvent::from(KeyCode::Left)), Action::None);
     assert_eq!(monitor.focus, Pane::Artifacts);
-    monitor.open_detail().await;
-    let review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
-    monitor.detail.as_mut().unwrap().review = Some(review);
-    let review = monitor.detail.as_mut().unwrap().review.as_mut().unwrap();
-    review.control(review::Control::Red);
-    review.load_single(super::tests::request(
-        "app/review",
-        "GREEN",
-        json!({"profile":{"kind":"human"},"result":{"verdict":"GREEN"}}),
-    ));
+    let mut monitor = human_detail(settled_while_editing()).await;
     assert_eq!(
         monitor.key(KeyEvent::from(KeyCode::Char('q'))),
         Action::Quit
     );
+}
+
+/// The coordinator's end-to-end repro: a real Human request is claimed, edited in the monitor's
+/// form, then submitted by another command under the same claimant.
+#[tokio::test]
+async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_detail() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir(&repo).unwrap();
+    fs::write(
+        repo.join("index.artf"),
+        "name = \"app\"\n[evals.review]\ntitle = \"Review\"\nprofile = { kind = \"human\" }\n\
+         [evals.review.payload]\ninstruction = \"Review\"\n\
+         [evals.review.pass_schema]\nproperties.note = { type = \"string\" }\n",
+    )
+    .unwrap();
+    let options = crate::project::VerifyOptions {
+        wait_timeout: std::time::Duration::from_millis(1),
+        ..Default::default()
+    };
+    let run = crate::project::verify(
+        &repo,
+        Some(&state),
+        &crate::project::selection::Selection::All,
+        &options,
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let id = run.requests[0].id.clone();
+    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let reviewer = crate::human::default_reviewer().unwrap_or_else(|_| "fixture".into());
+    crate::human::claim(&receipts, id.as_str(), &reviewer)
+        .await
+        .unwrap();
+    let mut monitor = Monitor::new(state.clone(), Some(repo.clone()));
+    monitor.refresh().await;
+    monitor.focus = Pane::Artifacts;
+    render(&mut monitor, 160, 30);
+    let open = |monitor: &mut Monitor| {
+        // Without USER in the environment, open the same request under the fixture reviewer.
+        if monitor.detail.as_ref().unwrap().review.is_none() {
+            let (_, requests) = monitor.run.as_ref().unwrap();
+            let view = requests[0].clone();
+            let mut review =
+                review::Review::new(state.clone(), None, reviewer.clone(), Some(id.to_string()));
+            review.load_single(view);
+            monitor.detail.as_mut().unwrap().review = Some(review);
+        }
+    };
+    monitor.open_detail().await;
+    open(&mut monitor);
+    monitor.key(KeyEvent::from(KeyCode::Char('g')));
+    monitor.paste("real-draft");
+    assert!(render_text(&mut monitor, 160, 30).contains("real-draft"));
+    assert!(monitor.locked());
+    let click = |monitor: &mut Monitor| {
+        let tree = monitor.hits.tree;
+        monitor.mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            tree.x + 2,
+            tree.y + 1,
+        ));
+    };
+    click(&mut monitor);
+    assert_eq!(monitor.focus, Pane::Detail, "an active form keeps focus");
+
+    crate::human::submit(
+        &receipts,
+        id.as_str(),
+        &reviewer,
+        &json!({"verdict":"GREEN","note":"outside"}),
+        tokio_util::sync::CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    monitor.refresh().await;
+    let text = render_text(&mut monitor, 160, 30);
+    assert!(text.contains("Completed result"), "{text}");
+    assert!(
+        store::read_request(&state, id.as_str())
+            .await
+            .unwrap()
+            .claim
+            .is_none()
+    );
+    // Neither the form nor the focus lock outlives the review.
+    assert!(!monitor.locked());
+    monitor.key(KeyEvent::from(KeyCode::Char('?')));
+    assert!(monitor.help);
+    monitor.key(KeyEvent::from(KeyCode::Char('x')));
+    monitor.key(KeyEvent::from(KeyCode::Char('!')));
+    assert!(monitor.detail.is_none(), "! leaves the Detail");
+    assert_eq!(monitor.focus, Pane::Artifacts);
+    monitor.open_detail().await;
+    open(&mut monitor);
+    assert_eq!(monitor.key(KeyEvent::from(KeyCode::Left)), Action::None);
+    assert_eq!(monitor.focus, Pane::Artifacts);
+    monitor.open_detail().await;
+    open(&mut monitor);
+    assert_eq!(
+        monitor.key(KeyEvent::from(KeyCode::Char('q'))),
+        Action::Quit
+    );
+    // A click outside leaves the settled Detail.
+    render(&mut monitor, 160, 30);
+    click(&mut monitor);
+    assert_eq!(monitor.focus, Pane::Artifacts);
+    assert!(monitor.detail.is_none());
+}
+
+#[tokio::test]
+async fn help_and_next_attention_reach_monitor_from_idle_human_details() {
+    use crate::review::tests::{demo, embedded, settled};
+    // CLAIM, read-only and completed: no field is edited, so ? and ! are monitor keys.
+    for review in [
+        embedded(None, demo()),
+        embedded(Some("bob"), demo()),
+        settled("GREEN"),
+    ] {
+        let mut monitor = human_detail(review).await;
+        assert_eq!(
+            monitor.key(KeyEvent::from(KeyCode::Char('?'))),
+            Action::None
+        );
+        assert!(monitor.help);
+        assert!(render_text(&mut monitor, 160, 40).contains("Keys · any key closes"));
+        monitor.key(KeyEvent::from(KeyCode::Char('x')));
+        assert!(!monitor.help);
+        assert_eq!(monitor.focus, Pane::Detail);
+        // ! leaves through the draft-keeping path and opens the next attention eval.
+        assert_eq!(
+            monitor.key(KeyEvent::from(KeyCode::Char('!'))),
+            Action::OpenDetail
+        );
+        assert!(monitor.detail.is_none());
+        assert_eq!(
+            monitor.reviews.len(),
+            1,
+            "the review is kept for the next open"
+        );
+        assert_eq!(monitor.target(), Some(Target::Eval("p2/check".into())));
+    }
 }

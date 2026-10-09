@@ -33,7 +33,7 @@ pub(super) fn color(tone: Tone) -> Color {
 
 /// Text for one row: line breaks and tabs become spaces and other control characters go,
 /// so widths are measured on what the terminal shows (and `cell_width` never sees a control).
-pub(super) fn plain(text: &str) -> Cow<'_, str> {
+pub(crate) fn plain(text: &str) -> Cow<'_, str> {
     if !text.contains(char::is_control) {
         return Cow::Borrowed(text);
     }
@@ -48,7 +48,8 @@ pub(super) fn plain(text: &str) -> Cow<'_, str> {
     )
 }
 
-fn width(text: &str) -> usize {
+/// Terminal columns of [`plain`] text.
+pub(crate) fn width(text: &str) -> usize {
     plain(text)
         .graphemes(true)
         .map(|grapheme| usize::from(grapheme.cell_width()))
@@ -56,7 +57,7 @@ fn width(text: &str) -> usize {
 }
 
 /// At most `max` columns of [`plain`] text, ending in `…` when cut.
-pub(super) fn fit(text: &str, max: usize) -> String {
+pub(crate) fn fit(text: &str, max: usize) -> String {
     let text = plain(text);
     if width(&text) <= max {
         return text.into_owned();

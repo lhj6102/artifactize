@@ -4,7 +4,7 @@ mod catalog;
 mod evidence;
 mod fold;
 pub(crate) mod input;
-mod layout;
+pub(crate) mod layout;
 mod model;
 #[cfg(test)]
 mod pane_tests;
@@ -30,9 +30,10 @@ pub use model::{
     Section, Segment, Source, Strip, Target, Tone, Upstream, Waits, Weight, detail, duration,
     glyph, progress, run_rows, strip, tree, upstream_index,
 };
+pub(crate) use rows::{fit, plain, width};
 pub use terminal::run;
 pub(crate) use terminal::{repaint, suspend};
-pub(crate) use view::clock;
+pub(crate) use view::{clock, crumbs};
 
 use crate::{
     config::ProfileKind,
@@ -71,13 +72,11 @@ pub enum Pane {
     Artifacts,
     Detail,
 }
-/// Areas inside the Detail pane.
+/// Areas inside a non-Human Detail pane; a Human review keeps its own sub-areas.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DetailArea {
     Summary,
     Evidence,
-    Tools,
-    Fields,
 }
 
 /// The opened Detail of one tree node: sections, evidence, an Agent session or a Human review.
@@ -414,7 +413,6 @@ impl Monitor {
                             pane.request = Some(view.request.id.clone());
                             review.load_single(view);
                             pane.review = Some(review);
-                            pane.focus = DetailArea::Fields;
                         }
                         Err(error) => self.notice = Some(error),
                     },
@@ -730,67 +728,57 @@ impl Monitor {
         }
         Action::None
     }
-    /// Keys while Detail has focus. A Human review owns them, except Esc and Tab.
+    /// Keys while Detail has focus. A Human review owns them through the shared component.
     fn detail_key(&mut self, key: KeyEvent) -> Action {
         let Some(pane) = &mut self.detail else {
             return Action::None;
         };
+        if let Some(review) = &mut pane.review {
+            match review.key_detail(key) {
+                review::Handled::Action(action) => return Action::Review(action),
+                review::Handled::Back => {
+                    self.leave_detail();
+                    return Action::None;
+                }
+                review::Handled::Quit => return Action::Quit,
+                // `?` and `!` outside a form act as in any Detail; leaving keeps the draft.
+                review::Handled::Pass => {}
+            }
+        }
         if key.code == KeyCode::Esc {
             if pane.show_details {
                 pane.show_details = false;
                 pane.focus = DetailArea::Evidence;
                 return Action::None;
             }
-            if let Some(review) = &mut pane.review
-                && (review.busy() || review.confirming())
-            {
-                return Action::Review(review.control(review::Control::Cancel));
-            }
             self.leave_detail();
             return Action::None;
         }
-        // A Human review owns every key only while it edits, works or confirms; otherwise the
-        // common Detail keys come first and its own keys (c, g, r, u, Ctrl-S…) follow.
-        if !pane.review.as_ref().is_some_and(owns_keys) {
-            match key.code {
-                KeyCode::Char('q') => return Action::Quit,
-                KeyCode::Char('?') => {
-                    self.help = true;
-                    return Action::None;
-                }
-                KeyCode::Left => {
-                    self.leave_detail();
-                    return Action::None;
-                }
-                // The next attention item opens in Detail, so causes read one after another.
-                KeyCode::Char('!') => {
-                    self.leave_detail();
-                    return if self.next_attention() {
-                        Action::OpenDetail
-                    } else {
-                        Action::None
-                    };
-                }
-                _ => {}
+        // A Human review passes only `?` and `!`, outside a form, job or confirmation.
+        match key.code {
+            KeyCode::Char('q') => return Action::Quit,
+            KeyCode::Char('?') => {
+                self.help = true;
+                return Action::None;
             }
+            KeyCode::Left => {
+                self.leave_detail();
+                return Action::None;
+            }
+            // The next attention item opens in Detail, so causes read one after another.
+            KeyCode::Char('!') => {
+                self.leave_detail();
+                return if self.next_attention() {
+                    Action::OpenDetail
+                } else {
+                    Action::None
+                };
+            }
+            _ => {}
         }
         let Some(pane) = &mut self.detail else {
             return Action::None;
         };
-        if let Some(review) = &mut pane.review {
-            if key.code == KeyCode::BackTab
-                || key.code == KeyCode::Tab
-                    && (pane.focus == DetailArea::Tools || !review.editing())
-            {
-                pane.focus = if pane.focus == DetailArea::Tools {
-                    DetailArea::Fields
-                } else {
-                    DetailArea::Tools
-                };
-                return Action::None;
-            }
-            return Action::Review(review.key_single(key, pane.focus == DetailArea::Tools));
-        }
         match key.code {
             KeyCode::Char('t') if pane.live.is_none() || pane.show_details => {
                 pane.technical = !pane.technical;
@@ -864,9 +852,8 @@ impl Monitor {
     }
     pub fn paste(&mut self, text: &str) {
         if self.focus == Pane::Detail
-            && let Some(pane) = &mut self.detail
-            && pane.focus == DetailArea::Fields
-            && let Some(review) = &mut pane.review
+            && let Some(review) = self.review_mut()
+            && review.area() == review::Area::Fields
         {
             review.paste_single(text);
         }

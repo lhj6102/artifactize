@@ -100,7 +100,6 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
     review.load_single(view);
     review.control(review::Control::Red);
     monitor.detail.as_mut().unwrap().review = Some(review);
-    monitor.detail.as_mut().unwrap().focus = DetailArea::Fields;
     let cursor = |monitor: &Monitor| match monitor
         .detail
         .as_ref()

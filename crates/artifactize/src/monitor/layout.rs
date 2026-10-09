@@ -68,33 +68,58 @@ pub(super) fn back(pane: Pane) -> Pane {
     LEVELS[level(pane).saturating_sub(1)]
 }
 
+/// One drill-down level of a screen: its fixed Compact width and its natural Full width,
+/// borders included. `u16::MAX` lets a level grow to the whole body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Level {
+    pub compact: u16,
+    pub natural: u16,
+}
+
+/// The monitor's levels: Scope, Runs and the Run tree have Compact widths; Detail grows freely.
 pub fn plan(area: Rect, focus: Pane, hints: Hints) -> Plan {
-    let focused = level(focus);
+    let natural = [hints.scope, hints.runs, hints.tree, u16::MAX];
+    let levels = LEVELS.map(|pane| {
+        let index = level(pane);
+        Level {
+            compact: COMPACT.get(index).copied().unwrap_or(0),
+            natural: natural[index],
+        }
+    });
+    let panes = columns(area, &levels, level(focus))
+        .into_iter()
+        .map(|(index, area, density)| (LEVELS[index], area, density))
+        .collect();
+    Plan { panes }
+}
+
+/// Visible levels of any drill-down screen, by index, left to right: the focused level is Full
+/// up to its natural width, the level to its left is Compact and the level to its right a
+/// Preview. The last level (a Detail) keeps its left neighbour as context at any two-pane width
+/// and never has a Preview. Below `MEDIUM` only the focused level shows.
+pub(crate) fn columns(area: Rect, levels: &[Level], focused: usize) -> Vec<(usize, Rect, Density)> {
+    let last = levels.len().saturating_sub(1);
     let width = area.width;
-    // Detail keeps the tree as context at any two-pane width. Elsewhere a two-pane width shows
-    // the Preview of the next level, since the breadcrumb already names the level before.
+    let next = (focused < last).then_some(focused + 1);
+    // A Detail keeps the level before it as context at any two-pane width. Elsewhere a two-pane
+    // width shows the Preview of the next level, since the breadcrumb already names the level
+    // before.
     let (mut left, right) = if width < MEDIUM {
         (None, None)
-    } else if focus == Pane::Detail {
-        (Some(level(Pane::Artifacts)), None)
+    } else if focused == last {
+        (focused.checked_sub(1), None)
     } else if width < WIDE {
-        (None, Some(focused + 1))
+        (None, next)
     } else {
-        (focused.checked_sub(1), Some(focused + 1))
+        (focused.checked_sub(1), next)
     };
-    let mut compact = left.map_or(0, |level| COMPACT[level]);
+    let mut compact = left.map_or(0, |level| levels[level].compact);
     if width.saturating_sub(compact) < FULL_MIN {
         left = None;
         compact = 0;
     }
     let rest = width - compact;
-    let natural = match focus {
-        Pane::Repositories => hints.scope,
-        Pane::Runs => hints.runs,
-        Pane::Artifacts => hints.tree,
-        Pane::Detail => u16::MAX,
-    }
-    .max(FULL_MIN);
+    let natural = levels[focused].natural.max(FULL_MIN);
     let (full, preview) = match right {
         Some(_) if rest >= FULL_MIN + PREVIEW_MIN => {
             let full = natural.min(rest - PREVIEW_MIN);
@@ -104,18 +129,18 @@ pub fn plan(area: Rect, focus: Pane, hints: Hints) -> Plan {
     };
     let mut panes = Vec::new();
     let mut x = area.x;
-    let mut push = |pane, width, density| {
-        panes.push((pane, Rect::new(x, area.y, width, area.height), density));
+    let mut push = |level, width, density| {
+        panes.push((level, Rect::new(x, area.y, width, area.height), density));
         x += width;
     };
     if let Some(level) = left {
-        push(LEVELS[level], compact, Density::Compact);
+        push(level, compact, Density::Compact);
     }
-    push(focus, full, Density::Full);
+    push(focused, full, Density::Full);
     if let Some(level) = right.filter(|_| preview > 0) {
-        push(LEVELS[level], preview, Density::Preview);
+        push(level, preview, Density::Preview);
     }
-    Plan { panes }
+    panes
 }
 
 #[cfg(test)]
@@ -236,5 +261,49 @@ mod tests {
         );
         // A zero-sized body still has exactly the focused pane.
         assert_eq!(plan(Rect::default(), Tree, HINTS).panes.len(), 1);
+    }
+
+    /// The standalone review's two levels: its waiting list (Compact 30) and the Detail.
+    fn review(width: u16, focused: usize, natural: u16) -> Vec<(usize, u16, Density)> {
+        let levels = [
+            Level {
+                compact: 30,
+                natural,
+            },
+            Level {
+                compact: 0,
+                natural: u16::MAX,
+            },
+        ];
+        let panes = columns(Rect::new(0, 1, width, 20), &levels, focused);
+        assert_eq!(
+            panes.iter().map(|(_, area, _)| area.width).sum::<u16>(),
+            width,
+            "{panes:?}"
+        );
+        panes
+            .into_iter()
+            .map(|(level, area, density)| (level, area.width, density))
+            .collect()
+    }
+
+    #[test]
+    fn review_list_and_detail_follow_the_same_breakpoints() {
+        for (width, focused, expected) in [
+            // List focused: the list grows to its natural width and the Detail previews.
+            (160, 0, vec![(0, 70, Full), (1, 90, Preview)]),
+            (120, 0, vec![(0, 70, Full), (1, 50, Preview)]),
+            (100, 0, vec![(0, 64, Full), (1, 36, Preview)]),
+            // Detail focused: the list is Compact beside the Full Detail, at any 2-pane width.
+            (160, 1, vec![(0, 30, Compact), (1, 130, Full)]),
+            (100, 1, vec![(0, 30, Compact), (1, 70, Full)]),
+            // Narrow: one pane; the breadcrumb names the request.
+            (99, 0, vec![(0, 99, Full)]),
+            (80, 1, vec![(1, 80, Full)]),
+        ] {
+            assert_eq!(review(width, focused, 70), expected, "{width} {focused}");
+        }
+        // A very wide list leaves the minimum Preview.
+        assert_eq!(review(160, 0, 500), [(0, 124, Full), (1, 36, Preview)]);
     }
 }
