@@ -1,6 +1,5 @@
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::PathBuf;
 
 use artifactize::config::{Profile, read_workspace_config};
 use artifactize::runtime::{self, Command, Outcome, Verdict};
@@ -21,13 +20,8 @@ impl Drop for Fixture {
 
 #[tokio::test]
 async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target/test-fixtures")
-        .join(format!("scope-execution-{}-{nonce}", std::process::id()));
+    let scratch = tempfile::tempdir().unwrap();
+    let root = scratch.path().join("repo");
     fs::create_dir_all(root.join("review/nested")).unwrap();
     fs::create_dir_all(root.join("data")).unwrap();
     let fixture = Fixture(support::os::canonical(&root));
@@ -53,8 +47,7 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
     };
     let args = resolve_argv(&config, &scope, &eval.target, args).unwrap();
     let cwd = scoped_path(root, &config.artifacts[&eval.target].path).unwrap();
-    let output =
-        Fixture(root.with_file_name(format!("scope-output-{}-{nonce}", std::process::id())));
+    let output = Fixture(scratch.path().join("output"));
     let mut command = Command::prepare(
         command.into(),
         args.into_iter().map(Into::into).collect(),

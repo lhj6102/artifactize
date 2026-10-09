@@ -417,3 +417,85 @@ fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
         );
     }
 }
+
+#[test]
+fn prune_preserves_gitless_workspace_copies_with_current_or_legacy_markers() {
+    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path().join("state");
+        let repo = root.path().join("reviewed");
+        let finished = runtime_run(&state, &repo);
+        let copy =
+            Path::new(finished["requests"][0]["runDir"].as_str().unwrap()).join("output/copy");
+        fs::create_dir_all(&copy).unwrap();
+        fs::write(copy.join(marker), "workspace marker").unwrap();
+        fs::write(copy.join("keep.txt"), "owner content").unwrap();
+        for args in [vec!["prune", "--dry-run"], vec!["prune"]] {
+            let error = result(command(&state).args(args), 2);
+            assert!(
+                error["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Prune refuses repository content"),
+                "{marker}: {error}"
+            );
+            assert_eq!(
+                fs::read_to_string(copy.join("keep.txt")).unwrap(),
+                "owner content"
+            );
+            assert!(copy.join(marker).exists());
+        }
+    }
+}
+
+#[test]
+fn remote_logout_refuses_credential_state_inside_current_and_legacy_workspaces() {
+    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        fs::write(workspace.join(marker), "workspace marker").unwrap();
+        let state = workspace.join("state");
+        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .arg("--state-dir")
+            .arg(&state)
+            .args(["remote", "logout", "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{marker}: {output:?}");
+        let error: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(
+            error["error"]
+                .as_str()
+                .unwrap()
+                .contains("artifactize workspace"),
+            "{marker}: {error}"
+        );
+        assert!(!state.exists(), "{marker}: credential guard created state");
+    }
+}
+
+#[test]
+fn doctor_never_probes_or_creates_state_inside_current_or_legacy_workspaces() {
+    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        fs::write(workspace.join(marker), "workspace marker").unwrap();
+        let state = workspace.join("state");
+        let report = result(&mut doctor(&state, root.path()), 1);
+        assert_eq!(
+            check(&report, "state")["status"],
+            "FAIL",
+            "{marker}: {report}"
+        );
+        assert!(
+            check(&report, "state")["message"]
+                .as_str()
+                .unwrap()
+                .contains("outside artifactize workspaces"),
+            "{marker}: {report}"
+        );
+        assert!(!state.exists(), "{marker}: doctor created state");
+    }
+}

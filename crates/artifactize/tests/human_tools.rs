@@ -64,9 +64,12 @@ fn text(result: &ToolResult) -> &str {
 #[test]
 fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
     let parse = |tool| {
-        parse_declaration(&support::declaration::to_toml(
-            json!({"name":"a","views":{"human_tools":{"inspect":tool}}}),
-        )?)
+        parse_declaration(
+            &support::declaration::to_toml(
+                json!({"name":"a","views":{"human_tools":{"inspect":tool}}}),
+            )
+            .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
+        )
     };
     let valid = tool("launch", "missing-program", &["{artifactPath}"]);
     assert!(parse(valid.clone()).is_ok());
@@ -84,7 +87,6 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
         ("args", json!(["${HOME}"])),
         ("args", json!(["prefix{artifactPath}"])),
         ("command", json!("{artifactPath}/tool")),
-        ("timeout_ms", json!(null)),
         ("timeout_ms", json!(0)),
         ("timeout_ms", json!(2_147_483_648u64)),
     ] {

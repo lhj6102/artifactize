@@ -208,3 +208,20 @@ async fn named_locks_serialize_holders_and_stay_private() {
         assert!(storage.lock("codex").await.is_err());
     }
 }
+
+#[test]
+fn credential_storage_keeps_current_and_legacy_workspace_markers_as_boundaries() {
+    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        fs::create_dir(&repo).unwrap();
+        fs::write(repo.join(marker), "marker").unwrap();
+        for kind in [Tokens::Codex, Tokens::Remote] {
+            let Err(error) = Storage::new(Some(&repo.join("state")), None, kind) else {
+                panic!("credential storage accepted {marker}");
+            };
+            assert!(error.contains("artifactize workspace"), "{marker}: {error}");
+            assert!(!repo.join("state").exists());
+        }
+    }
+}

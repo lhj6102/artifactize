@@ -23,7 +23,10 @@ struct Fixture {
 }
 
 fn parse(value: &Value) -> Result<artifactize::config::ArtifactDeclaration, String> {
-    parse_declaration(&support::declaration::to_toml(value.clone())?)
+    parse_declaration(
+        &support::declaration::to_toml(value.clone())
+            .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
+    )
 }
 
 fn dependency(targets: &[&str]) -> Value {
@@ -111,7 +114,6 @@ fn dependency_declarations_are_strict_and_other_profiles_still_require_payload()
         json!(["art", "art"]),
         json!([""]),
         json!(["bad/name"]),
-        json!([null]),
         json!(vec!["art"; 65]),
     ] {
         let mut invalid = valid.clone();
@@ -130,11 +132,9 @@ fn dependency_declarations_are_strict_and_other_profiles_still_require_payload()
         ("fail_schema", json!({})),
         ("profile_variants", json!({})),
     ] {
-        for value in [value, Value::Null] {
-            let mut invalid = valid.clone();
-            invalid["evals"][0][field] = value;
-            assert!(parse(&invalid).is_err(), "{invalid}");
-        }
+        let mut invalid = valid.clone();
+        invalid["evals"][0][field] = value;
+        assert!(parse(&invalid).is_err(), "{invalid}");
     }
     for profile in [
         json!({"kind":"human"}),

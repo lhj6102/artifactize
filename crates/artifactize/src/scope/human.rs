@@ -37,8 +37,9 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
                 Ok::<_, ScopeError>(())
             };
             validate().map_err(|error| {
-                super::ConfigError::new(
+                super::ConfigError::declaration(
                     config.root.join(&artifact.path).join(super::CONFIG_FILE),
+                    &["views", "human_tools", name, "args"],
                     format!("Human tool {name}: {error}"),
                 )
             })?;

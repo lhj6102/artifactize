@@ -5,6 +5,24 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
+/// Legacy markers remain safety boundaries even though discovery refuses their format.
+pub(crate) const ARTIFACT_MARKERS: [&str; 3] = [
+    crate::config::CONFIG_FILE,
+    "artifactize.json",
+    ".artifactizeignore",
+];
+
+pub(crate) fn has_artifact_marker(path: &Path) -> io::Result<bool> {
+    for marker in ARTIFACT_MARKERS {
+        match path.join(marker).symlink_metadata() {
+            Ok(_) => return Ok(true),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(false)
+}
+
 pub(crate) fn canonical_target(path: &Path) -> io::Result<PathBuf> {
     let mut resolved = PathBuf::new();
     for component in std::path::absolute(path)?.components() {
@@ -34,6 +52,17 @@ pub(crate) fn outside_workspace(workspace: &Path, output: &Path) -> io::Result<(
             "State and output directories must be outside the reviewed repository.",
         ));
     }
+    outside_artifact_workspaces(output)
+}
+
+pub(crate) fn outside_artifact_workspaces(output: &Path) -> io::Result<()> {
+    for ancestor in output.ancestors() {
+        if has_artifact_marker(ancestor)? {
+            return Err(io::Error::other(
+                "State and output directories must be outside artifactize workspaces.",
+            ));
+        }
+    }
     Ok(())
 }
 
@@ -44,4 +73,28 @@ pub(crate) fn prepare_directory(path: &Path, workspace: &Path) -> io::Result<Pat
     let path = crate::platform::canonicalize(&path)?;
     outside_workspace(workspace, &path)?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn state_and_output_creation_refuse_other_current_or_legacy_workspaces() {
+        for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+            let root = tempfile::tempdir().unwrap();
+            let reviewed = root.path().join("reviewed");
+            let other = root.path().join("other");
+            std::fs::create_dir(&reviewed).unwrap();
+            std::fs::create_dir(&other).unwrap();
+            std::fs::write(other.join(marker), "marker").unwrap();
+            let state = other.join("state");
+            let error = prepare_directory(&state, &reviewed).unwrap_err();
+            assert!(
+                error.to_string().contains("outside artifactize workspaces"),
+                "{marker}: {error}"
+            );
+            assert!(!state.exists());
+        }
+    }
 }

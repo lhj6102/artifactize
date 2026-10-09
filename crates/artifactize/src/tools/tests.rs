@@ -76,9 +76,12 @@ fn text(result: &ToolResult) -> &str {
 #[test]
 fn flat_declarations_validate_strictly_and_inertly() {
     let parse = |tool| {
-        parse_declaration(&crate::test_declaration::to_toml(
-            json!({"name":"a","views":{"agent_tools":{"inspect":tool}}}),
-        )?)
+        parse_declaration(
+            &crate::test_declaration::to_toml(
+                json!({"name":"a","views":{"agent_tools":{"inspect":tool}}}),
+            )
+            .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
+        )
     };
     assert!(parse(command()).is_ok());
     for builtin in ["read", "list", "glob", "grep", "view_image"] {
@@ -87,7 +90,6 @@ fn flat_declarations_validate_strictly_and_inertly() {
     for invalid in [
         json!({"builtin":"unknown"}),
         json!({"builtin":"read","command":"cat"}),
-        json!({"builtin":"read","description":null}),
         json!({"builtin":"read","description":"   "}),
         json!({"builtin":"read","description":"Read {other}"}),
         json!({"metadata":{"description":"Old"},"script":{"command":"cat","args":[]}}),
@@ -111,10 +113,8 @@ fn flat_declarations_validate_strictly_and_inertly() {
             "input_schema",
             json!({"type":"object","$ref":"file:///etc/passwd"}),
         ),
-        ("input_schema", Value::Null),
         ("timeout_ms", json!(0)),
         ("timeout_ms", json!(2_147_483_648u64)),
-        ("timeout_ms", json!(null)),
         ("execution_paths", json!(["../outside"])),
         ("execution_paths", json!(["same", "same"])),
         ("protocol", json!("shell")),

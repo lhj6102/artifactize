@@ -10,7 +10,10 @@ fn eval(profile: Value) -> Value {
 }
 
 fn parse(value: Value) -> Result<ArtifactDeclaration, String> {
-    parse_declaration(&crate::test_declaration::to_toml(value)?)
+    parse_declaration(
+        &crate::test_declaration::to_toml(value)
+            .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
+    )
 }
 
 #[test]
@@ -33,7 +36,7 @@ fn defaults_and_payload_are_preserved_without_interpolation() {
 #[test]
 fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
     let declared = eval(json!({"kind":"human"}));
-    for invalid in [Value::Null, json!(42), json!(true), json!([]), json!({})] {
+    for invalid in [json!(42), json!(true), json!([]), json!({})] {
         let mut declaration = declared.clone();
         declaration["payload"]["instruction"] = invalid;
         assert!(parse(json!({"name":"a","evals":[declaration]})).is_err());
@@ -52,17 +55,12 @@ fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
 }
 
 #[test]
-fn unknown_fields_and_explicit_nulls_are_not_ignored() {
+fn unknown_fields_are_not_ignored() {
     assert!(
         parse(json!({"name": "a", "target": "b"}))
             .unwrap_err()
             .contains("unknown field")
     );
-    assert!(parse(json!({"name": "a", "basis": null})).is_err());
-    assert!(parse(json!({"name": "a", "evals": null})).is_err());
-    assert!(parse(json!({"name": "a", "views": null})).is_err());
-    assert!(parse(json!({"name": "a", "mounts": null})).is_err());
-    assert!(parse(json!({"name": "a", "fingerprint": null})).is_err());
     let mut declared = eval(json!({"kind": "human"}));
     declared["deps"] = json!([]);
     assert!(
@@ -102,9 +100,8 @@ fn identifiers_and_eval_requirements_are_strict() {
 #[test]
 fn duplicate_evals_and_basis_with_evals_are_rejected() {
     let declared = eval(json!({"kind": "human"}));
-    let error =
-        parse(json!({"name": "a", "evals": [declared.clone(), declared.clone()]})).unwrap_err();
-    assert!(error.contains("Duplicate local Eval in a: check"));
+    let error = parse_declaration("name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }\npayload = { instruction = 'Inspect.' }\n[evals.check]\ntitle = 'Duplicate'").unwrap_err();
+    assert!(error.contains("duplicate key"), "{error}");
     assert!(
         parse(json!({"name": "a", "basis": true, "evals": [declared.clone()]}))
             .unwrap_err()
@@ -174,9 +171,6 @@ fn all_hook_timeouts_are_checked_without_opening_scripts() {
     });
     assert!(parse(valid.clone()).is_ok());
     let mut invalid = valid.clone();
-    invalid["fingerprint"]["script"]["timeout_ms"] = json!(null);
-    assert!(parse(invalid).is_err());
-    let mut invalid = valid.clone();
     invalid["views"]["agent_tools"]["read"]["timeout_ms"] = json!(2147483648_u64);
     assert!(parse(invalid).is_err());
     let mut invalid = valid;
@@ -223,8 +217,6 @@ fn response_schemas_are_validated_without_rewriting_owner_fields() {
         declaration.evals[0].pass_schema.as_ref().unwrap(),
         schema.as_object().unwrap()
     );
-    declared["fail_schema"] = Value::Null;
-    assert!(parse(json!({"name": "a", "evals": [declared]})).is_err());
 }
 
 #[test]
@@ -274,8 +266,6 @@ fn fingerprint_scripts_are_inert_declarations() {
         ("paths", json!(["input"])),
         ("weight", json!(1)),
         ("weight", json!(101)),
-        ("weight", json!(null)),
-        ("files", json!(null)),
         ("inputs", json!(["input"])),
     ] {
         let mut fingerprint = minimum.clone();
@@ -294,9 +284,10 @@ fn renamed_fingerprint_keys_fail_with_the_new_shape() {
     ] {
         let mut declaration = json!({"name":"a"});
         declaration[key] = value;
-        assert_eq!(
-            parse(declaration).unwrap_err(),
-            format!("{key} was renamed to fingerprint: {shape}")
+        let error = parse(declaration).unwrap_err();
+        assert!(
+            error.ends_with(&format!("{key} was renamed to fingerprint: {shape}")),
+            "{error}"
         );
     }
 }
@@ -308,9 +299,12 @@ fn a_family_declaration_names_its_removal() {
         json!({"instances":{"one":{}}}),
         json!(false),
     ] {
-        assert_eq!(
-            parse(json!({"name":"a","family":value})).unwrap_err(),
-            "family was removed in 0.9.0; declare each instance as its own Artifact."
+        let error = parse(json!({"name":"a","family":value})).unwrap_err();
+        assert!(
+            error.ends_with(
+                "family was removed in 0.9.0; declare each instance as its own Artifact."
+            ),
+            "{error}"
         );
     }
 }
@@ -441,7 +435,6 @@ fn agent_backends_are_explicit_and_optional_reasoning_is_exact() {
     for profile in [
         json!({"kind":"agent","provider":"openai","model":"m"}),
         json!({"kind":"agent","backend":"unknown","model":"m"}),
-        json!({"kind":"agent","backend":"openai","model":"m","reasoning":null}),
         json!({"kind":"agent","backend":"openai","model":"m","reasoning":"off"}),
         json!({"kind":"agent","backend":"anthropic","model":"m","reasoning":"xhigh"}),
         json!({"kind":"agent","backend":"codex","model":"m","reasoning":"ultra"}),
@@ -562,8 +555,6 @@ fn tags_are_optional_unique_nonblank_strings_with_a_bounded_list() {
         json!(["\u{2003}"]),
         json!(["same", "same"]),
         json!([1]),
-        json!([null]),
-        json!(null),
         json!("tag"),
         json!({}),
     ] {

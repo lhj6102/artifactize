@@ -26,9 +26,7 @@ struct Scratch(tempfile::TempDir);
 
 impl Scratch {
     fn new() -> Self {
-        let target =
-            support::os::canonical(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target"));
-        let scratch = Self(tempfile::tempdir_in(target).unwrap());
+        let scratch = Self(tempfile::tempdir().unwrap());
         std::fs::create_dir(scratch.workspace()).unwrap();
         scratch
     }

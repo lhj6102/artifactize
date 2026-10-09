@@ -147,13 +147,22 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
 }
 
 #[tokio::test]
-async fn explicitly_named_declarations_are_not_hashed_but_artf_folders_are() {
+async fn explicit_declaration_inputs_are_rejected_but_artf_folders_are_hashed() {
     let repo = Repo::new();
+    for input in ["index.artf", "file.png.artf", "missing.artf"] {
+        repo.artifact("", json!({"name":"root","fingerprint":{"files":[input]}}));
+        let error = read_workspace_config(repo.root.path())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("cannot be explicit artifactsum inputs"),
+            "{error}"
+        );
+    }
     repo.artifact(
         "",
-        json!({"name":"root","fingerprint":{"files":["file.png.artf","index.artf","bundle.artf"]}}),
+        json!({"name":"root","fingerprint":{"files":["bundle.artf"]}}),
     );
-    repo.write("file.png.artf", "not TOML");
     repo.write("bundle.artf/data.txt", "data");
     assert_eq!(repo.files("root").await, ["bundle.artf/data.txt"]);
 }
