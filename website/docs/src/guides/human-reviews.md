@@ -8,9 +8,10 @@ READY Human evals persist WAITING_HUMAN and release their job slot. They consume
 no `maxExecutions` budget, so even a zero budget admits a Human review. `verify`
 waits for Human results as it waits for runtime and Agent evals, and never
 fabricates a verdict. When its wait times out it exits and lists the waiting
-requests, and no worker stays alive. Waiting executions with a reuse key retain their exclusive
-claim on the key after the verifier exits. Cross-repository followers refer to that
-same execution and forward Human actions to its original request and repository.
+requests, and no worker stays alive. A waiting execution with a reuse key retains its
+exclusive claim on the key after the verifier exits, unless it is forced (`--force`): a
+forced wait holds no claim on its key. Cross-repository followers refer to the claiming
+execution and forward Human actions to its original request and repository.
 
 A submission that arrives while `verify` waits runs the Human eval's dependents in
 the same Run. Human sign-offs reuse by default: artifactsum supplies the target and

@@ -42,7 +42,8 @@ derived state and `blockedBy`, but have no execution row, key, run output, usage
 or backend-capacity slot. They count under `summary.derived`, not executed or
 reused work. They never enter cache inspection or team-store lookup/publication.
 One execution per reuse key can be
-active (RUNNING or WAITING_HUMAN) at a time. `state_meta` holds the state's stable
+active (RUNNING or WAITING_HUMAN) at a time; a forced (`--force`) execution bypasses this claim and
+never holds its key's active slot. `state_meta` holds the state's stable
 id, a random UUID made when the database is created (row `id`), which
 [Agent session references](#agent-sessions) name. How a review went, its
 conversation and its tool calls, is not in the state: it is in the review's
