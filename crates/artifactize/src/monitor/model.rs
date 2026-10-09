@@ -187,6 +187,9 @@ fn reused(view: &RequestView) -> bool {
 
 fn elapsed(view: &RequestView, now: OffsetDateTime) -> Option<String> {
     let request = &view.request;
+    if view.request.profile.kind() == crate::config::ProfileKind::Dependency {
+        return Some("derived".into());
+    }
     if reused(view) {
         return Some("reused".into());
     }
@@ -249,13 +252,17 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             .map(|(status, count)| (status.clone(), count.as_u64().unwrap_or(0)))
             .collect(),
         work: format!(
-            "executions {}/{} · jobs {} · executed {} · reused {}{}{}",
+            "executions {}/{} · jobs {} · executed {} · reused {}{}{}{}",
             run.executions_started,
             run.max_executions
                 .map_or("unlimited".into(), |max| max.to_string()),
             run.jobs,
             summary["executed"]["total"],
             summary["reused"]["total"],
+            summary["derived"]
+                .as_u64()
+                .filter(|count| *count > 0)
+                .map_or_else(String::new, |count| format!(" · derived {count}")),
             if usage.is_empty() {
                 usage
             } else {
@@ -443,6 +450,11 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
         RelationKind::Mount { alias } => {
             format!("mount {}", alias.value().map_or("", String::as_str))
         }
+        RelationKind::Dependency { name, eval_id } => format!(
+            "dependency {} in {}",
+            name.value().map_or("", String::as_str),
+            eval_id.value().map_or("", String::as_str)
+        ),
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
         RelationKind::Argument {
             eval_id,
@@ -562,6 +574,7 @@ fn profile(profile: &crate::config::StoredProfile) -> String {
             format!("runtime {command} {}", args.join(" "))
         }
         StoredProfile::Human {} => "human".into(),
+        StoredProfile::Dependency { depends_on } => format!("dependency {}", depends_on.join(", ")),
     }
 }
 
@@ -597,6 +610,10 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     );
     detail.push("Request", request.id.as_str());
     detail.push("Reason", request.blocked_reason.clone().unwrap_or_default());
+    if request.profile.kind() == crate::config::ProfileKind::Dependency {
+        detail.push("Source", "derived (no execution)");
+        detail.push("Blocked by", request.blocked_by.join(", "));
+    }
     detail.push("Error", error(view).unwrap_or_default());
     detail.push("Instruction", request.payload.instruction());
     detail.push("Profile", profile(&request.profile));

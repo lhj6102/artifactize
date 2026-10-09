@@ -269,7 +269,7 @@ impl<'de> Deserialize<'de> for Relation {
         let names: &[&str] = match kind_name.as_str() {
             "child" => &["path"],
             "mount" => &["alias"],
-            "instruction" => &["evalId", "name"],
+            "instruction" | "dependency" => &["evalId", "name"],
             "argv" => &["evalId", "index", "name", "path"],
             _ => &[],
         };
@@ -308,6 +308,12 @@ pub enum RelationKind {
     Mount {
         #[serde(default, skip_serializing_if = "missing")]
         alias: Field<String>,
+    },
+    Dependency {
+        #[serde(rename = "evalId", default, skip_serializing_if = "missing")]
+        eval_id: Field<String>,
+        #[serde(default, skip_serializing_if = "missing")]
+        name: Field<String>,
     },
     Instruction {
         #[serde(rename = "evalId")]

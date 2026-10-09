@@ -43,6 +43,11 @@ pub enum RelationKind {
     Mount {
         alias: String,
     },
+    Dependency {
+        #[serde(rename = "evalId")]
+        eval_id: String,
+        name: String,
+    },
     Instruction {
         #[serde(rename = "evalId")]
         eval_id: String,
@@ -493,7 +498,36 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         };
         let mut references = BTreeMap::new();
         let mut deps = BTreeSet::new();
-        for name in instruction_references(&eval.declaration.payload.instruction) {
+        if let Profile::Dependency { depends_on } = &eval.declaration.profile {
+            for name in depends_on {
+                let source = reference_target(config, &eval.target, name).map_err(error)?;
+                if source == eval.target {
+                    return Err(error(ScopeError(
+                        "Dependency Evals cannot depend on their own Artifact.".into(),
+                    )));
+                }
+                if !deps.insert(source.to_owned()) {
+                    return Err(error(ScopeError(
+                        "Dependency profile dependsOn must resolve to unique Artifacts.".into(),
+                    )));
+                }
+                relations.push(Relation {
+                    source: source.to_owned(),
+                    target: eval.target.clone(),
+                    kind: RelationKind::Dependency {
+                        eval_id: eval.id.clone(),
+                        name: name.clone(),
+                    },
+                });
+            }
+        }
+        for name in eval
+            .declaration
+            .payload
+            .as_ref()
+            .into_iter()
+            .flat_map(|payload| instruction_references(&payload.instruction))
+        {
             let source = reference_target(config, &eval.target, name).map_err(error)?;
             references.insert(name.to_owned(), source.to_owned());
             if source != eval.target {
@@ -537,7 +571,9 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         eval.deps = deps;
     }
     config.relations = relations;
-    human::validate_references(config)
+    human::validate_references(config)?;
+    crate::graph::Graph::new(config).map_err(|error| ConfigError::new(&config.root, error))?;
+    Ok(())
 }
 
 #[cfg(test)]

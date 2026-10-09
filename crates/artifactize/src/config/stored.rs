@@ -61,6 +61,18 @@ impl StoredPayload {
     }
 }
 
+impl From<&Option<super::EvalPayload>> for StoredPayload {
+    fn from(payload: &Option<super::EvalPayload>) -> Self {
+        payload.as_ref().map_or_else(
+            || Self {
+                instruction: Field::Missing,
+                extra: Default::default(),
+            },
+            Self::from,
+        )
+    }
+}
+
 impl From<&super::EvalPayload> for StoredPayload {
     fn from(payload: &super::EvalPayload) -> Self {
         Self {
@@ -95,6 +107,10 @@ pub enum StoredProfile {
         max_tokens: Field<u64>,
     },
     Human {},
+    Dependency {
+        #[serde(rename = "dependsOn")]
+        depends_on: Vec<String>,
+    },
     Runtime {
         command: String,
         args: Vec<String>,
@@ -112,6 +128,7 @@ impl StoredProfile {
         match self {
             Self::Agent { .. } => ProfileKind::Agent,
             Self::Human {} => ProfileKind::Human,
+            Self::Dependency { .. } => ProfileKind::Dependency,
             Self::Runtime { .. } => ProfileKind::Runtime,
         }
     }
@@ -135,6 +152,9 @@ impl From<&Profile> for StoredProfile {
                 max_tokens: (*max_tokens).into(),
             },
             Profile::Human {} => Self::Human {},
+            Profile::Dependency { depends_on } => Self::Dependency {
+                depends_on: depends_on.clone(),
+            },
             Profile::Runtime {
                 command,
                 args,

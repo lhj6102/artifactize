@@ -130,6 +130,10 @@ pub enum Profile {
         max_tokens: Option<u64>,
     },
     Human {},
+    Dependency {
+        #[serde(rename = "dependsOn")]
+        depends_on: Vec<String>,
+    },
     Runtime {
         command: String,
         args: Vec<String>,
@@ -159,6 +163,21 @@ impl Profile {
                 Ok(())
             }
             Self::Human {} => Ok(()),
+            Self::Dependency { depends_on } => {
+                if depends_on.is_empty()
+                    || depends_on.len() > MAX_DECLARED_ITEMS
+                    || depends_on.iter().collect::<BTreeSet<_>>().len() != depends_on.len()
+                {
+                    return Err(
+                        "Dependency profile dependsOn must contain 1–64 unique Artifact names."
+                            .into(),
+                    );
+                }
+                for name in depends_on {
+                    identifier(name, "Dependency Artifact name")?;
+                }
+                Ok(())
+            }
             Self::Runtime { command, args, .. } => script(command, args),
         }
     }
@@ -167,6 +186,7 @@ impl Profile {
         match self {
             Self::Agent { .. } => ProfileKind::Agent,
             Self::Human {} => ProfileKind::Human,
+            Self::Dependency { .. } => ProfileKind::Dependency,
             Self::Runtime { .. } => ProfileKind::Runtime,
         }
     }
@@ -184,6 +204,8 @@ pub enum ProfileKind {
     Agent,
     /// Human evals: a person's sign-off.
     Human,
+    /// Dependency evals: derived from current required Artifact evidence.
+    Dependency,
 }
 
 impl ProfileKind {
@@ -192,6 +214,7 @@ impl ProfileKind {
             Self::Runtime => "runtime",
             Self::Agent => "agent",
             Self::Human => "human",
+            Self::Dependency => "dependency",
         }
     }
 }
@@ -206,25 +229,71 @@ pub struct EvalPayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", try_from = "EvalFields")]
 pub struct EvalDeclaration {
     pub id: String,
     pub title: String,
     pub profile: Profile,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub profile_variants: BTreeMap<String, Profile>,
-    pub payload: EvalPayload,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload: Option<EvalPayload>,
     #[serde(default, deserialize_with = "present")]
     pub pass_schema: Option<Map<String, Value>>,
     #[serde(default, deserialize_with = "present")]
     pub fail_schema: Option<Map<String, Value>>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EvalFields {
+    id: String,
+    title: String,
+    profile: Profile,
+    #[serde(default, deserialize_with = "present")]
+    profile_variants: Option<BTreeMap<String, Profile>>,
+    #[serde(default, deserialize_with = "present")]
+    payload: Option<EvalPayload>,
+    #[serde(default, deserialize_with = "present")]
+    pass_schema: Option<Map<String, Value>>,
+    #[serde(default, deserialize_with = "present")]
+    fail_schema: Option<Map<String, Value>>,
+}
+
+impl TryFrom<EvalFields> for EvalDeclaration {
+    type Error = String;
+
+    fn try_from(fields: EvalFields) -> Result<Self, Self::Error> {
+        if matches!(fields.profile, Profile::Dependency { .. }) {
+            if fields.payload.is_some()
+                || fields.pass_schema.is_some()
+                || fields.fail_schema.is_some()
+                || fields.profile_variants.is_some()
+            {
+                return Err("Dependency Evals cannot declare payload, passSchema, failSchema or profileVariants.".into());
+            }
+        } else if fields.payload.is_none() {
+            return Err("Eval payload is required for runtime, agent and human profiles.".into());
+        }
+        Ok(Self {
+            id: fields.id,
+            title: fields.title,
+            profile: fields.profile,
+            profile_variants: fields.profile_variants.unwrap_or_default(),
+            payload: fields.payload,
+            pass_schema: fields.pass_schema,
+            fail_schema: fields.fail_schema,
+        })
+    }
+}
+
 impl EvalDeclaration {
     fn validate(&self) -> Result<(), String> {
         identifier(&self.id, "Eval id")?;
         text(&self.title, "Eval title")?;
-        text(&self.payload.instruction, "Eval payload.instruction")?;
+        if let Some(payload) = &self.payload {
+            text(&payload.instruction, "Eval payload.instruction")?;
+        }
         self.profile.validate()?;
         for schema in [&self.pass_schema, &self.fail_schema].into_iter().flatten() {
             crate::agent::verdict::validate_schema(schema)?;

@@ -45,6 +45,7 @@ fn actions_count_exhaustively_and_count_object_order_matches_old_string_keys() {
     let mut counts = Counts::default();
     for (action, expected) in [
         (VerifyAction::Execute, "execute"),
+        (VerifyAction::Derive, "derive"),
         (VerifyAction::Reuse, "reuse"),
         (VerifyAction::Wait, "wait"),
         (VerifyAction::Blocked, "blocked"),
@@ -74,6 +75,6 @@ fn actions_count_exhaustively_and_count_object_order_matches_old_string_keys() {
         (EvalCondition::Error, 1),
         (EvalCondition::Blocked, 1),
     ]);
-    let expected = r#"{"artifacts":{"BASIS":1,"BLOCKED":1,"ERROR":1,"INCOMPLETE":1,"PASS":1,"RED":1,"STALE":1,"UNREVIEWED":1,"WAIT_DEPENDENCY":1},"evals":{"BLOCKED":1,"ERROR":1,"PASS":1,"RED":1,"STALE":1,"UNREVIEWED":1,"WAIT_DEPENDENCY":1,"WAITING_HUMAN":1},"execute":1,"reuse":1,"wait":1,"blocked":1}"#;
+    let expected = r#"{"artifacts":{"BASIS":1,"BLOCKED":1,"ERROR":1,"INCOMPLETE":1,"PASS":1,"RED":1,"STALE":1,"UNREVIEWED":1,"WAIT_DEPENDENCY":1},"evals":{"BLOCKED":1,"ERROR":1,"PASS":1,"RED":1,"STALE":1,"UNREVIEWED":1,"WAIT_DEPENDENCY":1,"WAITING_HUMAN":1},"execute":1,"derive":1,"reuse":1,"wait":1,"blocked":1}"#;
     assert_eq!(serde_json::to_string(&counts).unwrap(), expected);
 }

@@ -45,7 +45,7 @@ fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
         .remove("instruction");
     assert!(parse(json!({"name":"a","evals":[missing]})).is_err());
     let parsed = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
-    let payload = &parsed.evals[0].payload;
+    let payload = parsed.evals[0].payload.as_ref().unwrap();
     assert_eq!(payload.instruction, "Inspect {input}.");
     assert_eq!(payload.extra["ownerData"], declared["payload"]["ownerData"]);
     assert_eq!(serde_json::to_value(payload).unwrap(), declared["payload"]);
@@ -331,7 +331,7 @@ fn removed_template_fields_are_unknown_but_owner_payloads_stay_literal() {
         "payload":{"instruction":"Inspect.","owner":{"$param":"/literal"}}});
     let declaration = parse(json!({"name":"a","evals":[declared]})).unwrap();
     assert_eq!(
-        declaration.evals[0].payload.extra["owner"],
+        declaration.evals[0].payload.as_ref().unwrap().extra["owner"],
         json!({"$param":"/literal"})
     );
 }

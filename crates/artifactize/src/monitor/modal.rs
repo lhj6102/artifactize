@@ -95,6 +95,6 @@ pub fn evidence(_state: &Path, view: &RequestView) -> Evidence {
                 text,
             }
         }
-        ProfileKind::Human => Evidence::default(),
+        ProfileKind::Human | ProfileKind::Dependency => Evidence::default(),
     }
 }

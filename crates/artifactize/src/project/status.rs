@@ -88,6 +88,7 @@ pub struct Counts {
     pub artifacts: BTreeMap<ArtifactCondition, usize>,
     pub evals: BTreeMap<EvalCondition, usize>,
     pub execute: usize,
+    pub derive: usize,
     pub reuse: usize,
     pub wait: usize,
     pub blocked: usize,
@@ -146,7 +147,7 @@ pub async fn status(
     let included_ids: BTreeSet<_> = included_eval_ids.iter().collect();
     let fingerprints = cache::prepare(
         &config,
-        required.iter().copied(),
+        cache::fingerprint_targets(&config, &required),
         &state,
         &super::fingerprint_parallelism(options)?,
         cancellation.clone(),
@@ -263,8 +264,20 @@ pub async fn status(
         let current = &evaluation.evals[eval.id.as_str()];
         let selected = selected_ids.contains(&eval.id);
         let included = included_ids.contains(&eval.id);
-        let force = options.force && selected;
+        let derived = matches!(eval.declaration.profile, Profile::Dependency { .. });
+        let force = options.force && selected && !derived;
         let (action, reason) = match current.readiness {
+            _ if derived => (
+                VerifyAction::Derive,
+                if current.blocked_by.is_empty() {
+                    "Derived from current GREEN dependency evidence; no execution or reuse.".into()
+                } else {
+                    format!(
+                        "Derived dependency verdict: waiting for current GREEN evidence from {}.",
+                        current.blocked_by.join(", ")
+                    )
+                },
+            ),
             // verify takes cached results before gates resolve, even behind RED; the state keeps the gate.
             _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
                 VerifyAction::Reuse,
@@ -326,6 +339,7 @@ pub async fn status(
                 )
             }
             Readiness::Ready => match eval.declaration.profile {
+                Profile::Dependency { .. } => unreachable!("derived above"),
                 Profile::Human { .. } => (
                     VerifyAction::Execute,
                     "Record a request awaiting a Human claim and submission.".into(),
@@ -337,6 +351,7 @@ pub async fn status(
                     } else {
                         match cache::eval_key(&config, eval, &fingerprints) {
                             Ok(_) => "The current eval and fingerprints have no completed cached result.".into(),
+                            Err(cache::Unkeyed::Derived) => unreachable!("derived above"),
                             Err(cache::Unkeyed::Target) => "The Artifact declares fingerprint: false; saved noncached results satisfy only their own Run.".into(),
                             Err(cache::Unkeyed::Dependency(id)) => format!("Dependency {id} declares fingerprint: false, so this eval has no reuse key; saved noncached results satisfy only their own Run."),
                         }
@@ -365,7 +380,7 @@ pub async fn status(
             action,
             reason,
             blocked_by: current
-                .unmet_gates
+                .blocked_by
                 .iter()
                 .map(|id| (*id).to_owned())
                 .collect(),
@@ -420,6 +435,7 @@ impl Counts {
     fn action(&mut self, action: VerifyAction) {
         match action {
             VerifyAction::Execute => self.execute += 1,
+            VerifyAction::Derive => self.derive += 1,
             VerifyAction::Reuse => self.reuse += 1,
             VerifyAction::Wait => self.wait += 1,
             VerifyAction::Blocked => self.blocked += 1,

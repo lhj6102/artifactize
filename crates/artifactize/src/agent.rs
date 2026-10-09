@@ -638,7 +638,11 @@ fn prompt(
     schema: &Value,
 ) -> Result<CompletionRequest, String> {
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
-    let mut payload = eval.declaration.payload.clone();
+    let mut payload = eval
+        .declaration
+        .payload
+        .clone()
+        .expect("Agent payload is validated");
     let instruction: String =
         scope::parse_artifact_instruction(&payload.instruction, &scope, &eval.references)
             .into_iter()

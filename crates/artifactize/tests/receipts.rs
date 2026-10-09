@@ -431,7 +431,7 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
     assert_eq!(
         db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
             .unwrap(),
-        5
+        STATE_SCHEMA_VERSION
     );
     // Earlier schema-5 writes remain readable, even if their lifecycle fields contradict:
     // validation gates new writes, not a migration of saved data.
