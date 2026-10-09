@@ -285,19 +285,14 @@ fn reject_repository(path: &Path) -> Result<(), String> {
             path.display()
         ));
     }
-    for marker in [".git"] {
-        match path.join(marker).symlink_metadata() {
-            Ok(_) => {
-                return Err(format!(
-                    "Prune refuses repository content: {}",
-                    path.display()
-                ));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.to_string()),
-        }
+    match path.join(".git").symlink_metadata() {
+        Ok(_) => Err(format!(
+            "Prune refuses repository content: {}",
+            path.display()
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
     }
-    Ok(())
 }
 
 fn validate_tree(path: &Path, runs: &Path, repositories: &[PathBuf]) -> Result<(), String> {
