@@ -102,33 +102,85 @@ Run first: eval, request, claim, waiting time, repository); Enter opens one. Wit
 an ID it opens that request in any repository. It also runs on its own, for example
 in a second terminal or tmux pane.
 
-The request screen shows the request, Run, repository, status, claim, instruction,
-GREEN and RED owner schemas and the declared Human tools with their commands and
-args. Opening a request claims nothing.
+The waiting list and Detail use the monitor's reactive layout. With the list
+focused, it is Full and the selected request has a read-only Preview. Enter or →
+opens Detail. With Detail focused, a 30-column Compact list sits beside it. Below
+100 columns only the focused pane shows, with the breadcrumb
+`artifactize review › scope › eval`. ↑/↓ or `j`/`k` selects a request; `r` refreshes
+the list. Esc on the list stays there, never quits. The standalone UI has no `?`
+help overlay or `!` attention navigation; those keys belong to the monitor.
 
-- **Claim on first action.** Running a tool or submitting claims the request for
-  the reviewer (`$USER` unless `--reviewer`) if it is unclaimed. A request claimed
-  by someone else, or no longer waiting, is read-only. `u` releases your claim. On
-  quit, claims this session took without submitting are listed: `k` keeps them,
-  `u` releases them.
-- **Tools.** `j`/`k` select a tool and Enter runs it. Before the first run of a
-  command line in a session, a confirmation shows the resolved command, its
-  directory and the repository it comes from (with `--all` it may be another
-  repository); `y` runs it. A `launch` tool reports "launched" and the UI
-  continues. An `output` tool runs with a spinner (Esc cancels) and its stdout and
-  stderr fill the output pane (PgUp/PgDn scroll). A nonzero exit is shown as a tool
-  error, not a verdict.
-- **Submit.** `s`, then `g` (GREEN) or `r` (RED). A form opens when the verdict's
-  owner schema is a flat object whose properties are `const`, `boolean`, `string`
-  (with `minLength`, `maxLength` or `enum`), `integer` or `number`; `const` fields
-  are prefilled and fixed. Tab or ↑/↓ move, Space or ←/→ choose, typing edits,
-  Enter submits. Any other schema (nested objects, arrays, composition, `$ref`),
-  or Ctrl-E in the form, opens `$EDITOR` (default `vi`) on a JSON template of the
-  owner fields; saving submits it, and an empty file submits nothing. A validation
-  error keeps the request waiting and returns to the form with the failing paths.
-- After a submission the list returns if more requests wait; otherwise `review`
-  exits. Esc goes back and `q` quits. The monitor embeds the same review controller
-  and lifecycle jobs rather than launching this standalone command.
+### Shared Human Detail
+
+The monitor and standalone `review` use **one Human review component**. Opening
+or previewing a request claims nothing. The instruction comes first, below one
+line of status, claim and waiting time. `t` shows or hides Technical: request,
+Run, repository, full claim details, shared execution, creation time and GREEN/RED
+owner schemas. For a follower, the destination request and repository stay visible.
+
+Before claim, the instruction fills the body and tools appear on one line. After
+claim, it folds to two rows above Tools/Output and the fields. `i` expands or folds
+it while not editing; the expanded instruction takes 70% of the body and ↑/↓
+scrolls it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
+the wheel over the instruction scrolls it too. Tools focus widens Tools/Output
+to 60% of the available width;
+the selected tool shows its command and description.
+
+| Key | Human Detail action |
+|---|---|
+| `c` | Explicitly claim a waiting request; active only with Detail focused |
+| `g` / `r` | Choose GREEN / RED and open its form, after claim |
+| `u` | Release your claim without a verdict |
+| Ctrl-G / Ctrl-R | Choose or switch verdict while editing |
+| Ctrl-S | Submit the chosen form |
+| Ctrl-U | Release while editing |
+| Tab / Shift-Tab | Switch Tools and Fields; in edited Fields, Tab moves fields or indents JSON and Shift-Tab switches to Tools |
+| `i` / `t` | Expand the instruction / toggle Technical, while not editing |
+| Esc | Cancel work or confirmation, then stop editing, then leave Detail |
+| Ctrl-E | Standalone only: edit the form in `$EDITOR` |
+
+- **Claim.** Press `c` before running tools or submitting (`$USER` unless
+  `--reviewer`). Those actions never claim implicitly. A request claimed by someone
+  else, or no longer waiting, is read-only. GREEN/RED, submit and release require
+  your claim. `u` or Release relinquishes it; leaving Detail keeps it.
+- **Tools.** With Tools focused, ↑/↓ selects and Enter runs the selected tool.
+  `j`/`k` also selects while not editing. Before a command line's first run in a session, a confirmation shows its
+  resolved command, directory and repository (with `--all`, possibly another
+  repository). `y` or Enter confirms; Esc cancels. A `launch` tool reports
+  "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
+  Ctrl-C cancels. Its stdout/stderr fill Output; PgUp/PgDn scroll. A nonzero exit
+  is a tool error, not a verdict.
+- **Form.** `g`/`r` opens the schema-backed GREEN/RED form directly; there is no
+  verdict popup. A flat object with `const`, `boolean`, `string` (`minLength`,
+  `maxLength`, `enum`), `integer` or `number` properties gets typed fields. `const`
+  fields are prefilled and fixed. Tab or ↑/↓ moves between fields, Space or ←/→
+  chooses, and typing edits. Other schemas (nested objects, arrays, composition,
+  `$ref`) open a JSON template inside the TUI. Enter inserts a JSON newline and
+  Tab indents; Enter never submits a flat form. Ctrl-S or Submit submits. A
+  validation error keeps the request waiting and shows the failing paths.
+- **Editing.** Ordinary letters (`q`, `c`, `i`, `t`, …), ←/→ and Tab belong to the
+  fields, not navigation. Ctrl-G/Ctrl-R switches verdicts, keeping separate drafts.
+  Editing, tool work and confirmation lock focus moves outside Detail. Esc closes
+  one thing at a time: cancel a job or confirmation, then stop editing with its
+  draft kept, then leave Detail. The same verdict reopens the draft. Refresh and
+  leaving/reopening the same request keep drafts; opening a different request in
+  standalone `review` starts fresh. A request settled by another command ends
+  editing on refresh and releases the focus lock.
+- **External editor.** Only standalone `review` offers Ctrl-E in a form. It opens
+  `$EDITOR` (default `vi`) on the owner-fields JSON. Saving a valid nonempty object
+  submits it immediately; an empty file submits nothing. Monitor never opens
+  `$EDITOR`; nested JSON stays in the TUI.
+
+Outside a form, work or confirmation, `q` quits from Detail too. Ctrl-C quits
+from a form, but first cancels a running tool. Standalone `review` lists claims
+this session took without submitting: `k` keeps them and quits, `u` releases them
+and quits, and Esc stays. The quit prompt sets a form aside without dropping its
+draft. Monitor keeps claims on exit; release with `u` first if you want to give
+one back. Esc never quits either UI.
+
+After a standalone submission the list returns if more requests wait; otherwise
+`review` exits. Monitor keeps the completed result open in Detail. Both use the
+same in-process lifecycle jobs; monitor does not launch the standalone command.
 
 ## Monitor
 
@@ -136,43 +188,141 @@ args. Opening a request claims nothing.
 artifactize monitor [--repo PATH | --all] [--state-dir PATH]
 ```
 
-The monitor always catalogs every repository in this state. The current directory
+The monitor catalogs every repository in this state. The current directory
 (including a Git subdirectory), `--repo`, or `--all` only sets the first selection.
-It has three panes:
+Navigation drills down through **Scope → Runs → Run tree → Detail**.
 
-- **Repository / worktree.** Git clones group by their common Git directory, with
-  an ALL row for the entire state and another ALL row for each repository. Git's
-  NUL-delimited worktree list also exposes worktrees with no Runs. Non-Git and
-  deleted legacy paths remain visible without guessing a missing repository
-  identity. New Runs record optional `commonDir`, `worktreePath` and `branch` while
-  preserving their artifactize `repoPath` workspace. State schema 6 needs a new state when upgrading from 0.8 or earlier
-  ([Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09)). `?N`, `RED N` and a running indicator summarize attention
-  independently of the visible Run page; followers of one Human execution count
-  as one waiting sign-off.
-- **Runs.** The selected repository/worktree's Runs, newest first. Scope filtering
-  happens before paging, so a repository remains reachable even beyond the latest
-  100 global Runs. Moving past the end loads older Runs.
-- **Artifacts and evals.** The selected Run's saved definitions and requests, not
-  a re-evaluation of current files. Artifact rows show their tags. `⇐` rows show
-  child/mount/reference/dependency inputs and `↻` marks cycles.
-  The Run summary shows validation, request counts, budgets, executed/reused work,
-  spent/saved usage, derived dependency eval counts and currently running or
-  waiting evals.
+### Reactive panes
 
-Outside a modal, ←/→ moves to the previous/next pane without wrapping at the
-screen edges; Tab/Shift-Tab cycles through panes. ↑/↓ or `j`/`k` selects, `r`
-refreshes and `q` quits. Inside a form, ←/→ retains its editing/choice behavior.
-Enter on a Run focuses its artifact tree; Enter or `o` on a tree item opens its
-modal. Click focuses/selects, double-click opens a tree detail and the wheel
-scrolls the pointed pane. F2 toggles mouse capture so the terminal can select text;
-bracketed keyboard paste works with capture on or off. Esc closes a modal (or
-cancels its running tool first). Modal clicks never reach the underlying lists.
+The focused pane is **Full**. **Compact** gives narrow context from the level to
+its left. **Preview** shows the next level without moving focus. Hidden levels
+stay in the breadcrumb: `artifactize › scope › Run › eval`.
+
+| Terminal width | Visible panes |
+|---|---|
+| 140 columns or more | Up to Compact + Full + Preview |
+| 100–139 columns | Full + Preview, not Compact + Full |
+| Fewer than 100 columns | Full only, with the breadcrumb |
+
+With Detail focused, the layout shows Tree Compact + Detail Full at 100 columns
+or more, and Detail alone below 100. Compact widths are 20 for Scope, 18 for Runs
+and 30 for the tree. Full grows to its natural width; spare width goes to Preview.
+
+- **Scope.** Git clones group by their common Git directory. `ALL` selects the
+  entire state; each repository row selects all its worktrees, without a separate
+  repository ALL row. Worktrees without Runs fold into `+N without Runs (Space)`;
+  Space shows or hides them. The selected scope stays visible. Non-Git and deleted
+  paths stay listed. Runs record optional `commonDir`, `worktreePath` and `branch`
+  alongside their `repoPath` workspace.
+- **Runs.** The selected scope's Runs appear newest first, with age, duration and
+  request counts (`✓` GREEN, `✗` RED, `!` ERROR, `?` waiting Human, `◐` running).
+  Narrow panes drop secondary columns. Scope filtering happens before paging;
+  moving past the end loads older Runs.
+- **Run tree.** The selected Run's saved definitions, recorded evidence and current
+  request states, not a re-evaluation of files. The headline shows status, wall
+  time, counts and only the token total for usage. It shows `validation pending`
+  while running, then **SATISFIED / NOT SATISFIED at Run end**. Up to three attention
+  lines show errors, waiting Humans and running evals, then `+N more`. Enter on the
+  **Run** row opens validation and unmet obligations, counts, errors, waiting and
+  running work, timing, budgets, executed/reused/derived counts and full spent/saved
+  usage in Detail.
+
+Scope badges and the header share `!N ✗N ◐N ?N` attention counters. These cover the
+catalog, not just the visible Run page. Followers of one Human execution count as
+one waiting sign-off.
+
+### Artifacts and evals
+
+Each eval has **one row**. Artifact rows summarize the eval rows shown now, with
+`passed/total` and the most urgent state. `[file]` marks file Artifacts; their target
+path and tags are in Detail's Technical section. A basis Artifact is one row:
+`◇ engine  basis`. There are no separate relation rows or always-on dependency lists.
+
+| View state | Meaning |
+|---|---|
+| `✓` done | GREEN, executed, reused or derived |
+| `✗` / `!` failed | RED / ERROR |
+| `◐` / `?` / `·` in progress | Running, waiting for a Human (with claimant), queued for a job/backend slot, or joining an execution |
+| `…` waits for X | A running Run waits for X's required evals to be GREEN |
+| `⊘` blocked by X | An upstream RED or blocked eval prevents execution |
+| `○` / `$` / `-` not run | A finished Run waited for X, has stale evidence or did not review the eval (`○`); its budget ran out (`$`); the eval has no request (`-`) |
+
+Running and Human rows are bold and colored; queued rows keep a colored `·`.
+Waiting and ordinary not-run rows are dim. ERROR
+upstream asks for a retry rather than blocking as RED does. A finished Run can
+still have an open Human request. These view states explain saved request states;
+they do not rename the states in JSON.
+
+Dependencies target **Artifacts**, not individual evals. A row shows at most two
+unmet Artifacts, then `+N`, with each Artifact's completion state. When all targets
+are themselves waiting, it adds one level of cause, for example
+`waits for cli … waiting (cli waits for code-style)`. Cycle peers share `↻ peer`
+markers and do not wait for each other, unless a dependency eval's `depends_on`
+explicitly names a peer. Upstream comes first where the graph allows; cycle peers
+are ordered by name. Dependency evals carry `[dep]` and follow ordinary evals.
+
+All-done Artifacts fold automatically. Other Artifacts stay open unless you toggle
+them; refresh respects your choices. A new Run selects its first in-progress or
+failed eval. `h` folds, `l` unfolds and Space toggles the selected tree row.
+
+The selected eval's upstream Artifact rows get `↑`: bright when unmet, dim when
+complete. There is no downstream highlight. Off-screen targets show `↑N above` or
+`↑N below`. `b` cycles through those Artifact rows, unmet first; Backspace returns
+to the original row. On an Artifact row, `b` uses its evals' combined upstream.
+
+The headline's validation stays **at Run end**. The tree rolls up the requests as
+they stand now, including a later Human submission. A dim `*` marks a row whose
+derived state changed since the Run ended; it does not mean files changed. Artifact
+Detail also keeps an `At Run end` field. Historical requests and validation are
+not rewritten by this view.
+
+### Keys and mouse
+
+| Key | Action |
+|---|---|
+| Enter / → | Next level; on a tree row, open Detail |
+| `o` | Open the selected tree row's Detail |
+| ← / Esc | Step back; Esc never quits |
+| Tab / Shift-Tab | Cycle Scope, Runs and the tree; inside Detail, switch sub-areas |
+| ↑/↓ or `j`/`k` | Select a row; inside Detail, scroll |
+| `?` | Show help; the next key closes it without another action |
+| `!` | Next ERROR, RED or waiting Human eval in this Run, wrapping around |
+| `r` | Refresh outside a Human form |
+| `q` / Ctrl-C | `q` quits outside editing/work/confirmation; Ctrl-C quits or first cancels a running Human tool |
+| F2 | Toggle mouse capture for terminal text selection |
+
+From Detail, `!` opens the next attention item's Detail. Human actions work only
+with Detail focused; ordinary letters are field input while editing. Review work,
+confirmation and editing lock focus moves to other panes. Esc cancels work or
+confirmation first, then stops form editing with the draft kept, then leaves Detail.
+
+Click focuses and selects. Double-click opens a tree row's Detail; clicking the
+peek opens it Full. The wheel scrolls the pane under the pointer without moving
+focus. In the tree it moves the viewport, not the selection, so the peek stays on
+the same eval. Breadcrumb segments are not clickable. Bracketed keyboard paste
+works with mouse capture on or off.
+
+### Detail
+
+With the tree focused, Detail is a **peek** that follows `j`/`k`: Outcome and the
+Artifacts the eval waits for. A running Agent's peek also shows its last transcript
+line. Enter, → or a click on the peek opens **Full** Detail instead of a modal.
+Leaving Detail closes the full view and restores the peek.
+
+Read-only sections appear in this order: **Outcome → Waits for → What → Provenance
+→ Technical**. Outcome puts the verdict or error first. What includes the instruction
+and raw result. Provenance holds work, usage, budgets and timing. Technical holds
+identifiers and hashes; it starts folded (`t` toggles it). Waits for lists the same
+upstream Artifacts as the tree, with their completion state and reference origin;
+`w` shows or hides their pending evals. Empty sections are omitted. Tab switches
+between sections and evidence; ↑/↓ and PgUp/PgDn scroll the focused area.
 
 Detail depends on the eval kind:
 
-- **Agent:** a full-width live transcript, including RUNNING reviews and the original
-  local session behind reused evidence. Summary/result details are opt-in with `d`
-  or Details; `d`/Esc returns to the transcript. Provider-normalized text and public
+- **Agent:** a live transcript in Detail, including RUNNING reviews and the original
+  local session behind reused evidence. Its title keeps one line of outcome:
+  state, elapsed time, profile and dependencies. Summary/result sections are opt-in
+  with `d` or Details; `d`/Esc returns to the transcript. Provider-normalized text and public
   reasoning summaries update the active block before the turn finishes, coalesced
   about every 100 ms. Public summaries appear under a subdued Thinking label only
   when the provider/model supplies them; their absence is not simulated. Encrypted,
@@ -206,23 +356,20 @@ Detail depends on the eval kind:
   large history/layout jobs otherwise yield between bounded chunks. Temporary files
   are removed when the selected reader closes or resets. Later `session send` events
   remain visible after the review's end event.
-- **Runtime:** saved stdout/stderr, exit code and capture truncation. Running,
-  timeout/cancellation and remote summary-only results honestly show logs as
-  unavailable; there is no new live-log recorder.
+- **Runtime:** saved stdout/stderr, exit code and capture truncation beside the
+  sections, or below them in a Detail narrower than 90 columns. Running,
+  timeout/cancellation and remote summary-only results show logs as unavailable;
+  there is no live-log recorder.
 - **Dependency:** the saved derived state and `blockedBy` requirements, marked
   `derived (no execution)`. It has no claim, tools or verdict form.
-- **Human:** completed result, or an explicit **CLAIM → REVIEW** flow. Claim (`c`)
-  enables tools on the left and GREEN/RED fields on the right. Request instructions
-  stay visible above them in CLAIM and REVIEW; the wheel there or Ctrl-PgUp/PgDn
-  scrolls long criteria without scrolling the form. GREEN/RED (`g`/`r`
-  before editing, Ctrl-G/Ctrl-R while editing) selects the existing schema form.
-  Flat schemas retain typed fields; nested/array schemas use a JSON template edited
-  inside the TUI, never `$EDITOR`. Enter inserts a JSON newline; Ctrl-S or Submit
-  submits. Shift-Tab switches between tools and fields; Tab moves flat fields or
-  indents JSON. Run tool/Enter in the tool pane preserves first-command
-  confirmation and cancellation. Release (`u`, or Ctrl-U while editing) unclaims.
-  Refresh, closing/reopening a modal and verdict switches retain drafts. Ordinary
-  letters in fields are input, not global shortcuts.
+- **Human:** the same [Human Detail](#shared-human-detail) as standalone `review`,
+  with explicit **CLAIM → REVIEW**, instruction first, folded Technical (`t`),
+  instruction expansion (`i`), tools/output and GREEN/RED fields. `c` claims only
+  in focused Detail; tools and submission never claim implicitly. `g`/`r` opens
+  forms, Ctrl-G/Ctrl-R switches verdicts and Ctrl-S submits. Esc cancels work or
+  confirmation, then stops editing with the draft kept, then returns to the tree.
+  Monitor never opens `$EDITOR`. Outside editing, work or confirmation, `q` quits,
+  `?` shows monitor help and `!` opens the next attention item.
 
 Browsing uses read-only state queries and cached Git discovery, not configuration
 rediscovery or fingerprints on each refresh. Local monitor/review readers share a
@@ -242,7 +389,7 @@ no file I/O, and terminal input takes priority over append/index bursts. This do
 not add remote team-store push events. Only explicit Human actions write or
 run owner tools, through the same atomic claim, fingerprint recheck, schema
 validation and `submit_and_publish` APIs as `review`. Followers resolve to their
-original request. If remote publishing fails after local settlement, the modal
+original request. If remote publishing fails after local settlement, Detail
 shows the completed local result and the publication failure instead of offering
-another submission. Closing a Human modal keeps its claim; Release relinquishes
+another submission. Leaving Human Detail keeps its claim; Release relinquishes
 it. Terminal modes, cursor, mouse capture and paste are restored on exit.

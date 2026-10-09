@@ -110,6 +110,35 @@ a team review store or with a script fingerprint. The first full `verify` review
 every executable eval once, Human sign-offs included. Dependency evals derive
 current evidence without execution. See [Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
 
+The monitor replaces eval modals with Scope → Runs → Run tree → Detail. Panes
+resize around focus; at 100–139 columns Full sits beside the next level's Preview.
+Each eval has one row, with `waits for X` / `blocked by X` and upstream navigation
+(`b` / Backspace). The headline keeps validation **at Run end**; a dim `*` marks
+rows changed since then. Esc steps back and never quits; `q` quits outside editing
+and Ctrl-C quits or cancels a running Human tool first. `?` shows help and `!` finds
+the next attention item. See
+[Monitor](../guides/human-reviews.md#monitor).
+
+Standalone `artifactize review` now uses the same Human Detail and keys as the
+monitor. Press `c` to claim explicitly; running a tool or submitting no longer
+claims for you. Removed keys and behavior:
+
+- `s` no longer opens a verdict popup. `g`/`r` opens the GREEN/RED form directly;
+  Ctrl-G/Ctrl-R switches verdicts while editing.
+- Enter no longer submits a flat form; Ctrl-S submits. Nested schemas open inline
+  JSON, where Enter inserts a newline.
+- `e` in a JSON form is text, not an editor shortcut. Ctrl-E opens `$EDITOR` in
+  standalone `review` only; monitor stays in the TUI.
+- `t` no longer runs a tool; it toggles Technical outside editing. Tab focuses
+  Tools, ↑/↓ or `j`/`k` selects a tool and Enter runs it after claim.
+- Esc on the waiting list no longer quits. Esc cancels work or confirmation, then
+  stops editing with the draft kept, then leaves Detail. `q` outside editing or
+  Ctrl-C quits; standalone `review` offers `k` to keep or `u` to release this
+  session's unsubmitted claims.
+
+`i` expands the instruction while not editing. See
+[Shared Human Detail](../guides/human-reviews.md#shared-human-detail).
+
 0.5.0 removes the `chatgpt` and `claude` Agent backends, with `login chatgpt`,
 `logout chatgpt` and the internal `mcp` command, and adds `codex` for ChatGPT plan
 users. `config check` names the replacements for each eval or profile variant that

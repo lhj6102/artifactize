@@ -81,10 +81,12 @@ artifactize run show RUN_ID
 
 `claim`, `tool` and `submit` use `$USER` as the reviewer unless you pass
 `--reviewer NAME`; `request unclaim REQUEST_ID` gives a claim back. `artifactize
-review` does the same in a terminal UI: it lists waiting requests, claims on the
-first tool run or submission, asks before a tool's first run and fills the owner
-fields in a form. `verify` waits for Human results like any other, so dependents
-continue in the same Run; once the sign-off arrives it exits 4 here, because
+review` does the same in a terminal UI: it lists waiting requests and previews the
+instruction. Enter opens Detail, `c` explicitly claims, Tab focuses tools and
+Enter runs one after confirmation. `g`/`r` opens the GREEN/RED fields; Ctrl-S
+submits. Esc stops editing before returning to the list, keeping the draft.
+`verify` waits for Human results like any other, so dependents continue in the
+same Run; once the sign-off arrives it exits 4 here, because
 `spec/review` has no result yet.
 
 For a real Agent review, put an exact model ID in the profile you use in `examples/agent-tools/spec/index.artf`,
@@ -98,16 +100,24 @@ artifactize monitor         # Initially select this repository and worktree
 artifactize monitor --all   # Initially select every repository in this state
 ```
 
-Start it in a second terminal while `verify` runs to watch progress. Three panes
-show repository/worktree → newest Runs → artifacts/evals; ALL rows switch scope
-without restarting. ←/→ moves between panes (Tab cycles), `j`/`k`
-selects, Enter or a double-click opens detail and `q` quits. Artifact rows
-show tags. Agent details show saved conversations; Runtime details show saved logs;
-dependency details show derived requirements. A waiting Human detail has Claim,
-tools, GREEN/RED fields, Submit and Release in the monitor itself. Ctrl-S submits;
-nested JSON is edited in the TUI (Enter adds a newline). F2 toggles mouse capture
-for terminal text selection; keyboard paste works either way. Browsing does not
-execute owner code; explicit Human tools and submissions use the review APIs. See
+Start it in a second terminal while `verify` runs. Drill down through Scope → Runs
+→ Run tree → Detail with Enter or →; Esc steps back and never quits. The focused
+pane gets the space, with context and a preview when the terminal is wide enough.
+`j`/`k` selects; the tree's Detail peek follows the selected eval. `?` shows help,
+`!` finds the next error, RED or waiting Human eval, and `q` or Ctrl-C quits.
+
+Each eval has one row. `waits for X` and `blocked by X` name upstream Artifacts;
+`b` jumps to them and Backspace returns. The headline keeps validation **at Run
+end**; a dim `*` marks rows changed by later request updates. Enter on the Run row
+opens usage, budgets and counts. Agent Detail shows its saved conversation;
+Runtime Detail shows saved logs; dependency Detail shows derived requirements.
+A waiting Human Detail is the same component as `review`: `c` claims, `g`/`r`
+opens a verdict form and Ctrl-S submits. `i` expands its instruction; `t` opens
+Technical. Esc stops editing with the draft kept before leaving Detail. Nested
+JSON stays in the TUI; only standalone `review` offers Ctrl-E for `$EDITOR`.
+F2 toggles mouse capture for terminal text selection; keyboard paste works either
+way. Browsing runs no owner
+code; explicit Human tools and submissions use the review APIs. See
 [Human reviews and monitor](../guides/human-reviews.md#monitor).
 
 ## Team review store (optional)

@@ -96,6 +96,19 @@ Artifact/eval definitions for the selected dependency closure, including tags,
 schemas, tool views and graph relations. These are recorded with the initial request
 rows, not reconstructed from current declarations.
 
+A partial Run can use saved evidence for an eval without creating a request for
+it, such as an upstream eval outside the execution selection. The Run records
+those verdicts in `evidence`, a map from qualified eval IDs to saved states:
+
+```json
+{"run": {"evidence": {"code-style/approved": "GREEN"}}}
+```
+
+`run show RUN_ID --json` and `verify --json` expose it as `run.evidence`; the field
+is omitted when empty. It is the evidence this Run used, not a lookup of the
+latest result. Saved definitions, `evidence` and the Run's request states let the
+monitor judge gates without reading current declarations or recomputing fingerprints.
+
 `run list [--repo-only | --all]` lists saved Runs newest first as a text table, or
 as a JSON array with `--json`. It defaults to the canonical `--repo` path (the
 current directory when omitted); `--repo-only` makes that default explicit, and
@@ -183,12 +196,17 @@ evals, including a basis Artifact, fulfills the listed condition. Basis Artifact
 cannot own evals; final obligations still cover upstream dependencies. Gate bypass
 never changes the derived verdict. The `blocked_by` list (`blockedBy` in JSON) contains
 each unfulfilled listed Artifact followed by its non-GREEN qualified eval IDs, in
-declared target order. Status reasons and monitor details show those blockers.
+declared target order. Status reasons show those blockers. The monitor's one-row-
+per-eval tree says `waits for X` or `blocked by X`, with X's Artifact completion
+state. Detail lists the same Artifacts under `Waits for`, with pending evals (`w`).
 
 A later Human submission can settle a waiting Run's requirements. It does not
 rewrite a dependency request in a historical Run; a later `status` or `verify`
-derives new current evidence. Historical `run show` and monitor views remain the
-saved snapshot.
+derives new current evidence. `run show` keeps saved validation and requests.
+The monitor derives its tree from the saved definitions and evidence with request
+states as they stand now, including later Human submissions. Its headline keeps
+**SATISFIED / NOT SATISFIED at Run end**; a dim `*` marks rows whose derived state
+changed since that end, not files changed. See [Monitor](../guides/human-reviews.md#monitor).
 
 `config graph [ARTIFACT]` defaults to the whole project, or shows the selected required closure
 including cycle peers. Text lists Artifacts with tags and file-kind markers, evals, components and
@@ -196,7 +214,8 @@ input-to-consumer relations. Full JSON includes resolved static Artifact/eval
 definitions (profiles, payloads, schemas and tool views), tags,
 child/mount/instruction/argv/dependency relation metadata, cycle markers and
 dependency-first SCCs. Artifact entries carry `kind` (`file` or `folder`) and
-workspace-relative target `path`; status and monitor also show file kinds/paths.
+workspace-relative target `path`. Status also shows file kinds/paths; the monitor
+uses `[file]` on tree rows and keeps the target path in Detail.
 Component IDs refer to the full graph and may be
 noncontiguous in a selected projection. `config check` keeps its static validity
 confirmation and JSON Artifact/eval counts. There is one text or full JSON output

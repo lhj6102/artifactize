@@ -168,3 +168,7 @@ v2 matches no earlier result, including a script fingerprint's result and record
 a team review store. The first full `verify` reviews every executable eval once,
 Human sign-offs included. Dependency evals have no execution; they derive their
 current verdicts. Later Runs reuse normally. See [State](../reference/state-cache-limits.md#state).
+
+The monitor and standalone `review` also share a redesigned Human Detail and an
+explicit `c` claim. See [Install: Upgrading to 0.9](../getting-started/install.md#upgrading-to-09)
+for the terminal layout and removed standalone keys.
