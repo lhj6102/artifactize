@@ -143,31 +143,14 @@ pub(crate) fn fingerprint_targets<'a>(
     config: &'a RepoConfig,
     required: &BTreeSet<&'a str>,
 ) -> BTreeSet<&'a str> {
-    let dependency_scope: BTreeSet<_> = config
+    config
         .evals
         .iter()
         .filter(|eval| {
             required.contains(eval.target.as_str())
-                && matches!(eval.declaration.profile, Profile::Dependency { .. })
+                && !matches!(eval.declaration.profile, Profile::Dependency { .. })
         })
-        .flat_map(|eval| {
-            std::iter::once(eval.target.as_str()).chain(eval.deps.iter().map(String::as_str))
-        })
-        .collect();
-    required
-        .iter()
-        .copied()
-        .filter(|id| !dependency_scope.contains(id))
-        .chain(
-            config
-                .evals
-                .iter()
-                .filter(|eval| {
-                    required.contains(eval.target.as_str())
-                        && !matches!(eval.declaration.profile, Profile::Dependency { .. })
-                })
-                .flat_map(|eval| dependencies(config, eval)),
-        )
+        .flat_map(|eval| dependencies(config, eval))
         .collect()
 }
 

@@ -703,3 +703,142 @@ fn dependency_eval_inside_an_ordinary_scc_uses_current_peer_evidence() {
         EvalStatus::Green
     );
 }
+
+#[test]
+fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
+    let fixture = Fixture::new();
+    fixture.write("leaf", json!({"name":"leaf","basis":true,"fingerprint":{"script":{"command":"missing-fingerprint-command","args":[]}}}));
+    fixture.write(
+        "basis",
+        json!({"name":"basis","basis":true,"mounts":{"leaf":"leaf"}}),
+    );
+    fixture.declare("player", vec![dependency(&["basis"])]);
+    for command in ["verify", "status"] {
+        let output = fixture
+            .command()
+            .args([command, "player/ready", "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{command}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+    }
+    // An ordinary consumer still needs the dependency Artifact fingerprint for its key.
+    fixture.write("player", json!({"name":"player","mounts":{"basis":"basis"},"evals":[dependency(&["basis"]), runtime("/bin/true")]}));
+    let output = fixture
+        .command()
+        .args(["verify", "player", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let view: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let ordinary = view["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["evalId"] == "player/check")
+        .unwrap();
+    assert!(ordinary["key"].is_string());
+    assert!(ordinary["fingerprints"]["basis"].is_string());
+}
+
+#[test]
+fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
+    let fixture = Fixture::new();
+    let mut eval = runtime("/bin/false");
+    eval["profileVariants"] =
+        json!({"fast":{"kind":"runtime","command":support::os::bin("/bin/true"),"args":[]}});
+    fixture.declare("art", vec![eval]);
+    for derived in [false, true] {
+        if derived {
+            fixture.declare("player", vec![dependency(&["art"])]);
+        }
+        let output = fixture
+            .command()
+            .args(["verify", "--all", "--profile", "fast", "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "derived={derived}: {}",
+            String::from_utf8_lossy(&output.stdout)
+        );
+        let run: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let ordinary = run["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|request| request["evalId"] == "art/check")
+            .unwrap();
+        assert_eq!(ordinary["options"]["variant"], "fast");
+        for command in ["verify", "status"] {
+            let output = fixture
+                .command()
+                .args([command, "--all", "--profile", "missing", "--json"])
+                .output()
+                .unwrap();
+            assert!(!output.status.success());
+            let error: Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert!(
+                error["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Unknown profile variant for art/check: missing")
+            );
+        }
+        let status = fixture
+            .command()
+            .args(["status", "--all", "--profile", "fast", "--json"])
+            .output()
+            .unwrap();
+        assert!(
+            status.status.success(),
+            "{}",
+            String::from_utf8_lossy(&status.stdout)
+        );
+        if derived {
+            let output = fixture
+                .command()
+                .args(["verify", "player/ready", "--profile", "fast", "--json"])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stdout)
+            );
+            let output = fixture
+                .command()
+                .args(["status", "player/ready", "--profile", "fast", "--json"])
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stdout)
+            );
+        }
+    }
+    let mapping =
+        project::selection::ProfileSelection::Evals(std::collections::BTreeMap::from([(
+            "player/ready".into(),
+            "fast".into(),
+        )]));
+    let error = project::selection::select_profiles(
+        fixture.config(),
+        &Selection::All,
+        Some(&mapping),
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        "Dependency Eval player/ready cannot select a profile variant."
+    );
+}

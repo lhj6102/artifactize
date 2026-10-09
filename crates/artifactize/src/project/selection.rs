@@ -197,6 +197,12 @@ pub fn select_profiles(
     let mapping: Vec<(&str, &str)> = match profile {
         ProfileSelection::Named(name) => evals
             .iter()
+            .filter(|eval| {
+                !matches!(
+                    eval.declaration.profile,
+                    crate::config::Profile::Dependency { .. }
+                )
+            })
             .map(|eval| (eval.id.as_str(), name.as_str()))
             .collect(),
         ProfileSelection::Evals(mapping) => mapping
@@ -209,6 +215,14 @@ pub fn select_profiles(
         let eval = included.get(id).ok_or_else(|| {
             format!("Profile selection is outside the submitted Eval scope: {id}")
         })?;
+        if matches!(
+            eval.declaration.profile,
+            crate::config::Profile::Dependency { .. }
+        ) {
+            return Err(format!(
+                "Dependency Eval {id} cannot select a profile variant."
+            ));
+        }
         let variant = eval
             .declaration
             .profile_variants
