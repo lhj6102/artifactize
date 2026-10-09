@@ -1,6 +1,6 @@
 //! The Artifacts and evals tree: one row per eval, Artifact rows rolled up from them.
 use serde_json::Value;
-use time::OffsetDateTime;
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use super::{
     Saved,
@@ -83,10 +83,34 @@ pub struct Node {
     pub changed: bool,
     /// Eval rows: every dependency Artifact, unmet ones first in X order.
     pub upstream: Vec<Upstream>,
+    /// Timed eval rows, so a cached tree can redraw its elapsed times.
+    pub clock: Option<Clock>,
     pub children: Vec<Node>,
 }
 
+/// When a timed eval started and, once settled, ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Clock {
+    pub start: OffsetDateTime,
+    pub end: Option<OffsetDateTime>,
+}
+
+impl Clock {
+    pub fn elapsed(self, now: OffsetDateTime) -> String {
+        super::duration((self.end.unwrap_or(now) - self.start).whole_seconds())
+    }
+}
+
 impl Node {
+    /// The right column (or the compact one) as of `now`.
+    pub fn right_at(&self, now: OffsetDateTime, compact: bool) -> String {
+        match self.clock {
+            Some(clock) => clock.elapsed(now),
+            None if compact => self.compact.clone(),
+            None => self.right.clone(),
+        }
+    }
+
     /// The status text without styling.
     pub fn status(&self) -> String {
         self.text
@@ -253,9 +277,12 @@ fn text(states: &States, view: &EvalView, request: Option<&RequestView>) -> Vec<
         EvalView::Done(Source::Executed) => plain("GREEN"),
         EvalView::Done(Source::Reused) => plain("GREEN · reused"),
         EvalView::Done(Source::Derived) => plain("GREEN · derived"),
+        EvalView::Done(Source::Saved) => plain("GREEN · saved result, not in this Run"),
         EvalView::Failed { verdict: true } => {
             let findings = findings(request.and_then(|view| view.request.result.as_ref()));
-            if findings.is_empty() {
+            if request.is_none() {
+                plain("RED · saved result, not in this Run")
+            } else if findings.is_empty() {
                 plain("RED")
             } else {
                 vec![Segment::plain(format!("RED · {findings}"))]
@@ -266,6 +293,7 @@ fn text(states: &States, view: &EvalView, request: Option<&RequestView>) -> Vec<
                 "ERROR · {}",
                 error.lines().next().unwrap_or_default()
             ))],
+            None if request.is_none() => plain("ERROR · saved result, not in this Run"),
             None => plain("ERROR"),
         },
         EvalView::InProgress(Activity::Running) => vec![Segment::plain(format!(
@@ -301,22 +329,22 @@ fn text(states: &States, view: &EvalView, request: Option<&RequestView>) -> Vec<
     }
 }
 
-/// Elapsed time of executed, failed, running and Human evals.
-fn time(view: &EvalView, request: Option<&RequestView>, now: OffsetDateTime) -> String {
+/// Start and end of executed, failed, running and Human evals; an open end runs to now.
+fn clock(view: &EvalView, request: Option<&RequestView>) -> Option<Clock> {
     let timed = matches!(
         view,
         EvalView::Done(Source::Executed)
             | EvalView::Failed { .. }
             | EvalView::InProgress(Activity::Running | Activity::Human(_))
     );
-    let Some(view) = request.filter(|_| timed) else {
-        return String::new();
+    let request = &request.filter(|_| timed)?.request;
+    let parse = |time: &str| OffsetDateTime::parse(time, &Rfc3339).ok();
+    let start = parse(request.started_at.as_deref().unwrap_or(&request.created_at))?;
+    let end = match request.completed_at.as_deref() {
+        Some(end) => Some(parse(end)?),
+        None => None,
     };
-    let request = &view.request;
-    let start = request.started_at.as_deref().or(Some(&request.created_at));
-    start
-        .and_then(|start| super::span(start, request.completed_at.as_deref(), now))
-        .unwrap_or_default()
+    Some(Clock { start, end })
 }
 
 fn compact(view: &EvalView, right: &str) -> String {
@@ -335,17 +363,14 @@ fn local(eval: &str) -> &str {
     eval.rsplit_once('/').map_or(eval, |(_, local)| local)
 }
 
-fn eval_node<'a>(
-    states: &States<'_, 'a>,
-    saved: &Saved<'a>,
-    eval: &'a str,
-    now: OffsetDateTime,
-) -> Node {
+fn eval_node<'a>(states: &States<'a>, eval: &'a str, now: OffsetDateTime) -> Node {
     let view = states.view(eval);
-    let request = saved.request(eval);
+    let request = states.request(eval);
     let (glyph, tone, weight) = style(&view);
-    let right = time(&view, request, now);
+    let clock = clock(&view, request);
+    let right = clock.map_or_else(String::new, |clock| clock.elapsed(now));
     Node {
+        clock,
         id: format!("e:{eval}"),
         glyph,
         tone,
@@ -442,7 +467,20 @@ fn summary(states: &States, id: &str, children: &[Node]) -> Vec<Segment> {
                 _ => first.text.clone(),
             }
         }
-        _ => Vec::new(),
+        // Every eval row is done, but graph.rs still holds them on their own gates.
+        _ => match states.completion(id) {
+            Completion::Waiting { blocked: true } => {
+                let mut segments = vec![Segment::plain("done, but blocked by ")];
+                segments.extend(x(states.blockers_of(id)));
+                segments
+            }
+            Completion::Waiting { blocked: false } => {
+                let mut segments = vec![Segment::plain("done, but waits for ")];
+                segments.extend(x(states.waits_of(id)));
+                segments
+            }
+            _ => Vec::new(),
+        },
     };
     if top == 0 {
         let busy = class(1);
@@ -454,7 +492,7 @@ fn summary(states: &States, id: &str, children: &[Node]) -> Vec<Segment> {
 }
 
 fn artifact_node<'a>(
-    states: &States<'_, 'a>,
+    states: &States<'a>,
     saved: &Saved<'a>,
     id: &str,
     now: OffsetDateTime,
@@ -464,7 +502,7 @@ fn artifact_node<'a>(
     let children: Vec<_> = states
         .evals(id)
         .iter()
-        .map(|&eval| eval_node(states, saved, eval, now))
+        .map(|&eval| eval_node(states, eval, now))
         .collect();
     let mut marks = String::new();
     if states.index.cyclic.contains(id) {
@@ -481,9 +519,11 @@ fn artifact_node<'a>(
         marks.push_str("  [file]");
     }
     let completion = states.completion(id);
-    let passed = children
+    // GREEN as the graph counts it: a done eval held on its own gates does not pass.
+    let passed = states
+        .evals(id)
         .iter()
-        .filter(|node| matches!(node.kind, Kind::Eval(EvalView::Done(_))))
+        .filter(|eval| states.effective(eval) == crate::graph::EvalStatus::Green)
         .count();
     let right = if children.is_empty() {
         String::new()
@@ -514,12 +554,19 @@ fn artifact_node<'a>(
                 let (glyph, tone, _) = self::completion(Completion::InProgress(busy));
                 (glyph, tone, Weight::Bold)
             }
+            // Every eval row is done, yet the graph holds them on their own gates.
+            (Kind::Eval(EvalView::Done(_)), Completion::Waiting { blocked }) => {
+                let (glyph, tone, _) = self::completion(Completion::Waiting { blocked });
+                let weight = if blocked { Weight::Normal } else { Weight::Dim };
+                (glyph, tone, weight)
+            }
             _ => (top.glyph, top.tone, top.weight),
         };
         (glyph, tone, weight, summary(states, id, &children))
     };
     Node {
         id: format!("a:{id}"),
+        clock: None,
         kind: Kind::Artifact { completion, basis },
         glyph,
         tone,
@@ -627,7 +674,7 @@ pub(super) fn waits_for(saved: &Saved, eval: &str, now: OffsetDateTime) -> Strin
             continue;
         }
         for &pending in states.evals(id) {
-            let node = eval_node(&states, saved, pending, now);
+            let node = eval_node(&states, pending, now);
             if !matches!(node.kind, Kind::Eval(EvalView::Done(_))) {
                 lines.push(format!("  {} {}  {}", node.glyph, node.name, node.status()));
             }

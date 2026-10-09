@@ -1,5 +1,8 @@
 //! Tree folding, where the cursor starts, and the blocker jumps (`b` / Backspace).
-use std::collections::{BTreeSet, HashSet};
+use std::{
+    collections::{BTreeSet, HashSet},
+    sync::Arc,
+};
 
 use time::OffsetDateTime;
 
@@ -7,6 +10,7 @@ use super::{
     Monitor,
     model::{self, Node, Upstream},
 };
+use crate::types::RunId;
 
 /// Tree state that outlives a refresh but not a change of Run.
 #[derive(Debug, Default)]
@@ -14,6 +18,8 @@ pub(super) struct Folds {
     /// Artifacts the user folded or unfolded; automatic folding leaves them alone.
     touched: BTreeSet<String>,
     blocker: Option<Blocker>,
+    /// The open Run's tree, built once per state change and shared by every frame.
+    cache: Option<(RunId, Arc<Vec<Node>>)>,
 }
 
 /// A `b` jump: the row it started from and the Artifact row it reached.
@@ -52,10 +58,21 @@ pub(super) fn upstream(nodes: &[Node], path: &[String]) -> Vec<Upstream> {
 }
 
 impl Monitor {
-    fn nodes(&self) -> Vec<Node> {
-        self.run.as_ref().map_or_else(Vec::new, |(run, requests)| {
-            model::tree(run, requests, OffsetDateTime::now_utc())
-        })
+    /// The open Run's tree. `sync_tree` rebuilds it when the Run's state changes; frames,
+    /// keys and hints reuse it, and redraw elapsed times from each row's clock.
+    pub(super) fn nodes(&mut self) -> Arc<Vec<Node>> {
+        let Some((run, requests)) = &self.run else {
+            self.folds.cache = None;
+            return Arc::default();
+        };
+        if let Some((id, nodes)) = &self.folds.cache
+            && *id == run.run.id
+        {
+            return nodes.clone();
+        }
+        let nodes = Arc::new(model::tree(run, requests, OffsetDateTime::now_utc()));
+        self.folds.cache = Some((run.run.id.clone(), nodes.clone()));
+        nodes
     }
 
     /// Fold Artifacts whose evals are all done and unfold the rest, except the ones the user
@@ -64,6 +81,7 @@ impl Monitor {
         if first {
             self.folds = Folds::default();
         }
+        self.folds.cache = None;
         let nodes = self.nodes();
         for node in nodes.iter().filter(|node| !node.children.is_empty()) {
             if self.folds.touched.contains(&node.id) {
@@ -137,18 +155,32 @@ impl Monitor {
         self.folds.blocker = Some(Blocker { origin, at });
     }
 
-    /// Backspace: return to the row the `b` jumps started from.
+    /// Backspace: return to the row the `b` jumps started from. If that eval's Artifact
+    /// folded meanwhile (say, its evals all finished), unfold it so the cursor stays visible;
+    /// the user's choice then holds against automatic folding.
     pub(super) fn jump_back(&mut self) {
-        if let Some(blocker) = self.folds.blocker.take()
-            && blocker.at == self.tree.selected()
-        {
-            self.tree.select(blocker.origin);
+        let Some(blocker) = self.folds.blocker.take() else {
+            return;
+        };
+        if blocker.at != self.tree.selected() {
+            return;
         }
+        if let [artifact, _, ..] = blocker.origin.as_slice() {
+            let artifact = artifact.clone();
+            if self.tree.open(vec![artifact.clone()]) {
+                self.folds.touched.insert(artifact);
+            }
+        }
+        self.tree.select(blocker.origin);
     }
 
     /// The key hint for `b`, shown only when the selected row depends on an Artifact.
-    pub(super) fn blocker_hint(&self) -> &'static str {
-        if self.focus == super::Pane::Artifacts && !self.highlighted(&self.nodes()).is_empty() {
+    pub(super) fn blocker_hint(&mut self) -> &'static str {
+        if self.focus != super::Pane::Artifacts {
+            return "";
+        }
+        let nodes = self.nodes();
+        if !self.highlighted(&nodes).is_empty() {
             " · b/Backspace blocker"
         } else {
             ""

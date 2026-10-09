@@ -9,6 +9,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph},
 };
+use time::OffsetDateTime;
 use tui_tree_widget::{Tree, TreeItem, TreeState};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -79,16 +80,14 @@ pub(super) struct Layout<'h> {
     pub compact: bool,
     /// Artifacts the selected eval depends on.
     pub upstream: &'h [Upstream],
+    /// Elapsed times are drawn as of this instant.
+    pub now: OffsetDateTime,
 }
 
 fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -> Line<'static> {
     let lead = lead(depth);
     let available = layout.total.saturating_sub(lead);
-    let right = if layout.compact {
-        &node.compact
-    } else {
-        &node.right
-    };
+    let right = &node.right_at(layout.now, layout.compact);
     let tail = width(right) + if star { 2 } else { 0 };
     let budget = if layout.compact {
         available.saturating_sub(tail + 1)
@@ -227,22 +226,22 @@ pub(super) fn marked(
 }
 
 /// Draw the tree; mark the selected eval's upstream Artifact rows with `↑` and count the
-/// marked rows scrolled out of view on the borders.
+/// marked rows scrolled out of view on the borders. The rows fill the block's inner width,
+/// whatever `layout.total` says.
 pub(super) fn draw(
     frame: &mut Frame,
     area: Rect,
     block: Block<'static>,
     nodes: &[Node],
     state: &mut TreeState<String>,
-    upstream: &[Upstream],
-    compact: bool,
+    layout: Layout,
 ) {
     let inner = block.inner(area);
     let layout = Layout {
         total: usize::from(inner.width),
-        compact,
-        upstream,
+        ..layout
     };
+    let upstream = layout.upstream;
     let items = match items(nodes, &layout) {
         Ok(items) => items,
         Err(error) => {

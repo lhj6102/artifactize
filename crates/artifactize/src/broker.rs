@@ -293,6 +293,13 @@ impl Scheduler<'_, '_> {
         };
         let run_dir = self.run.state_dir.join("runs").join(self.run.id.as_str());
         let mut evidence = BTreeMap::new();
+        // Saved evals this Run has no request for: their evidence is recorded on the Run.
+        let saved_evals: BTreeSet<String> = self
+            .run
+            .definitions
+            .graph()
+            .map(|graph| graph.evals().iter().map(|eval| eval.id.clone()).collect())
+            .unwrap_or_default();
         let mut running = BTreeSet::new();
         let mut waiting = BTreeSet::new();
         // Requests waiting for a machine-wide backend slot: no job slot, no executor start.
@@ -350,6 +357,7 @@ impl Scheduler<'_, '_> {
                 }
             }
             if !self.cancellation.is_cancelled() {
+                let recorded = self.run.evidence.len();
                 for eval in &self.config.evals {
                     if evidence.contains_key(&eval.id) {
                         continue;
@@ -369,6 +377,11 @@ impl Scheduler<'_, '_> {
                     }
                     if let Err(error) = cache::validate_file_inputs(&self.config, eval) {
                         evidence.insert(eval.id.clone(), Evidence::OperationalError);
+                        if index.is_none() && saved_evals.contains(eval.id.as_str()) {
+                            self.run
+                                .evidence
+                                .insert(eval.id.clone(), crate::types::RequestStatus::Error);
+                        }
                         if let Some(index) = index {
                             let request = &mut self.requests[index];
                             request.status = crate::types::RequestStatus::Error;
@@ -383,10 +396,17 @@ impl Scheduler<'_, '_> {
                     if let Some(key) = self.keys.get(eval.id.as_str())
                         && let Some(execution) = self.receipts.cached_execution(&key.value).await?
                     {
-                        evidence.insert(
-                            eval.id.clone(),
-                            Evidence::Current(execution.verdict().expect("completed cache entry")),
-                        );
+                        let verdict = execution.verdict().expect("completed cache entry");
+                        evidence.insert(eval.id.clone(), Evidence::Current(verdict));
+                        if index.is_none() && saved_evals.contains(eval.id.as_str()) {
+                            self.run.evidence.insert(
+                                eval.id.clone(),
+                                match verdict {
+                                    Verdict::Green => crate::types::RequestStatus::Green,
+                                    Verdict::Red => crate::types::RequestStatus::Red,
+                                },
+                            );
+                        }
                         if let Some(index) = index {
                             waiting.remove(&index);
                             let request = &mut self.requests[index];
@@ -394,6 +414,9 @@ impl Scheduler<'_, '_> {
                             self.receipts.reuse_execution(request).await?;
                         }
                     }
+                }
+                if self.run.evidence.len() != recorded {
+                    self.receipts.save_run(self.run).await?;
                 }
                 let mut evaluation = self
                     .graph

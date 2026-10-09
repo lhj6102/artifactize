@@ -211,7 +211,7 @@ impl Monitor {
             top,
         );
         self.hits.panes[2] = tree_area;
-        let nodes = model::tree(run, requests, now);
+        let nodes = self.nodes();
         let upstream = self.highlighted(&nodes);
         super::rows::draw(
             frame,
@@ -222,8 +222,12 @@ impl Monitor {
             ),
             &nodes,
             &mut self.tree,
-            &upstream,
-            false,
+            super::rows::Layout {
+                total: 0,
+                compact: false,
+                upstream: &upstream,
+                now,
+            },
         );
     }
     fn draw_modal(&mut self, frame: &mut Frame, area: Rect) {

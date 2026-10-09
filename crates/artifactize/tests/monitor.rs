@@ -516,6 +516,136 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert_eq!(dump(&fixture.state), before);
 }
 
+/// Gates in the tree follow the evidence and effective statuses the Run's graph used:
+/// saved results outside a partial Run, and GREEN results masked behind a RED upstream.
+#[tokio::test]
+async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    let flag = root.path().join("fail");
+    let check = format!("test ! -e '{}'", flag.display());
+    let fingerprint =
+        |name: &str| json!({"script":{"command":"echo","args":[format!("{name}-v1")]}});
+    declare(
+        &repo.join("a"),
+        json!({"name":"a","fingerprint":fingerprint("a"),
+            "evals":[eval("x", runtime("sh", &["-c", &check]), "Check.")]}),
+    );
+    declare(
+        &repo.join("b"),
+        json!({"name":"b","fingerprint":fingerprint("b"),
+            "evals":[eval("x", runtime("true", &[]), "Check {a}.")]}),
+    );
+    declare(
+        &repo.join("c"),
+        json!({"name":"c","fingerprint":fingerprint("c"),"evals":[
+            eval("x", runtime("true", &[]), "Check {b}."),
+            eval("y", runtime("true", &[]), "Check {b}.")]}),
+    );
+    let verify = |args: &[&str], code: i32| -> String {
+        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .env("PATH", support::os::path())
+            .arg("--repo")
+            .arg(&repo)
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("verify")
+            .args(args)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(code),
+            "{args:?}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        value["id"].as_str().unwrap().to_owned()
+    };
+    let load = |id: String| {
+        let state = state.clone();
+        async move {
+            (
+                store::read_run(&state, &id).await.unwrap(),
+                store::read_requests(&state, Some(&id)).await.unwrap(),
+            )
+        }
+    };
+    let now = OffsetDateTime::now_utc();
+    verify(&["--all"], 0);
+
+    // A partial forced Run of c: a and b have no requests, only saved results.
+    let (view, requests) = load(verify(&["c", "--force", "--jobs", "1"], 0)).await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        view.run.evidence,
+        [
+            ("a/x".to_owned(), artifactize::types::RequestStatus::Green),
+            ("b/x".to_owned(), artifactize::types::RequestStatus::Green),
+        ]
+        .into()
+    );
+    let nodes = monitor::tree(&view, &requests, now);
+    let mut all = Vec::new();
+    flatten(&nodes, &mut all);
+    let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
+    assert_eq!(
+        node("e:b/x").kind,
+        Kind::Eval(EvalView::Done(monitor::Source::Saved))
+    );
+    assert_eq!(
+        node("e:c/y").kind,
+        Kind::Eval(EvalView::Done(monitor::Source::Executed))
+    );
+    assert!(all.iter().all(|node| !node.changed));
+
+    // a turns RED; b's reused GREEN is masked BLOCKED, and c is blocked by b.
+    fs::write(&flag, "").unwrap();
+    let (view, requests) = load(verify(
+        &["--evals", "a/x,c/x,c/y", "--recursive", "--force"],
+        1,
+    ))
+    .await;
+    let saved = |id: &str| {
+        view.run.validation["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|artifact| artifact["id"] == id)
+            .unwrap()["status"]
+            .clone()
+    };
+    assert_eq!(
+        (saved("b"), saved("c")),
+        (json!("BLOCKED"), json!("BLOCKED"))
+    );
+    let nodes = monitor::tree(&view, &requests, now);
+    let mut all = Vec::new();
+    flatten(&nodes, &mut all);
+    let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
+    assert_eq!(
+        node("e:a/x").kind,
+        Kind::Eval(EvalView::Failed { verdict: true })
+    );
+    assert_eq!(
+        node("e:b/x").kind,
+        Kind::Eval(EvalView::Done(monitor::Source::Reused))
+    );
+    assert_eq!(node("a:b").line(), "⊘ b  done, but blocked by a  0/1");
+    assert_eq!(
+        node("e:c/x").kind,
+        Kind::Eval(EvalView::BlockedBy(vec!["b".into()]))
+    );
+    assert_eq!(node("a:c").line(), "⊘ c  not run: blocked by b  0/2");
+    assert!(
+        all.iter().all(|node| !node.changed),
+        "nothing changed after the Run"
+    );
+}
+
 /// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.
 #[cfg(unix)]
 #[test]

@@ -353,13 +353,8 @@ impl<'a> Saved<'a> {
                     .iter()
                     .map(|view| view.request.target.as_str()),
             );
-        let mut ids = Vec::new();
-        for id in saved {
-            if !ids.contains(&id) {
-                ids.push(id);
-            }
-        }
-        ids
+        let mut seen = std::collections::HashSet::new();
+        saved.filter(|id| seen.insert(*id)).collect()
     }
 
     /// Saved Eval definitions targeting the Artifact, then requests without one.
