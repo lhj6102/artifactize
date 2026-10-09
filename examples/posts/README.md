@@ -32,8 +32,9 @@ What it demonstrates:
   hash. `fingerprint = false` would disable reuse.
 - **A shared mount.** Every post mounts the `house-style` basis Artifact as
   `style`. It has no evals and uses default folder artifactsum. Each post's reuse
-  key therefore covers both its file and the checker and banned words. Changing
-  `house-style/check.py` or `house-style/banned.txt` reviews all three posts.
+  key therefore covers both its file and the checker and banned words, including
+  each covered Artifact's kind (`file` or `folder`), never its physical path.
+  Changing `house-style/check.py` or `house-style/banned.txt` reviews all three posts.
 - **File references and cwd.** Runtime argv resolves `{tip}` to the absolute
   file path and `{style}/check.py` to the mounted checker. File references never
   take a `/path` suffix. The process runs in `examples/posts`, the file's
