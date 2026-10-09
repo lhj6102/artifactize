@@ -110,7 +110,7 @@ pub async fn verify(
         .map_err(|e| e.to_string())?;
     let fingerprints = cache::prepare(
         &config,
-        required.iter().copied(),
+        cache::fingerprint_targets(&config, &required),
         &runs,
         &parallelism,
         cancellation.clone(),
@@ -207,7 +207,12 @@ pub async fn verify(
             payload: (&eval.declaration.payload).into(),
             references: json!(eval.references),
             deps: eval.deps.clone(),
-            force: options.force && selected_ids.contains(eval.id.as_str()) && !matches!(eval.declaration.profile, crate::config::Profile::Dependency { .. }),
+            force: options.force
+                && selected_ids.contains(eval.id.as_str())
+                && !matches!(
+                    eval.declaration.profile,
+                    crate::config::Profile::Dependency { .. }
+                ),
             fingerprint: fingerprints
                 .get(eval.target.as_str())
                 .map(|fingerprint| fingerprint.value.clone()),

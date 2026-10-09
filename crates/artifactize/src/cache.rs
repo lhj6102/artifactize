@@ -137,6 +137,23 @@ pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a 
         .collect()
 }
 
+/// Only executable Evals need fingerprints; a derived verdict never runs a fingerprint
+/// script solely for its own request. Restrict preparation to the required key inputs.
+pub(crate) fn fingerprint_targets<'a>(
+    config: &'a RepoConfig,
+    required: &BTreeSet<&str>,
+) -> BTreeSet<&'a str> {
+    config
+        .evals
+        .iter()
+        .filter(|eval| {
+            required.contains(eval.target.as_str())
+                && !matches!(eval.declaration.profile, Profile::Dependency { .. })
+        })
+        .flat_map(|eval| dependencies(config, eval))
+        .collect()
+}
+
 /// The reuse key of an Eval definition hash over these fingerprints.
 pub fn key(
     eval_def_hash: &str,

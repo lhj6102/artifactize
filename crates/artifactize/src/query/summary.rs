@@ -34,7 +34,11 @@ pub struct Source<'a> {
 /// marker and the monitor.
 pub fn source(request: &Request) -> Option<Source<'_>> {
     if request.profile.kind() == crate::config::ProfileKind::Dependency {
-        return Some(Source { run_id: &request.run_id, request_id: &request.id, kind: SourceKind::Derived });
+        return Some(Source {
+            run_id: &request.run_id,
+            request_id: &request.id,
+            kind: SourceKind::Derived,
+        });
     }
     let provenance = request
         .provenance
@@ -96,16 +100,18 @@ struct Kinds {
     runtime: u64,
     agent: u64,
     human: u64,
-    dependency: u64,
 }
 impl Kinds {
     fn add(&mut self, kind: crate::config::ProfileKind) {
+        if kind == crate::config::ProfileKind::Dependency {
+            return;
+        }
         self.total += 1;
         match kind {
             crate::config::ProfileKind::Runtime => self.runtime += 1,
             crate::config::ProfileKind::Agent => self.agent += 1,
             crate::config::ProfileKind::Human => self.human += 1,
-            crate::config::ProfileKind::Dependency => self.dependency += 1,
+            crate::config::ProfileKind::Dependency => unreachable!("dependency Evals are derived"),
         }
     }
 }
@@ -192,7 +198,11 @@ pub fn run_output(view: &RunView, now: OffsetDateTime) -> Value {
     }
     value["usage"] = json!({"spent":usage.usage,"saved":saved});
     value["summary"] = json!(RunSummary {
-        derived: view.requests.iter().filter(|request| request.profile.kind() == crate::config::ProfileKind::Dependency).count() as u64,
+        derived: view
+            .requests
+            .iter()
+            .filter(|request| request.profile.kind() == crate::config::ProfileKind::Dependency)
+            .count() as u64,
         counts,
         executed,
         reused: reuses,

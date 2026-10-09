@@ -331,7 +331,7 @@ fn removed_template_fields_are_unknown_but_owner_payloads_stay_literal() {
         "payload":{"instruction":"Inspect.","owner":{"$param":"/literal"}}});
     let declaration = parse(json!({"name":"a","evals":[declared]})).unwrap();
     assert_eq!(
-        declaration.evals[0].payload.extra["owner"],
+        declaration.evals[0].payload.as_ref().unwrap().extra["owner"],
         json!({"$param":"/literal"})
     );
 }

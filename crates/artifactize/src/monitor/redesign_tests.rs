@@ -96,7 +96,10 @@ async fn catalog_is_global_and_scope_filter_precedes_more_than_one_page() {
             .iter()
             .any(|row| row.label.contains("alpha"))
     );
-    assert_eq!(store::state_schema(&state).unwrap(), Some(5));
+    assert_eq!(
+        store::state_schema(&state).unwrap(),
+        Some(store::STATE_SCHEMA_VERSION)
+    );
     fs::remove_dir_all(&beta).unwrap();
     monitor.refresh().await;
     assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-old-beta");

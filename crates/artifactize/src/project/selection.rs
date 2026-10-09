@@ -124,12 +124,20 @@ impl Selection {
             let mut index = 0;
             while index < included.len() {
                 let eval = included[index];
-                if matches!(eval.declaration.profile, crate::config::Profile::Dependency { .. }) {
+                if matches!(
+                    eval.declaration.profile,
+                    crate::config::Profile::Dependency { .. }
+                ) {
                     let roots: Vec<_> = eval.deps.iter().map(String::as_str).collect();
-                    let required: BTreeSet<_> = graph.dependency_closure(&roots)
-                        .map_err(|error| error.to_string())?.into_iter().collect();
+                    let required: BTreeSet<_> = graph
+                        .dependency_closure(&roots)
+                        .map_err(|error| error.to_string())?
+                        .into_iter()
+                        .collect();
                     for dependency in &config.evals {
-                        if required.contains(dependency.target.as_str()) && seen.insert(dependency.id.as_str()) {
+                        if required.contains(dependency.target.as_str())
+                            && seen.insert(dependency.id.as_str())
+                        {
                             included.push(dependency);
                         }
                     }

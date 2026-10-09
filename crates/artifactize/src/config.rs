@@ -168,13 +168,16 @@ impl Profile {
                     || depends_on.len() > MAX_DECLARED_ITEMS
                     || depends_on.iter().collect::<BTreeSet<_>>().len() != depends_on.len()
                 {
-                    return Err("Dependency profile dependsOn must contain 1–64 unique Artifact names.".into());
+                    return Err(
+                        "Dependency profile dependsOn must contain 1–64 unique Artifact names."
+                            .into(),
+                    );
                 }
                 for name in depends_on {
                     identifier(name, "Dependency Artifact name")?;
                 }
                 Ok(())
-            },
+            }
             Self::Runtime { command, args, .. } => script(command, args),
         }
     }
@@ -262,8 +265,10 @@ impl TryFrom<EvalFields> for EvalDeclaration {
 
     fn try_from(fields: EvalFields) -> Result<Self, Self::Error> {
         if matches!(fields.profile, Profile::Dependency { .. }) {
-            if fields.payload.is_some() || fields.pass_schema.is_some()
-                || fields.fail_schema.is_some() || fields.profile_variants.is_some()
+            if fields.payload.is_some()
+                || fields.pass_schema.is_some()
+                || fields.fail_schema.is_some()
+                || fields.profile_variants.is_some()
             {
                 return Err("Dependency Evals cannot declare payload, passSchema, failSchema or profileVariants.".into());
             }
@@ -271,9 +276,13 @@ impl TryFrom<EvalFields> for EvalDeclaration {
             return Err("Eval payload is required for runtime, agent and human profiles.".into());
         }
         Ok(Self {
-            id: fields.id, title: fields.title, profile: fields.profile,
+            id: fields.id,
+            title: fields.title,
+            profile: fields.profile,
             profile_variants: fields.profile_variants.unwrap_or_default(),
-            payload: fields.payload, pass_schema: fields.pass_schema, fail_schema: fields.fail_schema,
+            payload: fields.payload,
+            pass_schema: fields.pass_schema,
+            fail_schema: fields.fail_schema,
         })
     }
 }

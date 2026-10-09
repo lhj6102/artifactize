@@ -502,18 +502,32 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             for name in depends_on {
                 let source = reference_target(config, &eval.target, name).map_err(error)?;
                 if source == eval.target {
-                    return Err(error(ScopeError("Dependency Evals cannot depend on their own Artifact.".into())));
+                    return Err(error(ScopeError(
+                        "Dependency Evals cannot depend on their own Artifact.".into(),
+                    )));
                 }
                 if !deps.insert(source.to_owned()) {
-                    return Err(error(ScopeError("Dependency profile dependsOn must resolve to unique Artifacts.".into())));
+                    return Err(error(ScopeError(
+                        "Dependency profile dependsOn must resolve to unique Artifacts.".into(),
+                    )));
                 }
                 relations.push(Relation {
-                    source: source.to_owned(), target: eval.target.clone(),
-                    kind: RelationKind::Dependency { eval_id: eval.id.clone(), name: name.clone() },
+                    source: source.to_owned(),
+                    target: eval.target.clone(),
+                    kind: RelationKind::Dependency {
+                        eval_id: eval.id.clone(),
+                        name: name.clone(),
+                    },
                 });
             }
         }
-        for name in eval.declaration.payload.as_ref().into_iter().flat_map(|payload| instruction_references(&payload.instruction)) {
+        for name in eval
+            .declaration
+            .payload
+            .as_ref()
+            .into_iter()
+            .flat_map(|payload| instruction_references(&payload.instruction))
+        {
             let source = reference_target(config, &eval.target, name).map_err(error)?;
             references.insert(name.to_owned(), source.to_owned());
             if source != eval.target {

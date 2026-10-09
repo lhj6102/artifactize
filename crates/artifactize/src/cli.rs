@@ -215,7 +215,9 @@ impl SelectionArgs {
     fn resolve(self) -> Result<Selection, String> {
         if let Some(artifact_id) = self.artifact {
             if artifact_id.contains('/') {
-                Ok(Selection::Eval { eval_id: artifact_id })
+                Ok(Selection::Eval {
+                    eval_id: artifact_id,
+                })
             } else {
                 Ok(Selection::Artifact { artifact_id })
             }

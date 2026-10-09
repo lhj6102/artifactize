@@ -147,7 +147,7 @@ pub async fn status(
     let included_ids: BTreeSet<_> = included_eval_ids.iter().collect();
     let fingerprints = cache::prepare(
         &config,
-        required.iter().copied(),
+        cache::fingerprint_targets(&config, &required),
         &state,
         &super::fingerprint_parallelism(options)?,
         cancellation.clone(),
@@ -272,7 +272,10 @@ pub async fn status(
                 if current.blocked_by.is_empty() {
                     "Derived from current GREEN dependency evidence; no execution or reuse.".into()
                 } else {
-                    format!("Derived dependency verdict: waiting for current GREEN evidence from {}.", current.blocked_by.join(", "))
+                    format!(
+                        "Derived dependency verdict: waiting for current GREEN evidence from {}.",
+                        current.blocked_by.join(", ")
+                    )
                 },
             ),
             // verify takes cached results before gates resolve, even behind RED; the state keeps the gate.

@@ -446,7 +446,11 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
         RelationKind::Mount { alias } => {
             format!("mount {}", alias.value().map_or("", String::as_str))
         }
-        RelationKind::Dependency { name, eval_id } => format!("dependency {} in {}", name.value().map_or("", String::as_str), eval_id.value().map_or("", String::as_str)),
+        RelationKind::Dependency { name, eval_id } => format!(
+            "dependency {} in {}",
+            name.value().map_or("", String::as_str),
+            eval_id.value().map_or("", String::as_str)
+        ),
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
         RelationKind::Argument {
             eval_id,
