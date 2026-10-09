@@ -139,6 +139,35 @@ impl Scope<'_> {
     }
 }
 
+/// Revalidate file targets at every preparation/read boundary, without following links.
+pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(), ScopeError> {
+    if artifact.file_name().is_some() {
+        let target = artifact
+            .path
+            .to_str()
+            .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
+        let file = open_scoped(root, target).map_err(|error| {
+            ScopeError(format!(
+                "File Artifact {} target {} is unavailable: {error}",
+                artifact.name,
+                artifact.path.display()
+            ))
+        })?;
+        if !file
+            .metadata()
+            .map_err(|error| ScopeError(error.to_string()))?
+            .is_file()
+        {
+            return Err(ScopeError(format!(
+                "File Artifact {} target {} must remain a regular file.",
+                artifact.name,
+                artifact.path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Why a scoped open failed. A missing entry stays distinct, so a caller that knows the
 /// logical path the user asked for can name it.
 #[derive(Debug, Error)]
@@ -540,15 +569,24 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     format!("Ambiguous mount alias {alias} in {id}."),
                 ));
             }
-            match fs::symlink_metadata(config.root.join(artifact.folder()).join(alias)) {
-                Ok(_) => {
+            if artifact.file_name().is_some() {
+                if artifact.file_name() == Some(alias.as_str()) {
                     return Err(error(
                         &["mounts", alias],
-                        format!("Mount {id}/{alias} conflicts with a physical entry."),
+                        format!("Mount {id}/{alias} conflicts with the target file."),
                     ));
                 }
-                Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => {}
-                Err(failure) => return Err(error(&["mounts", alias], failure.to_string())),
+            } else {
+                match fs::symlink_metadata(config.root.join(artifact.folder()).join(alias)) {
+                    Ok(_) => {
+                        return Err(error(
+                            &["mounts", alias],
+                            format!("Mount {id}/{alias} conflicts with a physical entry."),
+                        ));
+                    }
+                    Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(failure) => return Err(error(&["mounts", alias], failure.to_string())),
+                }
             }
             relations.push(Relation {
                 source: source.clone(),

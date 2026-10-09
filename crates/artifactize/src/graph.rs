@@ -258,6 +258,20 @@ impl<'a> Graph<'a> {
                 .filter(|id| component.artifacts.contains(&self.evals[id]));
             for id in ordinary.chain(derived) {
                 if let Some(targets) = self.derived.get(id) {
+                    if evidence.get(id) == Some(&Evidence::OperationalError) {
+                        evals.insert(
+                            id,
+                            EvalEvaluation {
+                                status: EvalStatus::Error,
+                                readiness: Readiness::Ready,
+                                evidence: Some(Evidence::OperationalError),
+                                unmet_gates: Vec::new(),
+                                blocked_by: Vec::new(),
+                                derived: true,
+                            },
+                        );
+                        continue;
+                    }
                     let unmet: Vec<_> = targets
                         .iter()
                         .flat_map(|target| &self.artifacts[target].evals)

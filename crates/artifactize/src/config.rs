@@ -921,10 +921,11 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             owner = Some(name);
         }
         for marker in &entries {
-            if marker
-                .file_name()
-                .as_encoded_bytes()
-                .ends_with(b".artf.artf")
+            if !ignored.matched(marker.path(), false).is_ignore()
+                && marker
+                    .file_name()
+                    .as_encoded_bytes()
+                    .ends_with(b".artf.artf")
             {
                 return Err(ConfigError::new(
                     marker.path(),
@@ -933,6 +934,9 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             }
         }
         for marker in &entries {
+            if ignored.matched(marker.path(), false).is_ignore() {
+                continue;
+            }
             let filename = marker.file_name();
             if !filename.as_encoded_bytes().ends_with(b".artf") {
                 continue;
@@ -967,6 +971,12 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 ));
             }
             path(target).map_err(|error| ConfigError::new(&file, error))?;
+            if target.contains(':') {
+                return Err(ConfigError::new(
+                    &file,
+                    "File Artifact target name must not contain ':'; scoped tool paths do not support colons.",
+                ));
+            }
             let target_path = directory.join(target);
             let metadata = fs::symlink_metadata(&target_path).map_err(|error| {
                 ConfigError::new(

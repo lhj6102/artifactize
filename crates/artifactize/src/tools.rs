@@ -171,6 +171,11 @@ impl<'a> Registry<'a> {
         if cancellation.is_cancelled() {
             return ToolResult::error("Agent tool call was cancelled.");
         }
+        for artifact in self.scope.artifacts.values() {
+            if let Err(error) = scope::validate_file_target(&self.config.root, artifact) {
+                return ToolResult::error(error.to_string());
+            }
+        }
         let command = match tool.declaration {
             AgentTool::Command(command) => command,
             AgentTool::Builtin(tool_declaration) => {

@@ -367,6 +367,19 @@ impl Scheduler<'_, '_> {
                     }) {
                         continue;
                     }
+                    if let Err(error) = cache::validate_file_inputs(&self.config, eval) {
+                        evidence.insert(eval.id.clone(), Evidence::OperationalError);
+                        if let Some(index) = index {
+                            let request = &mut self.requests[index];
+                            request.status = crate::types::RequestStatus::Error;
+                            request.error = Some(error);
+                            request.error_code = Some("PREPARATION_FAILED".into());
+                            request.result = None;
+                            request.completed_at = Some(now());
+                            self.receipts.save_request(request).await?;
+                        }
+                        continue;
+                    }
                     if let Some(key) = self.keys.get(eval.id.as_str())
                         && let Some(execution) = self.receipts.cached_execution(&key.value).await?
                     {
@@ -400,6 +413,22 @@ impl Scheduler<'_, '_> {
                         continue;
                     }
                     if request.profile.kind() == ProfileKind::Dependency {
+                        let declared = self
+                            .config
+                            .evals
+                            .iter()
+                            .find(|eval| eval.id == request.eval_id)
+                            .expect("included Eval");
+                        if let Err(error) = cache::validate_file_inputs(&self.config, declared) {
+                            request.status = crate::types::RequestStatus::Error;
+                            request.error = Some(error);
+                            request.error_code = Some("PREPARATION_FAILED".into());
+                            request.result = None;
+                            request.completed_at = Some(now());
+                            self.receipts.save_request(request).await?;
+                            evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
+                            continue;
+                        }
                         let eval = &evaluation.evals[request.eval_id.as_str()];
                         let status = crate::project::verify::status(eval.status);
                         let blocked_by: Vec<_> =
@@ -417,11 +446,36 @@ impl Scheduler<'_, '_> {
                     if !waiting.contains(&index) && running.len() + waiting.len() >= self.run.jobs {
                         continue;
                     }
+                    let declared = self
+                        .config
+                        .evals
+                        .iter()
+                        .find(|eval| eval.id == request.eval_id)
+                        .expect("included Eval");
+                    if let Err(error) = cache::validate_file_inputs(&self.config, declared) {
+                        waiting.remove(&index);
+                        request.status = crate::types::RequestStatus::Error;
+                        request.error = Some(error);
+                        request.error_code = Some("PREPARATION_FAILED".into());
+                        request.result = None;
+                        request.completed_at = Some(now());
+                        self.receipts.save_request(request).await?;
+                        evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
+                        evaluation = self
+                            .graph
+                            .evaluate_with_policy(&evidence, self.run.ignore_gates);
+                        continue;
+                    }
                     let mut execution = Execution {
                         id: format!("execution-{}", request.id).parse()?,
                         key: request.key.clone(),
                         fingerprint: request.fingerprint.clone(),
                         fingerprints: request.fingerprints.clone(),
+                        artifact_kinds: self
+                            .keys
+                            .get(request.eval_id.as_str())
+                            .map(|key| key.artifact_kinds.clone())
+                            .unwrap_or_default(),
                         eval_def_hash: request.eval_def_hash.clone(),
                         owner_pid: owner.pid,
                         owner_start_time: owner.start_time,

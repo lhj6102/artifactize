@@ -414,6 +414,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
             .unwrap(),
         eval_def_hash: "hash".into(),
         fingerprints: fingerprints(pairs),
+        artifact_kinds: BTreeMap::new(),
     };
     let old = manifest(&[("src/a.py", "1"), ("old.md", "1"), ("same", "1")]);
     let new = manifest(&[("src/a.py", "2"), ("docs/new.md", "1"), ("same", "1")]);

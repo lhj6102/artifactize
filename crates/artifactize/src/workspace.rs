@@ -34,6 +34,17 @@ pub(crate) fn has_artifact_marker(path: &Path) -> io::Result<bool> {
         {
             return Ok(false);
         }
+        // Search-only ancestors can be traversed but not enumerated. Retain fixed-marker
+        // stat probes, including .git, without rejecting an otherwise usable state path.
+        // Unknown sidecars cannot be detected here, but discovery also cannot enumerate
+        // this directory, so artifactize cannot run it as a discovered workspace.
+        Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+            return match path.join(".git").symlink_metadata() {
+                Ok(_) => Ok(true),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+                Err(error) => Err(error),
+            };
+        }
         Err(error) => return Err(error),
     };
     for entry in entries {

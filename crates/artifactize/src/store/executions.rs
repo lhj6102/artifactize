@@ -59,6 +59,9 @@ pub struct Execution {
     /// Each Artifact the key covers, the target included, with its fingerprint.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub fingerprints: BTreeMap<String, Fingerprint>,
+    /// Kinds of exactly the Artifacts covered by a new-format reuse key.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub artifact_kinds: BTreeMap<String, crate::config::ArtifactKind>,
     pub eval_def_hash: String,
     pub owner_pid: u32,
     pub owner_start_time: u64,

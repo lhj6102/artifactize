@@ -129,6 +129,23 @@ pub(super) async fn execute(
             None
         }
     };
+    let outcome = if outcome.is_some() {
+        let eval = config
+            .evals
+            .iter()
+            .find(|eval| eval.id == request.eval_id)
+            .expect("included eval");
+        match cache::validate_file_inputs(&config, eval) {
+            Ok(()) => outcome,
+            Err(error) => {
+                request.error = Some(error);
+                request.error_code = Some("INPUT_CHANGED".into());
+                None
+            }
+        }
+    } else {
+        outcome
+    };
     let outcome = if outcome.is_some()
         && let Some(expected) = &request.key
     {
@@ -229,6 +246,7 @@ pub(super) fn prepare(
     saving: Option<&agent::session::Saving>,
     request: &mut Request,
 ) -> Result<Prepared, String> {
+    cache::validate_file_inputs(config, eval)?;
     if matches!(eval.declaration.profile, Profile::Human {}) {
         request.human_definition = Some(human::definition(config, eval)?);
         request.run_dir = Some(run_dir.to_path_buf());
