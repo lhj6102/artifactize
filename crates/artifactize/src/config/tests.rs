@@ -303,6 +303,40 @@ fn renamed_fingerprint_keys_fail_with_the_new_shape() {
 }
 
 #[test]
+fn a_family_declaration_names_its_removal() {
+    for value in [
+        json!({"instances":"instances.json"}),
+        json!({"instances":{"one":{}}}),
+        Value::Null,
+        json!(false),
+    ] {
+        assert_eq!(
+            parse(json!({"name":"a","family":value})).unwrap_err(),
+            "family was removed in 0.9.0; declare each instance as its own Artifact."
+        );
+    }
+}
+
+#[test]
+fn removed_template_fields_are_unknown_but_owner_payloads_stay_literal() {
+    for key in ["params", "variants", "instances", "material", "$param"] {
+        let mut declaration = json!({"name":"a"});
+        declaration[key] = json!({});
+        assert!(
+            parse(declaration).unwrap_err().contains("unknown field"),
+            "{key}"
+        );
+    }
+    let declared = json!({"id":"check","title":"Check","profile":{"kind":"human"},
+        "payload":{"instruction":"Inspect.","owner":{"$param":"/literal"}}});
+    let declaration = parse(json!({"name":"a","evals":[declared]})).unwrap();
+    assert_eq!(
+        declaration.evals[0].payload.extra["owner"],
+        json!({"$param":"/literal"})
+    );
+}
+
+#[test]
 fn content_fingerprint_defaults_to_the_owner_folder() {
     let declaration = parse(json!({"name":"a","fingerprint":{}})).unwrap();
     let fingerprint = declaration.fingerprint.unwrap();

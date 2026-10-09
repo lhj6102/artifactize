@@ -152,6 +152,42 @@ fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
 }
 
 #[test]
+fn config_check_rejects_removed_family_declarations_without_opening_instance_lists() {
+    let message = "family was removed in 0.9.0; declare each instance as its own Artifact.";
+    for value in [
+        json!({"instances":"missing.json"}),
+        json!({"instances":{"one":{}}}),
+        Value::Null,
+        json!(false),
+    ] {
+        let fixture = Fixture::new();
+        fixture.write(
+            "app/artifactize.json",
+            &json!({"name":"app","family":value}).to_string(),
+        );
+        fixture.write("app/nested/artifactize.json", r#"{"name":"nested"}"#);
+        let output = fixture
+            .command()
+            .args(["config", "check", "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let error = json_output(&output)["error"].as_str().unwrap().to_owned();
+        assert!(error.contains(&native("app/artifactize.json")), "{error}");
+        assert!(error.ends_with(message), "{error}");
+        let output = fixture
+            .command()
+            .args(["config", "check"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(output.stdout.is_empty());
+        assert!(String::from_utf8_lossy(&output.stderr).contains(message));
+        assert!(!fixture.0.join("state-home").exists());
+    }
+}
+
+#[test]
 fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let fixture = Fixture::new();
     fixture.write(

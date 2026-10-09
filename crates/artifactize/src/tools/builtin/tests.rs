@@ -504,7 +504,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
 }
 
 #[tokio::test]
-async fn listing_pages_are_sorted_and_include_logical_mounts_and_family_catalogs() {
+async fn listing_pages_are_sorted_and_include_logical_mounts_and_children() {
     let fixture = Fixture::new();
     fixture.artifact("a", "a", json!({"source":"b"}), "Review.");
     fixture.artifact("b", "b", json!({"back":"a"}), "Refers to {hidden}.");
@@ -512,9 +512,9 @@ async fn listing_pages_are_sorted_and_include_logical_mounts_and_family_catalogs
     fixture.write("b/input.txt", "mounted\n");
     fixture.write(
         "a/nested/cases/artifactize.json",
-        json!({"name":"cases","family":{"instances":{"one":{},"two":{}}}}).to_string(),
+        json!({"name":"cases"}).to_string(),
     );
-    fixture.write("a/nested/cases/input.txt", "family\n");
+    fixture.write("a/nested/cases/input.txt", "child\n");
     let data = fixture.data("list_a", json!({})).await;
     assert_eq!(
         data["entries"]
@@ -529,29 +529,23 @@ async fn listing_pages_are_sorted_and_include_logical_mounts_and_family_catalogs
     let data = fixture.data("list_a", json!({"path":"nested"})).await;
     assert_eq!(
         data["entries"][0],
-        json!({"name":"cases","path":"nested/cases","kind":"family","instances":["one","two"]})
+        json!({"name":"cases","path":"nested/cases","kind":"directory"})
     );
     let data = fixture
         .data("list_a", json!({"path":"nested/cases","limit":1}))
         .await;
     assert_eq!(data["totalEntries"], 2);
-    assert_eq!(data["entries"][0]["path"], "nested/cases/one");
+    assert_eq!(data["entries"][0]["path"], "nested/cases/artifactize.json");
     assert_eq!(data["nextOffset"], 1);
     let data = fixture
         .data("list_a", json!({"path":"nested/cases","offset":1}))
         .await;
-    assert_eq!(data["entries"][0]["name"], "two");
+    assert_eq!(data["entries"][0]["name"], "input.txt");
     assert_eq!(data["nextOffset"], Value::Null);
     let data = fixture
-        .data("read_a", json!({"path":"nested/cases/one/input.txt"}))
+        .data("read_a", json!({"path":"nested/cases/input.txt"}))
         .await;
-    assert_eq!(data["resolvedArtifactId"], "one");
-    assert!(
-        fixture
-            .call("read_a", json!({"path":"nested/cases/input.txt"}))
-            .await
-            .is_error
-    );
+    assert_eq!(data["resolvedArtifactId"], "cases");
     assert_eq!(
         fixture
             .data("read_a", json!({"path":"source/input.txt"}))
@@ -561,11 +555,7 @@ async fn listing_pages_are_sorted_and_include_logical_mounts_and_family_catalogs
     let data = fixture.data("glob_a", json!({"pattern":"**/*.txt"})).await;
     assert_eq!(
         data["files"],
-        json!([
-            "nested/cases/one/input.txt",
-            "nested/cases/two/input.txt",
-            "source/input.txt"
-        ])
+        json!(["nested/cases/input.txt", "source/input.txt"])
     );
     assert_eq!(data["truncated"], false);
     let config = read_workspace_config(&fixture.root).unwrap();

@@ -243,68 +243,6 @@ fn profiles_rebuild_static_gates_without_running_commands() {
 }
 
 #[test]
-fn families_keep_full_definitions_grouping_and_last_run_pointers() {
-    let fixture = Fixture::new("families");
-    let unreviewed = fixture.json(&["status", "scenarios"], 1);
-    assert_eq!(
-        unreviewed["selectedEvalIds"],
-        json!(["checkout/review", "search/review"])
-    );
-    assert_eq!(
-        row(&unreviewed, "artifacts", "checkout")["family"],
-        "scenarios"
-    );
-    assert_eq!(
-        row(&unreviewed, "artifacts", "search")["state"],
-        "UNREVIEWED"
-    );
-    let run = fixture.json(&["verify", "scenarios"], 0);
-    assert_eq!(run["validation"]["satisfied"], true);
-    let view = fixture.json(&["status", "scenarios"], 0);
-    assert_eq!(view["counts"]["reuse"], 2);
-    for (id, fingerprint) in [
-        ("checkout/review", "checkout:READY"),
-        ("search/review", "search:SEARCH"),
-    ] {
-        assert_eq!(row(&view, "evals", id)["state"], "PASS");
-        assert_eq!(row(&view, "evals", id)["action"], "reuse");
-        assert_eq!(
-            row(&view, "evals", id)["last"],
-            json!({"runId":run["id"],"verdict":"GREEN","fingerprint":fingerprint})
-        );
-    }
-    fs::write(
-        fixture.repo.join("scenarios/fingerprint.sh"),
-        "#!/bin/sh\ntouch fingerprint-ran\nexit 91\n",
-    )
-    .unwrap();
-    let error = fixture.json(&["status", "scenarios"], 2);
-    assert!(error["error"].as_str().unwrap().contains("exited with"));
-    assert!(fixture.repo.join("scenarios/fingerprint-ran").exists());
-    fs::remove_file(fixture.repo.join("scenarios/fingerprint-ran")).unwrap();
-    fixture.json(&["config", "check"], 0);
-    let graph = fixture.json(&["config", "graph", "scenarios"], 0);
-    assert_eq!(
-        graph["families"]["scenarios"],
-        json!({"path":"scenarios","artifactIds":["checkout","search"]})
-    );
-    assert_eq!(graph["artifacts"].as_object().unwrap().len(), 2);
-    assert_eq!(
-        graph["artifacts"]["checkout"]["family"]["material"],
-        json!(["checkout.txt"])
-    );
-    assert_eq!(
-        graph["artifacts"]["search"]["views"]["agentTools"]["detail"]["inputSchema"]["properties"]
-            ["id"]["enum"],
-        json!(["message", "query"])
-    );
-    let text =
-        String::from_utf8(fixture.output(&["config", "graph", "scenarios"], 0).stdout).unwrap();
-    assert!(text.contains("Family scenarios: checkout, search"));
-    assert!(!fixture.repo.join("scenarios/fingerprint-ran").exists());
-}
-
-#[test]
 fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     let fixture = Fixture::new("runtime");
     let path = fixture.repo.join("review/artifactize.json");

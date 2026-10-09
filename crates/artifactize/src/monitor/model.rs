@@ -11,7 +11,6 @@ use crate::{
 /// What a tree node shows in the detail pane, parsed from its stable tree identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
-    Family(String),
     Artifact(String),
     Eval(String),
 }
@@ -22,7 +21,6 @@ impl Target {
         let (kind, name) = id.split_once(':')?;
         let name = name.to_owned();
         match kind {
-            "f" => Some(Self::Family(name)),
             "a" | "r" => Some(Self::Artifact(name)),
             "e" => Some(Self::Eval(name)),
             _ => None,
@@ -85,7 +83,7 @@ impl Detail {
     }
 }
 
-/// Most to least urgent, for family and live Artifact roll-ups.
+/// Most to least urgent, for live Artifact roll-ups.
 const URGENCY: &str = "ERROR RED BLOCKED RUNNING WAITING_HUMAN QUEUED BUDGET_EXHAUSTED \
     WAIT_DEPENDENCY WAIT STALE UNREVIEWED INCOMPLETE GREEN BASIS";
 const ABSENT: &str = "not in Run";
@@ -416,32 +414,6 @@ impl<'a> Saved<'a> {
         })
     }
 
-    fn family(&self, id: &str) -> Option<&'a str> {
-        self.artifact(id)?
-            .family
-            .value()?
-            .name
-            .value()
-            .map(String::as_str)
-    }
-
-    fn family_members(&self, name: &str) -> Vec<&'a str> {
-        let mut members: Vec<_> = self
-            .definitions()
-            .and_then(|graph| graph.family(name))
-            .and_then(|family| family.artifact_ids.value())
-            .into_iter()
-            .flatten()
-            .map(String::as_str)
-            .collect();
-        for id in self.artifact_ids() {
-            if self.family(id) == Some(name) && !members.contains(&id) {
-                members.push(id);
-            }
-        }
-        members
-    }
-
     fn relations(
         &self,
         artifact: &str,
@@ -555,35 +527,14 @@ fn artifact_node(saved: &Saved, id: &str, now: OffsetDateTime) -> Node {
     }
 }
 
-/// Every saved or requested Artifact appears exactly once; family instances group under their family.
+/// Every saved or requested Artifact appears exactly once.
 pub fn tree(run: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Vec<Node> {
     let saved = Saved { run, requests };
-    let mut nodes = Vec::new();
-    let mut families = Vec::new();
-    for id in saved.artifact_ids() {
-        match saved.family(id) {
-            Some(name) if families.contains(&name) => {}
-            Some(name) => {
-                families.push(name);
-                let members = saved.family_members(name).into_iter();
-                let children: Vec<_> = members.map(|id| artifact_node(&saved, id, now)).collect();
-                let status = rollup(children.iter().filter_map(|node| node.status.as_deref()));
-                let text = format!(
-                    "family {name}  {} · {} instances",
-                    status.as_deref().unwrap_or(ABSENT),
-                    children.len()
-                );
-                nodes.push(Node {
-                    id: format!("f:{name}"),
-                    status,
-                    text,
-                    children,
-                });
-            }
-            None => nodes.push(artifact_node(&saved, id, now)),
-        }
-    }
-    nodes
+    saved
+        .artifact_ids()
+        .into_iter()
+        .map(|id| artifact_node(&saved, id, now))
+        .collect()
 }
 
 fn profile(profile: &crate::config::StoredProfile) -> String {
@@ -819,7 +770,6 @@ pub fn detail(
                         },
                     ),
             );
-            detail.push("Family", saved.family(id).unwrap_or_default());
             detail.push(
                 "Fingerprint",
                 saved.validation(id)["fingerprint"]
@@ -868,22 +818,6 @@ pub fn detail(
                 });
                 detail.push(key, join(relations, "\n"));
             }
-        }
-        Target::Family(name) => {
-            detail.title = format!("Family {name}");
-            detail.push(
-                "Path",
-                saved
-                    .definitions()
-                    .and_then(|graph| graph.family(name))
-                    .and_then(|family| family.path.value())
-                    .map_or_else(|| "-".into(), |path| path.display().to_string()),
-            );
-            let members = saved.family_members(name).into_iter().map(|member| {
-                let (status, passed, total) = saved.artifact_state(member);
-                format!("{} {passed}/{total}", mark(member, status.as_deref()))
-            });
-            detail.push("Instances", join(members, "\n"));
         }
     }
     detail

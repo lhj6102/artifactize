@@ -53,10 +53,10 @@ pub(crate) fn description(builtin: Builtin) -> &'static str {
             "Read UTF-8 complete lines in {artifactName}. path is a relative logical file path, including child/mount paths. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". offset is 1-based (default 1); limit defaults to 80, maximum 500. Returns numbered lines preserving LF/CRLF/BOM, up to 64 KiB, startLine/endLine/lineCount, totalLines when known, truncated and nextOffset. No symlinks or binary text."
         }
         Builtin::List => {
-            "List {artifactName} at a relative logical path (default root). Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Sorted entries include name, path and kind; mounts and family instance catalogs are included. offset is 0-based; limit defaults to and cannot exceed 200. Returns totalEntries, truncated and nextOffset. Symlinks and special files are listed but never followed. Directories are limited to 10,000 entries."
+            "List {artifactName} at a relative logical path (default root). Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Sorted entries include name, path and kind; mounts are included. offset is 0-based; limit defaults to and cannot exceed 200. Returns totalEntries, truncated and nextOffset. Symlinks and special files are listed but never followed. Directories are limited to 10,000 entries."
         }
         Builtin::Glob => {
-            "Find files in {artifactName} with a relative glob pattern (* within a path component, ** across directories). path is a relative logical directory, default root; patterns are relative to it. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Returns up to 200 sorted logical paths and truncated. Includes hidden files, mounts and family instance paths; ignores no files by git rules. Symlinks/special files are skipped, mount cycles are not repeated, and traversal is limited to 10,000 entries."
+            "Find files in {artifactName} with a relative glob pattern (* within a path component, ** across directories). path is a relative logical directory, default root; patterns are relative to it. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". Returns up to 200 sorted logical paths and truncated. Includes hidden files and mounts; ignores no files by git rules. Symlinks/special files are skipped, mount cycles are not repeated, and traversal is limited to 10,000 entries."
         }
         Builtin::Grep => {
             "Search UTF-8 files in {artifactName} with a Rust regex, one match per matching line. path is a relative logical file or directory (default root); glob filters paths relative to it. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". caseInsensitive defaults to false; maxResults defaults to and cannot exceed 200. Returns matches with path, line and text, plus truncated. Skips binary/invalid UTF-8 and symlinks; includes hidden files. Caps: 10,000 traversed entries, 8 MiB per file, 64 MiB searched, 512 KiB result. Skipped oversized files or bounded results set truncated."
@@ -143,13 +143,10 @@ impl Reader<'_> {
         }
     }
 
-    fn location(&self, path: &str, listing: bool) -> Result<ScopedPath, String> {
-        if listing {
-            self.scope.resolve_listing(self.owner, path)
-        } else {
-            self.scope.resolve_path(self.owner, path)
-        }
-        .map_err(|e| e.to_string())
+    fn location(&self, path: &str) -> Result<ScopedPath, String> {
+        self.scope
+            .resolve_path(self.owner, path)
+            .map_err(|e| e.to_string())
     }
 
     /// Open the resolved `location` of the logical `path`, which a missing entry names.
@@ -162,14 +159,14 @@ impl Reader<'_> {
     }
 
     fn view_image(&self, path: &str) -> Result<Content, String> {
-        let location = self.location(path, false)?;
+        let location = self.location(path)?;
         let bytes = image::read(self.open(path, &location)?)?;
         self.check_cancelled()?;
         image::normalize(&bytes, None)
     }
 
     fn read(&self, path: &str, offset: usize, limit: usize) -> Result<Value, String> {
-        let location = self.location(path, false)?;
+        let location = self.location(path)?;
         let file = self.open(path, &location)?;
         if !file.metadata().map_err(|e| e.to_string())?.is_file() {
             return Err("Reading requires a regular file; list the directory first.".into());
@@ -241,85 +238,59 @@ impl Reader<'_> {
 
     fn entries(&self, path: &str) -> Result<Vec<Value>, String> {
         self.check_cancelled()?;
-        let location = self.location(path, true)?;
+        let location = self.location(path)?;
         let file = self.open(path, &location)?;
         if !file.metadata().map_err(|e| e.to_string())?.is_dir() {
             return Err("Listing requires a directory.".into());
         }
         let owner = self.scope.artifacts[location.artifact_id.as_str()];
-        let mut families: BTreeMap<String, Vec<String>> = BTreeMap::new();
-        for (child, id) in &owner.children {
-            if self
-                .scope
-                .artifacts
-                .get(id.as_str())
-                .is_some_and(|artifact| artifact.family.is_some())
-                && let Some(folder) = child.strip_suffix(&format!("/{id}"))
-            {
-                families.entry(folder.into()).or_default().push(id.clone());
-            }
-        }
         let mut entries = BTreeMap::new();
-        if let Some(instances) = families.get(&location.path) {
-            for id in instances {
-                entries.insert(
-                    id.clone(),
-                    json!({"name":id,"kind":"instance","artifactId":id}),
+        // Enumerate the pinned directory, not a path that could have been replaced by a link.
+        let directory = platform::read_dir(&file).map_err(|_| "Cannot list Artifact directory.")?;
+        for entry in directory {
+            self.check_cancelled()?;
+            if entries.len() >= MAX_ENTRIES {
+                return Err(
+                    "Directory exceeds the 10,000-entry listing limit; choose a narrower path."
+                        .into(),
                 );
             }
-        } else {
-            // Enumerate the pinned directory, not a path that could have been replaced by a link.
-            let directory =
-                platform::read_dir(&file).map_err(|_| "Cannot list Artifact directory.")?;
-            for entry in directory {
+            let entry = entry.map_err(|_| "Cannot list Artifact entry.")?;
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| "Artifact paths must be UTF-8.")?;
+            let kind = entry
+                .file_type()
+                .map_err(|_| "Cannot inspect Artifact entry.")?;
+            let value = json!({"name":name,"kind":match kind {
+                FileKind::File => "file",
+                FileKind::Directory => "directory",
+                FileKind::Symlink => "symlink",
+                FileKind::Other => "other",
+            }});
+            entries.insert(name, value);
+        }
+        if location.path.is_empty() {
+            for (alias, id) in &owner.mounts {
                 self.check_cancelled()?;
-                if entries.len() >= MAX_ENTRIES {
+                if entries.len() == MAX_ENTRIES {
                     return Err(
                         "Directory exceeds the 10,000-entry listing limit; choose a narrower path."
                             .into(),
                     );
                 }
-                let entry = entry.map_err(|_| "Cannot list Artifact entry.")?;
-                let name = entry
-                    .file_name()
-                    .into_string()
-                    .map_err(|_| "Artifact paths must be UTF-8.")?;
-                let kind = entry
-                    .file_type()
-                    .map_err(|_| "Cannot inspect Artifact entry.")?;
-                let relative = join(&location.path, &name);
-                let value = if kind == FileKind::Directory
-                    && let Some(instances) = families.get(&relative)
+                if !self.scope.artifacts.contains_key(id.as_str()) {
+                    return Err("Mount is outside this eval's scope.".into());
+                }
+                if entries
+                    .insert(
+                        alias.clone(),
+                        json!({"name":alias,"kind":"mount","artifactId":id}),
+                    )
+                    .is_some()
                 {
-                    json!({"name":name,"kind":"family","instances":instances})
-                } else {
-                    json!({"name":name,"kind":match kind {
-                        FileKind::File => "file",
-                        FileKind::Directory => "directory",
-                        FileKind::Symlink => "symlink",
-                        FileKind::Other => "other",
-                    }})
-                };
-                entries.insert(name, value);
-            }
-            if location.path.is_empty() {
-                for (alias, id) in &owner.mounts {
-                    self.check_cancelled()?;
-                    if entries.len() == MAX_ENTRIES {
-                        return Err("Directory exceeds the 10,000-entry listing limit; choose a narrower path.".into());
-                    }
-                    if !self.scope.artifacts.contains_key(id.as_str()) {
-                        return Err("Mount is outside this eval's scope.".into());
-                    }
-                    if entries
-                        .insert(
-                            alias.clone(),
-                            json!({"name":alias,"kind":"mount","artifactId":id}),
-                        )
-                        .is_some()
-                    {
-                        return Err("Logical mount conflicts with a physical entry.".into());
-                    }
+                    return Err("Logical mount conflicts with a physical entry.".into());
                 }
             }
         }
@@ -346,7 +317,7 @@ impl Reader<'_> {
             })
             .collect();
         if entries.is_empty() && offset < total {
-            return Err("Listing entry exceeds 512 KiB; list the family catalog directly.".into());
+            return Err("Listing entry exceeds 512 KiB; narrow the path.".into());
         }
         let next = offset + entries.len();
         Ok(
@@ -355,7 +326,7 @@ impl Reader<'_> {
     }
 
     fn files(&self, path: &str) -> Result<(BTreeSet<String>, bool), String> {
-        let location = self.location(path, true)?;
+        let location = self.location(path)?;
         if self
             .open(path, &location)?
             .metadata()
@@ -370,7 +341,7 @@ impl Reader<'_> {
         let mut truncated = false;
         while let Some((path, mut ancestors)) = pending.pop() {
             self.check_cancelled()?;
-            let location = self.location(&path, true)?;
+            let location = self.location(&path)?;
             let key = (location.artifact_id, location.path);
             if ancestors.contains(&key) {
                 continue;
@@ -387,9 +358,7 @@ impl Reader<'_> {
                     "file" => {
                         files.insert(child.to_owned());
                     }
-                    "directory" | "family" | "mount" | "instance" => {
-                        pending.push((child.into(), ancestors.clone()))
-                    }
+                    "directory" | "mount" => pending.push((child.into(), ancestors.clone())),
                     _ => {}
                 }
             }
@@ -402,7 +371,7 @@ impl Reader<'_> {
 
     fn glob(&self, path: &str, pattern: &str) -> Result<Value, String> {
         let matcher = glob(pattern)?;
-        let location = self.location(path, true)?;
+        let location = self.location(path)?;
         if !self
             .open(path, &location)?
             .metadata()
@@ -426,7 +395,7 @@ impl Reader<'_> {
             }
             // Recheck entries that may have changed since enumeration.
             if !self
-                .open(&file, &self.location(&file, false)?)?
+                .open(&file, &self.location(&file)?)?
                 .metadata()
                 .map_err(|e| e.to_string())?
                 .is_file()
@@ -459,7 +428,7 @@ impl Reader<'_> {
             {
                 continue;
             }
-            let input = self.open(&file, &self.location(&file, false)?)?;
+            let input = self.open(&file, &self.location(&file)?)?;
             let metadata = input.metadata().map_err(|e| e.to_string())?;
             if !metadata.is_file() {
                 return Err("Grep requires regular files.".into());

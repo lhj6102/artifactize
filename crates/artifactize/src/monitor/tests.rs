@@ -53,15 +53,14 @@ pub(super) fn live() -> (RunView, Vec<RequestView>) {
     let definitions = json!({
         "artifacts":{
             "lib":{"path":"lib","basis":true},"dep":{"path":"dep"},"app":{"path":""},
-            "p1":{"path":"pages","family":{"name":"pages"}},"p2":{"path":"pages","family":{"name":"pages"}}
+            "p1":{"path":"pages/one"},"p2":{"path":"pages/two"}
         },
         "evals":[eval("dep/check", &[]), eval("app/check", &["lib", "dep"]), eval("app/review", &[]), eval("p1/check", &[]), eval("p2/check", &[])],
         "relations":[
             {"source":"lib","target":"app","kind":"mount","alias":"shared","cyclic":false},
             {"source":"dep","target":"app","kind":"instruction","name":"dep","evalId":"app/check","cyclic":false}
         ],
-        "components":[{"id":0,"artifacts":["lib"]},{"id":1,"artifacts":["dep"]},{"id":2,"artifacts":["p1"]},{"id":3,"artifacts":["p2"]},{"id":4,"artifacts":["app"],"gates":["dep/check"]}],
-        "families":{"pages":{"path":"pages","artifactIds":["p1","p2"]}}
+        "components":[{"id":0,"artifacts":["lib"]},{"id":1,"artifacts":["dep"]},{"id":2,"artifacts":["p1"]},{"id":3,"artifacts":["p2"]},{"id":4,"artifacts":["app"],"gates":["dep/check"]}]
     });
     let mut waiting = request(
         "app/review",
@@ -141,11 +140,10 @@ fn live_progress_tree_and_details_are_pure_projections() {
             .iter()
             .map(|node| node.id.as_str())
             .collect::<Vec<_>>(),
-        ["a:lib", "a:dep", "f:pages", "a:app"]
+        ["a:lib", "a:dep", "a:p1", "a:p2", "a:app"]
     );
-    let family = find(&nodes, "f:pages");
-    assert_eq!(family.status.as_deref(), Some("ERROR"));
-    assert_eq!(family.children.len(), 2);
+    assert_eq!(find(&nodes, "a:p1").status.as_deref(), Some("GREEN"));
+    assert_eq!(find(&nodes, "a:p2").status.as_deref(), Some("ERROR"));
     assert_eq!(find(&nodes, "a:app").status.as_deref(), Some("RUNNING"));
     assert_eq!(find(&nodes, "a:app").text, "app  RUNNING 0/2");
     assert_eq!(
@@ -193,12 +191,6 @@ fn live_progress_tree_and_details_are_pure_projections() {
         app.field("Inputs"),
         Some("lib — mount shared\ndep — {dep} in app/check")
     );
-    let pages = detail(&view, &requests, &Target::Family("pages".into()), now());
-    assert_eq!(
-        pages.field("Instances"),
-        Some("✓ p1 GREEN 1/1\n! p2 ERROR 0/1")
-    );
-
     // Runs saved without definitions still expose every requested Artifact and eval.
     let mut bare = run(Value::Null);
     bare.requests = view.requests.clone();
@@ -304,7 +296,7 @@ fn run_screen_renders_progress_tree_and_detail() {
         "running app/check",
         "waiting Human app/review · claimed by alice",
         "◇ lib  BASIS",
-        "▶ ! family pages  ERROR · 2 instances",
+        "▼ ! p2  ERROR 0/1",
         "▼ ◐ app  RUNNING 0/2",
         "Artifacts and evals",
     ] {

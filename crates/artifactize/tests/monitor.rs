@@ -39,7 +39,7 @@ fn runtime(command: &str, args: &[&str]) -> Value {
 }
 
 impl Fixture {
-    /// Repository alpha has a family, a cycle, a child, a mount, and fingerprint-cached GREEN/RED results;
+    /// Repository alpha has a cycle, a child, a mount, and fingerprint-cached GREEN/RED results;
     /// beta has a long-running eval gated on a release file and a Human eval.
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
@@ -50,13 +50,13 @@ impl Fixture {
             &alpha.join("input"),
             json!({"name":"input","basis":true,"fingerprint":{}}),
         );
-        declare(
-            &alpha.join("scenarios"),
-            json!({"name":"scenarios",
-                "family":{"instances":{"checkout":{"material":["material.txt"]},"search":{"material":["material.txt"]}}},
-                "evals":[eval("review", runtime("true", &[]), "Inspect {input}.")]}),
-        );
-        fs::write(alpha.join("scenarios/material.txt"), "material").unwrap();
+        for name in ["checkout", "search"] {
+            declare(
+                &alpha.join("scenarios").join(name),
+                json!({"name":name,
+                    "evals":[eval("review", runtime("true", &[]), "Inspect {input}.")]}),
+            );
+        }
         declare(
             &alpha.join("cycle-a"),
             json!({"name":"cycle-a","fingerprint":{"script":{"command":"echo","args":["a-v1"]}},
@@ -379,16 +379,8 @@ async fn saved_tree_details_without_repository_or_writes() {
                 .is_some()
         );
     }
-    let family = nodes.iter().find(|node| node.id == "f:scenarios").unwrap();
-    assert_eq!(
-        family
-            .children
-            .iter()
-            .map(|node| node.id.as_str())
-            .collect::<Vec<_>>(),
-        ["a:checkout", "a:search"]
-    );
-    assert_eq!(family.status.as_deref(), Some("GREEN"));
+    assert_eq!(node("a:checkout").status.as_deref(), Some("GREEN"));
+    assert_eq!(node("a:search").status.as_deref(), Some("GREEN"));
     assert!(node("a:cycle-a").text.contains('↻') && node("a:cycle-b").text.contains('↻'));
     let cycle_input = node("a:cycle-a")
         .children
@@ -476,24 +468,29 @@ async fn saved_tree_details_without_repository_or_writes() {
     monitor.refresh().await;
     let run = screen(&mut monitor);
     assert!(
-        run.contains("family scenarios") && run.contains("validation NOT SATISFIED (unmet: red)"),
+        run.contains("checkout  GREEN") && run.contains("validation NOT SATISFIED (unmet: red)"),
         "{run}"
     );
-    // Collapsed families stay reachable: walk to the family node and expand it.
+    // Collapsed Artifacts stay reachable: expand an Artifact to select its eval.
     let mut steps = 0;
-    while monitor.target() != Some(Target::Family("scenarios".into())) {
+    while monitor.target() != Some(Target::Artifact("checkout".into())) {
         press(&mut monitor, KeyCode::Down);
         screen(&mut monitor);
         steps += 1;
-        assert!(steps < 40, "family node not reachable");
+        assert!(steps < 40, "Artifact node not reachable");
     }
-    assert!(!screen(&mut monitor).contains("checkout  GREEN"));
+    press(&mut monitor, KeyCode::Char('h'));
+    let collapsed = screen(&mut monitor);
+    assert!(collapsed.contains("▶ ✓ checkout  GREEN 1/1"), "{collapsed}");
     press(&mut monitor, KeyCode::Char('l'));
     screen(&mut monitor);
     press(&mut monitor, KeyCode::Down);
     let expanded = screen(&mut monitor);
     assert!(expanded.contains("checkout  GREEN 1/1"), "{expanded}");
-    assert_eq!(monitor.target(), Some(Target::Artifact("checkout".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Eval("checkout/review".into()))
+    );
     for _ in 0..3 {
         monitor.refresh().await;
         screen(&mut monitor);

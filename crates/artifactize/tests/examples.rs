@@ -136,11 +136,7 @@ fn map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[test]
 fn every_example_passes_static_queries_and_reports_status() {
     let session = Session::new();
-    for (name, artifacts, evals) in [
-        ("runtime-relations", 4, 3),
-        ("agent-tools", 2, 2),
-        ("family", 4, 3),
-    ] {
+    for (name, artifacts, evals) in [("runtime-relations", 4, 3), ("agent-tools", 2, 2)] {
         let repo = example(name);
         let before = files(&repo);
         assert_eq!(
@@ -178,16 +174,6 @@ fn every_example_passes_static_queries_and_reports_status() {
     assert_eq!(
         graph["artifacts"]["guide"]["children"],
         json!({"intro": "intro", "usage": "usage"})
-    );
-
-    let graph = session.json(
-        &example("family"),
-        &["config", "graph", "posts", "--json"],
-        0,
-    );
-    assert_eq!(
-        graph["families"]["posts"]["artifactIds"],
-        json!(["release-notes", "tip", "welcome"])
     );
 }
 
@@ -263,65 +249,6 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
             ("usage/heading", "RED"),
         ])
     );
-}
-
-#[test]
-fn family_selectors_expand_instances_and_reuse_each_instance() {
-    let session = Session::new();
-    let repo = example("family");
-    let before = files(&repo);
-    let family = session.json(&repo, &["verify", "posts", "--json"], 0);
-    assert_eq!(
-        statuses(&family),
-        map(&[
-            ("release-notes/style", "GREEN"),
-            ("tip/style", "GREEN"),
-            ("welcome/style", "GREEN"),
-        ])
-    );
-    let by_eval = requests(&family);
-    assert_eq!(
-        by_eval["tip/style"]["title"],
-        "The brief post fits in 40 words and follows the house style"
-    );
-    assert_eq!(
-        by_eval["tip/style"]["argv"].as_array().unwrap().last(),
-        Some(&json!("40"))
-    );
-    assert_eq!(
-        by_eval["welcome/style"]["argv"].as_array().unwrap().last(),
-        Some(&json!("120"))
-    );
-
-    let instance = session.json(&repo, &["verify", "tip", "--json"], 0);
-    assert_eq!(statuses(&instance), map(&[("tip/style", "GREEN")]));
-    assert_eq!(instance["executionsStarted"], 0);
-    let evals = session.json(
-        &repo,
-        &["verify", "--evals", "welcome/style,tip/style", "--json"],
-        0,
-    );
-    assert_eq!(evals["executionsStarted"], 0);
-    let status = session.json(&repo, &["status", "posts", "--json"], 0);
-    assert_eq!(status["counts"]["reuse"], 3);
-    assert_eq!(files(&repo), before);
-
-    // README: a banned word in tip.md re-runs only tip/style.
-    let copy = session.copy("family");
-    append(
-        &copy.join("posts/tip.md"),
-        "It helps you leverage every run.\n",
-    );
-    let red = session.json(&copy, &["verify", "posts", "--json"], 1);
-    assert_eq!(
-        statuses(&red),
-        map(&[
-            ("release-notes/style", "GREEN"),
-            ("tip/style", "RED"),
-            ("welcome/style", "GREEN"),
-        ])
-    );
-    assert_eq!(red["executionsStarted"], 1);
 }
 
 #[test]

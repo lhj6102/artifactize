@@ -10,7 +10,6 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
     let mut config = RepoConfig {
         root: "/unused".into(),
         artifacts: BTreeMap::new(),
-        families: BTreeMap::new(),
         evals: Vec::new(),
         relations: edges
             .iter()
@@ -45,7 +44,6 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
         config.artifacts.insert(
             name.into(),
             Artifact {
-                family: None,
                 name: name.into(),
                 basis: declaration.basis,
                 path: name.into(),

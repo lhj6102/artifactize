@@ -72,23 +72,6 @@ pub struct Scope<'a> {
 impl Scope<'_> {
     /// Pure logical resolution. Each mount or child hop consumes path components.
     pub fn resolve_path(&self, artifact_id: &str, path: &str) -> Result<ScopedPath, ScopeError> {
-        self.resolve_path_inner(artifact_id, path, false)
-    }
-
-    pub(crate) fn resolve_listing(
-        &self,
-        artifact_id: &str,
-        path: &str,
-    ) -> Result<ScopedPath, ScopeError> {
-        self.resolve_path_inner(artifact_id, path, true)
-    }
-
-    fn resolve_path_inner(
-        &self,
-        artifact_id: &str,
-        path: &str,
-        listing: bool,
-    ) -> Result<ScopedPath, ScopeError> {
         logical_path(path)?;
         let mut current = artifact_id;
         let mut remaining = path;
@@ -115,26 +98,6 @@ impl Scope<'_> {
                 current = target;
                 remaining = remaining[prefix.len()..].strip_prefix('/').unwrap_or("");
                 continue;
-            }
-            for (child, id) in &artifact.children {
-                if let Some(family) = self
-                    .artifacts
-                    .get(id.as_str())
-                    .and_then(|child| child.family.as_ref())
-                    && let Some(folder) = child.strip_suffix(&format!("/{id}"))
-                    && (remaining == folder
-                        || remaining
-                            .strip_prefix(folder)
-                            .is_some_and(|rest| rest.starts_with('/')))
-                {
-                    if listing && remaining == folder {
-                        break;
-                    }
-                    return Err(ScopeError(format!(
-                        "Artifact path is inside the folder of Artifact family {}; address one of its instances as {folder}/<instance>/<path>.",
-                        family.name
-                    )));
-                }
             }
             break;
         }
@@ -410,11 +373,6 @@ fn reference_target<'a>(
         .get(owner)
         .ok_or_else(|| ScopeError(format!("Unknown Artifact: {owner}")))?;
     let target = artifact.mounts.get(name).map_or(name, String::as_str);
-    if config.families.contains_key(target) {
-        return Err(ScopeError(format!(
-            "Reference {{{name}}} names an Artifact family; reference one of its instances."
-        )));
-    }
     config
         .artifacts
         .get_key_value(target)
@@ -475,17 +433,10 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             });
         }
         for (alias, source) in &artifact.mounts {
-            if config.families.contains_key(source) {
-                return Err(error(format!(
-                    "Mount target {source} in {id} is an Artifact family; mount one of its instances."
-                )));
-            }
             if !config.artifacts.contains_key(source) {
                 return Err(error(format!("Unknown mount target {source} in {id}.")));
             }
-            if (config.artifacts.contains_key(alias) || config.families.contains_key(alias))
-                && alias != source
-            {
+            if config.artifacts.contains_key(alias) && alias != source {
                 return Err(error(format!("Ambiguous mount alias {alias} in {id}.")));
             }
             match fs::symlink_metadata(config.root.join(&artifact.path).join(alias)) {

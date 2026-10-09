@@ -189,7 +189,7 @@ pub enum Command {
 #[derive(Debug, Args)]
 #[group(multiple = false)]
 pub struct SelectionArgs {
-    /// Select one Artifact or every instance of a family.
+    /// Select one Artifact.
     artifact: Option<String>,
     /// Select one qualified Eval ID.
     #[arg(long, value_name = "ID")]
@@ -197,13 +197,13 @@ pub struct SelectionArgs {
     /// Select comma-separated qualified Eval IDs.
     #[arg(long, value_name = "CSV")]
     evals: Option<String>,
-    /// Select comma-separated Artifact or family names.
+    /// Select comma-separated Artifact names.
     #[arg(long, value_name = "CSV")]
     artifacts: Option<String>,
     /// Read Eval IDs from a JSON array or one ID per line.
     #[arg(long, value_name = "PATH")]
     evals_file: Option<PathBuf>,
-    /// Read Artifact or family names from a JSON array or one ID per line.
+    /// Read Artifact names from a JSON array or one ID per line.
     #[arg(long, value_name = "PATH")]
     artifacts_file: Option<PathBuf>,
     /// Select every Artifact.
@@ -301,9 +301,9 @@ impl ModelProvider {
 pub enum ConfigCommand {
     /// Validate declarations and unique Artifact/Eval ids.
     Check,
-    /// Inspect full static definitions, relations, cycles, and families.
+    /// Inspect full static definitions, relations, and cycles.
     Graph {
-        /// Select one Artifact or family and its required closure; defaults to all.
+        /// Select one Artifact and its required closure; defaults to all.
         artifact: Option<String>,
     },
 }

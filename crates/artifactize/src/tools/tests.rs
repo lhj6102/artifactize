@@ -596,7 +596,7 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
 }
 
 #[tokio::test]
-async fn json_scope_contains_mount_children_and_family_material() {
+async fn json_scope_contains_only_paths_mounts_and_children() {
     let fixture = Fixture::new(command());
     let mut root: Value =
         serde_json::from_str(&fs::read_to_string(fixture.repo.join("artifactize.json")).unwrap())
@@ -607,8 +607,7 @@ async fn json_scope_contains_mount_children_and_family_material() {
     fs::create_dir_all(fixture.repo.join("cases")).unwrap();
     fs::write(
         fixture.repo.join("cases/artifactize.json"),
-        json!({"name":"cases","family":{"instances":{"leaf":{"material":["input.txt"]}}}})
-            .to_string(),
+        json!({"name":"leaf"}).to_string(),
     )
     .unwrap();
     fs::write(fixture.repo.join("cases/input.txt"), "material").unwrap();
@@ -634,12 +633,13 @@ async fn json_scope_contains_mount_children_and_family_material() {
         panic!("{result:?}")
     };
     assert_eq!(data["a"]["mounts"], json!({"alias":"leaf"}));
-    assert_eq!(data["a"]["children"], json!({"cases/leaf":"leaf"}));
+    assert_eq!(data["a"]["children"], json!({"cases":"leaf"}));
     assert_eq!(data["leaf"]["path"], json!(fixture.repo.join("cases")));
     assert_eq!(
-        data["leaf"]["family"],
-        json!({"name":"cases","material":["input.txt"]})
+        data["leaf"],
+        json!({"path":fixture.repo.join("cases"),"children":{},"mounts":{}})
     );
+    assert_eq!(data["a"].as_object().unwrap().len(), 3);
 }
 
 #[tokio::test]

@@ -251,14 +251,7 @@ impl<'a> Registry<'a> {
         let mut scoped = serde_json::Map::new();
         for (id, artifact) in &self.scope.artifacts {
             let path = scope::scoped_path(&self.config.root, &artifact.path).map_err(|_| ())?;
-            let mut entry =
-                json!({"path":path,"children":artifact.children,"mounts":artifact.mounts});
-            if let Some(family) = &artifact.family {
-                for material in &family.material {
-                    scope::scoped_path(&path, Path::new(material)).map_err(|_| ())?;
-                }
-                entry["family"] = json!({"name":family.name,"material":family.material});
-            }
+            let entry = json!({"path":path,"children":artifact.children,"mounts":artifact.mounts});
             scoped.insert((*id).into(), entry);
         }
         let mut context = json!({"artifactId":owner,"artifactPath":cwd,"scope":scoped});
