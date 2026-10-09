@@ -186,6 +186,9 @@ fn style(view: &EvalView) -> (&'static str, Tone, Weight) {
 
 /// Shown X per row; the rest become `+N`.
 const SHOWN: usize = 2;
+/// A shown text field keeps this many characters of its first line, enough for a short value
+/// or the start of a sentence while two fields still fit on one row.
+const SHOWN_TEXT: usize = 24;
 
 /// `cli ◐ in progress`, or `a ◐, b ? +1`; an ERROR-failed X asks for a retry.
 fn tokens(states: &States, x: &[String], glyphs: bool) -> Vec<Segment> {
@@ -243,7 +246,7 @@ fn findings(result: Option<&Value>) -> String {
             Value::Object(fields) => format!("{key} {{{}}}", fields.len()),
             Value::String(text) => {
                 let text = text.lines().next().unwrap_or_default();
-                let mut short: String = text.chars().take(24).collect();
+                let mut short: String = text.chars().take(SHOWN_TEXT).collect();
                 if short.len() < text.len() {
                     short.push('…');
                 }

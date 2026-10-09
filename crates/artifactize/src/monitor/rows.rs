@@ -29,6 +29,8 @@ const CHANGED_MARK: &str = " *";
 /// A full-width row's name column never narrows below its glyph and the status gap, so a deep
 /// node keeps its glyph even when the tree is barely wider than the indentation.
 const MIN_COLUMN: usize = GLYPH + STATUS_GAP;
+/// Names take at most half the full tree's width, so the status text always keeps the rest.
+const NAME_SHARE: usize = 2;
 
 pub(super) fn color(tone: Tone) -> Color {
     match tone {
@@ -89,7 +91,7 @@ pub(crate) fn fit(text: &str, max: usize) -> String {
     fitted
 }
 
-fn lead(depth: usize) -> usize {
+pub(super) fn lead(depth: usize) -> usize {
     MARKER + depth * INDENT + FOLD
 }
 
@@ -103,7 +105,7 @@ fn column(nodes: &[Node], depth: usize, total: usize) -> usize {
         })
         .max()
         .unwrap_or(0);
-    widest.min(total / 2)
+    widest.min(total / NAME_SHARE)
 }
 
 pub(super) struct Layout<'h> {

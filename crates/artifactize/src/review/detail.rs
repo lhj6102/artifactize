@@ -24,6 +24,8 @@ use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 /// The expanded instruction (or Technical section) takes this share of the body height.
 const EXPANDED: u16 = 70;
+/// A bordered box never shrinks below one line of text between its borders.
+const MIN_BOX: u16 = 3;
 /// Instruction rows kept above the tools and fields once the review is claimed or completed.
 const FOLDED: u16 = 2;
 /// Width shares of the tools column with and without focus.
@@ -569,7 +571,7 @@ impl Review {
             .wrap(Wrap { trim: false })
             .line_count(body.width.saturating_sub(2));
         let height = if expanded {
-            (body.height * EXPANDED / 100).max(3)
+            (body.height * EXPANDED / 100).max(MIN_BOX)
         } else if summary {
             (u16::try_from(rows).unwrap_or(u16::MAX).saturating_add(2))
                 .min(body.height.saturating_sub(2))
@@ -666,7 +668,7 @@ impl Review {
                 rows.push((name, index));
             }
         }
-        let height = (rows.len().max(1) as u16 + 2).min((area.height / 2).max(3));
+        let height = (rows.len().max(1) as u16 + 2).min((area.height / 2).max(MIN_BOX));
         let [list, output] =
             Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
         let block = Block::bordered()

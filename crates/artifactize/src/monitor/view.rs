@@ -4,7 +4,7 @@ use super::{
     input::{Button, Hits},
     layout::{self, Density, Hints},
     model::{self, Section},
-    rows::{fit, plain},
+    rows::{fit, lead, plain},
 };
 use ratatui::{
     Frame,
@@ -29,6 +29,26 @@ const PEEK_WIDTH: usize = 512;
 const TREE_ROWS: u16 = 4;
 /// Compact Run ids keep this many trailing characters.
 const SHORT_ID: usize = 6;
+/// A status glyph and the space after it.
+const GLYPH_GAP: usize = 2;
+/// Between the Run's status and its headline.
+const HEADLINE_SEPARATOR: &str = " · ";
+/// A bordered pane's natural width adds its two borders and one spare column, so the widest
+/// row ends before the right border instead of touching it.
+const PANE_CHROME: usize = 3;
+/// Table columns are one column apart (ratatui's default spacing).
+const COLUMN_SPACING: usize = 1;
+/// Each level of the Scope list indents by two columns.
+const SCOPE_INDENT: usize = 2;
+/// The label before a running Agent's last transcript line in the peek.
+const LAST_LABEL: &str = "last: ";
+/// The help popup stays this wide, so its key column and descriptions read as a table.
+const HELP_WIDTH: u16 = 72;
+/// Beside the evidence, the sections take this share of the Detail's width, as the evidence
+/// lines (commands, paths, output) are usually the longer ones.
+const SECTIONS_BESIDE: u16 = 45;
+/// Above the evidence, the sections take half the Detail's height.
+const SECTIONS_ABOVE: u16 = 50;
 
 pub(crate) fn clock(time: OffsetDateTime) -> String {
     format!(
@@ -167,13 +187,11 @@ fn width(text: &str) -> usize {
 fn cap(columns: usize) -> u16 {
     u16::try_from(columns).unwrap_or(u16::MAX)
 }
-/// Widest tree row: indentation, the fold marker, the glyph and the text.
+/// Widest tree row: the marker, indentation and fold symbol, then the glyph and the text.
 fn tree_width(nodes: &[model::Node], depth: usize) -> usize {
     nodes
         .iter()
-        .map(|node| {
-            (depth * 2 + 3 + width(&node.line())).max(tree_width(&node.children, depth + 1))
-        })
+        .map(|node| (lead(depth) + width(&node.line())).max(tree_width(&node.children, depth + 1)))
         .max()
         .unwrap_or(0)
 }
@@ -227,11 +245,12 @@ const RUN_BOUND: usize = 80;
 
 /// Columns of the Run headline and its attention lines.
 fn strip_width(strip: &model::Strip) -> usize {
-    let headline = width(&strip.status) + width(&strip.headline) + 5;
+    let headline =
+        GLYPH_GAP + width(&strip.status) + width(HEADLINE_SEPARATOR) + width(&strip.headline);
     let attention = strip
         .attention
         .iter()
-        .map(|(_, text)| width(text) + 2)
+        .map(|(_, text)| GLYPH_GAP + width(text))
         .max()
         .unwrap_or(0);
     headline.max(attention)
@@ -284,7 +303,7 @@ impl Monitor {
                 let strip = self.run.as_ref().map_or(0, |(run, requests)| {
                     strip_width(&model::strip(&model::progress(run, requests, now)))
                 });
-                cap((tree_width(nodes, 0).max(strip) + 3).min(RUN_BOUND))
+                cap((tree_width(nodes, 0).max(strip) + PANE_CHROME).min(RUN_BOUND))
             }),
         };
         let plan = layout::plan(body, self.focus, hints);
@@ -412,7 +431,7 @@ impl Monitor {
             .catalog
             .rows
             .iter()
-            .map(|row| row.depth * 2 + width(&row.label))
+            .map(|row| row.depth * SCOPE_INDENT + width(&row.label))
             .max()
             .unwrap_or(0);
         let badge = self
@@ -422,7 +441,7 @@ impl Monitor {
             .map(|row| width(&row.badge.text()))
             .max()
             .unwrap_or(0);
-        cap(label + badge + 4)
+        cap(label + COLUMN_SPACING + badge + PANE_CHROME)
     }
     fn draw_scope(&mut self, frame: &mut Frame, area: Rect, density: Density) {
         let focused = self.focus == Pane::Repositories;
@@ -442,13 +461,17 @@ impl Monitor {
                 let parts = parts(row);
                 parts
                     .iter()
-                    .map(|(_, count)| count.to_string().len() as u16 + 2)
+                    .map(|(_, count)| cap(count.to_string().len() + GLYPH_GAP))
                     .sum::<u16>()
             })
             .max()
             .unwrap_or(0);
         let rows = self.catalog.rows.iter().map(|row| {
-            let label = format!("{}{}", "  ".repeat(row.depth), plain(&row.label));
+            let label = format!(
+                "{}{}",
+                " ".repeat(row.depth * SCOPE_INDENT),
+                plain(&row.label)
+            );
             let label = if row.fold.is_some() {
                 Span::raw(label).dark_gray()
             } else {
@@ -482,7 +505,7 @@ impl Monitor {
             .iter()
             .map(|row| run_cells(row, workspace))
             .collect();
-        cap(total(&run_widths(&rows, usize::MAX)) + 3)
+        cap(total(&run_widths(&rows, usize::MAX)) + PANE_CHROME)
     }
     fn draw_runs(&mut self, frame: &mut Frame, area: Rect, density: Density, now: OffsetDateTime) {
         let focused = self.focus == Pane::Runs;
@@ -514,11 +537,15 @@ impl Monitor {
             });
             (
                 rows.collect(),
-                vec![Constraint::Length(SHORT_ID as u16 + 2), Constraint::Fill(1)],
+                vec![
+                    Constraint::Length(cap(GLYPH_GAP + SHORT_ID)),
+                    Constraint::Fill(1),
+                ],
             )
         } else {
             let cells: Vec<_> = rows.iter().map(|row| run_cells(row, workspace)).collect();
-            let widths = run_widths(&cells, usize::from(area.width.saturating_sub(3)));
+            let room = usize::from(area.width).saturating_sub(PANE_CHROME);
+            let widths = run_widths(&cells, room);
             let rows = rows.iter().zip(&cells).map(|(row, cells)| {
                 Row::new(
                     cells
@@ -587,7 +614,7 @@ impl Monitor {
             glyph(&strip.status),
             " ".into(),
             status(&strip.status),
-            format!(" · {headline}").into(),
+            format!("{HEADLINE_SEPARATOR}{headline}").into(),
         ]))
         .wrap(Wrap { trim: false });
         // The headline wraps into at most a third of the pane; its height is measured after
@@ -618,7 +645,11 @@ impl Monitor {
             attention.extend(strip.attention.iter().take(shown).map(|(state, text)| {
                 Line::from(vec![
                     glyph(state),
-                    format!(" {}", fit(text, usize::from(inner.width).saturating_sub(2))).into(),
+                    format!(
+                        " {}",
+                        fit(text, usize::from(inner.width).saturating_sub(GLYPH_GAP))
+                    )
+                    .into(),
                 ])
             }));
             if shown < items && room > 0 {
@@ -700,8 +731,11 @@ impl Monitor {
                     });
                     let last = last.unwrap_or_else(|| "reading the session…".into());
                     lines.push(Line::from(vec![
-                        Span::styled("last: ", Modifier::BOLD),
-                        Span::raw(fit(&last, usize::from(inner.width).saturating_sub(6))),
+                        Span::styled(LAST_LABEL, Modifier::BOLD),
+                        Span::raw(fit(
+                            &last,
+                            usize::from(inner.width).saturating_sub(width(LAST_LABEL)),
+                        )),
                     ]));
                 }
                 None if !peek.text.is_empty() => {
@@ -825,10 +859,13 @@ impl Monitor {
                 frame.render_widget(sections, content);
             } else {
                 let [left, right] = if content.width >= SIDE_BY_SIDE {
-                    Layout::horizontal([Constraint::Percentage(45), Constraint::Fill(1)])
-                        .areas(content)
+                    Layout::horizontal([
+                        Constraint::Percentage(SECTIONS_BESIDE),
+                        Constraint::Fill(1),
+                    ])
+                    .areas(content)
                 } else {
-                    Layout::vertical([Constraint::Percentage(50), Constraint::Fill(1)])
+                    Layout::vertical([Constraint::Percentage(SECTIONS_ABOVE), Constraint::Fill(1)])
                         .areas(content)
                 };
                 self.hits.areas = [left, right];
@@ -972,7 +1009,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
             }
         })
         .collect();
-    let width = area.width.min(72);
+    let width = area.width.min(HELP_WIDTH);
     let height = area.height.min(lines.len() as u16 + 2);
     let area = Rect::new(
         area.x + (area.width - width) / 2,

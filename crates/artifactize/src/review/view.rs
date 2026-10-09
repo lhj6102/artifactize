@@ -27,6 +27,8 @@ const WAITING_WIDTH: u16 = 8;
 /// A long repository path counts only this far towards the Full list's width, so one deep
 /// checkout does not push the Preview off a wide terminal.
 const REPO_WIDTH: u16 = 40;
+/// A popup takes this share of the terminal's width, leaving the review visible around it.
+const POPUP_WIDTH: u16 = 80;
 /// The Full waiting list's column titles; a column is never narrower than its title.
 const HEADERS: [&str; 5] = ["EVAL", "REQUEST", "CLAIM", "WAITING", "REPO"];
 
@@ -51,7 +53,7 @@ pub(super) fn lines(fields: Vec<(&'static str, String)>) -> Vec<Line<'static>> {
 
 fn popup(frame: &mut Frame, area: Rect, title: String, text: Vec<Line<'static>>) {
     let height = (text.len() as u16 + 2).min(area.height);
-    let [area] = Layout::horizontal([Constraint::Percentage(80)])
+    let [area] = Layout::horizontal([Constraint::Percentage(POPUP_WIDTH)])
         .flex(Flex::Center)
         .areas(area);
     let [area] = Layout::vertical([Constraint::Length(height)])
