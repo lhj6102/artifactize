@@ -31,7 +31,12 @@ fn declare(path: &Path, declaration: Value) {
 }
 
 fn eval(id: &str, profile: Value, instruction: &str) -> Value {
-    json!({"id":id,"title":format!("Check {id}"),"profile":profile,"payload":{"instruction":instruction}})
+    json!({
+        "id":id,
+        "title":format!("Check {id}"),
+        "profile":profile,
+        "payload":{"instruction":instruction},
+    })
 }
 
 fn runtime(command: &str, args: &[&str]) -> Value {
@@ -70,8 +75,13 @@ impl Fixture {
         );
         declare(
             &alpha.join("red"),
-            json!({"name":"red","fingerprint":{"script":{"command":"echo","args":["red-v1"]}},
-                "evals":[eval("check", runtime("sh", &["-c", "echo finding; exit 7"]), "Check {input}.")]}),
+            json!({
+                "name":"red",
+                "fingerprint":{"script":{"command":"echo","args":["red-v1"]}},
+                "evals":[
+                    eval("check", runtime("sh", &["-c", "echo finding; exit 7"]), "Check {input}."),
+                ],
+            }),
         );
         declare(
             &alpha.join("red/part"),

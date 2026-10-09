@@ -38,8 +38,18 @@ impl Fixture {
         let repo = self.root.path().join(name);
         let runtime = json!({"kind":"runtime","command":bin("/bin/true"),"args":[]});
         // web/tests is RED when its version says "broken".
-        let web = json!({"kind":"runtime","command":bin("/bin/sh"),"args":["-c","! grep -q broken version"]});
-        let agent = json!({"kind":"agent","backend":"openai","model":"fake-exact-model","reasoning":"high","timeout_ms":15000});
+        let web = json!({
+            "kind":"runtime",
+            "command":bin("/bin/sh"),
+            "args":["-c","! grep -q broken version"],
+        });
+        let agent = json!({
+            "kind":"agent",
+            "backend":"openai",
+            "model":"fake-exact-model",
+            "reasoning":"high",
+            "timeout_ms":15000,
+        });
         let artifacts = [
             ("api", "tests", runtime.clone(), "Run the API tests."),
             ("web", "tests", web, "Run the web tests."),
@@ -56,9 +66,18 @@ impl Fixture {
         for ((artifact, eval, profile, instruction), version) in artifacts.into_iter().zip(versions)
         {
             let folder = repo.join(artifact);
-            let mut declaration = json!({"id":eval,"title":eval,"profile":profile,"payload":{"instruction":instruction}});
+            let mut declaration = json!({
+                "id":eval,
+                "title":eval,
+                "profile":profile,
+                "payload":{"instruction":instruction},
+            });
             if artifact == "docs" {
-                declaration["pass_schema"] = json!({"type":"object","properties":{"note":{"type":"string"}},"required":["note"]});
+                declaration["pass_schema"] = json!({
+                    "type":"object",
+                    "properties":{"note":{"type":"string"}},
+                    "required":["note"],
+                });
             }
             write(
                 &folder,

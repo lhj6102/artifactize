@@ -210,12 +210,17 @@ fn queued_for_a_slot_or_jobs_differs_from_waiting_for_an_artifact() {
     for (extra, queue, text) in [
         (json!({}), Queue::Jobs, "queued"),
         (
-            json!({"blockedReason":"Waiting for a free codex slot: all 2 are in use on this machine (limits.json)."}),
+            json!({
+                "blockedReason":"Waiting for a free codex slot: all 2 are in use on this machine (limits.json).",
+            }),
             Queue::Slot("codex".into()),
             "queued · codex slots full",
         ),
         (
-            json!({"executionId":"execution-1","blockedReason":"Waiting for the active execution of this reuse key."}),
+            json!({
+                "executionId":"execution-1",
+                "blockedReason":"Waiting for the active execution of this reuse key.",
+            }),
             Queue::Joined,
             "queued · joins the running review",
         ),
@@ -460,8 +465,10 @@ fn dependency_evals_wait_for_their_artifacts_with_at_most_two_x() {
         request(
             "player/ready",
             "WAIT_DEPENDENCY",
-            json!({"profile":{"kind":"dependency","dependsOn":["player-movement","hero-art","level"]},
-                "deps":["player-movement","hero-art","level"]}),
+            json!({
+                "profile":{"kind":"dependency","dependsOn":["player-movement","hero-art","level"]},
+                "deps":["player-movement","hero-art","level"],
+            }),
         ),
     ];
     let (run, requests) = saved(definitions, true, requests);
@@ -641,9 +648,13 @@ fn upstream_index_falls_back_to_relations_and_request_deps() {
             {"source":"a","target":"b","kind":"mount","alias":"base"},
             {"source":"b","target":"a","kind":"child","path":"a"},
             {"source":"a","target":"c","kind":"instruction","name":"a","evalId":"c/x"},
-            {"source":"c","target":"d","kind":"child","path":"c"}
+            {"source":"c","target":"d","kind":"child","path":"c"},
         ],
-        "components":[{"id":0,"artifacts":["a","b"],"cyclic":true},{"id":1,"artifacts":["c"]},{"id":2,"artifacts":["d"]}]
+        "components":[
+            {"id":0,"artifacts":["a","b"],"cyclic":true},
+            {"id":1,"artifacts":["c"]},
+            {"id":2,"artifacts":["d"]},
+        ],
     });
     let (run, requests) = saved(definitions, true, Vec::new());
     assert_eq!(
@@ -680,14 +691,27 @@ fn upstream_index_falls_back_to_relations_and_request_deps() {
 #[test]
 fn waits_for_detail_lists_upstream_with_origins_and_pending_evals() {
     let definitions = json!({
-        "artifacts":{"code-style":{"path":"s"},"cli":{"path":"c"},"engine":{"path":"e","basis":true}},
+        "artifacts":{
+            "code-style":{"path":"s"},
+            "cli":{"path":"c"},
+            "engine":{"path":"e","basis":true},
+        },
         "evals":[runtime("code-style/approved"), runtime("cli/follows-style")],
         "relations":[
-            {"source":"code-style","target":"cli","kind":"instruction","name":"code-style","evalId":"cli/follows-style"},
-            {"source":"engine","target":"cli","kind":"mount","alias":"base"}
+            {
+                "source":"code-style",
+                "target":"cli",
+                "kind":"instruction",
+                "name":"code-style",
+                "evalId":"cli/follows-style",
+            },
+            {"source":"engine","target":"cli","kind":"mount","alias":"base"},
         ],
-        "components":[{"id":0,"artifacts":["code-style"]},{"id":1,"artifacts":["engine"]},
-            {"id":2,"artifacts":["cli"],"dependencies":[0,1]}]
+        "components":[
+            {"id":0,"artifacts":["code-style"]},
+            {"id":1,"artifacts":["engine"]},
+            {"id":2,"artifacts":["cli"],"dependencies":[0,1]},
+        ],
     });
     let requests = vec![
         request(

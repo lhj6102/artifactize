@@ -68,27 +68,50 @@ pub(crate) fn description(builtin: Builtin) -> &'static str {
 }
 
 pub(crate) fn input_schema(builtin: Builtin) -> Value {
-    let path = json!({"type":"string","maxLength":scope::MAX_PATH_UNITS,"description":"Logical path relative to the tool's Artifact, without the Artifact's name; no absolute paths, dot components, backslashes or symlinks. Empty means the root."});
+    let path = json!({
+        "type":"string",
+        "maxLength":scope::MAX_PATH_UNITS,
+        "description":"Logical path relative to the tool's Artifact, without the Artifact's name; no absolute paths, dot components, backslashes or symlinks. Empty means the root.",
+    });
     let pattern = json!({"type":"string","minLength":1,"maxLength":MAX_PATTERN_UNITS});
     let integer =
         |min, max, default| json!({"type":"integer","minimum":min,"maximum":max,"default":default});
     let (properties, required) = match builtin {
         Builtin::Read => (
-            json!({"path":path,"offset":integer(1, crate::types::MAX_SAFE_JSON_INTEGER, 1),"limit":integer(1,MAX_READ_LINES as u64,DEFAULT_READ_LINES as u64)}),
+            json!({
+                "path":path,
+                "offset":integer(1, crate::types::MAX_SAFE_JSON_INTEGER, 1),
+                "limit":integer(1, MAX_READ_LINES as u64, DEFAULT_READ_LINES as u64),
+            }),
             vec!["path"],
         ),
         Builtin::List => (
-            json!({"path":path,"offset":integer(0,crate::types::MAX_SAFE_JSON_INTEGER,0),"limit":integer(1,MAX_RESULTS as u64,MAX_RESULTS as u64)}),
+            json!({
+                "path":path,
+                "offset":integer(0, crate::types::MAX_SAFE_JSON_INTEGER, 0),
+                "limit":integer(1, MAX_RESULTS as u64, MAX_RESULTS as u64),
+            }),
             vec![],
         ),
         Builtin::Glob => (json!({"pattern":pattern,"path":path}), vec!["pattern"]),
         Builtin::Grep => (
-            json!({"pattern":pattern,"path":path,"glob":pattern,"caseInsensitive":{"type":"boolean","default":false},"maxResults":integer(1,MAX_RESULTS as u64,MAX_RESULTS as u64)}),
+            json!({
+                "pattern":pattern,
+                "path":path,
+                "glob":pattern,
+                "caseInsensitive":{"type":"boolean","default":false},
+                "maxResults":integer(1, MAX_RESULTS as u64, MAX_RESULTS as u64),
+            }),
             vec!["pattern"],
         ),
         Builtin::ViewImage => (json!({"path":path}), vec!["path"]),
     };
-    json!({"type":"object","properties":properties,"required":required,"additionalProperties":false})
+    json!({
+        "type":"object",
+        "properties":properties,
+        "required":required,
+        "additionalProperties":false,
+    })
 }
 
 pub(super) fn call(
@@ -238,9 +261,15 @@ impl Reader<'_> {
         }
         let count = lines.len();
         let mut result = json!({
-            "artifactId":self.owner,"resolvedArtifactId":location.artifact_id,"path":path,
-            "lines":lines,"startLine":offset,"endLine":if count == 0 { None } else { Some(offset + count - 1) },
-            "lineCount":count,"truncated":!complete,"nextOffset":if complete { None } else { Some(offset + count) }
+            "artifactId":self.owner,
+            "resolvedArtifactId":location.artifact_id,
+            "path":path,
+            "lines":lines,
+            "startLine":offset,
+            "endLine":if count == 0 { None } else { Some(offset + count - 1) },
+            "lineCount":count,
+            "truncated":!complete,
+            "nextOffset":if complete { None } else { Some(offset + count) },
         });
         if complete {
             let total = current - 1 + usize::from(partial_line);
@@ -343,9 +372,14 @@ impl Reader<'_> {
             return Err("Listing entry exceeds 512 KiB; narrow the path.".into());
         }
         let next = offset + entries.len();
-        Ok(
-            json!({"artifactId":self.owner,"path":path,"entries":entries,"totalEntries":total,"truncated":next<total,"nextOffset":if next<total {Some(next)} else {None}}),
-        )
+        Ok(json!({
+            "artifactId":self.owner,
+            "path":path,
+            "entries":entries,
+            "totalEntries":total,
+            "truncated":next<total,
+            "nextOffset":if next<total {Some(next)} else {None},
+        }))
     }
 
     fn files(&self, path: &str) -> Result<(BTreeSet<String>, bool), String> {
@@ -491,7 +525,7 @@ impl Reader<'_> {
                 if !regex.is_match(line) {
                     continue;
                 }
-                let entry = json!({"path":file,"line":index+1,"text":line});
+                let entry = json!({"path":file,"line":index + 1,"text":line});
                 bytes += serde_json::to_vec(&entry).unwrap().len() + 1;
                 if matches.len() == limit || bytes > RESULT_BYTES {
                     truncated = true;

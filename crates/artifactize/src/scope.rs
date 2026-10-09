@@ -178,7 +178,8 @@ pub(crate) enum OpenError {
     Refused(#[from] ScopeError),
 }
 
-/// Open each component relative to its pinned parent, so replacement cannot redirect a read through a link.
+/// Open each component relative to its pinned parent, so replacement cannot redirect a read
+/// through a link.
 pub(crate) fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, OpenError> {
     if !root.is_absolute() || artifact.path.is_absolute() {
         return Err(
@@ -614,7 +615,10 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 && !fs::symlink_metadata(config.root.join(artifact.folder()).join(input))
                     .is_ok_and(|metadata| metadata.is_dir())
             {
-                return Err(error("Artifact declarations (*.artf) cannot be explicit artifactsum inputs; declarations are excluded from artifactsum.".into()));
+                return Err(error(
+                    "Artifact declarations (*.artf) cannot be explicit artifactsum inputs; declarations are excluded from artifactsum."
+                        .into(),
+                ));
             }
             let location = scope
                 .resolve_path(id, input)

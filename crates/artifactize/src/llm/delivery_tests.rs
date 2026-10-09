@@ -70,13 +70,56 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
             .await
             .unwrap();
         let early = [
-            json!({"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_public","summary":[]}}),
-            json!({"type":"response.reasoning_summary_text.delta","item_id":"rs_public","output_index":0,"summary_index":0,"delta":"Public first "}),
-            json!({"type":"response.reasoning_text.delta","item_id":"rs_public","output_index":0,"delta":"PRIVATE_RAW_REASONING"}),
-            json!({"type":"response.reasoning_summary_text.delta","item_id":"rs_public","output_index":0,"summary_index":0,"delta":"public second"}),
-            json!({"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_text","role":"assistant","status":"in_progress","content":[]}}),
-            json!({"type":"response.output_text.delta","item_id":"msg_text","output_index":1,"content_index":0,"delta":"Visible first "}),
-            json!({"type":"response.output_text.delta","item_id":"msg_text","output_index":1,"content_index":0,"delta":"visible second"}),
+            json!({
+                "type":"response.output_item.added",
+                "output_index":0,
+                "item":{"type":"reasoning","id":"rs_public","summary":[]},
+            }),
+            json!({
+                "type":"response.reasoning_summary_text.delta",
+                "item_id":"rs_public",
+                "output_index":0,
+                "summary_index":0,
+                "delta":"Public first ",
+            }),
+            json!({
+                "type":"response.reasoning_text.delta",
+                "item_id":"rs_public",
+                "output_index":0,
+                "delta":"PRIVATE_RAW_REASONING",
+            }),
+            json!({
+                "type":"response.reasoning_summary_text.delta",
+                "item_id":"rs_public",
+                "output_index":0,
+                "summary_index":0,
+                "delta":"public second",
+            }),
+            json!({
+                "type":"response.output_item.added",
+                "output_index":1,
+                "item":{
+                    "type":"message",
+                    "id":"msg_text",
+                    "role":"assistant",
+                    "status":"in_progress",
+                    "content":[],
+                },
+            }),
+            json!({
+                "type":"response.output_text.delta",
+                "item_id":"msg_text",
+                "output_index":1,
+                "content_index":0,
+                "delta":"Visible first ",
+            }),
+            json!({
+                "type":"response.output_text.delta",
+                "item_id":"msg_text",
+                "output_index":1,
+                "content_index":0,
+                "delta":"visible second",
+            }),
         ];
         for (index, event) in early.into_iter().enumerate() {
             let bytes = frame(event, index).into_bytes();
@@ -85,7 +128,35 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
             socket.write_all(&bytes[split..]).await.unwrap();
         }
         release_rx.await.unwrap();
-        let response = json!({"id":"resp_fixture","object":"response","created_at":1,"model":"fixture-model","status":"completed","output":[{"type":"reasoning","id":"rs_public","summary":[{"type":"summary_text","text":"Public first public second"}],"encrypted_content":"PRIVATE_ENCRYPTED_PAYLOAD"},{"type":"message","id":"msg_text","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Visible first visible second","annotations":[]}]}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}});
+        let response = json!({
+            "id":"resp_fixture",
+            "object":"response",
+            "created_at":1,
+            "model":"fixture-model",
+            "status":"completed",
+            "output":[
+                {
+                    "type":"reasoning",
+                    "id":"rs_public",
+                    "summary":[{"type":"summary_text","text":"Public first public second"}],
+                    "encrypted_content":"PRIVATE_ENCRYPTED_PAYLOAD",
+                },
+                {
+                    "type":"message",
+                    "id":"msg_text",
+                    "role":"assistant",
+                    "status":"completed",
+                    "content":[
+                        {
+                            "type":"output_text",
+                            "text":"Visible first visible second",
+                            "annotations":[],
+                        },
+                    ],
+                },
+            ],
+            "usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2},
+        });
         socket
             .write_all(
                 frame(json!({"type":"response.completed","response":response}), 7).as_bytes(),
@@ -221,7 +292,22 @@ async fn cancelled_text_keeps_partial_and_does_not_retry() {
             )
             .await
             .unwrap();
-        socket.write_all(frame(json!({"type":"response.output_text.delta","item_id":"message","output_index":0,"content_index":0,"delta":"partial visible"}),0).as_bytes()).await.unwrap();
+        socket
+            .write_all(
+                frame(
+                    json!({
+                        "type":"response.output_text.delta",
+                        "item_id":"message",
+                        "output_index":0,
+                        "content_index":0,
+                        "delta":"partial visible",
+                    }),
+                    0,
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
         let _ = stop_rx.await;
     });
     let client = Client::Openai(Box::new(

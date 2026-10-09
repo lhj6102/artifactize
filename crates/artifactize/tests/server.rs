@@ -131,12 +131,25 @@ fn key(seed: u8) -> String {
 }
 
 fn record(key: &str, kind: &str, verdict: &str) -> Value {
-    json!({"schema":2,"key":key,"evalDefHash":HASH,"fingerprints":{"app":"app-v1"},"verdict":verdict,
-        "evalId":"app/check","runId":"run-a","requestId":"run-a-1","executionId":"execution-run-a-1",
-        "profile":{"kind":kind},"options":{},"result":{"verdict":verdict},"usage":null,
+    json!({
+        "schema":2,
+        "key":key,
+        "evalDefHash":HASH,
+        "fingerprints":{"app":"app-v1"},
+        "verdict":verdict,
+        "evalId":"app/check",
+        "runId":"run-a",
+        "requestId":"run-a-1",
+        "executionId":"execution-run-a-1",
+        "profile":{"kind":kind},
+        "options":{},
+        "result":{"verdict":verdict},
+        "usage":null,
         "producer":{"name":"alice@laptop","version":"0.5.0"},
-        "startedAt":"2026-10-04T00:00:00Z","completedAt":"2026-10-04T00:00:01Z",
-        "publisher":"mallory"})
+        "startedAt":"2026-10-04T00:00:00Z",
+        "completedAt":"2026-10-04T00:00:01Z",
+        "publisher":"mallory",
+    })
 }
 
 /// Another execution of the same key, completed at `completed_at`.

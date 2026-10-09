@@ -62,10 +62,22 @@ fn json_output(output: &Output) -> Value {
 fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs() {
     let fixture = Fixture::new();
     fixture.write("input/index.artf", r#"{"name":"input"}"#);
-    let mut declaration = json!({"name":"review","mounts":{"source":"input"},"evals":[{
-        "id":"run","title":"Run","profile":{"kind":"runtime","command":"missing-command","args":["{source}/missing-file"]},
-        "payload":{"instruction":"Read {source}."}
-    }]});
+    let mut declaration = json!({
+        "name":"review",
+        "mounts":{"source":"input"},
+        "evals":[
+            {
+                "id":"run",
+                "title":"Run",
+                "profile":{
+                    "kind":"runtime",
+                    "command":"missing-command",
+                    "args":["{source}/missing-file"],
+                },
+                "payload":{"instruction":"Read {source}."},
+            },
+        ],
+    });
     fixture.write("review/index.artf", &declaration.to_string());
     let output = fixture
         .command()
@@ -280,7 +292,10 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
         "Check {source}."
     );
 
-    fixture.write("other/index.artf", r#"{"name":"other","evals":[{"id":"runtime","title":"Other","profile":{"kind":"human"},"payload":{"instruction":"Inspect"}}]}"#);
+    fixture.write(
+        "other/index.artf",
+        r#"{"name":"other","evals":[{"id":"runtime","title":"Other","profile":{"kind":"human"},"payload":{"instruction":"Inspect"}}]}"#,
+    );
     let config = read_workspace_config(&fixture.0).unwrap();
     assert_eq!(config.evals[0].id, "other/runtime");
     fixture.write("other/index.artf", r#"{"name":"review"}"#);

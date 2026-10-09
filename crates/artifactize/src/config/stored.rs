@@ -216,7 +216,15 @@ mod tests {
     fn stored_profiles_preserve_missing_and_null_without_weakening_config() {
         for value in [
             json!({"kind":"agent","backend":"openai","model":"fixture"}),
-            json!({"kind":"agent","backend":"openai","model":"fixture","reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null}),
+            json!({
+                "kind":"agent",
+                "backend":"openai",
+                "model":"fixture",
+                "reasoning":null,
+                "timeoutMs":null,
+                "maxToolCalls":null,
+                "maxTokens":null,
+            }),
             json!({"kind":"runtime","command":"fixture","args":[],"timeoutMs":null}),
             json!({"kind":"runtime","command":"fixture","args":[],"timeoutMs":1000}),
             json!({"kind":"human"}),
@@ -264,7 +272,15 @@ mod tests {
                 .unwrap();
         assert_eq!(
             serde_json::to_value(StoredProfile::from(&config)).unwrap(),
-            json!({"kind":"agent","backend":"openai","model":"fixture","reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null})
+            json!({
+                "kind":"agent",
+                "backend":"openai",
+                "model":"fixture",
+                "reasoning":null,
+                "timeoutMs":null,
+                "maxToolCalls":null,
+                "maxTokens":null,
+            })
         );
     }
 }

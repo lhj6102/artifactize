@@ -29,13 +29,30 @@ impl Fixture {
         fs::write(repo.join("app/page.md"), "# Page\n").unwrap();
         support::declaration::write(
             repo.join("app/index.artf"),
-            json!({"name":"app","fingerprint":{},
-                "views":{"agent_tools":{"sim":{"description":"Simulate {artifactName}.",
-                    "input_schema":{"type":"object","additionalProperties":false},
-                    "protocol":"json","command":bin("/bin/true"),"args":[],
-                    "execution_paths":["bin/sim","rules"]}}},
-                "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},
-                    "payload":{"instruction":"Review the page."}}]})
+            json!({
+                "name":"app",
+                "fingerprint":{},
+                "views":{
+                    "agent_tools":{
+                        "sim":{
+                            "description":"Simulate {artifactName}.",
+                            "input_schema":{"type":"object","additionalProperties":false},
+                            "protocol":"json",
+                            "command":bin("/bin/true"),
+                            "args":[],
+                            "execution_paths":["bin/sim","rules"],
+                        },
+                    },
+                },
+                "evals":[
+                    {
+                        "id":"review",
+                        "title":"Review",
+                        "profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},
+                        "payload":{"instruction":"Review the page."},
+                    },
+                ],
+            })
             .to_string(),
         )
         .unwrap();

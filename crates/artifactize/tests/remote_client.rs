@@ -110,7 +110,12 @@ impl Whoami {
                     )
                 };
                 let body = body.to_string();
-                write!(stream, "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                write!(
+                    stream,
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
             }
         });
         Self {
@@ -158,7 +163,12 @@ fn login_status_overrides_and_logout_against_a_test_server() {
             &token,
             0
         ),
-        json!({"url":server.url,"share":"summary","principal":"alice-laptop","scopes":["read","publish"]})
+        json!({
+            "url":server.url,
+            "share":"summary",
+            "principal":"alice-laptop",
+            "scopes":["read","publish"],
+        })
     );
     let saved = state.join("auth/remote-token.json");
     assert!(support::os::private_file(&saved));

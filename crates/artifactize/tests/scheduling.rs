@@ -71,7 +71,17 @@ impl Fixture {
 }
 
 fn eval(id: &str, script: &str) -> Value {
-    json!({"id":id,"title":"Check","profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script,"sh",id],"timeout_ms":10000},"payload":{"instruction":"Check."}})
+    json!({
+        "id":id,
+        "title":"Check",
+        "profile":{
+            "kind":"runtime",
+            "command":bin("/bin/sh"),
+            "args":["-c",script,"sh",id],
+            "timeout_ms":10000,
+        },
+        "payload":{"instruction":"Check."},
+    })
 }
 
 fn wait_until(mut condition: impl FnMut() -> bool) {
@@ -119,7 +129,11 @@ fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
     wait_until(|| fixture.starts().len() == 1 && fixture.state.join("state.sqlite").exists());
     let database = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     database.busy_timeout(Duration::from_secs(5)).unwrap();
-    database.execute_batch("CREATE TABLE fixture_update_count(count INTEGER); INSERT INTO fixture_update_count VALUES(0); CREATE TRIGGER fixture_budget_updates AFTER UPDATE ON requests WHEN NEW.status='BUDGET_EXHAUSTED' BEGIN UPDATE fixture_update_count SET count=count+1; END;").unwrap();
+    database
+        .execute_batch(
+            "CREATE TABLE fixture_update_count(count INTEGER); INSERT INTO fixture_update_count VALUES(0); CREATE TRIGGER fixture_budget_updates AFTER UPDATE ON requests WHEN NEW.status='BUDGET_EXHAUSTED' BEGIN UPDATE fixture_update_count SET count=count+1; END;",
+        )
+        .unwrap();
     thread::sleep(Duration::from_millis(350));
     let count: i64 = database
         .query_row("SELECT count FROM fixture_update_count", [], |row| {
@@ -139,7 +153,12 @@ fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
 #[test]
 fn expired_human_deadline_still_drains_parallel_runtime_without_rewriting_waiter() {
     let fixture = Fixture::new(vec![
-        json!({"id":"human","title":"Human","profile":{"kind":"human"},"payload":{"instruction":"Review."}}),
+        json!({
+            "id":"human",
+            "title":"Human",
+            "profile":{"kind":"human"},
+            "payload":{"instruction":"Review."},
+        }),
         eval("slow", SLOW),
     ]);
     let child = fixture.spawn(&["--jobs", "2", "--timeout-ms", "10"]);

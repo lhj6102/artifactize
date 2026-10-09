@@ -255,7 +255,12 @@ impl<'a> Registry<'a> {
         let mut scoped = serde_json::Map::new();
         for (id, artifact) in &self.scope.artifacts {
             let path = scope::scoped_path(&self.config.root, &artifact.path).map_err(|_| ())?;
-            let entry = json!({"path":path,"kind":artifact.kind,"children":artifact.children,"mounts":artifact.mounts});
+            let entry = json!({
+                "path":path,
+                "kind":artifact.kind,
+                "children":artifact.children,
+                "mounts":artifact.mounts,
+            });
             scoped.insert((*id).into(), entry);
         }
         let mut context =

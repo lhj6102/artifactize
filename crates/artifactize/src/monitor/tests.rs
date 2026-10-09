@@ -14,11 +14,20 @@ fn now() -> OffsetDateTime {
 
 pub(crate) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
     let mut value = json!({
-        "id":format!("run-1-{}", eval.replace('/', "-")),"runId":"run-1","evalId":eval,"target":eval.split('/').next(),
-        "title":"Title","profile":{"kind":"runtime","command":"true","args":[]},
-        "requestedProfile":{"kind":"runtime","command":"true","args":[]},"evalDefHash":"hash",
-        "payload":{"instruction":"Check."},"references":{},"deps":[],"status":status,
-        "createdAt":"2026-01-01T00:00:00Z","cwd":"/repo"
+        "id":format!("run-1-{}", eval.replace('/', "-")),
+        "runId":"run-1",
+        "evalId":eval,
+        "target":eval.split('/').next(),
+        "title":"Title",
+        "profile":{"kind":"runtime","command":"true","args":[]},
+        "requestedProfile":{"kind":"runtime","command":"true","args":[]},
+        "evalDefHash":"hash",
+        "payload":{"instruction":"Check."},
+        "references":{},
+        "deps":[],
+        "status":status,
+        "createdAt":"2026-01-01T00:00:00Z",
+        "cwd":"/repo",
     });
     value
         .as_object_mut()
@@ -33,8 +42,16 @@ pub(crate) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
 }
 
 fn eval(id: &str, deps: &[&str]) -> Value {
-    json!({"id":id,"target":id.split('/').next(),"deps":deps,
-        "declaration":{"title":"Title","profile":{"kind":"agent","backend":"openai","model":"gpt-x","reasoning":"high"},"payload":{"instruction":"Look."}}})
+    json!({
+        "id":id,
+        "target":id.split('/').next(),
+        "deps":deps,
+        "declaration":{
+            "title":"Title",
+            "profile":{"kind":"agent","backend":"openai","model":"gpt-x","reasoning":"high"},
+            "payload":{"instruction":"Look."},
+        },
+    })
 }
 
 fn run(definitions: Value) -> RunView {
@@ -52,15 +69,37 @@ fn run(definitions: Value) -> RunView {
 pub(super) fn live() -> (RunView, Vec<RequestView>) {
     let definitions = json!({
         "artifacts":{
-            "lib":{"path":"lib","basis":true},"dep":{"path":"dep"},"app":{"path":""},
-            "p1":{"path":"pages/one"},"p2":{"path":"pages/two"}
+            "lib":{"path":"lib","basis":true},
+            "dep":{"path":"dep"},
+            "app":{"path":""},
+            "p1":{"path":"pages/one"},
+            "p2":{"path":"pages/two"},
         },
-        "evals":[eval("dep/check", &[]), eval("app/check", &["lib", "dep"]), eval("app/review", &[]), eval("p1/check", &[]), eval("p2/check", &[])],
+        "evals":[
+            eval("dep/check", &[]),
+            eval("app/check", &["lib", "dep"]),
+            eval("app/review", &[]),
+            eval("p1/check", &[]),
+            eval("p2/check", &[]),
+        ],
         "relations":[
             {"source":"lib","target":"app","kind":"mount","alias":"shared","cyclic":false},
-            {"source":"dep","target":"app","kind":"instruction","name":"dep","evalId":"app/check","cyclic":false}
+            {
+                "source":"dep",
+                "target":"app",
+                "kind":"instruction",
+                "name":"dep",
+                "evalId":"app/check",
+                "cyclic":false,
+            },
         ],
-        "components":[{"id":0,"artifacts":["lib"]},{"id":1,"artifacts":["dep"]},{"id":2,"artifacts":["p1"]},{"id":3,"artifacts":["p2"]},{"id":4,"artifacts":["app"],"gates":["dep/check"]}]
+        "components":[
+            {"id":0,"artifacts":["lib"]},
+            {"id":1,"artifacts":["dep"]},
+            {"id":2,"artifacts":["p1"]},
+            {"id":3,"artifacts":["p2"]},
+            {"id":4,"artifacts":["app"],"gates":["dep/check"]},
+        ],
     });
     let mut waiting = request(
         "app/review",
@@ -87,7 +126,11 @@ pub(super) fn live() -> (RunView, Vec<RequestView>) {
         request(
             "p2/check",
             "ERROR",
-            json!({"error":"spawn failed","errorCode":"SPAWN","completedAt":"2026-01-01T00:00:02Z"}),
+            json!({
+                "error":"spawn failed",
+                "errorCode":"SPAWN",
+                "completedAt":"2026-01-01T00:00:02Z",
+            }),
         ),
     ];
     let mut view = run(definitions);
@@ -377,8 +420,20 @@ fn run_screen_renders_progress_tree_and_detail() {
 /// Usage, budgets and errors that used to push the Run summary's last lines off.
 fn heavy() -> (RunView, Vec<RequestView>) {
     let (mut view, mut requests) = live();
-    let usage = json!([{"turn":1,"attempt":1,"usage":{"inputTokens":3915049,"outputTokens":51234,
-        "cacheReadTokens":3618816,"cacheWriteTokens":0,"reasoningTokens":20480,"totalTokens":3966283}}]);
+    let usage = json!([
+        {
+            "turn":1,
+            "attempt":1,
+            "usage":{
+                "inputTokens":3915049,
+                "outputTokens":51234,
+                "cacheReadTokens":3618816,
+                "cacheWriteTokens":0,
+                "reasoningTokens":20480,
+                "totalTokens":3966283,
+            },
+        },
+    ]);
     for (index, eval) in ["p1/check", "p2/check"].into_iter().enumerate() {
         let request = &mut requests
             .iter_mut()

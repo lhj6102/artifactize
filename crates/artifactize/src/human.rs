@@ -115,7 +115,8 @@ pub async fn tool_command(
     Registry::new(&config, &request.eval_id)?.command(tool)
 }
 
-/// Invalid results remain correctable; only a valid submission performs the final fingerprint check.
+/// Invalid results remain correctable; only a valid submission performs the final fingerprint
+/// check.
 pub async fn submit(
     receipts: &Receipts,
     request: &str,

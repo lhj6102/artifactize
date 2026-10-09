@@ -29,8 +29,14 @@ fn schema_uses_jsonschema_without_rewriting_owner_values() {
     let owner = json!({
         "type":"object",
         "$defs":{"nonempty":{"type":"string","minLength":1}},
-        "properties":{"evidence":{"type":"array","items":{"anyOf":[{"$ref":"#/$defs/nonempty"},{"type":"integer","minimum":0}]},"minItems":1}},
-        "required":["evidence"]
+        "properties":{
+            "evidence":{
+                "type":"array",
+                "items":{"anyOf":[{"$ref":"#/$defs/nonempty"},{"type":"integer","minimum":0}]},
+                "minItems":1,
+            },
+        },
+        "required":["evidence"],
     });
     let schema = VerdictSchema::new(owner.as_object(), None).unwrap();
     let result = json!({"verdict":"GREEN","evidence":["  keep spacing  ",3]});
@@ -121,10 +127,20 @@ fn parsed_human_submission_uses_same_validation_without_repair() {
 #[test]
 fn human_submission_errors_list_bounded_failing_paths() {
     let eval: EvalDeclaration = crate::test_declaration::eval(json!({
-        "id":"human", "title":"Review", "profile":{"kind":"human"},
+        "id":"human",
+        "title":"Review",
+        "profile":{"kind":"human"},
         "payload":{"instruction":"Review."},
-        "pass_schema":{"properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
-        "fail_schema":{"properties":{"reason":{"type":"string","minLength":1}},"patternProperties":{"^x":{}},"required":["reason"]}
+        "pass_schema":{
+            "properties":{"approved":{"const":true}},
+            "required":["approved"],
+            "additionalProperties":false,
+        },
+        "fail_schema":{
+            "properties":{"reason":{"type":"string","minLength":1}},
+            "patternProperties":{"^x":{}},
+            "required":["reason"],
+        },
     }))
     .unwrap();
     let error = |value| validate_result(&eval, &value).unwrap_err();
@@ -159,7 +175,13 @@ fn human_submission_errors_list_bounded_failing_paths() {
 
 #[test]
 fn repair_detail_names_bounded_failing_paths_of_json_results() {
-    let owner = json!({"properties":{"covered":{"type":"array","items":{"type":"string","pattern":"^R[0-9]+$"},"minItems":1},"notes":{"type":"string","maxLength":10}},"required":["covered"]});
+    let owner = json!({
+        "properties":{
+            "covered":{"type":"array","items":{"type":"string","pattern":"^R[0-9]+$"},"minItems":1},
+            "notes":{"type":"string","maxLength":10},
+        },
+        "required":["covered"],
+    });
     let schema = VerdictSchema::new(owner.as_object(), None).unwrap();
     let repair = |text: &str| {
         let error = schema.parse(text).unwrap_err();

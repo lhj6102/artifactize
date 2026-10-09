@@ -15,7 +15,10 @@ fn public_summary_allowlist_survives_every_chunk_split_utf8_crlf_and_multiline_s
     }
     let sink = Sink::default();
     let mut observer = Observer::default();
-    observer.push(b"data: {\"type\":\"response.reasoning_text.delta\",\"delta\":\"private\"}\n\ndata: {\"type\":\"unknown\",\"encrypted_content\":\"private\"}\n\n",&sink);
+    observer.push(
+        b"data: {\"type\":\"response.reasoning_text.delta\",\"delta\":\"private\"}\n\ndata: {\"type\":\"unknown\",\"encrypted_content\":\"private\"}\n\n",
+        &sink,
+    );
     assert!(sink.take(1, 1).is_empty());
 }
 
@@ -38,6 +41,9 @@ async fn task_local_sinks_are_isolated_and_overflow_only_degrades_observer() {
     let sink = Sink::default();
     let mut observer = Observer::default();
     observer.push(&vec![b'x'; FRAME_BYTES + FRAME_SLICE], &sink);
-    observer.push(b"\n\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"later\",\"summary_index\":0,\"delta\":\"recovered\"}\n\n",&sink);
+    observer.push(
+        b"\n\ndata: {\"type\":\"response.reasoning_summary_text.delta\",\"item_id\":\"later\",\"summary_index\":0,\"delta\":\"recovered\"}\n\n",
+        &sink,
+    );
     assert_eq!(sink.take(1, 1)[0].text, "recovered");
 }

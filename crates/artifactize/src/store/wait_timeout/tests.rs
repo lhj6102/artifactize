@@ -54,7 +54,17 @@ async fn unrepresentable_duration_never_writes_an_unreadable_run() {
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
     let receipts = crate::store::Receipts::open(&state, &repo).await.unwrap();
-    let mut run: crate::store::Run = serde_json::from_value(json!({"id":"run-duration","repoPath":repo,"stateDir":state,"status":"RUNNING","createdAt":"2026-01-01T00:00:00Z","selection":{"kind":"all"},"validation":null,"waitTimeoutMs":1})).unwrap();
+    let mut run: crate::store::Run = serde_json::from_value(json!({
+        "id":"run-duration",
+        "repoPath":repo,
+        "stateDir":state,
+        "status":"RUNNING",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "selection":{"kind":"all"},
+        "validation":null,
+        "waitTimeoutMs":1,
+    }))
+    .unwrap();
     receipts.create_run(&run, &[]).await.unwrap();
     for duration in [
         Duration::from_millis(u64::from(u32::MAX) + 1),

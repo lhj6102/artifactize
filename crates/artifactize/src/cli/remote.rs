@@ -47,9 +47,12 @@ pub(super) async fn execute(
             let token = read_token()?;
             let (remote, principal) = remote::login(state, repo, &url, share, token).await?;
             if json {
-                print_json(
-                    &json!({"url": remote.url, "share": share, "principal": principal.principal, "scopes": principal.scopes}),
-                )?;
+                print_json(&json!({
+                    "url": remote.url,
+                    "share": share,
+                    "principal": principal.principal,
+                    "scopes": principal.scopes,
+                }))?;
             } else {
                 writeln!(
                     out,

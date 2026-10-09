@@ -294,7 +294,10 @@ impl TryFrom<EvalFields> for EvalDeclaration {
                 || fields.fail_schema.is_some()
                 || fields.profile_variants.is_some()
             {
-                return Err("Dependency Evals cannot declare payload, pass_schema, fail_schema or profile_variants.".into());
+                return Err(
+                    "Dependency Evals cannot declare payload, pass_schema, fail_schema or profile_variants."
+                        .into(),
+                );
             }
         } else if fields.payload.is_none() {
             return Err("Eval payload is required for runtime, agent and human profiles.".into());
@@ -509,9 +512,14 @@ impl From<Fingerprint> for Value {
                 args,
                 files,
                 timeout_ms,
-            } => serde_json::json!({"script": {
-                "command": command, "args": args, "files": files, "timeoutMs": timeout_ms.map(|value| value.as_millis()),
-            }}),
+            } => serde_json::json!({
+                "script": {
+                    "command": command,
+                    "args": args,
+                    "files": files,
+                    "timeoutMs": timeout_ms.map(|value| value.as_millis()),
+                },
+            }),
             Fingerprint::Artifactsum { files, ignore } => {
                 serde_json::json!({"files": files, "ignore": ignore})
             }

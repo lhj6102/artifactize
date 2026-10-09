@@ -217,7 +217,12 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             json!({"configured":false}),
         ),
         Ok(Some(remote)) => {
-            let details = json!({"configured":true,"url":remote.url,"share":remote.share,"tokenSource":remote.token_source});
+            let details = json!({
+                "configured":true,
+                "url":remote.url,
+                "share":remote.share,
+                "tokenSource":remote.token_source,
+            });
             if remote.token_source == auth::remote::TokenSource::None {
                 report.add(
                     "remote",

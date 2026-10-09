@@ -33,7 +33,13 @@ impl Project {
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
         fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
-        let profile = json!({"kind":"agent","backend":"codex","model":"gpt-6-luna","reasoning":"max","max_tool_calls":2});
+        let profile = json!({
+            "kind":"agent",
+            "backend":"codex",
+            "model":"gpt-6-luna",
+            "reasoning":"max",
+            "max_tool_calls":2,
+        });
         support::declaration::write(
             repo.join("spec/index.artf"),
             json!({"name":"spec","views":{"agent_tools":{"read":{"builtin":"read"}}},
@@ -74,8 +80,16 @@ impl Project {
     /// A Codex CLI auth file outside the state directory.
     fn auth_file(&self, access: &str) -> PathBuf {
         let path = self.root.path().join("codex-auth.json");
-        let auth = json!({"OPENAI_API_KEY":null,"tokens":{"id_token":"id","access_token":access,
-            "refresh_token":"file-refresh","account_id":"file-account"},"last_refresh":"2026-10-01T00:00:00Z"});
+        let auth = json!({
+            "OPENAI_API_KEY":null,
+            "tokens":{
+                "id_token":"id",
+                "access_token":access,
+                "refresh_token":"file-refresh",
+                "account_id":"file-account",
+            },
+            "last_refresh":"2026-10-01T00:00:00Z",
+        });
         support::declaration::write(&path, auth.to_string()).unwrap();
         path
     }
@@ -288,7 +302,9 @@ fn provider_errors_explain_themselves_and_permanent_ones_are_not_retried() {
     let expired = FakeProvider::start(|_| {
         Reply::Json(
             401,
-            json!({"error":{"message":"Your authentication token has expired.","code":"token_expired"}}),
+            json!({
+                "error":{"message":"Your authentication token has expired.","code":"token_expired"},
+            }),
         )
     });
     let request = failed(&project, &expired);
@@ -305,7 +321,14 @@ fn provider_errors_explain_themselves_and_permanent_ones_are_not_retried() {
     let limited = FakeProvider::start(move |_| {
         Reply::Json(
             429,
-            json!({"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"plus","resets_at":resets}}),
+            json!({
+                "error":{
+                    "type":"usage_limit_reached",
+                    "message":"The usage limit has been reached",
+                    "plan_type":"plus",
+                    "resets_at":resets,
+                },
+            }),
         )
     });
     let request = failed(&project, &limited);
@@ -318,8 +341,31 @@ fn provider_errors_explain_themselves_and_permanent_ones_are_not_retried() {
 
     let broken = FakeProvider::start(|_| {
         codex::stream(vec![
-            json!({"type":"response.created","sequence_number":0,"response":{"id":"resp_1","object":"response","created_at":1,"model":"gpt-6-luna","status":"in_progress","output":[]}}),
-            json!({"type":"response.failed","sequence_number":1,"response":{"id":"resp_1","object":"response","created_at":1,"model":"gpt-6-luna","status":"failed","output":[],"error":{"code":"invalid_prompt","message":"The prompt was rejected."}}}),
+            json!({
+                "type":"response.created",
+                "sequence_number":0,
+                "response":{
+                    "id":"resp_1",
+                    "object":"response",
+                    "created_at":1,
+                    "model":"gpt-6-luna",
+                    "status":"in_progress",
+                    "output":[],
+                },
+            }),
+            json!({
+                "type":"response.failed",
+                "sequence_number":1,
+                "response":{
+                    "id":"resp_1",
+                    "object":"response",
+                    "created_at":1,
+                    "model":"gpt-6-luna",
+                    "status":"failed",
+                    "output":[],
+                    "error":{"code":"invalid_prompt","message":"The prompt was rejected."},
+                },
+            }),
         ])
     });
     let error = failed(&project, &broken)["error"]
@@ -402,11 +448,18 @@ fn models_lists_the_accounts_picker_models_in_server_order() {
     let provider = FakeProvider::start(|_| {
         Reply::Json(
             200,
-            json!({"models":[
-                {"slug":"gpt-6-luna","display_name":"GPT-6 Luna","visibility":"list","supported_in_api":true},
-                {"slug":"internal","display_name":"Internal","visibility":"hide"},
-                {"slug":"gpt-6.1-sol","display_name":"GPT-6.1 Sol","visibility":"list"},
-            ]}),
+            json!({
+                "models":[
+                    {
+                        "slug":"gpt-6-luna",
+                        "display_name":"GPT-6 Luna",
+                        "visibility":"list",
+                        "supported_in_api":true,
+                    },
+                    {"slug":"internal","display_name":"Internal","visibility":"hide"},
+                    {"slug":"gpt-6.1-sol","display_name":"GPT-6.1 Sol","visibility":"list"},
+                ],
+            }),
         )
     });
     let listing = parsed(
@@ -476,7 +529,11 @@ fn logout_revokes_and_removes_only_artifactizes_tokens() {
     assert_eq!(calls.len(), 1);
     assert_eq!(
         calls[0].body,
-        json!({"token":"stored-refresh","token_type_hint":"refresh_token","client_id":"app_EMoamEEZ73f0CkXaXp7hrann"})
+        json!({
+            "token":"stored-refresh",
+            "token_type_hint":"refresh_token",
+            "client_id":"app_EMoamEEZ73f0CkXaXp7hrann",
+        })
     );
 }
 
@@ -564,7 +621,9 @@ fn sign_in_storage_inside_a_git_work_tree_is_refused_and_doctor_only_warns() {
                 "{} is inside the git work tree ",
                 Path::new("state").join("auth").display()
             ))
-            && message.ends_with("; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE."),
+            && message.ends_with(
+                "; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE."
+            ),
         "{message}"
     );
     assert!(!message.contains("reviewed repository"), "{message}");
@@ -640,7 +699,9 @@ fn removed_backend_messages_name_codex_without_a_version() {
     let failure = parsed(project.command(&["config", "check"]).output().unwrap(), 2);
     let error = failure["error"].as_str().unwrap();
     assert!(
-        error.trim_end().ends_with(r#"backend "chatgpt" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex" with a ChatGPT/Codex sign-in"#),
+        error.trim_end().ends_with(
+            r#"backend "chatgpt" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex" with a ChatGPT/Codex sign-in"#
+        ),
         "{error}"
     );
     assert!(!Path::new(&project.state).join("auth").exists());
@@ -702,7 +763,13 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
         json!({"backend":"openai","model":"fake-openai-model","reasoning":"high"})
     );
     assert_eq!(provider.requests()[1].path, "/v1/responses");
-    project.profile(json!({"kind":"agent","backend":"codex","model":"gpt-6-luna","reasoning":"max","max_tool_calls":2}));
+    project.profile(json!({
+        "kind":"agent",
+        "backend":"codex",
+        "model":"gpt-6-luna",
+        "reasoning":"max",
+        "max_tool_calls":2,
+    }));
     let back = verify(&["verify", "--all"]);
     assert_eq!(back["executionsStarted"], 0);
     assert_eq!(back["requests"][0]["executionId"], newer["executionId"]);

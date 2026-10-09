@@ -388,16 +388,62 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
     let receipts = Receipts::open(&state, &repo).await.unwrap();
     // Literal schema-5 fixture: optional profile fields were serialized as null.
     let view: RunView = serde_json::from_value(json!({
-        "id":"run-old","repoPath":repo,"stateDir":state,"status":"RUNNING",
-        "createdAt":"2026-01-01T00:00:00Z","completedAt":null,"selection":{"kind":"all"},"profile":null,
-        "validation":null,"error":null,"requests":[{
-            "id":"run-old-1","runId":"run-old","evalId":"app/check","target":"app","title":"Check",
-            "profile":{"kind":"agent","backend":"openai","model":"fixture","reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null},
-            "requestedProfile":{"kind":"agent","backend":"openai","model":"fixture","reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null},
-            "evalDefHash":"fixture","executionId":null,"provenance":null,"usage":null,
-            "payload":{},"references":{},"deps":[],"status":"QUEUED","createdAt":"2026-01-01T00:00:00Z",
-            "startedAt":null,"completedAt":null,"cwd":repo,"runDir":null,"argv":null,"child":null,"result":null,"error":null,"errorCode":null,"blockedReason":null
-        }]
+        "id":"run-old",
+        "repoPath":repo,
+        "stateDir":state,
+        "status":"RUNNING",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "completedAt":null,
+        "selection":{"kind":"all"},
+        "profile":null,
+        "validation":null,
+        "error":null,
+        "requests":[
+            {
+                "id":"run-old-1",
+                "runId":"run-old",
+                "evalId":"app/check",
+                "target":"app",
+                "title":"Check",
+                "profile":{
+                    "kind":"agent",
+                    "backend":"openai",
+                    "model":"fixture",
+                    "reasoning":null,
+                    "timeoutMs":null,
+                    "maxToolCalls":null,
+                    "maxTokens":null,
+                },
+                "requestedProfile":{
+                    "kind":"agent",
+                    "backend":"openai",
+                    "model":"fixture",
+                    "reasoning":null,
+                    "timeoutMs":null,
+                    "maxToolCalls":null,
+                    "maxTokens":null,
+                },
+                "evalDefHash":"fixture",
+                "executionId":null,
+                "provenance":null,
+                "usage":null,
+                "payload":{},
+                "references":{},
+                "deps":[],
+                "status":"QUEUED",
+                "createdAt":"2026-01-01T00:00:00Z",
+                "startedAt":null,
+                "completedAt":null,
+                "cwd":repo,
+                "runDir":null,
+                "argv":null,
+                "child":null,
+                "result":null,
+                "error":null,
+                "errorCode":null,
+                "blockedReason":null,
+            },
+        ],
     }))
     .unwrap();
     receipts
@@ -407,7 +453,15 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
     let before = serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap();
     assert_eq!(
         before["requests"][0]["profile"],
-        json!({"kind":"agent","backend":"openai","model":"fixture","reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null})
+        json!({
+            "kind":"agent",
+            "backend":"openai",
+            "model":"fixture",
+            "reasoning":null,
+            "timeoutMs":null,
+            "maxToolCalls":null,
+            "maxTokens":null,
+        })
     );
     let mut bad = view.requests[0].clone();
     bad.status = RequestStatus::Green;

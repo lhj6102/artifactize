@@ -412,7 +412,14 @@ async fn environment_subprocess_probe() {
 #[tokio::test]
 async fn runtime_cleans_ansi_and_controls_without_changing_whitespace_or_del() {
     let scratch = Scratch::new();
-    let result = completed(execute(scratch.command("/usr/bin/printf", &["\\033[31mred\\033[0m\\000\\001\\010\\013\\014\\016\\037\\t\\n\\r\\177\\377\\033[?25l\\033[1 qend"], None)).await);
+    let result = completed(
+        execute(scratch.command(
+            "/usr/bin/printf",
+            &["\\033[31mred\\033[0m\\000\\001\\010\\013\\014\\016\\037\\t\\n\\r\\177\\377\\033[?25l\\033[1 qend"],
+            None,
+        ))
+        .await,
+    );
     assert_eq!(result.output.stdout, "red\t\n\r\x7f\u{fffd}end".as_bytes());
     assert!(!result.output.truncated);
     let stderr = completed(
@@ -429,7 +436,17 @@ async fn runtime_cleans_ansi_and_controls_without_changing_whitespace_or_del() {
 #[tokio::test]
 async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata() {
     let scratch = Scratch::new();
-    let result = completed(execute(scratch.command("/bin/sh", &["-c", "head -c 262144 /dev/zero | tr '\\000' x & head -c 262144 /dev/zero | tr '\\000' y >&2 & wait"], None)).await);
+    let result = completed(
+        execute(scratch.command(
+            "/bin/sh",
+            &[
+                "-c",
+                "head -c 262144 /dev/zero | tr '\\000' x & head -c 262144 /dev/zero | tr '\\000' y >&2 & wait",
+            ],
+            None,
+        ))
+        .await,
+    );
     assert_eq!(result.verdict, Verdict::Green);
     assert_eq!(result.output.stdout, vec![b'x'; 128 * 1024]);
     assert_eq!(result.output.stderr, vec![b'y'; 128 * 1024]);
@@ -452,7 +469,10 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     // Each Windows process start costs more, and the deadline covers three of them.
     let command = scratch.command(
         "/bin/sh",
-        &["-c", "trap '' TERM; sh -c 'sleep 30 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait"],
+        &[
+            "-c",
+            "trap '' TERM; sh -c 'sleep 30 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait",
+        ],
         Some(if cfg!(windows) { 2000 } else { 500 }),
     );
     let marker = command.directory().join("output/grandchild");
@@ -488,7 +508,10 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
     let scratch = Scratch::new();
     let command = scratch.command(
         "/bin/sh",
-        &["-c", "trap '' TERM; sh -c 'sleep 30 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait"],
+        &[
+            "-c",
+            "trap '' TERM; sh -c 'sleep 30 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait",
+        ],
         None,
     );
     let marker = command.directory().join("output/grandchild");

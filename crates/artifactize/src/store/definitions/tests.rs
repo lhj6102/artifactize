@@ -7,11 +7,83 @@ use sha2::{Digest, Sha256};
 #[test]
 fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
     let mut wire = json!({
-        "version":1,"repoPath":"/saved/workspace","selection":{"kind":"all"},"futureTop":{"v":7},
-        "artifacts":{"page":{"path":"pages","name":"page","children":{},"mounts":{},"basis":null,"fingerprint":{"script":{"command":"echo","args":["v1"],"files":[],"timeoutMs":null,"futureScript":true}},"reviewPolicy":{"dependencyGates":null,"futurePolicy":1},"views":{"agentTools":{"read":{"builtin":"read","futureTool":true}},"humanTools":{"inspect":{"description":"Inspect","kind":"output","command":"cat","args":["file.md"],"futureHumanTool":1}},"futureView":[]},"futureArtifact":"kept"}},
-        "evals":[{"id":"page/check","target":"page","references":{},"deps":["input"],"declaration":{"id":"check","title":"Inspect","profile":{"kind":"runtime","command":"true","args":[],"timeoutMs":null},"profileVariants":{},"payload":{"instruction":"Inspect {input}.","owner":[true,null,42]},"passSchema":{"type":"object","properties":{"accepted":{"const":true}}},"failSchema":null,"futureDeclaration":true},"futureEval":2}],
-        "relations":[{"source":"input","target":"page","kind":"instruction","evalId":"page/check","name":"input","cyclic":true,"futureRelation":false}],
-        "components":[{"id":0,"artifacts":["input","page"],"dependencies":[],"gates":["input/check"],"cyclic":true,"futureComponent":3}]
+        "version":1,
+        "repoPath":"/saved/workspace",
+        "selection":{"kind":"all"},
+        "futureTop":{"v":7},
+        "artifacts":{
+            "page":{
+                "path":"pages",
+                "name":"page",
+                "children":{},
+                "mounts":{},
+                "basis":null,
+                "fingerprint":{
+                    "script":{
+                        "command":"echo",
+                        "args":["v1"],
+                        "files":[],
+                        "timeoutMs":null,
+                        "futureScript":true,
+                    },
+                },
+                "reviewPolicy":{"dependencyGates":null,"futurePolicy":1},
+                "views":{
+                    "agentTools":{"read":{"builtin":"read","futureTool":true}},
+                    "humanTools":{
+                        "inspect":{
+                            "description":"Inspect",
+                            "kind":"output",
+                            "command":"cat",
+                            "args":["file.md"],
+                            "futureHumanTool":1,
+                        },
+                    },
+                    "futureView":[],
+                },
+                "futureArtifact":"kept",
+            },
+        },
+        "evals":[
+            {
+                "id":"page/check",
+                "target":"page",
+                "references":{},
+                "deps":["input"],
+                "declaration":{
+                    "id":"check",
+                    "title":"Inspect",
+                    "profile":{"kind":"runtime","command":"true","args":[],"timeoutMs":null},
+                    "profileVariants":{},
+                    "payload":{"instruction":"Inspect {input}.","owner":[true,null,42]},
+                    "passSchema":{"type":"object","properties":{"accepted":{"const":true}}},
+                    "failSchema":null,
+                    "futureDeclaration":true,
+                },
+                "futureEval":2,
+            },
+        ],
+        "relations":[
+            {
+                "source":"input",
+                "target":"page",
+                "kind":"instruction",
+                "evalId":"page/check",
+                "name":"input",
+                "cyclic":true,
+                "futureRelation":false,
+            },
+        ],
+        "components":[
+            {
+                "id":0,
+                "artifacts":["input","page"],
+                "dependencies":[],
+                "gates":["input/check"],
+                "cyclic":true,
+                "futureComponent":3,
+            },
+        ],
     });
     wire["selection"]["futureSelection"] = json!({"v":true});
     wire["evals"][0]["declaration"]["profile"]["futureProfile"] = json!({"v":1});
@@ -46,14 +118,41 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
         let snapshot: Definitions = serde_json::from_value(wire.clone()).unwrap();
         assert_eq!(serde_json::to_value(snapshot).unwrap(), wire);
     }
-    let missing: crate::store::Run = serde_json::from_value(json!({"id":"run-old","repoPath":"/repo","stateDir":"/state","status":"RUNNING","createdAt":"2026-01-01T00:00:00Z","selection":{"kind":"all"},"validation":null})).unwrap();
+    let missing: crate::store::Run = serde_json::from_value(json!({
+        "id":"run-old",
+        "repoPath":"/repo",
+        "stateDir":"/state",
+        "status":"RUNNING",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "selection":{"kind":"all"},
+        "validation":null,
+    }))
+    .unwrap();
     assert!(missing.definitions.graph().is_none());
 }
 
 #[test]
 fn current_graph_capture_serializes_identically_to_pinned_query_view() {
     let root = tempfile::tempdir().unwrap();
-    crate::test_declaration::write(root.path().join("index.artf"), json!({"name":"app","views":{"agent_tools":{"read":{"builtin":"read"}}},"fingerprint":{"script":{"command":"echo","args":["v1"]}},"evals":[{"id":"check","title":"Check","profile":{"kind":"agent","backend":"openai","model":"fixture"},"payload":{"instruction":"Check.","owner":{"nested":[1,2]}},"pass_schema":{"type":"object"}}]}).to_string()).unwrap();
+    crate::test_declaration::write(
+        root.path().join("index.artf"),
+        json!({
+            "name":"app",
+            "views":{"agent_tools":{"read":{"builtin":"read"}}},
+            "fingerprint":{"script":{"command":"echo","args":["v1"]}},
+            "evals":[
+                {
+                    "id":"check",
+                    "title":"Check",
+                    "profile":{"kind":"agent","backend":"openai","model":"fixture"},
+                    "payload":{"instruction":"Check.","owner":{"nested":[1,2]}},
+                    "pass_schema":{"type":"object"},
+                },
+            ],
+        })
+        .to_string(),
+    )
+    .unwrap();
     let config = config::read_workspace_config(root.path()).unwrap();
     let selection = Selection::All;
     let view = crate::query::graph(&config, &selection).unwrap();
@@ -97,12 +196,21 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
     );
     let snapshot = Definitions::from_view(&view).unwrap();
     assert_eq!(serde_json::to_value(snapshot).unwrap(), before);
-    // The eval definition and reuse key are calculated from live declarations, never this display snapshot.
+    // The eval definition and reuse key are calculated from live declarations, never this
+    // display snapshot.
     let eval_hash = crate::cache::eval_definition_hash(&config.evals[0].declaration);
     let saved_profile = &before["evals"][0]["declaration"]["profile"];
     assert_eq!(
         saved_profile,
-        &json!({"kind":"agent","backend":"openai","model":"fixture","reasoning":null,"timeoutMs":null,"maxToolCalls":null,"maxTokens":null})
+        &json!({
+            "kind":"agent",
+            "backend":"openai",
+            "model":"fixture",
+            "reasoning":null,
+            "timeoutMs":null,
+            "maxToolCalls":null,
+            "maxTokens":null,
+        })
     );
     assert_eq!(
         eval_hash,
@@ -122,9 +230,25 @@ async fn saved_definition_timeouts_reject_unrepresentable_writes() {
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
     let receipts = crate::store::Receipts::open(&state, &repo).await.unwrap();
-    let mut run: crate::store::Run = serde_json::from_value(json!({"id":"run-definition","repoPath":repo,"stateDir":state,"status":"RUNNING","createdAt":"2026-01-01T00:00:00Z","selection":{"kind":"all"},"validation":null,"definitions":{"artifacts":{"app":{"fingerprint":{"script":{"command":"echo","args":[],"timeoutMs":1}}}}}})).unwrap();
+    let mut run: crate::store::Run = serde_json::from_value(json!({
+        "id":"run-definition",
+        "repoPath":repo,
+        "stateDir":state,
+        "status":"RUNNING",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "selection":{"kind":"all"},
+        "validation":null,
+        "definitions":{
+            "artifacts":{
+                "app":{"fingerprint":{"script":{"command":"echo","args":[],"timeoutMs":1}}},
+            },
+        },
+    }))
+    .unwrap();
     receipts.create_run(&run, &[]).await.unwrap();
-    let wire = json!({"artifacts":{"app":{"fingerprint":{"script":{"command":"echo","args":[],"timeoutMs":1}}}}});
+    let wire = json!({
+        "artifacts":{"app":{"fingerprint":{"script":{"command":"echo","args":[],"timeoutMs":1}}}},
+    });
     for duration in [
         std::time::Duration::ZERO,
         std::time::Duration::from_millis(2147483648),

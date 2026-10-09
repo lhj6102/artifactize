@@ -30,11 +30,20 @@ fn parse(value: &Value) -> Result<artifactize::config::ArtifactDeclaration, Stri
 }
 
 fn dependency(targets: &[&str]) -> Value {
-    json!({"id":"ready","title":"Inputs are ready","profile":{"kind":"dependency","depends_on":targets}})
+    json!({
+        "id":"ready",
+        "title":"Inputs are ready",
+        "profile":{"kind":"dependency","depends_on":targets},
+    })
 }
 
 fn runtime(command: &str) -> Value {
-    json!({"id":"check","title":"Check input","profile":{"kind":"runtime","command":support::os::bin(command),"args":[]},"payload":{"instruction":"Check the input."}})
+    json!({
+        "id":"check",
+        "title":"Check input",
+        "profile":{"kind":"runtime","command":support::os::bin(command),"args":[]},
+        "payload":{"instruction":"Check the input."},
+    })
 }
 
 impl Fixture {
@@ -172,7 +181,13 @@ fn dependency_targets_resolve_mount_aliases_and_reject_unknown_self_and_duplicat
         .unwrap();
     assert_eq!(
         serde_json::to_value(relation).unwrap(),
-        json!({"source":"art","target":"player","kind":"dependency","evalId":"player/ready","name":"sprite"})
+        json!({
+            "source":"art",
+            "target":"player",
+            "kind":"dependency",
+            "evalId":"player/ready",
+            "name":"sprite",
+        })
     );
     for (targets, error) in [
         (vec!["missing"], "missing"),
@@ -463,7 +478,15 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
 #[tokio::test]
 async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     let fixture = Fixture::new();
-    fixture.declare("art",vec![json!({"id":"approve","title":"Approve art","profile":{"kind":"human"},"payload":{"instruction":"Inspect art."}})]);
+    fixture.declare(
+        "art",
+        vec![json!({
+            "id":"approve",
+            "title":"Approve art",
+            "profile":{"kind":"human"},
+            "payload":{"instruction":"Inspect art."},
+        })],
+    );
     fixture.declare("player", vec![dependency(&["art"])]);
     let options = VerifyOptions {
         wait_timeout: Duration::from_millis(10),
@@ -553,8 +576,22 @@ async fn dependency_chains_derive_without_job_or_execution_budget() {
 #[tokio::test]
 async fn dependency_only_run_has_no_fingerprint_process_or_team_store_calls() {
     let fixture = Fixture::new();
-    fixture.write("basis", json!({"name":"basis","basis":true,"fingerprint":{"script":{"command":"missing-fingerprint-command","args":[]}}}));
-    fixture.write("player", json!({"name":"player","fingerprint":{"script":{"command":"missing-fingerprint-command","args":[]}},"evals":[dependency(&["basis"])]}));
+    fixture.write(
+        "basis",
+        json!({
+            "name":"basis",
+            "basis":true,
+            "fingerprint":{"script":{"command":"missing-fingerprint-command","args":[]}},
+        }),
+    );
+    fixture.write(
+        "player",
+        json!({
+            "name":"player",
+            "fingerprint":{"script":{"command":"missing-fingerprint-command","args":[]}},
+            "evals":[dependency(&["basis"])],
+        }),
+    );
     let remote =
         support::FakeProvider::start(|_| panic!("dependency-only Run contacted the team store"));
     let output = fixture
@@ -706,7 +743,14 @@ fn dependency_eval_inside_an_ordinary_scc_uses_current_peer_evidence() {
 #[test]
 fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
     let fixture = Fixture::new();
-    fixture.write("leaf", json!({"name":"leaf","basis":true,"fingerprint":{"script":{"command":"missing-fingerprint-command","args":[]}}}));
+    fixture.write(
+        "leaf",
+        json!({
+            "name":"leaf",
+            "basis":true,
+            "fingerprint":{"script":{"command":"missing-fingerprint-command","args":[]}},
+        }),
+    );
     fixture.write(
         "basis",
         json!({"name":"basis","basis":true,"mounts":{"leaf":"leaf"}}),
@@ -725,7 +769,14 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
         );
     }
     // An ordinary consumer still needs the dependency Artifact fingerprint for its key.
-    fixture.write("player", json!({"name":"player","mounts":{"basis":"basis"},"evals":[dependency(&["basis"]), runtime("/bin/true")]}));
+    fixture.write(
+        "player",
+        json!({
+            "name":"player",
+            "mounts":{"basis":"basis"},
+            "evals":[dependency(&["basis"]), runtime("/bin/true")],
+        }),
+    );
     let output = fixture
         .command()
         .args(["verify", "player", "--json"])

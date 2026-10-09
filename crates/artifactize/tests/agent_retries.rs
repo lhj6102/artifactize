@@ -57,8 +57,13 @@ impl Project {
         // A Codex sign-in, for the codex evals.
         let auth = project.state.join("auth");
         support::os::create_private_dir_all(&auth);
-        let credentials = json!({"access_token":codex::jwt("account-1", now() + 3600),
-            "refresh_token":"refresh","account_id":"account-1","expires_at":now() + 3600,"saved_at":1});
+        let credentials = json!({
+            "access_token":codex::jwt("account-1", now() + 3600),
+            "refresh_token":"refresh",
+            "account_id":"account-1",
+            "expires_at":now() + 3600,
+            "saved_at":1,
+        });
         support::os::write_private_file(&auth.join("codex.json"), credentials.to_string());
         project
     }
@@ -200,7 +205,13 @@ fn a_later_turn_retries_transient_failures_and_honours_retry_after() {
             error(
                 429,
                 vec![("retry-after-ms", "700".into())],
-                json!({"error":{"message":"Rate limit reached","type":"requests","code":"rate_limit_exceeded"}}),
+                json!({
+                    "error":{
+                        "message":"Rate limit reached",
+                        "type":"requests",
+                        "code":"rate_limit_exceeded",
+                    },
+                }),
             ),
         ],
     );
@@ -323,7 +334,12 @@ fn failures_carry_specific_error_codes() {
             error(
                 429,
                 vec![],
-                json!({"error":{"message":"You exceeded your current quota","code":"insufficient_quota"}}),
+                json!({
+                    "error":{
+                        "message":"You exceeded your current quota",
+                        "code":"insufficient_quota",
+                    },
+                }),
             ),
             "QUOTA",
         ),
@@ -408,10 +424,9 @@ fn an_authentication_failure_stops_new_reviews_on_that_backend_only() {
     assert_eq!(skipped["status"], "ERROR");
     assert_eq!(skipped["errorCode"], "BACKEND_STOPPED");
     assert!(
-        skipped["error"]
-            .as_str()
-            .unwrap()
-            .starts_with("Not started: this Run stopped admitting openai reviews after AUTHENTICATION in a/review: Incorrect API key provided"),
+        skipped["error"].as_str().unwrap().starts_with(
+            "Not started: this Run stopped admitting openai reviews after AUTHENTICATION in a/review: Incorrect API key provided"
+        ),
         "{skipped}"
     );
     assert!(skipped["executionId"].is_null());
@@ -456,7 +471,14 @@ fn a_codex_usage_limit_stops_codex_for_the_run() {
             return error(
                 429,
                 vec![],
-                json!({"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"plus","resets_at":now() + 3600}}),
+                json!({
+                    "error":{
+                        "type":"usage_limit_reached",
+                        "message":"The usage limit has been reached",
+                        "plan_type":"plus",
+                        "resets_at":now() + 3600,
+                    },
+                }),
             );
         }
         pass(request)

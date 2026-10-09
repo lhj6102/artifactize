@@ -670,7 +670,9 @@ mod tests {
                 .collect::<Vec<_>>(),
             _ => panic!("a user message"),
         };
-        let not_run = json!([{"type":"text","text":"Not run: the review stopped before this tool call completed."}]);
+        let not_run = json!([
+            {"type":"text","text":"Not run: the review stopped before this tool call completed."},
+        ]);
         // The budget stopped the second call: it is answered next to the first one's result.
         let history = replay(&[&answer, &ran]);
         assert_eq!(history.len(), 2);

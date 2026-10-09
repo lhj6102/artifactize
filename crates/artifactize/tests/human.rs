@@ -84,14 +84,39 @@ fn write_human(path: &Path, fingerprint: bool) {
     fs::create_dir_all(path).unwrap();
     support::declaration::write(path.join("fingerprint"), "human-v1\n").unwrap();
     let mut declaration = json!({
-        "name":"review", "views":{"human_tools":{
-            "inspect":{"description":"Inspect","kind":"output","command":bin("cat"),"args":["fingerprint"]},
-            "fail":{"description":"Fail","kind":"output","command":bin("false"),"args":[]}
-        },"agent_tools":{"read":{"builtin":"read"}}},
-        "evals":[{"id":"check","title":"Human check","profile":{"kind":"human"},"payload":{"instruction":"Review."},
-            "pass_schema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
-            "fail_schema":{"type":"object","properties":{"reason":{"type":"string","minLength":1}},"required":["reason"],"additionalProperties":false}
-        }]
+        "name":"review",
+        "views":{
+            "human_tools":{
+                "inspect":{
+                    "description":"Inspect",
+                    "kind":"output",
+                    "command":bin("cat"),
+                    "args":["fingerprint"],
+                },
+                "fail":{"description":"Fail","kind":"output","command":bin("false"),"args":[]},
+            },
+            "agent_tools":{"read":{"builtin":"read"}},
+        },
+        "evals":[
+            {
+                "id":"check",
+                "title":"Human check",
+                "profile":{"kind":"human"},
+                "payload":{"instruction":"Review."},
+                "pass_schema":{
+                    "type":"object",
+                    "properties":{"approved":{"const":true}},
+                    "required":["approved"],
+                    "additionalProperties":false,
+                },
+                "fail_schema":{
+                    "type":"object",
+                    "properties":{"reason":{"type":"string","minLength":1}},
+                    "required":["reason"],
+                    "additionalProperties":false,
+                },
+            },
+        ],
     });
     if fingerprint {
         declaration["fingerprint"] =
@@ -379,7 +404,22 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
 async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     let fixture = Fixture::new(false);
     write_human(&fixture.repo.join("child"), true);
-    support::declaration::write(fixture.repo.join("index.artf"), json!({"name":"parent","evals":[{"id":"test","title":"Dependent","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Check child."}}]}).to_string()).unwrap();
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
+        json!({
+            "name":"parent",
+            "evals":[
+                {
+                    "id":"test",
+                    "title":"Dependent",
+                    "profile":{"kind":"runtime","command":"true","args":[]},
+                    "payload":{"instruction":"Check child."},
+                },
+            ],
+        })
+        .to_string(),
+    )
+    .unwrap();
     let run = fixture.verify(returning()).await;
     assert_eq!(run.run.status.as_str(), "INCOMPLETE");
     let waiting = run

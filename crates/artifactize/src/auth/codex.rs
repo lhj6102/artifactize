@@ -616,7 +616,10 @@ async fn stored_token(storage: &Storage, root: &str) -> Result<Token, TokenError
     .await?;
     let refreshed = credentials(tokens, now()?)?;
     if refreshed.account_id != stored.account_id {
-        return Err("The refreshed Codex token is for another ChatGPT account; run `artifactize login codex`.".into());
+        return Err(
+            "The refreshed Codex token is for another ChatGPT account; run `artifactize login codex`."
+                .into(),
+        );
     }
     storage.save(CREDENTIALS, &refreshed)?;
     Ok(Token {

@@ -128,7 +128,8 @@ pub enum Command {
                 .range(1..=crate::config::validation::MAX_TIMEOUT_MS as i64)
         )]
         timeout_ms: Option<u32>,
-        /// Only reuse results for these kinds (comma-separated); an eval with nothing to reuse is not executed.
+        /// Only reuse results for these kinds (comma-separated); an eval with nothing to reuse is
+        /// not executed.
         #[arg(long, value_name = "KINDS", value_enum, value_delimiter = ',')]
         reuse_only: Vec<ProfileKind>,
     },
@@ -171,13 +172,15 @@ pub enum Command {
         #[command(subcommand)]
         command: ConfigCommand,
     },
-    /// Browse repositories/worktrees, Runs and eval details; initial selection is the current worktree.
+    /// Browse repositories/worktrees, Runs and eval details; initial selection is the current
+    /// worktree.
     Monitor {
         /// Initially select ALL repositories; every scope remains accessible in the UI.
         #[arg(long)]
         all: bool,
     },
-    /// Claim, run tools for and submit waiting Human reviews in a terminal UI; defaults to the current repository.
+    /// Claim, run tools for and submit waiting Human reviews in a terminal UI; defaults to the
+    /// current repository.
     Review {
         /// Open this request instead of the waiting list.
         #[arg(value_name = "REQUEST_ID")]

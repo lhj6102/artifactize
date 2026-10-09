@@ -622,9 +622,11 @@ fn validate_output(stdout: &[u8]) -> Result<crate::types::Fingerprint, String> {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
     {
         return Err(if cfg!(windows) {
-            "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF or CRLF.".into()
+            "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF or CRLF."
+                .into()
         } else {
-            "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF.".into()
+            "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF."
+                .into()
         });
     }
     String::from_utf8(value.to_vec())

@@ -11,7 +11,8 @@ use unicode_segmentation::UnicodeSegmentation;
 
 /// One layout/page-in job scans at most a quarter MiB of formatted text.
 const CHUNK: usize = 256 * 1024;
-/// Bound each layout job even for empty events, which spend no byte budget, so input stays responsive.
+/// Bound each layout job even for empty events, which spend no byte budget, so input stays
+/// responsive.
 const LAYOUT_EVENTS: usize = 128;
 /// Each disk row stores three u64s: source byte offset, rendered byte offset and rendered length.
 /// Keep these offsets on disk instead of retaining a heap Range for every terminal row.

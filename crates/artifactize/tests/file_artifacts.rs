@@ -81,7 +81,17 @@ impl Fixture {
 }
 
 fn runtime(name: &str, args: &[&str]) -> Value {
-    json!({"name":name,"evals":[{"id":"check","title":"Check","profile":{"kind":"runtime","command":support::os::bin("/bin/sh"),"args":args},"payload":{"instruction":"Check."}}]})
+    json!({
+        "name":name,
+        "evals":[
+            {
+                "id":"check",
+                "title":"Check",
+                "profile":{"kind":"runtime","command":support::os::bin("/bin/sh"),"args":args},
+                "payload":{"instruction":"Check."},
+            },
+        ],
+    })
 }
 
 #[test]
@@ -336,13 +346,37 @@ async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
     fixture.write("files/target.txt", "visible needle\n");
     fixture.write("files/sibling.txt", "secret needle\n");
     fixture.declare("files/child/index.artf", json!({"name":"child"}));
-    fixture.declare("files/target.txt.artf", json!({"name":"file","mounts":{"external":"other"},"views":{"agent_tools":{
-        "list":{"builtin":"list"},"glob":{"builtin":"glob"},"grep":{"builtin":"grep"},"read":{"builtin":"read"}
-    }},"evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"offline","reasoning":"high"},"payload":{"instruction":"Read {reference}."}}]}));
+    fixture.declare("files/target.txt.artf", json!({
+        "name":"file",
+        "mounts":{"external":"other"},
+        "views":{
+            "agent_tools":{
+                "list":{"builtin":"list"},
+                "glob":{"builtin":"glob"},
+                "grep":{"builtin":"grep"},
+                "read":{"builtin":"read"},
+            },
+        },
+        "evals":[
+            {
+                "id":"review",
+                "title":"Review",
+                "profile":{"kind":"agent","backend":"openai","model":"offline","reasoning":"high"},
+                "payload":{"instruction":"Read {reference}."},
+            },
+        ],
+    }));
     fixture.write("other/input.txt", "mounted needle\n");
     fixture.declare("other/input.txt.artf", json!({"name":"other"}));
     fixture.write("references/rules", "rules");
-    fixture.declare("references/rules.artf", json!({"name":"reference","basis":true,"views":{"agent_tools":{"read":{"builtin":"read"}}}}));
+    fixture.declare(
+        "references/rules.artf",
+        json!({
+            "name":"reference",
+            "basis":true,
+            "views":{"agent_tools":{"read":{"builtin":"read"}}},
+        }),
+    );
     let config = fixture.config();
     let registry = Registry::new(&config, "file/review").unwrap();
     let names = registry
@@ -471,7 +505,20 @@ fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
         fixture.declare("files/input.txt.artf", runtime("file", &args));
         fixture.error("files/input.txt.artf", "cannot have a /path suffix");
     }
-    fixture.declare("files/input.txt.artf", json!({"name":"file","evals":[{"id":"review","title":"Review","profile":{"kind":"human"},"payload":{"instruction":"Read {file}/sub."}}]}));
+    fixture.declare(
+        "files/input.txt.artf",
+        json!({
+            "name":"file",
+            "evals":[
+                {
+                    "id":"review",
+                    "title":"Review",
+                    "profile":{"kind":"human"},
+                    "payload":{"instruction":"Read {file}/sub."},
+                },
+            ],
+        }),
+    );
     fixture.error("files/input.txt.artf", "cannot have a /path suffix");
     fixture.declare(
         "files/input.txt.artf",
@@ -484,7 +531,22 @@ fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
 fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
     let fixture = Fixture::new();
     fixture.write("files/input.txt", "input");
-    fixture.declare("files/input.txt.artf", json!({"name":"file","views":{"human_tools":{"open":{"description":"Open","kind":"output","command":support::os::bin("/bin/cat"),"args":["{artifactPath}","{file}"]}}}}));
+    fixture.declare(
+        "files/input.txt.artf",
+        json!({
+            "name":"file",
+            "views":{
+                "human_tools":{
+                    "open":{
+                        "description":"Open",
+                        "kind":"output",
+                        "command":support::os::bin("/bin/cat"),
+                        "args":["{artifactPath}","{file}"],
+                    },
+                },
+            },
+        }),
+    );
     let config = fixture.config();
     let registry = artifactize::tools::human::Registry::for_artifact(&config, "file").unwrap();
     let command = registry.command("open_file").unwrap();
@@ -493,7 +555,22 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
         command.args,
         vec![config.root.join("files/input.txt").to_str().unwrap(); 2]
     );
-    fixture.declare("files/input.txt.artf", json!({"name":"file","views":{"human_tools":{"open":{"description":"Open","kind":"output","command":"cat","args":["{artifactPath}/sibling"]}}}}));
+    fixture.declare(
+        "files/input.txt.artf",
+        json!({
+            "name":"file",
+            "views":{
+                "human_tools":{
+                    "open":{
+                        "description":"Open",
+                        "kind":"output",
+                        "command":"cat",
+                        "args":["{artifactPath}/sibling"],
+                    },
+                },
+            },
+        }),
+    );
     fixture.error("files/input.txt.artf", "cannot have a /path suffix");
 }
 
@@ -505,7 +582,19 @@ async fn fingerprint_scripts_run_in_containing_folder_with_file_arguments_and_re
         "files/hash.sh",
         "test -f input.txt && test \"$1\" -ef input.txt && printf file-v1\n",
     );
-    fixture.declare("files/input.txt.artf", json!({"name":"file","fingerprint":{"script":{"command":support::os::bin("/bin/sh"),"args":["hash.sh","{file}"],"files":["hash.sh"]}}}));
+    fixture.declare(
+        "files/input.txt.artf",
+        json!({
+            "name":"file",
+            "fingerprint":{
+                "script":{
+                    "command":support::os::bin("/bin/sh"),
+                    "args":["hash.sh","{file}"],
+                    "files":["hash.sh"],
+                },
+            },
+        }),
+    );
     let result = fingerprints(&fixture.config(), &fixture.state).await;
     assert_eq!(result["file"].value.to_string(), "file-v1");
 }
@@ -590,8 +679,18 @@ async fn dependency_evals_can_live_on_files_and_target_files() {
     fixture.write("input.txt", "input");
     fixture.declare("input.txt.artf", runtime("input", &["-c", "exit 0"]));
     fixture.write("ready.txt", "ready");
-    fixture.declare("ready.txt.artf", json!({"name":"ready","evals":[{"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["input"]}}]}));
-    fixture.declare("folder/index.artf", json!({"name":"folder","evals":[{"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["ready"]}}]}));
+    fixture.declare("ready.txt.artf", json!({
+        "name":"ready",
+        "evals":[
+            {"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["input"]}},
+        ],
+    }));
+    fixture.declare("folder/index.artf", json!({
+        "name":"folder",
+        "evals":[
+            {"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["ready"]}},
+        ],
+    }));
     let run = fixture.json(&["verify", "--all"], 0);
     for id in ["ready/ready", "folder/ready"] {
         let request = run["requests"]
@@ -625,8 +724,26 @@ async fn dependency_evals_can_live_on_files_and_target_files() {
 async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_metadata() {
     let fixture = Fixture::new();
     fixture.write("files/input.txt", "input");
-    fixture.write("files/tool.py", "import json,os,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':{'cwd':os.getcwd(),'argv':sys.argv[1:],'artifactPath':x['context']['artifactPath'],'scope':x['context']['scope']}}]}))\n");
-    fixture.declare("files/input.txt.artf", json!({"name":"file","views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"json","command":"python3","args":["tool.py","{file}"]}}}}));
+    fixture.write(
+        "files/tool.py",
+        "import json,os,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':{'cwd':os.getcwd(),'argv':sys.argv[1:],'artifactPath':x['context']['artifactPath'],'scope':x['context']['scope']}}]}))\n",
+    );
+    fixture.declare(
+        "files/input.txt.artf",
+        json!({
+            "name":"file",
+            "views":{
+                "agent_tools":{
+                    "inspect":{
+                        "description":"Inspect",
+                        "protocol":"json",
+                        "command":"python3",
+                        "args":["tool.py","{file}"],
+                    },
+                },
+            },
+        }),
+    );
     let config = fixture.config();
     let registry = Registry::for_artifact(&config, "file").unwrap();
     registry.preflight("inspect_file").unwrap();
@@ -651,7 +768,13 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
 async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_discovery() {
     let fixture = Fixture::new();
     fixture.write("input.txt", "input");
-    fixture.declare("input.txt.artf", json!({"name":"file","views":{"agent_tools":{"read":{"builtin":"read"},"list":{"builtin":"list"}}}}));
+    fixture.declare(
+        "input.txt.artf",
+        json!({
+            "name":"file",
+            "views":{"agent_tools":{"read":{"builtin":"read"},"list":{"builtin":"list"}}},
+        }),
+    );
     let config = fixture.config();
     let registry = Registry::for_artifact(&config, "file").unwrap();
     fs::remove_file(fixture.repo.join("input.txt")).unwrap();
@@ -708,7 +831,22 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
 fn json_tool_file_references_reject_suffixes_at_the_declaration() {
     let fixture = Fixture::new();
     fixture.write("input", "input");
-    fixture.declare("input.artf", json!({"name":"file","views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"json","command":"cat","args":["{file}/sibling"]}}}}));
+    fixture.declare(
+        "input.artf",
+        json!({
+            "name":"file",
+            "views":{
+                "agent_tools":{
+                    "inspect":{
+                        "description":"Inspect",
+                        "protocol":"json",
+                        "command":"cat",
+                        "args":["{file}/sibling"],
+                    },
+                },
+            },
+        }),
+    );
     fixture.error("input.artf", "cannot have a /path suffix");
 }
 
@@ -730,7 +868,22 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
         "#!/bin/sh\ntest -f input.txt && printf files\n",
     );
     support::os::make_executable(&fixture.repo.join("files/inspect"));
-    fixture.declare("files/input.txt.artf", json!({"name":"file","views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"plain","command":"./inspect","args":[]}}}}));
+    fixture.declare(
+        "files/input.txt.artf",
+        json!({
+            "name":"file",
+            "views":{
+                "agent_tools":{
+                    "inspect":{
+                        "description":"Inspect",
+                        "protocol":"plain",
+                        "command":"./inspect",
+                        "args":[],
+                    },
+                },
+            },
+        }),
+    );
     let config = fixture.config();
     let registry = Registry::for_artifact(&config, "file").unwrap();
     registry.preflight("inspect_file").unwrap();
@@ -752,7 +905,23 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
     fixture.write("tools/inspect", "#!/bin/sh\nprintf mounted\n");
     support::os::make_executable(&fixture.repo.join("tools/inspect"));
     fixture.declare("tools/index.artf", json!({"name":"tools","basis":true}));
-    fixture.declare("files/input.txt.artf", json!({"name":"file","mounts":{"bin":"tools"},"views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"plain","command":"bin/inspect","args":[]}}}}));
+    fixture.declare(
+        "files/input.txt.artf",
+        json!({
+            "name":"file",
+            "mounts":{"bin":"tools"},
+            "views":{
+                "agent_tools":{
+                    "inspect":{
+                        "description":"Inspect",
+                        "protocol":"plain",
+                        "command":"bin/inspect",
+                        "args":[],
+                    },
+                },
+            },
+        }),
+    );
     let config = fixture.config();
     let registry = Registry::for_artifact(&config, "file").unwrap();
     registry.preflight("inspect_file").unwrap();
@@ -777,7 +946,10 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
 fn sidecar_checks_keep_s2_source_locations_and_literal_owner_data() {
     let fixture = Fixture::new();
     fixture.write("input.txt", "input");
-    fixture.write("input.txt.artf", "name = 'file'\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\npayload = { instruction = 'Check.', owner = { '$__toml_private_datetime' = 'ordinary string' } }\n");
+    fixture.write(
+        "input.txt.artf",
+        "name = 'file'\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\npayload = { instruction = 'Check.', owner = { '$__toml_private_datetime' = 'ordinary string' } }\n",
+    );
     assert_eq!(
         fixture.config().evals[0]
             .declaration
@@ -787,7 +959,10 @@ fn sidecar_checks_keep_s2_source_locations_and_literal_owner_data() {
             .extra["owner"]["$__toml_private_datetime"],
         "ordinary string"
     );
-    fixture.write("input.txt.artf", "name = 'file'\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\npayload.instruction = 'Check {file}/sub.'\n");
+    fixture.write(
+        "input.txt.artf",
+        "name = 'file'\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\npayload.instruction = 'Check {file}/sub.'\n",
+    );
     let error = read_workspace_config(&fixture.repo).unwrap_err();
     assert!(
         error.message.contains("line 5") && error.message.contains("cannot have a /path suffix"),
@@ -828,7 +1003,21 @@ fn changing_folder_to_file_does_not_reuse_equal_artifactsum_evidence() {
 #[test]
 fn reuse_key_covers_kinds_of_target_mount_child_and_reference_but_never_paths_or_tags() {
     let fixture = Fixture::new();
-    fixture.declare("owner/index.artf", json!({"name":"owner","mounts":{"mounted":"mount"},"evals":[{"id":"check","title":"Check","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Check {reference}."}}]}));
+    fixture.declare(
+        "owner/index.artf",
+        json!({
+            "name":"owner",
+            "mounts":{"mounted":"mount"},
+            "evals":[
+                {
+                    "id":"check",
+                    "title":"Check",
+                    "profile":{"kind":"runtime","command":"true","args":[]},
+                    "payload":{"instruction":"Check {reference}."},
+                },
+            ],
+        }),
+    );
     fixture.declare(
         "owner/child/index.artf",
         json!({"name":"child","basis":true}),
@@ -954,7 +1143,19 @@ fn disabled_fingerprint_target_deleted_by_dependency_script_is_not_executed() {
     declaration["fingerprint"] = json!(false);
     declaration["mounts"] = json!({"dep":"dep"});
     fixture.declare("files/input.txt.artf", declaration);
-    fixture.declare("dep/index.artf", json!({"name":"dep","basis":true,"fingerprint":{"script":{"command":support::os::bin("/bin/sh"),"args":["-c","rm ../files/input.txt; printf constant"]}}}));
+    fixture.declare(
+        "dep/index.artf",
+        json!({
+            "name":"dep",
+            "basis":true,
+            "fingerprint":{
+                "script":{
+                    "command":support::os::bin("/bin/sh"),
+                    "args":["-c","rm ../files/input.txt; printf constant"],
+                },
+            },
+        }),
+    );
     let run = fixture.json(&["verify", "--all"], 2);
     assert_eq!(run["requests"][0]["errorCode"], "PREPARATION_FAILED");
     assert!(!fixture.repo.join("files/started").exists());
@@ -967,7 +1168,14 @@ async fn mount_alias_can_shadow_a_sibling_not_visible_in_the_file_virtual_root()
     fixture.write("alias", "hidden sibling");
     fixture.write("other/visible", "mounted");
     fixture.declare("other/index.artf", json!({"name":"other","basis":true}));
-    fixture.declare("target.artf", json!({"name":"file","mounts":{"alias":"other"},"views":{"agent_tools":{"list":{"builtin":"list"},"read":{"builtin":"read"}}}}));
+    fixture.declare(
+        "target.artf",
+        json!({
+            "name":"file",
+            "mounts":{"alias":"other"},
+            "views":{"agent_tools":{"list":{"builtin":"list"},"read":{"builtin":"read"}}},
+        }),
+    );
     let config = fixture.config();
     let registry = Registry::for_artifact(&config, "file").unwrap();
     let listing = call(&registry, "list_file", json!({}), &fixture.state).await;
@@ -989,7 +1197,30 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
     for kind in ["directory", "missing", "symlink"] {
         let fixture = Fixture::new();
         fixture.write("input.txt", "input");
-        fixture.declare("input.txt.artf", json!({"name":"file","views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"json","command":"python3","args":["-c","open('started','w').write('yes');print('{}')"]}},"human_tools":{"inspect":{"description":"Inspect","kind":"output","command":support::os::bin("/bin/sh"),"args":["-c","touch started"]}}}}));
+        fixture.declare(
+            "input.txt.artf",
+            json!({
+                "name":"file",
+                "views":{
+                    "agent_tools":{
+                        "inspect":{
+                            "description":"Inspect",
+                            "protocol":"json",
+                            "command":"python3",
+                            "args":["-c","open('started','w').write('yes');print('{}')"],
+                        },
+                    },
+                    "human_tools":{
+                        "inspect":{
+                            "description":"Inspect",
+                            "kind":"output",
+                            "command":support::os::bin("/bin/sh"),
+                            "args":["-c","touch started"],
+                        },
+                    },
+                },
+            }),
+        );
         let config = fixture.config();
         let agent = Registry::for_artifact(&config, "file").unwrap();
         let human = artifactize::tools::human::Registry::for_artifact(&config, "file").unwrap();
@@ -1125,7 +1356,13 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
 fn a_derived_file_eval_never_turns_green_after_its_target_was_deleted() {
     let fixture = Fixture::new();
     fixture.write("ready.txt", "ready");
-    fixture.declare("ready.txt.artf", json!({"name":"ready","fingerprint":false,"evals":[{"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["trigger"]}}]}));
+    fixture.declare("ready.txt.artf", json!({
+        "name":"ready",
+        "fingerprint":false,
+        "evals":[
+            {"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["trigger"]}},
+        ],
+    }));
     fixture.declare(
         "trigger/index.artf",
         runtime("trigger", &["-c", "rm ../ready.txt"]),
@@ -1149,9 +1386,30 @@ fn removed_file_target_cannot_reuse_green_evidence_after_preparation() {
     let mut declaration = runtime("file", &["-c", "exit 0"]);
     declaration["mounts"] = json!({"dep":"dep"});
     fixture.declare("files/input.txt.artf", declaration);
-    fixture.declare("dep/index.artf", json!({"name":"dep","basis":true,"fingerprint":{"script":{"command":support::os::bin("/bin/sh"),"args":["-c","printf constant"]}}}));
+    fixture.declare(
+        "dep/index.artf",
+        json!({
+            "name":"dep",
+            "basis":true,
+            "fingerprint":{
+                "script":{"command":support::os::bin("/bin/sh"),"args":["-c","printf constant"]},
+            },
+        }),
+    );
     let first = fixture.json(&["verify", "--all"], 0);
-    fixture.declare("dep/index.artf", json!({"name":"dep","basis":true,"fingerprint":{"script":{"command":support::os::bin("/bin/sh"),"args":["-c","rm ../files/input.txt; printf constant"]}}}));
+    fixture.declare(
+        "dep/index.artf",
+        json!({
+            "name":"dep",
+            "basis":true,
+            "fingerprint":{
+                "script":{
+                    "command":support::os::bin("/bin/sh"),
+                    "args":["-c","rm ../files/input.txt; printf constant"],
+                },
+            },
+        }),
+    );
     let run = fixture.json(&["verify", "--all"], 2);
     assert_eq!(first["requests"][0]["key"], run["requests"][0]["key"]);
     assert_eq!(run["requests"][0]["errorCode"], "PREPARATION_FAILED");

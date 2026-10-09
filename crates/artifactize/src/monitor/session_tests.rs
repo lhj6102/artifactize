@@ -52,7 +52,13 @@ fn expanded_activity_remains_open_after_late_completion_and_resize_while_paused(
             serde_json::json!({"path":"src/visible.rs"}),
         ),
     );
-    let message = serde_json::json!({"kind":"message","message":Message::Assistant {id:None,content:vec![AssistantContent::ToolCall(call.clone())]}});
+    let message = serde_json::json!({
+        "kind":"message",
+        "message":Message::Assistant {
+            id: None,
+            content: vec![AssistantContent::ToolCall(call.clone())],
+        },
+    });
     append(&source, &format!("{message}\n"));
     append(&source, &answer("following prose ".repeat(100).as_str()));
     let mut live = session::Live::new(1, source);
@@ -65,7 +71,13 @@ fn expanded_activity_remains_open_after_late_completion_and_resize_while_paused(
     complete(&mut live);
     assert!(live.expanded(id));
     let anchor = live.window.anchor;
-    let result = serde_json::json!({"kind":"message","message":Message::tool_results(vec![call.result(vec![ToolResultContent::text("hidden output")])]),"isError":[false]});
+    let result = serde_json::json!({
+        "kind":"message",
+        "message":Message::tool_results(vec![
+            call.result(vec![ToolResultContent::text("hidden output")]),
+        ]),
+        "isError":[false],
+    });
     append(&live.source, &format!("{result}\n"));
     live.invalidate();
     complete(&mut live);

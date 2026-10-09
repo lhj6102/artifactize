@@ -60,7 +60,14 @@ fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
         json!({
             "name":name,
             "views":{"agent_tools":tools},
-            "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}],
+            "evals":[
+                {
+                    "id":"review",
+                    "title":"Review",
+                    "profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},
+                    "payload":{"instruction":instruction},
+                },
+            ],
         })
         .to_string(),
     )
@@ -68,7 +75,12 @@ fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
 }
 
 fn command() -> Value {
-    json!({"description":"Inspect {artifactName}","protocol":"json","command":"python3","args":["tool.py"]})
+    json!({
+        "description":"Inspect {artifactName}",
+        "protocol":"json",
+        "command":"python3",
+        "args":["tool.py"],
+    })
 }
 
 fn text(result: &ToolResult) -> &str {
@@ -147,7 +159,9 @@ async fn argument_validation_precedes_spawn_and_output_creation() {
         "properties":{"n":{"$ref":"#/$defs/positive"}},"required":["n"],"additionalProperties":false
     });
     let fixture = Fixture::new(tool);
-    fixture.script("open('spawned', 'w').write('yes')\nprint('{\"content\":[{\"type\":\"text\",\"text\":\"ran\"}]}')");
+    fixture.script(
+        "open('spawned', 'w').write('yes')\nprint('{\"content\":[{\"type\":\"text\",\"text\":\"ran\"}]}')",
+    );
     let config = read_workspace_config(&fixture.repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     for args in [
@@ -216,7 +230,9 @@ print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':c
 #[tokio::test]
 async fn json_success_authored_error_and_credential_safe_failures() {
     let fixture = Fixture::new(command());
-    fixture.script("print('{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"Choose a smaller range.\"}]}')");
+    fixture.script(
+        "print('{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"Choose a smaller range.\"}]}')",
+    );
     let result = fixture.call(json!({})).await;
     assert!(result.is_error);
     assert_eq!(text(&result), "Choose a smaller range.");
@@ -239,7 +255,9 @@ async fn json_success_authored_error_and_credential_safe_failures() {
         text(&fixture.call(json!({})).await),
         "Agent tool returned invalid output."
     );
-    fixture.script("import sys\nprint('secret-stderr',file=sys.stderr)\nprint('{\"content\":[{\"type\":\"text\",\"text\":\"safe\"}]}')");
+    fixture.script(
+        "import sys\nprint('secret-stderr',file=sys.stderr)\nprint('{\"content\":[{\"type\":\"text\",\"text\":\"safe\"}]}')",
+    );
     assert_eq!(text(&fixture.call(json!({})).await), "safe");
 }
 
@@ -342,7 +360,9 @@ print(json.dumps({{'content':[
         "path = 'image'; open(os.path.join(root,path), 'wb').write(b'not a PNG')",
         "path = 'image'; open(os.path.join(root,path), 'wb').truncate(4*1024*1024+1)",
     ] {
-        fixture.script(&format!("import json, os, shutil, sys\nif os.name == 'nt': import _winapi\nrequest = json.load(sys.stdin)\nroot = request['context']['outputDir']\n{setup}\nprint(json.dumps({{'content':[{{'type':'image','path':path,'mimeType':'image/png'}}]}}))"));
+        fixture.script(&format!(
+            "import json, os, shutil, sys\nif os.name == 'nt': import _winapi\nrequest = json.load(sys.stdin)\nroot = request['context']['outputDir']\n{setup}\nprint(json.dumps({{'content':[{{'type':'image','path':path,'mimeType':'image/png'}}]}}))"
+        ));
         let result = fixture.call(json!({})).await;
         assert!(result.is_error, "{setup}");
         assert_eq!(text(&result), "Agent tool returned invalid output.");
@@ -362,7 +382,11 @@ async fn plain_substitution_is_literal_single_pass_and_handles_escaping() {
         "{{query}}",
         "{{\"literal\":true}}"
     ]);
-    tool["input_schema"] = json!({"type":"object","properties":{"query":{"type":"string"},"n":{"type":"integer"},"items":{"type":"array"}},"required":["query","n","items"]});
+    tool["input_schema"] = json!({
+        "type":"object",
+        "properties":{"query":{"type":"string"},"n":{"type":"integer"},"items":{"type":"array"}},
+        "required":["query","n","items"],
+    });
     let fixture = Fixture::new(tool);
     fixture
         .script("import json, sys\nassert sys.stdin.read() == ''\nprint(json.dumps(sys.argv[1:]))");
@@ -397,7 +421,9 @@ async fn plain_output_is_clean_bounded_and_nonzero_is_error() {
     let mut tool = command();
     tool["protocol"] = json!("plain");
     let fixture = Fixture::new(tool);
-    fixture.script("import sys\nsys.stdout.buffer.write(b'\\x1b[31mhello\\x1b[0m\\x00\\t\\n')\nprint('stderr-secret',file=sys.stderr)");
+    fixture.script(
+        "import sys\nsys.stdout.buffer.write(b'\\x1b[31mhello\\x1b[0m\\x00\\t\\n')\nprint('stderr-secret',file=sys.stderr)",
+    );
     assert_eq!(text(&fixture.call(json!({})).await), "hello\t\n");
     fixture.script(
         "import sys\nprint('domain detail')\nprint('stderr-secret',file=sys.stderr)\nsys.exit(3)",
@@ -621,7 +647,9 @@ async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
     let mut root: Value =
         crate::test_declaration::read(fs::read(fixture.repo.join("index.artf")).unwrap()).unwrap();
     root["mounts"] = json!({"alias":"leaf"});
-    root["views"]["human_tools"] = json!({"humanOnly":{"description":"Human only","kind":"output","command":"missing","args":[]}});
+    root["views"]["human_tools"] = json!({
+        "humanOnly":{"description":"Human only","kind":"output","command":"missing","args":[]},
+    });
     crate::test_declaration::write(fixture.repo.join("index.artf"), root.to_string()).unwrap();
     fs::create_dir_all(fixture.repo.join("cases")).unwrap();
     crate::test_declaration::write(
@@ -630,7 +658,9 @@ async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
     )
     .unwrap();
     fs::write(fixture.repo.join("cases/input.txt"), "material").unwrap();
-    fixture.script("import json,sys\nrequest=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':request['context']['scope']}]}))");
+    fixture.script(
+        "import json,sys\nrequest=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':request['context']['scope']}]}))",
+    );
     let config = read_workspace_config(&fixture.repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     assert_eq!(
@@ -706,10 +736,19 @@ async fn dropping_call_cleans_process_before_removing_directories() {
 
 #[test]
 fn schema_diagnostics_are_bounded_without_limiting_valid_arrays() {
-    let validator = schema::compile(&json!({"type":"object","properties":{"items":{"type":"array","items":{"type":"integer"}}}})).unwrap();
+    let validator = schema::compile(&json!({
+        "type":"object",
+        "properties":{"items":{"type":"array","items":{"type":"integer"}}},
+    }))
+    .unwrap();
     assert!(schema::validate(&validator, &json!({"items":vec![1;4096]})).is_ok());
     let key = "secret\n\t/".repeat(4000);
-    let validator = schema::compile(&json!({"type":"object","properties":{&key:{"type":"integer"}},"additionalProperties":false})).unwrap();
+    let validator = schema::compile(&json!({
+        "type":"object",
+        "properties":{&key:{"type":"integer"}},
+        "additionalProperties":false,
+    }))
+    .unwrap();
     let args = json!({&key:"secret-value","a":1,"b":1,"c":1,"d":1,"e":1});
     let message = schema::validate(&validator, &args).unwrap_err();
     assert!(message.len() < 4096);

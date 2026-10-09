@@ -371,21 +371,43 @@ pub async fn verify(
         "selectedEvalIds":selected.evals.iter().map(|eval| &eval.id).collect::<Vec<_>>(),
         "includedEvalIds":evals.iter().map(|eval| &eval.id).collect::<Vec<_>>(),
         "satisfied":satisfied && !cancellation.is_cancelled(),
-        "obligations":evaluation.obligations.iter().filter(|id| required.contains(*id)).collect::<Vec<_>>(),
-        "artifacts":required.iter().map(|id| {
-            let a = &evaluation.artifacts[id];
-            let mut artifact = json!({"id":id,"status":format!("{:?}",a.status).to_uppercase(),"passed":a.passed,"total":a.total,"satisfied":a.satisfied});
-            if let Some(fingerprint) = fingerprints.get(id) {
-                artifact["fingerprintKind"] = json!(if fingerprint.manifest.is_some() {
-                    "artifactsum"
-                } else {
-                    "script"
+        "obligations":evaluation
+            .obligations
+            .iter()
+            .filter(|id| required.contains(*id))
+            .collect::<Vec<_>>(),
+        "artifacts":required
+            .iter()
+            .map(|id| {
+                let a = &evaluation.artifacts[id];
+                let mut artifact = json!({
+                    "id":id,
+                    "status":format!("{:?}", a.status).to_uppercase(),
+                    "passed":a.passed,
+                    "total":a.total,
+                    "satisfied":a.satisfied,
                 });
-                artifact["fingerprint"] = json!(fingerprint.value);
-            }
-            artifact
-        }).collect::<Vec<_>>(),
-        "evals":required_evals.iter().map(|(id, eval)| json!({"id":id,"status":status(eval.status),"blockedBy":eval.blocked_by})).collect::<Vec<_>>(),
+                if let Some(fingerprint) = fingerprints.get(id) {
+                    artifact["fingerprintKind"] = json!(if fingerprint.manifest.is_some() {
+                        "artifactsum"
+                    } else {
+                        "script"
+                    });
+                    artifact["fingerprint"] = json!(fingerprint.value);
+                }
+                artifact
+            })
+            .collect::<Vec<_>>(),
+        "evals":required_evals
+            .iter()
+            .map(|(id, eval)| {
+                json!({
+                    "id":id,
+                    "status":status(eval.status),
+                    "blockedBy":eval.blocked_by,
+                })
+            })
+            .collect::<Vec<_>>(),
     });
     receipts.finish(&run, &requests).await?;
     // Saved Agent conversations past their size bound are collected; a failure only warns.

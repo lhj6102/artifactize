@@ -55,7 +55,10 @@ impl ToolCheckOptions {
                 || self.tool.is_some()
                 || self.execute)
         {
-            return Err("An eval selector determines scope and audience; do not combine it with --artifact, --audience, --tool or --execute.".into());
+            return Err(
+                "An eval selector determines scope and audience; do not combine it with --artifact, --audience, --tool or --execute."
+                    .into(),
+            );
         }
         if self.execute
             && (self.artifact.is_none() || self.audience.is_none() || self.tool.is_none())
@@ -107,7 +110,11 @@ impl Catalog<'_> {
                     name: tool.name.clone(),
                     artifact_id: tool.artifact_id.clone(),
                     description: tool.description.clone(),
-                    input_schema: json!({"type":"object","properties":{},"additionalProperties":false}),
+                    input_schema: json!({
+                        "type":"object",
+                        "properties":{},
+                        "additionalProperties":false,
+                    }),
                 })
                 .collect(),
         }

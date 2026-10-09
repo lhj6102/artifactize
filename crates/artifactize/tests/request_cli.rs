@@ -33,14 +33,38 @@ impl Fixture {
         )
         .unwrap();
         let mut declaration = json!({
-            "name":"child","views":{"human_tools":{
-                "inspect":{"description":"Inspect","kind":"output","command":"cat","args":["fingerprint"]},
-                "open":{"description":"Launch","kind":"launch","command":"true","args":[]}
-            }},
-            "evals":[{"id":"review","title":"Human review","profile":{"kind":"human"},
-                "payload":{"instruction":"Review."},
-                "pass_schema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
-                "fail_schema":{"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"],"additionalProperties":false}}]
+            "name":"child",
+            "views":{
+                "human_tools":{
+                    "inspect":{
+                        "description":"Inspect",
+                        "kind":"output",
+                        "command":"cat",
+                        "args":["fingerprint"],
+                    },
+                    "open":{"description":"Launch","kind":"launch","command":"true","args":[]},
+                },
+            },
+            "evals":[
+                {
+                    "id":"review",
+                    "title":"Human review",
+                    "profile":{"kind":"human"},
+                    "payload":{"instruction":"Review."},
+                    "pass_schema":{
+                        "type":"object",
+                        "properties":{"approved":{"const":true}},
+                        "required":["approved"],
+                        "additionalProperties":false,
+                    },
+                    "fail_schema":{
+                        "type":"object",
+                        "properties":{"reason":{"type":"string"}},
+                        "required":["reason"],
+                        "additionalProperties":false,
+                    },
+                },
+            ],
         });
         if fingerprint {
             declaration["fingerprint"] = json!({"script":{"command":"cat","args":["fingerprint"]}});

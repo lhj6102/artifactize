@@ -73,7 +73,17 @@ async fn starting_inside_saved_non_git_workspace_selects_its_runs() {
     let state = root.path().join("state");
     std::fs::create_dir_all(repo.join("sub")).unwrap();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    let run: store::Run = serde_json::from_value(serde_json::json!({"id":"run-non-git","repoPath":repo,"stateDir":state,"status":"GREEN","createdAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:00:01Z","selection":{"kind":"all"},"validation":null})).unwrap();
+    let run: store::Run = serde_json::from_value(serde_json::json!({
+        "id":"run-non-git",
+        "repoPath":repo,
+        "stateDir":state,
+        "status":"GREEN",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "completedAt":"2026-01-01T00:00:01Z",
+        "selection":{"kind":"all"},
+        "validation":null,
+    }))
+    .unwrap();
     receipts.create_run(&run, &[]).await.unwrap();
     let mut monitor = super::super::Monitor::new(state, Some(repo.join("sub")));
     monitor.refresh().await;
