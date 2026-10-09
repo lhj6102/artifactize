@@ -76,7 +76,7 @@ impl Fixture {
 
     fn runtime(&self, program: &str, args: &[&str]) {
         fs::write(self.repo.join("artifactize.json"), json!({
-            "name":"test", "evals":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":bin(program),"args":args}, "payload":{"instruction":"Check runtime."}}]
+            "name":"test", "fingerprint":false, "evals":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":bin(program),"args":args}, "payload":{"instruction":"Check runtime."}}]
         }).to_string()).unwrap();
     }
 }

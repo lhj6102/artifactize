@@ -99,6 +99,8 @@ pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing")]
     pub name: Field<String>,
     #[serde(default, skip_serializing_if = "missing")]
+    pub tags: Field<Vec<String>>,
+    #[serde(default, skip_serializing_if = "missing")]
     pub views: Field<Views>,
     #[serde(default, skip_serializing_if = "missing")]
     pub mounts: Field<BTreeMap<String, String>>,

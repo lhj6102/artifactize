@@ -90,6 +90,7 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
             "name",
             "path",
             "reviewPolicy",
+            "tags",
             "views"
         ]
     );
@@ -109,7 +110,7 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
     let fingerprints = BTreeMap::from([("app".into(), "v1".parse().unwrap())]);
     assert_eq!(
         crate::cache::key(&eval_hash, &fingerprints).as_str(),
-        "37e7570aa8d259201517ad28ccbe755d8413d74371b26650729fb872296c262f"
+        "4056b8c4b08cc6c34167297a0c9fbb6ca8c0ca28f996c1470805b690c7329350"
     );
 }
 

@@ -128,9 +128,12 @@ fn a_dependency_change_misses_but_two_connections_away_only_through_the_fingerpr
 }
 
 #[test]
-fn a_dependency_without_a_fingerprint_leaves_its_dependents_unkeyed() {
+fn a_dependency_disabling_fingerprints_leaves_its_dependents_unkeyed() {
     let fixture = Fixture::new();
-    fixture.artifact("core", json!({"name":"core","basis":true}));
+    fixture.artifact(
+        "core",
+        json!({"name":"core","basis":true,"fingerprint":false}),
+    );
     fixture.file("core/lib.txt", "v1");
     fixture.artifact(
         "api",
@@ -148,7 +151,7 @@ fn a_dependency_without_a_fingerprint_leaves_its_dependents_unkeyed() {
         status["evals"][0]["reason"]
             .as_str()
             .unwrap()
-            .starts_with("Dependency core declares no fingerprint"),
+            .starts_with("Dependency core declares fingerprint: false"),
         "{status}"
     );
     // Declaring one restores reuse.
@@ -250,7 +253,7 @@ fn generated_and_ignored_review_output_never_changes_the_fingerprint() {
     assert!(fixture.repo.join("py/out/report.txt").is_file());
     assert_eq!(
         run["validation"]["artifacts"][0]["fingerprintKind"],
-        "content"
+        "artifactsum"
     );
     assert!(fixture.executed(0).is_empty());
 
@@ -344,7 +347,10 @@ fn status_json_shows_each_evals_fingerprints_definition_hash_and_key() {
     let fixture = Fixture::new();
     fixture.artifact("core", json!({"name":"core","basis":true,"fingerprint":{}}));
     fixture.file("core/lib.txt", "v1");
-    fixture.artifact("loose", json!({"name":"loose","basis":true}));
+    fixture.artifact(
+        "loose",
+        json!({"name":"loose","basis":true,"fingerprint":false}),
+    );
     fixture.artifact(
         "api",
         artifact("api", json!({}), json!({"core":"core"}), PASS),
@@ -367,16 +373,16 @@ fn status_json_shows_each_evals_fingerprints_definition_hash_and_key() {
     let hash = api["evalDefHash"].as_str().unwrap();
     assert_eq!(hash.len(), 64);
     let fingerprint = api["fingerprint"].as_str().unwrap();
-    assert!(fingerprint.starts_with("content:"));
+    assert!(fingerprint.starts_with("artifactsum:"));
     assert_eq!(api["fingerprints"]["api"], fingerprint);
     assert!(
         api["fingerprints"]["core"]
             .as_str()
             .unwrap()
-            .starts_with("content:")
+            .starts_with("artifactsum:")
     );
     assert_eq!(api["key"].as_str().unwrap().len(), 64);
-    // An Artifact without a fingerprint shows as null and leaves no key.
+    // An Artifact declaring fingerprint: false shows as null and leaves no key.
     let web = eval("web/check");
     assert_eq!(web["fingerprints"]["loose"], Value::Null);
     assert!(web["fingerprints"]["web"].is_string());
@@ -402,6 +408,114 @@ fn status_json_shows_each_evals_fingerprints_definition_hash_and_key() {
     assert_eq!(after["evals"][0]["id"], "api/check");
     assert_eq!(after["evals"][0]["action"], "reuse");
     assert_eq!(after["evals"][0]["key"], api["key"]);
+}
+
+#[test]
+fn default_artifactsum_reuses_and_tags_appear_in_graph_status_and_saved_monitor_data() {
+    let fixture = Fixture::new();
+    fixture.artifact("basis", json!({"name":"basis","basis":true}));
+    fixture.file("basis/rules.txt", "rules");
+    let mut declaration = artifact("app", json!({}), json!({"rules":"basis"}), PASS);
+    declaration.as_object_mut().unwrap().remove("fingerprint");
+    declaration["tags"] = json!(["type:image", "scope:combat"]);
+    fixture.artifact("app", declaration.clone());
+    fixture.file("app/input.txt", "input");
+    let graph = fixture.json(&["config", "graph"], 0);
+    assert_eq!(graph["artifacts"]["app"]["tags"], declaration["tags"]);
+    assert_eq!(graph["artifacts"]["basis"]["tags"], json!([]));
+    let text = String::from_utf8(fixture.run(&["config", "graph"]).stdout).unwrap();
+    assert!(
+        text.contains("Artifact app [type:image, scope:combat] (app)"),
+        "{text}"
+    );
+    let fresh = fixture.json(&["status"], 1);
+    assert_eq!(fresh["artifacts"][0]["tags"], declaration["tags"]);
+    assert_eq!(fresh["artifacts"][1]["tags"], json!([]));
+    assert!(fresh["evals"][0]["key"].is_string());
+    assert!(
+        fresh["evals"][0]["fingerprints"]["basis"]
+            .as_str()
+            .unwrap()
+            .starts_with("artifactsum:")
+    );
+    let text = String::from_utf8(fixture.run(&["status"]).stdout).unwrap();
+    assert!(
+        text.contains("Artifact app [type:image, scope:combat]: UNREVIEWED"),
+        "{text}"
+    );
+    let first = fixture.json(&["verify", "--all"], 0);
+    assert_eq!(
+        first["definitions"]["artifacts"]["app"]["tags"],
+        declaration["tags"]
+    );
+    assert_eq!(
+        first["validation"]["artifacts"][0]["fingerprintKind"],
+        "artifactsum"
+    );
+    assert_eq!(first["requests"][0]["key"], fresh["evals"][0]["key"]);
+    declaration["tags"] = json!(["scope:changed"]);
+    fixture.artifact("app", declaration);
+    let reused = fixture.json(&["verify", "--all"], 0);
+    assert_eq!(reused["executionsStarted"], 0);
+    assert_eq!(first["requests"][0]["key"], reused["requests"][0]["key"]);
+    fixture.file("basis/rules.txt", "changed");
+    assert_eq!(fixture.executed(0), ["app/check"]);
+}
+
+#[test]
+fn fingerprint_false_disables_end_of_review_checks_and_reports_the_explicit_choice() {
+    let fixture = Fixture::new();
+    fixture.artifact(
+        "app",
+        artifact(
+            "app",
+            json!(false),
+            json!({}),
+            &["-c", "echo run >> output.txt"],
+        ),
+    );
+    for _ in 0..2 {
+        let run = fixture.json(&["verify", "--all"], 0);
+        assert_eq!(run["executionsStarted"], 1);
+        assert!(run["requests"][0]["key"].is_null());
+        assert!(run["requests"][0]["fingerprint"].is_null());
+    }
+    let status = fixture.json(&["status"], 1);
+    assert!(
+        status["evals"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("declares fingerprint: false")
+    );
+    let text = String::from_utf8(fixture.run(&["status"]).stdout).unwrap();
+    assert!(text.contains("Artifact app:"));
+    assert!(text.contains("declares fingerprint: false"));
+    assert_eq!(
+        fs::read_to_string(fixture.repo.join("app/output.txt")).unwrap(),
+        "run\nrun\n"
+    );
+}
+
+#[test]
+fn config_check_rejects_true_and_nonobject_fingerprints_with_a_clear_message() {
+    let fixture = Fixture::new();
+    for value in [
+        json!(true),
+        json!(null),
+        json!(42),
+        json!("default"),
+        json!([]),
+    ] {
+        fixture.artifact("app", json!({"name":"app","fingerprint":value}));
+        let output = fixture.json(&["config", "check"], 2);
+        assert!(
+            output["error"]
+                .as_str()
+                .unwrap()
+                .contains("fingerprint must be false or an object"),
+            "{output}"
+        );
+    }
 }
 
 /// Windows opens `Secret` and `secret` as one folder, but ignore rules match names as written.

@@ -25,7 +25,7 @@ impl Fixture {
         fs::write(
             repo.join("artifactize.json"),
             json!({
-                "name":"parent","evals":[{"id":"check","title":"Dependent",
+                "name":"parent","fingerprint":false,"evals":[{"id":"check","title":"Dependent",
                     "profile":{"kind":"runtime","command":"true","args":[]},
                     "payload":{"instruction":"Check child."}}]
             })
@@ -44,6 +44,8 @@ impl Fixture {
         });
         if fingerprint {
             declaration["fingerprint"] = json!({"script":{"command":"cat","args":["fingerprint"]}});
+        } else {
+            declaration["fingerprint"] = json!(false);
         }
         fs::write(child.join("fingerprint"), "review-v1\n").unwrap();
         fs::write(child.join("artifactize.json"), declaration.to_string()).unwrap();
@@ -356,14 +358,14 @@ fn unclaim_releases_the_claimants_lock_for_another_reviewer() {
 }
 
 #[test]
-fn no_fingerprint_submission_from_another_process_continues_the_same_run() {
+fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
     let fixture = Fixture::new(false);
     let sibling = fixture.repo.join("sibling");
     fs::create_dir(&sibling).unwrap();
     fs::write(
         sibling.join("artifactize.json"),
         json!({
-            "name":"sibling","evals":[{"id":"check","title":"Once",
+            "name":"sibling","fingerprint":false,"evals":[{"id":"check","title":"Once",
             "profile":{"kind":"runtime","command":"true","args":[]},
             "payload":{"instruction":"Run before the Human finishes."}}]
         })

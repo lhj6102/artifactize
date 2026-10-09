@@ -337,10 +337,10 @@ fn removed_template_fields_are_unknown_but_owner_payloads_stay_literal() {
 }
 
 #[test]
-fn content_fingerprint_defaults_to_the_owner_folder() {
+fn artifactsum_defaults_to_the_owner_folder() {
     let declaration = parse(json!({"name":"a","fingerprint":{}})).unwrap();
     let fingerprint = declaration.fingerprint.unwrap();
-    let Fingerprint::Content { files, ignore } = &fingerprint else {
+    let Fingerprint::Artifactsum { files, ignore } = &fingerprint else {
         panic!()
     };
     assert_eq!(files, &["."]);
@@ -350,7 +350,7 @@ fn content_fingerprint_defaults_to_the_owner_folder() {
         json!({"files":["."],"ignore":[]})
     );
     let declared = json!({"files":["src","docs/a.md"],"ignore":["*.log","build/"]});
-    let Some(Fingerprint::Content { files, ignore }) =
+    let Some(Fingerprint::Artifactsum { files, ignore }) =
         parse(json!({"name":"a","fingerprint":declared}))
             .unwrap()
             .fingerprint
@@ -510,6 +510,73 @@ fn a_result_check_names_its_removal() {
         assert!(
             error.contains("Eval check: resultCheck was removed in 0.6.0"),
             "{error}"
+        );
+    }
+}
+
+#[test]
+fn omitted_fingerprint_is_artifactsum_and_only_false_disables_it() {
+    let default = parse(json!({"name":"a"})).unwrap().fingerprint.unwrap();
+    let explicit = parse(json!({"name":"a","fingerprint":{}}))
+        .unwrap()
+        .fingerprint
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(default).unwrap(),
+        serde_json::to_value(explicit).unwrap()
+    );
+    assert!(
+        parse(json!({"name":"a","fingerprint":false}))
+            .unwrap()
+            .fingerprint
+            .is_none()
+    );
+    for invalid in [json!(true), json!(null), json!(0), json!("off"), json!([])] {
+        let error = parse(json!({"name":"a","fingerprint":invalid})).unwrap_err();
+        assert!(
+            error.contains("fingerprint must be false or an object"),
+            "{invalid}: {error}"
+        );
+    }
+}
+
+#[test]
+fn tags_are_optional_unique_nonblank_strings_with_a_bounded_list() {
+    assert!(parse(json!({"name":"a"})).unwrap().tags.is_empty());
+    for tags in [
+        json!([]),
+        json!(["type:image", "scope:combat", "한글 태그", " free text "]),
+    ] {
+        let declaration = parse(json!({"name":"a","tags":tags})).unwrap();
+        assert_eq!(serde_json::to_value(declaration.tags).unwrap(), tags);
+    }
+    let tags: Vec<_> = (0..64).map(|i| format!("tag:{i}")).collect();
+    assert!(parse(json!({"name":"a","tags":tags})).is_ok());
+    let tags: Vec<_> = (0..65).map(|i| format!("tag:{i}")).collect();
+    assert!(
+        parse(json!({"name":"a","tags":tags}))
+            .unwrap_err()
+            .contains("at most 64")
+    );
+    for tags in [
+        json!([""]),
+        json!(["  "]),
+        json!(["\u{2003}"]),
+        json!(["same", "same"]),
+        json!([1]),
+        json!([null]),
+        json!(null),
+        json!("tag"),
+        json!({}),
+    ] {
+        assert!(parse(json!({"name":"a","tags":tags})).is_err(), "{tags}");
+    }
+    for control in (0..=31).chain(std::iter::once(127)) {
+        let tag = format!("tag{}value", char::from(control));
+        let error = parse(json!({"name":"a","tags":[tag]})).unwrap_err();
+        assert!(
+            error.contains("ASCII control characters"),
+            "{control}: {error}"
         );
     }
 }

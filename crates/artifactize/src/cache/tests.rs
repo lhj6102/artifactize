@@ -1,3 +1,6 @@
+#[path = "artifactsum_tests.rs"]
+mod artifactsum_tests;
+
 use std::{fs, path::Path};
 
 use serde_json::{Value, json};
@@ -60,7 +63,7 @@ impl Repo {
 #[tokio::test]
 async fn manifest_digest_prefix_remains_first_sixteen_hex_characters_not_full_identity() {
     let repo = Repo::new();
-    repo.artifact("", json!({"name":"root","fingerprint":{}}));
+    repo.artifact("", json!({"name":"root"}));
     repo.write("a.txt", "abc");
     let fingerprint = repo.fingerprint("root").await.unwrap();
     let manifest = fingerprint.manifest.unwrap();
@@ -69,10 +72,10 @@ async fn manifest_digest_prefix_remains_first_sixteen_hex_characters_not_full_id
         manifest.inputs,
         "e4f6b6f577a7a9d1317c8277472a2cf20ab370750350f87150dc6169e62a7506"
     );
-    assert_eq!(fingerprint.value.len(), 72);
+    assert_eq!(fingerprint.value.len(), 76);
     assert_eq!(
         fingerprint.value.as_str(),
-        format!("content:{}", manifest.inputs)
+        format!("artifactsum:{}", manifest.inputs)
     );
 }
 
@@ -114,7 +117,7 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
         ]
     );
     let before = repo.fingerprint("root").await.unwrap().value;
-    assert!(before.starts_with("content:") && before.len() == 72);
+    assert!(before.starts_with("artifactsum:") && before.len() == 76);
     for path in [
         "notes.log",
         "data/raw",
@@ -185,7 +188,7 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
     let link = repo.root.path().join("owner/link");
     let check = |error: String| {
         assert!(
-            error.contains("Content fingerprint for Artifact owner failed: link:"),
+            error.contains("Artifactsum for Artifact owner failed: link:"),
             "{error}"
         );
         assert!(error.contains("fingerprint.ignore"), "{error}");
@@ -389,8 +392,8 @@ fn changes_name_target_files_and_dependency_fingerprints() {
     };
     let old = manifest(&[("src/a.py", "1"), ("old.md", "1"), ("same", "1")]);
     let new = manifest(&[("src/a.py", "2"), ("docs/new.md", "1"), ("same", "1")]);
-    let before = fingerprints(&[("a", "content:1"), ("core", "x"), ("gone", "x")]);
-    let after = current(&[("a", "content:2"), ("core", "y"), ("extra", "x")]);
+    let before = fingerprints(&[("a", "artifactsum:1"), ("core", "x"), ("gone", "x")]);
+    let after = current(&[("a", "artifactsum:2"), ("core", "y"), ("extra", "x")]);
     let changes = changes(
         &execution(Some(old.clone()), before.clone()),
         "a",
@@ -408,7 +411,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
         "changed: +docs/new.md, -old.md, src/a.py; dependency core changed; dependency extra added; dependency gone removed"
     );
     // Only a dependency changed: the target's files are not listed.
-    let only = current(&[("a", "content:1"), ("core", "y"), ("gone", "x")]);
+    let only = current(&[("a", "artifactsum:1"), ("core", "y"), ("gone", "x")]);
     let changes = super::changes(
         &execution(Some(old.clone()), before.clone()),
         "a",
@@ -440,10 +443,9 @@ fn changes_name_target_files_and_dependency_fingerprints() {
     assert!(changes.files.is_none() && changes.dependencies.is_none());
 }
 
-/// The keys of evals without a `resultCheck`, computed by artifactize 0.5 before 0.6.0
-/// removed it: they do not change, so their results stay reusable.
+/// The upgrade invalidates even script keys, without changing the Eval strategy hash.
 #[test]
-fn keys_of_evals_without_a_result_check_are_pinned() {
+fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
     let agent: EvalDeclaration = serde_json::from_value(json!({
         "id":"spec-coverage","title":"Spec coverage",
         "profile":{"kind":"agent","backend":"openai","model":"gpt-5.1","reasoning":"high","timeoutMs":60000,"maxToolCalls":20},
@@ -476,6 +478,6 @@ fn keys_of_evals_without_a_result_check_are_pinned() {
         ),
     ] {
         assert_eq!(eval_definition_hash(eval), hash);
-        assert_eq!(key(hash, &fingerprints).as_str(), pinned);
+        assert_ne!(key(hash, &fingerprints).as_str(), pinned);
     }
 }

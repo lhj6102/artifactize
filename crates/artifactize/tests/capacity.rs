@@ -69,7 +69,7 @@ impl Fixture {
             fs::create_dir_all(&folder).unwrap();
             fs::write(
                 folder.join("artifactize.json"),
-                json!({"name":name,"evals":[{"id":"review","title":"Review",
+                json!({"name":name,"fingerprint":false,"evals":[{"id":"review","title":"Review",
                     "profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},
                     "payload":{"instruction":"Review."}}]})
                 .to_string(),

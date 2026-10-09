@@ -27,7 +27,7 @@ impl Fixture {
             ("broken", runtime("/artifactize/missing")),
             ("human", json!({"kind": "human"})),
         ] {
-            let mut declaration = json!({"name": name, "evals": [{"id": "check", "title": name,
+            let mut declaration = json!({"name": name, "fingerprint":false, "evals": [{"id": "check", "title": name,
                 "profile": profile, "payload": {"instruction": "Check."}}]});
             if name == "green" {
                 declaration["fingerprint"] =

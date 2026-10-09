@@ -53,7 +53,7 @@ fn check<'a>(report: &'a Value, name: &str) -> &'a Value {
 fn verify(state: &Path, repo: &Path, profile: Value, code: i32) -> Value {
     fs::create_dir_all(repo).unwrap();
     fs::write(repo.join("artifactize.json"), json!({
-        "name":"a", "evals":[{"id":"review", "title":"Review", "payload":{"instruction":"Review"}, "profile":profile}]
+        "name":"a", "fingerprint":false, "evals":[{"id":"review", "title":"Review", "payload":{"instruction":"Review"}, "profile":profile}]
     }).to_string()).unwrap();
     // A Human request is recorded and left waiting: the wait times out at once.
     result(

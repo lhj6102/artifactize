@@ -408,7 +408,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert_eq!(red.field("Fingerprint"), Some("red-v1"));
     let covers = red.field("Key covers").unwrap();
     assert!(
-        covers.starts_with("input content:") && covers.contains("\npart content:"),
+        covers.starts_with("input artifactsum:") && covers.contains("\npart artifactsum:"),
         "{covers}"
     );
     assert!(covers.ends_with("\nred red-v1"), "{covers}");

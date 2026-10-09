@@ -42,6 +42,7 @@ pub struct StatusView {
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactState {
     pub id: String,
+    pub tags: Vec<String>,
     pub state: ArtifactCondition,
     pub reason: String,
     pub eval_ids: Vec<String>,
@@ -239,6 +240,7 @@ pub async fn status(
         *counts.artifacts.entry(status).or_default() += 1;
         artifacts.push(ArtifactState {
             id: (*id).to_owned(),
+            tags: config.artifacts[*id].tags.clone(),
             state: status,
             reason,
             eval_ids: own.evals.iter().map(|id| (*id).to_owned()).collect(),
@@ -335,8 +337,8 @@ pub async fn status(
                     } else {
                         match cache::eval_key(&config, eval, &fingerprints) {
                             Ok(_) => "The current eval and fingerprints have no completed cached result.".into(),
-                            Err(cache::Unkeyed::Target) => "No fingerprint is declared; saved noncached results satisfy only their own Run.".into(),
-                            Err(cache::Unkeyed::Dependency(id)) => format!("Dependency {id} declares no fingerprint, so this eval has no reuse key; saved noncached results satisfy only their own Run."),
+                            Err(cache::Unkeyed::Target) => "The Artifact declares fingerprint: false; saved noncached results satisfy only their own Run.".into(),
+                            Err(cache::Unkeyed::Dependency(id)) => format!("Dependency {id} declares fingerprint: false, so this eval has no reuse key; saved noncached results satisfy only their own Run."),
                         }
                     },
                 ),
