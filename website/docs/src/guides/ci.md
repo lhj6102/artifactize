@@ -1,14 +1,17 @@
 # CI
 
-Run `artifactize verify --all --reuse-only agent,human` as a CI step: tests run,
-while reviews must come from the cache or the team store, so CI never calls a
-model or waits for a person. It exits 0 only when every selected eval is GREEN, so
-RED (1), ERROR (2) and INCOMPLETE (4) fail the job; the
-[command reference](../reference/cli.md#command-reference) lists every exit code.
-An Agent review or Human sign-off with nothing to reuse is
-[not executed](../reference/cli.md#reuse-only) and leaves the Run INCOMPLETE, so CI
-passes only once a developer's `verify` has produced it; a sign-off is reused only
-when its Artifacts declare a fingerprint.
+Run `artifactize verify --all --reuse-only agent,human` as a CI step: tests run, while reviews must come from the cache or
+the team store, so CI never calls a model or waits for a person. It exits 0 only
+when every selected eval is GREEN, so RED (1), ERROR (2) and INCOMPLETE (4) fail the
+job; the [command reference](../reference/cli.md#command-reference) lists every exit code. An Agent review or Human sign-off with
+nothing to reuse is [not executed](../reference/cli.md#reuse-only) and leaves the Run INCOMPLETE, so CI passes only once
+a developer's `verify` has produced it for the current key. Artifactsum enables
+reuse by default; `fingerprint = false` on a target or dependency disables it.
+
+Dependency evals still derive current readiness under `--reuse-only agent,human`; they run nothing
+and are never cached or fetched from the store themselves. A missing or waiting
+required review leaves them WAIT_DEPENDENCY; a required RED makes them BLOCKED.
+`--reuse-only dependency` does not prevent derivation.
 
 ## Reuse verdicts from the team store
 

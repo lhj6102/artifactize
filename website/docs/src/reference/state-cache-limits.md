@@ -6,7 +6,7 @@ bounded, and the local diagnostics and maintenance commands.
 
 ## State
 
-One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 5),
+One `state.sqlite` holds Runs from every repository (bundled SQLite, WAL, schema 6),
 with the canonical repository path recorded on each Run. The state home is
 `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`, else (on Windows)
 `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
@@ -26,7 +26,11 @@ four tables:
 | `executions` | execution | `id`, `key`, `eval_def_hash`, `status`, `owner_pid` and `owner_start_time` (the owning process), `backend` (an Agent review's, see [Backend capacity](#backend-capacity)), and the [key history](#cache-inspection) columns `completed_at`, `bytes` and `last_used` |
 | `state_meta` | named value of the state | `name`, `value` |
 
-A Run has one request per eval and per ordinal. One execution per reuse key can be
+A Run has one request per eval and per ordinal. Dependency requests save their
+derived state and `blockedBy`, but have no execution row, key, run output, usage
+or backend-capacity slot. They count under `summary.derived`, not executed or
+reused work. They never enter cache inspection or team-store lookup/publication.
+One execution per reuse key can be
 active (RUNNING or WAITING_HUMAN) at a time. `state_meta` holds the state's stable
 id, a random UUID made when the database is created (row `id`), which
 [Agent session references](#agent-sessions) name. How a review went, its
@@ -34,7 +38,7 @@ conversation and its tool calls, is not in the state: it is in the review's
 [saved session](#agent-sessions).
 
 There is no migration. Commands that read or write a state written by an earlier
-artifactize (schema 1 to 4, artifactize 0.1 to 0.5) refuse it with exit code 2 and
+artifactize (schemas 1–5, through artifactize 0.8) refuse it with exit code 2 and
 this message, leaving it as it is. `doctor` instead includes the same message in
 its hard-error report and exits 1:
 
@@ -42,13 +46,17 @@ its hard-error report and exits 1:
 This state was written by an earlier artifactize. Start a new state (set ARTIFACTIZE_STATE_HOME or move the old one away). artifactize does not migrate it.
 ```
 
-A new state reviews every eval once and then reuses as before.
+A new 0.9 state reviews every executable eval once, Human sign-offs included,
+and then reuses as before. Reuse-key v2 matches no earlier records, including
+script fingerprints and team-store records. Dependency evals derive current
+evidence; they have no execution or reusable record. See
+[Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
 [`doctor`](#doctor-models-and-prune) reports such a state as a hard error, and a
 database written by a newer artifactize the same way.
 
 Tokens are never stored inside a repository. `$STATE/auth`, which holds the Codex
 sign-in and the review store token, is refused when it lies inside a git work tree or
-an artifactize workspace (any ancestor holding `.git` or `artifactize.json`) or
+an artifactize workspace (any ancestor holding `.git` or `index.artf`) or
 inside `--repo`, even where the state itself is accepted, such as a gitignored folder
 in a checkout. `login codex` and `remote login` then fail before signing in, with a
 message naming both folders:
@@ -241,7 +249,7 @@ removes are in the [reference](#doctor-models-and-prune).
 file. It reports the resolved state directory and tests writability with a temporary
 directory, removed immediately (in the nearest existing ancestor when state does
 not yet exist). It reads the state database's schema without changing the file: a
-database [written by an earlier artifactize](#state) (schema 1 to 4) or by a newer
+database [written by an earlier artifactize](#state) (schemas 1–5) or by a newer
 one is a hard error (exit 1), with the message other commands refuse it with and
 its `schema` and the `supported` one in the details. `--repo`
 additionally runs the same static validation as `config check`. The `limits` check

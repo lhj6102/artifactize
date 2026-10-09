@@ -3,7 +3,7 @@
 [Agent evals and backends](../guides/agent-evals.md#agent-tools) shows an Agent tool declaration.
 
 Command fields `description`, `protocol`, `command` and `args` are required.
-`inputSchema` defaults to `{"type":"object","additionalProperties":false}`
+`input_schema` defaults to `{"type":"object","additionalProperties":false}`
 (empty arguments only). Supplied schemas must have root `type: "object"` and are
 compiled by `jsonschema`, without its file/HTTP resolution features. Local `$ref`,
 composition and other standard schema features work; there is no custom keyword
@@ -32,9 +32,9 @@ absolute paths, dot components or symlinks. The registry scope remains the eval'
 admitted Artifacts, not other evals' references. Paths are opened read-only through
 pinned directory descriptors with no-follow component checks; special files cannot
 be read. `list` can report `symlink`/`other` entries, but searches skip them.
-Mounts have kind `mount`; family folders have kind `family` and an `instances`
-catalog. Listing a family folder directly pages its logical `instance` entries;
-reading its physical files requires `<family>/<instance>/<path>`.
+Mounts have kind `mount`. A file Artifact exposes only its target file, mounts and
+referenced Artifacts, not unrelated siblings in its working directory.
+`list` at its root lists the target file and declared mounts.
 
 Read returns at most 64 KiB of **complete original line bytes**, preserving LF,
 CRLF and a UTF-8 BOM in each line's `text`. Only requested lines are decoded;
@@ -47,8 +47,8 @@ Globs use `*` within a component and `**` across directories, relative to `path`
 Grep uses Rust `regex` syntax; `glob` filters relative file paths (or the basename
 when `path` names a file). Hidden files are included; git ignore rules do not
 filter results. Binary (NUL) and invalid UTF-8 files are skipped in their entirety.
-Search follows logical mounts and family instances without repeating a mount
-cycle. Bounds are 10,000 traversed entries, 8 MiB per grep file, 64 MiB searched,
+Search follows logical mounts without repeating a mount cycle. Bounds are 10,000
+traversed entries, 8 MiB per grep file, 64 MiB searched,
 and 512 KiB per JSON result. Search limits or skipped oversized files set
 `truncated: true`; narrow the path/pattern to continue. Listing a directory with
 more than 10,000 entries returns an error. Listing can page early at the result
@@ -73,8 +73,9 @@ The `json` protocol receives exactly one request on stdin:
 }
 ```
 
-Scope entries contain canonical physical paths and logical child/mount maps;
-family instances also include `family: {name, material}`. `executionPaths` is
+Scope entries contain canonical physical paths and logical child/mount maps.
+These protocol keys stay camelCase; declarations use `execution_paths` and
+`input_schema`. `executionPaths` is
 omitted when empty. Declared execution paths are up to 64 unique workspace-relative
 files/directories, resolved without symlinks or copying.
 
@@ -101,7 +102,7 @@ These reach the reviewer unchanged. Nonzero exit, crash, malformed/truncated
 JSON, and process failures yield generic errors; stderr is never forwarded.
 There are no observation receipts.
 
-For `plain`, only top-level declared `inputSchema.properties` can appear as argv
+For `plain`, only top-level declared `input_schema.properties` can appear as argv
 placeholders. Whole-token `{query}` and embedded `--query={query}` both work.
 Strings substitute literally; other JSON values use compact JSON. Missing values
 and NUL bytes fail before spawn. `{{` and `}}` escape literal braces. Substitution
@@ -118,7 +119,8 @@ lookup. Commands containing `/` resolve from the owner through the scope resolve
 as given. JSON-protocol argv may use existing scoped Artifact references, but
 cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
 schema-property placeholders. Commands themselves are never interpolated.
-Command calls use the owner folder as cwd, runtime's PATH/LANG-only inheritance and
+Command calls use the owner's working directory (the containing folder for a file
+Artifact) as cwd, runtime's PATH/LANG-only inheritance and
 private external HOME/TMP/output, a default 120000 ms deadline (1–2147483647), and
 process-group cancellation/cleanup. Per-call directories are removed on success,
 failure and cancellation, including dropped call futures; caller-owned output

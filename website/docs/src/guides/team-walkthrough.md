@@ -129,13 +129,20 @@ A rejected token, by contrast, fails the job with exit 2.
 
 ## Human sign-offs
 
-A Human verdict is reused only when its Artifact has a fingerprint. Here is a
-one-file project with a Human sign-off, with a copy for Bob:
+A Human verdict reuses by default through artifactsum; `fingerprint = false` disables it. Here
+is a one-file project with a Human sign-off, with a copy for Bob:
 
 ```sh
 mkdir "$WALK/brand" && cd "$WALK/brand"
 echo 'logo v1' > logo.txt
-echo '{"name":"brand","fingerprint":{},"evals":[{"id":"signoff","title":"Sign off","profile":{"kind":"human"},"payload":{"instruction":"Approve the logo."}}]}' > artifactize.json
+cat > index.artf <<'TOML'
+name = "brand"
+
+[evals.signoff]
+title = "Sign off"
+profile = { kind = "human" }
+payload.instruction = "Approve the logo."
+TOML
 cp -r "$WALK/brand" "$WALK/brand-bob"
 ```
 

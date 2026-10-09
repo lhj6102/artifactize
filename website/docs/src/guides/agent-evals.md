@@ -9,14 +9,9 @@ verdict.
 Agent evals use one explicit model and backend, with no bundled catalog, aliases,
 credential search or fallback:
 
-```json
-{
-  "kind": "agent",
-  "backend": "openai",
-  "model": "YOUR_EXACT_MODEL_ID",
-  "reasoning": "high",
-  "timeoutMs": 240000
-}
+```toml
+# Inside [evals.review]
+profile = { kind = "agent", backend = "openai", model = "YOUR_EXACT_MODEL_ID", reasoning = "high", timeout_ms = 240000 }
 ```
 
 `backend` accepts `openai`, `anthropic` or `codex`. The first two use only
@@ -56,54 +51,45 @@ Return only one JSON object matching the schema.
 ```
 
 If the repaired output is still invalid, the review is ERROR, and the saved error
-keeps only the error code, never the model's output. `maxTokens` and `maxToolCalls` are enforced client-side before further tools
-execute; neither becomes a provider request parameter.
+keeps only the error code, never the model's output. `max_tokens` and `max_tool_calls` are
+enforced client-side before further tools execute; neither becomes a provider
+request parameter.
 
 The rig adapter, retries, tool results and usage counters are in
 [Agent backends](#agent-backends).
 
 ## Agent tools
 
-`views.agentTools` is an explicit safe-name map. Each entry is either a flat
-command declaration or a built-in reference; unknown and mixed fields are rejected.
-There is no `metadata`, `script`, `resultKinds`, `artifactKind` or `observation`
-wrapper on Agent tools.
+`views.agent_tools` is an explicit safe-name map. Each entry is either a flat command
+declaration or a built-in reference; unknown and mixed fields are rejected. There is
+no `metadata`, `script`, `result_kinds`, `artifact_kind` or `observation` wrapper on Agent
+tools.
 
-```json
-{
-  "views": {
-    "agentTools": {
-      "inspect": {
-        "description": "Inspect a section of {artifactName}.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {"section": {"type": "string"}},
-          "required": ["section"],
-          "additionalProperties": false
-        },
-        "protocol": "json",
-        "command": "python3",
-        "args": ["inspect.py"],
-        "timeoutMs": 120000,
-        "executionPaths": ["shared/rules.json"]
-      },
-      "search": {
-        "description": "Search {artifactName}.",
-        "inputSchema": {
-          "type": "object",
-          "properties": {"query": {"type": "string"}},
-          "required": ["query"],
-          "additionalProperties": false
-        },
-        "protocol": "plain",
-        "command": "rg",
-        "args": ["--", "{query}", "."]
-      },
-      "read": {"builtin": "read", "description": "Read {artifactName}."}
-    }
-  }
-}
+```toml
+[views.agent_tools]
+read = { builtin = "read", description = "Read {artifactName}." }
+
+[views.agent_tools.inspect]
+description = "Inspect a section of {artifactName}."
+input_schema = { type = "object", properties = { section = { type = "string" } }, required = ["section"], additionalProperties = false }
+protocol = "json"
+command = "python3"
+args = ["inspect.py"]
+timeout_ms = 120000
+execution_paths = ["shared/rules.json"]
+
+[views.agent_tools.search]
+description = "Search {artifactName}."
+input_schema = { type = "object", properties = { query = { type = "string" } }, required = ["query"], additionalProperties = false }
+protocol = "plain"
+command = "rg"
+args = ["--", "{query}", "."]
 ```
+
+Declaration keys are snake_case; JSON tool requests/results and saved profiles
+keep their existing names. A file Artifact's built-ins expose its file, mounts and
+referenced Artifacts, not sibling files; command tools use the containing folder
+as cwd and remain trusted local programs.
 
 Field rules, the built-in tools, the `json` and `plain` protocols and their limits
 are in the [reference](../reference/agent-tools.md#agent-tools).
@@ -156,9 +142,9 @@ A failed Agent review records one of these `errorCode` values:
 | `QUOTA` | A billing, credit or plan usage limit (`insufficient_quota`, a Codex usage limit) | no; stops the backend |
 | `RATE_LIMIT` | HTTP 429 without a quota cause, after the retries or when `Retry-After` passes the deadline | yes |
 | `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream | yes, before output |
-| `TIMEOUT` | The review's `timeoutMs` deadline | no |
+| `TIMEOUT` | The review's `timeout_ms` deadline | no |
 | `CANCELLED` | Ctrl-C or a cancelled Run | no |
-| `PROVIDER_BUDGET_EXCEEDED` | `maxTokens` or `maxToolCalls` was exceeded | no |
+| `PROVIDER_BUDGET_EXCEEDED` | `max_tokens` or `max_tool_calls` was exceeded | no |
 | `INVALID_RESULT` | No valid verdict after the one format repair | no |
 | `PROVIDER_ERROR` | Any other provider failure: a rejected request, an unknown or different model, an incomplete response, a malformed tool call | no |
 | `AGENT_ERROR` | Anything else, such as an invalid test endpoint or an unusable tool | no |
@@ -340,7 +326,8 @@ notes.md line 1 says R1 holds, but it now reads "R1 fails", so the verdict would
   another fingerprint now, the header says `files changed since this review`, and the
   model is told so.
 - The answer is free text, with no verdict schema, and each follow-up gets the
-  profile's `maxToolCalls`, `maxTokens` and `timeoutMs` budgets afresh. Your message is
+  profile's `maxToolCalls`, `maxTokens` and `timeoutMs` budgets afresh
+  (saved JSON field names). Your message is
   sent as one new user turn that frames it as a follow-up, not a new review: `Follow-up
   question from a person about the review above. This is not a new review: the verdict
   stays as recorded, and the instruction to return one JSON object applied only to the
@@ -387,7 +374,7 @@ does. Turn saving off with `"agentSessions": {"enabled": false}`, and delete
 ```sh
 artifactize login codex     # sign in to ChatGPT in the browser
 artifactize models codex    # the account's Codex models
-# Declare "backend": "codex", "model": "gpt-6-luna", "reasoning": "max", then:
+# Declare backend = "codex", model = "gpt-6-luna", reasoning = "max", then:
 artifactize verify --all
 artifactize logout codex    # revoke and delete artifactize's tokens
 ```

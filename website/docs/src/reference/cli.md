@@ -9,7 +9,8 @@ Every command accepts the common options `--repo PATH` (default: the current
 directory), `--state-dir PATH` (default: the state home below) and `--json`, before
 or after the subcommand, at most once each; commands that do not read a repository
 or state ignore them, except `monitor` and `review` (which reject `--json`).
-`SELECTOR` is exactly one of `ARTIFACT`, `--eval ID`, `--evals CSV`,
+`SELECTOR` is exactly one of positional `ARTIFACT` or qualified `ARTIFACT/EVAL`,
+`--eval ID`, `--evals CSV`,
 `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH` or `--all`.
 `help [COMMAND]` and `--help` print help; `--version` prints the version.
 
@@ -18,7 +19,7 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `verify SELECTOR` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--jobs N` (4), `--fingerprint-jobs N` (CPUs), `--max-executions N`, `--timeout-ms MS` (600000), `--reuse-only KINDS` | text or JSON | outcome |
 | `status [SELECTOR]` | `--profile NAME`, `--recursive`, `--force`, `--ignore-gates`, `--fingerprint-jobs N` (CPUs); default `--all` | text or JSON | 0 satisfied, 1 not |
 | `config check` | | text or JSON | 0 |
-| `config graph [ARTIFACT\|FAMILY]` | | text or JSON | 0 |
+| `config graph [ARTIFACT]` | | text or JSON | 0 |
 | `run list` | `--repo-only` \| `--all`, `--limit N` (50), `--offset N` (0) | text or JSON | 0 |
 | `run show RUN_ID` | `--wait`, `--timeout-ms MS` (600000, needs `--wait`) | JSON | 0; outcome with `--wait` |
 | `request list` | `--run RUN_ID` | text or JSON | 0 |
@@ -98,15 +99,18 @@ ERROR-waiting dependents, and a two-Artifact cycle. Its overall exit code is 2.
 
 [Runs, status and validation](../concepts/runs-and-status.md#verify-and-runs) covers selectors, gates, outcomes and output.
 
-Root `reviewPolicy.dependencyGates` defaults to `green`; `ignore` enables bypass.
+Root `review_policy.dependency_gates` defaults to `green`; `ignore` enables bypass.
 The library's `project::VerifyOptions.ignore_gates` can explicitly override either
 policy, including `Some(false)` to enforce gates. `--force` marks only explicitly
-selected evals for a fresh review, not recursive dependencies; it neither expands
+selected executable evals for a fresh review, not recursive dependencies; it
+neither expands
 the execution scope nor bypasses gates. Runs record the resolved policy and each
 request's force flag. Forced evals never read or join cached results or live
 executions; a forced GREEN or RED is added as the key's newest record, and
 published to a configured review store, which later runs reuse. Dependencies may
 still reuse their own local records, but a forced Run reads nothing from the store.
+Dependency evals are always derived, never forced. Gate bypass changes neither
+their requirements nor their derived verdict.
 
 `--jobs N` bounds the evals one `verify` runs at once. Agent reviews are further
 bounded machine-wide per backend by `$STATE/limits.json`
@@ -123,9 +127,11 @@ Results and output do not depend on the bound or on completion order.
 budget (unlimited when omitted); it is not an Artifact declaration field.
 The Run records `jobs`, `fingerprintJobs`, `maxExecutions` and `executionsStarted`. A prepared
 Runtime or Agent invocation consumes one start, even when it fails to spawn or
-later returns ERROR. Human waiting, claim and tool actions consume no starts. Fingerprint preparation/rechecks, cache hits, and joined waiters
+later returns ERROR. Human waiting, claim and tool actions and dependency
+derivation consume no starts. Fingerprint preparation/rechecks, cache hits, and
+joined waiters
 consume none. Preparation failures before invocation consume none. Zero permits
-reuse, joining and Human reviews; a budgeted waiter replacing a failed/dead owner uses
+reuse, joining, Human reviews and dependency derivation; a budgeted waiter replacing a failed/dead owner uses
 its own Run's remaining budget. Exhaustion never interrupts running evals, but
 leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
@@ -146,13 +152,15 @@ contain ASCII whitespace, control characters or commas. Malformed JSON arrays
 never fall back to line parsing. Relative file paths resolve from the CLI's cwd,
 not `--repo`.
 
-`verify ... --profile NAME` selects a complete declared `profileVariants` entry
-for every included eval. Each eval can declare up to 64 safely named variants,
+`verify ... --profile NAME` selects a complete declared `profile_variants` entry
+for every included executable eval. Dependency evals are skipped; they have no
+variants. Explicit per-eval library mappings to a dependency eval are rejected.
+Each executable eval can declare up to 64 safely named variants,
 all retaining its default reviewer kind. Unknown variants fail before creating a
 Run, and source declarations are never rewritten. The library accepts
 `project::selection::ProfileSelection::Named` or `ProfileSelection::Evals` (a
 qualified-eval-to-name map); mappings outside the included scope fail. With
-`--recursive`, variants also apply to dependency evals. Runtime
+`--recursive`, variants also apply to included executable dependencies. Runtime
 variant arguments rebuild scoped references and dependency gates. The selected
 variant is an execution option: it is not part of the reuse key, so results of
 different variants (and of the declared profile) reuse each other unless a runtime
@@ -163,8 +171,10 @@ requested profile when a hit returns another one, and text output then adds
 
 ## Reuse only
 
-`verify --reuse-only KINDS` takes a comma-separated list of `runtime`, `agent` and
-`human`. An eval of a listed kind may only reuse a result: a completed record of its
+`verify --reuse-only KINDS` takes a comma-separated list of `runtime`, `agent`,
+`human` and `dependency`. Dependency evals still derive current evidence, even
+with `--reuse-only dependency`; they do not look up a cached verdict. An executable
+eval of a listed kind may only reuse a result: a completed record of its
 reuse key in the local cache, or in the [review store](review-store.md) when one is
 configured. When there is none, the eval is not executed: no executor start, no
 provider call, no Human request, and no waiting, not even for a live execution of
@@ -184,3 +194,24 @@ Evals that depend on it wait, or are blocked, as they would behind any missing
 evidence. The Run ends INCOMPLETE with a reason (exit 4), even when another eval is
 RED or ERROR, as with an exhausted budget, and records the kinds as `reuseOnly`.
 `status` does not take the flag: it predicts what a plain `verify` would do.
+
+## Dependency selection and output
+
+`artifactize verify player/ready` is the same qualified eval selection as
+`--eval player/ready`. A selected dependency eval automatically includes its
+required dependency scope's evals, without `--recursive`. A file Artifact is
+selected by its declared name; it has no automatic relation to the surrounding
+folder Artifact.
+
+Dependency requests are marked `(derived)` in text and
+`source.kind = "derived"` in JSON. `summary.derived` counts them separately from
+executed and reused work. Their `blocked_by` list (`blockedBy` in JSON requests,
+validation and status) lists unfulfilled Artifacts and qualified eval IDs. RED or
+BLOCKED requirements produce BLOCKED; missing, stale, ERROR, cancelled or waiting
+Human requirements produce WAIT_DEPENDENCY; fulfilled requirements produce GREEN.
+`status` uses the `derive` action, and monitor details show the same saved blockers.
+Tags appear on Artifact entries in text/JSON graph and status, and in the monitor.
+
+There is no execution, cache key, team-store lookup or publication for the derived
+eval itself. Executable requirements keep normal reuse and execution behavior.
+See [Dependency evals](declarations.md#dependency-evals).

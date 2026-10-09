@@ -16,12 +16,13 @@ artifactize --state-dir /srv/artifactize server token add ci --scopes read
 artifactize --state-dir /srv/artifactize server run     # http://127.0.0.1:8417/
 ```
 
-`token add` prints each token once. `server run` binds loopback by default. Put a
-TLS reverse proxy or a tunnel in front, because clients require HTTPS except on
-loopback. Back up `review-store.sqlite` with `sqlite3 .backup`. Upgrade the server and its
-clients together: a 0.5 server drops the records 0.4 stored, whose keys no 0.5
-client computes, and tells older clients to upgrade. See
-[Review store server](../reference/review-store.md#review-store-server) for the full reference.
+`token add` prints each token once. `server run` binds loopback by default. Put a TLS
+reverse proxy or a tunnel in front, because clients require HTTPS except on
+loopback. Back up `review-store.sqlite` with `sqlite3 .backup`. Upgrade the server and its clients
+together. The 0.9 reuse-key v2 matches no older record, so every executable eval,
+Human sign-offs included, needs one new review. Dependency evals have no store
+records: each client derives them from current required evidence. See [Review store server](../reference/review-store.md#review-store-server) for
+the full reference.
 
 **Clients.** Each machine signs in once. The token is read from stdin and is not
 echoed:
@@ -57,10 +58,9 @@ See [Remote review store client](../reference/review-store.md#remote-review-stor
   request and session ids).
 
 It never sends argv, stdout/stderr, repository paths or an Agent conversation.
-`full` (`remote login --share full` or `ARTIFACTIZE_REMOTE_SHARE=full`) also sends
-the saved execution as is, including captured output. Owner fields are free text
-at both levels, so keep secrets out of the fields that `passSchema` and
-`failSchema` allow.
+`full` (`remote login --share full` or `ARTIFACTIZE_REMOTE_SHARE=full`) also sends the saved execution as is,
+including captured output. Owner fields are free text at both levels, so keep
+secrets out of the fields that `pass_schema` and `fail_schema` allow.
 
 **Trust.**
 
@@ -75,5 +75,5 @@ at both levels, so keep secrets out of the fields that `passSchema` and
   `cache rm` drops a local key's records, and `server rm` removes a key's records
   from the store.
 - Only `$STATE/remote.json` and the environment configure the store, never
-  `artifactize.json`, so a cloned repository cannot send your token elsewhere.
+  `.artf` declarations, so a cloned repository cannot send your token elsewhere.
   Tokens are stored 0600, bound to the store they were issued for, and never printed.

@@ -3,7 +3,8 @@
 [Human reviews](../guides/human-reviews.md#human-tools) shows a Human tool declaration.
 
 Arguments are fixed literal argv, with scope placeholders only: `{artifactPath}`
-is the declaring Artifact's canonical folder; `{name}` names an Artifact or its
+is the declaring Artifact's canonical target path (a folder or file); `{name}`
+names an Artifact or its
 owner's mount alias. Both accept `/path` and `--flag=` forms, resolved by the same
 logical-path and no-symlink checks as runtime argv. Other brace forms are rejected;
 there are no arbitrary string templates or escaped-brace interpolation. Unknown
@@ -15,7 +16,8 @@ metadata is checked at each call, not during inert config discovery.
 Executable resolution is identical to Agent tools: bare names use PATH, relative
 names containing `/` are owner-relative scoped paths (`./tool` is accepted), and
 absolute executables run as given. No shell is added; the cwd is the declaring
-Artifact's folder. Human commands inherit the reviewer's **complete real
+Artifact's working directory (the containing folder for a file Artifact).
+Human commands inherit the reviewer's **complete real
 environment**, including HOME, DISPLAY/WAYLAND_DISPLAY, XDG settings and config.
 They do not use Agent isolation or create private HOME/TMP/output directories.
 Only declare trusted commands: they have the reviewer's ordinary permissions and
@@ -26,7 +28,7 @@ environment, including any credentials already present there.
   immediately after spawn succeeds. There is no readiness wait or content capture.
   Spawn failure is an error; a later exit (even nonzero) does not undo the handoff.
   The program intentionally survives artifactize exit or later cancellation; the
-  reviewer owns its lifetime. `timeoutMs` does not limit the handed-off program.
+  reviewer owns its lifetime. `timeout_ms` does not limit the handed-off program.
   A launch is neither a verdict nor proof of observation.
 - `output` waits for completion, with a default 120000 ms timeout. Stdout and stderr
   are each captured up to 128 KiB and cleaned like runtime output. Each becomes a
@@ -70,7 +72,7 @@ The internal library exposes asynchronous operations with an open `store::Receip
 - `human::tool_command(receipts, request_id, tool)` resolves what that tool would
   run (repository, program, argv and directory) without claiming or running it.
 - `human::submit(receipts, request_id, reviewer, result, cancellation)` accepts
-  GREEN/RED with fields matching `passSchema`/`failSchema`, using the Agent result
+  GREEN/RED with fields matching `pass_schema`/`fail_schema`, using the Agent result
   validator without repair. Invalid or oversized results (over 256000 JSON bytes)
   leave the request waiting for correction; schema errors list up to five failing
   instance paths. A valid submission recomputes the fingerprint only when the request
@@ -88,10 +90,11 @@ publishes a submission to the remote review store exactly like `request submit`.
 optional `--run` filtering. Text includes request/Run/eval IDs, status and reviewer;
 `--json` and `request show` include the full saved audit, current claim (also for
 shared-execution followers), source execution and summary. The `definition` field
-joins the saved eval and its owning Artifact (including family membership) from
+joins the saved eval and its owning Artifact, including tags, from
 the Run; older Runs without saved definitions return null. These queries need no
 repository and run no owner code. `run show` and JSON verify include a Run summary:
-status counts, executed and reused requests by reviewer kind, wall time, actual
+status counts, executed and reused requests by reviewer kind, a separate derived
+dependency count, wall time, actual
 executor starts, attempts and usage reporting completeness. Run totals
 exclude reused source executions; the Run-level `usage.saved` sums their original
 counters. Reused requests keep source attribution and the raw per-provider attempts

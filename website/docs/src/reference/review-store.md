@@ -60,6 +60,11 @@ anew. A 0.5 server answers 0.4 and 0.3 clients (their lookup keys and their
 upgrade; the 0.3 `staleKey` alias is gone. Upgrade the server and its clients
 together.
 
+0.9 uses reuse-key v2, so it reuses no pre-0.9 record, including script-fingerprint
+results and Human sign-offs. Existing store records cannot satisfy the new keys;
+clients review once and publish new records. This is separate from local state
+schema 6, which requires a new state without migration.
+
 ## Remote review store client
 
 ```sh
@@ -70,7 +75,7 @@ artifactize remote logout
 ```
 
 A client is configured only through the state directory and the environment,
-never `artifactize.json`, so a cloned repository cannot redirect a token. `remote
+never `.artf` declarations, so a cloned repository cannot redirect a token. `remote
 login URL` reads one token line from stdin (never argv). It attempts to hide
 terminal input; on Windows, if that fails, it warns that the token will be visible
 and continues reading. Non-terminal stdin is read without changing terminal echo.
@@ -124,7 +129,9 @@ reasoning, limits and profile variant) and an Agent result's `executionPaths` pi
 A token without `read` looks nothing up and one without `publish` publishes nothing,
 so a read-only CI token only reuses. Human sign-offs also need `human`; with any
 other token they stay local with a warning. Nothing is published for evals without a
-reuse key. `--force` never reads from the store, but a forced result is a new record
+reuse key. Dependency evals have no key or store record and are derived locally
+from current required evidence, not looked up or published. `--force` never reads
+from the store, but a forced result is a new record
 and is published like any other, so it becomes the store's latest too (unless a
 newer one exists). `status` makes the same comparison with a read-only lookup,
 without mirroring, so its `reuse` prediction includes newer remote results;
