@@ -231,7 +231,13 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
             .count(),
         1
     );
-    assert!(fresh.catalog.rows.iter().any(|row| matches!(&row.scope, Scope::Worktree(Repository::Workspace(_), path) if path == &other)), "deleted legacy paths must not be guessed into a Git group");
+    assert!(
+        fresh.catalog.rows.iter().any(|row| matches!(
+            &row.scope,
+            Scope::Worktree(Repository::Workspace(_), path) if path == &other
+        )),
+        "deleted legacy paths must not be guessed into a Git group"
+    );
     fs::remove_dir_all(&repo).unwrap();
     let mut deleted = Monitor::new(state.clone(), Some(repo.clone()));
     deleted.refresh().await;

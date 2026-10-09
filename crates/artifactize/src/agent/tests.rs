@@ -38,11 +38,16 @@ impl Fixture {
         let output = directory.path().join("output");
         fs::create_dir_all(&repo).unwrap();
         fs::create_dir_all(&output).unwrap();
-        crate::test_declaration::write(repo.join("index.artf"), json!({
-            "name":"a",
-            "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":backend,"model":"exact-model","reasoning":"high"},"payload":{"instruction":"Check {a}","owner":"unchanged"},"pass_schema":{"type":"object","properties":{"reason":{"type":"string","description":"Why it passes"}}}}],
-            "views":{"agent_tools":{"inspect":{"description":"Inspect {artifactName}","protocol":"json","command":"python3","args":["tool.py"],"input_schema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}}},
-        }).to_string()).unwrap();
+        crate::test_declaration::write(
+            repo.join("index.artf"),
+            json!({
+                "name":"a",
+                "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":backend,"model":"exact-model","reasoning":"high"},"payload":{"instruction":"Check {a}","owner":"unchanged"},"pass_schema":{"type":"object","properties":{"reason":{"type":"string","description":"Why it passes"}}}}],
+                "views":{"agent_tools":{"inspect":{"description":"Inspect {artifactName}","protocol":"json","command":"python3","args":["tool.py"],"input_schema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}}},
+            })
+            .to_string(),
+        )
+        .unwrap();
         fs::write(repo.join("tool.py"), "import json,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'text','text':'tool evidence'},{'type':'json','data':{'ok':True}}]}))\n").unwrap();
         let config = read_workspace_config(&repo).unwrap();
         Self {

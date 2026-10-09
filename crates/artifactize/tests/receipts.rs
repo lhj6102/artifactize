@@ -398,7 +398,8 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
             "payload":{},"references":{},"deps":[],"status":"QUEUED","createdAt":"2026-01-01T00:00:00Z",
             "startedAt":null,"completedAt":null,"cwd":repo,"runDir":null,"argv":null,"child":null,"result":null,"error":null,"errorCode":null,"blockedReason":null
         }]
-    })).unwrap();
+    }))
+    .unwrap();
     receipts
         .create_run(&view.run, &view.requests)
         .await

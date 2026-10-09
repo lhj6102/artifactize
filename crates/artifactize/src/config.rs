@@ -668,10 +668,14 @@ pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
     {
         for (id, eval) in evals {
             if eval.get_ref().get("result_check").is_some() {
-                return Err(location.child("evals").child(id.get_ref()).child("result_check").error(format!(
-                    "Eval {}: result_check was removed in 0.6.0; remove it. The review's tool calls are in its saved session (artifactize session show).",
-                    id.get_ref()
-                )));
+                return Err(location
+                    .child("evals")
+                    .child(id.get_ref())
+                    .child("result_check")
+                    .error(format!(
+                        "Eval {}: result_check was removed in 0.6.0; remove it. The review's tool calls are in its saved session (artifactize session show).",
+                        id.get_ref()
+                    )));
             }
         }
     }

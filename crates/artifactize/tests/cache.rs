@@ -76,10 +76,13 @@ impl Fixture {
             ) else {
                 return false;
             };
-            let data = db.query_row::<String, _, _>(
-                "SELECT data FROM requests WHERE status='QUEUED' AND execution_id IS NOT NULL LIMIT 1",
-                [], |row| row.get(0),
-            ).ok();
+            let data = db
+                .query_row::<String, _, _>(
+                    "SELECT data FROM requests WHERE status='QUEUED' AND execution_id IS NOT NULL LIMIT 1",
+                    [],
+                    |row| row.get(0),
+                )
+                .ok();
             if let Some(data) = data {
                 request = serde_json::from_str(&data).unwrap();
                 true
@@ -153,10 +156,12 @@ impl Fixture {
         for i in 0..count {
             let id = format!("seed-{i:05}");
             let key = format!("{i:064x}");
-            transaction.execute(
-                "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT ?1,?4,'seed',status,owner_pid,owner_start_time,?2,?3,?2,json_set(data,'$.id',?1,'$.key',?4) FROM executions LIMIT 1",
-                rusqlite::params![id, format!("2000-01-01T00:00:00.{i:09}Z"), bytes, key],
-            ).unwrap();
+            transaction
+                .execute(
+                    "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT ?1,?4,'seed',status,owner_pid,owner_start_time,?2,?3,?2,json_set(data,'$.id',?1,'$.key',?4) FROM executions LIMIT 1",
+                    rusqlite::params![id, format!("2000-01-01T00:00:00.{i:09}Z"), bytes, key],
+                )
+                .unwrap();
         }
         transaction.commit().unwrap();
     }
@@ -792,7 +797,8 @@ fn mismatched_start_time_is_reclaimed_but_status_and_saved_queries_do_not_reconc
     db.execute(
         "UPDATE executions SET owner_pid=?,owner_start_time=0,status='RUNNING',data=json_set(data,'$.ownerPid',?,'$.ownerStartTime',0,'$.status','RUNNING','$.result',NULL,'$.completedAt',NULL,'$.provenance.completedAt',NULL) WHERE id=?",
         rusqlite::params![std::process::id(), std::process::id(), id],
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(
         fixture.command(&repo, &["status"], 1)["evals"][0]["action"],
         "execute"

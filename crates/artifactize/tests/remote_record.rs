@@ -247,8 +247,16 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
     let db = Connection::open(state.path().join("state.sqlite")).unwrap();
     db.execute(
         "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) VALUES(?1,?2,?3,'GREEN',0,0,?4,?5,?4,?6)",
-        rusqlite::params![execution.id, execution.key, execution.eval_def_hash, execution.completed_at, text.len() as i64, text],
-    ).unwrap();
+        rusqlite::params![
+            execution.id,
+            execution.key,
+            execution.eval_def_hash,
+            execution.completed_at,
+            text.len() as i64,
+            text
+        ],
+    )
+    .unwrap();
     assert_eq!(
         cache::list(state.path(), false).await.unwrap()[0].execution_id,
         execution.id

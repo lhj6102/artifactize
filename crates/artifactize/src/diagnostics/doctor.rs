@@ -185,7 +185,11 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         match llm::test_endpoint(backend) {
             Ok(None) => report.add(
                 name,
-                if present { CheckStatus::Pass } else { CheckStatus::Warn },
+                if present {
+                    CheckStatus::Pass
+                } else {
+                    CheckStatus::Warn
+                },
                 &format!("{key}."),
                 json!({"present":present}),
             ),

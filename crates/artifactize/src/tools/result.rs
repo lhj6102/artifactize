@@ -87,7 +87,10 @@ pub(super) fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, ()> 
     let wire: WireResult = serde_json::from_slice(stdout).map_err(|_| ())?;
     if !(1..=MAX_CONTENT_BLOCKS).contains(&wire.content.len())
         || wire.is_error
-            && !matches!(wire.content.as_slice(), [WireContent::Text { text }] if !text.trim().is_empty())
+            && !matches!(
+                wire.content.as_slice(),
+                [WireContent::Text { text }] if !text.trim().is_empty()
+            )
     {
         return Err(());
     }

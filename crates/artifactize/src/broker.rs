@@ -86,7 +86,8 @@ mod wake_tests {
             tokio::select! {
                 biased;
                 _ = tokio::time::sleep_until(finished) => break,
-                _ = tokio::time::sleep_until(wake.unwrap_or_else(tokio::time::Instant::now)), if wake.is_some() => panic!("expired deadline was re-armed"),
+                _ = tokio::time::sleep_until(wake.unwrap_or_else(tokio::time::Instant::now)),
+                    if wake.is_some() => panic!("expired deadline was re-armed"),
                 _ = reconcile.tick() => {},
             }
         }
@@ -819,7 +820,9 @@ impl Scheduler<'_, '_> {
             tokio::select! {
                 biased;
                 result = self.tasks.join_next(), if !self.tasks.is_empty() => {
-                    let (index, request) = result.expect("active tasks").map_err(|e| e.to_string())??;
+                    let (index, request) = result
+                        .expect("active tasks")
+                        .map_err(|e| e.to_string())??;
                     running.remove(&index);
                     let stopped = stops.all();
                     if stopped.len() != self.run.stopped_backends.len() {
@@ -838,8 +841,10 @@ impl Scheduler<'_, '_> {
                 _ = self.cancellation.cancelled(), if !cancelled => {},
                 _ = changes.next_state(), if !cancelled => {},
                 _ = reconcile.tick(), if waiting_external && !cancelled => {},
-                _ = tokio::time::sleep_until(deadline_at), if wake_deadline.is_some() && !cancelled => {},
-                _ = tokio::time::sleep_until(remote_due), if human_wait && self.remote.is_some() && !self.run.force && !cancelled => {},
+                _ = tokio::time::sleep_until(deadline_at),
+                    if wake_deadline.is_some() && !cancelled => {},
+                _ = tokio::time::sleep_until(remote_due),
+                    if human_wait && self.remote.is_some() && !self.run.force && !cancelled => {},
             }
         }
         Ok(evidence)

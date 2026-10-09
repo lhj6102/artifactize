@@ -323,7 +323,8 @@ mod tests {
                 "startedAt":null,"completedAt":"2026-01-01T00:00:01Z","cwd":"/repo","runDir":null,"argv":null,
                 "child":null,"result":{"verdict":"GREEN"},"error":null,"errorCode":null,"blockedReason":null
             }]
-        })).unwrap()
+        }))
+        .unwrap()
     }
     #[test]
     fn supplied_time_is_deterministic_and_profile_omission_is_not_null() {

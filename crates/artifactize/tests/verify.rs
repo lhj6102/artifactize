@@ -75,9 +75,14 @@ impl Fixture {
     }
 
     fn runtime(&self, program: &str, args: &[&str]) {
-        support::declaration::write(self.repo.join("index.artf"), json!({
-            "name":"test", "fingerprint":false, "evals":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":bin(program),"args":args}, "payload":{"instruction":"Check runtime."}}]
-        }).to_string()).unwrap();
+        support::declaration::write(
+            self.repo.join("index.artf"),
+            json!({
+                "name":"test", "fingerprint":false, "evals":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":bin(program),"args":args}, "payload":{"instruction":"Check runtime."}}]
+            })
+            .to_string(),
+        )
+        .unwrap();
     }
 }
 

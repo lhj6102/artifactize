@@ -1058,7 +1058,9 @@ async fn drive(
             .map_err(|e| e.to_string())?;
         action = tokio::select! {
             _ = cancellation.cancelled() => Action::Quit,
-            outcome = async { pending.as_mut().expect("pending job").await }, if pending.is_some() => {
+            outcome = async { pending.as_mut().expect("pending job").await },
+                if pending.is_some() =>
+            {
                 pending = None;
                 if matches!(outcome, Outcome::Submitted { .. }) {
                     // Remote and cache warnings may have reached stderr; repaint every cell.
@@ -1069,7 +1071,9 @@ async fn drive(
             _ = spin.tick(), if review.busy() => Action::None,
             _ = tick.tick() => Action::None,
             change = changes.next() => match change {
-                crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => Action::Refresh,
+                crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => {
+                    Action::Refresh
+                }
                 crate::changes::Change::SessionInvalidated(_) => Action::None,
             },
             event = events.next() => match event {

@@ -376,7 +376,11 @@ pub async fn verify(
             let a = &evaluation.artifacts[id];
             let mut artifact = json!({"id":id,"status":format!("{:?}",a.status).to_uppercase(),"passed":a.passed,"total":a.total,"satisfied":a.satisfied});
             if let Some(fingerprint) = fingerprints.get(id) {
-                artifact["fingerprintKind"] = json!(if fingerprint.manifest.is_some() { "artifactsum" } else { "script" });
+                artifact["fingerprintKind"] = json!(if fingerprint.manifest.is_some() {
+                    "artifactsum"
+                } else {
+                    "script"
+                });
                 artifact["fingerprint"] = json!(fingerprint.value);
             }
             artifact

@@ -563,13 +563,16 @@ async fn token_request(
         let message = match refreshing {
             Some(storage) if terminal(code) => {
                 storage.remove(CREDENTIALS)?;
-                format!("The Codex refresh token is no longer valid ({code}); run `artifactize login codex`.")
+                format!(
+                    "The Codex refresh token is no longer valid ({code}); run `artifactize login codex`."
+                )
             }
             Some(_) => {
                 format!("Codex token refresh failed (HTTP {status}); the stored sign-in was kept.")
             }
             None if code == "invalid_grant" => {
-                "The Codex authorization code was rejected (invalid_grant); run `artifactize login codex` again.".into()
+                "The Codex authorization code was rejected (invalid_grant); run `artifactize login codex` again."
+                    .into()
             }
             None => format!("Codex sign-in failed (HTTP {status})."),
         };

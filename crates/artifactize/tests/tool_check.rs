@@ -22,21 +22,26 @@ fn fixture(repo: &Path) {
     support::os::make_executable(&tool);
     let command = format!("./{TOOL}");
     let profile = json!({"kind":"agent","backend":"openai","model":"test"});
-    support::declaration::write(repo.join("a/index.artf"), json!({
-        "name":"a","views":{
-            "agent_tools":{
-                "read":{"builtin":"read"},"image":{"builtin":"view_image"},
-                "env":{"description":"Environment","command":command,"args":[],"protocol":"plain","input_schema":{"type":"object","additionalProperties":false}},
-                "data":{"description":"JSON","command":bin("/bin/echo"),"args":["{\"content\":[{\"type\":\"json\",\"data\":{\"answer\":42}}]}"],"protocol":"json","input_schema":{"type":"object"}},
-                "error":{"description":"Authored error","command":bin("/bin/echo"),"args":["{\"content\":[{\"type\":\"text\",\"text\":\"Owner error\"}],\"isError\":true}"],"protocol":"json","input_schema":{"type":"object"}}
+    support::declaration::write(
+        repo.join("a/index.artf"),
+        json!({
+            "name":"a","views":{
+                "agent_tools":{
+                    "read":{"builtin":"read"},"image":{"builtin":"view_image"},
+                    "env":{"description":"Environment","command":command,"args":[],"protocol":"plain","input_schema":{"type":"object","additionalProperties":false}},
+                    "data":{"description":"JSON","command":bin("/bin/echo"),"args":["{\"content\":[{\"type\":\"json\",\"data\":{\"answer\":42}}]}"],"protocol":"json","input_schema":{"type":"object"}},
+                    "error":{"description":"Authored error","command":bin("/bin/echo"),"args":["{\"content\":[{\"type\":\"text\",\"text\":\"Owner error\"}],\"isError\":true}"],"protocol":"json","input_schema":{"type":"object"}}
+                },
+                "human_tools":{"env":{"description":"Environment","kind":"output","command":command,"args":[]}}
             },
-            "human_tools":{"env":{"description":"Environment","kind":"output","command":command,"args":[]}}
-        },
-        "evals":[
-            {"id":"review","title":"Review","profile":profile,"payload":{"instruction":"Review a."}},
-            {"id":"human","title":"Human","profile":{"kind":"human"},"payload":{"instruction":"Review a."}}
-        ]
-    }).to_string()).unwrap();
+            "evals":[
+                {"id":"review","title":"Review","profile":profile,"payload":{"instruction":"Review a."}},
+                {"id":"human","title":"Human","profile":{"kind":"human"},"payload":{"instruction":"Review a."}}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
     support::declaration::write(
         repo.join("b/index.artf"),
         json!({"name":"b","views":{"agent_tools":{"read":{"builtin":"read"}}},"basis":true})

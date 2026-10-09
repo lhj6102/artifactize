@@ -86,16 +86,34 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
     let Some(connection) = open(state, false).await? else {
         return Ok(Vec::new());
     };
-    connection.call(move |db| -> Result<_, Error> {
-        let mut statement = db.prepare(&format!("SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.producer.name'),json_extract(e.data,'$.options.variant'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"))?;
-        Ok(statement.query_map([history], |row| Ok(Entry {
-            key: row.get(0)?, eval_def_hash: row.get(1)?, execution_id: row.get(2)?,
-            verdict: row.get(3)?, repo_path: row.get(4)?, eval_id: row.get(5)?,
-            fingerprint: row.get(6)?, completed_at: row.get(7)?, producer: row.get(8)?,
-            variant: row.get(9)?, origin: row.get(10)?, records: row.get(11)?,
-            bytes: row.get(12)?, last_used: row.get(13)?,
-        }))?.collect::<Result<_, _>>()?)
-    }).await.map_err(|e| e.to_string())
+    connection
+        .call(move |db| -> Result<_, Error> {
+            let mut statement = db.prepare(&format!(
+                "SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.producer.name'),json_extract(e.data,'$.options.variant'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"
+            ))?;
+            Ok(statement
+                .query_map([history], |row| {
+                    Ok(Entry {
+                        key: row.get(0)?,
+                        eval_def_hash: row.get(1)?,
+                        execution_id: row.get(2)?,
+                        verdict: row.get(3)?,
+                        repo_path: row.get(4)?,
+                        eval_id: row.get(5)?,
+                        fingerprint: row.get(6)?,
+                        completed_at: row.get(7)?,
+                        producer: row.get(8)?,
+                        variant: row.get(9)?,
+                        origin: row.get(10)?,
+                        records: row.get(11)?,
+                        bytes: row.get(12)?,
+                        last_used: row.get(13)?,
+                    })
+                })?
+                .collect::<Result<_, _>>()?)
+        })
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// A key's records, latest first; without `history` only the latest.
@@ -133,11 +151,17 @@ pub async fn local(
     };
     connection
         .call(move |db| -> Result<_, Error> {
-            let mut statement = db.prepare(&format!("SELECT data FROM (SELECT e.key,e.data,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD} AND json_extract(e.data,'$.origin') IS NULL AND e.key>?) WHERE rank=1 ORDER BY key LIMIT ?"))?;
+            let mut statement = db.prepare(&format!(
+                "SELECT data FROM (SELECT e.key,e.data,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD} AND json_extract(e.data,'$.origin') IS NULL AND e.key>?) WHERE rank=1 ORDER BY key LIMIT ?"
+            ))?;
             statement
-                .query_map(params![after.as_ref().map_or("", crate::types::ReuseKey::as_str), limit as i64], |row| {
-                    row.get::<_, String>(0)
-                })?
+                .query_map(
+                    params![
+                        after.as_ref().map_or("", crate::types::ReuseKey::as_str),
+                        limit as i64
+                    ],
+                    |row| row.get::<_, String>(0),
+                )?
                 .map(|row| Ok(serde_json::from_str(&row?)?))
                 .collect()
         })
@@ -153,22 +177,29 @@ pub async fn remove(state: &Path, key: &str) -> Result<bool, String> {
     let Ok(key) = key.parse::<crate::types::ReuseKey>() else {
         return Ok(false);
     };
-    connection.call(move |db| -> Result<bool, Error> {
-        let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let in_use: bool = transaction.query_row(
-            "SELECT EXISTS(SELECT 1 FROM executions WHERE key=?1 AND status IN ('RUNNING','WAITING_HUMAN')) OR EXISTS(SELECT 1 FROM requests q JOIN executions e ON e.id=q.execution_id WHERE e.key=?1 AND e.completed_at IS NOT NULL AND q.status IN ('QUEUED','RUNNING','WAITING_HUMAN'))",
-            [&key], |row| row.get(0),
-        )?;
-        if in_use {
-            return Err(Error::Invalid(format!("Key {key} is in use by an active execution or waiter.")));
-        }
-        let removed = transaction.execute(
-            "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL WHERE key=? AND completed_at IS NOT NULL",
-            [&key],
-        )?;
-        transaction.commit()?;
-        Ok(removed != 0)
-    }).await.map_err(|e| e.to_string())
+    connection
+        .call(move |db| -> Result<bool, Error> {
+            let transaction =
+                db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+            let in_use: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM executions WHERE key=?1 AND status IN ('RUNNING','WAITING_HUMAN')) OR EXISTS(SELECT 1 FROM requests q JOIN executions e ON e.id=q.execution_id WHERE e.key=?1 AND e.completed_at IS NOT NULL AND q.status IN ('QUEUED','RUNNING','WAITING_HUMAN'))",
+                [&key],
+                |row| row.get(0),
+            )?;
+            if in_use {
+                return Err(Error::Invalid(format!(
+                    "Key {key} is in use by an active execution or waiter."
+                )));
+            }
+            let removed = transaction.execute(
+                "UPDATE executions SET completed_at=NULL,bytes=NULL,last_used=NULL WHERE key=? AND completed_at IS NOT NULL",
+                [&key],
+            )?;
+            transaction.commit()?;
+            Ok(removed != 0)
+        })
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// The history columns of a completed record: its sortable completion time and size, or

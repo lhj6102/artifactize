@@ -336,15 +336,36 @@ impl Receipts {
         }
         let run = run.clone();
         let requests = requests.to_vec();
-        self.connection.call(move |db| -> Result<(), Error> {
-            let transaction = db.transaction()?;
-            transaction.execute("INSERT INTO runs(id,repo,status,data) VALUES (?,?,?,?)", params![run.id, run.repo_path.to_string_lossy(), run.status, serde_json::to_string(&run)?])?;
-            for (ordinal, request) in requests.iter().enumerate() {
-                transaction.execute("INSERT INTO requests(id,run_id,eval_id,ordinal,status,data) VALUES (?,?,?,?,?,?)", params![request.id, run.id, request.eval_id, ordinal as i64, request.status, serde_json::to_string(request)?])?;
-            }
-            transaction.commit()?;
-            Ok(())
-        }).await.map_err(|e| e.to_string())
+        self.connection
+            .call(move |db| -> Result<(), Error> {
+                let transaction = db.transaction()?;
+                transaction.execute(
+                    "INSERT INTO runs(id,repo,status,data) VALUES (?,?,?,?)",
+                    params![
+                        run.id,
+                        run.repo_path.to_string_lossy(),
+                        run.status,
+                        serde_json::to_string(&run)?
+                    ],
+                )?;
+                for (ordinal, request) in requests.iter().enumerate() {
+                    transaction.execute(
+                        "INSERT INTO requests(id,run_id,eval_id,ordinal,status,data) VALUES (?,?,?,?,?,?)",
+                        params![
+                            request.id,
+                            run.id,
+                            request.eval_id,
+                            ordinal as i64,
+                            request.status,
+                            serde_json::to_string(request)?
+                        ],
+                    )?;
+                }
+                transaction.commit()?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub async fn save_request(&self, request: &Request) -> Result<(), String> {

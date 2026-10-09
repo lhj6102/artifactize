@@ -305,8 +305,19 @@ fn active_owner(
     db.query_row(
         "SELECT id,owner_pid,owner_start_time,status FROM executions WHERE key=? AND status IN ('RUNNING','WAITING_HUMAN')",
         [key],
-        |row| Ok((row.get(0)?, process::ChildIdentity { pid: row.get(1)?, start_time: row.get::<_, i64>(2)? as u64 }, row.get(3)?)),
-    ).optional().map_err(Into::into)
+        |row| {
+            Ok((
+                row.get(0)?,
+                process::ChildIdentity {
+                    pid: row.get(1)?,
+                    start_time: row.get::<_, i64>(2)? as u64,
+                },
+                row.get(3)?,
+            ))
+        },
+    )
+    .optional()
+    .map_err(Into::into)
 }
 
 fn available_to_waiter(
@@ -501,54 +512,72 @@ impl Receipts {
         execution.validate()?;
         let execution = execution.clone();
         let waiting_for = waiting_for.cloned();
-        self.connection.call(move |db| -> Result<Claim, Error> {
-            let key = execution.key.as_ref().filter(|_| keyed);
-            if let Some(key) = key {
-                let transaction = db.transaction()?;
-                if let Some(claim) = available_to_waiter(&transaction, key, waiting_for.as_ref())? {
-                    return Ok(claim);
+        self.connection
+            .call(move |db| -> Result<Claim, Error> {
+                let key = execution.key.as_ref().filter(|_| keyed);
+                if let Some(key) = key {
+                    let transaction = db.transaction()?;
+                    if let Some(claim) =
+                        available_to_waiter(&transaction, key, waiting_for.as_ref())?
+                    {
+                        return Ok(claim);
+                    }
                 }
-            }
-            if !allow_start {
-                return Ok(Claim::BudgetExhausted);
-            }
-            let capacity = capacity.zip(execution.backend());
-            if key.is_none() && capacity.is_none() {
-                return Ok(Claim::Owned);
-            }
-            let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            if let Some(key) = key
-                && let Some(claim) = available_to_waiter(&transaction, key, waiting_for.as_ref())?
-            {
-                return Ok(claim);
-            }
-            if let Some((capacity, backend)) = capacity {
-                if (capacity.stopped)() {
+                if !allow_start {
                     return Ok(Claim::BudgetExhausted);
                 }
-                if held_slots(&transaction, backend, &execution.started_at)? >= capacity.limit {
-                    transaction.commit()?;
-                    return Ok(Claim::Full);
+                let capacity = capacity.zip(execution.backend());
+                if key.is_none() && capacity.is_none() {
+                    return Ok(Claim::Owned);
                 }
-            }
-            if let Some(key) = key
-                && let Some((id, _, _)) = active_owner(&transaction, key)?
-            {
-                owner_died(&transaction, &id, &execution.started_at)?;
-            }
-            let inserted = transaction.execute(
-                "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN') DO NOTHING",
-                params![execution.id, key, execution.eval_def_hash, execution.status, execution.owner_pid, execution.owner_start_time as i64, execution.backend(), serde_json::to_string(&execution)?],
-            )?;
-            let claim = match key {
-                Some(key) if inserted == 0 => {
-                    Claim::Wait(active_owner(&transaction, key)?.expect("conflicting active key").0)
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                if let Some(key) = key
+                    && let Some(claim) =
+                        available_to_waiter(&transaction, key, waiting_for.as_ref())?
+                {
+                    return Ok(claim);
                 }
-                _ => Claim::Owned,
-            };
-            transaction.commit()?;
-            Ok(claim)
-        }).await.map_err(|e| e.to_string())
+                if let Some((capacity, backend)) = capacity {
+                    if (capacity.stopped)() {
+                        return Ok(Claim::BudgetExhausted);
+                    }
+                    if held_slots(&transaction, backend, &execution.started_at)? >= capacity.limit {
+                        transaction.commit()?;
+                        return Ok(Claim::Full);
+                    }
+                }
+                if let Some(key) = key
+                    && let Some((id, _, _)) = active_owner(&transaction, key)?
+                {
+                    owner_died(&transaction, &id, &execution.started_at)?;
+                }
+                let inserted = transaction.execute(
+                    "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN') DO NOTHING",
+                    params![
+                        execution.id,
+                        key,
+                        execution.eval_def_hash,
+                        execution.status,
+                        execution.owner_pid,
+                        execution.owner_start_time as i64,
+                        execution.backend(),
+                        serde_json::to_string(&execution)?
+                    ],
+                )?;
+                let claim = match key {
+                    Some(key) if inserted == 0 => Claim::Wait(
+                        active_owner(&transaction, key)?
+                            .expect("conflicting active key")
+                            .0,
+                    ),
+                    _ => Claim::Owned,
+                };
+                transaction.commit()?;
+                Ok(claim)
+            })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub async fn reuse_execution(&self, request: &Request) -> Result<(), String> {
@@ -626,13 +655,28 @@ impl Receipts {
                 // A mirror kept after `cache rm` or GC is reused for the same remote execution.
                 transaction.execute(
                     "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES (?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING",
-                    params![execution.id, key, execution.eval_def_hash, execution.status, execution.owner_pid, execution.owner_start_time as i64, data],
+                    params![
+                        execution.id,
+                        key,
+                        execution.eval_def_hash,
+                        execution.status,
+                        execution.owner_pid,
+                        execution.owner_start_time as i64,
+                        data
+                    ],
                 )?;
-                let data: String = transaction.query_row(
-                    "SELECT data FROM executions WHERE id=? AND key=? AND status=?",
-                    params![execution.id, key, execution.status],
-                    |row| row.get(0),
-                ).optional()?.ok_or_else(|| Error::Invalid("Mirrored execution ID conflicts with another execution.".into()))?;
+                let data: String = transaction
+                    .query_row(
+                        "SELECT data FROM executions WHERE id=? AND key=? AND status=?",
+                        params![execution.id, key, execution.status],
+                        |row| row.get(0),
+                    )
+                    .optional()?
+                    .ok_or_else(|| {
+                        Error::Invalid(
+                            "Mirrored execution ID conflicts with another execution.".into(),
+                        )
+                    })?;
                 let mirrored: Execution = serde_json::from_str(&data)?;
                 if let Some((completed_at, bytes)) = history::columns(&mirrored, data.len())? {
                     transaction.execute(
@@ -678,7 +722,17 @@ pub(super) fn settle(
     if claimed || request.human_definition.is_some() {
         if db.execute(
             "UPDATE executions SET key=?,status=?,completed_at=?,bytes=?,last_used=?,data=? WHERE id=? AND owner_pid=? AND owner_start_time=? AND status IN ('RUNNING','WAITING_HUMAN')",
-            params![execution.key, execution.status, completed_at, bytes, last_used, data, execution.id, execution.owner_pid, execution.owner_start_time as i64],
+            params![
+                execution.key,
+                execution.status,
+                completed_at,
+                bytes,
+                last_used,
+                data,
+                execution.id,
+                execution.owner_pid,
+                execution.owner_start_time as i64
+            ],
         )? != 1
         {
             return Err(Error::Invalid("Active execution not found.".into()));
@@ -687,7 +741,19 @@ pub(super) fn settle(
         db.execute(
             "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,completed_at,bytes,last_used,data) VALUES (?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(id) DO UPDATE SET key=excluded.key,status=excluded.status,completed_at=excluded.completed_at,bytes=excluded.bytes,last_used=excluded.last_used,data=excluded.data",
-            params![execution.id, execution.key, execution.eval_def_hash, execution.status, execution.owner_pid, execution.owner_start_time as i64, execution.backend(), completed_at, bytes, last_used, data],
+            params![
+                execution.id,
+                execution.key,
+                execution.eval_def_hash,
+                execution.status,
+                execution.owner_pid,
+                execution.owner_start_time as i64,
+                execution.backend(),
+                completed_at,
+                bytes,
+                last_used,
+                data
+            ],
         )?;
     }
     update_request(db, request)?;

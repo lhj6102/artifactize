@@ -15,10 +15,13 @@ pub struct HumanClaim {
 }
 
 fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), Error> {
-    let data: Option<String> = db.query_row(
-        "SELECT e.data FROM requests q JOIN executions e ON e.id=q.execution_id WHERE q.id=? AND q.status='WAITING_HUMAN' AND e.status='WAITING_HUMAN'",
-        [id], |row| row.get(0),
-    ).optional()?;
+    let data: Option<String> = db
+        .query_row(
+            "SELECT e.data FROM requests q JOIN executions e ON e.id=q.execution_id WHERE q.id=? AND q.status='WAITING_HUMAN' AND e.status='WAITING_HUMAN'",
+            [id],
+            |row| row.get(0),
+        )
+        .optional()?;
     let execution: Execution = serde_json::from_str(
         &data.ok_or_else(|| Error::Invalid("Request is not waiting for a Human review.".into()))?,
     )?;
@@ -83,11 +86,20 @@ impl Receipts {
         &self,
         ids: Vec<crate::types::RequestId>,
     ) -> Result<Vec<Request>, String> {
-        self.connection.call(move |db| -> Result<_, Error> {
-            let mut statement = db.prepare("SELECT data FROM requests WHERE id IN (SELECT value FROM json_each(?)) AND status!='WAITING_HUMAN'")?;
-            statement.query_map([serde_json::to_string(&ids)?], |row| row.get::<_, String>(0))?
-                .map(|row| Ok(serde_json::from_str(&row?)?)).collect()
-        }).await.map_err(|e| e.to_string())
+        self.connection
+            .call(move |db| -> Result<_, Error> {
+                let mut statement = db.prepare(
+                    "SELECT data FROM requests WHERE id IN (SELECT value FROM json_each(?)) AND status!='WAITING_HUMAN'",
+                )?;
+                statement
+                    .query_map([serde_json::to_string(&ids)?], |row| {
+                        row.get::<_, String>(0)
+                    })?
+                    .map(|row| Ok(serde_json::from_str(&row?)?))
+                    .collect()
+            })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub(crate) async fn wait_for_human(
@@ -99,21 +111,43 @@ impl Receipts {
         request.validate()?;
         let execution = execution.clone();
         let request = request.clone();
-        self.connection.call(move |db| -> Result<(), Error> {
-            let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            let data = serde_json::to_string(&execution)?;
-            if execution.key.is_some() && !request.force {
-                if transaction.execute("UPDATE executions SET status='WAITING_HUMAN',data=? WHERE id=? AND owner_pid=? AND owner_start_time=? AND status='RUNNING'", params![data, execution.id, execution.owner_pid, execution.owner_start_time as i64])? != 1 {
-                    return Err(Error::Invalid("Active execution not found.".into()));
+        self.connection
+            .call(move |db| -> Result<(), Error> {
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                let data = serde_json::to_string(&execution)?;
+                if execution.key.is_some() && !request.force {
+                    if transaction.execute(
+                        "UPDATE executions SET status='WAITING_HUMAN',data=? WHERE id=? AND owner_pid=? AND owner_start_time=? AND status='RUNNING'",
+                        params![
+                            data,
+                            execution.id,
+                            execution.owner_pid,
+                            execution.owner_start_time as i64
+                        ],
+                    )? != 1
+                    {
+                        return Err(Error::Invalid("Active execution not found.".into()));
+                    }
+                } else {
+                    // Unclaimed: a forced or unkeyed wait never holds its key's active slot.
+                    transaction.execute(
+                        "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES (?,NULL,?,'WAITING_HUMAN',?,?,?)",
+                        params![
+                            execution.id,
+                            execution.eval_def_hash,
+                            execution.owner_pid,
+                            execution.owner_start_time as i64,
+                            data
+                        ],
+                    )?;
                 }
-            } else {
-                // Unclaimed: a forced or unkeyed wait never holds its key's active slot.
-                transaction.execute("INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES (?,NULL,?,'WAITING_HUMAN',?,?,?)", params![execution.id, execution.eval_def_hash, execution.owner_pid, execution.owner_start_time as i64, data])?;
-            }
-            update_request(&transaction, &request)?;
-            transaction.commit()?;
-            Ok(())
-        }).await.map_err(|e| e.to_string())
+                update_request(&transaction, &request)?;
+                transaction.commit()?;
+                Ok(())
+            })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     pub(crate) async fn follow_human(&self, request: &Request) -> Result<Request, String> {
@@ -142,15 +176,22 @@ impl Receipts {
     pub(crate) async fn claim_human(&self, id: &str, reviewer: &str) -> Result<HumanClaim, String> {
         let id: crate::types::RequestId = id.parse()?;
         let reviewer = reviewer.to_owned();
-        self.connection.call(move |db| -> Result<_, Error> {
-            let transaction = db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-            let (request, _) = waiting(&transaction, &id)?;
-            transaction.execute("UPDATE requests SET claimed_by=?,claimed_at=? WHERE id=? AND claimed_by IS NULL", params![reviewer, crate::broker::now(), request.id])?;
-            claimant(&transaction, &request.id, &reviewer)?;
-            let claim = claim(&transaction, &request.id)?;
-            transaction.commit()?;
-            Ok(claim)
-        }).await.map_err(|e| e.to_string())
+        self.connection
+            .call(move |db| -> Result<_, Error> {
+                let transaction =
+                    db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+                let (request, _) = waiting(&transaction, &id)?;
+                transaction.execute(
+                    "UPDATE requests SET claimed_by=?,claimed_at=? WHERE id=? AND claimed_by IS NULL",
+                    params![reviewer, crate::broker::now(), request.id],
+                )?;
+                claimant(&transaction, &request.id, &reviewer)?;
+                let claim = claim(&transaction, &request.id)?;
+                transaction.commit()?;
+                Ok(claim)
+            })
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// Only the claimant releases, and only while the original request still waits.

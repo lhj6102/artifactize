@@ -10,7 +10,8 @@ fn reference(argument: &str) -> Result<Option<ArgumentReference<'_>>, ScopeError
             || argument.bytes().filter(|byte| *byte == b'}').count() != 1)
     {
         return Err(ScopeError(
-            "Human arguments support only {artifactPath} or {name}[/path] scope placeholders (optionally --flag=).".into(),
+            "Human arguments support only {artifactPath} or {name}[/path] scope placeholders (optionally --flag=)."
+                .into(),
         ));
     }
     Ok(reference)

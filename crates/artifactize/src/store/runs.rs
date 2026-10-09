@@ -73,40 +73,49 @@ pub async fn read_scoped_runs(
     )
     .await
     .map_err(|e| e.to_string())?;
-    connection.call(move |db| -> Result<_, Error> {
-        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
-        let transaction = db.transaction()?;
-        if !schema_initialized(&transaction)? {
-            return Ok(Vec::new());
-        }
-        let mut runs = {
-            let mut statement = transaction.prepare(
-                "SELECT id,repo,json_extract(data,'$.createdAt'),json_extract(data,'$.completedAt'),status
+    connection
+        .call(move |db| -> Result<_, Error> {
+            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            let transaction = db.transaction()?;
+            if !schema_initialized(&transaction)? {
+                return Ok(Vec::new());
+            }
+            let mut runs = {
+                let mut statement = transaction.prepare(
+                    "SELECT id,repo,json_extract(data,'$.createdAt'),json_extract(data,'$.completedAt'),status
                  FROM runs WHERE (?1 IS NULL OR repo IN (SELECT value FROM json_each(?1)))
                  ORDER BY json_extract(data,'$.createdAt') DESC,rowid DESC LIMIT ?2 OFFSET ?3",
-            )?;
-            statement.query_map(params![repos, limit, offset], |row| {
-                Ok(RunSummary {
-                    id: row.get(0)?,
-                    repo_path: PathBuf::from(row.get::<_, String>(1)?),
-                    created_at: row.get(2)?,
-                    completed_at: row.get(3)?,
-                    status: row.get(4)?,
-                    counts: BTreeMap::new(),
-                })
-            })?.collect::<Result<Vec<_>, _>>()?
-        };
-        {
-            let mut statement = transaction.prepare(
-                "SELECT status,count(*) FROM requests WHERE run_id=? GROUP BY status",
-            )?;
-            for run in &mut runs {
-                outside_workspace(&run.repo_path, &state).map_err(|e| Error::Invalid(e.to_string()))?;
-                run.counts = statement.query_map([&run.id], |row| Ok((row.get(0)?, row.get::<_, i64>(1)? as u64)))?
-                    .collect::<Result<_, _>>()?;
+                )?;
+                statement
+                    .query_map(params![repos, limit, offset], |row| {
+                        Ok(RunSummary {
+                            id: row.get(0)?,
+                            repo_path: PathBuf::from(row.get::<_, String>(1)?),
+                            created_at: row.get(2)?,
+                            completed_at: row.get(3)?,
+                            status: row.get(4)?,
+                            counts: BTreeMap::new(),
+                        })
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?
+            };
+            {
+                let mut statement = transaction.prepare(
+                    "SELECT status,count(*) FROM requests WHERE run_id=? GROUP BY status",
+                )?;
+                for run in &mut runs {
+                    outside_workspace(&run.repo_path, &state)
+                        .map_err(|e| Error::Invalid(e.to_string()))?;
+                    run.counts = statement
+                        .query_map([&run.id], |row| {
+                            Ok((row.get(0)?, row.get::<_, i64>(1)? as u64))
+                        })?
+                        .collect::<Result<_, _>>()?;
+                }
             }
-        }
-        transaction.commit()?;
-        Ok(runs)
-    }).await.map_err(|e| e.to_string())
+            transaction.commit()?;
+            Ok(runs)
+        })
+        .await
+        .map_err(|e| e.to_string())
 }

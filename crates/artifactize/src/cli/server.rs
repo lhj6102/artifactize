@@ -61,8 +61,11 @@ pub(super) async fn execute(
     match command {
         ServerCommand::Run { listen } => {
             if !listen.ip().is_loopback() {
-                writeln!(io::stderr().lock(), "Serving plain HTTP on {listen}; clients require HTTPS, so put a TLS proxy or tunnel in front.")
-                    .map_err(|e| e.to_string())?;
+                writeln!(
+                    io::stderr().lock(),
+                    "Serving plain HTTP on {listen}; clients require HTTPS, so put a TLS proxy or tunnel in front."
+                )
+                .map_err(|e| e.to_string())?;
             }
             let (cancellation, listener) = cancellation_listener()?;
             let result = server::serve(

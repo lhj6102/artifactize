@@ -122,7 +122,8 @@ impl Store {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 // Another process may have upgraded between the two reads.
                 if matches!(
-                    transaction.pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?,
+                    transaction
+                        .pragma_query_value(None, "user_version", |row| row.get::<_, u32>(0))?,
                     1 | 2
                 ) {
                     reuse_keys(&transaction)?;
@@ -334,7 +335,15 @@ impl Store {
                 let used = now();
                 let created = transaction.execute(
                     "INSERT INTO entries(key,execution_id,publisher,completed_at,bytes,last_used,data) VALUES (?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
-                    params![key, execution_id, publisher, completed_at, data.len() as i64, used, data],
+                    params![
+                        key,
+                        execution_id,
+                        publisher,
+                        completed_at,
+                        data.len() as i64,
+                        used,
+                        data
+                    ],
                 )? == 1;
                 // Evict least-recently-used records above the caps, never the new one.
                 loop {
