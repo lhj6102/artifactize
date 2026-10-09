@@ -354,10 +354,18 @@ pub async fn status(
                         "An explicitly forced Eval requires a new execution.".into()
                     } else {
                         match cache::eval_key(&config, eval, &fingerprints) {
-                            Ok(_) => "The current eval and fingerprints have no completed cached result.".into(),
+                            Ok(_) => {
+                                "The current eval and fingerprints have no completed cached result."
+                                    .into()
+                            }
                             Err(cache::Unkeyed::Derived) => unreachable!("derived above"),
-                            Err(cache::Unkeyed::Target) => "The Artifact declares fingerprint: false; saved noncached results satisfy only their own Run.".into(),
-                            Err(cache::Unkeyed::Dependency(id)) => format!("Dependency {id} declares fingerprint: false, so this eval has no reuse key; saved noncached results satisfy only their own Run."),
+                            Err(cache::Unkeyed::Target) => {
+                                "The Artifact declares fingerprint: false; saved noncached results satisfy only their own Run."
+                                    .into()
+                            }
+                            Err(cache::Unkeyed::Dependency(id)) => format!(
+                                "Dependency {id} declares fingerprint: false, so this eval has no reuse key; saved noncached results satisfy only their own Run."
+                            ),
                         }
                     },
                 ),

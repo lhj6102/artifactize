@@ -52,9 +52,14 @@ fn check<'a>(report: &'a Value, name: &str) -> &'a Value {
 
 fn verify(state: &Path, repo: &Path, profile: Value, code: i32) -> Value {
     fs::create_dir_all(repo).unwrap();
-    support::declaration::write(repo.join("index.artf"), json!({
-        "name":"a", "fingerprint":false, "evals":[{"id":"review", "title":"Review", "payload":{"instruction":"Review"}, "profile":profile}]
-    }).to_string()).unwrap();
+    support::declaration::write(
+        repo.join("index.artf"),
+        json!({
+            "name":"a", "fingerprint":false, "evals":[{"id":"review", "title":"Review", "payload":{"instruction":"Review"}, "profile":profile}]
+        })
+        .to_string(),
+    )
+    .unwrap();
     // A Human request is recorded and left waiting: the wait times out at once.
     result(
         command(state)
@@ -270,7 +275,11 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     db.execute("UPDATE runs SET status='RUNNING' WHERE id=?", [id(&active)])
         .unwrap();
     let start = support::os::start_time(std::process::id()) as i64;
-    db.execute("UPDATE executions SET owner_pid=?,owner_start_time=? WHERE json_extract(data,'$.provenance.runId')=?", params![std::process::id(), start, id(&owned)]).unwrap();
+    db.execute(
+        "UPDATE executions SET owner_pid=?,owner_start_time=? WHERE json_extract(data,'$.provenance.runId')=?",
+        params![std::process::id(), start, id(&owned)],
+    )
+    .unwrap();
     drop(db);
     let run = state.join("runs").join(id(&finished));
     for path in [

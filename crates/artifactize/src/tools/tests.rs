@@ -55,11 +55,16 @@ impl Fixture {
 
 fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
     fs::create_dir_all(path).unwrap();
-    crate::test_declaration::write(path.join("index.artf"), json!({
-        "name":name,
-        "views":{"agent_tools":tools},
-        "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}],
-    }).to_string()).unwrap();
+    crate::test_declaration::write(
+        path.join("index.artf"),
+        json!({
+            "name":name,
+            "views":{"agent_tools":tools},
+            "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}],
+        })
+        .to_string(),
+    )
+    .unwrap();
 }
 
 fn command() -> Value {
@@ -677,7 +682,9 @@ async fn dropping_call_cleans_process_before_removing_directories() {
             {
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             }
-        }) => { result.unwrap(); },
+        }) => {
+            result.unwrap();
+        }
     }
     let pid: u32 = fs::read_to_string(fixture.repo.join("started"))
         .unwrap()

@@ -128,13 +128,19 @@ pub fn prune(
         let finished = completed
             .as_deref()
             .and_then(|date| OffsetDateTime::parse(date, &Rfc3339).ok());
-        let requests_terminal: bool = transaction.query_row(
-            "SELECT NOT EXISTS(SELECT 1 FROM requests WHERE run_id=? AND status NOT IN ('GREEN','RED','ERROR','INCOMPLETE','BLOCKED','BUDGET_EXHAUSTED'))", [&id], |row| row.get(0),
-        ).map_err(|e| e.to_string())?;
+        let requests_terminal: bool = transaction
+            .query_row(
+                "SELECT NOT EXISTS(SELECT 1 FROM requests WHERE run_id=? AND status NOT IN ('GREEN','RED','ERROR','INCOMPLETE','BLOCKED','BUDGET_EXHAUSTED'))",
+                [&id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
         let owners = {
-            let mut statement = transaction.prepare(
-                "SELECT owner_pid,owner_start_time,status FROM executions WHERE json_extract(data,'$.provenance.runId')=?1 OR id IN (SELECT execution_id FROM requests WHERE run_id=?1)"
-            ).map_err(|e| e.to_string())?;
+            let mut statement = transaction
+                .prepare(
+                    "SELECT owner_pid,owner_start_time,status FROM executions WHERE json_extract(data,'$.provenance.runId')=?1 OR id IN (SELECT execution_id FROM requests WHERE run_id=?1)",
+                )
+                .map_err(|e| e.to_string())?;
             statement
                 .query_map([&id], |row| {
                     Ok((

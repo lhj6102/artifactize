@@ -86,9 +86,10 @@ fn initial_header_is_lazy_authoritative_and_end_preserves_saved_reference() {
             .iter()
             .all(|event| event.at.is_some() && event.send.is_none())
     );
-    assert!(
-        matches!(&conversation.events[3].kind, Kind::Answer(answer) if answer.text.as_deref()==Some("after end"))
-    );
+    assert!(matches!(
+        &conversation.events[3].kind,
+        Kind::Answer(answer) if answer.text.as_deref() == Some("after end")
+    ));
 }
 
 #[test]
@@ -222,9 +223,10 @@ async fn only_successful_flushed_events_notify_ipc_and_failed_writes_never_notif
             .unwrap(),
         Change::SessionInvalidated(id.clone())
     );
-    assert!(
-        matches!(&Conversation::load(&path).unwrap().unwrap().events[1].kind,Kind::Answer(answer) if answer.text.as_deref()==Some("flushed"))
-    );
+    assert!(matches!(
+        &Conversation::load(&path).unwrap().unwrap().events[1].kind,
+        Kind::Answer(answer) if answer.text.as_deref() == Some("flushed")
+    ));
     let reference = recorder.reference().unwrap().clone();
     let (_bad_root, file) = fail_file();
     recorder.state = Recording::Review { file, reference };

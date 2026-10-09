@@ -98,7 +98,9 @@ impl Catalog {
         })
     }
     fn initial_path(&mut self, path: &Path, paths: &BTreeMap<Scope, BTreeSet<PathBuf>>) -> Scope {
-        if let Some((scope, _)) = paths.iter().find(|(scope, workspaces)| matches!(scope, Scope::Worktree(_, tree) if tree == path || workspaces.contains(path))) {
+        if let Some((scope, _)) = paths.iter().find(|(scope, workspaces)| {
+            matches!(scope, Scope::Worktree(_, tree) if tree == path || workspaces.contains(path))
+        }) {
             return scope.clone();
         }
         let identity = self.identity(path);

@@ -139,8 +139,21 @@ pub async fn resolve(state: &Path, view: &RequestView) -> Result<Resolution, Str
         ));
     }
     match &request.session_id {
-        Some(id) => Ok(Resolution::Local(Source { state: state.into(), reference: SessionRef { producer, state: state_id, run_id: request.run_id.clone(), request_id: request.id.clone(), session_id: id.clone() }, saved: false })),
-        None => Ok(Resolution::Unavailable("No saved Agent conversation was recorded for this request. It may have reused evidence with no session reference, predate session saving, or never have started an Agent review.".into())),
+        Some(id) => Ok(Resolution::Local(Source {
+            state: state.into(),
+            reference: SessionRef {
+                producer,
+                state: state_id,
+                run_id: request.run_id.clone(),
+                request_id: request.id.clone(),
+                session_id: id.clone(),
+            },
+            saved: false,
+        })),
+        None => Ok(Resolution::Unavailable(
+            "No saved Agent conversation was recorded for this request. It may have reused evidence with no session reference, predate session saving, or never have started an Agent review."
+                .into(),
+        )),
     }
 }
 
@@ -481,7 +494,18 @@ impl Reader {
         let result = (|| {
             let (reset, exists) = self.probe()?;
             if !exists {
-                return Ok(Window { reset, status: Some(if self.source.saved { "This Agent session was removed by session GC (or the saved file was removed)." } else { "This Agent session was never recorded as saved, or has not been created yet." }.into()), ..Window::default() });
+                return Ok(Window {
+                    reset,
+                    status: Some(
+                        if self.source.saved {
+                            "This Agent session was removed by session GC (or the saved file was removed)."
+                        } else {
+                            "This Agent session was never recorded as saved, or has not been created yet."
+                        }
+                        .into(),
+                    ),
+                    ..Window::default()
+                });
             }
             if width == 0 {
                 return Ok(Window {

@@ -67,8 +67,11 @@ pub(super) async fn execute(
             if json {
                 print_json(&json!({"signedIn": false}))?;
             } else {
-                writeln!(out, "Signed out of the remote review store. The server keeps the token valid until `artifactize server token revoke`.")
-                    .map_err(|e| e.to_string())?;
+                writeln!(
+                    out,
+                    "Signed out of the remote review store. The server keeps the token valid until `artifactize server token revoke`."
+                )
+                .map_err(|e| e.to_string())?;
             }
             Ok(0)
         }

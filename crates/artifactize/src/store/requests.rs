@@ -117,15 +117,17 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
         .session
         .map(str::parse::<crate::types::SessionId>)
         .transpose()?;
-    connection.call(move |db| -> Result<_, Error> {
-        db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
-        let transaction = db.transaction()?;
-        if !schema_initialized(&transaction)? {
-            return Ok(Vec::new());
-        }
-        let views = {
-            // A follower shows the claim of the waiting request whose execution it follows.
-            let mut statement = transaction.prepare("SELECT q.data,r.repo,e.data,h.id,h.claimed_by,h.claimed_at,
+    connection
+        .call(move |db| -> Result<_, Error> {
+            db.busy_timeout(super::SQLITE_BUSY_TIMEOUT)?;
+            let transaction = db.transaction()?;
+            if !schema_initialized(&transaction)? {
+                return Ok(Vec::new());
+            }
+            let views = {
+                // A follower shows the claim of the waiting request whose execution it follows.
+                let mut statement = transaction.prepare(
+                    "SELECT q.data,r.repo,e.data,h.id,h.claimed_by,h.claimed_at,
                 json_extract(r.data,'$.definitions.artifacts'),
                 (SELECT value FROM json_each(r.data,'$.definitions.evals') WHERE json_extract(value,'$.id')=q.eval_id)
                 FROM requests q JOIN runs r ON r.id=q.run_id
@@ -134,28 +136,67 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                 WHERE (?1 IS NULL OR q.run_id=?1) AND (?2 IS NULL OR q.id=?2)
                 AND (?3 IS NULL OR r.repo=?3) AND (NOT ?4 OR q.status='WAITING_HUMAN')
                 AND (?5 IS NULL OR json_extract(q.data,'$.sessionId')=?5)
-                ORDER BY r.rowid DESC,q.ordinal")?;
-            statement.query_map(params![run, id, repo, waiting, session], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, Option<String>>(2)?,
-                    row.get::<_, Option<crate::types::RequestId>>(3)?, row.get::<_, Option<String>>(4)?, row.get::<_, Option<String>>(5)?,
-                    row.get::<_, Option<String>>(6)?, row.get::<_, Option<String>>(7)?))
-            })?.map(|row| {
-                let (data, repo, execution, request_id, reviewer, claimed_at, artifacts, eval) = row?;
-                outside_workspace(Path::new(&repo), &state).map_err(|e| Error::Invalid(e.to_string()))?;
-                let request: Request = serde_json::from_str(&data)?;
-                let artifacts: Option<Value> = artifacts.map(|data| serde_json::from_str(&data)).transpose()?;
-                let eval: Option<Value> = eval.map(|data| serde_json::from_str(&data)).transpose()?;
-                let definition = eval.zip(artifacts.as_ref().and_then(|artifacts| artifacts.get(&request.target)))
-                    .map(|(eval, artifact)| json!({"eval":eval,"artifact":artifact}));
-                Ok(RequestView {
-                    request,
-                    definition,
-                    claim: request_id.zip(reviewer).zip(claimed_at).map(|((request_id, reviewer), claimed_at)| HumanClaim {request_id, reviewer, claimed_at}),
-                    execution: execution.map(|data| serde_json::from_str(&data)).transpose()?,
-                })
-            }).collect::<Result<Vec<_>, Error>>()?
-        };
-        transaction.commit()?;
-        Ok(views)
-    }).await.map_err(|e| e.to_string())
+                ORDER BY r.rowid DESC,q.ordinal",
+                )?;
+                statement
+                    .query_map(params![run, id, repo, waiting, session], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<crate::types::RequestId>>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                            row.get::<_, Option<String>>(5)?,
+                            row.get::<_, Option<String>>(6)?,
+                            row.get::<_, Option<String>>(7)?,
+                        ))
+                    })?
+                    .map(|row| {
+                        let (
+                            data,
+                            repo,
+                            execution,
+                            request_id,
+                            reviewer,
+                            claimed_at,
+                            artifacts,
+                            eval,
+                        ) = row?;
+                        outside_workspace(Path::new(&repo), &state)
+                            .map_err(|e| Error::Invalid(e.to_string()))?;
+                        let request: Request = serde_json::from_str(&data)?;
+                        let artifacts: Option<Value> = artifacts
+                            .map(|data| serde_json::from_str(&data))
+                            .transpose()?;
+                        let eval: Option<Value> =
+                            eval.map(|data| serde_json::from_str(&data)).transpose()?;
+                        let definition = eval
+                            .zip(
+                                artifacts
+                                    .as_ref()
+                                    .and_then(|artifacts| artifacts.get(&request.target)),
+                            )
+                            .map(|(eval, artifact)| json!({"eval":eval,"artifact":artifact}));
+                        Ok(RequestView {
+                            request,
+                            definition,
+                            claim: request_id.zip(reviewer).zip(claimed_at).map(
+                                |((request_id, reviewer), claimed_at)| HumanClaim {
+                                    request_id,
+                                    reviewer,
+                                    claimed_at,
+                                },
+                            ),
+                            execution: execution
+                                .map(|data| serde_json::from_str(&data))
+                                .transpose()?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, Error>>()?
+            };
+            transaction.commit()?;
+            Ok(views)
+        })
+        .await
+        .map_err(|e| e.to_string())
 }

@@ -127,29 +127,47 @@ async fn watch(
             event = events.next() => match event {
                 Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => monitor.key(key),
                 Some(Ok(Event::Mouse(mouse))) => monitor.mouse(mouse),
-                Some(Ok(Event::Paste(text))) => { monitor.paste(&text); Action::None }
-                Some(Ok(Event::Resize(_, _))) => { monitor.hits = input::Hits::default(); Action::None }
+                Some(Ok(Event::Paste(text))) => {
+                    monitor.paste(&text);
+                    Action::None
+                }
+                Some(Ok(Event::Resize(_, _))) => {
+                    monitor.hits = input::Hits::default();
+                    Action::None
+                }
                 Some(Ok(_)) => Action::None,
                 Some(Err(error)) => return Err(error.to_string()),
                 None => Action::Quit,
             },
-            outcome = async { session_job.as_mut().expect("active session job").await }, if session_job.is_some() => {
+            outcome = async { session_job.as_mut().expect("active session job").await },
+                if session_job.is_some() =>
+            {
                 session_job = None;
                 match outcome {
                     Ok((job, window)) => {
                         if let Some(live) = monitor.live_mut()
-                            && live.serial == job.serial && live.source.reference == job.reader.source.reference
-                        { live.finish(job, window); }
+                            && live.serial == job.serial
+                            && live.source.reference == job.reader.source.reference
+                        {
+                            live.finish(job, window);
+                        }
                     }
                     Err(error) => return Err(format!("Session reader job failed: {error}")),
                 }
                 Action::None
             }
             _ = session_probe.tick() => {
-                if let Some(live) = monitor.live_mut() { live.invalidate(); }
+                if let Some(live) = monitor.live_mut() {
+                    live.invalidate();
+                }
                 Action::None
             },
-            outcome = async { match &mut pending { Some(job) => Some(job.await), None => None } }, if pending.is_some() => {
+            outcome = async {
+                match &mut pending {
+                    Some(job) => Some(job.await),
+                    None => None,
+                }
+            }, if pending.is_some() => {
                 pending = None;
                 // Publishing may have emitted a fail-open warning on stderr.
                 repaint(terminal)?;
@@ -161,9 +179,15 @@ async fn watch(
             _ = spin.tick(), if pending.is_some() => Action::None,
             _ = tick.tick() => Action::None,
             change = changes.next() => match change {
-                crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => Action::Refresh,
+                crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => {
+                    Action::Refresh
+                }
                 crate::changes::Change::SessionInvalidated(id) => {
-                    if let Some(live) = monitor.live_mut() && live.source.reference.session_id == id { live.invalidate(); }
+                    if let Some(live) = monitor.live_mut()
+                        && live.source.reference.session_id == id
+                    {
+                        live.invalidate();
+                    }
                     Action::None
                 }
             },

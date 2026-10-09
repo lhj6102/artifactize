@@ -242,9 +242,10 @@ fn explicit_file_fingerprints_allow_only_the_target_and_reject_ignore_even_if_em
         "input.txt.artf",
         json!({"name":"file","fingerprint":{"files":["input.txt"]}}),
     );
-    assert!(
-        matches!(&fixture.config().artifacts["file"].fingerprint, Some(Fingerprint::Artifactsum { files, .. }) if files == &["input.txt"])
-    );
+    assert!(matches!(
+        &fixture.config().artifacts["file"].fingerprint,
+        Some(Fingerprint::Artifactsum { files, .. }) if files == &["input.txt"]
+    ));
     fixture.declare("input.txt.artf", json!({"name":"file","fingerprint":false}));
     assert!(fixture.config().artifacts["file"].fingerprint.is_none());
 }

@@ -360,9 +360,10 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
     let declaration = parse_declaration(source).unwrap();
     assert_eq!(declaration.evals[0].id, "ready");
     assert!(declaration.evals[0].payload.is_none());
-    assert!(
-        matches!(&declaration.evals[0].profile, Profile::Dependency { depends_on } if depends_on == &["input"])
-    );
+    assert!(matches!(
+        &declaration.evals[0].profile,
+        Profile::Dependency { depends_on } if depends_on == &["input"]
+    ));
     let expected = json!({"kind":"dependency","dependsOn":["input"]});
     assert_eq!(
         serde_json::to_value(&declaration.evals[0].profile).unwrap(),

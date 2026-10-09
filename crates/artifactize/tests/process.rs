@@ -165,10 +165,11 @@ async fn invalid_cwd_is_a_spawn_error_before_registration() {
     .await
     .unwrap();
     // Windows reports a missing working directory as ERROR_DIRECTORY.
-    assert!(
-        matches!(result, Err(process::Error::Spawn(error)) if error.kind() == io::ErrorKind::NotFound
-            || (cfg!(windows) && error.kind() == io::ErrorKind::NotADirectory))
-    );
+    assert!(matches!(
+        result,
+        Err(process::Error::Spawn(error)) if error.kind() == io::ErrorKind::NotFound
+            || (cfg!(windows) && error.kind() == io::ErrorKind::NotADirectory)
+    ));
 }
 
 #[tokio::test]

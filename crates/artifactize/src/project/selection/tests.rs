@@ -243,15 +243,20 @@ fn file_reads_reject_nonregular_and_oversized_inputs() {
 
 fn profile_fixture() -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
-    crate::test_declaration::write(directory.path().join("index.artf"), json!({
-        "name":"target", "evals":[
-            {"id":"z", "title":"Z", "profile":{"kind":"runtime","command":"/bin/true","args":[]},
-             "profile_variants":{"careful":{"kind":"runtime","command":"/bin/echo","args":["{input}"],"timeout_ms":9}},
-             "payload":{"instruction":"Check."}},
-            {"id":"a", "title":"A", "profile":{"kind":"runtime","command":"/bin/true","args":[]},
-             "payload":{"instruction":"Check."}}
-        ]
-    }).to_string()).unwrap();
+    crate::test_declaration::write(
+        directory.path().join("index.artf"),
+        json!({
+            "name":"target", "evals":[
+                {"id":"z", "title":"Z", "profile":{"kind":"runtime","command":"/bin/true","args":[]},
+                 "profile_variants":{"careful":{"kind":"runtime","command":"/bin/echo","args":["{input}"],"timeout_ms":9}},
+                 "payload":{"instruction":"Check."}},
+                {"id":"a", "title":"A", "profile":{"kind":"runtime","command":"/bin/true","args":[]},
+                 "payload":{"instruction":"Check."}}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
     fs::create_dir(directory.path().join("external")).unwrap();
     crate::test_declaration::write(
         directory.path().join("external/index.artf"),

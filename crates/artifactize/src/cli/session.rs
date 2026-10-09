@@ -255,7 +255,9 @@ async fn send(
     located.load()?;
     let _lock = tokio::select! {
         lock = session::lock(state, &located.id) => lock?,
-        () = cancellation.cancelled() => return Err("Cancelled while waiting for another send to this session.".into()),
+        () = cancellation.cancelled() => {
+            return Err("Cancelled while waiting for another send to this session.".into());
+        }
     };
     let conversation = located.load()?;
     let request = &located.request.request;

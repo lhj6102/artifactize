@@ -26,12 +26,17 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
     fs::create_dir_all(root.join("data")).unwrap();
     let fixture = Fixture(support::os::canonical(&root));
     let root = &fixture.0;
-    support::declaration::write(root.join("review/index.artf"), json!({
-        "name":"review", "mounts":{"source":"input"}, "evals":[{
-            "id":"read", "title":"Read inputs", "payload":{"instruction":"Inspect inputs."},
-            "profile":{"kind":"runtime", "command":bin("/bin/cat"), "args":["local", "{review}/nested/file", "{review}/source/file", "{input}/file"]}
-        }]
-    }).to_string()).unwrap();
+    support::declaration::write(
+        root.join("review/index.artf"),
+        json!({
+            "name":"review", "mounts":{"source":"input"}, "evals":[{
+                "id":"read", "title":"Read inputs", "payload":{"instruction":"Inspect inputs."},
+                "profile":{"kind":"runtime", "command":bin("/bin/cat"), "args":["local", "{review}/nested/file", "{review}/source/file", "{input}/file"]}
+            }]
+        })
+        .to_string(),
+    )
+    .unwrap();
     fs::write(root.join("review/local"), "owner\n").unwrap();
     support::declaration::write(root.join("review/nested/index.artf"), r#"{"name":"child"}"#)
         .unwrap();

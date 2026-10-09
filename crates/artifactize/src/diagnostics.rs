@@ -101,10 +101,15 @@ impl Catalog<'_> {
     fn definitions(&self) -> Vec<tools::ToolDefinition> {
         match self {
             Self::Agent(registry) => registry.list().cloned().collect(),
-            Self::Human(registry) => registry.list().map(|tool| tools::ToolDefinition {
-                name: tool.name.clone(), artifact_id: tool.artifact_id.clone(), description: tool.description.clone(),
-                input_schema: json!({"type":"object","properties":{},"additionalProperties":false}),
-            }).collect(),
+            Self::Human(registry) => registry
+                .list()
+                .map(|tool| tools::ToolDefinition {
+                    name: tool.name.clone(),
+                    artifact_id: tool.artifact_id.clone(),
+                    description: tool.description.clone(),
+                    input_schema: json!({"type":"object","properties":{},"additionalProperties":false}),
+                })
+                .collect(),
         }
     }
     fn preflight(&self, name: &str) -> Result<(), String> {

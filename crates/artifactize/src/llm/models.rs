@@ -104,9 +104,16 @@ mod tests {
         assert!(requests[0].body.is_null());
 
         let anthropic = Server::new(vec![
-            MockHttpResponse::success(json!({"data":[{"id":"first", "display_name":"First"}], "has_more":true,"last_id":"first"}).to_string()),
-            MockHttpResponse::success(json!({"data":[{"id":"second", "display_name":"Second"}],"has_more":false}).to_string()),
-        ]).await;
+            MockHttpResponse::success(
+                json!({"data":[{"id":"first", "display_name":"First"}], "has_more":true,"last_id":"first"})
+                    .to_string(),
+            ),
+            MockHttpResponse::success(
+                json!({"data":[{"id":"second", "display_name":"Second"}],"has_more":false})
+                    .to_string(),
+            ),
+        ])
+        .await;
         let models = list_at(Backend::Anthropic, "anthropic-key", &anthropic.base)
             .await
             .unwrap();

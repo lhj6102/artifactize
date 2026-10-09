@@ -296,7 +296,9 @@ async fn publish(publisher: Arc<Publishing>) {
                 _ = wake => {},
                 _ = tokio::time::sleep(RECONNECT) => {
                     // The task must not retain a publisher forever after its writers disappear.
-                    if Arc::strong_count(&publisher) == 1 { break; }
+                    if Arc::strong_count(&publisher) == 1 {
+                        break;
+                    }
                     continue;
                 }
             }
@@ -363,14 +365,23 @@ async fn watch(
                 result = connection => {
                     if let Ok(Ok((stream, epoch))) = result {
                         inbox.add(Change::Resync);
-                        if let Some(ready) = ready.take() { let _ = ready.send(()); }
+                        if let Some(ready) = ready.take() {
+                            let _ = ready.send(());
+                        }
                         let receive = receive(stream, epoch, inbox.clone());
                         tokio::pin!(receive);
                         loop {
                             tokio::select! {
                                 _ = cancel.cancelled() => break,
-                                _ = &mut receive => { inbox.add(Change::Resync); break; },
-                                _ = reconcile.tick() => { if probe.changed().await { inbox.add(Change::Resync); } },
+                                _ = &mut receive => {
+                                    inbox.add(Change::Resync);
+                                    break;
+                                }
+                                _ = reconcile.tick() => {
+                                    if probe.changed().await {
+                                        inbox.add(Change::Resync);
+                                    }
+                                }
                             }
                         }
                     }
@@ -442,8 +453,15 @@ async fn serve(
             _ = clients.join_next(), if !clients.is_empty() => {},
             result = listener.accept(), if clients.len() < MAX_CLIENTS => {
                 let stream = result?;
-                let (identity, epoch, sender, sequence) = (endpoint.identity.clone(), epoch.clone(), sender.clone(), sequence.clone());
-                clients.spawn(async move { let _ = client(stream, identity, epoch, sender, sequence).await; });
+                let (identity, epoch, sender, sequence) = (
+                    endpoint.identity.clone(),
+                    epoch.clone(),
+                    sender.clone(),
+                    sequence.clone(),
+                );
+                clients.spawn(async move {
+                    let _ = client(stream, identity, epoch, sender, sequence).await;
+                });
             }
         }
     }

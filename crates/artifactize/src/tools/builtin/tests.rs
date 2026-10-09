@@ -26,11 +26,15 @@ impl Fixture {
     }
 
     fn artifact(&self, path: &str, name: &str, mounts: Value, instruction: &str) {
-        self.write(&format!("{path}/index.artf"), json!({
-            "name":name,"mounts":mounts,"views":{"agent_tools":{
-                "read":{"builtin":"read"},"list":{"builtin":"list"},"glob":{"builtin":"glob"},"grep":{"builtin":"grep"},"view_image":{"builtin":"view_image"}
-            }},"evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}]
-        }).to_string());
+        self.write(
+            &format!("{path}/index.artf"),
+            json!({
+                "name":name,"mounts":mounts,"views":{"agent_tools":{
+                    "read":{"builtin":"read"},"list":{"builtin":"list"},"glob":{"builtin":"glob"},"grep":{"builtin":"grep"},"view_image":{"builtin":"view_image"}
+                }},"evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}]
+            })
+            .to_string(),
+        );
     }
 
     fn write(&self, path: &str, data: impl AsRef<[u8]>) {

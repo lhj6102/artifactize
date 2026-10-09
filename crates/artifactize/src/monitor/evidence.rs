@@ -91,10 +91,26 @@ pub fn evidence(_state: &Path, view: &RequestView) -> Evidence {
                 .clone()
                 .and_then(|result| serde_json::from_value::<RuntimeLog>(result).ok());
             let text = match logs {
-                Some(logs) => format!("exit code: {}\ncapture truncated: {}\n\nstdout\n{}\n\nstderr\n{}", logs.exit_code.map_or("unreported".into(), |code| code.to_string()), logs.truncated, logs.stdout, logs.stderr),
-                None if view.request.origin.is_some() => "Logs unavailable: this remote result contains only a summary; stdout/stderr were not saved here.".into(),
-                None if view.request.status == RequestStatus::Running => "Logs unavailable while running: only completed runtime output is saved; this view does not stream live pipes.".into(),
-                None => "Logs unavailable: stdout/stderr were not saved for this request (for example timeout, cancellation, operational failure, or a summary-only reused result).".into(),
+                Some(logs) => format!(
+                    "exit code: {}\ncapture truncated: {}\n\nstdout\n{}\n\nstderr\n{}",
+                    logs.exit_code
+                        .map_or("unreported".into(), |code| code.to_string()),
+                    logs.truncated,
+                    logs.stdout,
+                    logs.stderr
+                ),
+                None if view.request.origin.is_some() => {
+                    "Logs unavailable: this remote result contains only a summary; stdout/stderr were not saved here."
+                        .into()
+                }
+                None if view.request.status == RequestStatus::Running => {
+                    "Logs unavailable while running: only completed runtime output is saved; this view does not stream live pipes."
+                        .into()
+                }
+                None => {
+                    "Logs unavailable: stdout/stderr were not saved for this request (for example timeout, cancellation, operational failure, or a summary-only reused result)."
+                        .into()
+                }
             };
             Evidence {
                 title: "Saved runtime stdout / stderr".into(),

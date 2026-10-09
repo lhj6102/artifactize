@@ -70,25 +70,35 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     )
     .unwrap();
     for (name, title) in [("checkout", "Checkout"), ("search", "Search")] {
-        support::declaration::write(first.join(format!("scenarios/{name}/index.artf")), json!({
-            "name":name,
-            "evals":[{
-                "id":"review","title":title,
-                "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
-                "profile_variants":{"brief":{"kind":"runtime","command":bin("/bin/echo"),"args":["saved result"]}},
-                "payload":{"instruction":"Inspect {input}."},
-                "pass_schema":{"type":"object"}
-            }]
-        }).to_string()).unwrap();
+        support::declaration::write(
+            first.join(format!("scenarios/{name}/index.artf")),
+            json!({
+                "name":name,
+                "evals":[{
+                    "id":"review","title":title,
+                    "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+                    "profile_variants":{"brief":{"kind":"runtime","command":bin("/bin/echo"),"args":["saved result"]}},
+                    "payload":{"instruction":"Inspect {input}."},
+                    "pass_schema":{"type":"object"}
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
     }
-    support::declaration::write(second.join("index.artf"), json!({
-        "name":"other",
-        "evals":[
-            {"id":"pass","title":"Pass","profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},"payload":{"instruction":"Pass."}},
-            {"id":"fail","title":"Fail","profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},"payload":{"instruction":"Fail."}},
-            {"id":"human","title":"Human","profile":{"kind":"human"},"payload":{"instruction":"Inspect."}}
-        ]
-    }).to_string()).unwrap();
+    support::declaration::write(
+        second.join("index.artf"),
+        json!({
+            "name":"other",
+            "evals":[
+                {"id":"pass","title":"Pass","profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},"payload":{"instruction":"Pass."}},
+                {"id":"fail","title":"Fail","profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},"payload":{"instruction":"Fail."}},
+                {"id":"human","title":"Human","profile":{"kind":"human"},"payload":{"instruction":"Inspect."}}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
 
     let selected = query(
         &first,

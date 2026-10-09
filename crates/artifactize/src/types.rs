@@ -128,31 +128,72 @@ identity!(ReuseKey, |value: &str| value.len() == SHA256_HEX_BYTES
 macro_rules! status {
     ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-        pub enum $name { $(#[serde(rename = $text)] $variant),+ }
-        impl $name {
-            pub fn as_str(self) -> &'static str { match self { $(Self::$variant => $text),+ } }
+        pub enum $name {
+            $(#[serde(rename = $text)] $variant),+
         }
-        impl fmt::Display for $name { fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(self.as_str()) } }
+        impl $name {
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $text),+
+                }
+            }
+        }
+        impl fmt::Display for $name {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(self.as_str())
+            }
+        }
         impl FromStr for $name {
             type Err = String;
             fn from_str(value: &str) -> Result<Self, Self::Err> {
-                match value { $($text => Ok(Self::$variant)),+, _ => Err(format!("Invalid {}: {value:?}.", stringify!($name))) }
+                match value {
+                    $($text => Ok(Self::$variant)),+,
+                    _ => Err(format!("Invalid {}: {value:?}.", stringify!($name))),
+                }
             }
         }
-        impl ToSql for $name { fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> { self.as_str().to_sql() } }
+        impl ToSql for $name {
+            fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+                self.as_str().to_sql()
+            }
+        }
         impl FromSql for $name {
             fn column_result(value: ValueRef<'_>) -> FromSqlResult<Self> {
-                value.as_str()?.parse().map_err(|error: String| FromSqlError::Other(error.into()))
+                value
+                    .as_str()?
+                    .parse()
+                    .map_err(|error: String| FromSqlError::Other(error.into()))
             }
         }
     };
 }
-status!(RunStatus { Running => "RUNNING", Green => "GREEN", Red => "RED", Error => "ERROR", Incomplete => "INCOMPLETE" });
-status!(RequestStatus {
-    Queued => "QUEUED", Running => "RUNNING", WaitingHuman => "WAITING_HUMAN", Green => "GREEN", Red => "RED", Error => "ERROR",
-    BudgetExhausted => "BUDGET_EXHAUSTED", Stale => "STALE", Unreviewed => "UNREVIEWED", WaitDependency => "WAIT_DEPENDENCY", Blocked => "BLOCKED"
+status!(RunStatus {
+    Running => "RUNNING",
+    Green => "GREEN",
+    Red => "RED",
+    Error => "ERROR",
+    Incomplete => "INCOMPLETE",
 });
-status!(ExecutionStatus { Running => "RUNNING", WaitingHuman => "WAITING_HUMAN", Green => "GREEN", Red => "RED", Error => "ERROR" });
+status!(RequestStatus {
+    Queued => "QUEUED",
+    Running => "RUNNING",
+    WaitingHuman => "WAITING_HUMAN",
+    Green => "GREEN",
+    Red => "RED",
+    Error => "ERROR",
+    BudgetExhausted => "BUDGET_EXHAUSTED",
+    Stale => "STALE",
+    Unreviewed => "UNREVIEWED",
+    WaitDependency => "WAIT_DEPENDENCY",
+    Blocked => "BLOCKED",
+});
+status!(ExecutionStatus {
+    Running => "RUNNING",
+    WaitingHuman => "WAITING_HUMAN",
+    Green => "GREEN",
+    Red => "RED",
+    Error => "ERROR",
+});
 impl From<ExecutionStatus> for RequestStatus {
     fn from(status: ExecutionStatus) -> Self {
         match status {

@@ -40,10 +40,15 @@ fn python(source: &str) -> Vec<&str> {
 
 fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
     fs::create_dir_all(path).unwrap();
-    support::declaration::write(path.join("index.artf"), json!({
-        "name":name,"views":{"human_tools":tools,"agent_tools":{"read":{"builtin":"read"}}},
-        "evals":[{"id":"review","title":"Review","profile":{"kind":"human"},"payload":{"instruction":instruction}}]
-    }).to_string()).unwrap();
+    support::declaration::write(
+        path.join("index.artf"),
+        json!({
+            "name":name,"views":{"human_tools":tools,"agent_tools":{"read":{"builtin":"read"}}},
+            "evals":[{"id":"review","title":"Review","profile":{"kind":"human"},"payload":{"instruction":instruction}}]
+        })
+        .to_string(),
+    )
+    .unwrap();
 }
 
 async fn call(repo: &Path) -> ToolResult {
