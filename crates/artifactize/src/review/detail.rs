@@ -353,7 +353,7 @@ impl Review {
                 KeyCode::Char('e') if self.standalone && self.owned() => match &mut self.mode {
                     Mode::Form(form) => {
                         let draft = form.draft();
-                        form.json = Some(draft.clone());
+                        form.set_json(draft.clone());
                         Action::Edit(draft)
                     }
                     _ => Action::None,

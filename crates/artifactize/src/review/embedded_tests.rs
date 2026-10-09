@@ -353,6 +353,64 @@ async fn an_external_submission_ends_editing_and_frees_the_detail_keys() {
 }
 
 #[tokio::test]
+async fn a_confirmation_after_an_outside_release_neither_claims_nor_runs() {
+    let (_root, repo, state) = fixture();
+    let view = waiting(&repo, &state).await;
+    let id = view.request.id.clone();
+    let mut review = opened(&state, view, "alice");
+    let outcome = perform(&mut review, Control::Claim).await;
+    review.finish_single(outcome);
+    review.refresh().await;
+    let outcome = perform(&mut review, Control::RunTool).await;
+    review.finish_single(outcome);
+    assert!(review.confirming());
+    // Another terminal releases the claim; the monitor refreshes under the open prompt.
+    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    human::unclaim(&receipts, &id, "alice").await.unwrap();
+    review.refresh().await;
+    assert!(!review.owned());
+    assert_eq!(review.control(Control::Confirm), Action::None);
+    assert!(!review.confirming());
+    let saved = store::read_request(&state, &id).await.unwrap();
+    assert!(saved.claim.is_none(), "confirming never claims");
+}
+
+#[tokio::test]
+async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
+    let (_root, repo, state) = fixture();
+    let view = waiting(&repo, &state).await;
+    let id = view.request.id.clone();
+    let mut review = Review::new(state.clone(), None, "alice".into(), Some(id.to_string()));
+    review.refresh().await;
+    let Action::Start(job) = review.key(KeyEvent::from(KeyCode::Char('c'))) else {
+        panic!("claim job");
+    };
+    let outcome = review.start(job).await;
+    review.finish(outcome);
+    review.refresh().await;
+    // Another terminal settles it; this session still holds the claim it took on a second one.
+    human::submit_and_publish(
+        &state,
+        id.as_str(),
+        "alice",
+        &json!({"verdict":"GREEN","approved":true}),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    review.refresh().await;
+    assert!(review.settled());
+    review.taken.push("run-held-1".parse().unwrap());
+    assert_eq!(
+        review.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+        Action::None
+    );
+    assert_eq!(review.mode(), &Mode::Leave);
+    review.refresh().await;
+    assert_eq!(review.mode(), &Mode::Leave, "a refresh keeps the prompt");
+}
+
+#[tokio::test]
 async fn keyboard_reclaim_restores_the_release_draft() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;

@@ -958,6 +958,126 @@ fn panes(review: &mut Review, width: u16) -> (bool, bool, bool, String) {
 }
 
 #[test]
+fn a_tool_confirmation_never_claims_once_the_claim_is_gone() {
+    let notes = command(&["/repo/release/notes.md"]);
+    let confirm = |review: &mut Review| {
+        assert_eq!(
+            press(review, KeyCode::Enter),
+            Action::Start(Job::Inspect {
+                id: ID.parse().unwrap(),
+                tool: "notes_release".into(),
+            })
+        );
+        review.finish(Outcome::Inspected {
+            tool: "notes_release".into(),
+            result: Ok(notes.clone()),
+        });
+        assert!(review.confirming());
+    };
+    // Another terminal releases the claim while the prompt is open; a refresh reloads it.
+    let mut review = opened(Some("alice"), demo());
+    press(&mut review, KeyCode::Tab);
+    confirm(&mut review);
+    review.show(view("WAITING_HUMAN", None, demo()));
+    for key in [KeyCode::Char('y'), KeyCode::Enter] {
+        assert_eq!(press(&mut review, key), Action::None, "{key:?}");
+    }
+    assert_eq!(review.mode(), &Mode::Request);
+    assert!(review.confirmed.is_empty());
+    assert!(screen(&mut review).contains("Claim this request before reviewing it."));
+    // A form set aside for the tool comes back instead of a run.
+    let mut review = opened(Some("alice"), demo());
+    press(&mut review, KeyCode::Char('r'));
+    press(&mut review, KeyCode::Char('x'));
+    press(&mut review, KeyCode::BackTab);
+    confirm(&mut review);
+    review.show(view("WAITING_HUMAN", Some("bob"), demo()));
+    assert_eq!(review.control(Control::Confirm), Action::None);
+    assert_eq!(form(&review).fields[0].display(), "x");
+    // A request settled meanwhile drops the prompt; y then runs nothing.
+    let mut review = opened(Some("alice"), demo());
+    press(&mut review, KeyCode::Tab);
+    confirm(&mut review);
+    review.show(view("GREEN", None, demo()));
+    assert!(!review.confirming());
+    assert_eq!(press(&mut review, KeyCode::Char('y')), Action::None);
+    // No job ever claims: an unclaimed submission from $EDITOR is refused too.
+    let mut review = opened(Some("alice"), demo());
+    press(&mut review, KeyCode::Char('r'));
+    review.show(view("WAITING_HUMAN", None, demo()));
+    assert_eq!(
+        review.edited(Ok(r#"{"reason":"late"}"#.into())),
+        Action::None
+    );
+    assert_eq!(
+        form(&review).error.as_deref(),
+        Some("Claim this request before reviewing it.")
+    );
+}
+
+#[test]
+fn a_refresh_never_drops_the_quit_prompt() {
+    let mut review = opened(Some("alice"), demo());
+    let other: RequestId = "run-2-1".parse().unwrap();
+    review.taken = vec![ID.parse().unwrap(), other];
+    review.show(view("GREEN", None, demo()));
+    assert_eq!(control(&mut review, 'c'), Action::None);
+    assert_eq!(review.mode(), &Mode::Leave);
+    // The settled request reloads, as every refresh does; the prompt stays.
+    review.show(view("GREEN", None, demo()));
+    assert_eq!(review.mode(), &Mode::Leave);
+    let text = screen(&mut review);
+    assert!(
+        text.contains("This session claimed 2 request(s) without submitting:")
+            && text.contains("run-2-1"),
+        "{text}"
+    );
+    assert_eq!(
+        press(&mut review, KeyCode::Char('u')),
+        Action::Start(Job::Release {
+            ids: vec![ID.parse().unwrap(), "run-2-1".parse().unwrap()],
+            quit: true
+        })
+    );
+}
+
+#[test]
+fn json_cursors_stay_on_utf8_boundaries_when_the_text_is_replaced() {
+    let nested = definition(
+        json!({"type":"object","properties":{"meta":{"type":"object"}}}),
+        json!({"type":"object","properties":{"meta":{"type":"object"}}}),
+    );
+    let mut review = opened(Some("alice"), nested);
+    press(&mut review, KeyCode::Char('g'));
+    let Action::Edit(draft) = control(&mut review, 'e') else {
+        panic!("Ctrl-E opens the editor");
+    };
+    // The editor saves invalid JSON whose multibyte text spans the old cursor position.
+    let old = form(&review).cursor;
+    assert_eq!(old, draft.len());
+    let edited = format!("{}한한 not json", "x".repeat(old - 1));
+    assert!(!edited.is_char_boundary(old));
+    assert_eq!(review.edited(Ok(edited.clone())), Action::None);
+    assert!(form(&review).error.is_some());
+    assert_eq!(form(&review).cursor, edited.len());
+    let text = screen(&mut review);
+    assert!(text.contains(" not json") && text.contains('한'), "{text}");
+    press(&mut review, KeyCode::Char('!'));
+    assert!(form(&review).json.as_ref().unwrap().ends_with("json!"));
+    // The renderer, keys and paste are boundary-safe even for a cursor left mid-character.
+    if let Mode::Form(form) = &mut review.mode {
+        form.set_json("{\"note\":\"한글\"}".into());
+        form.cursor = 10;
+    }
+    screen(&mut review);
+    press(&mut review, KeyCode::Left);
+    review.paste_single("é");
+    let form = form(&review);
+    assert!(form.json.as_ref().unwrap().is_char_boundary(form.cursor));
+    assert!(form.json.as_ref().unwrap().contains('é'), "{form:?}");
+}
+
+#[test]
 fn control_characters_never_break_one_row_texts() {
     let mut review = listed();
     for view in &mut review.waiting {

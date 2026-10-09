@@ -441,7 +441,8 @@ pub(super) fn draw_inline_form(
         draw_fields(frame, area, form, scroll, border);
         return;
     };
-    let cursor = form.cursor.min(json.len());
+    // Boundary-safe even for a cursor left inside a multibyte character.
+    let cursor = super::form::boundary(json, form.cursor);
     let before = &json[..cursor];
     let row = before
         .chars()

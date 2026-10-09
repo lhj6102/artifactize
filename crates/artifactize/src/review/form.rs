@@ -187,9 +187,16 @@ impl Form {
         Ok(Value::Object(object))
     }
 
+    /// Replace the JSON text (from `$EDITOR` or a flat form's draft); the cursor moves to its end.
+    pub fn set_json(&mut self, text: String) {
+        self.cursor = text.len();
+        self.json = Some(text);
+    }
+
     /// Bounded paste follows the existing Human result limit, without splitting UTF-8.
     pub fn paste(&mut self, text: &str) {
         if let Some(json) = &mut self.json {
+            self.cursor = boundary(json, self.cursor);
             if json.len().saturating_add(text.len()) <= crate::human::MAX_RESULT_BYTES {
                 json.insert_str(self.cursor, text);
                 self.cursor += text.len();
@@ -239,7 +246,7 @@ impl Form {
             return;
         }
         let text = self.json.as_ref().expect("JSON mode");
-        self.cursor = self.cursor.min(text.len());
+        self.cursor = boundary(text, self.cursor);
         match key.code {
             KeyCode::Char(character)
                 if !key.modifiers.intersects(
@@ -415,6 +422,15 @@ fn input(property: &Value) -> Option<(Input, String)> {
 }
 
 /// A JSON skeleton of a schema for `$EDITOR`: constants and first choices filled, the rest empty.
+/// `cursor` moved back onto a UTF-8 character boundary of `text`, at most its end.
+pub(crate) fn boundary(text: &str, cursor: usize) -> usize {
+    let mut cursor = cursor.min(text.len());
+    while !text.is_char_boundary(cursor) {
+        cursor -= 1;
+    }
+    cursor
+}
+
 pub fn template(schema: &Value) -> Value {
     if let Some(value) = ["const", "default"].iter().find_map(|key| schema.get(*key)) {
         return value.clone();

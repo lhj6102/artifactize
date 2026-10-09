@@ -386,7 +386,11 @@ impl Review {
     }
 
     /// Leave the form without discarding it; the same verdict reopens the draft.
+    /// Only a form is set aside; any other mode, such as the quit prompt, stays.
     fn stop_editing(&mut self) {
+        if !matches!(self.mode, Mode::Form(_)) {
+            return;
+        }
         if let Mode::Form(form) = std::mem::replace(&mut self.mode, Mode::Request) {
             self.drafts.insert(form.verdict, form);
         }
@@ -513,14 +517,30 @@ impl Review {
         else {
             return Action::None;
         };
-        if run {
-            self.confirmed.push(command);
-            return self.run(tool);
-        }
-        if let Some(form) = self.tool_draft.take() {
+        // The claim may have been released or the request settled while the prompt was open.
+        let owned = self.owned_request();
+        if (!run || owned.is_err())
+            && let Some(form) = self.tool_draft.take()
+        {
             self.mode = Mode::Form(form);
         }
-        Action::None
+        if !run {
+            return Action::None;
+        }
+        if let Err(error) = owned {
+            return self.notify(error, true);
+        }
+        self.confirmed.push(command);
+        self.run(tool)
+    }
+
+    /// The open request when this reviewer holds its claim. Jobs never claim implicitly: a
+    /// claim is always the explicit `c`.
+    fn owned_request(&self) -> Result<RequestId, String> {
+        match self.actionable()? {
+            (id, false) => Ok(id),
+            (_, true) => Err("Claim this request before reviewing it.".into()),
+        }
     }
 
     fn release(&mut self) -> Action {
@@ -535,15 +555,23 @@ impl Review {
     }
 
     fn run(&mut self, tool: String) -> Action {
-        match self.actionable() {
-            Ok((id, claim)) => Action::Start(Job::Run { id, tool, claim }),
+        match self.owned_request() {
+            Ok(id) => Action::Start(Job::Run {
+                id,
+                tool,
+                claim: false,
+            }),
             Err(error) => self.notify(error, true),
         }
     }
 
     fn submit(&mut self, result: Value) -> Action {
-        match self.actionable() {
-            Ok((id, claim)) => Action::Start(Job::Submit { id, result, claim }),
+        match self.owned_request() {
+            Ok(id) => Action::Start(Job::Submit {
+                id,
+                result,
+                claim: false,
+            }),
             Err(error) => {
                 if let Mode::Form(form) = &mut self.mode {
                     form.error = Some(error);
@@ -723,7 +751,7 @@ impl Review {
                 form.error = Some("The edited file was empty; nothing was submitted.".into())
             }
             Ok(text) => {
-                form.json = Some(text);
+                form.set_json(text);
                 match form.result() {
                     Ok(result) => return self.submit(result),
                     Err(error) => form.error = Some(error),
