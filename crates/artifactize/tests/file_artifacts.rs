@@ -771,3 +771,34 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
         }]
     );
 }
+
+#[test]
+fn sidecar_checks_keep_s2_source_locations_and_literal_owner_data() {
+    let fixture = Fixture::new();
+    fixture.write("input.txt", "input");
+    fixture.write("input.txt.artf", "name = 'file'\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\npayload = { instruction = 'Check.', owner = { '$__toml_private_datetime' = 'ordinary string' } }\n");
+    assert_eq!(
+        fixture.config().evals[0]
+            .declaration
+            .payload
+            .as_ref()
+            .unwrap()
+            .extra["owner"]["$__toml_private_datetime"],
+        "ordinary string"
+    );
+    fixture.write("input.txt.artf", "name = 'file'\n[evals.review]\ntitle = 'Review'\nprofile = { kind = 'human' }\npayload.instruction = 'Check {file}/sub.'\n");
+    let error = read_workspace_config(&fixture.repo).unwrap_err();
+    assert!(
+        error.message.contains("line 5") && error.message.contains("cannot have a /path suffix"),
+        "{error}"
+    );
+    fixture.write(
+        "input.txt.artf",
+        "name = 'file'\nfingerprint = { files = ['input.txt'], ignore = [] }\n",
+    );
+    let error = read_workspace_config(&fixture.repo).unwrap_err();
+    assert!(
+        error.message.contains("line 2") && error.message.contains("fingerprint.ignore"),
+        "{error}"
+    );
+}

@@ -430,7 +430,12 @@ fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
 
 #[test]
 fn prune_preserves_gitless_workspace_copies_with_current_or_legacy_markers() {
-    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+    for marker in [
+        "index.artf",
+        "artifactize.json",
+        ".artifactizeignore",
+        "file.txt.artf",
+    ] {
         let root = tempfile::tempdir().unwrap();
         let state = root.path().join("state");
         let repo = root.path().join("reviewed");
@@ -460,7 +465,12 @@ fn prune_preserves_gitless_workspace_copies_with_current_or_legacy_markers() {
 
 #[test]
 fn remote_logout_refuses_credential_state_inside_current_and_legacy_workspaces() {
-    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+    for marker in [
+        "index.artf",
+        "artifactize.json",
+        ".artifactizeignore",
+        "file.txt.artf",
+    ] {
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("workspace");
         fs::create_dir(&workspace).unwrap();
@@ -487,7 +497,12 @@ fn remote_logout_refuses_credential_state_inside_current_and_legacy_workspaces()
 
 #[test]
 fn doctor_never_probes_or_creates_state_inside_current_or_legacy_workspaces() {
-    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+    for marker in [
+        "index.artf",
+        "artifactize.json",
+        ".artifactizeignore",
+        "file.txt.artf",
+    ] {
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("workspace");
         fs::create_dir(&workspace).unwrap();

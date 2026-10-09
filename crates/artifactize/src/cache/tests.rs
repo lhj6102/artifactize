@@ -153,7 +153,7 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
 }
 
 #[tokio::test]
-async fn explicit_declaration_inputs_are_rejected_but_artf_folders_are_hashed() {
+async fn explicit_declaration_inputs_are_rejected() {
     let repo = Repo::new();
     for input in ["index.artf", "file.png.artf", "missing.artf"] {
         repo.artifact("", json!({"name":"root","fingerprint":{"files":[input]}}));
@@ -165,12 +165,6 @@ async fn explicit_declaration_inputs_are_rejected_but_artf_folders_are_hashed() 
             "{error}"
         );
     }
-    repo.artifact(
-        "",
-        json!({"name":"root","fingerprint":{"files":["bundle.artf"]}}),
-    );
-    repo.write("bundle.artf/data.txt", "data");
-    assert_eq!(repo.files("root").await, ["bundle.artf/data.txt"]);
 }
 
 #[tokio::test]

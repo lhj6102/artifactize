@@ -727,7 +727,8 @@ fn json_backed_tool_and_fingerprint_fields_report_the_offending_field_span() {
 fn explicitly_listed_artf_files_are_rejected_before_opening_for_artifactsum() {
     let root = tempfile::tempdir().unwrap();
     for input in ["index.artf", "missing.png.artf", "existing.png.artf"] {
-        write(root.path(), "existing.png.artf", "not TOML");
+        write(root.path(), "existing.png", "pixels");
+        write(root.path(), "existing.png.artf", "name = 'image'");
         write(
             root.path(),
             "index.artf",

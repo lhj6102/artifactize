@@ -991,14 +991,15 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             let mut declaration =
                 parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
             if declaration.review_policy.is_some() {
-                return Err(ConfigError::new(
+                return Err(ConfigError::declaration(
                     &file,
+                    &["review_policy"],
                     "review_policy belongs only to the repository root index.artf.",
                 ));
             }
-            let value: toml::Value =
-                toml::from_str(&source).map_err(|error| ConfigError::new(&file, error))?;
-            if value.get("fingerprint").is_none() {
+            let value = toml::de::DeTable::parse(&source)
+                .map_err(|error| ConfigError::new(&file, error))?;
+            if value.get_ref().get("fingerprint").is_none() {
                 declaration.fingerprint = Some(Fingerprint::Artifactsum {
                     files: vec![target.into()],
                     ignore: Vec::new(),
@@ -1006,18 +1007,21 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             }
             if let Some(Fingerprint::Artifactsum { files, .. }) = &declaration.fingerprint {
                 if value
+                    .get_ref()
                     .get("fingerprint")
-                    .and_then(|value| value.get("ignore"))
+                    .and_then(|value| value.get_ref().get("ignore"))
                     .is_some()
                 {
-                    return Err(ConfigError::new(
+                    return Err(ConfigError::declaration(
                         &file,
+                        &["fingerprint", "ignore"],
                         "fingerprint.ignore is not supported for a file Artifact.",
                     ));
                 }
                 if files.iter().any(|input| input != target) {
-                    return Err(ConfigError::new(
+                    return Err(ConfigError::declaration(
                         &file,
+                        &["fingerprint", "files"],
                         format!(
                             "fingerprint.files for a file Artifact may name only its target {target}."
                         ),

@@ -466,24 +466,32 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
     let mut relations = Vec::new();
     for (id, artifact) in &config.artifacts {
         let error = |keys: &[&str], message: String| {
-            ConfigError::declaration(
-                config.root.join(artifact.declaration_path()),
-                keys,
-                message,
-            )
+            ConfigError::declaration(config.root.join(artifact.declaration_path()), keys, message)
         };
         for (name, tool) in &artifact.views.agent_tools {
             if let crate::config::AgentTool::Command(tool) = tool
                 && tool.protocol == crate::config::ToolProtocol::Json
             {
                 for argument in &tool.args {
-                    if let Some(reference) = argument_reference(argument)
-                        .map_err(|failure| error(&["views", "agent_tools", name, "args"], format!("Agent tool {name}: {failure}")))?
-                    {
-                        let target = reference_target(config, id, reference.name)
-                            .map_err(|failure| error(&["views", "agent_tools", name, "args"], format!("Agent tool {name}: {failure}")))?;
-                        reference_path(config, target, reference.path)
-                            .map_err(|failure| error(&["views", "agent_tools", name, "args"], format!("Agent tool {name}: {failure}")))?;
+                    if let Some(reference) = argument_reference(argument).map_err(|failure| {
+                        error(
+                            &["views", "agent_tools", name, "args"],
+                            format!("Agent tool {name}: {failure}"),
+                        )
+                    })? {
+                        let target =
+                            reference_target(config, id, reference.name).map_err(|failure| {
+                                error(
+                                    &["views", "agent_tools", name, "args"],
+                                    format!("Agent tool {name}: {failure}"),
+                                )
+                            })?;
+                        reference_path(config, target, reference.path).map_err(|failure| {
+                            error(
+                                &["views", "agent_tools", name, "args"],
+                                format!("Agent tool {name}: {failure}"),
+                            )
+                        })?;
                     }
                 }
             }
@@ -496,13 +504,19 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                         format!("fingerprint.script: {failure}"),
                     )
                 })? {
-                    let target = reference_target(config, id, reference.name).map_err(|failure| {
+                    let target =
+                        reference_target(config, id, reference.name).map_err(|failure| {
+                            error(
+                                &["fingerprint", "script", "args"],
+                                format!("fingerprint.script: {failure}"),
+                            )
+                        })?;
+                    reference_path(config, target, reference.path).map_err(|failure| {
                         error(
                             &["fingerprint", "script", "args"],
                             format!("fingerprint.script: {failure}"),
                         )
                     })?;
-                    reference_path(config, target, reference.path).map_err(|failure| error(&["fingerprint", "script", "args"], format!("fingerprint.script: {failure}")))?;
                 }
             }
         }
@@ -629,7 +643,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             let source = reference_target(config, &eval.target, name)
                 .map_err(|failure| error(&["payload", "instruction"], failure))?;
             if instruction[reference.end..].starts_with('/') {
-                reference_path(config, source, "/").map_err(|failure| error(&["payload", "instruction"], failure))?;
+                reference_path(config, source, "/")
+                    .map_err(|failure| error(&["payload", "instruction"], failure))?;
             }
             if references
                 .insert(name.to_owned(), source.to_owned())
@@ -658,7 +673,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 };
                 let source = reference_target(config, &eval.target, reference.name)
                     .map_err(|failure| error(&["profile", "args"], failure))?;
-                reference_path(config, source, reference.path).map_err(|failure| error(&["profile", "args"], failure))?;
+                reference_path(config, source, reference.path)
+                    .map_err(|failure| error(&["profile", "args"], failure))?;
                 if source != eval.target {
                     deps.insert(source.to_owned());
                     relations.push(Relation {

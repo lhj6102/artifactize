@@ -16,13 +16,24 @@ pub(crate) fn has_artifact_marker(path: &Path) -> io::Result<bool> {
     for marker in ARTIFACT_MARKERS {
         match path.join(marker).symlink_metadata() {
             Ok(_) => return Ok(true),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+                ) => {}
             Err(error) => return Err(error),
         }
     }
     let entries = match std::fs::read_dir(path) {
         Ok(entries) => entries,
-        Err(error) if matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) => return Ok(false),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return Ok(false);
+        }
         Err(error) => return Err(error),
     };
     for entry in entries {
@@ -91,7 +102,12 @@ mod tests {
 
     #[test]
     fn state_and_output_creation_refuse_other_current_or_legacy_workspaces() {
-        for marker in ["index.artf", "artifactize.json", ".artifactizeignore", "file.txt.artf"] {
+        for marker in [
+            "index.artf",
+            "artifactize.json",
+            ".artifactizeignore",
+            "file.txt.artf",
+        ] {
             let root = tempfile::tempdir().unwrap();
             let reviewed = root.path().join("reviewed");
             let other = root.path().join("other");
