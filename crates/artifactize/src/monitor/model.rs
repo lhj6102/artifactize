@@ -252,13 +252,17 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             .map(|(status, count)| (status.clone(), count.as_u64().unwrap_or(0)))
             .collect(),
         work: format!(
-            "executions {}/{} · jobs {} · executed {} · reused {}{}{}",
+            "executions {}/{} · jobs {} · executed {} · reused {}{}{}{}",
             run.executions_started,
             run.max_executions
                 .map_or("unlimited".into(), |max| max.to_string()),
             run.jobs,
             summary["executed"]["total"],
             summary["reused"]["total"],
+            summary["derived"]
+                .as_u64()
+                .filter(|count| *count > 0)
+                .map_or_else(String::new, |count| format!(" · derived {count}")),
             if usage.is_empty() {
                 usage
             } else {

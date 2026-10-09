@@ -263,7 +263,7 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
     assert_eq!(
         db.pragma_query_value::<u32, _>(None, "user_version", |row| row.get(0))
             .unwrap(),
-        5
+        artifactize::store::STATE_SCHEMA_VERSION
     );
 }
 

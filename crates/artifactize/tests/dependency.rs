@@ -449,6 +449,16 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
         );
         assert_eq!(detail.field("Source"), Some("derived (no execution)"));
         assert_eq!(detail.field("Blocked by"), Some("art, art/check"));
+        let progress = monitor::progress(&run, &requests, OffsetDateTime::now_utc());
+        assert!(progress.work.contains("derived 1"));
+        let tree = monitor::tree(&run, &requests, OffsetDateTime::now_utc());
+        let player = tree.iter().find(|node| node.id == "a:player").unwrap();
+        assert!(
+            player
+                .children
+                .iter()
+                .any(|node| node.id == "e:player/ready" && node.text.contains("derived"))
+        );
     }
 }
 
@@ -608,6 +618,41 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
         graph.evaluate(&cancelled).evals["player/ready"].status,
         EvalStatus::Wait
     );
+    let mut slow = runtime("/bin/sh");
+    slow["profile"]["args"] = json!(["-c", "touch started; sleep 30"]);
+    fixture.write(
+        "art",
+        json!({"name":"art","fingerprint":false,"evals":[slow]}),
+    );
+    let token = CancellationToken::new();
+    let cancel = token.clone();
+    let started = fixture.repo.join("art/started");
+    let cancellation = async move {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while !started.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("runtime started");
+        cancel.cancel();
+    };
+    let selection = Fixture::selection();
+    let options = VerifyOptions::default();
+    let (run, ()) = tokio::join!(
+        project::verify(
+            &fixture.repo,
+            Some(&fixture.state),
+            &selection,
+            &options,
+            token
+        ),
+        cancellation
+    );
+    let run = run.unwrap();
+    assert_eq!(run.requests[1].error_code.as_deref(), Some("CANCELLED"));
+    assert_eq!(run.requests[0].status.as_str(), "WAIT_DEPENDENCY");
+    assert_eq!(run.requests[0].blocked_by, vec!["art", "art/check"]);
 }
 
 #[tokio::test]
