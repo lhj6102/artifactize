@@ -209,12 +209,23 @@ executed and reused work. Their `blocked_by` list (`blockedBy` in JSON requests,
 validation and status) lists unfulfilled Artifacts and qualified eval IDs. RED or
 BLOCKED requirements produce BLOCKED; missing, stale, ERROR, cancelled or waiting
 Human requirements produce WAIT_DEPENDENCY; fulfilled requirements produce GREEN.
-`status` uses the `derive` action, and monitor details show the same saved blockers.
+`status` uses the `derive` action. The monitor derives `waits for X` / `blocked by X`
+rows from the Run's saved evidence and current request states; Detail's `Waits for`
+section lists the upstream Artifacts and their completion state (`w` shows pending evals).
 Tags appear on Artifact entries in text/JSON graph and status, and in the monitor.
 JSON graph/status and saved definitions also carry `kind` (`file` or `folder`)
-and the workspace-relative target `path`; text graph/status and monitor mark
-file Artifacts and show their file paths.
+and the workspace-relative target `path`. Text graph/status mark file Artifacts
+and show their paths; the monitor shows `[file]` in the tree and the path in Detail.
 
 There is no execution, cache key, team-store lookup or publication for the derived
 eval itself. Executable requirements keep normal reuse and execution behavior.
 See [Dependency evals](declarations.md#dependency-evals).
+
+## Saved Run evidence and terminal views
+
+`run show RUN_ID --json` and `verify --json` include `run.evidence` when nonempty.
+It maps qualified eval IDs to saved verdicts used without a request in this Run,
+such as cached upstream evidence in a partial Run. It is not the latest global
+verdict. See [Runs](../concepts/runs-and-status.md#verify-and-runs).
+For the terminal keys and layout, see [Monitor](../guides/human-reviews.md#monitor)
+and [Human reviews](../guides/human-reviews.md#review).

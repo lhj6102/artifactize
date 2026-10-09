@@ -66,8 +66,9 @@ re-reviews only that Artifact.
 - **Know what a change will cost before you run it.** `status` predicts what
   `verify` will execute, reuse or wait for, and names the files and dependencies
   that changed.
-- **Human review in the terminal.** `artifactize monitor` shows live Runs and
-  opens Human sign-offs in an embedded eval modal: claim, run tools and submit.
+- **Human review in the terminal.** `artifactize monitor` drills down from Scope
+  to Runs, the Run tree and Detail: explicitly claim a sign-off, run tools and
+  submit without leaving the terminal.
 
 ## Install
 
@@ -185,17 +186,27 @@ Artifact kinds and fingerprints are unchanged and says where each came from.
 
 ## Human review in the terminal
 
-`verify` waits by default while a Human eval needs a sign-off. The monitor's
-repository, Run and Artifact panes lead to the eval: `o` opens its embedded modal.
-Claim the request, run the tools its owner declared, choose GREEN or RED, and submit
-the schema-backed form without leaving the monitor. The Run then finishes.
+`verify` waits by default while a Human eval needs a sign-off. The monitor drills
+down through Scope → Runs → Run tree → Detail. Its focused pane gets the space;
+context and previews appear when the terminal is wide enough. `j`/`k` selects an
+eval and reveals its outcome in the peek; Enter or `o` opens Detail. Press `c` to
+claim a waiting Human request, run the tools its owner declared, choose GREEN or
+RED, and submit the schema-backed form with Ctrl-S. A submission resumes the
+waiting Run's dependents.
 
-The monitor follows local state changes without a permanent daemon. Agent eval
-modals show live local sessions with scrolling and expandable tool activity groups;
+`?` shows help and `!` finds the next error, RED or waiting Human eval. Esc steps
+back and never quits; `q` or Ctrl-C quits outside editing. The tree names what an
+eval waits for; `b` jumps upstream and Backspace returns. Validation stays **at Run
+end** in the headline; a dim `*` marks rows changed by later request updates.
+
+The monitor follows local state changes without a permanent daemon. Agent Detail
+shows live local sessions with scrolling and expandable tool activity groups;
 reused results keep their original evidence when it is available.
 
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/human.gif" width="800"
-     alt="verify waits by default; the three-pane monitor opens a Human eval modal, explicitly claims the request, runs the notes tool, submits the GREEN schema form and shows the completed GREEN Run.">
+     alt="A Human sign-off in the terminal: verify waits, the reviewer explicitly claims the request, runs the notes tool, submits GREEN and the waiting Run completes.">
+
+This recording shows the earlier layout; 0.9 opens reviews in Detail instead.
 
 [Human reviews](https://artifactize.dev/docs/guides/human-reviews.html)
 
