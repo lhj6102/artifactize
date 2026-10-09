@@ -26,6 +26,8 @@ pub(crate) use os::{
     restrict_file, spawn_detached, spawn_gated, stop_requested, sync_dir,
 };
 
+#[cfg(unix)]
+pub(crate) use unix::GROUP_OTHER_BITS;
 #[cfg(windows)]
 pub(crate) use windows::{is_owner_only, private_pipe, user_identity};
 

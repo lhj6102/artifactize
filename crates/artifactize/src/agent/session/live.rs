@@ -190,7 +190,9 @@ fn private_directory(file: &File) -> Result<(), String> {
         use std::os::unix::fs::MetadataExt;
         let metadata = file.metadata().map_err(|error| error.to_string())?;
         // SAFETY: geteuid has no arguments or side effects.
-        if metadata.mode() & 0o077 != 0 || metadata.uid() != unsafe { libc::geteuid() } {
+        if metadata.mode() & platform::GROUP_OTHER_BITS != 0
+            || metadata.uid() != unsafe { libc::geteuid() }
+        {
             return Err("Session store must be owner-only and owned by this user.".into());
         }
     }
