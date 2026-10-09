@@ -754,10 +754,18 @@ fn reject_non_json_values(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ArtifactKind {
+    Folder,
+    File,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
     pub path: PathBuf,
+    pub kind: ArtifactKind,
     pub children: BTreeMap<String, String>,
     pub name: String,
     pub tags: Vec<String>,
@@ -766,6 +774,33 @@ pub struct Artifact {
     pub basis: Option<bool>,
     pub fingerprint: Option<Fingerprint>,
     pub review_policy: Option<ReviewPolicy>,
+}
+
+impl Artifact {
+    /// Runtime commands and relative declarations use the containing folder.
+    pub fn folder(&self) -> &Path {
+        match self.kind {
+            ArtifactKind::Folder => &self.path,
+            ArtifactKind::File => self.path.parent().unwrap_or(Path::new("")),
+        }
+    }
+
+    pub fn file_name(&self) -> Option<&str> {
+        (self.kind == ArtifactKind::File)
+            .then(|| self.path.file_name().and_then(|name| name.to_str()))
+            .flatten()
+    }
+
+    pub fn declaration_path(&self) -> PathBuf {
+        match self.kind {
+            ArtifactKind::Folder => logical_join(&self.path, std::ffi::OsStr::new(CONFIG_FILE)),
+            ArtifactKind::File => {
+                let mut path = self.path.as_os_str().to_owned();
+                path.push(".artf");
+                PathBuf::from(path)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -867,23 +902,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     "review_policy belongs only to the repository root index.artf.",
                 ));
             }
-            let ArtifactDeclaration {
-                name,
-                tags,
-                evals,
-                views,
-                mounts,
-                basis,
-                fingerprint,
-                review_policy,
-            } = declaration;
-            if config.artifacts.contains_key(&name) {
-                return Err(ConfigError::declaration(
-                    &file,
-                    &["name"],
-                    format!("Duplicate Artifact name: {name}"),
-                ));
-            }
+            let name = declaration.name.clone();
             if let Some(parent) = &owner {
                 let parent = config.artifacts.get_mut(parent).unwrap();
                 let child = relative.strip_prefix(&parent.path).unwrap();
@@ -892,31 +911,140 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     .ok_or_else(|| ConfigError::new(&file, "Artifact paths must be UTF-8."))?;
                 parent.children.insert(child.to_owned(), name.clone());
             }
-            owner = Some(name.clone());
-            for declaration in evals {
-                config.evals.push(Eval {
-                    id: format!("{name}/{}", declaration.id),
-                    target: name.clone(),
-                    references: BTreeMap::new(),
-                    deps: Vec::new(),
-                    declaration,
-                    variant: None,
+            insert_artifact(
+                &mut config,
+                relative.clone(),
+                ArtifactKind::Folder,
+                declaration,
+                &file,
+            )?;
+            owner = Some(name);
+        }
+        for marker in &entries {
+            if !ignored.matched(marker.path(), false).is_ignore()
+                && marker
+                    .file_name()
+                    .as_encoded_bytes()
+                    .ends_with(b".artf.artf")
+            {
+                return Err(ConfigError::new(
+                    marker.path(),
+                    "File Artifact target must not be a declaration (.artf).",
+                ));
+            }
+        }
+        for marker in &entries {
+            if ignored.matched(marker.path(), false).is_ignore() {
+                continue;
+            }
+            let filename = marker.file_name();
+            if !filename.as_encoded_bytes().ends_with(b".artf") {
+                continue;
+            }
+            let Some(filename) = filename.to_str() else {
+                return Err(ConfigError::new(
+                    marker.path(),
+                    "Artifact paths must be UTF-8.",
+                ));
+            };
+            let Some(target) = filename.strip_suffix(".artf") else {
+                continue;
+            };
+            if filename == CONFIG_FILE {
+                continue;
+            }
+            let file = marker.path();
+            if !marker
+                .file_type()
+                .map_err(|error| ConfigError::new(&file, error))?
+                .is_file()
+            {
+                return Err(ConfigError::new(
+                    &file,
+                    "File Artifact declaration must be a regular file.",
+                ));
+            }
+            if target.is_empty() || target.ends_with(".artf") {
+                return Err(ConfigError::new(
+                    &file,
+                    "File Artifact target must not be a declaration (.artf).",
+                ));
+            }
+            path(target).map_err(|error| ConfigError::new(&file, error))?;
+            if target.contains(':') {
+                return Err(ConfigError::new(
+                    &file,
+                    "File Artifact target name must not contain ':'; scoped tool paths do not support colons.",
+                ));
+            }
+            let target_path = directory.join(target);
+            let metadata = fs::symlink_metadata(&target_path).map_err(|error| {
+                ConfigError::new(
+                    &file,
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        format!("File Artifact target {target} is missing.")
+                    } else {
+                        format!("Cannot inspect File Artifact target {target}: {error}.")
+                    },
+                )
+            })?;
+            if !metadata.is_file() || metadata.is_symlink() {
+                return Err(ConfigError::new(
+                    &file,
+                    format!(
+                        "File Artifact target {target} must be a regular file, not a symlink, directory or special file."
+                    ),
+                ));
+            }
+            let source =
+                fs::read_to_string(&file).map_err(|error| ConfigError::new(&file, error))?;
+            let mut declaration =
+                parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
+            if declaration.review_policy.is_some() {
+                return Err(ConfigError::declaration(
+                    &file,
+                    &["review_policy"],
+                    "review_policy belongs only to the repository root index.artf.",
+                ));
+            }
+            let value = toml::de::DeTable::parse(&source)
+                .map_err(|error| ConfigError::new(&file, error))?;
+            if value.get_ref().get("fingerprint").is_none() {
+                declaration.fingerprint = Some(Fingerprint::Artifactsum {
+                    files: vec![target.into()],
+                    ignore: Vec::new(),
                 });
             }
-            config.artifacts.insert(
-                name.clone(),
-                Artifact {
-                    path: relative.clone(),
-                    children: BTreeMap::new(),
-                    name,
-                    tags,
-                    views,
-                    mounts,
-                    basis,
-                    fingerprint,
-                    review_policy,
-                },
-            );
+            if let Some(Fingerprint::Artifactsum { files, .. }) = &declaration.fingerprint {
+                if value
+                    .get_ref()
+                    .get("fingerprint")
+                    .and_then(|value| value.get_ref().get("ignore"))
+                    .is_some()
+                {
+                    return Err(ConfigError::declaration(
+                        &file,
+                        &["fingerprint", "ignore"],
+                        "fingerprint.ignore is not supported for a file Artifact.",
+                    ));
+                }
+                if files.iter().any(|input| input != target) {
+                    return Err(ConfigError::declaration(
+                        &file,
+                        &["fingerprint", "files"],
+                        format!(
+                            "fingerprint.files for a file Artifact may name only its target {target}."
+                        ),
+                    ));
+                }
+            }
+            insert_artifact(
+                &mut config,
+                logical_join(&relative, std::ffi::OsStr::new(target)),
+                ArtifactKind::File,
+                declaration,
+                &file,
+            )?;
         }
         for entry in entries.into_iter().rev() {
             let kind = entry
@@ -934,11 +1062,63 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
     if config.artifacts.is_empty() {
         return Err(ConfigError::new(
             &config.root,
-            "Workspace must contain at least one index.artf Artifact.",
+            "Workspace must contain at least one .artf Artifact.",
         ));
     }
     crate::scope::resolve_config(&mut config)?;
     Ok(config)
+}
+
+fn insert_artifact(
+    config: &mut RepoConfig,
+    path: PathBuf,
+    kind: ArtifactKind,
+    declaration: ArtifactDeclaration,
+    file: &Path,
+) -> Result<(), ConfigError> {
+    let ArtifactDeclaration {
+        name,
+        tags,
+        evals,
+        views,
+        mounts,
+        basis,
+        fingerprint,
+        review_policy,
+    } = declaration;
+    if config.artifacts.contains_key(&name) {
+        return Err(ConfigError::declaration(
+            file,
+            &["name"],
+            format!("Duplicate Artifact name: {name}."),
+        ));
+    }
+    for declaration in evals {
+        config.evals.push(Eval {
+            id: format!("{name}/{}", declaration.id),
+            target: name.clone(),
+            references: BTreeMap::new(),
+            deps: Vec::new(),
+            declaration,
+            variant: None,
+        });
+    }
+    config.artifacts.insert(
+        name.clone(),
+        Artifact {
+            path,
+            kind,
+            children: BTreeMap::new(),
+            name,
+            tags,
+            views,
+            mounts,
+            basis,
+            fingerprint,
+            review_policy,
+        },
+    );
+    Ok(())
 }
 
 /// The folders the workspace root's `.artfignore` (gitignore syntax) keeps out of

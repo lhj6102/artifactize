@@ -51,6 +51,7 @@ struct RegisteredTool<'a> {
 }
 
 struct Invocation {
+    cwd: PathBuf,
     program: OsString,
     argv: Vec<OsString>,
     context: Value,
@@ -170,6 +171,11 @@ impl<'a> Registry<'a> {
         if cancellation.is_cancelled() {
             return ToolResult::error("Agent tool call was cancelled.");
         }
+        for artifact in self.scope.artifacts.values() {
+            if let Err(error) = scope::validate_file_target(&self.config.root, artifact) {
+                return ToolResult::error(error.to_string());
+            }
+        }
         let command = match tool.declaration {
             AgentTool::Command(command) => command,
             AgentTool::Builtin(tool_declaration) => {
@@ -217,9 +223,7 @@ impl<'a> Registry<'a> {
     }
 
     fn prepare(&self, owner: &str, tool: &CommandTool, args: &Value) -> Result<Invocation, ()> {
-        let cwd = self
-            .scope
-            .resolve_input(&self.config.root, owner, "")
+        let cwd = scope::scoped_path(&self.config.root, self.config.artifacts[owner].folder())
             .map_err(|_| ())?;
         let program = executable(&self.config.root, &self.scope, owner, &tool.command)?;
         let argv = match tool.protocol {
@@ -251,10 +255,11 @@ impl<'a> Registry<'a> {
         let mut scoped = serde_json::Map::new();
         for (id, artifact) in &self.scope.artifacts {
             let path = scope::scoped_path(&self.config.root, &artifact.path).map_err(|_| ())?;
-            let entry = json!({"path":path,"children":artifact.children,"mounts":artifact.mounts});
+            let entry = json!({"path":path,"kind":artifact.kind,"children":artifact.children,"mounts":artifact.mounts});
             scoped.insert((*id).into(), entry);
         }
-        let mut context = json!({"artifactId":owner,"artifactPath":cwd,"scope":scoped});
+        let mut context =
+            json!({"artifactId":owner,"artifactPath":scoped[owner]["path"],"scope":scoped});
         if !tool.execution_paths.is_empty() {
             let mut paths = serde_json::Map::new();
             for path in &tool.execution_paths {
@@ -265,6 +270,7 @@ impl<'a> Registry<'a> {
             context["executionPaths"] = paths.into();
         }
         Ok(Invocation {
+            cwd,
             program,
             argv: argv.into_iter().map(Into::into).collect(),
             context,
@@ -277,7 +283,16 @@ impl<'a> Registry<'a> {
 fn executable(root: &Path, scope: &Scope<'_>, owner: &str, command: &str) -> Result<OsString, ()> {
     if !Path::new(command).is_absolute() && command.contains('/') {
         let relative = command.strip_prefix("./").unwrap_or(command);
-        let program = scope.resolve_input(root, owner, relative).map_err(|_| ())?;
+        let artifact = scope.artifacts[owner];
+        let mounted = artifact
+            .mounts
+            .contains_key(relative.split('/').next().unwrap_or(""));
+        let program = if artifact.file_name().is_some() && !mounted {
+            let folder = scope::scoped_path(root, artifact.folder()).map_err(|_| ())?;
+            scope::scoped_path(&folder, Path::new(relative)).map_err(|_| ())?
+        } else {
+            scope.resolve_input(root, owner, relative).map_err(|_| ())?
+        };
         if !program.is_file() {
             return Err(());
         }
@@ -298,9 +313,8 @@ fn preflight_executable(
     let found = if Path::new(&program).is_absolute() {
         crate::platform::is_executable(Path::new(&program))
     } else {
-        let cwd = scope
-            .resolve_input(root, owner, "")
-            .map_err(|e| e.to_string())?;
+        let cwd =
+            scope::scoped_path(root, scope.artifacts[owner].folder()).map_err(|e| e.to_string())?;
         std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
             .any(|dir| crate::platform::is_executable(&cwd.join(dir).join(&program)))
     };
@@ -329,6 +343,7 @@ async fn invoke(
         return ToolResult::error("Agent tool preparation failed.");
     };
     let Invocation {
+        cwd,
         program,
         argv,
         mut context,
@@ -339,11 +354,7 @@ async fn invoke(
         let mut command =
             runtime::Command::prepare(program, argv, workspace, directory.path(), Some(timeout_ms))
                 .map_err(|_| "Agent tool preparation failed.")?;
-        command.cwd = PathBuf::from(
-            context["artifactPath"]
-                .as_str()
-                .ok_or("Agent tool preparation failed.")?,
-        );
+        command.cwd = cwd;
         let output_dir = command.directory().join("output");
         context["outputDir"] = json!(output_dir);
         context["tmpDir"] = json!(command.directory().join("tmp"));

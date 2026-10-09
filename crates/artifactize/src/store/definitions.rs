@@ -93,6 +93,8 @@ impl Graph {
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing")]
+    pub kind: Field<config::ArtifactKind>,
+    #[serde(default, skip_serializing_if = "missing")]
     pub path: Field<PathBuf>,
     #[serde(default, skip_serializing_if = "missing")]
     pub children: Field<BTreeMap<String, String>>,

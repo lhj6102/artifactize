@@ -337,6 +337,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         key: Some(key.value.clone()),
         fingerprint: Some("remote-v1".parse().unwrap()),
         fingerprints: key.fingerprints.clone(),
+        artifact_kinds: key.artifact_kinds.clone(),
         eval_def_hash: key.eval_def_hash.clone(),
         owner_pid: 1,
         owner_start_time: 1,

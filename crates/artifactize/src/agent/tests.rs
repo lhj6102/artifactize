@@ -581,3 +581,32 @@ fn session_ids_are_distinct_version_4_uuids() {
         assert!(matches!(&id[19..20], "8" | "9" | "a" | "b"), "{id}");
     }
 }
+
+#[tokio::test]
+async fn file_artifact_instruction_prompt_uses_target_path_and_file_kind() {
+    let mut fixture = Fixture::new("openai");
+    let repo = fixture.config.root.clone();
+    let declaration =
+        crate::test_declaration::read(fs::read(repo.join("index.artf")).unwrap()).unwrap();
+    fs::remove_file(repo.join("index.artf")).unwrap();
+    fs::write(repo.join("input.txt"), "evidence").unwrap();
+    crate::test_declaration::write(repo.join("input.txt.artf"), declaration.to_string()).unwrap();
+    fixture.config = read_workspace_config(&repo).unwrap();
+    let (review, http) = fixture.run(vec![final_openai()]).await;
+    assert_eq!(review.result.unwrap(), json!({"verdict":"GREEN"}));
+    let body: Value = serde_json::from_slice(&http.requests()[0].body).unwrap();
+    assert!(
+        body.to_string()
+            .contains("Artifact a (path: input.txt; tools: inspect_a)")
+    );
+    assert!(body.to_string().contains(r#"\"kind\":\"file\""#));
+    assert_eq!(
+        fixture.config.evals[0]
+            .declaration
+            .payload
+            .as_ref()
+            .unwrap()
+            .instruction,
+        "Check {a}"
+    );
+}

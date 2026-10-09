@@ -527,8 +527,13 @@ fn artifact_node(saved: &Saved, id: &str, now: OffsetDateTime) -> Node {
     } else {
         ""
     };
+    let file = saved
+        .artifact(id)
+        .filter(|artifact| artifact.kind.value() == Some(&crate::config::ArtifactKind::File))
+        .and_then(|artifact| artifact.path.value())
+        .map_or_else(String::new, |path| format!(" [file: {}]", path.display()));
     let text = format!(
-        "{id}{cycle}  {} {passed}/{total}",
+        "{id}{cycle}{file}  {} {passed}/{total}",
         status.as_deref().unwrap_or(ABSENT)
     );
     Node {
@@ -768,7 +773,14 @@ pub fn detail(
             } else {
                 ""
             };
-            detail.title = format!("Artifact {id}{basis}");
+            let kind = if artifact.and_then(|artifact| artifact.kind.value())
+                == Some(&crate::config::ArtifactKind::File)
+            {
+                " [file]"
+            } else {
+                ""
+            };
+            detail.title = format!("Artifact {id}{basis}{kind}");
             detail.push(
                 "Tags",
                 artifact

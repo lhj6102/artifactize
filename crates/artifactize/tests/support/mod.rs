@@ -111,7 +111,7 @@ fn port(path: &Path, deadlines: bool) {
     }
     match path.file_name().and_then(|name| name.to_str()) {
         // Rewritten only when needed: a declaration's bytes can be part of a fingerprint.
-        Some("index.artf") => {
+        Some(name) if name.ends_with(".artf") => {
             let mut declaration: Value =
                 toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
             if commands(&mut declaration, deadlines) {

@@ -225,7 +225,7 @@ pub async fn verify(
             created_at: run.created_at.clone(),
             started_at: None,
             completed_at: None,
-            cwd: config.root.join(&config.artifacts[&eval.target].path),
+            cwd: config.root.join(config.artifacts[&eval.target].folder()),
             run_dir: None,
             argv: None,
             child: None,
@@ -273,6 +273,9 @@ pub async fn verify(
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
         if request.profile.kind() == ProfileKind::Dependency {
+            if request.status == crate::types::RequestStatus::Error {
+                continue;
+            }
             broker::derive(request, &evaluation.evals[request.eval_id.as_str()]);
             continue;
         }

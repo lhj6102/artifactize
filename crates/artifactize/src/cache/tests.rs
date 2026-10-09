@@ -100,11 +100,13 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
         "target/debug/app",
         ".git",
         "child/c.txt",
-        "file.png.artf",
-        "sub/nested.artf",
     ] {
         repo.write(path, "v1");
     }
+    repo.write("file.png", "v1");
+    repo.write("sub/nested", "v1");
+    repo.write("file.png.artf", "name = 'image'\n");
+    repo.write("sub/nested.artf", "name = 'nested'\n");
     repo.write(".gitignore", "# generated\nbuild/\n*.tmp\n");
     repo.write("sub/.gitignore", "!keep.tmp\n");
     repo.artifact("child", json!({"name":"child"}));
@@ -114,8 +116,10 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
             ".gitignore",
             "a.txt",
             "data/kept",
+            "file.png",
             "sub/.gitignore",
-            "sub/keep.tmp"
+            "sub/keep.tmp",
+            "sub/nested"
         ]
     );
     let before = repo.fingerprint("root").await.unwrap().value;
@@ -131,8 +135,6 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
         "target/debug/app",
         ".git",
         "child/c.txt",
-        "file.png.artf",
-        "sub/nested.artf",
         "build/new/file",
     ] {
         repo.write(path, "v2");
@@ -142,12 +144,16 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
             "{path}"
         );
     }
+    for (path, name) in [("file.png.artf", "image"), ("sub/nested.artf", "nested")] {
+        repo.write(path, &format!("name = '{name}'\ntags = ['changed']\n"));
+        assert_eq!(repo.fingerprint("root").await.unwrap().value, before);
+    }
     repo.write("sub/keep.tmp", "v2");
     assert_ne!(repo.fingerprint("root").await.unwrap().value, before);
 }
 
 #[tokio::test]
-async fn explicit_declaration_inputs_are_rejected_but_artf_folders_are_hashed() {
+async fn explicit_declaration_inputs_are_rejected() {
     let repo = Repo::new();
     for input in ["index.artf", "file.png.artf", "missing.artf"] {
         repo.artifact("", json!({"name":"root","fingerprint":{"files":[input]}}));
@@ -159,12 +165,6 @@ async fn explicit_declaration_inputs_are_rejected_but_artf_folders_are_hashed() 
             "{error}"
         );
     }
-    repo.artifact(
-        "",
-        json!({"name":"root","fingerprint":{"files":["bundle.artf"]}}),
-    );
-    repo.write("bundle.artf/data.txt", "data");
-    assert_eq!(repo.files("root").await, ["bundle.artf/data.txt"]);
 }
 
 #[tokio::test]
@@ -414,6 +414,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
             .unwrap(),
         eval_def_hash: "hash".into(),
         fingerprints: fingerprints(pairs),
+        artifact_kinds: BTreeMap::new(),
     };
     let old = manifest(&[("src/a.py", "1"), ("old.md", "1"), ("same", "1")]);
     let new = manifest(&[("src/a.py", "2"), ("docs/new.md", "1"), ("same", "1")]);

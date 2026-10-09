@@ -95,6 +95,7 @@ pub struct Key {
     pub eval_def_hash: String,
     /// Each Artifact the eval depends on, its target included, with its fingerprint.
     pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
+    pub artifact_kinds: BTreeMap<String, crate::config::ArtifactKind>,
 }
 
 /// Why an eval has no reuse key: an Artifact it depends on declares `fingerprint: false`.
@@ -170,6 +171,24 @@ pub fn key(
         .expect("SHA-256 is a reuse key")
 }
 
+/// Scope kinds distinguish file/folder observation without coupling reuse to repo paths.
+pub fn key_with_kinds(
+    eval_def_hash: &str,
+    fingerprints: &BTreeMap<String, crate::types::Fingerprint>,
+    kinds: &BTreeMap<String, crate::config::ArtifactKind>,
+) -> crate::types::ReuseKey {
+    if kinds.is_empty() {
+        return key(eval_def_hash, fingerprints);
+    }
+    let mut digest = Sha256::new();
+    digest.update(b"artifactize-kind-key-v1\n");
+    digest.update(key(eval_def_hash, fingerprints).as_bytes());
+    digest.update(serde_json::to_vec(kinds).expect("Artifact kinds are JSON"));
+    content::hex(&digest.finalize())
+        .parse()
+        .expect("SHA-256 is a reuse key")
+}
+
 /// The eval's reuse key from prepared fingerprints. Without a fingerprint on every Artifact
 /// it depends on, the eval has no key, so it is never reused or published.
 pub fn eval_key(
@@ -191,10 +210,15 @@ pub fn eval_key(
         values.insert(id.to_owned(), fingerprint.value.clone());
     }
     let eval_def_hash = eval_definition_hash(&eval.declaration);
+    let artifact_kinds = values
+        .keys()
+        .map(|id| (id.clone(), config.artifacts[id].kind))
+        .collect();
     Ok(Key {
-        value: key(&eval_def_hash, &values),
+        value: key_with_kinds(&eval_def_hash, &values, &artifact_kinds),
         eval_def_hash,
         fingerprints: values,
+        artifact_kinds,
     })
 }
 
@@ -238,6 +262,15 @@ impl Parallelism {
     }
 }
 
+/// Every file visible to a review must still be its declared regular target.
+pub(crate) fn validate_file_inputs(config: &RepoConfig, eval: &Eval) -> Result<(), String> {
+    let scope = scope::eval_scope(config, eval).map_err(|error| error.to_string())?;
+    for artifact in scope.artifacts.values() {
+        scope::validate_file_target(&config.root, artifact).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 /// Prepare only the selected dependency closure, once per Artifact, computing up to the
 /// parallelism's limit of fingerprints at a time. The result does not depend on completion
 /// order: a failure reports the first failing Artifact in input order, and fingerprints after
@@ -249,6 +282,11 @@ pub async fn prepare<'a>(
     parallelism: &Parallelism,
     cancellation: CancellationToken,
 ) -> Result<BTreeMap<&'a str, PreparedFingerprint>, String> {
+    let artifacts: Vec<_> = artifacts.into_iter().collect();
+    for id in &artifacts {
+        scope::validate_file_target(&config.root, &config.artifacts[*id])
+            .map_err(|error| error.to_string())?;
+    }
     let mut seen = BTreeSet::new();
     let ids: Vec<&'a str> = artifacts
         .into_iter()
@@ -325,6 +363,7 @@ pub async fn recheck(
     parallelism: &Parallelism,
     cancellation: CancellationToken,
 ) -> Result<Option<crate::types::ReuseKey>, String> {
+    validate_file_inputs(config, eval)?;
     let fingerprints = prepare(
         config,
         dependencies(config, eval),
@@ -333,6 +372,7 @@ pub async fn recheck(
         cancellation,
     )
     .await?;
+    validate_file_inputs(config, eval)?;
     Ok(eval_key(config, eval, &fingerprints)
         .ok()
         .map(|key| key.value))
@@ -344,7 +384,9 @@ async fn compute(
     output_root: &Path,
     cancellation: CancellationToken,
 ) -> Result<PreparedFingerprint, String> {
-    match &config.artifacts[id].fingerprint {
+    scope::validate_file_target(&config.root, &config.artifacts[id])
+        .map_err(|error| error.to_string())?;
+    let result = match &config.artifacts[id].fingerprint {
         Some(Fingerprint::Artifactsum { files, ignore }) => {
             content(config, id, files, ignore, &cancellation)
                 .await
@@ -357,7 +399,10 @@ async fn compute(
             manifest: None,
         }),
         None => Err(format!("Artifact {id} declares fingerprint: false.")),
-    }
+    }?;
+    scope::validate_file_target(&config.root, &config.artifacts[id])
+        .map_err(|error| error.to_string())?;
+    Ok(result)
 }
 
 /// The built-in hash of the Artifact's own input files, nothing else.
@@ -506,7 +551,7 @@ async fn script(
     else {
         unreachable!("fingerprint script")
     };
-    let cwd = scope::scoped_path(&config.root, &artifact.path).map_err(|e| e.to_string())?;
+    let cwd = scope::scoped_path(&config.root, artifact.folder()).map_err(|e| e.to_string())?;
     for input in files {
         scope::scoped_path(&cwd, Path::new(input)).map_err(|e| e.to_string())?;
     }

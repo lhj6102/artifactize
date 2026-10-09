@@ -34,6 +34,8 @@ pub struct Record {
     pub eval_def_hash: String,
     /// Each Artifact the key covers, with its fingerprint.
     pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub artifact_kinds: BTreeMap<String, crate::config::ArtifactKind>,
     pub verdict: crate::types::ExecutionStatus,
     pub eval_id: String,
     pub run_id: crate::types::RunId,
@@ -88,6 +90,7 @@ impl Record {
             key: key.clone(),
             eval_def_hash: execution.eval_def_hash.clone(),
             fingerprints: execution.fingerprints.clone(),
+            artifact_kinds: execution.artifact_kinds.clone(),
             verdict: execution.status,
             eval_id: execution.provenance.eval_id.clone(),
             run_id: execution.provenance.run_id.clone(),
@@ -121,7 +124,13 @@ impl Record {
                 crate::config::identifier(name, "Artifact name").is_ok()
                     && valid_fingerprint(fingerprint)
             })
-            && crate::cache::key(&self.eval_def_hash, &self.fingerprints) == self.key
+            && (self.artifact_kinds.is_empty()
+                || self.artifact_kinds.keys().eq(self.fingerprints.keys()))
+            && crate::cache::key_with_kinds(
+                &self.eval_def_hash,
+                &self.fingerprints,
+                &self.artifact_kinds,
+            ) == self.key
             && matches!(self.verdict.as_str(), "GREEN" | "RED")
             && self.result["verdict"] == self.verdict.as_str()
             && self.execution_id.valid_wire()
@@ -132,6 +141,7 @@ impl Record {
                     && execution.key.as_ref() == Some(&self.key)
                     && execution.eval_def_hash == self.eval_def_hash
                     && execution.fingerprints == self.fingerprints
+                    && execution.artifact_kinds == self.artifact_kinds
                     && execution.status == self.verdict
                     && execution.profile == self.profile
                     && execution.origin.is_none()
@@ -169,6 +179,7 @@ impl Record {
                     .and_then(|(target, _)| self.fingerprints.get(target))
                     .cloned(),
                 fingerprints: self.fingerprints,
+                artifact_kinds: self.artifact_kinds,
                 eval_def_hash: self.eval_def_hash.clone(),
                 owner_pid: 0,
                 owner_start_time: 0,

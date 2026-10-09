@@ -46,6 +46,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
         config.artifacts.insert(
             name.into(),
             Artifact {
+                kind: crate::config::ArtifactKind::Folder,
                 name: name.into(),
                 tags: declaration.tags,
                 basis: declaration.basis,

@@ -238,7 +238,7 @@ fn errors_name_the_declaration_and_parser_or_serde_positions() {
 }
 
 #[test]
-fn legacy_files_fail_but_ignored_files_and_future_sidecars_are_not_read() {
+fn legacy_files_fail_but_ignored_files_and_non_declarations_are_not_read() {
     let root = tempfile::tempdir().unwrap();
     write(root.path(), "index.artf", "name = 'a'");
     write(root.path(), "nested/artifactize.json", "not JSON");
@@ -251,7 +251,6 @@ fn legacy_files_fail_but_ignored_files_and_future_sidecars_are_not_read() {
         "{error}"
     );
     write(root.path(), ".artfignore", "nested/\n");
-    write(root.path(), "random.png.artf", "not TOML");
     write(root.path(), "other/index.artf.backup", "not TOML");
     assert_eq!(
         read_workspace_config(root.path()).unwrap().artifacts.len(),
@@ -728,7 +727,8 @@ fn json_backed_tool_and_fingerprint_fields_report_the_offending_field_span() {
 fn explicitly_listed_artf_files_are_rejected_before_opening_for_artifactsum() {
     let root = tempfile::tempdir().unwrap();
     for input in ["index.artf", "missing.png.artf", "existing.png.artf"] {
-        write(root.path(), "existing.png.artf", "not TOML");
+        write(root.path(), "existing.png", "pixels");
+        write(root.path(), "existing.png.artf", "name = 'image'");
         write(
             root.path(),
             "index.artf",

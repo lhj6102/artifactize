@@ -163,6 +163,10 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
         refusal.contains("auth is inside the artifactize workspace "),
         "{refusal}"
     );
+    fs::remove_file(repo.join("index.artf")).unwrap();
+    fs::write(repo.join("file.txt"), "input").unwrap();
+    crate::test_declaration::write(repo.join("file.txt.artf"), r#"{"name":"file"}"#).unwrap();
+    assert!(Storage::new(Some(&repo.join("state")), None, Tokens::Codex).is_err());
     assert!(!repo.join("state").exists());
     let state = temp.path().join("state");
     let storage = Storage::new(Some(&state), None, Tokens::Codex).unwrap();

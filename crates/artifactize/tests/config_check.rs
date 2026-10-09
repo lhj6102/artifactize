@@ -346,7 +346,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
         json_output(&output)["error"]
             .as_str()
             .unwrap()
-            .contains("at least one index.artf")
+            .contains("at least one .artf")
     );
     let output = empty
         .command()

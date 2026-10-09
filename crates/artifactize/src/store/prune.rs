@@ -279,19 +279,20 @@ fn real_path(path: &Path) -> Result<PathBuf, String> {
 }
 
 fn reject_repository(path: &Path) -> Result<(), String> {
-    for marker in std::iter::once(".git").chain(workspace::ARTIFACT_MARKERS) {
-        match path.join(marker).symlink_metadata() {
-            Ok(_) => {
-                return Err(format!(
-                    "Prune refuses repository content: {}",
-                    path.display()
-                ));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.to_string()),
-        }
+    if workspace::has_artifact_marker(path).map_err(|error| error.to_string())? {
+        return Err(format!(
+            "Prune refuses repository content: {}",
+            path.display()
+        ));
     }
-    Ok(())
+    match path.join(".git").symlink_metadata() {
+        Ok(_) => Err(format!(
+            "Prune refuses repository content: {}",
+            path.display()
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 fn validate_tree(path: &Path, runs: &Path, repositories: &[PathBuf]) -> Result<(), String> {
