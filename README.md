@@ -204,9 +204,9 @@ keeping the draft, then leaves Detail. A submission resumes the waiting Run's
 dependents.
 
 `?` shows help and `!` finds the next error, RED or waiting Human eval. Esc steps
-back and never quits; `q` quits outside editing and Ctrl-C quits or cancels a
-running Human tool first. The tree names what an
-eval waits for; `b` jumps upstream and Backspace returns. Validation stays **at Run
+back and never quits; `q` quits from idle views. Ctrl-C quits or cancels a running
+Human tool first. The tree names what an eval waits for; `b` jumps upstream and
+Backspace returns. Validation stays **at Run
 end** in the headline; a dim `*` marks rows changed by later request updates.
 
 The monitor follows local state changes without a permanent daemon. Agent Detail

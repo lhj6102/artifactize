@@ -143,8 +143,8 @@ the selected tool shows its command and description.
   `--reviewer`). Those actions never claim implicitly. A request claimed by someone
   else, or no longer waiting, is read-only. GREEN/RED, submit and release require
   your claim. `u` or Release relinquishes it; leaving Detail keeps it.
-- **Tools.** With Tools focused, ↑/↓ or `j`/`k` selects and Enter runs the selected
-  tool. Before a command line's first run in a session, a confirmation shows its
+- **Tools.** With Tools focused, ↑/↓ selects and Enter runs the selected tool.
+  `j`/`k` also selects while not editing. Before a command line's first run in a session, a confirmation shows its
   resolved command, directory and repository (with `--all`, possibly another
   repository). `y` or Enter confirms; Esc cancels. A `launch` tool reports
   "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
@@ -219,7 +219,7 @@ and 30 for the tree. Full grows to its natural width; spare width goes to Previe
   Narrow panes drop secondary columns. Scope filtering happens before paging;
   moving past the end loads older Runs.
 - **Run tree.** The selected Run's saved definitions, recorded evidence and current
-  request states, not a re-evaluation of files. The headline shows status, elapsed
+  request states, not a re-evaluation of files. The headline shows status, wall
   time, counts and only the token total for usage. It shows `validation pending`
   while running, then **SATISFIED / NOT SATISFIED at Run end**. Up to three attention
   lines show errors, waiting Humans and running evals, then `+N more`. Enter on the
@@ -309,8 +309,8 @@ Artifacts the eval waits for. A running Agent's peek also shows its last transcr
 line. Enter, → or a click on the peek opens **Full** Detail instead of a modal.
 Leaving Detail closes the full view and restores the peek.
 
-Sections appear in this order: **Outcome → Waits for → What → Provenance →
-Technical**. Outcome puts the verdict or error first. What includes the instruction
+Read-only sections appear in this order: **Outcome → Waits for → What → Provenance
+→ Technical**. Outcome puts the verdict or error first. What includes the instruction
 and raw result. Provenance holds work, usage, budgets and timing. Technical holds
 identifiers and hashes; it starts folded (`t` toggles it). Waits for lists the same
 upstream Artifacts as the tree, with their completion state and reference origin;
