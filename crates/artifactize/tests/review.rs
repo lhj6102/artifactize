@@ -240,33 +240,25 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     assert_eq!(fixture.claim(&id).await.as_deref(), Some("alice"));
     assert!(screen(&mut review).contains("REVIEW (yours)"));
 
-    // fail_release, notes_release, open_release: run notes first, after confirming it.
+    // fail_release, notes_release, open_release: the focused Tools pane shows the resolved
+    // command of the selected tool, and Enter runs it at once.
     press(&mut review, KeyCode::Char('j')).await;
-    press(&mut review, KeyCode::Enter).await;
     let release = support::os::canonical(&fixture.repo.join("release"));
-    let confirm = screen(&mut review);
-    // A long path wraps inside the dialog: compare the text without the layout.
+    let selected = screen(&mut review);
+    // A long path may be cut at the pane's edge: compare the text without the layout.
     let unwrapped = |text: &str| -> String {
         text.chars()
             .filter(|c| !c.is_whitespace() && !"│┌┐└┘─".contains(*c))
             .collect()
     };
-    let repository = format!(
-        "Repository: {}",
-        support::os::canonical(&fixture.repo).display()
-    );
-    assert!(
-        unwrapped(&confirm).contains(&unwrapped(&repository)),
-        "{confirm}"
-    );
     let notes = release.join("notes.md").display().to_string();
     let command = artifactize::review::shell([bin("cat").as_str(), notes.as_str()]);
-    let expected = format!("Command: {command}");
-    assert!(
-        unwrapped(&confirm).contains(&unwrapped(&expected)),
-        "{confirm}"
-    );
-    press(&mut review, KeyCode::Char('y')).await;
+    let shown = format!("$ {command}");
+    let prefix: String = unwrapped(&shown).chars().take(20).collect();
+    assert!(unwrapped(&selected).contains(&prefix), "{selected}");
+    assert!(!selected.contains("{artifactPath}"), "{selected}");
+    press(&mut review, KeyCode::Enter).await;
+    assert_eq!(review.mode(), &Mode::Request);
     let notes = screen(&mut review);
     assert!(
         notes.contains("# Release notes") && notes.contains("- Ready."),
@@ -276,8 +268,6 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
 
     press(&mut review, KeyCode::Char('k')).await;
     press(&mut review, KeyCode::Enter).await;
-    assert!(matches!(review.mode(), Mode::Confirm { .. }));
-    press(&mut review, KeyCode::Char('y')).await;
     let failed = screen(&mut review);
     assert!(
         failed.contains("Output · fail_release · tool error"),
@@ -290,12 +280,9 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     press(&mut review, KeyCode::Char('j')).await;
     press(&mut review, KeyCode::Char('j')).await;
     press(&mut review, KeyCode::Enter).await;
-    press(&mut review, KeyCode::Char('y')).await;
     assert!(screen(&mut review).contains("open_release launched."));
-    // Confirmed in this session: notes runs again without asking.
     press(&mut review, KeyCode::Char('k')).await;
     press(&mut review, KeyCode::Enter).await;
-    assert_eq!(review.mode(), &Mode::Request);
     assert!(screen(&mut review).contains("notes_release finished."));
 
     // RED with an empty reason fails validation and keeps the form.

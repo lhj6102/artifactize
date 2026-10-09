@@ -130,8 +130,9 @@ claims for you. Removed keys and behavior:
 - `e` in a JSON form is text, not an editor shortcut. Ctrl-E opens `$EDITOR` in
   standalone `review` only; monitor stays in the TUI.
 - `t` no longer runs a tool; it toggles Technical outside editing. Tab focuses
-  Tools, ↑/↓ or `j`/`k` selects a tool and Enter runs it after claim.
-- Esc on the waiting list no longer quits. Esc cancels work or confirmation, then
+  Tools, ↑/↓ or `j`/`k` selects a tool and Enter runs it after claim, with no
+  confirmation step.
+- Esc on the waiting list no longer quits. Esc cancels work, then
   stops editing with the draft kept, then leaves Detail. `q` outside editing or
   Ctrl-C quits; standalone `review` offers `k` to keep or `u` to release this
   session's unsubmitted claims.
