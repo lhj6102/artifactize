@@ -32,7 +32,22 @@ distinction.
 A sidecar such as `hero.png.artf` declares the neighboring file as an independent
 Artifact. It requires a `name`, uses the same TOML schema as a folder and hashes
 only that file by default. Built-in tools see the file and admitted mounts and
-references, not siblings.
+references, not siblings. The [posts example](https://github.com/lhj6102/artifactize/tree/main/examples/posts)
+uses three Markdown sidecars and one shared style checker. From the previous
+example's directory:
+
+```sh
+cd ../posts
+artifactize config check   # four Artifacts, three evals
+artifactize verify --all   # three GREEN results
+artifactize verify tip/style # qualified file eval; reused
+artifactize status         # all three post reviews are reused
+cd ../runtime-relations    # continue the tour below
+```
+
+Each file hashes only itself. The mounted `house-style` Artifact covers the
+checker and banned words, so a shared change invalidates all three post keys.
+Its README shows how to make one post RED while the other two reuse.
 
 A dependency eval collects readiness from other Artifacts without a new review:
 
