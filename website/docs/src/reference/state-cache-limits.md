@@ -14,9 +14,10 @@ with the canonical repository path recorded on each Run. The state home is
 private output directories under `PATH/runs`. Saved Runs stay readable after the
 original repository is removed. State/output inside the reviewed repository or
 another artifactize workspace is rejected, including through symlink ancestors.
-For this safety check, any ancestor containing `index.artf`, legacy
+For this safety check, any ancestor containing a `.artf` declaration, legacy
 `artifactize.json` or legacy `.artifactizeignore` marks a workspace, even though
-legacy declarations are not read. Database files and their WAL sidecars must be
+legacy declarations are not read. Sidecar-only workspaces are protected too.
+Database files and their WAL sidecars must be
 regular files.
 
 The state keeps what was reviewed, with which verdict, and how it was executed, in

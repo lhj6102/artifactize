@@ -10,8 +10,8 @@ Every Artifact uses **artifactsum** by default. Omit `fingerprint` to hash its o
 files, or choose a script. A fingerprint adds no tool declarations or other
 Artifact's value; dependencies enter through the [reuse key](#the-reuse-key).
 
-- Omission, or `fingerprint = {}`, uses artifactsum: `artifactsum:` plus SHA-256
-  over the Artifact's own input paths and bytes. A folder hashes its own files;
+- Omission uses artifactsum: `artifactsum:` plus SHA-256 over the Artifact's
+  own input paths and bytes. `fingerprint = {}` also works for folders. A folder hashes its own files;
   a file Artifact hashes its one target file.
 - `fingerprint = { script = { command = "hash", args = [] } }` uses the command's
   output as the fingerprint. It hashes nothing on its own, so the command must
@@ -31,7 +31,8 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   files). Each must exist and stay inside the Artifact: paths into child Artifacts
   or mounts are rejected. Directory walks skip child Artifact folders and every
   `*.artf` declaration. Explicit `.artf` file inputs fail `config check`; they are
-  not silently skipped. Directories whose names end in `.artf` are valid inputs.
+  not silently skipped. A directory whose name ends in `.artf` is an invalid
+  declaration and fails discovery.
   A neighboring file Artifact's target remains in the folder's hash; it creates
   no automatic child relation.
 - `ignore`: up to 64 `.gitignore`-style globs relative to the owner, without
@@ -41,6 +42,12 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
   down through the Artifact and walked directories applies. A pattern is relative
   to its own file's folder; negation works, and deeper files override shallower
   ones. Explicitly named non-declaration `files` are never ignored.
+
+File Artifacts hash only their target filename. An explicit artifactsum form
+must name just that file, for example `fingerprint = { files = ["hero.png"] }`.
+`fingerprint = {}`, `files = ["."]` and `ignore` (even `[]`) are rejected for a
+file Artifact. Omit the field for its default; use a script if the fingerprint
+needs to cover more than the file.
 
 The old `dependencies` fingerprint option is rejected: a fingerprint covers only its own
 Artifact. Walk limits and manifests are in the [reference](../reference/declarations.md#artifactsum); the script form is under

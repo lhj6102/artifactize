@@ -78,8 +78,8 @@ TOML has no null value. Omit optional fields; do not use `null`. A schema may sa
 Unquoted TOML dates/times and non-finite numbers (`inf`, `nan`) are rejected
 anywhere, including payloads and schemas, because they have no JSON equivalent.
 Quote dates to use them as strings. Declaration errors name the `.artf` file,
-line and column, including syntax, deserialization, semantic validation and
-cross-Artifact reference errors. Field validation and unsupported-value errors
+line and column when parsing or validating their contents, including syntax,
+deserialization, semantic validation and cross-Artifact reference errors. Field validation and unsupported-value errors
 also name the typed key path, such as `evals.ready.profile.depends_on`.
 
 `config check` validates without executing fingerprint scripts or hashing files.
@@ -107,8 +107,9 @@ option is also rejected.
 
 `hero.png.artf` declares the regular file `hero.png` in the same folder. Its
 `name` is required and independent of any surrounding folder Artifact. Missing
-targets, directories, symlinks and special files are not valid targets. A file
-named `index` cannot have a sidecar because `index.artf` always declares the folder;
+targets, directories, symlinks and special files are not valid targets.
+The `.artf` declaration itself must also be a regular file: symlinks, special files
+and directories such as `bundle.artf` fail discovery. A file named `index` cannot have a sidecar because `index.artf` always declares the folder;
 `.artf` files are declarations and are never targets.
 
 A file Artifact creates no child or dependency relation to the containing folder
@@ -117,11 +118,25 @@ Artifact. The nearest-folder ownership rule still applies to subfolder
 Artifact targets and excludes every `*.artf` declaration.
 
 Runtime commands, tools and fingerprint scripts use the containing folder as cwd.
-`{name}` resolves to the target file path, not the folder. Built-in tools expose
-only the target file, mounts and referenced Artifacts, not unrelated siblings.
+`{name}` resolves to the target file path, not the folder; file references cannot
+have a `/path` suffix. Built-in tools expose only the target file, mounts and
+referenced Artifacts, not unrelated siblings. `list .` names the virtual file
+Artifact root; it lists the target filename and mounts. Paths within that root
+remain relative to the containing folder.
 Mount aliases must not shadow the target filename. Default artifactsum covers
 only the target file. The containing folder is a working directory, not an
-implicit grant of built-in-tool access to its other files.
+implicit grant of built-in-tool access to its other files. A workspace can have
+only file Artifacts; it does not need a folder declaration.
+
+Omit `fingerprint` to hash the file. An explicit artifactsum form must be
+`fingerprint = { files = ["hero.png"] }` for `hero.png.artf`: only the target
+filename is allowed. `fingerprint = {}` and `files = ["."]` are rejected, as is
+`fingerprint.ignore`, even an empty list. Script fingerprints and
+`fingerprint = false` remain available.
+
+JSON command-tool `context.artifactPath` names the file, while the process cwd is
+its containing folder. Scope entries carry `kind = "file"` or `"folder"`.
+`execution_paths` stay workspace-relative provenance pins for both kinds.
 
 ## Dependency evals
 
@@ -172,9 +187,10 @@ a subsequent `status` or `verify` derives the new current verdict.
 ## Artifactsum
 
 [Fingerprints and reuse](../concepts/fingerprints-and-reuse.md#artifactsum)
-describes `files` and `ignore`. Omitting `fingerprint` uses artifactsum.
-`fingerprint = {}` does the same; `fingerprint = false` disables reuse. `fingerprint
-= true` is rejected.
+describes `files` and `ignore`. Omitting `fingerprint` uses artifactsum. For a
+folder, `fingerprint = {}` does the same. A file Artifact's explicit artifactsum
+form must list its target filename. `fingerprint = false` disables reuse;
+`fingerprint = true` is rejected.
 
 The value is `artifactsum:` plus the SHA-256 over each input file's owner-relative
 path and the SHA-256 of its bytes, in path order. It covers only the Artifact's own
@@ -182,9 +198,9 @@ files: a dependency's change reaches an eval through the dependency's fingerprin
 in the [reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key). Folder walks
 exclude child Artifact folders and every `*.artf` file. Explicitly listing a
 `.artf` file in `fingerprint.files` fails `config check`, even if the file does not
-exist. A real directory whose name ends in `.artf` remains a valid input; its
-non-declaration files are hashed normally. File Artifacts hash only their target
-by default. Tags are not hashed and do not change the Eval definition hash or
+exist. Discovery also rejects non-regular `.artf` entries, including directories;
+a directory named `bundle.artf` is not an ordinary hashable input. File Artifacts
+hash only their target by default. Tags are not hashed and do not change the Eval definition hash or
 reuse key.
 
 Walks follow scoped path rules. Symlinks and special files fail closed unless they

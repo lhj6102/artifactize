@@ -211,6 +211,9 @@ BLOCKED requirements produce BLOCKED; missing, stale, ERROR, cancelled or waitin
 Human requirements produce WAIT_DEPENDENCY; fulfilled requirements produce GREEN.
 `status` uses the `derive` action, and monitor details show the same saved blockers.
 Tags appear on Artifact entries in text/JSON graph and status, and in the monitor.
+JSON graph/status and saved definitions also carry `kind` (`file` or `folder`)
+and the workspace-relative target `path`; text graph/status and monitor mark
+file Artifacts and show their file paths.
 
 There is no execution, cache key, team-store lookup or publication for the derived
 eval itself. Executable requirements keep normal reuse and execution behavior.

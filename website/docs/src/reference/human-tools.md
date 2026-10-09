@@ -4,8 +4,9 @@
 
 Arguments are fixed literal argv, with scope placeholders only: `{artifactPath}`
 is the declaring Artifact's canonical target path (a folder or file); `{name}`
-names an Artifact or its
-owner's mount alias. Both accept `/path` and `--flag=` forms, resolved by the same
+names an Artifact or its owner's mount alias. Folder references accept `/path`
+suffixes; file references, including `{artifactPath}` for a file owner, reject
+them. Both accept `--flag=` forms, resolved by the same
 logical-path and no-symlink checks as runtime argv. Other brace forms are rejected;
 there are no arbitrary string templates or escaped-brace interpolation. Unknown
 names and invalid operand syntax are rejected when loading the workspace. Tool

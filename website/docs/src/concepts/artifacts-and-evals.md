@@ -56,7 +56,13 @@ payload.instruction = "Check {hero-art} against {style-guide}."
 
 The working directory is the containing folder, but built-in tools see only the
 file, its mounts and the referenced Artifacts, not unrelated sibling files.
-`{hero-art}` resolves to the file path. Its default artifactsum hashes just that file.
+`{hero-art}` resolves to the file path and cannot have a `/path` suffix.
+`list .` uses a virtual root containing the filename and mounts; paths inside it
+are containing-folder-relative. Its default artifactsum hashes just that file.
+An explicit artifactsum `files` list may name only `hero.png`; `ignore`, even an
+empty list, is rejected. `fingerprint = {}` is not a file default: omit the field.
+The sidecar itself must be a regular file, so a directory named `bundle.artf`
+also fails discovery.
 
 A file Artifact is not a child or dependency of the surrounding folder Artifact. The
 folder's artifactsum still includes the target file and excludes all `*.artf`
@@ -105,7 +111,8 @@ files, with the `artifactsum:` prefix. A folder hashes its own files and exclude
 Artifact folders; a file Artifact hashes its one target file.
 
 - `fingerprint = { files = ["src"], ignore = ["*.log"] }` narrows artifactsum's
-  inputs. With an empty table, its defaults apply.
+  folder inputs. With an empty table, a folder's defaults apply. A file Artifact
+  can explicitly list only its target filename and cannot declare `ignore`.
 - `fingerprint = { script = { command = "/bin/sh", args = ["fingerprint.sh"] } }`
   uses an owner-written [fingerprint script](../reference/declarations.md#fingerprint-scripts),
   optionally with `files` (paths that must exist, never hashed) and `timeout_ms`.

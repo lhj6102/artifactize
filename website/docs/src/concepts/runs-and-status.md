@@ -191,11 +191,13 @@ derives new current evidence. Historical `run show` and monitor views remain the
 saved snapshot.
 
 `config graph [ARTIFACT]` defaults to the whole project, or shows the selected required closure
-including cycle peers. Text lists Artifacts with tags, evals, components and
+including cycle peers. Text lists Artifacts with tags and file-kind markers, evals, components and
 input-to-consumer relations. Full JSON includes resolved static Artifact/eval
 definitions (profiles, payloads, schemas and tool views), tags,
 child/mount/instruction/argv/dependency relation metadata, cycle markers and
-dependency-first SCCs. Component IDs refer to the full graph and may be
+dependency-first SCCs. Artifact entries carry `kind` (`file` or `folder`) and
+workspace-relative target `path`; status and monitor also show file kinds/paths.
+Component IDs refer to the full graph and may be
 noncontiguous in a selected projection. `config check` keeps its static validity
 confirmation and JSON Artifact/eval counts. There is one text or full JSON output
 level, with no `plan`, `--compact` or `--full`. The former top-level `graph`

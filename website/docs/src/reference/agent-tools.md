@@ -28,13 +28,17 @@ and `grep` execute in-process without subprocesses or output directories;
 
 Paths are relative logical paths from the tool's declaring Artifact, including
 children and mount aliases; omitted paths mean its root. They never accept
-absolute paths, dot components or symlinks. The registry scope remains the eval's
+absolute paths, traversal components or symlinks. The lone `.` is accepted as
+a file Artifact's virtual root for list/glob/grep; other dot components are
+rejected. The registry scope remains the eval's
 admitted Artifacts, not other evals' references. Paths are opened read-only through
 pinned directory descriptors with no-follow component checks; special files cannot
 be read. `list` can report `symlink`/`other` entries, but searches skip them.
 Mounts have kind `mount`. A file Artifact exposes only its target file, mounts and
 referenced Artifacts, not unrelated siblings in its working directory.
-`list` at its root lists the target file and declared mounts.
+`list` with no path or `path: "."` lists that virtual root's target file and
+declared mounts. Read the target by its filename; file paths remain relative to
+the containing folder.
 
 Read returns at most 64 KiB of **complete original line bytes**, preserving LF,
 CRLF and a UTF-8 BOM in each line's `text`. Only requested lines are decoded;
@@ -65,7 +69,7 @@ The `json` protocol receives exactly one request on stdin:
     "outputDir": "/external/private/output",
     "tmpDir": "/external/private/tmp",
     "scope": {
-      "example": {"path": "/workspace/example", "children": {}, "mounts": {}}
+      "example": {"path": "/workspace/example", "kind": "folder", "children": {}, "mounts": {}}
     },
     "executionPaths": {"shared/rules.json": "/workspace/shared/rules.json"}
   },
@@ -73,11 +77,15 @@ The `json` protocol receives exactly one request on stdin:
 }
 ```
 
-Scope entries contain canonical physical paths and logical child/mount maps.
+Scope entries contain canonical physical paths, `kind` (`file` or `folder`) and
+logical child/mount maps. For a file Artifact, `context.artifactPath` and its
+scope entry's `path` name the file, not the process cwd; the cwd is its containing
+folder. File Artifact references reject `/path` suffixes.
 These protocol keys stay camelCase; declarations use `execution_paths` and
 `input_schema`. `executionPaths` is
 omitted when empty. Declared execution paths are up to 64 unique workspace-relative
-files/directories, resolved without symlinks or copying.
+files/directories, resolved without symlinks or copying. This remains
+workspace-relative for file Artifacts; it is not relative to their cwd or target.
 
 When an Agent review starts, artifactize pins each execution path of the eval's
 tools: a file to the SHA-256 of its bytes, a directory to the SHA-256 over each
