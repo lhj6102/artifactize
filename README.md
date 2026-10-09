@@ -22,8 +22,8 @@
 Artifactize splits a project into Artifacts (code, docs, designs, images), each with
 its own evals: tests, LLM reviews, human sign-offs and derived dependency checks.
 Every teammate, human or agent, works their own way on their part, and integrating
-that work never pays for the same review twice: while an Artifact's fingerprint is
-unchanged, its GREEN or RED result is reused. Artifactize is open source under the
+that work reuses each review while its eval definition, covered Artifact kinds
+and fingerprints match. Earlier GREEN or RED results are reused. Artifactize is open source under the
 Apache License 2.0 and runs on Linux and WSL 2.
 
 ## Why I built it

@@ -37,7 +37,7 @@ model or lower effort. If the response reports a model ID, it must match exactly
 Agent evals share runtime evals' dependency gates, reuse-key claims, reuse and final
 fingerprint recheck. The backend, model, reasoning and limits are execution
 options, not part of the reuse key: a result another model or profile produced for
-the same eval and fingerprints is reused, and its record shows which one it was. Final output must be one strict JSON object containing
+the same eval, Artifact kinds and fingerprints is reused, and its record shows which one it was. Final output must be one strict JSON object containing
 `"verdict":"GREEN"` or `"verdict":"RED"` and only the permitted owner-schema fields.
 One tools-disabled repair is allowed for invalid final output, within the original
 deadline. The repair turn names the error and, when the output was a JSON object, up
