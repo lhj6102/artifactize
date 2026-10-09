@@ -12,7 +12,7 @@ args = ["STYLE.md"]
 timeout_ms = 10000
 
 [views.human_tools]
-open = { description = "Open STYLE.md of {artifactName} in GNOME Text Editor.", kind = "launch", command = "gnome-text-editor", args = ["{artifactPath}/STYLE.md"] }
+open = { description = "Open STYLE.md of {artifactName} in the desktop's default application.", kind = "launch", command = "xdg-open", args = ["{artifactPath}/STYLE.md"] }
 
 [evals.approved]
 title = "The owner approves the checklist as the code standard"
