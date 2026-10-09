@@ -36,13 +36,13 @@ impl Project {
         fs::create_dir_all(&folder).unwrap();
         fs::write(folder.join("notes.md"), "notes: R1 holds.\n").unwrap();
         let profile = json!({"kind":"agent","backend":backend,
-            "model":format!("{backend}-model"),"timeoutMs":20000});
-        fs::write(
-            folder.join("artifactize.json"),
-            json!({"name":"notes","fingerprint":{},"views":{"agentTools":{"read":{"builtin":"read"}}},
+            "model":format!("{backend}-model"),"timeout_ms":20000});
+        support::declaration::write(
+            folder.join("index.artf"),
+            json!({"name":"notes","fingerprint":{},"views":{"agent_tools":{"read":{"builtin":"read"}}},
                 "evals":[{"id":"review","title":"Review","profile":profile,
                     "payload":{"instruction":"Review {notes}."},
-                    "passSchema":{"type":"object","required":["covered"],
+                    "pass_schema":{"type":"object","required":["covered"],
                         "properties":{"covered":{"type":"array","items":{"type":"string"}}}}}]})
             .to_string(),
         )

@@ -26,8 +26,8 @@ impl Fixture {
     }
 
     fn artifact(&self, path: &str, name: &str, mounts: Value, instruction: &str) {
-        self.write(&format!("{path}/artifactize.json"), json!({
-            "name":name,"mounts":mounts,"views":{"agentTools":{
+        self.write(&format!("{path}/index.artf"), json!({
+            "name":name,"mounts":mounts,"views":{"agent_tools":{
                 "read":{"builtin":"read"},"list":{"builtin":"list"},"glob":{"builtin":"glob"},"grep":{"builtin":"grep"},"view_image":{"builtin":"view_image"}
             }},"evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}]
         }).to_string());
@@ -36,7 +36,7 @@ impl Fixture {
     fn write(&self, path: &str, data: impl AsRef<[u8]>) {
         let path = self.root.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, data).unwrap();
+        crate::test_declaration::write(path, data).unwrap();
     }
 
     async fn call(&self, tool: &str, args: Value) -> ToolResult {
@@ -257,7 +257,7 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
         "../outside/secret",
         "/etc/passwd",
         "C:/Windows/win.ini",
-        "data/../artifactize.json",
+        "data/../index.artf",
         "data//file",
         "data/./file",
         "data\\file",
@@ -305,7 +305,7 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
             .is_error
     );
     let data = fixture.data("glob_a", json!({"pattern":"**/*"})).await;
-    assert_eq!(data["files"], json!(["artifactize.json", "data/file"]));
+    assert_eq!(data["files"], json!(["data/file", "index.artf"]));
     let config = read_workspace_config(&fixture.root).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     fs::rename(fixture.root.join("a"), fixture.root.join("old-a")).unwrap();
@@ -471,7 +471,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
             matches!(&result.content[0], Content::Text { text } if text.contains("Tool arguments"))
         );
     }
-    fixture.write("bare/artifactize.json", r#"{"name":"bare"}"#);
+    fixture.write("bare/index.artf", r#"{"name":"bare"}"#);
     fixture.artifact("other", "other", json!({}), "Review.");
     fixture.artifact("a", "a", json!({"bare":"bare"}), "Review.");
     let config = read_workspace_config(&fixture.root).unwrap();
@@ -489,7 +489,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
     }
     assert!(
         fixture
-            .call("read_bare", json!({"path":"artifactize.json"}))
+            .call("read_bare", json!({"path":"index.artf"}))
             .await
             .is_error
     );
@@ -511,7 +511,7 @@ async fn listing_pages_are_sorted_and_include_logical_mounts_and_children() {
     fixture.artifact("hidden", "hidden", json!({}), "Review.");
     fixture.write("b/input.txt", "mounted\n");
     fixture.write(
-        "a/nested/cases/artifactize.json",
+        "a/nested/cases/index.artf",
         json!({"name":"cases"}).to_string(),
     );
     fixture.write("a/nested/cases/input.txt", "child\n");
@@ -523,7 +523,7 @@ async fn listing_pages_are_sorted_and_include_logical_mounts_and_children() {
             .iter()
             .map(|entry| entry["name"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        ["artifactize.json", "nested", "source"]
+        ["index.artf", "nested", "source"]
     );
     assert_eq!(data["entries"][2]["kind"], "mount");
     let data = fixture.data("list_a", json!({"path":"nested"})).await;
@@ -535,7 +535,7 @@ async fn listing_pages_are_sorted_and_include_logical_mounts_and_children() {
         .data("list_a", json!({"path":"nested/cases","limit":1}))
         .await;
     assert_eq!(data["totalEntries"], 2);
-    assert_eq!(data["entries"][0]["path"], "nested/cases/artifactize.json");
+    assert_eq!(data["entries"][0]["path"], "nested/cases/index.artf");
     assert_eq!(data["nextOffset"], 1);
     let data = fixture
         .data("list_a", json!({"path":"nested/cases","offset":1}))

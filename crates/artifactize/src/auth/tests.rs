@@ -110,7 +110,7 @@ fn storage_is_atomic_private_and_refuses_links() {
         assert!(storage.read::<Secret>("secret.json").is_err());
         fs::remove_file(&path).unwrap();
     }
-    fs::write(&path, r#"{"token":"readable"}"#).unwrap();
+    crate::test_declaration::write(&path, r#"{"token":"readable"}"#).unwrap();
     grant_everyone_read(&path);
     assert!(storage.read::<Secret>("secret.json").is_err());
     fs::remove_file(&path).unwrap();
@@ -155,7 +155,7 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
             && refusal.ends_with("or set ARTIFACTIZE_CODEX_AUTH_FILE."),
         "{refusal}"
     );
-    fs::write(repo.join("artifactize.json"), "{}").unwrap();
+    crate::test_declaration::write(repo.join("index.artf"), "{}").unwrap();
     let Err(refusal) = Storage::new(Some(&repo.join("state")), None, Tokens::Codex) else {
         panic!("auth storage inside an artifactize workspace");
     };
@@ -206,5 +206,22 @@ async fn named_locks_serialize_holders_and_stay_private() {
     fs::remove_file(&lock).unwrap();
     if symlink_file(temp.path().join("elsewhere"), &lock).is_some() {
         assert!(storage.lock("codex").await.is_err());
+    }
+}
+
+#[test]
+fn credential_storage_keeps_current_and_legacy_workspace_markers_as_boundaries() {
+    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+        let root = tempfile::tempdir().unwrap();
+        let repo = root.path().join("repo");
+        fs::create_dir(&repo).unwrap();
+        fs::write(repo.join(marker), "marker").unwrap();
+        for kind in [Tokens::Codex, Tokens::Remote] {
+            let Err(error) = Storage::new(Some(&repo.join("state")), None, kind) else {
+                panic!("credential storage accepted {marker}");
+            };
+            assert!(error.contains("artifactize workspace"), "{marker}: {error}");
+            assert!(!repo.join("state").exists());
+        }
     }
 }

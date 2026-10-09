@@ -51,10 +51,10 @@ pub(crate) const MAX_TIMEOUT_MS: u64 = 2_147_483_647;
 pub(super) fn timeout_number<E: Error>(number: Number) -> Result<std::time::Duration, E> {
     let value = number
         .as_f64()
-        .ok_or_else(|| E::custom("Invalid timeoutMs."))?;
+        .ok_or_else(|| E::custom("Invalid timeout_ms."))?;
     if value < 1.0 || value > MAX_TIMEOUT_MS as f64 || value.fract() != 0.0 {
         return Err(E::custom(
-            "timeoutMs must be an integer from 1 through 2147483647.",
+            "timeout_ms must be an integer from 1 through 2147483647.",
         ));
     }
     Ok(std::time::Duration::from_millis(value as u64))

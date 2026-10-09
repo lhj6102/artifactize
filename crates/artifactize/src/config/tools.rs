@@ -8,15 +8,31 @@ const MAX_DESCRIPTION_CHARS: usize = 4000;
 
 use super::validation::{paths, present, script, text, timeout};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum AgentTool {
     Command(CommandTool),
     Builtin(BuiltinTool),
 }
 
+impl<'de> Deserialize<'de> for AgentTool {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let value = Value::deserialize(deserializer)?;
+        if value.get("builtin").is_some() {
+            serde_json::from_value(value).map(Self::Builtin)
+        } else {
+            serde_json::from_value(value).map(Self::Command)
+        }
+        .map_err(D::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(
+    rename_all(serialize = "camelCase", deserialize = "snake_case"),
+    deny_unknown_fields
+)]
 pub struct CommandTool {
     pub description: String,
     #[serde(default = "empty_schema")]
@@ -76,7 +92,7 @@ impl AgentTool {
                 if tool.command.contains(['{', '}']) {
                     return Err("Tool command must not contain placeholders.".into());
                 }
-                paths(&tool.execution_paths, "executionPaths")?;
+                paths(&tool.execution_paths, "execution_paths")?;
                 crate::tools::schema::compile(&tool.input_schema)?;
                 if tool.protocol == ToolProtocol::Plain {
                     for arg in &tool.args {
@@ -108,7 +124,10 @@ impl AgentTool {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(
+    rename_all(serialize = "camelCase", deserialize = "snake_case"),
+    deny_unknown_fields
+)]
 pub struct HumanTool {
     pub description: String,
     pub kind: HumanToolKind,

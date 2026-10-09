@@ -37,11 +37,11 @@ fn write_repo(repo: &Path, profile: Value) {
         "echo stdout-marker\necho stderr-marker >&2\n",
     )
     .unwrap();
-    fs::write(
-        repo.join("artifactize.json"),
+    support::declaration::write(
+        repo.join("index.artf"),
         json!({"name":"app","fingerprint":{"script":{"command":bin("cat"),"args":["fingerprint"]}},
             "evals":[{"id":"check","title":"Check","profile":profile,"payload":{"instruction":"Review."},
-                "passSchema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false}}]})
+                "pass_schema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false}}]})
         .to_string(),
     )
     .unwrap();
@@ -309,13 +309,13 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     };
     let root = tempfile::tempdir().unwrap();
     let repo = root.path().join("repo");
-    let declared = json!({"kind":"agent","backend":"openai","model":"model-a","reasoning":"high","timeoutMs":60000});
-    let fast = json!({"kind":"agent","backend":"anthropic","model":"model-b","reasoning":"low","maxTokens":500});
+    let declared = json!({"kind":"agent","backend":"openai","model":"model-a","reasoning":"high","timeout_ms":60000});
+    let fast = json!({"kind":"agent","backend":"anthropic","model":"model-b","reasoning":"low","max_tokens":500});
     write_repo(&repo, declared.clone());
-    let path = repo.join("artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    declaration["evals"][0]["profileVariants"] = json!({ "fast": fast });
-    fs::write(&path, declaration.to_string()).unwrap();
+    let path = repo.join("index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    declaration["evals"][0]["profile_variants"] = json!({ "fast": fast });
+    support::declaration::write(&path, declaration.to_string()).unwrap();
 
     // The record the `fast` variant produced elsewhere, keyed like this repository's eval.
     let config = read_workspace_config(&repo).unwrap();
@@ -344,7 +344,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         result: Some(json!({"verdict":"GREEN","approved":true})),
         error: None,
         error_code: None,
-        profile: serde_json::from_value(fast.clone()).unwrap(),
+        profile: artifactize::config::StoredProfile::from(&variant),
         options: ExecutionOptions::new(&variant, Some("fast")),
         usage: Some(
             serde_json::from_value(json!([{"turn":1,"attempt":1,"usage":{"inputTokens":10}}]))
@@ -385,7 +385,10 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     assert_eq!(reused.run.status.as_str(), "GREEN");
     assert_eq!(reused.run.executions_started, 0);
     let request = &reused.requests[0];
-    assert_eq!(serde_json::to_value(&request.profile).unwrap(), fast);
+    assert_eq!(
+        serde_json::to_value(&request.profile).unwrap(),
+        serde_json::to_value(artifactize::config::StoredProfile::from(&variant)).unwrap()
+    );
     assert_eq!(
         serde_json::to_value(&request.requested_profile).unwrap()["model"],
         declared["model"]
@@ -404,8 +407,8 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     );
 
     // A model, reasoning or limit change alone keeps reusing it.
-    declaration["evals"][0]["profile"] = json!({"kind":"agent","backend":"openai","model":"model-c","maxToolCalls":3,"timeoutMs":1000});
-    fs::write(&path, declaration.to_string()).unwrap();
+    declaration["evals"][0]["profile"] = json!({"kind":"agent","backend":"openai","model":"model-c","max_tool_calls":3,"timeout_ms":1000});
+    support::declaration::write(&path, declaration.to_string()).unwrap();
     let again = verify(&repo, &state).await;
     assert_eq!(again.run.executions_started, 0);
     assert_eq!(again.requests[0].key.as_deref(), Some(key.value.as_str()));

@@ -59,29 +59,29 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     fs::create_dir(first.join("input")).unwrap();
     fs::create_dir(first.join("unselected")).unwrap();
     fs::create_dir(&second).unwrap();
-    fs::write(
-        first.join("input/artifactize.json"),
+    support::declaration::write(
+        first.join("input/index.artf"),
         r#"{"name":"input","basis":true}"#,
     )
     .unwrap();
-    fs::write(
-        first.join("unselected/artifactize.json"),
+    support::declaration::write(
+        first.join("unselected/index.artf"),
         r#"{"name":"unselected","basis":true}"#,
     )
     .unwrap();
     for (name, title) in [("checkout", "Checkout"), ("search", "Search")] {
-        fs::write(first.join(format!("scenarios/{name}/artifactize.json")), json!({
+        support::declaration::write(first.join(format!("scenarios/{name}/index.artf")), json!({
             "name":name,
             "evals":[{
                 "id":"review","title":title,
                 "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
-                "profileVariants":{"brief":{"kind":"runtime","command":bin("/bin/echo"),"args":["saved result"]}},
+                "profile_variants":{"brief":{"kind":"runtime","command":bin("/bin/echo"),"args":["saved result"]}},
                 "payload":{"instruction":"Inspect {input}."},
-                "passSchema":{"type":"object"}
+                "pass_schema":{"type":"object"}
             }]
         }).to_string()).unwrap();
     }
-    fs::write(second.join("artifactize.json"), json!({
+    support::declaration::write(second.join("index.artf"), json!({
         "name":"other",
         "evals":[
             {"id":"pass","title":"Pass","profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},"payload":{"instruction":"Pass."}},
@@ -163,7 +163,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
 
     fs::remove_dir_all(&first).unwrap();
     // A historical query must not discover even the surviving repository's declarations.
-    fs::write(second.join("artifactize.json"), "not JSON").unwrap();
+    support::declaration::write(second.join("index.artf"), "not JSON").unwrap();
     let before = fs::read(state.join("state.sqlite")).unwrap();
     let all = query(&first, &state, &["run", "list", "--all"], 0);
     assert_eq!(all.as_array().unwrap().len(), 3);

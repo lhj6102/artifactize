@@ -31,15 +31,22 @@ impl Location {
         let directory = crate::store::state_dir(state)?.join("auth");
         let directory =
             crate::workspace::canonical_target(&directory).map_err(|e| e.to_string())?;
-        let marked = directory.ancestors().find_map(|ancestor| {
-            [
-                (".git", "git work tree"),
-                ("artifactize.json", "artifactize workspace"),
-            ]
-            .into_iter()
-            .find(|(marker, _)| ancestor.join(marker).exists())
-            .map(|(_, kind)| (kind, ancestor.to_owned()))
-        });
+        let mut marked = None;
+        for ancestor in directory.ancestors() {
+            let kind = if ancestor.join(".git").symlink_metadata().is_ok() {
+                Some("git work tree")
+            } else if crate::workspace::has_artifact_marker(ancestor)
+                .map_err(|error| error.to_string())?
+            {
+                Some("artifactize workspace")
+            } else {
+                None
+            };
+            if let Some(kind) = kind {
+                marked = Some((kind, ancestor.to_owned()));
+                break;
+            }
+        }
         let enclosure = match (marked, repo) {
             (Some(marked), _) => Some(marked),
             (None, Some(repo)) => {

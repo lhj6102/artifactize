@@ -22,8 +22,8 @@ impl Fixture {
         let repo = root.path().join("repo");
         let child = repo.join("child");
         fs::create_dir_all(&child).unwrap();
-        fs::write(
-            repo.join("artifactize.json"),
+        support::declaration::write(
+            repo.join("index.artf"),
             json!({
                 "name":"parent","fingerprint":false,"evals":[{"id":"check","title":"Dependent",
                     "profile":{"kind":"runtime","command":"true","args":[]},
@@ -33,14 +33,14 @@ impl Fixture {
         )
         .unwrap();
         let mut declaration = json!({
-            "name":"child","views":{"humanTools":{
+            "name":"child","views":{"human_tools":{
                 "inspect":{"description":"Inspect","kind":"output","command":"cat","args":["fingerprint"]},
                 "open":{"description":"Launch","kind":"launch","command":"true","args":[]}
             }},
             "evals":[{"id":"review","title":"Human review","profile":{"kind":"human"},
                 "payload":{"instruction":"Review."},
-                "passSchema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
-                "failSchema":{"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"],"additionalProperties":false}}]
+                "pass_schema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
+                "fail_schema":{"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"],"additionalProperties":false}}]
         });
         if fingerprint {
             declaration["fingerprint"] = json!({"script":{"command":"cat","args":["fingerprint"]}});
@@ -48,7 +48,7 @@ impl Fixture {
             declaration["fingerprint"] = json!(false);
         }
         fs::write(child.join("fingerprint"), "review-v1\n").unwrap();
-        fs::write(child.join("artifactize.json"), declaration.to_string()).unwrap();
+        support::declaration::write(child.join("index.artf"), declaration.to_string()).unwrap();
         Self {
             repo,
             state: root.path().join("state"),
@@ -362,8 +362,8 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
     let fixture = Fixture::new(false);
     let sibling = fixture.repo.join("sibling");
     fs::create_dir(&sibling).unwrap();
-    fs::write(
-        sibling.join("artifactize.json"),
+    support::declaration::write(
+        sibling.join("index.artf"),
         json!({
             "name":"sibling","fingerprint":false,"evals":[{"id":"check","title":"Once",
             "profile":{"kind":"runtime","command":"true","args":[]},

@@ -29,13 +29,13 @@ impl Fixture {
     }
 
     fn artifact(&self, folder: &str, value: Value) {
-        self.file(&format!("{folder}/artifactize.json"), &value.to_string());
+        self.file(&format!("{folder}/index.artf"), &value.to_string());
     }
 
     fn file(&self, path: &str, contents: &str) {
         let path = self.repo.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, contents).unwrap();
+        support::declaration::write(path, contents).unwrap();
     }
 
     fn run(&self, args: &[&str]) -> Output {
@@ -181,8 +181,8 @@ fn a_tool_declaration_change_alone_reuses() {
     let fixture = Fixture::new();
     let mut declaration = artifact("app", json!({}), json!({}), PASS);
     let tool = |description: &str| {
-        json!({"agentTools":{"lint":{"description":description,
-            "inputSchema":{"type":"object","properties":{"path":{"type":"string"}},"additionalProperties":false},
+        json!({"agent_tools":{"lint":{"description":description,
+            "input_schema":{"type":"object","properties":{"path":{"type":"string"}},"additionalProperties":false},
             "protocol":"json","command":bin("/bin/true"),"args":[]}}})
     };
     declaration["views"] = tool("Lint a file.");
@@ -191,7 +191,7 @@ fn a_tool_declaration_change_alone_reuses() {
     assert_eq!(fixture.executed(0), ["app/check"]);
     // A tool is a way of viewing the Artifact, not part of it (#85).
     declaration["views"] = tool("Lint one file and report every finding.");
-    declaration["views"]["agentTools"]["lint"]["inputSchema"]["properties"]["strict"] =
+    declaration["views"]["agent_tools"]["lint"]["input_schema"]["properties"]["strict"] =
         json!({"type":"boolean"});
     fixture.artifact("app", declaration);
     assert_eq!(fixture.json(&["status"], 0)["evals"][0]["action"], "reuse");
@@ -499,13 +499,7 @@ fn fingerprint_false_disables_end_of_review_checks_and_reports_the_explicit_choi
 #[test]
 fn config_check_rejects_true_and_nonobject_fingerprints_with_a_clear_message() {
     let fixture = Fixture::new();
-    for value in [
-        json!(true),
-        json!(null),
-        json!(42),
-        json!("default"),
-        json!([]),
-    ] {
+    for value in [json!(true), json!(42), json!("default"), json!([])] {
         fixture.artifact("app", json!({"name":"app","fingerprint":value}));
         let output = fixture.json(&["config", "check"], 2);
         assert!(

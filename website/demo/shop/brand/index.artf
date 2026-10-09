@@ -1,0 +1,10 @@
+name = "brand"
+fingerprint = {}
+
+[evals.logo]
+title = "The logo is well-formed SVG"
+profile = { kind = "runtime", command = "python3", args = ["-c", "import sys, xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])", "logo.svg"], timeout_ms = 10000 }
+
+[evals.logo.payload]
+instruction = """
+Check that {brand}/logo.svg parses as XML."""

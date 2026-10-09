@@ -40,8 +40,8 @@ fn python(source: &str) -> Vec<&str> {
 
 fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
     fs::create_dir_all(path).unwrap();
-    fs::write(path.join("artifactize.json"), json!({
-        "name":name,"views":{"humanTools":tools,"agentTools":{"read":{"builtin":"read"}}},
+    support::declaration::write(path.join("index.artf"), json!({
+        "name":name,"views":{"human_tools":tools,"agent_tools":{"read":{"builtin":"read"}}},
         "evals":[{"id":"review","title":"Review","profile":{"kind":"human"},"payload":{"instruction":instruction}}]
     }).to_string()).unwrap();
 }
@@ -64,7 +64,12 @@ fn text(result: &ToolResult) -> &str {
 #[test]
 fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
     let parse = |tool| {
-        parse_declaration(&json!({"name":"a","views":{"humanTools":{"inspect":tool}}}).to_string())
+        parse_declaration(
+            &support::declaration::to_toml(
+                json!({"name":"a","views":{"human_tools":{"inspect":tool}}}),
+            )
+            .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
+        )
     };
     let valid = tool("launch", "missing-program", &["{artifactPath}"]);
     assert!(parse(valid.clone()).is_ok());
@@ -72,9 +77,9 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
         ("kind", json!("shell")),
         ("description", json!(" ")),
         ("description", json!("Open {unknown}")),
-        ("inputSchema", json!({"type":"object"})),
+        ("input_schema", json!({"type":"object"})),
         ("protocol", json!("plain")),
-        ("executionPaths", json!([])),
+        ("execution_paths", json!([])),
         ("args", json!([{"path":"free"}])),
         ("args", json!(["{artifactPath}/../outside"])),
         ("args", json!(["{bad.name}"])),
@@ -82,9 +87,8 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
         ("args", json!(["${HOME}"])),
         ("args", json!(["prefix{artifactPath}"])),
         ("command", json!("{artifactPath}/tool")),
-        ("timeoutMs", json!(null)),
-        ("timeoutMs", json!(0)),
-        ("timeoutMs", json!(2_147_483_648u64)),
+        ("timeout_ms", json!(0)),
+        ("timeout_ms", json!(2_147_483_648u64)),
     ] {
         let mut invalid = valid.clone();
         invalid[key] = value;
@@ -216,10 +220,10 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
         ],
     );
     write_artifact(&owner, "a", json!({"inspect":command}), "Review.");
-    let marker = owner.join("artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&marker).unwrap()).unwrap();
+    let marker = owner.join("index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&marker).unwrap()).unwrap();
     declaration["mounts"] = json!({"source":"b"});
-    fs::write(&marker, declaration.to_string()).unwrap();
+    support::declaration::write(&marker, declaration.to_string()).unwrap();
     let result = call(repo).await;
     assert!(!result.is_error, "{result:?}");
     let input = repo.join("b").join("input");
@@ -248,8 +252,8 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
             .is_error
     );
     declaration.as_object_mut().unwrap().remove("mounts");
-    declaration["views"]["humanTools"]["inspect"]["args"] = json!(["{b}"]);
-    fs::write(marker, declaration.to_string()).unwrap();
+    declaration["views"]["human_tools"]["inspect"]["args"] = json!(["{b}"]);
+    support::declaration::write(marker, declaration.to_string()).unwrap();
     assert!(call(repo).await.is_error);
 }
 
@@ -330,7 +334,7 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
 async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     let repo = tempfile::tempdir().unwrap();
     let mut command = tool("output", "sleep", &["60"]);
-    command["timeoutMs"] = json!(40);
+    command["timeout_ms"] = json!(40);
     write_artifact(repo.path(), "a", json!({"inspect":command}), "Review.");
     assert_eq!(text(&call(repo.path()).await), "Human tool timed out.");
     write_artifact(
@@ -466,10 +470,10 @@ async fn human_environment_and_launch_probe() {
         )
     );
     let mut declaration: Value =
-        serde_json::from_slice(&fs::read(repo.join("artifactize.json")).unwrap()).unwrap();
+        support::declaration::read(fs::read(repo.join("index.artf")).unwrap()).unwrap();
     declaration["evals"].as_array_mut().unwrap().push(json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":"Review."}}));
-    declaration["views"]["agentTools"] = json!({"inspect":{"description":"Inspect","protocol":"plain","command":"python3","args":["-c","import os; print(os.environ.get('ARTIFACTIZE_HUMAN_MARKER','absent')); print(os.environ['HOME'])"]}});
-    declaration["views"]["humanTools"]["inspect"] = tool(
+    declaration["views"]["agent_tools"] = json!({"inspect":{"description":"Inspect","protocol":"plain","command":"python3","args":["-c","import os; print(os.environ.get('ARTIFACTIZE_HUMAN_MARKER','absent')); print(os.environ['HOME'])"]}});
+    declaration["views"]["human_tools"]["inspect"] = tool(
         "launch",
         "sh",
         &[
@@ -477,7 +481,7 @@ async fn human_environment_and_launch_probe() {
             "printf '%s' $$ > pid; printf '%s' \"$ARTIFACTIZE_HUMAN_MARKER\" > marker; exec sleep 10",
         ],
     );
-    fs::write(repo.join("artifactize.json"), declaration.to_string()).unwrap();
+    support::declaration::write(repo.join("index.artf"), declaration.to_string()).unwrap();
     let config = read_workspace_config(repo).unwrap();
     assert!(Registry::new(&config, "a/agent").is_err());
     let result = tools::Registry::new(&config, "a/agent")

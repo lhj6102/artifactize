@@ -1,4 +1,4 @@
-# Folders with their own artifactize.json that are not part of this repository's
+# Folders with their own index.artf that are not part of this repository's
 # workspace: test fixtures, and the example and demo projects run on their own.
 crates/artifactize/tests/
 examples/

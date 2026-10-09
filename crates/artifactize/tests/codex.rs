@@ -33,10 +33,10 @@ impl Project {
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
         fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
-        let profile = json!({"kind":"agent","backend":"codex","model":"gpt-6-luna","reasoning":"max","maxToolCalls":2});
-        fs::write(
-            repo.join("spec/artifactize.json"),
-            json!({"name":"spec","views":{"agentTools":{"read":{"builtin":"read"}}},
+        let profile = json!({"kind":"agent","backend":"codex","model":"gpt-6-luna","reasoning":"max","max_tool_calls":2});
+        support::declaration::write(
+            repo.join("spec/index.artf"),
+            json!({"name":"spec","views":{"agent_tools":{"read":{"builtin":"read"}}},
                 "fingerprint":{},
                 "evals":[{"id":"review","title":"Review","profile":profile,
                     "payload":{"instruction":"Review {spec}."}}]})
@@ -51,10 +51,10 @@ impl Project {
     }
 
     fn profile(&self, profile: Value) {
-        let path = self.repo.join("spec/artifactize.json");
-        let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let path = self.repo.join("spec/index.artf");
+        let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
         declaration["evals"][0]["profile"] = profile;
-        fs::write(path, declaration.to_string()).unwrap();
+        support::declaration::write(path, declaration.to_string()).unwrap();
     }
 
     fn credentials(&self) -> PathBuf {
@@ -76,7 +76,7 @@ impl Project {
         let path = self.root.path().join("codex-auth.json");
         let auth = json!({"OPENAI_API_KEY":null,"tokens":{"id_token":"id","access_token":access,
             "refresh_token":"file-refresh","account_id":"file-account"},"last_refresh":"2026-10-01T00:00:00Z"});
-        fs::write(&path, auth.to_string()).unwrap();
+        support::declaration::write(&path, auth.to_string()).unwrap();
         path
     }
 
@@ -632,15 +632,15 @@ fn sign_in_endpoints_are_loopback_only_and_guard_the_review_store() {
 #[test]
 fn removed_backend_messages_name_codex_without_a_version() {
     let project = Project::new();
-    let path = project.repo.join("spec/artifactize.json");
+    let path = project.repo.join("spec/index.artf");
     let declaration = fs::read_to_string(&path)
         .unwrap()
         .replace("\"codex\"", "\"chatgpt\"");
-    fs::write(&path, declaration).unwrap();
+    support::declaration::write(&path, declaration).unwrap();
     let failure = parsed(project.command(&["config", "check"]).output().unwrap(), 2);
     let error = failure["error"].as_str().unwrap();
     assert!(
-        error.ends_with(r#"backend "chatgpt" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex" with a ChatGPT/Codex sign-in"#),
+        error.trim_end().ends_with(r#"backend "chatgpt" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex" with a ChatGPT/Codex sign-in"#),
         "{error}"
     );
     assert!(!Path::new(&project.state).join("auth").exists());
@@ -702,7 +702,7 @@ fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
         json!({"backend":"openai","model":"fake-openai-model","reasoning":"high"})
     );
     assert_eq!(provider.requests()[1].path, "/v1/responses");
-    project.profile(json!({"kind":"agent","backend":"codex","model":"gpt-6-luna","reasoning":"max","maxToolCalls":2}));
+    project.profile(json!({"kind":"agent","backend":"codex","model":"gpt-6-luna","reasoning":"max","max_tool_calls":2}));
     let back = verify(&["verify", "--all"]);
     assert_eq!(back["executionsStarted"], 0);
     assert_eq!(back["requests"][0]["executionId"], newer["executionId"]);

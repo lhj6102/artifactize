@@ -9,7 +9,7 @@ fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
-    std::fs::write(repo.join("artifactize.json"), json!({"name":"signoff","fingerprint":{},"views":{"humanTools":{"inspect":{"kind":"output","description":"Inspect","command":crate::test_os::bin("true"),"args":[]}}},"evals":[{"id":"review","title":"Approve","profile":{"kind":"human"},"payload":{"instruction":"Inspect."},"passSchema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},"failSchema":{"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"],"additionalProperties":false}}]}).to_string()).unwrap();
+    crate::test_declaration::write(repo.join("index.artf"), json!({"name":"signoff","fingerprint":{},"views":{"human_tools":{"inspect":{"kind":"output","description":"Inspect","command":crate::test_os::bin("true"),"args":[]}}},"evals":[{"id":"review","title":"Approve","profile":{"kind":"human"},"payload":{"instruction":"Inspect."},"pass_schema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},"fail_schema":{"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"],"additionalProperties":false}}]}).to_string()).unwrap();
     (root, repo, state)
 }
 async fn waiting(repo: &std::path::Path, state: &std::path::Path) -> RequestView {

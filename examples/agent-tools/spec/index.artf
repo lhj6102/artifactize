@@ -1,0 +1,90 @@
+name = "spec"
+mounts = { reqs = "requirements" }
+
+[views.agent_tools]
+read = { builtin = "read", description = "Read lines of a text file in {artifactName}; the requirements are at reqs/requirements.md." }
+grep = { builtin = "grep" }
+view_image = { builtin = "view_image", description = "View an image in {artifactName}, such as diagram.png." }
+
+[views.agent_tools.section]
+description = "Print one '## ' section of spec.md in {artifactName}, by its exact title."
+input_schema = { type = "object", properties = { title = { type = "string", minLength = 1 } }, required = ["title"], additionalProperties = false }
+protocol = "plain"
+command = "/bin/sh"
+args = ["section.sh", "{title}"]
+timeout_ms = 10000
+
+[views.agent_tools.coverage]
+description = "List each requirement for {artifactName} with the spec.md lines that cite its ID. Pass id to see one requirement."
+input_schema = { type = "object", properties = { id = { type = "string", pattern = "^R[0-9]+$" } }, additionalProperties = false }
+protocol = "json"
+command = "python3"
+args = ["coverage.py", "{reqs}/requirements.md"]
+timeout_ms = 10000
+
+[views.human_tools]
+open = { description = "Open the review notes of {artifactName} in the desktop's default application.", kind = "launch", command = "xdg-open", args = ["{artifactPath}/notes.md"] }
+notes = { description = "Print the review notes of {artifactName}.", kind = "output", command = "cat", args = ["{artifactPath}/notes.md"] }
+
+[evals.review]
+title = "The specification covers every requirement"
+profile = { kind = "agent", backend = "openai", model = "YOUR_OPENAI_MODEL_ID", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20, max_tokens = 200000 }
+
+[evals.review.profile_variants]
+anthropic = { kind = "agent", backend = "anthropic", model = "YOUR_ANTHROPIC_MODEL_ID", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20, max_tokens = 200000 }
+codex = { kind = "agent", backend = "codex", model = "YOUR_CODEX_MODEL_SLUG", reasoning = "medium", timeout_ms = 240000, max_tool_calls = 20, max_tokens = 200000 }
+
+[evals.review.payload]
+instruction = """
+Review spec.md in {spec} against every requirement in {reqs}. Start with coverage_spec to see which \
+lines cite each requirement ID, then read the cited sections with section_spec or read_spec, and use \
+grep_spec to search for anything the coverage report misses. Use view_image_spec to check that \
+diagram.png matches the Diagram section. Answer GREEN only if each requirement is fully specified \
+and the diagram matches; otherwise answer RED with one finding per problem."""
+
+[evals.review.pass_schema]
+type = "object"
+properties.covered = { type = "array", items = { type = "string", pattern = "^R[0-9]+$" }, minItems = 1 }
+properties.diagramMatches = { const = true }
+properties.notes = { type = "string" }
+required = ["covered", "diagramMatches"]
+additionalProperties = false
+
+[evals.review.fail_schema]
+type = "object"
+required = ["findings"]
+additionalProperties = false
+
+[evals.review.fail_schema.properties.findings]
+type = "array"
+minItems = 1
+
+[evals.review.fail_schema.properties.findings.items]
+type = "object"
+properties.requirement = { type = "string", pattern = "^(R[0-9]+|diagram)$" }
+properties.problem = { type = "string", minLength = 1 }
+required = ["requirement", "problem"]
+additionalProperties = false
+
+[evals.signoff]
+title = "A reviewer signs off on the open questions"
+profile = { kind = "human" }
+
+[evals.signoff.payload]
+instruction = """
+Read the review notes of {spec} with the notes or open tool. Submit GREEN with approved: true when \
+every open question has an answer that spec.md supports; otherwise submit RED and list the \
+unresolved questions."""
+
+[evals.signoff.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved"]
+additionalProperties = false
+
+[evals.signoff.fail_schema]
+type = "object"
+properties.unresolved = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
+required = ["unresolved"]
+additionalProperties = false

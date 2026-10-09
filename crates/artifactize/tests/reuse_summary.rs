@@ -39,7 +39,7 @@ impl Fixture {
         let runtime = json!({"kind":"runtime","command":bin("/bin/true"),"args":[]});
         // web/tests is RED when its version says "broken".
         let web = json!({"kind":"runtime","command":bin("/bin/sh"),"args":["-c","! grep -q broken version"]});
-        let agent = json!({"kind":"agent","backend":"openai","model":"fake-exact-model","reasoning":"high","timeoutMs":15000});
+        let agent = json!({"kind":"agent","backend":"openai","model":"fake-exact-model","reasoning":"high","timeout_ms":15000});
         let artifacts = [
             ("api", "tests", runtime.clone(), "Run the API tests."),
             ("web", "tests", web, "Run the web tests."),
@@ -58,7 +58,7 @@ impl Fixture {
             let folder = repo.join(artifact);
             let mut declaration = json!({"id":eval,"title":eval,"profile":profile,"payload":{"instruction":instruction}});
             if artifact == "docs" {
-                declaration["passSchema"] = json!({"type":"object","properties":{"note":{"type":"string"}},"required":["note"]});
+                declaration["pass_schema"] = json!({"type":"object","properties":{"note":{"type":"string"}},"required":["note"]});
             }
             write(
                 &folder,
@@ -114,7 +114,7 @@ impl Fixture {
 
 fn write(folder: &Path, declaration: Value) {
     fs::create_dir_all(folder).unwrap();
-    fs::write(folder.join("artifactize.json"), declaration.to_string()).unwrap();
+    support::declaration::write(folder.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 fn request<'a>(run: &'a Value, eval: &str) -> &'a Value {
@@ -353,11 +353,11 @@ fn an_agent_model_reasoning_or_limit_change_alone_reuses_the_review() {
     assert!(calls > 0);
 
     // Another backend setting is an execution option, not part of the reuse key.
-    let path = repo.join("docs/artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let path = repo.join("docs/index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     declaration["evals"][0]["profile"] = json!({"kind":"agent","backend":"openai",
-        "model":"fake-other-model","reasoning":"low","timeoutMs":60000,"maxTokens":4000});
-    fs::write(&path, declaration.to_string()).unwrap();
+        "model":"fake-other-model","reasoning":"low","timeout_ms":60000,"max_tokens":4000});
+    support::declaration::write(&path, declaration.to_string()).unwrap();
     let status = fixture.json(&repo, &["status"], 1);
     let docs = status["evals"]
         .as_array()

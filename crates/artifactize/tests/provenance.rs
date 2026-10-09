@@ -1,4 +1,4 @@
-//! Agent results pin the files their tools execute (`executionPaths`) in their provenance.
+//! Agent results pin the files their tools execute (`execution_paths`) in their provenance.
 
 mod support;
 
@@ -27,13 +27,13 @@ impl Fixture {
         fs::write(repo.join("rules/nested/b.json"), "[]").unwrap();
         fs::create_dir(repo.join("app")).unwrap();
         fs::write(repo.join("app/page.md"), "# Page\n").unwrap();
-        fs::write(
-            repo.join("app/artifactize.json"),
+        support::declaration::write(
+            repo.join("app/index.artf"),
             json!({"name":"app","fingerprint":{},
-                "views":{"agentTools":{"sim":{"description":"Simulate {artifactName}.",
-                    "inputSchema":{"type":"object","additionalProperties":false},
+                "views":{"agent_tools":{"sim":{"description":"Simulate {artifactName}.",
+                    "input_schema":{"type":"object","additionalProperties":false},
                     "protocol":"json","command":bin("/bin/true"),"args":[],
-                    "executionPaths":["bin/sim","rules"]}}},
+                    "execution_paths":["bin/sim","rules"]}}},
                 "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},
                     "payload":{"instruction":"Review the page."}}]})
             .to_string(),

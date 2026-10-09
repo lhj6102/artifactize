@@ -90,6 +90,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         }
     }
     let writable = (|| {
+        let state = workspace::canonical_target(&state)?;
         if let Some(repo) = repo {
             let repo = workspace::canonical_target(repo)?;
             let repo = if repo.is_file() {
@@ -98,6 +99,8 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                 &repo
             };
             workspace::outside_workspace(repo, &state)?;
+        } else {
+            workspace::outside_artifact_workspaces(&state)?;
         }
         probe_writable(&state)
     })();

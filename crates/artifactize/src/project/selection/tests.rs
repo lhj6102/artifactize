@@ -243,18 +243,18 @@ fn file_reads_reject_nonregular_and_oversized_inputs() {
 
 fn profile_fixture() -> tempfile::TempDir {
     let directory = tempfile::tempdir().unwrap();
-    fs::write(directory.path().join("artifactize.json"), json!({
+    crate::test_declaration::write(directory.path().join("index.artf"), json!({
         "name":"target", "evals":[
             {"id":"z", "title":"Z", "profile":{"kind":"runtime","command":"/bin/true","args":[]},
-             "profileVariants":{"careful":{"kind":"runtime","command":"/bin/echo","args":["{input}"],"timeoutMs":9}},
+             "profile_variants":{"careful":{"kind":"runtime","command":"/bin/echo","args":["{input}"],"timeout_ms":9}},
              "payload":{"instruction":"Check."}},
             {"id":"a", "title":"A", "profile":{"kind":"runtime","command":"/bin/true","args":[]},
              "payload":{"instruction":"Check."}}
         ]
     }).to_string()).unwrap();
     fs::create_dir(directory.path().join("external")).unwrap();
-    fs::write(
-        directory.path().join("external/artifactize.json"),
+    crate::test_declaration::write(
+        directory.path().join("external/index.artf"),
         r#"{"name":"input","basis":true}"#,
     )
     .unwrap();
@@ -264,7 +264,7 @@ fn profile_fixture() -> tempfile::TempDir {
 #[test]
 fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies() {
     let directory = profile_fixture();
-    let source = directory.path().join("artifactize.json");
+    let source = directory.path().join("index.artf");
     let before = fs::read(&source).unwrap();
     let load = || read_workspace_config(directory.path()).unwrap();
     let selection = Selection::Eval {
@@ -277,17 +277,17 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
         false,
     )
     .unwrap();
-    assert_eq!(selected.evals[0].deps, ["input"]);
+    assert_eq!(selected.evals[1].deps, ["input"]);
     assert_eq!(
-        serde_json::to_value(&selected.evals[0].declaration.profile).unwrap()["command"],
+        serde_json::to_value(&selected.evals[1].declaration.profile).unwrap()["command"],
         "/bin/echo"
     );
     assert_eq!(
-        serde_json::to_value(&selected.evals[0].declaration.profile).unwrap()["timeoutMs"],
+        serde_json::to_value(&selected.evals[1].declaration.profile).unwrap()["timeoutMs"],
         9
     );
     assert_eq!(
-        serde_json::to_value(&selected.evals[1].declaration.profile).unwrap()["command"],
+        serde_json::to_value(&selected.evals[0].declaration.profile).unwrap()["command"],
         "/bin/true"
     );
     assert_eq!(
@@ -297,7 +297,7 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
             },
             &selected
         ),
-        ["target/z", "target/a"]
+        ["target/a", "target/z"]
     );
     assert_eq!(fs::read(source).unwrap(), before);
     assert!(load().evals[0].deps.is_empty());
@@ -336,12 +336,12 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
 #[test]
 fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
     let declaration = |variants| {
-        json!({"name":"target", "evals":[{
+        crate::test_declaration::to_toml(json!({"name":"target", "evals":[{
         "id":"check", "title":"Check", "profile":{"kind":"runtime", "command":"/bin/true","args":[]},
-        "payload":{"instruction":"Check."}, "profileVariants": variants
-    }]}).to_string()
+        "payload":{"instruction":"Check."}, "profile_variants": variants
+    }]})).unwrap()
     };
-    let valid = json!({"kind":"runtime", "command":"/bin/false", "args":[], "timeoutMs":1});
+    let valid = json!({"kind":"runtime", "command":"/bin/false", "args":[], "timeout_ms":1});
     let variants: BTreeMap<_, _> = (0..64).map(|i| (format!("v{i}"), valid.clone())).collect();
     assert!(parse_declaration(&declaration(json!(variants))).is_ok());
     let mut oversized = variants;
@@ -354,9 +354,8 @@ fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
     for variants in [
         json!({"bad name":valid}),
         json!({"v":{"kind":"human"}}),
-        json!({"v":{"timeoutMs":1}}),
-        json!({"v":{"kind":"runtime","command":"/bin/true","args":[],"timeoutMs":0}}),
-        json!(null),
+        json!({"v":{"timeout_ms":1}}),
+        json!({"v":{"kind":"runtime","command":"/bin/true","args":[],"timeout_ms":0}}),
     ] {
         assert!(parse_declaration(&declaration(variants)).is_err());
     }

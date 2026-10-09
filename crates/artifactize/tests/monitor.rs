@@ -27,7 +27,7 @@ struct Fixture {
 
 fn declare(path: &Path, declaration: Value) {
     fs::create_dir_all(path).unwrap();
-    fs::write(path.join("artifactize.json"), declaration.to_string()).unwrap();
+    support::declaration::write(path.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 fn eval(id: &str, profile: Value, instruction: &str) -> Value {
@@ -35,7 +35,7 @@ fn eval(id: &str, profile: Value, instruction: &str) -> Value {
 }
 
 fn runtime(command: &str, args: &[&str]) -> Value {
-    json!({"kind":"runtime","command":command,"args":args,"timeoutMs":20000})
+    json!({"kind":"runtime","command":command,"args":args,"timeout_ms":20000})
 }
 
 impl Fixture {

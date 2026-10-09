@@ -52,7 +52,7 @@ fn check<'a>(report: &'a Value, name: &str) -> &'a Value {
 
 fn verify(state: &Path, repo: &Path, profile: Value, code: i32) -> Value {
     fs::create_dir_all(repo).unwrap();
-    fs::write(repo.join("artifactize.json"), json!({
+    support::declaration::write(repo.join("index.artf"), json!({
         "name":"a", "fingerprint":false, "evals":[{"id":"review", "title":"Review", "payload":{"instruction":"Review"}, "profile":profile}]
     }).to_string()).unwrap();
     // A Human request is recorded and left waiting: the wait times out at once.
@@ -223,7 +223,7 @@ fn doctor_reports_hard_local_errors_and_models_cli_needs_no_run() {
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
-    fs::write(repo.join("artifactize.json"), "invalid").unwrap();
+    support::declaration::write(repo.join("index.artf"), "invalid").unwrap();
     let report = result(doctor(&state, root.path()).arg("--repo").arg(&repo), 1);
     assert_eq!(check(&report, "config")["status"], "FAIL");
     fs::write(&state, "not a directory").unwrap();
@@ -286,7 +286,7 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let waiting_output = state.join("runs").join(id(&waiting)).join("output");
     fs::create_dir_all(&waiting_output).unwrap();
     let before = fs::read(state.join("state.sqlite")).unwrap();
-    let repo_before = fs::read(repo.join("artifactize.json")).unwrap();
+    let repo_before = fs::read(repo.join("index.artf")).unwrap();
     let dry = result(command(&state).args(["prune", "--dry-run"]), 0);
     assert_eq!(dry["removed"], json!([]));
     assert_eq!(dry["wouldRemove"].as_array().unwrap().len(), 6);
@@ -332,10 +332,7 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     assert!(run.join("unknown/keep").exists());
     assert!(run.join("runtime-extra/audit.json").exists());
     assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
-    assert_eq!(
-        fs::read(repo.join("artifactize.json")).unwrap(),
-        repo_before
-    );
+    assert_eq!(fs::read(repo.join("index.artf")).unwrap(), repo_before);
     let shown = result(command(&state).args(["run", "show", &id(&finished)]), 0);
     assert_eq!(shown, finished);
 }
@@ -353,7 +350,7 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
         let error = result(command(&state).args(["prune"]), 2);
         assert!(error["error"].as_str().unwrap().contains("symlink"));
         assert!(output.is_dir());
-        assert!(repo.join("artifactize.json").exists());
+        assert!(repo.join("index.artf").exists());
         remove_link(&link);
     }
     let alias = root.path().join("alias");
@@ -384,7 +381,7 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
     );
     assert!(output.is_dir());
     fs::remove_file(run.join(".git")).unwrap();
-    fs::write(output.join("artifactize.json"), "{}").unwrap();
+    support::declaration::write(output.join("index.artf"), "{}").unwrap();
     assert!(
         result(command(&state).arg("prune"), 2)["error"]
             .as_str()
@@ -405,11 +402,7 @@ fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
     let root = tempfile::tempdir().unwrap();
     let repo = support::os::canonical(root.path()).join("Repo");
     fs::create_dir(&repo).unwrap();
-    fs::write(
-        repo.join("artifactize.json"),
-        r#"{"name":"a","basis":true}"#,
-    )
-    .unwrap();
+    support::declaration::write(repo.join("index.artf"), r#"{"name":"a","basis":true}"#).unwrap();
     for state in [
         repo.join("state"),
         support::os::other_case(&repo).join("state"),
@@ -422,5 +415,87 @@ fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
                 .contains("outside the reviewed repository"),
             "{state:?}: {error}"
         );
+    }
+}
+
+#[test]
+fn prune_preserves_gitless_workspace_copies_with_current_or_legacy_markers() {
+    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path().join("state");
+        let repo = root.path().join("reviewed");
+        let finished = runtime_run(&state, &repo);
+        let copy =
+            Path::new(finished["requests"][0]["runDir"].as_str().unwrap()).join("output/copy");
+        fs::create_dir_all(&copy).unwrap();
+        fs::write(copy.join(marker), "workspace marker").unwrap();
+        fs::write(copy.join("keep.txt"), "owner content").unwrap();
+        for args in [vec!["prune", "--dry-run"], vec!["prune"]] {
+            let error = result(command(&state).args(args), 2);
+            assert!(
+                error["error"]
+                    .as_str()
+                    .unwrap()
+                    .contains("Prune refuses repository content"),
+                "{marker}: {error}"
+            );
+            assert_eq!(
+                fs::read_to_string(copy.join("keep.txt")).unwrap(),
+                "owner content"
+            );
+            assert!(copy.join(marker).exists());
+        }
+    }
+}
+
+#[test]
+fn remote_logout_refuses_credential_state_inside_current_and_legacy_workspaces() {
+    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        fs::write(workspace.join(marker), "workspace marker").unwrap();
+        let state = workspace.join("state");
+        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .arg("--state-dir")
+            .arg(&state)
+            .args(["remote", "logout", "--json"])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{marker}: {output:?}");
+        let error: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert!(
+            error["error"]
+                .as_str()
+                .unwrap()
+                .contains("artifactize workspace"),
+            "{marker}: {error}"
+        );
+        assert!(!state.exists(), "{marker}: credential guard created state");
+    }
+}
+
+#[test]
+fn doctor_never_probes_or_creates_state_inside_current_or_legacy_workspaces() {
+    for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+        let root = tempfile::tempdir().unwrap();
+        let workspace = root.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+        fs::write(workspace.join(marker), "workspace marker").unwrap();
+        let state = workspace.join("state");
+        let report = result(&mut doctor(&state, root.path()), 1);
+        assert_eq!(
+            check(&report, "state")["status"],
+            "FAIL",
+            "{marker}: {report}"
+        );
+        assert!(
+            check(&report, "state")["message"]
+                .as_str()
+                .unwrap()
+                .contains("outside artifactize workspaces"),
+            "{marker}: {report}"
+        );
+        assert!(!state.exists(), "{marker}: doctor created state");
     }
 }

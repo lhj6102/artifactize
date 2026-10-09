@@ -82,15 +82,15 @@ impl Fixture {
 
 fn write_human(path: &Path, fingerprint: bool) {
     fs::create_dir_all(path).unwrap();
-    fs::write(path.join("fingerprint"), "human-v1\n").unwrap();
+    support::declaration::write(path.join("fingerprint"), "human-v1\n").unwrap();
     let mut declaration = json!({
-        "name":"review", "views":{"humanTools":{
+        "name":"review", "views":{"human_tools":{
             "inspect":{"description":"Inspect","kind":"output","command":bin("cat"),"args":["fingerprint"]},
             "fail":{"description":"Fail","kind":"output","command":bin("false"),"args":[]}
-        },"agentTools":{"read":{"builtin":"read"}}},
+        },"agent_tools":{"read":{"builtin":"read"}}},
         "evals":[{"id":"check","title":"Human check","profile":{"kind":"human"},"payload":{"instruction":"Review."},
-            "passSchema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
-            "failSchema":{"type":"object","properties":{"reason":{"type":"string","minLength":1}},"required":["reason"],"additionalProperties":false}
+            "pass_schema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
+            "fail_schema":{"type":"object","properties":{"reason":{"type":"string","minLength":1}},"required":["reason"],"additionalProperties":false}
         }]
     });
     if fingerprint {
@@ -99,7 +99,7 @@ fn write_human(path: &Path, fingerprint: bool) {
     } else {
         declaration["fingerprint"] = json!(false);
     }
-    fs::write(path.join("artifactize.json"), declaration.to_string()).unwrap();
+    support::declaration::write(path.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 /// Options that record Human requests and return at once instead of waiting for them.
@@ -347,8 +347,8 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
     let receipts = fixture.receipts().await;
     human::claim(&receipts, id, "alice").await.unwrap();
     fs::create_dir(fixture.repo.join("child")).unwrap();
-    fs::write(
-        fixture.repo.join("child/artifactize.json"),
+    support::declaration::write(
+        fixture.repo.join("child/index.artf"),
         r#"{"name":"child","basis":true}"#,
     )
     .unwrap();
@@ -369,7 +369,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
             .await
             .is_err()
     );
-    fs::remove_file(fixture.repo.join("child/artifactize.json")).unwrap();
+    fs::remove_file(fixture.repo.join("child/index.artf")).unwrap();
     human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
         .await
         .unwrap();
@@ -379,7 +379,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
 async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     let fixture = Fixture::new(false);
     write_human(&fixture.repo.join("child"), true);
-    fs::write(fixture.repo.join("artifactize.json"), json!({"name":"parent","evals":[{"id":"test","title":"Dependent","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Check child."}}]}).to_string()).unwrap();
+    support::declaration::write(fixture.repo.join("index.artf"), json!({"name":"parent","evals":[{"id":"test","title":"Dependent","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Check child."}}]}).to_string()).unwrap();
     let run = fixture.verify(returning()).await;
     assert_eq!(run.run.status.as_str(), "INCOMPLETE");
     let waiting = run
@@ -661,10 +661,10 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
 #[tokio::test]
 async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() {
     let fixture = Fixture::new(false);
-    let path = fixture.repo.join("artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let path = fixture.repo.join("index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     declaration.as_object_mut().unwrap().remove("fingerprint");
-    fs::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&path, declaration.to_string()).unwrap();
     let run = fixture.verify(returning()).await;
     assert!(
         run.requests[0]
@@ -737,19 +737,19 @@ async fn fingerprint_false_results_are_not_reused_by_a_new_verify() {
 #[tokio::test]
 async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     let fixture = Fixture::new(true);
-    let path = fixture.repo.join("artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let path = fixture.repo.join("index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     let mut same = declaration["evals"][0].clone();
     same["id"] = json!("same");
     same["title"] = json!("Same criteria");
     let mut different = same.clone();
-    different["id"] = json!("different");
-    different["passSchema"]["properties"]["approved"]["const"] = json!(false);
+    different["id"] = json!("zz-different");
+    different["pass_schema"]["properties"]["approved"]["const"] = json!(false);
     declaration["evals"]
         .as_array_mut()
         .unwrap()
         .extend([same, different]);
-    fs::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(path, declaration.to_string()).unwrap();
     let run = fixture.verify(returning()).await;
     assert_eq!(run.requests[0].execution_id, run.requests[1].execution_id);
     assert_eq!(run.requests[0].eval_def_hash, run.requests[1].eval_def_hash);
@@ -840,10 +840,10 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
 #[tokio::test]
 async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
     let fixture = Fixture::new(true);
-    let path = fixture.repo.join("artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    declaration["evals"][0]["profileVariants"] = json!({"lead":{"kind":"human"}});
-    fs::write(&path, declaration.to_string()).unwrap();
+    let path = fixture.repo.join("index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    declaration["evals"][0]["profile_variants"] = json!({"lead":{"kind":"human"}});
+    support::declaration::write(&path, declaration.to_string()).unwrap();
     let run = fixture
         .verify(VerifyOptions {
             profile: Some(project::selection::ProfileSelection::Named("lead".into())),

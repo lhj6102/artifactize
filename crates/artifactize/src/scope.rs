@@ -417,16 +417,27 @@ pub fn resolve_argv(
 pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError> {
     let mut relations = Vec::new();
     for (id, artifact) in &config.artifacts {
-        let error = |message: String| {
-            ConfigError::new(config.root.join(&artifact.path).join(CONFIG_FILE), message)
+        let error = |keys: &[&str], message: String| {
+            ConfigError::declaration(
+                config.root.join(&artifact.path).join(CONFIG_FILE),
+                keys,
+                message,
+            )
         };
         if let Some(Fingerprint::Script { args, .. }) = &artifact.fingerprint {
             for argument in args {
-                if let Some(reference) = argument_reference(argument)
-                    .map_err(|failure| error(format!("fingerprint.script: {failure}")))?
-                {
-                    reference_target(config, id, reference.name)
-                        .map_err(|failure| error(format!("fingerprint.script: {failure}")))?;
+                if let Some(reference) = argument_reference(argument).map_err(|failure| {
+                    error(
+                        &["fingerprint", "script", "args"],
+                        format!("fingerprint.script: {failure}"),
+                    )
+                })? {
+                    reference_target(config, id, reference.name).map_err(|failure| {
+                        error(
+                            &["fingerprint", "script", "args"],
+                            format!("fingerprint.script: {failure}"),
+                        )
+                    })?;
                 }
             }
         }
@@ -439,19 +450,26 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         }
         for (alias, source) in &artifact.mounts {
             if !config.artifacts.contains_key(source) {
-                return Err(error(format!("Unknown mount target {source} in {id}.")));
+                return Err(error(
+                    &["mounts", alias],
+                    format!("Unknown mount target {source} in {id}."),
+                ));
             }
             if config.artifacts.contains_key(alias) && alias != source {
-                return Err(error(format!("Ambiguous mount alias {alias} in {id}.")));
+                return Err(error(
+                    &["mounts", alias],
+                    format!("Ambiguous mount alias {alias} in {id}."),
+                ));
             }
             match fs::symlink_metadata(config.root.join(&artifact.path).join(alias)) {
                 Ok(_) => {
-                    return Err(error(format!(
-                        "Mount {id}/{alias} conflicts with a physical entry."
-                    )));
+                    return Err(error(
+                        &["mounts", alias],
+                        format!("Mount {id}/{alias} conflicts with a physical entry."),
+                    ));
                 }
                 Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => {}
-                Err(failure) => return Err(error(failure.to_string())),
+                Err(failure) => return Err(error(&["mounts", alias], failure.to_string())),
             }
             relations.push(Relation {
                 source: source.clone(),
@@ -467,13 +485,20 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             continue;
         };
         let error = |message: String| {
-            ConfigError::new(
+            ConfigError::declaration(
                 config.root.join(&artifact.path).join(CONFIG_FILE),
+                &["fingerprint", "files"],
                 format!("fingerprint.files: {message}"),
             )
         };
         let scope = artifact_scope(config, &[id]).map_err(|failure| error(failure.0))?;
         for input in inputs.iter().filter(|input| *input != ".") {
+            if input.ends_with(".artf")
+                && !fs::symlink_metadata(config.root.join(&artifact.path).join(input))
+                    .is_ok_and(|metadata| metadata.is_dir())
+            {
+                return Err(error("Artifact declarations (*.artf) cannot be explicit artifactsum inputs; declarations are excluded from artifactsum.".into()));
+            }
             let location = scope
                 .resolve_path(id, input)
                 .map_err(|failure| error(failure.0))?;
@@ -487,12 +512,15 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
     }
     let mut resolved = Vec::new();
     for eval in &config.evals {
-        let error = |failure: ScopeError| {
-            ConfigError::new(
+        let error = |field: &[&str], failure: ScopeError| {
+            let mut keys = vec!["evals", &eval.declaration.id];
+            keys.extend_from_slice(field);
+            ConfigError::declaration(
                 config
                     .root
                     .join(&config.artifacts[&eval.target].path)
                     .join(CONFIG_FILE),
+                &keys,
                 format!("Eval {}: {failure}", eval.id),
             )
         };
@@ -500,16 +528,22 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         let mut deps = BTreeSet::new();
         if let Profile::Dependency { depends_on } = &eval.declaration.profile {
             for name in depends_on {
-                let source = reference_target(config, &eval.target, name).map_err(error)?;
+                let source = reference_target(config, &eval.target, name)
+                    .map_err(|failure| error(&["profile", "depends_on"], failure))?;
                 if source == eval.target {
-                    return Err(error(ScopeError(
-                        "Dependency Evals cannot depend on their own Artifact.".into(),
-                    )));
+                    return Err(error(
+                        &["profile", "depends_on"],
+                        ScopeError("Dependency Evals cannot depend on their own Artifact.".into()),
+                    ));
                 }
                 if !deps.insert(source.to_owned()) {
-                    return Err(error(ScopeError(
-                        "Dependency profile dependsOn must resolve to unique Artifacts.".into(),
-                    )));
+                    return Err(error(
+                        &["profile", "depends_on"],
+                        ScopeError(
+                            "Dependency profile depends_on must resolve to unique Artifacts."
+                                .into(),
+                        ),
+                    ));
                 }
                 relations.push(Relation {
                     source: source.to_owned(),
@@ -528,7 +562,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             .into_iter()
             .flat_map(|payload| instruction_references(&payload.instruction))
         {
-            let source = reference_target(config, &eval.target, name).map_err(error)?;
+            let source = reference_target(config, &eval.target, name)
+                .map_err(|failure| error(&["payload", "instruction"], failure))?;
             references.insert(name.to_owned(), source.to_owned());
             if source != eval.target {
                 deps.insert(source.to_owned());
@@ -544,11 +579,13 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         }
         if let Profile::Runtime { args, .. } = &eval.declaration.profile {
             for (index, argument) in args.iter().enumerate() {
-                let Some(reference) = argument_reference(argument).map_err(error)? else {
+                let Some(reference) = argument_reference(argument)
+                    .map_err(|failure| error(&["profile", "args"], failure))?
+                else {
                     continue;
                 };
-                let source =
-                    reference_target(config, &eval.target, reference.name).map_err(error)?;
+                let source = reference_target(config, &eval.target, reference.name)
+                    .map_err(|failure| error(&["profile", "args"], failure))?;
                 if source != eval.target {
                     deps.insert(source.to_owned());
                     relations.push(Relation {

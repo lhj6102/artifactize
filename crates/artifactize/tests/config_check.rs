@@ -31,7 +31,7 @@ impl Fixture {
     fn write(&self, path: &str, contents: &str) {
         let path = self.0.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, contents).unwrap();
+        support::declaration::write(path, contents).unwrap();
     }
 
     fn command(&self) -> Command {
@@ -61,12 +61,12 @@ fn json_output(output: &Output) -> Value {
 #[test]
 fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs() {
     let fixture = Fixture::new();
-    fixture.write("input/artifactize.json", r#"{"name":"input"}"#);
+    fixture.write("input/index.artf", r#"{"name":"input"}"#);
     let mut declaration = json!({"name":"review","mounts":{"source":"input"},"evals":[{
         "id":"run","title":"Run","profile":{"kind":"runtime","command":"missing-command","args":["{source}/missing-file"]},
         "payload":{"instruction":"Read {source}."}
     }]});
-    fixture.write("review/artifactize.json", &declaration.to_string());
+    fixture.write("review/index.artf", &declaration.to_string());
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
@@ -78,7 +78,7 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
         json!({"ok":true,"artifacts":2,"evals":1})
     );
     declaration["evals"][0]["payload"]["instruction"] = json!("Unknown {missing}.");
-    fixture.write("review/artifactize.json", &declaration.to_string());
+    fixture.write("review/index.artf", &declaration.to_string());
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
@@ -86,12 +86,12 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-    assert!(error.contains(&native("review/artifactize.json")));
+    assert!(error.contains(&native("review/index.artf")));
     assert!(error.contains("review/run"));
     assert!(error.contains("Unknown Artifact reference {missing}"));
     declaration["evals"][0]["payload"]["instruction"] = json!("Inspect.");
     declaration["evals"][0]["profile"]["args"] = json!(["{missing}/file"]);
-    fixture.write("review/artifactize.json", &declaration.to_string());
+    fixture.write("review/index.artf", &declaration.to_string());
     let output = fixture
         .command()
         .args(["config", "check", "--json"])
@@ -105,7 +105,7 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
             .contains("Unknown Artifact reference {missing}")
     );
     declaration["mounts"]["source"] = json!("missing");
-    fixture.write("review/artifactize.json", &declaration.to_string());
+    fixture.write("review/index.artf", &declaration.to_string());
     let output = fixture
         .command()
         .args(["config", "check"])
@@ -119,11 +119,11 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
 
 #[test]
 fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
-    let shape = r#"was renamed to fingerprint: use "fingerprint": {"files": ["."], "ignore": []} or "fingerprint": {"script": {...}}."#;
+    let shape = r#"was renamed to fingerprint: use fingerprint = { files = ["."], ignore = [] } or [fingerprint.script]."#;
     for (key, value) in [
-        ("staleKey", json!({"content":{"inputs":["."]}})),
+        ("stale_key", json!({"content":{"inputs":["."]}})),
         (
-            "staleKey",
+            "stale_key",
             json!({"script":{"command":"./hash.sh","args":[]}}),
         ),
         ("stale", json!({"kind":"content"})),
@@ -131,7 +131,7 @@ fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
         let fixture = Fixture::new();
         let mut declaration = json!({"name":"app"});
         declaration[key] = value;
-        fixture.write("app/artifactize.json", &declaration.to_string());
+        fixture.write("app/index.artf", &declaration.to_string());
         let output = fixture
             .command()
             .args(["config", "check", "--json"])
@@ -139,7 +139,7 @@ fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-        assert!(error.contains(&native("app/artifactize.json")), "{error}");
+        assert!(error.contains(&native("app/index.artf")), "{error}");
         assert!(error.ends_with(&format!(": {key} {shape}")), "{error}");
         let output = fixture
             .command()
@@ -157,15 +157,14 @@ fn config_check_rejects_removed_family_declarations_without_opening_instance_lis
     for value in [
         json!({"instances":"missing.json"}),
         json!({"instances":{"one":{}}}),
-        Value::Null,
         json!(false),
     ] {
         let fixture = Fixture::new();
         fixture.write(
-            "app/artifactize.json",
+            "app/index.artf",
             &json!({"name":"app","family":value}).to_string(),
         );
-        fixture.write("app/nested/artifactize.json", r#"{"name":"nested"}"#);
+        fixture.write("app/nested/index.artf", r#"{"name":"nested"}"#);
         let output = fixture
             .command()
             .args(["config", "check", "--json"])
@@ -173,7 +172,7 @@ fn config_check_rejects_removed_family_declarations_without_opening_instance_lis
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-        assert!(error.contains(&native("app/artifactize.json")), "{error}");
+        assert!(error.contains(&native("app/index.artf")), "{error}");
         assert!(error.ends_with(message), "{error}");
         let output = fixture
             .command()
@@ -191,24 +190,24 @@ fn config_check_rejects_removed_family_declarations_without_opening_instance_lis
 fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     let fixture = Fixture::new();
     fixture.write(
-        "input/artifactize.json",
-        include_str!("fixtures/declarations/input/artifactize.json"),
+        "input/index.artf",
+        include_str!("fixtures/declarations/input/index.artf"),
     );
     fixture.write(
-        "review/artifactize.json",
-        include_str!("fixtures/declarations/review/artifactize.json"),
+        "review/index.artf",
+        include_str!("fixtures/declarations/review/index.artf"),
     );
     fixture.write(
         "review/hook.sh",
         include_str!("fixtures/declarations/review/hook.sh"),
     );
     fixture.write(
-        "unreviewed/artifactize.json",
-        include_str!("fixtures/declarations/unreviewed/artifactize.json"),
+        "unreviewed/index.artf",
+        include_str!("fixtures/declarations/unreviewed/index.artf"),
     );
     support::os::make_executable(&fixture.0.join("review/hook.sh"));
-    fixture.write(".git/ignored/artifactize.json", "not JSON");
-    fixture.write("node_modules/ignored/artifactize.json", "not JSON");
+    fixture.write(".git/ignored/index.artf", "not JSON");
+    fixture.write("node_modules/ignored/index.artf", "not JSON");
     fixture.write("other.json", "other names are not configuration");
     // Discovery never enters a linked folder; a junction needs no privilege on Windows.
     #[cfg(unix)]
@@ -268,11 +267,11 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
             .iter()
             .map(|eval| eval.id.as_str())
             .collect::<Vec<_>>(),
-        ["review/runtime", "review/agent", "review/human"]
+        ["review/agent", "review/human", "review/runtime"]
     );
     assert_eq!(config.artifacts["review"].path, Path::new("review"));
     assert_eq!(
-        config.evals[0]
+        config.evals[2]
             .declaration
             .payload
             .as_ref()
@@ -281,10 +280,10 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
         "Check {source}."
     );
 
-    fixture.write("other/artifactize.json", r#"{"name":"other","evals":[{"id":"runtime","title":"Other","profile":{"kind":"human"},"payload":{"instruction":"Inspect"}}]}"#);
+    fixture.write("other/index.artf", r#"{"name":"other","evals":[{"id":"runtime","title":"Other","profile":{"kind":"human"},"payload":{"instruction":"Inspect"}}]}"#);
     let config = read_workspace_config(&fixture.0).unwrap();
     assert_eq!(config.evals[0].id, "other/runtime");
-    fixture.write("other/artifactize.json", r#"{"name":"review"}"#);
+    fixture.write("other/index.artf", r#"{"name":"review"}"#);
     let output = fixture
         .command()
         .args(["--json", "config", "check"])
@@ -306,20 +305,17 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     assert!(output.stdout.is_empty());
     assert!(String::from_utf8_lossy(&output.stderr).contains("Duplicate Artifact name"));
 
-    fixture.write(
-        "other/artifactize.json",
-        r#"{"name":"other","reviewPolicy":{}}"#,
-    );
+    fixture.write("other/index.artf", r#"{"name":"other","review_policy":{}}"#);
     assert!(
         read_workspace_config(&fixture.0)
             .unwrap_err()
             .to_string()
             .contains("repository root")
     );
-    fs::remove_file(fixture.0.join("other/artifactize.json")).unwrap();
+    fs::remove_file(fixture.0.join("other/index.artf")).unwrap();
     if support::os::symlink_file(
-        fixture.0.join("input/artifactize.json"),
-        fixture.0.join("other/artifactize.json"),
+        fixture.0.join("input/index.artf"),
+        fixture.0.join("other/index.artf"),
     )
     .is_some()
     {
@@ -329,9 +325,9 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
                 .to_string()
                 .contains("regular file")
         );
-        fs::remove_file(fixture.0.join("other/artifactize.json")).unwrap();
+        fs::remove_file(fixture.0.join("other/index.artf")).unwrap();
     }
-    fs::create_dir(fixture.0.join("other/artifactize.json")).unwrap();
+    fs::create_dir(fixture.0.join("other/index.artf")).unwrap();
     assert!(
         read_workspace_config(&fixture.0)
             .unwrap_err()
@@ -350,7 +346,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
         json_output(&output)["error"]
             .as_str()
             .unwrap()
-            .contains("at least one artifactize.json")
+            .contains("at least one index.artf")
     );
     let output = empty
         .command()
@@ -374,9 +370,9 @@ fn config_check_names_the_replacements_for_removed_backends() {
         for (profile, variants) in [(agent.clone(), json!({})), (openai, json!({"old":agent}))] {
             let fixture = Fixture::new();
             fixture.write(
-                "app/artifactize.json",
+                "app/index.artf",
                 &json!({"name":"app","evals":[{
-                    "id":"review","title":"Review","profile":profile,"profileVariants":variants,
+                    "id":"review","title":"Review","profile":profile,"profile_variants":variants,
                     "payload":{"instruction":"Review."}
                 }]})
                 .to_string(),
@@ -388,7 +384,7 @@ fn config_check_names_the_replacements_for_removed_backends() {
                 .unwrap();
             assert_eq!(output.status.code(), Some(2));
             let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-            assert!(error.contains(&native("app/artifactize.json")), "{error}");
+            assert!(error.contains(&native("app/index.artf")), "{error}");
             assert!(
                 error.contains(&format!(
                     r#"backend "{backend}" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex""#
@@ -403,12 +399,12 @@ fn config_check_names_the_replacements_for_removed_backends() {
 fn config_check_names_the_removal_of_result_check() {
     let fixture = Fixture::new();
     fixture.write(
-        "app/artifactize.json",
+        "app/index.artf",
         &json!({"name":"app","evals":[{
             "id":"review","title":"Review",
             "profile":{"kind":"agent","backend":"openai","model":"m"},
             "payload":{"instruction":"Review."},
-            "resultCheck":{"command":"python3","args":["check.py"]}
+            "result_check":{"command":"python3","args":["check.py"]}
         }]})
         .to_string(),
     );
@@ -419,25 +415,25 @@ fn config_check_names_the_removal_of_result_check() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-    assert!(error.contains(&native("app/artifactize.json")), "{error}");
+    assert!(error.contains(&native("app/index.artf")), "{error}");
     assert!(
-        error.contains("Eval review: resultCheck was removed in 0.6.0"),
+        error.contains("Eval review: result_check was removed in 0.6.0"),
         "{error}"
     );
 }
 
 #[test]
-fn artifactizeignore_keeps_folders_out_of_discovery() {
+fn artfignore_keeps_folders_out_of_discovery() {
     let fixture = Fixture::new();
-    fixture.write("app/artifactize.json", r#"{"name":"app"}"#);
+    fixture.write("app/index.artf", r#"{"name":"app"}"#);
     // A test fixture that reuses app's name would break discovery.
-    fixture.write("app/tests/fixtures/artifactize.json", r#"{"name":"app"}"#);
-    fixture.write("examples/demo/artifactize.json", r#"{"name":"demo"}"#);
+    fixture.write("app/tests/fixtures/index.artf", r#"{"name":"app"}"#);
+    fixture.write("examples/demo/index.artf", r#"{"name":"demo"}"#);
     let error = read_workspace_config(&fixture.0).unwrap_err().to_string();
     assert!(error.contains("Duplicate Artifact name: app"), "{error}");
 
     fixture.write(
-        ".artifactizeignore",
+        ".artfignore",
         "# fixtures and examples\napp/tests/\nexamples/\n",
     );
     let config = read_workspace_config(&fixture.0).unwrap();

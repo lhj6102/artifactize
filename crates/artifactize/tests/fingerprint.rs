@@ -34,7 +34,7 @@ impl Fixture {
     fn write(&self, path: &str, value: Value) {
         let path = self.repo.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, value.to_string()).unwrap();
+        support::declaration::write(path, value.to_string()).unwrap();
     }
 
     fn command(&self) -> Command {
@@ -111,7 +111,7 @@ fn exact_output_is_validated_before_any_review_can_start() {
         &[b'x'; 129],
     ] {
         fs::write(fixture.repo.join("key"), bytes).unwrap();
-        fixture.write("artifactize.json", json!({"name":"test","fingerprint":fingerprint("cat key"),"evals":[eval("check", "touch executed")]}));
+        fixture.write("index.artf", json!({"name":"test","fingerprint":fingerprint("cat key"),"evals":[eval("check", "touch executed")]}));
         let error = fixture.verify(&["--all"], 2);
         assert!(
             error["error"].as_str().unwrap().contains("Artifact test"),
@@ -170,7 +170,7 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
         #[cfg(unix)]
         (fingerprint("kill -TERM $$"), "exited with"),
         (
-            json!({"script":{"command":bin("/bin/sleep"),"args":["30"],"timeoutMs":50}}),
+            json!({"script":{"command":bin("/bin/sleep"),"args":["30"],"timeout_ms":50}}),
             "timed out",
         ),
         (
@@ -194,7 +194,7 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
     .chain(links)
     {
         fixture.write(
-            "artifactize.json",
+            "index.artf",
             json!({"name":"test","fingerprint":declared,"evals":[eval("check","touch executed")]}),
         );
         let error = fixture.verify(&["--all"], 2);
@@ -239,10 +239,10 @@ print('protocol:v1')
         json!("$HOME; ../literal $(touch executed)"),
         json!("{test}/key"),
     ]);
-    fixture.write("owner/artifactize.json", json!({"name":"test","fingerprint":{"script":{"command":command,"args":args,"files":["key"]}},"evals":[eval("one","exit 0"),eval("two","exit 3")]}));
+    fixture.write("owner/index.artf", json!({"name":"test","fingerprint":{"script":{"command":command,"args":args,"files":["key"]}},"evals":[eval("one","exit 0"),eval("two","exit 3")]}));
     fs::write(fixture.repo.join("owner/key"), "material").unwrap();
     let path = fixture.repo.join("owner/fingerprint.py");
-    fs::write(&path, script).unwrap();
+    support::declaration::write(&path, script).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -295,7 +295,7 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
         let mut declared = fingerprint("cat key");
         declared["script"]["files"] = json!(["key"]);
         fixture.write(
-            "artifactize.json",
+            "index.artf",
             json!({"name":"test","fingerprint":declared,"evals":[eval("check",review)]}),
         );
         let run = fixture.verify(&["--all"], 2);
@@ -321,7 +321,7 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
         );
     }
     fixture.write(
-        "artifactize.json",
+        "index.artf",
         json!({"name":"test","fingerprint":false,"evals":[eval("check","printf after > key")]}),
     );
     let run = fixture.verify(&["--all"], 0);
@@ -335,14 +335,14 @@ fn preparation_covers_only_required_artifacts_but_includes_unselected_dependenci
     let mut selected = eval("check", "exit 0");
     selected["payload"]["instruction"] = json!("Check {dependency}.");
     fixture.write(
-        "a/artifactize.json",
+        "a/index.artf",
         json!({"name":"selected","fingerprint":false,"evals":[selected]}),
     );
     fixture.write(
-        "b/artifactize.json",
+        "b/index.artf",
         json!({"name":"dependency","basis":true,"fingerprint":fingerprint("printf dependency:v1")}),
     );
-    fixture.write("c/artifactize.json", json!({"name":"unrelated","fingerprint":fingerprint("exit 9"),"evals":[eval("check","touch executed")]}));
+    fixture.write("c/index.artf", json!({"name":"unrelated","fingerprint":fingerprint("exit 9"),"evals":[eval("check","touch executed")]}));
     let run = fixture.verify(&["--eval", "selected/check"], 0);
     assert_eq!(run["requests"].as_array().unwrap().len(), 1);
     assert!(run["requests"][0]["fingerprint"].is_null());
@@ -353,7 +353,7 @@ fn preparation_covers_only_required_artifacts_but_includes_unselected_dependenci
         "dependency:v1"
     );
     fixture.write(
-        "b/artifactize.json",
+        "b/index.artf",
         json!({"name":"dependency","basis":true,"fingerprint":fingerprint("exit 9")}),
     );
     let error = fixture.verify(&["--eval", "selected/check"], 2);
@@ -375,7 +375,7 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
             if recheck { "test -e executed" } else { "true" },
             marker.display()
         );
-        fixture.write("artifactize.json", json!({"name":"test","fingerprint":fingerprint(&source),"evals":[eval("check","touch executed")]}));
+        fixture.write("index.artf", json!({"name":"test","fingerprint":fingerprint(&source),"evals":[eval("check","touch executed")]}));
         let child = fixture
             .command()
             .args(["verify", "--all", "--json"])
@@ -436,7 +436,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     .unwrap();
     // Every Artifact an eval names needs a fingerprint for the eval to have a reuse key.
     fixture.write(
-        "core/artifactize.json",
+        "core/index.artf",
         json!({"name":"core","basis":true,"fingerprint":{}}),
     );
     fs::write(fixture.repo.join("core/lib.txt"), "v1").unwrap();
@@ -448,7 +448,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
             "evals":[{"id":"tests","title":"Tests","profile":{"kind":"runtime","command":"python3","args":["-B","test_api.py",reference]},"payload":{"instruction":"Run the API tests."}}]
         })
     };
-    fixture.write("api/artifactize.json", api("{core}", json!({})));
+    fixture.write("api/index.artf", api("{core}", json!({})));
     fs::write(
         fixture.repo.join("api/test_api.py"),
         "import pathlib, sys\nassert (pathlib.Path(sys.argv[1]) / 'lib.txt').is_file()\n",
@@ -479,7 +479,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     assert_eq!(second["executionsStarted"], 1);
 
     // Mount aliases keep working.
-    fixture.write("api/artifactize.json", api("{lib}", json!({"lib":"core"})));
+    fixture.write("api/index.artf", api("{lib}", json!({"lib":"core"})));
     assert_eq!(run(&["config", "check"]).0, Some(0));
     fixture.verify(&["--all"], 0);
 
@@ -488,7 +488,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
         ("{missing}", "Unknown Artifact reference {missing}"),
         ("{core}/../api", "safe relative logical path"),
     ] {
-        fixture.write("api/artifactize.json", api(reference, json!({})));
+        fixture.write("api/index.artf", api(reference, json!({})));
         for command in [&["config", "check"][..], &["status"]] {
             let (code, _, stderr) = run(command);
             assert_eq!(code, Some(2), "{command:?} {reference}: {stderr}");
@@ -509,7 +509,7 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
     for index in 0..8 {
         let name = format!("part{index}");
         fixture.write(
-            &format!("{name}/artifactize.json"),
+            &format!("{name}/index.artf"),
             json!({"name":name,
                 "fingerprint":{"script":{"command":bin("/bin/sh"),"args":["-c",script,"sh",name,markers]}},
                 "evals":[eval("check", "exit 0")]}),
@@ -582,7 +582,7 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
         ("gamma", "exit 4"),
     ] {
         fixture.write(
-            &format!("{name}/artifactize.json"),
+            &format!("{name}/index.artf"),
             json!({"name":name,"fingerprint":fingerprint(&format!("touch '{}.{name}'; {script}", started.display())),
                 "evals":[eval("check", "touch executed")]}),
         );

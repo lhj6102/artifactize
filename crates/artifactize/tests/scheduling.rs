@@ -24,8 +24,8 @@ impl Fixture {
         let root = tempfile::tempdir().unwrap();
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
-        fs::write(
-            repo.join("artifactize.json"),
+        support::declaration::write(
+            repo.join("index.artf"),
             json!({"name":"test","fingerprint":false,"evals":evals}).to_string(),
         )
         .unwrap();
@@ -71,7 +71,7 @@ impl Fixture {
 }
 
 fn eval(id: &str, script: &str) -> Value {
-    json!({"id":id,"title":"Check","profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script,"sh",id],"timeoutMs":10000},"payload":{"instruction":"Check."}})
+    json!({"id":id,"title":"Check","profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script,"sh",id],"timeout_ms":10000},"payload":{"instruction":"Check."}})
 }
 
 fn wait_until(mut condition: impl FnMut() -> bool) {
@@ -114,7 +114,7 @@ fn signal(child: &Child, signal: &str) {
 
 #[test]
 fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
-    let fixture = Fixture::new(vec![eval("slow", SLOW), eval("over-budget", "true")]);
+    let fixture = Fixture::new(vec![eval("slow", SLOW), eval("zz-over-budget", "true")]);
     let child = fixture.spawn(&["--jobs", "2", "--max-executions", "1"]);
     wait_until(|| fixture.starts().len() == 1 && fixture.state.join("state.sqlite").exists());
     let database = Connection::open(fixture.state.join("state.sqlite")).unwrap();
@@ -201,8 +201,8 @@ fn independent_evals_fill_jobs_without_exceeding_them_and_default_to_four() {
 #[test]
 fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() {
     let fixture = Fixture::new(vec![]);
-    fs::write(
-        fixture.repo.join("artifactize.json"),
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
         r#"{"name":"root","basis":true}"#,
     )
     .unwrap();
@@ -223,8 +223,8 @@ fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() 
         fs::create_dir(&folder).unwrap();
         let mut check = eval("check", script);
         check["payload"]["instruction"] = json!(instruction);
-        fs::write(
-            folder.join("artifactize.json"),
+        support::declaration::write(
+            folder.join("index.artf"),
             json!({"name":name,"fingerprint":false,"evals":[check]}).to_string(),
         )
         .unwrap();
@@ -378,8 +378,8 @@ fn invalid_limits_fail_without_creating_state() {
 #[test]
 fn budget_is_rechecked_when_a_dependency_makes_an_eval_ready() {
     let fixture = Fixture::new(vec![]);
-    fs::write(
-        fixture.repo.join("artifactize.json"),
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
         r#"{"name":"root","basis":true}"#,
     )
     .unwrap();
@@ -390,8 +390,8 @@ fn budget_is_rechecked_when_a_dependency_makes_an_eval_ready() {
         if name == "consumer" {
             check["payload"]["instruction"] = json!("Check {dependency}.");
         }
-        fs::write(
-            folder.join("artifactize.json"),
+        support::declaration::write(
+            folder.join("index.artf"),
             json!({"name":name,"fingerprint":false,"evals":[check]}).to_string(),
         )
         .unwrap();

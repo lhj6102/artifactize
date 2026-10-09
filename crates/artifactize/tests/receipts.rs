@@ -172,8 +172,8 @@ async fn repositories_share_one_state_database() {
     fs::create_dir(&first).unwrap();
     fs::create_dir(&second).unwrap();
     for (repo, name) in [(&first, "first"), (&second, "second")] {
-        fs::write(
-            repo.join("artifactize.json"),
+        support::declaration::write(
+            repo.join("index.artf"),
             format!(r#"{{"name":"{name}","basis":true}}"#),
         )
         .unwrap();
@@ -268,11 +268,8 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     let root = tempfile::tempdir().unwrap();
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
-    fs::write(
-        repo.join("artifactize.json"),
-        r#"{"name":"basis","basis":true}"#,
-    )
-    .unwrap();
+    support::declaration::write(repo.join("index.artf"), r#"{"name":"basis","basis":true}"#)
+        .unwrap();
     link_dir(&repo, &root.path().join("alias"));
     let inner = repo.join("inner");
     fs::create_dir(&inner).unwrap();

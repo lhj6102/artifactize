@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::{CONFIG_FILE, RepoConfig},
+    config::RepoConfig,
     platform::{self, FileKind},
     process, scope,
 };
@@ -122,8 +122,7 @@ impl Walk {
             .to_str()
             .ok_or("Artifact paths must be UTF-8.")?
             .to_owned();
-        let mut excluded = BTreeSet::from([CONFIG_FILE.to_owned()]);
-        excluded.extend(artifact.children.keys().cloned());
+        let excluded = artifact.children.keys().cloned().collect();
         let inputs: Vec<_> = inputs
             .iter()
             .map(|input| {
@@ -153,7 +152,7 @@ impl Walk {
             if file.metadata().map_err(|e| e.to_string())?.is_dir() {
                 let mut gitignores = self.ancestors(input)?;
                 self.directory(&file, input, &mut gitignores, &mut state, cancellation)?;
-            } else {
+            } else if !input.ends_with(".artf") {
                 hash_file(file, input, &mut state)?;
             }
         }
@@ -201,7 +200,10 @@ impl Walk {
                 return Err(process::Error::Cancelled.to_string());
             }
             let child = join(path, &name);
-            if self.excluded.contains(&child) || self.ignored(&child, is_dir, gitignores) {
+            if (!is_dir && name.ends_with(".artf"))
+                || self.excluded.contains(&child)
+                || self.ignored(&child, is_dir, gitignores)
+            {
                 continue;
             }
             state.entries += 1;

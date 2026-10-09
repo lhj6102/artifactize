@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
+mod location;
 mod stored;
 mod tools;
 pub(crate) mod validation;
@@ -17,16 +18,17 @@ pub use tools::{
     AgentTool, Builtin, BuiltinTool, CommandTool, HumanTool, HumanToolKind, ToolProtocol,
 };
 
+use location::Location;
 pub(crate) use validation::identifier;
 use validation::{path, paths, positive_integer, present, script, tags, text, timeout};
 
 /// Format version for artifactize configuration documents.
 pub const CONFIG_FORMAT_VERSION: u32 = 1;
-pub const CONFIG_FILE: &str = "artifactize.json";
+pub const CONFIG_FILE: &str = "index.artf";
 /// Gitignore-style folder patterns, at the workspace root, that discovery skips.
 /// Bound named variants and declared input lists to keep discovery and preparation finite.
 const MAX_DECLARED_ITEMS: usize = 64;
-pub const IGNORE_FILE: &str = ".artifactizeignore";
+pub const IGNORE_FILE: &str = ".artfignore";
 
 #[derive(Debug, Error)]
 #[error("{path}: {message}")]
@@ -41,6 +43,20 @@ impl ConfigError {
             path: path.into(),
             message: message.to_string(),
         }
+    }
+
+    /// Position cross-Artifact validation failures at their declaration's typed key.
+    pub(crate) fn declaration(
+        path: impl Into<PathBuf>,
+        keys: &[&str],
+        message: impl ToString,
+    ) -> Self {
+        let path = path.into();
+        let message = message.to_string();
+        let message = fs::read_to_string(&path).map_or(message.clone(), |source| {
+            location::error_at(&source, keys, &message)
+        });
+        Self { path, message }
     }
 }
 
@@ -114,31 +130,35 @@ pub enum Profile {
         #[serde(default, deserialize_with = "present")]
         reasoning: Option<String>,
         #[serde(
-            rename = "timeoutMs",
+            rename(serialize = "timeoutMs", deserialize = "timeout_ms"),
             default,
             deserialize_with = "timeout",
             serialize_with = "validation::milliseconds::serialize"
         )]
         timeout_ms: Option<std::time::Duration>,
         #[serde(
-            rename = "maxToolCalls",
+            rename(serialize = "maxToolCalls", deserialize = "max_tool_calls"),
             default,
             deserialize_with = "positive_integer"
         )]
         max_tool_calls: Option<u64>,
-        #[serde(rename = "maxTokens", default, deserialize_with = "positive_integer")]
+        #[serde(
+            rename(serialize = "maxTokens", deserialize = "max_tokens"),
+            default,
+            deserialize_with = "positive_integer"
+        )]
         max_tokens: Option<u64>,
     },
     Human {},
     Dependency {
-        #[serde(rename = "dependsOn")]
+        #[serde(rename(serialize = "dependsOn", deserialize = "depends_on"))]
         depends_on: Vec<String>,
     },
     Runtime {
         command: String,
         args: Vec<String>,
         #[serde(
-            rename = "timeoutMs",
+            rename(serialize = "timeoutMs", deserialize = "timeout_ms"),
             default,
             deserialize_with = "timeout",
             serialize_with = "validation::milliseconds::serialize"
@@ -148,7 +168,7 @@ pub enum Profile {
 }
 
 impl Profile {
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
         match self {
             Self::Agent {
                 backend,
@@ -156,9 +176,13 @@ impl Profile {
                 reasoning,
                 ..
             } => {
-                text(model, "Agent profile model")?;
+                location
+                    .child("model")
+                    .check(text(model, "Agent profile model"))?;
                 if let Some(reasoning) = reasoning {
-                    backend.validate_reasoning(reasoning)?;
+                    location
+                        .child("reasoning")
+                        .check(backend.validate_reasoning(reasoning))?;
                 }
                 Ok(())
             }
@@ -168,17 +192,18 @@ impl Profile {
                     || depends_on.len() > MAX_DECLARED_ITEMS
                     || depends_on.iter().collect::<BTreeSet<_>>().len() != depends_on.len()
                 {
-                    return Err(
-                        "Dependency profile dependsOn must contain 1–64 unique Artifact names."
-                            .into(),
-                    );
+                    return Err(location.child("depends_on").error(
+                        "Dependency profile depends_on must contain 1–64 unique Artifact names.",
+                    ));
                 }
                 for name in depends_on {
-                    identifier(name, "Dependency Artifact name")?;
+                    location
+                        .child("depends_on")
+                        .check(identifier(name, "Dependency Artifact name"))?;
                 }
                 Ok(())
             }
-            Self::Runtime { command, args, .. } => script(command, args),
+            Self::Runtime { command, args, .. } => location.check(script(command, args)),
         }
     }
 
@@ -245,9 +270,8 @@ pub struct EvalDeclaration {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 struct EvalFields {
-    id: String,
     title: String,
     profile: Profile,
     #[serde(default, deserialize_with = "present")]
@@ -270,13 +294,13 @@ impl TryFrom<EvalFields> for EvalDeclaration {
                 || fields.fail_schema.is_some()
                 || fields.profile_variants.is_some()
             {
-                return Err("Dependency Evals cannot declare payload, passSchema, failSchema or profileVariants.".into());
+                return Err("Dependency Evals cannot declare payload, pass_schema, fail_schema or profile_variants.".into());
             }
         } else if fields.payload.is_none() {
             return Err("Eval payload is required for runtime, agent and human profiles.".into());
         }
         Ok(Self {
-            id: fields.id,
+            id: String::new(),
             title: fields.title,
             profile: fields.profile,
             profile_variants: fields.profile_variants.unwrap_or_default(),
@@ -288,24 +312,44 @@ impl TryFrom<EvalFields> for EvalDeclaration {
 }
 
 impl EvalDeclaration {
-    fn validate(&self) -> Result<(), String> {
-        identifier(&self.id, "Eval id")?;
-        text(&self.title, "Eval title")?;
+    fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
+        location.check(identifier(&self.id, "Eval id"))?;
+        location
+            .child("title")
+            .check(text(&self.title, "Eval title"))?;
         if let Some(payload) = &self.payload {
-            text(&payload.instruction, "Eval payload.instruction")?;
+            location
+                .child("payload")
+                .child("instruction")
+                .check(text(&payload.instruction, "Eval payload.instruction"))?;
         }
-        self.profile.validate()?;
-        for schema in [&self.pass_schema, &self.fail_schema].into_iter().flatten() {
-            crate::agent::verdict::validate_schema(schema)?;
+        self.profile.validate(&location.child("profile"))?;
+        for (key, schema) in [
+            ("pass_schema", &self.pass_schema),
+            ("fail_schema", &self.fail_schema),
+        ] {
+            if let Some(schema) = schema {
+                location
+                    .child(key)
+                    .check(crate::agent::verdict::validate_schema(schema))?;
+            }
         }
         if self.profile_variants.len() > MAX_DECLARED_ITEMS {
-            return Err("profileVariants must contain at most 64 named profiles.".into());
+            return Err(location
+                .child("profile_variants")
+                .error("profile_variants must contain at most 64 named profiles."));
         }
         for (name, profile) in &self.profile_variants {
-            identifier(name, "Profile variant name")?;
-            profile.validate()?;
+            let variant = location.child("profile_variants").child(name);
+            location
+                .child("profile_variants")
+                .key(name)
+                .check(identifier(name, "Profile variant name"))?;
+            profile.validate(&variant)?;
             if std::mem::discriminant(profile) != std::mem::discriminant(&self.profile) {
-                return Err("Profile variants must retain the declared reviewer kind.".into());
+                return Err(
+                    variant.error("Profile variants must retain the declared reviewer kind.")
+                );
             }
         }
         Ok(())
@@ -313,7 +357,10 @@ impl EvalDeclaration {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(
+    rename_all(serialize = "camelCase", deserialize = "snake_case"),
+    deny_unknown_fields
+)]
 pub struct Views {
     #[serde(default)]
     pub agent_tools: BTreeMap<String, AgentTool>,
@@ -322,14 +369,20 @@ pub struct Views {
 }
 
 impl Views {
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
         for (name, tool) in &self.agent_tools {
-            identifier(name, "Agent tool name")?;
-            tool.validate().map_err(|e| format!("Tool {name}: {e}"))?;
+            let tools = location.child("agent_tools");
+            tools.key(name).check(identifier(name, "Agent tool name"))?;
+            tools
+                .child(name)
+                .check(tool.validate().map_err(|e| format!("Tool {name}: {e}")))?;
         }
         for (name, tool) in &self.human_tools {
-            identifier(name, "Human tool name")?;
-            tool.validate().map_err(|e| format!("Tool {name}: {e}"))?;
+            let tools = location.child("human_tools");
+            tools.key(name).check(identifier(name, "Human tool name"))?;
+            tools
+                .child(name)
+                .check(tool.validate().map_err(|e| format!("Tool {name}: {e}")))?;
         }
         Ok(())
     }
@@ -361,7 +414,7 @@ struct ScriptForm {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 struct ScriptFields {
     command: String,
     args: Vec<String>,
@@ -467,7 +520,7 @@ impl From<Fingerprint> for Value {
 }
 
 impl Fingerprint {
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
         match self {
             Self::Script {
                 command,
@@ -475,22 +528,29 @@ impl Fingerprint {
                 files,
                 ..
             } => {
-                script(command, args)?;
-                paths(files, "fingerprint.script.files")
+                location.child("script").check(script(command, args))?;
+                location
+                    .child("script")
+                    .child("files")
+                    .check(paths(files, "fingerprint.script.files"))
             }
             Self::Artifactsum { files, ignore, .. } => {
                 if files.is_empty()
                     || files.len() > MAX_DECLARED_ITEMS
                     || files.iter().collect::<BTreeSet<_>>().len() != files.len()
                 {
-                    return Err(
-                        "fingerprint.files must contain 1–64 unique owner-relative paths.".into(),
-                    );
+                    return Err(location.child("files").error(
+                        "fingerprint.files must contain 1–64 unique owner-relative paths.",
+                    ));
                 }
                 for file in files.iter().filter(|file| *file != ".") {
-                    path(file).map_err(|message| format!("fingerprint.files: {message}"))?;
+                    location.child("files").check(
+                        path(file).map_err(|message| format!("fingerprint.files: {message}")),
+                    )?;
                 }
-                crate::cache::ignore_patterns(ignore)
+                location
+                    .child("ignore")
+                    .check(crate::cache::ignore_patterns(ignore))
             }
         }
     }
@@ -504,19 +564,22 @@ pub enum DependencyGates {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(
+    rename_all(serialize = "camelCase", deserialize = "snake_case"),
+    deny_unknown_fields
+)]
 pub struct ReviewPolicy {
     #[serde(default, deserialize_with = "present")]
     pub dependency_gates: Option<DependencyGates>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct ArtifactDeclaration {
     pub name: String,
     #[serde(default)]
     pub tags: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "declared_evals")]
     pub evals: Vec<EvalDeclaration>,
     #[serde(default)]
     pub views: Views,
@@ -534,63 +597,161 @@ pub struct ArtifactDeclaration {
 }
 
 impl ArtifactDeclaration {
-    fn validate(&self) -> Result<(), String> {
-        identifier(&self.name, "Artifact name")?;
-        tags(&self.tags)?;
-        let mut ids = BTreeSet::new();
+    fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
+        location
+            .child("name")
+            .check(identifier(&self.name, "Artifact name"))?;
+        location.child("tags").check(tags(&self.tags))?;
         for eval in &self.evals {
-            eval.validate()
+            eval.validate(&location.child("evals").key(&eval.id))
                 .map_err(|message| format!("Eval {}: {message}", eval.id))?;
-            if !ids.insert(&eval.id) {
-                return Err(format!(
-                    "Duplicate local Eval in {}: {}",
-                    self.name, eval.id
-                ));
-            }
         }
         if self.basis == Some(true) && !self.evals.is_empty() {
-            return Err(format!("Basis Artifact {} cannot own Evals.", self.name));
+            return Err(location
+                .child("basis")
+                .error(format!("Basis Artifact {} cannot own Evals.", self.name)));
         }
-        self.views.validate()?;
+        self.views.validate(&location.child("views"))?;
         for (alias, target) in &self.mounts {
-            identifier(alias, "Mount alias")?;
-            identifier(target, "Mount target")?;
+            let mounts = location.child("mounts");
+            mounts.key(alias).check(identifier(alias, "Mount alias"))?;
+            mounts
+                .child(alias)
+                .check(identifier(target, "Mount target"))?;
         }
         if let Some(fingerprint) = &self.fingerprint {
-            fingerprint.validate()?;
+            fingerprint.validate(&location.child("fingerprint"))?;
         }
         Ok(())
     }
 }
 
+/// Eval ids live in table keys, not fields; BTreeMap also fixes their discovery order.
+fn declared_evals<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<EvalDeclaration>, D::Error> {
+    let evals = BTreeMap::<String, EvalDeclaration>::deserialize(deserializer)?;
+    Ok(evals
+        .into_iter()
+        .map(|(id, mut eval)| {
+            eval.id = id;
+            eval
+        })
+        .collect())
+}
+
 /// Validate an Artifact declaration without opening scripts or declared inputs.
-pub fn parse_declaration(json: &str) -> Result<ArtifactDeclaration, String> {
-    let value: Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
-    if value.get("family").is_some() {
-        return Err(
-            "family was removed in 0.9.0; declare each instance as its own Artifact.".into(),
-        );
+pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
+    let table = toml::de::DeTable::parse(source).map_err(|error| error.to_string())?;
+    let span = table.span();
+    let document = toml::Spanned::new(span, toml::de::DeValue::Table(table.into_inner()));
+    let location = Location::root(source, &document);
+    for (key, value) in document.get_ref().as_table().unwrap() {
+        reject_non_json_values(value, key.get_ref().as_ref(), source)?;
     }
-    // Both earlier names fail with the new shape instead of an unknown-field error.
-    for key in ["staleKey", "stale"] {
-        if value.get(key).is_some() {
-            return Err(format!(
-                r#"{key} was renamed to fingerprint: use "fingerprint": {{"files": ["."], "ignore": []}} or "fingerprint": {{"script": {{...}}}}."#
-            ));
+    if document.get_ref().get("family").is_some() {
+        return Err(location
+            .child("family")
+            .error("family was removed in 0.9.0; declare each instance as its own Artifact."));
+    }
+    for key in ["stale_key", "stale"] {
+        if document.get_ref().get(key).is_some() {
+            return Err(location.child(key).error(format!(
+                "{key} was renamed to fingerprint: use fingerprint = {{ files = [\".\"], ignore = [] }} or [fingerprint.script]."
+            )));
         }
     }
-    for eval in value["evals"].as_array().into_iter().flatten() {
-        if eval.get("resultCheck").is_some() {
-            return Err(format!(
-                "Eval {}: resultCheck was removed in 0.6.0; remove it. The review's tool calls are in its saved session (artifactize session show).",
-                eval["id"].as_str().unwrap_or("?")
-            ));
+    if let Some(evals) = document
+        .get_ref()
+        .get("evals")
+        .and_then(|value| value.get_ref().as_table())
+    {
+        for (id, eval) in evals {
+            if eval.get_ref().get("result_check").is_some() {
+                return Err(location.child("evals").child(id.get_ref()).child("result_check").error(format!(
+                    "Eval {}: result_check was removed in 0.6.0; remove it. The review's tool calls are in its saved session (artifactize session show).",
+                    id.get_ref()
+                )));
+            }
         }
     }
-    let declaration: ArtifactDeclaration =
-        serde_json::from_value(value).map_err(|error| error.to_string())?;
-    declaration.validate()?;
+    // These sum types use JSON maps internally; pin field errors to their original spans.
+    if let Some(fingerprint) = document.get_ref().get("fingerprint")
+        && let Some(fields) = fingerprint.get_ref().as_table()
+    {
+        let fingerprint_location = location.child("fingerprint");
+        if fields.contains_key("script") {
+            fingerprint_location.deserialize::<ScriptForm>()?;
+        } else if !fields.contains_key("dependencies") {
+            fingerprint_location.deserialize::<ArtifactsumForm>()?;
+        }
+    }
+    if let Some(tools) = document
+        .get_ref()
+        .get("views")
+        .and_then(|views| views.get_ref().get("agent_tools"))
+        .and_then(|tools| tools.get_ref().as_table())
+    {
+        for (name, tool) in tools {
+            if tool.get_ref().as_table().is_some() {
+                let tool_location = location
+                    .child("views")
+                    .child("agent_tools")
+                    .child(name.get_ref());
+                if tool.get_ref().get("builtin").is_some() {
+                    tool_location.deserialize::<BuiltinTool>()?;
+                } else {
+                    tool_location.deserialize::<CommandTool>()?;
+                }
+            }
+        }
+    }
+    let declaration =
+        ArtifactDeclaration::deserialize(toml::de::ValueDeserializer::from(document.clone()))
+            .map_err(|mut error| {
+                error.set_input(Some(source));
+                error.to_string()
+            })?;
+    declaration.validate(&location)?;
     Ok(declaration)
+}
+
+/// Reject TOML values that would become lossy or implementation-specific owner JSON.
+fn reject_non_json_values(
+    value: &toml::Spanned<toml::de::DeValue<'_>>,
+    path: &str,
+    source: &str,
+) -> Result<(), String> {
+    use toml::de::DeValue;
+    let diagnostic = |message| location::positioned(source, value.span().start, path, message);
+    match value.get_ref() {
+        DeValue::Datetime(_) => Err(diagnostic(
+            "TOML date/time values have no JSON equivalent; use a quoted string.",
+        )),
+        DeValue::Float(number)
+            if matches!(
+                number.as_str(),
+                "inf" | "+inf" | "-inf" | "nan" | "+nan" | "-nan"
+            ) =>
+        {
+            Err(diagnostic(
+                "TOML non-finite floats have no JSON equivalent.",
+            ))
+        }
+        DeValue::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                reject_non_json_values(item, &format!("{path}[{index}]"), source)?;
+            }
+            Ok(())
+        }
+        DeValue::Table(table) => {
+            for (key, value) in table {
+                reject_non_json_values(value, &format!("{path}.{}", key.get_ref()), source)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -669,6 +830,21 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             .map_err(|error| ConfigError::new(&directory, error))?;
         let mut entries = entries;
         entries.sort_by_key(|entry| entry.file_name());
+        if let Some(legacy) = entries
+            .iter()
+            .find(|entry| entry.file_name() == "artifactize.json")
+        {
+            let file = legacy.path();
+            let kind = legacy
+                .file_type()
+                .map_err(|error| ConfigError::new(&file, error))?;
+            if !ignored.matched(&file, kind.is_dir()).is_ignore() && !kind.is_dir() {
+                return Err(ConfigError::new(
+                    file,
+                    "artifactize.json is no longer read; declare this Artifact in index.artf (TOML).",
+                ));
+            }
+        }
         if let Some(marker) = entries
             .iter()
             .find(|entry| entry.file_name() == CONFIG_FILE)
@@ -678,18 +854,17 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 .file_type()
                 .map_err(|error| ConfigError::new(&file, error))?;
             if !kind.is_file() {
-                return Err(ConfigError::new(
-                    file,
-                    "artifactize.json must be a regular file.",
-                ));
+                return Err(ConfigError::new(file, "index.artf must be a regular file."));
             }
-            let json = fs::read_to_string(&file).map_err(|error| ConfigError::new(&file, error))?;
+            let source =
+                fs::read_to_string(&file).map_err(|error| ConfigError::new(&file, error))?;
             let declaration =
-                parse_declaration(&json).map_err(|error| ConfigError::new(&file, error))?;
+                parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
             if !relative.as_os_str().is_empty() && declaration.review_policy.is_some() {
-                return Err(ConfigError::new(
+                return Err(ConfigError::declaration(
                     &file,
-                    "reviewPolicy belongs only to the repository root artifactize.json.",
+                    &["review_policy"],
+                    "review_policy belongs only to the repository root index.artf.",
                 ));
             }
             let ArtifactDeclaration {
@@ -703,8 +878,9 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 review_policy,
             } = declaration;
             if config.artifacts.contains_key(&name) {
-                return Err(ConfigError::new(
+                return Err(ConfigError::declaration(
                     &file,
+                    &["name"],
                     format!("Duplicate Artifact name: {name}"),
                 ));
             }
@@ -758,16 +934,23 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
     if config.artifacts.is_empty() {
         return Err(ConfigError::new(
             &config.root,
-            "Workspace must contain at least one artifactize.json Artifact.",
+            "Workspace must contain at least one index.artf Artifact.",
         ));
     }
     crate::scope::resolve_config(&mut config)?;
     Ok(config)
 }
 
-/// The folders the workspace root's `.artifactizeignore` (gitignore syntax) keeps out of
-/// discovery, such as test fixtures or example projects with their own `artifactize.json`.
+/// The folders the workspace root's `.artfignore` (gitignore syntax) keeps out of
+/// discovery, such as test fixtures or example projects with their own `index.artf`.
 fn discovery_ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigError> {
+    let legacy = root.join(".artifactizeignore");
+    if fs::symlink_metadata(&legacy).is_ok() {
+        return Err(ConfigError::new(
+            legacy,
+            ".artifactizeignore was renamed to .artfignore.",
+        ));
+    }
     let file = root.join(IGNORE_FILE);
     let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
     // A regular file only: discovery never follows links.

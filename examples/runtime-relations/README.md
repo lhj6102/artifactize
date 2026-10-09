@@ -15,10 +15,10 @@ runtime-relations/
 
 What it demonstrates:
 
-- **Children.** `guide/intro` and `guide/usage` have their own `artifactize.json`,
+- **Children.** `guide/intro` and `guide/usage` have their own `index.artf`,
   so they are separate Artifacts. A parent depends on its nearest marked
   children, so `guide/terms` waits for `intro/heading` and `usage/heading` to be GREEN.
-- **A basis Artifact.** `glossary` declares `"basis": true`: it has no evals
+- **A basis Artifact.** `glossary` declares `basis = true`: it has no evals
   and counts as accepted input. A basis never waives its own dependencies.
 - **A mount.** `guide` mounts `glossary` under the alias `terms`. The mount
   is a logical name that adds a dependency. Nothing is copied or linked.
@@ -33,13 +33,14 @@ What it demonstrates:
   `python3 check_terms.py`. Each command runs from its owner's folder with only
   `PATH` and `LANG` inherited.
 - **Content fingerprint and reuse.** Each Artifact declares the built-in content
-  fingerprint, `"fingerprint": {}`, which hashes the Artifact's own files (child
-  folders, `artifactize.json`, `__pycache__` and `.gitignore`d files excluded).
-  `guide` spells out the default, `"files": ["."]`. An eval's reuse key adds the
+  fingerprint, `fingerprint = {}`, which hashes the Artifact's own files (child
+  folders, every `*.artf` file, `__pycache__` and `.gitignore`d files excluded).
+  `guide` spells out the default, `files = ["."]`. An eval's reuse key adds the
   fingerprints of the Artifacts it depends on: `guide/terms` depends on `intro` and
   `usage` (children) and `glossary` (the mount, also named as `{terms}`). That is
-  why the `glossary` basis declares a fingerprint too: without one, `guide/terms`
-  would have no reuse key and would be reviewed on every `verify`. While the eval
+  why the `glossary` basis participates in reuse too. The default fingerprint is
+  artifactsum; setting `fingerprint = false` on a dependency would leave `guide/terms`
+  without a reuse key, so it would be reviewed on every `verify`. While the eval
   and those fingerprints are unchanged since a saved GREEN or RED result, `verify`
   reuses that result without running the eval, and `status` lists the files and
   dependencies that changed since the last cached result.

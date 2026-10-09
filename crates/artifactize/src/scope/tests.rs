@@ -24,7 +24,7 @@ impl Fixture {
     fn write(&self, path: &str, contents: &str) {
         let path = self.0.join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, contents).unwrap();
+        crate::test_declaration::write(path, contents).unwrap();
     }
 
     fn artifact(&self, path: &str, value: Value) {
@@ -74,7 +74,7 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     fixture.artifact(
         "outer",
         json!({"name":"parent","evals":[eval("Inspect {child}.")],
-            "views":{"agentTools":{"read":{"description":"Read","protocol":"json","command":"not-run","args":[]}}}}),
+            "views":{"agent_tools":{"read":{"description":"Read","protocol":"json","command":"not-run","args":[]}}}}),
     );
     fixture.artifact("outer/unmarked/deep", json!({"name":"child"}));
     fixture.artifact(

@@ -67,8 +67,8 @@ impl Fixture {
             let name = format!("{prefix}{index}");
             let folder = repo.join(&name);
             fs::create_dir_all(&folder).unwrap();
-            fs::write(
-                folder.join("artifactize.json"),
+            support::declaration::write(
+                folder.join("index.artf"),
                 json!({"name":name,"fingerprint":false,"evals":[{"id":"review","title":"Review",
                     "profile":{"kind":"agent","backend":"openai","model":"fake-exact-model"},
                     "payload":{"instruction":"Review."}}]})
@@ -322,8 +322,8 @@ fn a_request_waiting_for_a_slot_holds_no_job_slot() {
     let repo = fixture.repo("mixed", 1);
     let check = repo.join("check");
     fs::create_dir_all(&check).unwrap();
-    fs::write(
-        check.join("artifactize.json"),
+    support::declaration::write(
+        check.join("index.artf"),
         json!({"name":"check","evals":[{"id":"run","title":"Run",
             "profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Run."}}]})
         .to_string(),

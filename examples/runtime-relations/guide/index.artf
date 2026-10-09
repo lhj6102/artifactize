@@ -1,0 +1,11 @@
+name = "guide"
+mounts = { terms = "glossary" }
+fingerprint = { files = ["."] }
+
+[evals.terms]
+title = "Every bold term is defined in the glossary"
+profile = { kind = "runtime", command = "python3", args = ["check_terms.py", "{terms}/terms.txt", "{guide}/intro/page.md", "{usage}/page.md"], timeout_ms = 10000 }
+
+[evals.terms.payload]
+instruction = """
+Check that every bold term in {intro} and {usage} is defined in {terms}."""

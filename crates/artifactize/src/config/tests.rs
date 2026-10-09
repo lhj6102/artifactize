@@ -5,12 +5,15 @@ use super::*;
 fn eval(profile: Value) -> Value {
     json!({
         "id": "check", "title": "Check the artifact", "profile": profile,
-        "payload": { "instruction": "Inspect {input}.", "ownerData": [true, null, {"value": 42}] }
+        "payload": { "instruction": "Inspect {input}.", "ownerData": [true, "literal", {"value": 42}] }
     })
 }
 
 fn parse(value: Value) -> Result<ArtifactDeclaration, String> {
-    parse_declaration(&value.to_string())
+    parse_declaration(
+        &crate::test_declaration::to_toml(value)
+            .expect("Test builder must be TOML-compatible; use raw TOML for invalid syntax."),
+    )
 }
 
 #[test]
@@ -33,7 +36,7 @@ fn defaults_and_payload_are_preserved_without_interpolation() {
 #[test]
 fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
     let declared = eval(json!({"kind":"human"}));
-    for invalid in [Value::Null, json!(42), json!(true), json!([]), json!({})] {
+    for invalid in [json!(42), json!(true), json!([]), json!({})] {
         let mut declaration = declared.clone();
         declaration["payload"]["instruction"] = invalid;
         assert!(parse(json!({"name":"a","evals":[declaration]})).is_err());
@@ -52,17 +55,12 @@ fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
 }
 
 #[test]
-fn unknown_fields_and_explicit_nulls_are_not_ignored() {
+fn unknown_fields_are_not_ignored() {
     assert!(
         parse(json!({"name": "a", "target": "b"}))
             .unwrap_err()
             .contains("unknown field")
     );
-    assert!(parse(json!({"name": "a", "basis": null})).is_err());
-    assert!(parse(json!({"name": "a", "evals": null})).is_err());
-    assert!(parse(json!({"name": "a", "views": null})).is_err());
-    assert!(parse(json!({"name": "a", "mounts": null})).is_err());
-    assert!(parse(json!({"name": "a", "fingerprint": null})).is_err());
     let mut declared = eval(json!({"kind": "human"}));
     declared["deps"] = json!([]);
     assert!(
@@ -70,7 +68,7 @@ fn unknown_fields_and_explicit_nulls_are_not_ignored() {
             .unwrap_err()
             .contains("deps")
     );
-    let invalid_human = eval(json!({"kind": "human", "timeoutMs": 100}));
+    let invalid_human = eval(json!({"kind": "human", "timeout_ms": 100}));
     assert!(parse(json!({"name": "a", "evals": [invalid_human]})).is_err());
     assert!(
         parse(json!({"name": "a", "fingerprint": {"kind": "always", "paths": ["input"]}})).is_err()
@@ -102,9 +100,8 @@ fn identifiers_and_eval_requirements_are_strict() {
 #[test]
 fn duplicate_evals_and_basis_with_evals_are_rejected() {
     let declared = eval(json!({"kind": "human"}));
-    let error =
-        parse(json!({"name": "a", "evals": [declared.clone(), declared.clone()]})).unwrap_err();
-    assert!(error.contains("Duplicate local Eval in a: check"));
+    let error = parse_declaration("name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }\npayload = { instruction = 'Inspect.' }\n[evals.check]\ntitle = 'Duplicate'").unwrap_err();
+    assert!(error.contains("duplicate key"), "{error}");
     assert!(
         parse(json!({"name": "a", "basis": true, "evals": [declared.clone()]}))
             .unwrap_err()
@@ -115,23 +112,23 @@ fn duplicate_evals_and_basis_with_evals_are_rejected() {
 
 #[test]
 fn profile_fields_and_numeric_limits_match_declarations() {
-    let profile = json!({"kind": "agent", "backend":"openai", "model": "model", "reasoning": "high", "timeoutMs": 2147483647, "maxToolCalls": 9007199254740991_u64, "maxTokens": 1.0});
+    let profile = json!({"kind": "agent", "backend":"openai", "model": "model", "reasoning": "high", "timeout_ms": 2147483647, "max_tool_calls": 9007199254740991_u64, "max_tokens": 1.0});
     assert!(parse(json!({"name": "a", "evals": [eval(profile.clone())]})).is_ok());
     let mut invalid = profile.clone();
-    invalid["timeoutMs"] = json!(2147483648_u64);
+    invalid["timeout_ms"] = json!(2147483648_u64);
     assert!(
         parse(json!({"name": "a", "evals": [eval(invalid)]}))
             .unwrap_err()
-            .contains("timeoutMs")
+            .contains("timeout_ms")
     );
     let mut invalid = profile.clone();
-    invalid["maxToolCalls"] = json!(9007199254740992_u64);
+    invalid["max_tool_calls"] = json!(9007199254740992_u64);
     assert!(parse(json!({"name": "a", "evals": [eval(invalid)]})).is_err());
     let mut invalid = profile.clone();
-    invalid["maxTokens"] = json!(0);
+    invalid["max_tokens"] = json!(0);
     assert!(parse(json!({"name": "a", "evals": [eval(invalid)]})).is_err());
     let mut invalid = profile.clone();
-    invalid["timeoutMs"] = json!(1.5);
+    invalid["timeout_ms"] = json!(1.5);
     assert!(parse(json!({"name": "a", "evals": [eval(invalid)]})).is_err());
     let mut invalid = profile.clone();
     invalid["model"] = json!(" ");
@@ -145,7 +142,7 @@ fn profile_fields_and_numeric_limits_match_declarations() {
 fn fixed_scripts_preserve_literal_args_but_reject_invalid_process_fields() {
     let args = json!(["$HOME", "{input}", "; touch marker", "line\nbreak"]);
     let profile =
-        json!({"kind": "runtime", "command": "arbitrary-program", "args": args, "timeoutMs": 1e3});
+        json!({"kind": "runtime", "command": "arbitrary-program", "args": args, "timeout_ms": 1e3});
     let declaration = parse(json!({"name": "a", "evals": [eval(profile)]})).unwrap();
     let Profile::Runtime {
         args: actual,
@@ -168,19 +165,16 @@ fn fixed_scripts_preserve_literal_args_but_reject_invalid_process_fields() {
 fn all_hook_timeouts_are_checked_without_opening_scripts() {
     let valid = json!({
         "name": "a",
-        "fingerprint": {"script":{"command": "fingerprint.sh", "args": [],"timeoutMs": 2147483647}},
-        "views": {"agentTools": {"read": {"description": "Read {artifactName}", "inputSchema": {"type": "object"}, "timeoutMs": 1000, "protocol": "json", "command": "sh", "args": ["view.sh"]}}},
+        "fingerprint": {"script":{"command": "fingerprint.sh", "args": [],"timeout_ms": 2147483647}},
+        "views": {"agent_tools": {"read": {"description": "Read {artifactName}", "input_schema": {"type": "object"}, "timeout_ms": 1000, "protocol": "json", "command": "sh", "args": ["view.sh"]}}},
         "evals": [{"id": "review", "title": "Review", "profile": {"kind": "agent", "backend":"openai", "model": "m", "reasoning": "high"}, "payload": {"instruction": "Review"}}]
     });
     assert!(parse(valid.clone()).is_ok());
     let mut invalid = valid.clone();
-    invalid["fingerprint"]["script"]["timeoutMs"] = json!(null);
-    assert!(parse(invalid).is_err());
-    let mut invalid = valid.clone();
-    invalid["views"]["agentTools"]["read"]["timeoutMs"] = json!(2147483648_u64);
+    invalid["views"]["agent_tools"]["read"]["timeout_ms"] = json!(2147483648_u64);
     assert!(parse(invalid).is_err());
     let mut invalid = valid;
-    invalid["evals"][0]["profile"]["timeoutMs"] = json!("30000");
+    invalid["evals"][0]["profile"]["timeout_ms"] = json!("30000");
     assert!(parse(invalid).is_err());
 }
 
@@ -202,7 +196,7 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
     ] {
         assert!(validation::path(path).is_err(), "{path:?}");
         assert!(parse(json!({"name":"a","fingerprint":{"script":{"command":"entry","args":[],"files":[path]}}})).is_err());
-        assert!(parse(json!({"name":"a","views":{"agentTools":{"read":{"description":"Read","inputSchema":{"type":"object"},"protocol":"json","executionPaths":[path],"command":"sh","args":[]}}}})).is_err());
+        assert!(parse(json!({"name":"a","views":{"agent_tools":{"read":{"description":"Read","input_schema":{"type":"object"},"protocol":"json","execution_paths":[path],"command":"sh","args":[]}}}})).is_err());
     }
     for path in ["file", "nested/file", "C:relative", "1:/relative", "a:b"] {
         assert!(validation::path(path).is_ok(), "{path:?}");
@@ -217,19 +211,17 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
 fn response_schemas_are_validated_without_rewriting_owner_fields() {
     let schema = json!({"type":"object","properties":{"ownerField":{"anyOf":[{"type":"string"},{"type":"integer"}]}}, "ownerKeyword":true});
     let mut declared = eval(json!({"kind": "human"}));
-    declared["passSchema"] = schema.clone();
+    declared["pass_schema"] = schema.clone();
     let declaration = parse(json!({"name": "a", "evals": [declared.clone()]})).unwrap();
     assert_eq!(
         declaration.evals[0].pass_schema.as_ref().unwrap(),
         schema.as_object().unwrap()
     );
-    declared["failSchema"] = Value::Null;
-    assert!(parse(json!({"name": "a", "evals": [declared]})).is_err());
 }
 
 #[test]
 fn fingerprint_scripts_are_inert_declarations() {
-    let script = json!({"script":{"command":"missing.sh","args":["literal"],"files":["missing-input"],"timeoutMs":1000}});
+    let script = json!({"script":{"command":"missing.sh","args":["literal"],"files":["missing-input"],"timeout_ms":1000}});
     let declaration = parse(json!({"name":"a","fingerprint":script})).unwrap();
     let Some(Fingerprint::Script {
         command,
@@ -274,8 +266,6 @@ fn fingerprint_scripts_are_inert_declarations() {
         ("paths", json!(["input"])),
         ("weight", json!(1)),
         ("weight", json!(101)),
-        ("weight", json!(null)),
-        ("files", json!(null)),
         ("inputs", json!(["input"])),
     ] {
         let mut fingerprint = minimum.clone();
@@ -286,18 +276,18 @@ fn fingerprint_scripts_are_inert_declarations() {
 
 #[test]
 fn renamed_fingerprint_keys_fail_with_the_new_shape() {
-    let shape =
-        r#"use "fingerprint": {"files": ["."], "ignore": []} or "fingerprint": {"script": {...}}."#;
+    let shape = r#"use fingerprint = { files = ["."], ignore = [] } or [fingerprint.script]."#;
     for (key, value) in [
-        ("staleKey", json!({"content":{}})),
-        ("staleKey", json!({"script":{"command":"x","args":[]}})),
+        ("stale_key", json!({"content":{}})),
+        ("stale_key", json!({"script":{"command":"x","args":[]}})),
         ("stale", json!({"kind":"content"})),
     ] {
         let mut declaration = json!({"name":"a"});
         declaration[key] = value;
-        assert_eq!(
-            parse(declaration).unwrap_err(),
-            format!("{key} was renamed to fingerprint: {shape}")
+        let error = parse(declaration).unwrap_err();
+        assert!(
+            error.ends_with(&format!("{key} was renamed to fingerprint: {shape}")),
+            "{error}"
         );
     }
 }
@@ -307,12 +297,14 @@ fn a_family_declaration_names_its_removal() {
     for value in [
         json!({"instances":"instances.json"}),
         json!({"instances":{"one":{}}}),
-        Value::Null,
         json!(false),
     ] {
-        assert_eq!(
-            parse(json!({"name":"a","family":value})).unwrap_err(),
-            "family was removed in 0.9.0; declare each instance as its own Artifact."
+        let error = parse(json!({"name":"a","family":value})).unwrap_err();
+        assert!(
+            error.ends_with(
+                "family was removed in 0.9.0; declare each instance as its own Artifact."
+            ),
+            "{error}"
         );
     }
 }
@@ -393,13 +385,13 @@ fn dropped_configuration_fields_are_rejected() {
     for declaration in [
         json!({"name":"a","critics":[]}),
         json!({"name":"a","envRequirements":{}}),
-        json!({"name":"a","reviewPolicy":{"maxConcurrentExecutors":1}}),
+        json!({"name":"a","review_policy":{"maxConcurrentExecutors":1}}),
     ] {
         assert!(parse(declaration).unwrap_err().contains("unknown field"));
     }
     assert!(
         parse(
-            json!({"name":"a","views":{"agentTools":{"read":{
+            json!({"name":"a","views":{"agent_tools":{"read":{
                 "description":"Read", "protocol":"json", "command":"read.sh", "args":[], "observation":"content"
             }}}})
         )
@@ -443,7 +435,6 @@ fn agent_backends_are_explicit_and_optional_reasoning_is_exact() {
     for profile in [
         json!({"kind":"agent","provider":"openai","model":"m"}),
         json!({"kind":"agent","backend":"unknown","model":"m"}),
-        json!({"kind":"agent","backend":"openai","model":"m","reasoning":null}),
         json!({"kind":"agent","backend":"openai","model":"m","reasoning":"off"}),
         json!({"kind":"agent","backend":"anthropic","model":"m","reasoning":"xhigh"}),
         json!({"kind":"agent","backend":"codex","model":"m","reasoning":"ultra"}),
@@ -484,7 +475,7 @@ fn response_schema_contract_rejects_reserved_fields_and_open_envelopes() {
         schemas.push(json!({"type":"object","required":[field]}));
     }
     for schema in schemas {
-        for branch in ["passSchema", "failSchema"] {
+        for branch in ["pass_schema", "fail_schema"] {
             let mut declaration = eval(json!({"kind":"human"}));
             declaration[branch] = schema.clone();
             assert!(
@@ -502,13 +493,13 @@ fn a_result_check_names_its_removal() {
             json!({"kind":"agent","backend":"openai","model":"m"}),
             json!({"command":"python3","args":["check.py"]}),
         ),
-        (json!({"kind":"human"}), json!(null)),
+        (json!({"kind":"human"}), json!(false)),
     ] {
         let mut declared = eval(profile);
-        declared["resultCheck"] = check;
+        declared["result_check"] = check;
         let error = parse(json!({"name":"a","evals":[declared]})).unwrap_err();
         assert!(
-            error.contains("Eval check: resultCheck was removed in 0.6.0"),
+            error.contains("Eval check: result_check was removed in 0.6.0"),
             "{error}"
         );
     }
@@ -531,7 +522,7 @@ fn omitted_fingerprint_is_artifactsum_and_only_false_disables_it() {
             .fingerprint
             .is_none()
     );
-    for invalid in [json!(true), json!(null), json!(0), json!("off"), json!([])] {
+    for invalid in [json!(true), json!(0), json!("off"), json!([])] {
         let error = parse(json!({"name":"a","fingerprint":invalid})).unwrap_err();
         assert!(
             error.contains("fingerprint must be false or an object"),
@@ -564,8 +555,6 @@ fn tags_are_optional_unique_nonblank_strings_with_a_bounded_list() {
         json!(["\u{2003}"]),
         json!(["same", "same"]),
         json!([1]),
-        json!([null]),
-        json!(null),
         json!("tag"),
         json!({}),
     ] {
@@ -592,11 +581,11 @@ fn duration_timeouts_keep_integral_millisecond_json_at_every_config_edge() {
         for kind in ["agent", "runtime"] {
             let profile = if kind == "agent" {
                 format!(
-                    r#"{{"kind":"agent","backend":"openai","model":"fixture","timeoutMs":{number}}}"#
+                    r#"{{"kind":"agent","backend":"openai","model":"fixture","timeout_ms":{number}}}"#
                 )
             } else {
                 format!(
-                    r#"{{"kind":"runtime","command":"fixture","args":[],"timeoutMs":{number}}}"#
+                    r#"{{"kind":"runtime","command":"fixture","args":[],"timeout_ms":{number}}}"#
                 )
             };
             let profile: Profile = serde_json::from_str(&profile).unwrap();
@@ -612,18 +601,18 @@ fn duration_timeouts_keep_integral_millisecond_json_at_every_config_edge() {
             };
             assert_eq!(duration, std::time::Duration::from_millis(millis));
         }
-        let tool: CommandTool = serde_json::from_str(&format!(r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeoutMs":{number}}}"#)).unwrap();
+        let tool: CommandTool = serde_json::from_str(&format!(r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeout_ms":{number}}}"#)).unwrap();
         assert_eq!(
             serde_json::to_value(tool).unwrap()["timeoutMs"],
             json!(millis)
         );
-        let tool: HumanTool = serde_json::from_str(&format!(r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeoutMs":{number}}}"#)).unwrap();
+        let tool: HumanTool = serde_json::from_str(&format!(r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeout_ms":{number}}}"#)).unwrap();
         assert_eq!(
             serde_json::to_value(tool).unwrap()["timeoutMs"],
             json!(millis)
         );
         let fingerprint: Fingerprint = serde_json::from_str(&format!(
-            r#"{{"script":{{"command":"fixture","args":[],"timeoutMs":{number}}}}}"#
+            r#"{{"script":{{"command":"fixture","args":[],"timeout_ms":{number}}}}}"#
         ))
         .unwrap();
         assert_eq!(
@@ -634,15 +623,15 @@ fn duration_timeouts_keep_integral_millisecond_json_at_every_config_edge() {
     for invalid in ["null", "0", "-1", "1.5", "2147483648", "1e99", "\"1000\""] {
         assert!(
             serde_json::from_str::<Profile>(&format!(
-                r#"{{"kind":"runtime","command":"fixture","args":[],"timeoutMs":{invalid}}}"#
+                r#"{{"kind":"runtime","command":"fixture","args":[],"timeout_ms":{invalid}}}"#
             ))
             .is_err()
         );
-        assert!(serde_json::from_str::<CommandTool>(&format!(r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeoutMs":{invalid}}}"#)).is_err());
-        assert!(serde_json::from_str::<HumanTool>(&format!(r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeoutMs":{invalid}}}"#)).is_err());
+        assert!(serde_json::from_str::<CommandTool>(&format!(r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeout_ms":{invalid}}}"#)).is_err());
+        assert!(serde_json::from_str::<HumanTool>(&format!(r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeout_ms":{invalid}}}"#)).is_err());
         assert!(
             serde_json::from_str::<Fingerprint>(&format!(
-                r#"{{"script":{{"command":"fixture","args":[],"timeoutMs":{invalid}}}}}"#
+                r#"{{"script":{{"command":"fixture","args":[],"timeout_ms":{invalid}}}}}"#
             ))
             .is_err()
         );

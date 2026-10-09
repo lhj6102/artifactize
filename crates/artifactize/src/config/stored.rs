@@ -227,7 +227,28 @@ mod tests {
                 .get("timeoutMs")
                 .is_some_and(serde_json::Value::is_null)
             {
-                assert!(serde_json::from_value::<Profile>(value).is_err());
+                let mut declaration = value;
+                let object = declaration.as_object_mut().unwrap();
+                for (camel, snake) in [
+                    ("timeoutMs", "timeout_ms"),
+                    ("maxToolCalls", "max_tool_calls"),
+                    ("maxTokens", "max_tokens"),
+                ] {
+                    if let Some(value) = object.remove(camel) {
+                        object.insert(snake.into(), value);
+                    }
+                }
+                // Only the timeout is invalid, so another optional field cannot mask it.
+                for field in ["reasoning", "max_tool_calls", "max_tokens"] {
+                    object.remove(field);
+                }
+                let error = serde_json::from_value::<Profile>(declaration)
+                    .unwrap_err()
+                    .to_string();
+                assert!(
+                    error.contains("null") && !error.contains("unknown field"),
+                    "{error}"
+                );
             }
         }
         let missing: StoredProfile =

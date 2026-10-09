@@ -216,7 +216,7 @@ fn human_repo(root: &Path, name: &str) -> PathBuf {
 
 fn write(folder: &Path, declaration: Value) {
     fs::create_dir_all(folder).unwrap();
-    fs::write(folder.join("artifactize.json"), declaration.to_string()).unwrap();
+    support::declaration::write(folder.join("index.artf"), declaration.to_string()).unwrap();
 }
 
 fn line<'a>(text: &'a str, prefix: &str) -> &'a str {
