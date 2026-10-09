@@ -317,7 +317,7 @@ async fn remote_failure_after_local_submit_leaves_completed_modal_not_resubmissi
 }
 
 #[tokio::test]
-async fn tool_confirmation_and_cancel_restore_the_existing_draft() {
+async fn a_tool_runs_at_once_and_keeps_the_open_draft() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;
     let mut review = opened(&state, view, "alice");
@@ -330,25 +330,17 @@ async fn tool_confirmation_and_cancel_restore_the_existing_draft() {
         Mode::Form(form) => form.draft(),
         _ => panic!("form"),
     };
+    // No confirmation step: the run job starts at once, and the form stays open meanwhile.
     let outcome = perform(&mut review, Control::RunTool).await;
-    review.finish_single(outcome);
-    assert!(review.confirming());
-    press(&mut review, KeyEvent::from(KeyCode::Char('n')));
-    assert_eq!(
-        match review.mode() {
-            Mode::Form(form) => form.draft(),
-            _ => panic!("restored form"),
-        },
-        draft
+    assert!(
+        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error),
+        "{outcome:?}"
     );
-    let outcome = perform(&mut review, Control::RunTool).await;
-    review.finish_single(outcome);
-    let outcome = perform(&mut review, Control::Confirm).await;
     review.finish_single(outcome);
     assert_eq!(
         match review.mode() {
             Mode::Form(form) => form.draft(),
-            _ => panic!("restored form"),
+            _ => panic!("kept form"),
         },
         draft
     );
@@ -397,7 +389,7 @@ async fn an_external_submission_ends_editing_and_frees_the_detail_keys() {
 }
 
 #[tokio::test]
-async fn a_confirmation_after_an_outside_release_neither_claims_nor_runs() {
+async fn a_run_after_an_outside_release_neither_claims_nor_runs() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;
     let id = view.request.id.clone();
@@ -405,22 +397,37 @@ async fn a_confirmation_after_an_outside_release_neither_claims_nor_runs() {
     let outcome = perform(&mut review, Control::Claim).await;
     review.finish_single(outcome);
     review.refresh().await;
-    let outcome = perform(&mut review, Control::RunTool).await;
-    review.finish_single(outcome);
-    assert!(review.confirming());
-    // Another terminal releases the claim; the monitor refreshes under the open prompt.
+    // Another terminal releases the claim before this review has refreshed: the job checks
+    // ownership atomically, so the stale view neither claims nor runs.
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
     human::unclaim(&receipts, &id, "alice").await.unwrap();
+    let Action::Start(job) = review.control(Control::RunTool) else {
+        panic!("the stale view still starts the job");
+    };
+    assert!(matches!(&job, Job::Run { claim: false, .. }), "{job:?}");
+    let outcome = review.start(job).await;
+    assert!(
+        matches!(
+            &outcome,
+            Outcome::Ran {
+                result: Err(_),
+                claimed: None,
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
+    review.finish_single(outcome);
+    // Once refreshed, Enter asks for a claim instead of starting anything.
     review.refresh().await;
     assert!(!review.owned());
-    assert_eq!(review.control(Control::Confirm), Action::None);
-    assert!(!review.confirming());
+    assert_eq!(review.control(Control::RunTool), Action::None);
     let saved = store::read_request(&state, &id).await.unwrap();
-    assert!(saved.claim.is_none(), "confirming never claims");
+    assert!(saved.claim.is_none(), "running never claims");
 }
 
 #[tokio::test]
-async fn a_confirmation_dropped_by_an_outside_submission_keeps_the_draft() {
+async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;
     let id = view.request.id.clone();
@@ -430,10 +437,6 @@ async fn a_confirmation_dropped_by_an_outside_submission_keeps_the_draft() {
     review.refresh().await;
     review.control(Control::Red);
     review.paste_single("draft with 한글");
-    // The RED form now lives only beside the tool's confirmation.
-    let outcome = perform(&mut review, Control::RunTool).await;
-    review.finish_single(outcome);
-    assert!(review.confirming() && review.tool_draft.is_some());
     human::submit_and_publish(
         &state,
         id.as_str(),
@@ -443,45 +446,21 @@ async fn a_confirmation_dropped_by_an_outside_submission_keeps_the_draft() {
     )
     .await
     .unwrap();
-    review.refresh().await;
-    assert!(review.settled() && !review.confirming());
-    assert_eq!(review.mode(), &Mode::Request);
-    assert!(review.tool_draft.is_none());
-    assert_eq!(review.drafts["RED"].fields[0].display(), "draft with 한글");
-}
-
-#[test]
-fn quitting_from_a_confirmation_keeps_the_draft() {
-    let mut review = super::tests::opened(Some("alice"), super::tests::demo());
-    review.control(Control::Red);
-    review.paste_single("kept");
-    let form = match review.mode() {
-        Mode::Form(form) => form.clone(),
-        _ => panic!("form"),
+    // A run started from the stale view is refused by the settled request.
+    let Action::Start(job) = review.control(Control::RunTool) else {
+        panic!("the stale view still starts the job");
     };
-    review.tool_draft = Some(form);
-    review.mode = Mode::Confirm {
-        tool: "notes_release".into(),
-        command: crate::tools::human::CommandLine {
-            repo: "/repo".into(),
-            kind: crate::config::HumanToolKind::Output,
-            program: "cat".into(),
-            args: Vec::new(),
-            cwd: "/repo".into(),
-        },
-    };
-    review.taken = vec!["run-1-3".parse().unwrap()];
-    review.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
-    assert_eq!(review.mode(), &Mode::Leave);
-    review.key(KeyEvent::from(KeyCode::Esc));
-    review.control(Control::Red);
-    assert_eq!(
-        match review.mode() {
-            Mode::Form(form) => form.fields[0].display(),
-            _ => panic!("form"),
-        },
-        "kept"
+    let outcome = review.start(job).await;
+    assert!(
+        matches!(&outcome, Outcome::Ran { result: Err(_), .. }),
+        "{outcome:?}"
     );
+    review.finish_single(outcome);
+    review.refresh().await;
+    assert!(review.settled());
+    assert_eq!(review.control(Control::RunTool), Action::None);
+    assert_eq!(review.mode(), &Mode::Request);
+    assert_eq!(review.drafts["RED"].fields[0].display(), "draft with 한글");
 }
 
 #[tokio::test]
@@ -802,22 +781,19 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     assert!(review.owned());
     assert!(drawn(&mut review).contains("Tools (1)"));
 
-    // The launch tool resolves {artifactPath} to the file and launches from its folder.
-    let action = review.control(Control::RunTool);
-    let outcome = job(&mut review, action).await;
-    let Outcome::Inspected {
-        result: Ok(command),
-        ..
-    } = &outcome
-    else {
-        panic!("{outcome:?}");
+    // The launch tool resolves {artifactPath} to the file and launches from its folder; the
+    // focused Tools pane shows that command, and Enter runs it without a confirmation.
+    let Some(Ok(command)) = review.command("open_brand-icon").cloned() else {
+        panic!("resolved command");
     };
     let root = std::fs::canonicalize(&repo).unwrap();
     let file = root.join("assets/brand/artifactize-icon.svg");
     assert_eq!(command.args, vec![file.to_str().unwrap().to_owned()]);
     assert_eq!(command.cwd, root.join("assets/brand"));
-    review.finish(outcome);
-    let action = review.control(Control::Confirm);
+    press(&mut review, KeyEvent::from(KeyCode::Tab));
+    let screen = drawn(&mut review);
+    assert!(screen.contains(file.to_str().unwrap()), "{screen}");
+    let action = press(&mut review, KeyEvent::from(KeyCode::Enter));
     let outcome = job(&mut review, action).await;
     assert!(
         matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error),

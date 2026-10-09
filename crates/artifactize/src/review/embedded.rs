@@ -13,7 +13,6 @@ pub enum Control {
     Red,
     Submit,
     RunTool,
-    Confirm,
     Cancel,
 }
 
@@ -28,15 +27,19 @@ impl Review {
     }
 
     /// Take the latest saved view of the open request. Once it is settled (here or by an
-    /// external submission) nothing is left to edit or confirm: the form is set aside and a
-    /// pending tool confirmation is dropped, so keys act on the completed Detail again.
+    /// external submission) nothing is left to edit: the form is set aside, so keys act on the
+    /// completed Detail again.
     pub(super) fn show(&mut self, view: RequestView) {
+        if self
+            .commands
+            .as_ref()
+            .is_some_and(|(id, _)| id != &view.request.id)
+        {
+            self.commands = None;
+        }
         self.request = Some(view);
         if self.settled() {
             self.stop_editing();
-            if matches!(self.mode, Mode::Confirm { .. }) {
-                self.drop_confirmation();
-            }
         }
     }
 
@@ -51,14 +54,6 @@ impl Review {
     /// A form takes the keys only while the request can still be reviewed.
     pub(crate) fn editing(&self) -> bool {
         matches!(self.mode, Mode::Form(_)) && !self.settled()
-    }
-    /// A tool confirmation holds the keys (and monitor's focus) only while the request can
-    /// still be reviewed.
-    pub(crate) fn confirming(&self) -> bool {
-        matches!(self.mode, Mode::Confirm { .. }) && !self.settled()
-    }
-    pub(crate) fn select_area(&mut self, area: Area) {
-        self.area = area;
     }
     pub(crate) fn selected_tool(&mut self, index: usize) {
         self.tool = index.min(self.tools().len().saturating_sub(1));
@@ -105,13 +100,6 @@ impl Review {
                 busy.cancel.cancel();
             }
             return Action::None;
-        }
-        if self.confirming() {
-            return match control {
-                Control::Confirm => self.confirm(true),
-                Control::Cancel => self.confirm(false),
-                _ => Action::None,
-            };
         }
         if self.settled() {
             return Action::None;
@@ -186,16 +174,8 @@ impl Review {
                 }
             }
             Control::Release => self.release(),
-            Control::RunTool => {
-                if let Mode::Form(form) = &self.mode {
-                    self.tool_draft = Some(form.clone());
-                }
-                let action = self.inspect();
-                if !matches!(action, Action::Start(_)) {
-                    self.tool_draft = None;
-                }
-                action
-            }
+            // The form stays open while the tool runs; no confirmation step.
+            Control::RunTool => self.run_selected(),
             _ => Action::None,
         }
     }

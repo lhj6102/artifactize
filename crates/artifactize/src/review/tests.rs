@@ -316,48 +316,44 @@ fn shared_requests_name_where_actions_go_in_the_metadata() {
 }
 
 #[test]
-fn tools_need_a_claim_and_each_command_line_is_confirmed_once() {
+fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     let mut review = opened(None, demo());
     press(&mut review, KeyCode::Tab);
     assert_eq!(press(&mut review, KeyCode::Enter), Action::None);
     assert!(screen(&mut review).contains("Claim this request before reviewing it."));
     claimed(&mut review);
     assert_eq!(review.taken, [ID.parse::<RequestId>().unwrap()]);
-    let inspect = Action::Start(Job::Inspect {
-        id: ID.parse().unwrap(),
-        tool: "notes_release".into(),
-    });
-    assert_eq!(press(&mut review, KeyCode::Enter), inspect);
-    let notes = command(&["/repo/release/notes.md"]);
-    let inspected = |command: &CommandLine| Outcome::Inspected {
-        tool: "notes_release".into(),
-        result: Ok(command.clone()),
+    // The Tools pane shows what Enter runs: the resolved command line once known.
+    let resolved = |review: &mut Review| {
+        review.commands = Some((
+            ID.parse().unwrap(),
+            [
+                (
+                    "notes_release".to_owned(),
+                    Ok(command(&["/repo/release/notes.md"])),
+                ),
+                (
+                    "open_release".to_owned(),
+                    Err("Tool executable path is unavailable.".into()),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        ));
     };
-    assert_eq!(review.finish(inspected(&notes)), Action::None);
+    resolved(&mut review);
     let text = screen(&mut review);
-    for expected in [
-        "Run notes_release for the first time in this session?",
-        "Kind: output",
-        "Repository: /repo",
-        "Directory: /repo/release",
-        "Command: cat /repo/release/notes.md",
-        "y/Enter run · n/Esc cancel",
-    ] {
-        assert!(text.contains(expected), "{expected}\n{text}");
-    }
-    assert_eq!(press(&mut review, KeyCode::Char('n')), Action::None);
-    assert_eq!(review.mode(), &Mode::Request);
-    assert_eq!(press(&mut review, KeyCode::Enter), inspect);
-    review.finish(inspected(&notes));
-    assert!(matches!(review.mode(), Mode::Confirm { .. }));
-    assert_eq!(
-        press(&mut review, KeyCode::Char('y')),
+    assert!(text.contains("$ cat /repo/release/notes.md"), "{text}");
+    assert!(!text.contains("{artifactPath}"), "{text}");
+    let run = |tool: &str| {
         Action::Start(Job::Run {
             id: ID.parse().unwrap(),
-            tool: "notes_release".into(),
-            claim: false
+            tool: tool.into(),
+            claim: false,
         })
-    );
+    };
+    // No confirmation: Enter starts the run job every time.
+    assert_eq!(press(&mut review, KeyCode::Enter), run("notes_release"));
     let ran = review.finish(Outcome::Ran {
         tool: "notes_release".into(),
         claimed: None,
@@ -367,23 +363,18 @@ fn tools_need_a_claim_and_each_command_line_is_confirmed_once() {
     let text = screen(&mut review);
     assert!(text.contains("Output · notes_release") && text.contains("# Release notes"));
     assert!(text.contains("claimed by you (alice)"), "{text}");
-
-    // Confirmed: the next run does not ask again.
-    assert_eq!(press(&mut review, KeyCode::Enter), inspect);
-    assert_eq!(
-        review.finish(inspected(&notes)),
-        Action::Start(Job::Run {
-            id: ID.parse().unwrap(),
-            tool: "notes_release".into(),
-            claim: false
-        })
+    assert_eq!(press(&mut review, KeyCode::Enter), run("notes_release"));
+    // A run drops the resolved commands until the next refresh resolves them again; a tool
+    // that cannot be resolved shows its declaration and why.
+    assert!(review.commands.is_none());
+    resolved(&mut review);
+    press(&mut review, KeyCode::Down);
+    let text = screen(&mut review);
+    assert!(
+        text.contains("$ xdg-open {artifactPath}")
+            && text.contains("Tool executable path is unavailable."),
+        "{text}"
     );
-    // A different command line (for example from another repository) asks again.
-    review.finish(inspected(&command(&["/other/notes.md"])));
-    assert!(matches!(review.mode(), Mode::Confirm { .. }));
-    assert_eq!(press(&mut review, KeyCode::Esc), Action::None);
-    assert_eq!(review.mode(), &Mode::Request);
-    assert_eq!(review.focus(), Focus::Detail, "Esc closes only the prompt");
 
     review.finish(Outcome::Ran {
         tool: "notes_release".into(),
@@ -409,12 +400,13 @@ fn tools_need_a_claim_and_each_command_line_is_confirmed_once() {
         }),
     });
     assert!(screen(&mut review).contains("open_release launched."));
-    review.finish(Outcome::Inspected {
+    review.finish(Outcome::Ran {
         tool: "notes_release".into(),
+        claimed: None,
         result: Err("Human Artifact scope or eval declarations changed.".into()),
     });
     assert_eq!(review.mode(), &Mode::Request);
-    assert!(screen(&mut review).contains("notes_release: Human Artifact scope"));
+    assert!(screen(&mut review).contains("notes_release did not run."));
 }
 
 #[test]
@@ -985,7 +977,7 @@ fn list_opens_requests_and_esc_steps_back_without_quitting() {
     assert!(text.contains("/repo"));
     // The selected request is previewed beside the list.
     assert!(text.contains("docs/check · Approve"), "{text}");
-    assert!(text.contains("Enter: open"), "{text}");
+    assert!(text.contains("Enter: open review · Tab: tools"), "{text}");
     press(&mut review, KeyCode::Char('j'));
     assert!(screen(&mut review).contains("release/signoff · Approve"));
     assert_eq!(press(&mut review, KeyCode::Enter), Action::Refresh);
@@ -1031,55 +1023,27 @@ fn panes(review: &mut Review, width: u16) -> (bool, bool, bool, String) {
 }
 
 #[test]
-fn a_tool_confirmation_never_claims_once_the_claim_is_gone() {
-    let notes = command(&["/repo/release/notes.md"]);
-    let confirm = |review: &mut Review| {
-        assert_eq!(
-            press(review, KeyCode::Enter),
-            Action::Start(Job::Inspect {
-                id: ID.parse().unwrap(),
-                tool: "notes_release".into(),
-            })
-        );
-        review.finish(Outcome::Inspected {
-            tool: "notes_release".into(),
-            result: Ok(notes.clone()),
-        });
-        assert!(review.confirming());
-    };
-    // Another terminal releases the claim while the prompt is open; a refresh reloads it.
+fn a_tool_run_never_claims_once_the_claim_is_gone() {
+    // Another terminal releases the claim; a refresh reloads it and Enter starts nothing.
     let mut review = opened(Some("alice"), demo());
     press(&mut review, KeyCode::Tab);
-    confirm(&mut review);
     review.show(view("WAITING_HUMAN", None, demo()));
-    for key in [KeyCode::Char('y'), KeyCode::Enter] {
-        assert_eq!(press(&mut review, key), Action::None, "{key:?}");
-    }
-    assert_eq!(review.mode(), &Mode::Request);
-    assert!(review.confirmed.is_empty());
+    assert_eq!(press(&mut review, KeyCode::Enter), Action::None);
     assert!(screen(&mut review).contains("Claim this request before reviewing it."));
-    // A form set aside for the tool goes back to the drafts instead of a run.
+    // Claimed by someone else meanwhile: a click on the selected tool runs nothing either,
+    // and an open form stays in the drafts for the next claim.
     let mut review = opened(Some("alice"), demo());
     press(&mut review, KeyCode::Char('r'));
     press(&mut review, KeyCode::Char('x'));
     press(&mut review, KeyCode::BackTab);
-    confirm(&mut review);
     review.show(view("WAITING_HUMAN", Some("bob"), demo()));
-    assert_eq!(review.control(Control::Confirm), Action::None);
-    assert_eq!(review.mode(), &Mode::Request);
-    assert_eq!(
-        review.drafts["RED"].fields[0].display(),
-        "x",
-        "kept for the next claim"
-    );
-    assert!(review.tool_draft.is_none());
-    // A request settled meanwhile drops the prompt; y then runs nothing.
+    assert_eq!(review.control(Control::RunTool), Action::None);
+    assert_eq!(form(&review).fields[0].display(), "x");
+    // A request settled meanwhile runs nothing.
     let mut review = opened(Some("alice"), demo());
     press(&mut review, KeyCode::Tab);
-    confirm(&mut review);
     review.show(view("GREEN", None, demo()));
-    assert!(!review.confirming());
-    assert_eq!(press(&mut review, KeyCode::Char('y')), Action::None);
+    assert_eq!(press(&mut review, KeyCode::Enter), Action::None);
     // No job ever claims: an unclaimed submission from $EDITOR is refused too.
     let mut review = opened(Some("alice"), demo());
     press(&mut review, KeyCode::Char('r'));
@@ -1248,4 +1212,147 @@ fn review_uses_the_reactive_layout_of_monitor() {
         text.contains("artifactize review › all repositories › release/signoff"),
         "{text}"
     );
+}
+
+fn click(review: &mut Review, rect: ratatui::layout::Rect) -> Action {
+    review.mouse(crossterm::event::MouseEvent {
+        kind: crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left),
+        column: rect.x + 1,
+        row: rect.y,
+        modifiers: KeyModifiers::NONE,
+    })
+}
+
+#[test]
+fn every_focus_names_the_way_to_the_tools_and_how_to_run_one() {
+    // The list: the footer and the Preview name Enter and Tab; Tab opens the tools directly.
+    let mut review = listed();
+    let text = screen(&mut review);
+    assert!(
+        text.contains("↑↓ request · Enter open review · Tab tools"),
+        "{text}"
+    );
+    assert!(text.contains("Enter: open review · Tab: tools"), "{text}");
+    assert_eq!(press(&mut review, KeyCode::Tab), Action::Refresh);
+    assert_eq!(
+        (review.focus(), review.area()),
+        (Focus::Detail, Area::Tools)
+    );
+
+    // CLAIM: the tools line and the footer say how to reach and run them.
+    let mut review = opened(None, demo());
+    let text = screen(&mut review);
+    assert!(text.contains("Tab or click: tools"), "{text}");
+    assert!(
+        text.contains("c claim · Tab tools, Enter run · i instruction"),
+        "{text}"
+    );
+    press(&mut review, KeyCode::Tab);
+    let text = screen(&mut review);
+    assert!(text.contains("Tools (2) · ↑↓ Enter run"), "{text}");
+    assert!(
+        text.contains("↑↓ tool · c claim, then Enter run · Tab fields"),
+        "{text}"
+    );
+
+    // REVIEW: the pane title names its key; while a field takes Tab, it is Shift-Tab.
+    let mut review = opened(Some("alice"), demo());
+    let text = screen(&mut review);
+    assert!(text.contains("Tools (2) · Tab "), "{text}");
+    assert!(
+        text.contains("g GREEN · r RED · u release · Tab tools, Enter run"),
+        "{text}"
+    );
+    press(&mut review, KeyCode::Char('r'));
+    let text = screen(&mut review);
+    assert!(text.contains("Tools (2) · Shift-Tab"), "{text}");
+    assert!(text.contains("Shift-Tab tools, Enter run"), "{text}");
+    press(&mut review, KeyCode::BackTab);
+    assert!(screen(&mut review).contains("↑↓ tool · Enter run · Tab fields"));
+
+    // Claimed by someone else: read-only, so no claim or run is offered.
+    let review = opened(Some("bob"), demo());
+    assert_eq!(
+        review.detail_hints(),
+        "Tab tools · i instruction · t technical · Esc back · q quit"
+    );
+
+    // Monitor's Human Detail shows the same key line for the same state.
+    let monitor = embedded(Some("alice"), demo());
+    assert_eq!(
+        monitor.detail_hints(),
+        "g GREEN · r RED · u release · Tab tools, Enter run · i instruction · t technical · \
+         Esc back · q quit"
+    );
+}
+
+#[test]
+fn clicks_focus_select_and_run_tools_and_f2_turns_the_mouse_off() {
+    let mut review = listed();
+    screen(&mut review);
+    // A click selects a list row, a click on the selected row opens it.
+    let (row, index) = review.hits.rows[1];
+    assert_eq!(index, 1);
+    assert_eq!(click(&mut review, row), Action::None);
+    assert_eq!(review.list.selected(), Some(1));
+    assert_eq!(click(&mut review, row), Action::Refresh);
+    assert_eq!(review.focus(), Focus::Detail);
+    assert_eq!(review.open.as_deref(), Some(ID));
+    // Claimed by alice: a click on a tool focuses and selects it; a second click runs it.
+    screen(&mut review);
+    let (row, index) = *review.hits.review.tool_rows.last().unwrap();
+    assert_eq!(index, 1);
+    assert_eq!(click(&mut review, row), Action::None);
+    assert_eq!((review.area(), review.tool), (Area::Tools, 1));
+    screen(&mut review);
+    let (row, _) = *review
+        .hits
+        .review
+        .tool_rows
+        .iter()
+        .find(|(_, index)| *index == 1)
+        .unwrap();
+    assert_eq!(
+        click(&mut review, row),
+        Action::Start(Job::Run {
+            id: ID.parse().unwrap(),
+            tool: "open_release".into(),
+            claim: false,
+        })
+    );
+    // The visible Run tool button runs the selected tool too.
+    let (button, _) = *review
+        .hits
+        .review
+        .buttons
+        .iter()
+        .find(|(_, control)| *control == Control::RunTool)
+        .unwrap();
+    assert!(matches!(
+        click(&mut review, button),
+        Action::Start(Job::Run { .. })
+    ));
+    // Close steps back to the list.
+    let close = review.hits.review.close;
+    assert_eq!(click(&mut review, close), Action::Refresh);
+    assert_eq!(review.focus(), Focus::List);
+
+    // Unclaimed: a click on the selected tool asks for the claim and starts nothing.
+    let mut review = opened(None, demo());
+    press(&mut review, KeyCode::Tab);
+    screen(&mut review);
+    let (row, _) = review.hits.review.tool_rows[0];
+    assert_eq!(click(&mut review, row), Action::None);
+    assert!(screen(&mut review).contains("Claim this request before reviewing it."));
+
+    // F2 turns capture off: the header says so and clicks do nothing until F2 again.
+    let mut review = listed();
+    assert_eq!(press(&mut review, KeyCode::F(2)), Action::Capture(false));
+    let text = screen(&mut review);
+    assert!(text.contains("mouse off · F2"), "{text}");
+    let (row, _) = review.hits.rows[1];
+    assert_eq!(click(&mut review, row), Action::None);
+    assert_eq!(review.list.selected(), Some(0));
+    assert_eq!(press(&mut review, KeyCode::F(2)), Action::Capture(true));
+    assert!(!screen(&mut review).contains("mouse off"));
 }

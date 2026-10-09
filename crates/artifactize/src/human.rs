@@ -104,15 +104,19 @@ pub async fn run_human_tool(
     Ok(registry.call(tool, cancellation).await)
 }
 
-/// What a registered Human tool of a waiting request would run; needs no claim and runs nothing.
-pub async fn tool_command(
+/// What every registered Human tool of a waiting request would run, by tool name; needs no
+/// claim and runs nothing. A tool that cannot be resolved carries its error.
+pub async fn tool_commands(
     receipts: &Receipts,
     request: &str,
-    tool: &str,
-) -> Result<CommandLine, String> {
+) -> Result<std::collections::BTreeMap<String, Result<CommandLine, String>>, String> {
     let request = receipts.waiting_human(request).await?;
     let config = reconnect(&request)?;
-    Registry::new(&config, &request.eval_id)?.command(tool)
+    let registry = Registry::new(&config, &request.eval_id)?;
+    Ok(registry
+        .list()
+        .map(|tool| (tool.name.clone(), registry.command(&tool.name)))
+        .collect())
 }
 
 /// Invalid results remain correctable; only a valid submission performs the final fingerprint

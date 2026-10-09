@@ -14,7 +14,7 @@ use crate::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Position, Rect},
     style::{Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{Block, Paragraph, Wrap},
@@ -35,7 +35,7 @@ const BUTTON_GAP: u16 = 1;
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Handled {
     Action(Action),
-    /// Step back out of the Detail, after any form, confirmation or job is closed.
+    /// Step back out of the Detail, after any form or job is closed.
     Back,
     Quit,
     /// A Detail-wide key for the caller: `?` help or `!` next attention, never while editing.
@@ -209,8 +209,8 @@ fn instruction(view: &RequestView, reviewer: &str, technical: bool) -> Vec<Line<
     lines
 }
 
-/// Tools in one line: name and kind.
-fn tools_line(tools: &[Tool]) -> Line<'static> {
+/// Tools in one line: name and kind, then the way in when there is one.
+fn tools_line(tools: &[Tool], way_in: Option<&str>) -> Line<'static> {
     if tools.is_empty() {
         return Line::from("Tools  none declared in this eval's scope").dark_gray();
     }
@@ -219,10 +219,11 @@ fn tools_line(tools: &[Tool]) -> Line<'static> {
         .map(|tool| plain(&format!("{} ({})", tool.name, kind(tool.kind))).into_owned())
         .collect::<Vec<_>>()
         .join(" · ");
-    Line::from(vec![
-        Span::styled("Tools  ", Modifier::BOLD),
-        Span::raw(names),
-    ])
+    let mut spans = vec![Span::styled("Tools  ", Modifier::BOLD), Span::raw(names)];
+    if let Some(way_in) = way_in {
+        spans.push(Span::raw(format!("  · {way_in}")).dark_gray());
+    }
+    Line::from(spans)
 }
 
 /// The Preview of a listed request: metadata, the instruction and its tools, read-only.
@@ -237,9 +238,17 @@ pub(super) fn draw_peek(frame: &mut Frame, area: Rect, view: &RequestView, revie
     lines.push(Line::default());
     lines.extend(instruction(view, reviewer, false));
     lines.push(Line::default());
-    lines.push(tools_line(&super::tools(&view.request)));
+    let tools = super::tools(&view.request);
+    lines.push(tools_line(&tools, None));
     lines.push(Line::default());
-    lines.push(Line::from("Enter: open").dark_gray());
+    lines.push(
+        Line::from(if tools.is_empty() {
+            "Enter: open review"
+        } else {
+            "Enter: open review · Tab: tools"
+        })
+        .dark_gray(),
+    );
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
@@ -254,26 +263,120 @@ impl Review {
         }
     }
 
-    /// The key line for this Detail's current state.
-    pub(crate) fn detail_hints(&self) -> String {
-        let hints = if self.busy() {
-            "Esc or Ctrl-C cancel · PgUp/PgDn scroll output"
-        } else if self.confirming() {
-            "y/Enter run · n/Esc cancel"
-        } else if self.owned() && self.editing() {
-            if self.standalone {
-                "Ctrl-S submit · Ctrl-G/R verdict · Ctrl-E $EDITOR · Shift-Tab tools · Esc stop editing"
-            } else {
-                "Ctrl-S submit · Ctrl-G/R verdict · Shift-Tab tools · Esc stop editing"
-            }
-        } else if self.settled() {
-            "PgUp/PgDn scroll · i instruction · t technical · Esc back · q quit"
-        } else if self.owned() {
-            "g GREEN · r RED · u release · Tab tools · i instruction · t technical · Esc back · q quit"
+    /// The key that moves focus to the Tools pane from here: Tab, or Shift-Tab while a form
+    /// field takes Tab.
+    fn tools_key(&self) -> &'static str {
+        if self.editing() && self.area == Area::Fields {
+            "Shift-Tab"
         } else {
-            "c claim · Tab tools · i instruction · t technical · Esc back · q quit"
-        };
-        hints.into()
+            "Tab"
+        }
+    }
+
+    /// The Tools pane title names how to reach it, or how to run a tool once it has focus.
+    fn tools_title(&self, count: usize) -> String {
+        if count == 0 {
+            format!(" Tools ({count}) ")
+        } else if self.area == Area::Tools {
+            format!(" Tools ({count}) · ↑↓ Enter run ")
+        } else {
+            format!(" Tools ({count}) · {} ", self.tools_key())
+        }
+    }
+
+    /// The key line for this Detail's current state: the keys that work in the focused area,
+    /// including how to reach the tools and run one.
+    pub(crate) fn detail_hints(&self) -> String {
+        if self.busy() {
+            return "Esc or Ctrl-C cancel · PgUp/PgDn scroll output".into();
+        }
+        if self.settled() {
+            return "PgUp/PgDn scroll · i instruction · t technical · Esc back · q quit".into();
+        }
+        let tools = !self.tools().is_empty();
+        let owned = self.owned();
+        // Unclaimed and waiting; a request claimed by someone else is read-only.
+        let claimable = matches!(self.actionable(), Ok((_, true)));
+        let editing = owned && self.editing();
+        let mut hints: Vec<String> = Vec::new();
+        if self.area == Area::Tools {
+            if tools {
+                hints.push("↑↓ tool".into());
+                if owned {
+                    hints.push("Enter run".into());
+                } else if claimable {
+                    hints.push("c claim, then Enter run".into());
+                }
+            } else if claimable {
+                hints.push("c claim".into());
+            }
+            hints.push("Tab fields".into());
+        } else if editing {
+            hints.extend(["Ctrl-S submit".into(), "Ctrl-G/R verdict".into()]);
+            if self.standalone {
+                hints.push("Ctrl-E $EDITOR".into());
+            }
+        } else if owned {
+            hints.extend(["g GREEN".into(), "r RED".into(), "u release".into()]);
+        } else if claimable {
+            hints.push("c claim".into());
+        }
+        if self.area != Area::Tools {
+            let key = self.tools_key();
+            hints.push(if tools && (owned || claimable) {
+                format!("{key} tools, Enter run")
+            } else {
+                format!("{key} tools")
+            });
+        }
+        if editing {
+            hints.push("Esc stop editing".into());
+        } else {
+            hints.extend([
+                "i instruction".into(),
+                "t technical".into(),
+                "Esc back".into(),
+                "q quit".into(),
+            ]);
+        }
+        hints.join(" · ")
+    }
+
+    /// A left click inside the Detail at `point`, over the geometry of the last drawn frame:
+    /// buttons act, the instruction, tools or fields take focus, a click selects a tool row and
+    /// a click on the selected tool of the focused Tools pane runs it.
+    pub(crate) fn click(&mut self, hits: &Hits, point: Position) -> Action {
+        if let Some((_, control)) = hits.buttons.iter().find(|(rect, _)| rect.contains(point)) {
+            return self.control(*control);
+        }
+        if self.busy() {
+            return Action::None;
+        }
+        if let Some((_, index)) = hits.tool_rows.iter().find(|(rect, _)| rect.contains(point)) {
+            let run = self.area == Area::Tools && self.tool == *index;
+            self.area = Area::Tools;
+            self.selected_tool(*index);
+            return if run {
+                self.control(Control::RunTool)
+            } else {
+                Action::None
+            };
+        }
+        if let Some((_, index)) = hits
+            .field_rows
+            .iter()
+            .find(|(rect, _)| rect.contains(point))
+        {
+            self.area = Area::Fields;
+            self.select_field(*index);
+        } else if hits.tools.contains(point) {
+            self.area = Area::Tools;
+        } else if hits.fields.contains(point) {
+            self.area = Area::Fields;
+        } else if hits.instruction.contains(point) && !self.editing() {
+            self.area = Area::Instruction;
+        }
+        Action::None
     }
 
     /// Keys of a Human review Detail, in monitor and the standalone review alike. Review keys
@@ -302,23 +405,13 @@ impl Review {
             }
             return Handled::Action(Action::None);
         }
-        // Esc closes one thing at a time: the confirmation, the form, then the Detail.
+        // Esc closes one thing at a time: the form, then the Detail.
         if key.code == KeyCode::Esc {
-            if self.confirming() {
-                return Handled::Action(self.control(Control::Cancel));
-            }
             if self.editing() {
                 self.stop_editing();
                 return Handled::Action(Action::None);
             }
             return Handled::Back;
-        }
-        if self.confirming() {
-            return Handled::Action(match key.code {
-                KeyCode::Char('y') | KeyCode::Enter => self.control(Control::Confirm),
-                KeyCode::Char('n' | 'q') => self.control(Control::Cancel),
-                _ => Action::None,
-            });
         }
         let editing = self.editing();
         if matches!(key.code, KeyCode::PageDown | KeyCode::PageUp) {
@@ -506,7 +599,7 @@ impl Review {
         if summary {
             frame.render_widget(
                 Paragraph::new(vec![
-                    tools_line(&self.tools()),
+                    tools_line(&self.tools(), Some("Tab or click: tools")),
                     Line::from(self.claim_text(&view)).dark_gray(),
                 ])
                 .wrap(Wrap { trim: false }),
@@ -514,8 +607,7 @@ impl Review {
             );
             hits.tools = lower;
         } else {
-            // A tool confirmation needs the room of the fields column.
-            let share = if self.area == Area::Tools && !self.confirming() {
+            let share = if self.area == Area::Tools {
                 TOOLS_FOCUSED
             } else {
                 TOOLS_UNFOCUSED
@@ -550,7 +642,21 @@ impl Review {
                     index,
                 ));
                 if focused {
-                    rows.push((Line::from(format!("  $ {}", plain(&tool.declared))), index));
+                    // What Enter runs: the resolved command line once known, else as declared.
+                    let command = match self.command(&tool.name) {
+                        Some(Ok(command)) => {
+                            let words =
+                                std::iter::once(command.program.to_string_lossy().into_owned())
+                                    .chain(command.args.iter().cloned())
+                                    .collect::<Vec<_>>();
+                            super::shell(words.iter().map(String::as_str))
+                        }
+                        _ => tool.declared.clone(),
+                    };
+                    rows.push((Line::from(format!("  $ {}", plain(&command))), index));
+                    if let Some(Err(error)) = self.command(&tool.name) {
+                        rows.push((Line::from(format!("  {}", plain(error))).red(), index));
+                    }
                     rows.push((
                         Line::from(format!("  {}", plain(&tool.description))).dark_gray(),
                         index,
@@ -564,7 +670,7 @@ impl Review {
         let [list, output] =
             Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
         let block = Block::bordered()
-            .title(format!(" Tools ({}) ", tools.len()))
+            .title(self.tools_title(tools.len()))
             .border_style(focused_border(focused));
         if tools.is_empty() {
             let recorded = self
@@ -612,7 +718,7 @@ impl Review {
         Vec::new()
     }
 
-    /// The fields or result column: the completed result, a tool confirmation, the owner
+    /// The fields or result column: the completed result, the owner
     /// form, or the CLAIM state. Returns the visible field rows.
     fn draw_result(&self, frame: &mut Frame, area: Rect, view: &RequestView) -> Vec<(Rect, usize)> {
         let focused = self.area == Area::Fields;
@@ -632,30 +738,6 @@ impl Review {
                     .wrap(Wrap { trim: false })
                     .scroll((self.field_scroll, 0))
                     .block(block("Completed result")),
-                area,
-            );
-            return Vec::new();
-        }
-        if let Mode::Confirm { tool, command } = &self.mode {
-            let words = std::iter::once(command.program.to_string_lossy().into_owned())
-                .chain(command.args.iter().cloned())
-                .collect::<Vec<_>>();
-            let fields = vec![
-                ("Kind", kind(command.kind).to_owned()),
-                ("Repository", command.repo.display().to_string()),
-                ("Directory", command.cwd.display().to_string()),
-                ("Command", super::shell(words.iter().map(String::as_str))),
-            ];
-            let mut text = vec![
-                Line::from(format!("Run {tool} for the first time in this session?")).bold(),
-                Line::default(),
-            ];
-            text.extend(view::lines(fields));
-            text.extend([Line::default(), Line::from("y/Enter run · n/Esc cancel")]);
-            frame.render_widget(
-                Paragraph::new(text)
-                    .wrap(Wrap { trim: false })
-                    .block(block("Confirm Human tool").cyan()),
                 area,
             );
             return Vec::new();
@@ -702,14 +784,7 @@ impl Review {
         let verdict = |letter: &'static str, control: &'static str| {
             if editing { control } else { letter }
         };
-        let controls: Vec<(String, Control)> = if self.busy() {
-            Vec::new()
-        } else if self.confirming() {
-            vec![
-                ("Confirm ⏎".into(), Control::Confirm),
-                ("Cancel Esc".into(), Control::Cancel),
-            ]
-        } else if self.settled() {
+        let controls: Vec<(String, Control)> = if self.busy() || self.settled() {
             Vec::new()
         } else if self.owned() {
             vec![

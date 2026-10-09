@@ -23,9 +23,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
+    MouseEventKind,
+};
 use futures_util::StreamExt;
-use ratatui::widgets::TableState;
+use ratatui::{layout::Position, widgets::TableState};
 use serde_json::Value;
 use time::OffsetDateTime;
 use tokio_util::sync::CancellationToken;
@@ -44,16 +47,13 @@ const REFRESH: Duration = Duration::from_secs(1);
 const SPIN: Duration = Duration::from_millis(100);
 /// Page keys move ten output rows in idle and busy views, preserving existing navigation.
 const SCROLL_PAGE: u16 = 10;
+/// A wheel tick moves three rows, as in monitor.
+const WHEEL_ROWS: i16 = 3;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mode {
     /// The open request without a form: claim, choose a verdict or run a tool.
     Request,
-    /// The first run of a command line in this session waits for confirmation.
-    Confirm {
-        tool: String,
-        command: CommandLine,
-    },
     Form(Form),
     /// Keep or release the claims this session took without submitting.
     Leave,
@@ -79,8 +79,6 @@ pub enum Area {
 pub enum Job {
     /// Explicit claim for an embedded single-request review.
     Claim { id: RequestId },
-    /// Resolve a tool's command line for confirmation; claims nothing.
-    Inspect { id: RequestId, tool: String },
     /// Claim first when `claim`, then run the tool.
     Run {
         id: RequestId,
@@ -106,10 +104,6 @@ pub enum Outcome {
     SavedLocally {
         request: Box<Request>,
         error: String,
-    },
-    Inspected {
-        tool: String,
-        result: Result<CommandLine, String>,
     },
     Ran {
         tool: String,
@@ -137,6 +131,8 @@ pub enum Action {
     Start(Job),
     /// Suspend the screen and edit this JSON in `$EDITOR`.
     Edit(String),
+    /// The standalone review turned mouse capture on or off (F2).
+    Capture(bool),
 }
 
 /// A declared Human tool as the saved definition records it.
@@ -170,6 +166,9 @@ impl Drop for Busy {
     }
 }
 
+/// Resolved command lines by tool name; a tool that cannot be resolved carries its error.
+type Commands = std::collections::BTreeMap<String, Result<CommandLine, String>>;
+
 /// Screen state over saved data; only jobs write, through the `human` lifecycle API.
 pub struct Review {
     state: PathBuf,
@@ -195,8 +194,9 @@ pub struct Review {
     scroll: u16,
     /// Requests this session claimed and has neither submitted nor released.
     taken: Vec<RequestId>,
-    /// Command lines the reviewer confirmed in this session.
-    confirmed: Vec<CommandLine>,
+    /// Resolved command lines of the open request's tools, by tool name, and the request
+    /// they were resolved for. Shown before a run; each run resolves again.
+    commands: Option<(RequestId, Commands)>,
     busy: Option<Busy>,
     /// The last action's message and whether it is an error.
     notice: Option<(String, bool)>,
@@ -208,8 +208,10 @@ pub struct Review {
     drafts: std::collections::BTreeMap<&'static str, Form>,
     field_scroll: u16,
     instruction_scroll: u16,
-    /// A Human tool confirmation temporarily replaces, but never discards, its form.
-    tool_draft: Option<Form>,
+    /// Standalone mouse capture, on by default like monitor; F2 toggles it.
+    mouse_capture: bool,
+    /// Geometry of the last drawn standalone frame for mouse hit tests.
+    hits: view::Hits,
 }
 
 impl Review {
@@ -246,7 +248,7 @@ impl Review {
             output: None,
             scroll: 0,
             taken: Vec::new(),
-            confirmed: Vec::new(),
+            commands: None,
             busy: None,
             notice: None,
             refreshed: None,
@@ -255,7 +257,8 @@ impl Review {
             drafts: std::collections::BTreeMap::new(),
             field_scroll: 0,
             instruction_scroll: 0,
-            tool_draft: None,
+            mouse_capture: true,
+            hits: view::Hits::default(),
         }
     }
 
@@ -316,6 +319,7 @@ impl Review {
                 return Action::None;
             }
         }
+        self.resolve_commands().await;
         self.tool = self.tool.min(self.tools().len().saturating_sub(1));
         if self.submitted && self.open.is_none() {
             self.submitted = false;
@@ -324,6 +328,35 @@ impl Review {
             }
         }
         Action::None
+    }
+
+    /// Resolve the open waiting request's tool command lines once per request (and again after
+    /// a run), so the Tools pane shows what Enter runs. Reads declarations; runs nothing.
+    pub(crate) async fn resolve_commands(&mut self) {
+        let Some(view) = &self.request else {
+            return;
+        };
+        let id = view.request.id.clone();
+        if view.request.status != crate::types::RequestStatus::WaitingHuman
+            || view.request.human_definition.is_none()
+            || self.commands.as_ref().is_some_and(|(seen, _)| seen == &id)
+        {
+            return;
+        }
+        let commands = async {
+            let (receipts, _) = human::open(&self.state, &id).await?;
+            human::tool_commands(&receipts, &id).await
+        }
+        .await;
+        // A request that cannot be resolved shows its tools as declared.
+        self.commands = Some((id, commands.unwrap_or_default()));
+    }
+
+    /// The resolved command line of a tool of the open request, once known.
+    pub(crate) fn command(&self, tool: &str) -> Option<&Result<CommandLine, String>> {
+        self.commands
+            .as_ref()
+            .and_then(|(_, commands)| commands.get(tool))
     }
 
     fn set_waiting(&mut self, waiting: Vec<RequestView>) {
@@ -390,7 +423,6 @@ impl Review {
         }
         // The prompt never discards a form; Esc returns and g or r reopens the draft.
         self.stop_editing();
-        self.drop_confirmation();
         self.mode = Mode::Leave;
         Action::None
     }
@@ -406,22 +438,16 @@ impl Review {
         }
     }
 
-    /// Drop a pending tool confirmation without running it. The form set aside for the tool
-    /// goes back to the per-verdict drafts, so the same verdict reopens it.
-    fn drop_confirmation(&mut self) {
-        if matches!(self.mode, Mode::Confirm { .. }) {
-            self.mode = Mode::Request;
-        }
-        if let Some(form) = self.tool_draft.take() {
-            self.drafts.insert(form.verdict, form);
-        }
-    }
-
     /// Standalone keys: the waiting list, then the shared Human review Detail. Esc steps back
     /// and never quits; q and Ctrl-C quit and offer to release this session's claims.
     pub fn key(&mut self, key: KeyEvent) -> Action {
         let interrupt =
             key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c');
+        // F2 turns mouse capture on or off in any state, as in monitor; paste works either way.
+        if key.code == KeyCode::F(2) {
+            self.mouse_capture = !self.mouse_capture;
+            return Action::Capture(self.mouse_capture);
+        }
         if self.busy.is_some() {
             return match self.key_detail(key) {
                 Handled::Action(action) => action,
@@ -486,6 +512,97 @@ impl Review {
                 Some(view) => self.open_view(view),
                 None => Action::None,
             },
+            // Straight to the tools of the selected request.
+            KeyCode::Tab => match self.selected().cloned() {
+                Some(view) => {
+                    let action = self.open_view(view);
+                    self.area = Area::Tools;
+                    action
+                }
+                None => Action::None,
+            },
+            _ => Action::None,
+        }
+    }
+
+    /// Standalone mouse: a click focuses and selects, a click on the selected list row opens it,
+    /// and inside the Detail it acts like monitor's Human Detail; the wheel scrolls.
+    pub fn mouse(&mut self, event: MouseEvent) -> Action {
+        if !self.mouse_capture || self.mode == Mode::Leave {
+            return Action::None;
+        }
+        let point = Position::new(event.column, event.row);
+        let hits = std::mem::take(&mut self.hits);
+        let action = self.mouse_at(&hits, event.kind, point);
+        self.hits = hits;
+        action
+    }
+
+    fn mouse_at(&mut self, hits: &view::Hits, kind: MouseEventKind, point: Position) -> Action {
+        let in_detail = hits.detail.contains(point);
+        match kind {
+            MouseEventKind::ScrollDown | MouseEventKind::ScrollUp => {
+                let down = kind == MouseEventKind::ScrollDown;
+                if in_detail {
+                    let delta = if down { WHEEL_ROWS } else { -WHEEL_ROWS };
+                    if hits.review.instruction.contains(point) {
+                        self.scroll_instruction(delta);
+                    } else if hits.review.fields.contains(point) {
+                        self.scroll_single(delta, true);
+                    } else if hits.review.tools.contains(point) {
+                        self.scroll_single(delta, false);
+                    }
+                } else if hits.list.contains(point) && self.focus == Focus::List {
+                    return self.list_key(KeyEvent::from(if down {
+                        KeyCode::Down
+                    } else {
+                        KeyCode::Up
+                    }));
+                }
+                Action::None
+            }
+            MouseEventKind::Down(MouseButton::Left) => {
+                if in_detail {
+                    if hits.review.close.contains(point) {
+                        if self.busy() {
+                            return self.control(Control::Cancel);
+                        }
+                        return match self.key_detail(KeyEvent::from(KeyCode::Esc)) {
+                            Handled::Back => {
+                                self.focus = Focus::List;
+                                Action::Refresh
+                            }
+                            Handled::Action(action) => action,
+                            Handled::Quit | Handled::Pass => Action::None,
+                        };
+                    }
+                    return self.click(&hits.review, point);
+                }
+                // A working review or an open form keeps the Detail.
+                if self.focus == Focus::Detail && (self.busy() || self.editing()) {
+                    return Action::None;
+                }
+                if hits.preview.contains(point) {
+                    return match self.selected().cloned() {
+                        Some(view) => self.open_view(view),
+                        None => Action::None,
+                    };
+                }
+                let Some(&(_, index)) = hits.rows.iter().find(|(rect, _)| rect.contains(point))
+                else {
+                    if hits.list.contains(point) {
+                        self.focus = Focus::List;
+                    }
+                    return Action::None;
+                };
+                let open = self.focus == Focus::List && self.list.selected() == Some(index);
+                self.focus = Focus::List;
+                self.list.select(Some(index));
+                match (open, self.waiting.get(index).cloned()) {
+                    (true, Some(view)) => self.open_view(view),
+                    _ => Action::None,
+                }
+            }
             _ => Action::None,
         }
     }
@@ -501,7 +618,6 @@ impl Review {
             self.field_scroll = 0;
             self.instruction_scroll = 0;
             self.drafts.clear();
-            self.tool_draft = None;
         }
         self.open = Some(view.request.id.clone());
         self.invalid_open = None;
@@ -518,41 +634,12 @@ impl Review {
         };
     }
 
-    /// Resolve the selected tool's command line; the run waits for its confirmation.
-    fn inspect(&mut self) -> Action {
+    /// Run the selected tool at once; the run itself checks the claim and resolves the command.
+    fn run_selected(&mut self) -> Action {
         let Some(tool) = self.tools().into_iter().nth(self.tool) else {
             return self.notify("This request declares no Human tools.", true);
         };
-        match self.actionable() {
-            Ok((id, _)) => Action::Start(Job::Inspect {
-                id,
-                tool: tool.name,
-            }),
-            Err(error) => self.notify(error, true),
-        }
-    }
-
-    /// Answer the first-run confirmation; declining brings back a form set aside for the tool.
-    fn confirm(&mut self, run: bool) -> Action {
-        let Mode::Confirm { tool, command } = std::mem::replace(&mut self.mode, Mode::Request)
-        else {
-            return Action::None;
-        };
-        if !run {
-            // Declined: back to the form the tool interrupted.
-            if let Some(form) = self.tool_draft.take() {
-                self.mode = Mode::Form(form);
-            }
-            return Action::None;
-        }
-        // The claim may have been released or the request settled while the prompt was open;
-        // the form waits in the drafts until this reviewer claims again.
-        if let Err(error) = self.owned_request() {
-            self.drop_confirmation();
-            return self.notify(error, true);
-        }
-        self.confirmed.push(command);
-        self.run(tool)
+        self.run(tool.name)
     }
 
     /// The open request when this reviewer holds its claim. Jobs never claim implicitly: a
@@ -607,7 +694,6 @@ impl Review {
         let cancel = CancellationToken::new();
         let label = match &job {
             Job::Claim { .. } => "Claiming the review".into(),
-            Job::Inspect { tool, .. } => format!("Resolving {tool}"),
             Job::Run { tool, .. } => format!("Running {tool}"),
             Job::Submit { result, .. } => {
                 format!(
@@ -636,20 +722,8 @@ impl Review {
         }
     }
 
-    /// Apply a job's outcome; a form set aside for a tool run comes back afterwards.
+    /// Apply a job's outcome.
     pub fn finish(&mut self, outcome: Outcome) -> Action {
-        let restore_form = matches!(
-            &outcome,
-            Outcome::Ran { .. } | Outcome::Inspected { result: Err(_), .. }
-        );
-        let action = self.settle(outcome);
-        if restore_form && let Some(form) = self.tool_draft.take() {
-            self.mode = Mode::Form(form);
-        }
-        action
-    }
-
-    fn settle(&mut self, outcome: Outcome) -> Action {
         self.busy = None;
         match outcome {
             Outcome::SavedLocally { request, error } => {
@@ -681,20 +755,14 @@ impl Review {
                 }
                 Action::Refresh
             }
-            Outcome::Inspected { tool, result } => match result {
-                Ok(command) if self.confirmed.contains(&command) => self.run(tool),
-                Ok(command) => {
-                    self.mode = Mode::Confirm { tool, command };
-                    Action::None
-                }
-                Err(error) => self.notify(format!("{tool}: {error}"), true),
-            },
             Outcome::Ran {
                 tool,
                 claimed,
                 result,
             } => {
                 self.took(claimed);
+                // Declarations may have changed; show the command the next run resolves.
+                self.commands = None;
                 let launched = Content::Launch { launched: true };
                 self.notice = Some(match &result {
                     Ok(result) if result.is_error => (
@@ -801,16 +869,6 @@ impl Job {
                 }
                 .await;
                 Outcome::Claimed { result }
-            }
-            Job::Inspect { id, tool } => {
-                let result = async {
-                    let (receipts, _) = human::open(&state, &id).await?;
-                    human::tool_command(&receipts, &id, &tool).await
-                };
-                Outcome::Inspected {
-                    result: result.await,
-                    tool,
-                }
             }
             Job::Run {
                 id,
@@ -1016,8 +1074,8 @@ pub async fn run(
     // Bracketed paste, like monitor: a pasted block reaches a field whole, never as keys.
     let guard = crate::monitor::InputGuard;
     let result = async {
-        crate::monitor::input::protocols(false, true)?;
         let review = Review::new(state, repo, reviewer, open);
+        crate::monitor::input::protocols(review.mouse_capture, true)?;
         drive(&mut terminal, review, cancellation).await
     }
     .await;
@@ -1056,9 +1114,13 @@ async fn drive(
                     // The editor owns the terminal; no event reader may compete for its input.
                     drop(events);
                     let edited = crate::monitor::suspend(terminal, edit(text)).await;
-                    crate::monitor::input::protocols(false, true)?;
+                    crate::monitor::input::protocols(review.mouse_capture, true)?;
                     events = EventStream::new();
                     review.edited(edited?)
+                }
+                Action::Capture(capture) => {
+                    crate::monitor::input::protocols(capture, true)?;
+                    Action::None
                 }
             };
         }
@@ -1087,6 +1149,7 @@ async fn drive(
             },
             event = events.next() => match event {
                 Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => review.key(key),
+                Some(Ok(Event::Mouse(mouse))) => review.mouse(mouse),
                 Some(Ok(Event::Paste(text))) => {
                     review.paste(&text);
                     Action::None

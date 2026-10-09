@@ -803,6 +803,48 @@ async fn human_detail_keys_follow_the_shared_protocol() {
 }
 
 #[tokio::test]
+async fn human_detail_names_the_tools_and_a_click_on_the_selected_tool_runs_it() {
+    use crate::review::tests::{demo, embedded};
+    let mut monitor = human_detail(embedded(Some("alice"), demo())).await;
+    let text = render_text(&mut monitor, 160, 40);
+    assert!(text.contains("Tools (2) · Tab "), "{text}");
+    assert!(text.contains("Tab tools, Enter run"), "{text}");
+    // The first click focuses the tools and selects the row; the next one runs it at once.
+    let (row, index) = *monitor.hits.review.tool_rows.last().unwrap();
+    assert_eq!(index, 1);
+    let click = |monitor: &mut Monitor, row: Rect| {
+        monitor.mouse(mouse(
+            MouseEventKind::Down(MouseButton::Left),
+            row.x + 1,
+            row.y,
+        ))
+    };
+    assert_eq!(
+        click(&mut monitor, row),
+        Action::Review(review::Action::None)
+    );
+    let text = render_text(&mut monitor, 160, 40);
+    assert!(text.contains("↑↓ tool · Enter run · Tab fields"), "{text}");
+    let (row, _) = *monitor
+        .hits
+        .review
+        .tool_rows
+        .iter()
+        .find(|(_, index)| *index == 1)
+        .unwrap();
+    assert!(matches!(
+        click(&mut monitor, row),
+        Action::Review(review::Action::Start(review::Job::Run { ref tool, claim: false, .. }))
+            if tool == "open_release"
+    ));
+    // Enter runs the selected tool too, with no confirmation step.
+    assert!(matches!(
+        monitor.key(KeyEvent::from(KeyCode::Enter)),
+        Action::Review(review::Action::Start(review::Job::Run { .. }))
+    ));
+}
+
+#[tokio::test]
 async fn a_review_settled_while_editing_gives_its_keys_back_to_monitor() {
     use crate::review::tests::settled_while_editing;
     let mut monitor = human_detail(settled_while_editing()).await;
