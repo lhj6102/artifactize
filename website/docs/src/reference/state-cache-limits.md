@@ -12,9 +12,12 @@ with the canonical repository path recorded on each Run. The state home is
 `%LOCALAPPDATA%\artifactize`, else `$HOME/.local/state/artifactize`.
 `--state-dir PATH` moves the whole state, including
 private output directories under `PATH/runs`. Saved Runs stay readable after the
-original repository is removed. State/output inside the reviewed repository is
-rejected, including through symlink ancestors; database files and their WAL sidecars
-must be regular files.
+original repository is removed. State/output inside the reviewed repository or
+another artifactize workspace is rejected, including through symlink ancestors.
+For this safety check, any ancestor containing `index.artf`, legacy
+`artifactize.json` or legacy `.artifactizeignore` marks a workspace, even though
+legacy declarations are not read. Database files and their WAL sidecars must be
+regular files.
 
 The state keeps what was reviewed, with which verdict, and how it was executed, in
 four tables:
@@ -56,10 +59,10 @@ database written by a newer artifactize the same way.
 
 Tokens are never stored inside a repository. `$STATE/auth`, which holds the Codex
 sign-in and the review store token, is refused when it lies inside a git work tree or
-an artifactize workspace (any ancestor holding `.git` or `index.artf`) or
-inside `--repo`, even where the state itself is accepted, such as a gitignored folder
-in a checkout. `login codex` and `remote login` then fail before signing in, with a
-message naming both folders:
+an artifactize workspace (an ancestor with any current or legacy marker above) or
+inside `--repo`, even in a gitignored folder. The `.git` check protects Git work
+trees separately from Artifact declaration markers. `login codex` and
+`remote login` then fail before signing in, with a message naming both folders:
 
 ```text
 Codex sign-in storage /work/project/.state/auth is inside the git work tree /work/project; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE.
@@ -248,7 +251,10 @@ removes are in the [reference](#doctor-models-and-prune).
 `doctor` makes no provider calls and creates no Run, verdict, cache entry or auth
 file. It reports the resolved state directory and tests writability with a temporary
 directory, removed immediately (in the nearest existing ancestor when state does
-not yet exist). It reads the state database's schema without changing the file: a
+not yet exist). Before the writable probe it enforces the same current/legacy
+workspace-marker safety boundary, even without `--repo`; unsafe state fails
+without writing a probe inside that workspace. It reads the state database's
+schema without changing the file: a
 database [written by an earlier artifactize](#state) (schemas 1–5) or by a newer
 one is a hard error (exit 1), with the message other commands refuse it with and
 its `schema` and the `supported` one in the details. `--repo`
@@ -287,7 +293,10 @@ Only known scratch directories below `state/runs/<run-id>` are removed: runtime
 `output`/`tmp`/`home`/`cache` and leftover tool output.
 Run roots, unknown files/directories, database rows, results and reuse records
 remain. Symlinks (including nested links), non-directory targets and
-repository content are refused before deletion. Database reads have a five-second
-busy timeout and finish before deletion; prune holds no writer lock. This is plain
+repository content are refused before deletion. `.git` and the current/legacy
+Artifact markers above protect workspace copies, including Git-less projects
+copied inside Run output. Both `--dry-run` and real prune enforce this boundary.
+Database reads have a five-second busy timeout and finish before deletion; prune
+holds no writer lock. This is plain
 prune, without quarantine, crash-recovery machinery or hostile filesystem-race
 protection. Saved `run show` and `request show` remain readable after pruning.

@@ -30,7 +30,8 @@ fingerprint = { files = ["src"], ignore = ["*.log"] }
 - `files`: 1–64 unique owner-relative paths, default `["."]` (the owner's own
   files). Each must exist and stay inside the Artifact: paths into child Artifacts
   or mounts are rejected. Directory walks skip child Artifact folders and every
-  `*.artf` declaration. Even explicitly named declaration files are excluded.
+  `*.artf` declaration. Explicit `.artf` file inputs fail `config check`; they are
+  not silently skipped. Directories whose names end in `.artf` are valid inputs.
   A neighboring file Artifact's target remains in the folder's hash; it creates
   no automatic child relation.
 - `ignore`: up to 64 `.gitignore`-style globs relative to the owner, without

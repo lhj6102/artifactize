@@ -77,14 +77,18 @@ TOML has no null value. Omit optional fields; do not use `null`. A schema may sa
 `type = "null"`, but literal null values such as a null `const` cannot be written.
 Unquoted TOML dates/times and non-finite numbers (`inf`, `nan`) are rejected
 anywhere, including payloads and schemas, because they have no JSON equivalent.
-Quote dates to use them as strings. Parser and deserialization errors name the
-`.artf` file and preserve line and column diagnostics; unsupported value errors
-also name their key path.
+Quote dates to use them as strings. Declaration errors name the `.artf` file,
+line and column, including syntax, deserialization, semantic validation and
+cross-Artifact reference errors. Field validation and unsupported-value errors
+also name the typed key path, such as `evals.ready.profile.depends_on`.
 
 `config check` validates without executing fingerprint scripts or hashing files.
 Use it after rewriting declarations. Legacy declaration and ignore files are not
-read; discovery reports these errors for non-ignored legacy declarations and for
-the old ignore file at the repository root:
+read. A non-ignored legacy declaration file fails discovery. A directory with the
+legacy declaration filename is walked normally, unless a directory ignore pattern
+excludes it. `.artfignore` can ignore a legacy file individually or skip its whole
+folder. The old ignore file at the repository root always fails. The diagnostics
+are:
 
 ```text
 artifactize.json is no longer read; declare this Artifact in index.artf (TOML).
@@ -176,9 +180,12 @@ The value is `artifactsum:` plus the SHA-256 over each input file's owner-relati
 path and the SHA-256 of its bytes, in path order. It covers only the Artifact's own
 files: a dependency's change reaches an eval through the dependency's fingerprint
 in the [reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key). Folder walks
-exclude child Artifact folders and every `*.artf` file, even an explicitly named
-declaration input. File Artifacts hash only their target by default. Tags are not
-hashed and do not change the Eval definition hash or reuse key.
+exclude child Artifact folders and every `*.artf` file. Explicitly listing a
+`.artf` file in `fingerprint.files` fails `config check`, even if the file does not
+exist. A real directory whose name ends in `.artf` remains a valid input; its
+non-declaration files are hashed normally. File Artifacts hash only their target
+by default. Tags are not hashed and do not change the Eval definition hash or
+reuse key.
 
 Walks follow scoped path rules. Symlinks and special files fail closed unless they
 are ignored, nothing is followed out of the owner, and a walk stops with an error
