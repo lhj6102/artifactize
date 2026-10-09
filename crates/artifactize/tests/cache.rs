@@ -465,7 +465,7 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
 }
 
 #[test]
-fn no_fingerprint_executes_each_time_and_never_reads_or_publishes_cache() {
+fn fingerprint_false_executes_each_time_and_never_reads_or_publishes_cache() {
     let fixture = Fixture::new();
     let repo = fixture.repo(
         "repo",
@@ -476,7 +476,7 @@ fn no_fingerprint_executes_each_time_and_never_reads_or_publishes_cache() {
     write(
         &repo,
         "artifactize.json",
-        json!({"name":"test","evals":[eval("check","echo run >> starts; exit 8")]}),
+        json!({"name":"test","fingerprint":false,"evals":[eval("check","echo run >> starts; exit 8")]}),
     );
     for _ in 0..2 {
         let run = fixture.command(&repo, &["verify", "--all"], 1);
@@ -940,7 +940,7 @@ fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget()
     write(
         &target,
         "independent/artifactize.json",
-        json!({"name":"z-independent","evals":[eval("check", "touch ran")]}),
+        json!({"name":"z-independent","fingerprint":false,"evals":[eval("check", "touch ran")]}),
     );
     let owner = fixture.spawn(&source, &[]);
     wait_until(|| fixture.starts() > 0);

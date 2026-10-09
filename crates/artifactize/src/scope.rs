@@ -458,7 +458,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         }
     }
     for (id, artifact) in &config.artifacts {
-        let Some(Fingerprint::Content { files: inputs, .. }) = &artifact.fingerprint else {
+        let Some(Fingerprint::Artifactsum { files: inputs, .. }) = &artifact.fingerprint else {
             continue;
         };
         let error = |message: String| {

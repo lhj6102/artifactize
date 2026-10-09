@@ -154,6 +154,14 @@ fn counters(totals: &serde_json::Value) -> String {
     }
 }
 
+fn tags(tags: &[String]) -> String {
+    if tags.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", tags.join(", "))
+    }
+}
+
 pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
     let mut out = io::stdout().lock();
     writeln!(
@@ -168,8 +176,12 @@ pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
     for artifact in &view.artifacts {
         writeln!(
             out,
-            "  Artifact {}: {} ({}/{} Evals)",
-            artifact.id, artifact.state, artifact.passed, artifact.total
+            "  Artifact {}{}: {} ({}/{} Evals)",
+            artifact.id,
+            tags(&artifact.tags),
+            artifact.state,
+            artifact.passed,
+            artifact.total
         )?;
     }
     for eval in &view.evals {
@@ -238,7 +250,8 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
             let artifact = view.artifacts[id];
             writeln!(
                 out,
-                "    Artifact {id}{} ({})",
+                "    Artifact {id}{}{} ({})",
+                tags(&artifact.tags),
                 if artifact.basis == Some(true) {
                     " [basis]"
                 } else {

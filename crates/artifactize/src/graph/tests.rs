@@ -45,6 +45,7 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
             name.into(),
             Artifact {
                 name: name.into(),
+                tags: declaration.tags,
                 basis: declaration.basis,
                 path: name.into(),
                 children: BTreeMap::new(),

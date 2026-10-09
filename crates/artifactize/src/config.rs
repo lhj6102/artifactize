@@ -18,7 +18,7 @@ pub use tools::{
 };
 
 pub(crate) use validation::identifier;
-use validation::{path, paths, positive_integer, present, script, text, timeout};
+use validation::{path, paths, positive_integer, present, script, tags, text, timeout};
 
 /// Format version for artifactize configuration documents.
 pub const CONFIG_FORMAT_VERSION: u32 = 1;
@@ -267,7 +267,7 @@ impl Views {
 }
 
 /// The developer's definition of what an Artifact's reviews depend on: a script's output or
-/// the built-in hash of the Artifact's own files, used as is. The content form is the plain
+/// artifactsum, the built-in hash of the Artifact's own files. Its form is the plain
 /// object; the script form keeps its `script` wrapper.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(try_from = "Map<String, Value>", into = "Value")]
@@ -279,7 +279,7 @@ pub enum Fingerprint {
         files: Vec<String>,
         timeout_ms: Option<std::time::Duration>,
     },
-    Content {
+    Artifactsum {
         files: Vec<String>,
         ignore: Vec<String>,
     },
@@ -308,7 +308,7 @@ struct ScriptFields {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ContentForm {
+struct ArtifactsumForm {
     #[serde(default = "owner_root")]
     files: Vec<String>,
     #[serde(default)]
@@ -317,6 +317,34 @@ struct ContentForm {
 
 fn owner_root() -> Vec<String> {
     vec![".".into()]
+}
+
+impl Default for Fingerprint {
+    fn default() -> Self {
+        Self::Artifactsum {
+            files: owner_root(),
+            ignore: Vec::new(),
+        }
+    }
+}
+
+fn default_fingerprint() -> Option<Fingerprint> {
+    Some(Fingerprint::default())
+}
+
+fn declared_fingerprint<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<Fingerprint>, D::Error> {
+    use serde::de::Error;
+    match Value::deserialize(deserializer)? {
+        Value::Bool(false) => Ok(None),
+        Value::Object(object) => Fingerprint::try_from(object)
+            .map(Some)
+            .map_err(D::Error::custom),
+        _ => Err(D::Error::custom(
+            "fingerprint must be false or an object declaring artifactsum (files, ignore) or a script.",
+        )),
+    }
 }
 
 impl TryFrom<Map<String, Value>> for Fingerprint {
@@ -345,8 +373,8 @@ impl TryFrom<Map<String, Value>> for Fingerprint {
                     "fingerprint.dependencies was removed in 0.5: a fingerprint covers only its own Artifact, and an eval's reuse key adds the fingerprints of its mounts, children and referenced Artifacts. Remove the field.",
                 ));
             }
-            let ContentForm { files, ignore } = serde_json::from_value(Value::Object(object))?;
-            Self::Content { files, ignore }
+            let ArtifactsumForm { files, ignore } = serde_json::from_value(Value::Object(object))?;
+            Self::Artifactsum { files, ignore }
         })
     }
 }
@@ -362,7 +390,7 @@ impl From<Fingerprint> for Value {
             } => serde_json::json!({"script": {
                 "command": command, "args": args, "files": files, "timeoutMs": timeout_ms.map(|value| value.as_millis()),
             }}),
-            Fingerprint::Content { files, ignore } => {
+            Fingerprint::Artifactsum { files, ignore } => {
                 serde_json::json!({"files": files, "ignore": ignore})
             }
         }
@@ -381,7 +409,7 @@ impl Fingerprint {
                 script(command, args)?;
                 paths(files, "fingerprint.script.files")
             }
-            Self::Content { files, ignore, .. } => {
+            Self::Artifactsum { files, ignore, .. } => {
                 if files.is_empty()
                     || files.len() > MAX_DECLARED_ITEMS
                     || files.iter().collect::<BTreeSet<_>>().len() != files.len()
@@ -418,6 +446,8 @@ pub struct ReviewPolicy {
 pub struct ArtifactDeclaration {
     pub name: String,
     #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
     pub evals: Vec<EvalDeclaration>,
     #[serde(default)]
     pub views: Views,
@@ -425,7 +455,10 @@ pub struct ArtifactDeclaration {
     pub mounts: BTreeMap<String, String>,
     #[serde(default, deserialize_with = "present")]
     pub basis: Option<bool>,
-    #[serde(default, deserialize_with = "present")]
+    #[serde(
+        default = "default_fingerprint",
+        deserialize_with = "declared_fingerprint"
+    )]
     pub fingerprint: Option<Fingerprint>,
     #[serde(default, deserialize_with = "present")]
     pub review_policy: Option<ReviewPolicy>,
@@ -434,6 +467,7 @@ pub struct ArtifactDeclaration {
 impl ArtifactDeclaration {
     fn validate(&self) -> Result<(), String> {
         identifier(&self.name, "Artifact name")?;
+        tags(&self.tags)?;
         let mut ids = BTreeSet::new();
         for eval in &self.evals {
             eval.validate()
@@ -496,6 +530,7 @@ pub struct Artifact {
     pub path: PathBuf,
     pub children: BTreeMap<String, String>,
     pub name: String,
+    pub tags: Vec<String>,
     pub views: Views,
     pub mounts: BTreeMap<String, String>,
     pub basis: Option<bool>,
@@ -590,6 +625,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             }
             let ArtifactDeclaration {
                 name,
+                tags,
                 evals,
                 views,
                 mounts,
@@ -628,6 +664,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     path: relative.clone(),
                     children: BTreeMap::new(),
                     name,
+                    tags,
                     views,
                     mounts,
                     basis,

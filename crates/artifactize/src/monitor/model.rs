@@ -752,6 +752,12 @@ pub fn detail(
                 ""
             };
             detail.title = format!("Artifact {id}{basis}");
+            detail.push(
+                "Tags",
+                artifact
+                    .and_then(|artifact| artifact.tags.value())
+                    .map_or_else(String::new, |tags| tags.join(", ")),
+            );
             let (status, passed, total) = saved.artifact_state(id);
             let status = status.as_deref().unwrap_or(ABSENT);
             detail.push("Status", format!("{status} · {passed}/{total} Evals GREEN"));

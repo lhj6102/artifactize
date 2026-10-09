@@ -96,6 +96,8 @@ fn write_human(path: &Path, fingerprint: bool) {
     if fingerprint {
         declaration["fingerprint"] =
             json!({"script":{"command":bin("cat"),"args":["fingerprint"]}});
+    } else {
+        declaration["fingerprint"] = json!(false);
     }
     fs::write(path.join("artifactize.json"), declaration.to_string()).unwrap();
 }
@@ -657,7 +659,61 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
 }
 
 #[tokio::test]
-async fn no_fingerprint_results_are_not_reused_by_a_new_verify() {
+async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() {
+    let fixture = Fixture::new(false);
+    let path = fixture.repo.join("artifactize.json");
+    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    declaration.as_object_mut().unwrap().remove("fingerprint");
+    fs::write(&path, declaration.to_string()).unwrap();
+    let run = fixture.verify(returning()).await;
+    assert!(
+        run.requests[0]
+            .fingerprint
+            .as_ref()
+            .unwrap()
+            .starts_with("artifactsum:")
+    );
+    let receipts = fixture.receipts().await;
+    human::claim(&receipts, &run.requests[0].id, "alice")
+        .await
+        .unwrap();
+    human::submit(
+        &receipts,
+        &run.requests[0].id,
+        "alice",
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    let next = fixture.verify(returning()).await;
+    assert_eq!(next.requests[0].status.as_str(), "GREEN");
+    assert_eq!(next.requests[0].execution_id, run.requests[0].execution_id);
+    fs::write(fixture.repo.join("fingerprint"), "human-v2\n").unwrap();
+    let changed = fixture.verify(returning()).await;
+    assert_eq!(changed.requests[0].status.as_str(), "WAITING_HUMAN");
+    assert_ne!(changed.requests[0].key, run.requests[0].key);
+    human::claim(&receipts, &changed.requests[0].id, "alice")
+        .await
+        .unwrap();
+    fs::write(fixture.repo.join("fingerprint"), "human-v3\n").unwrap();
+    let error = human::submit(
+        &receipts,
+        &changed.requests[0].id,
+        "alice",
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        error.contains("Fingerprint changed during review"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn fingerprint_false_results_are_not_reused_by_a_new_verify() {
     let fixture = Fixture::new(false);
     let run = fixture.verify(returning()).await;
     let receipts = fixture.receipts().await;

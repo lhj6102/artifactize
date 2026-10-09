@@ -34,11 +34,11 @@ const MAX_SUMMARY_PATHS: usize = 10;
 /// explicit format version lets owner scripts distinguish future envelopes, not DB schemas.
 const FINGERPRINT_INPUT_VERSION: u32 = 1;
 /// Keep per-file change explanations compact with 8 digest bytes (16 hex characters).
-/// This diagnostic prefix is not identity: content fingerprints/reuse keys retain full SHA-256.
+/// This diagnostic prefix is not identity: artifactsum/reuse keys retain full SHA-256.
 const MANIFEST_DIGEST_PREFIX_BYTES: usize = 8;
 /// Domain-separate and version the reuse-key hash input, including its terminating newline.
 /// Changing these bytes invalidates existing reuse keys; this is not a config/session/DB version.
-const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v1\n";
+const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v2\n";
 
 /// Hash the eval strategy: what is asked and how the answer is judged, never how the eval
 /// is executed. Execution options (backend, model, reasoning, limits, the profile variant),
@@ -65,14 +65,14 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
     ))
 }
 
-/// A prepared fingerprint; a content fingerprint also carries its manifest.
+/// A prepared fingerprint; artifactsum also carries its manifest.
 #[derive(Debug, Clone)]
 pub struct PreparedFingerprint {
     pub value: crate::types::Fingerprint,
     pub manifest: Option<Manifest>,
 }
 
-/// What a content fingerprint covered, saved with executions to explain later changes.
+/// What artifactsum covered, saved with executions to explain later changes.
 /// A file map that would exceed 64 KiB is omitted; the fingerprint still covers it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
@@ -93,7 +93,7 @@ pub struct Key {
     pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
 }
 
-/// Why an eval has no reuse key: an Artifact it depends on declares no fingerprint.
+/// Why an eval has no reuse key: an Artifact it depends on declares `fingerprint: false`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unkeyed {
     /// The eval's own target.
@@ -319,10 +319,10 @@ async fn compute(
     cancellation: CancellationToken,
 ) -> Result<PreparedFingerprint, String> {
     match &config.artifacts[id].fingerprint {
-        Some(Fingerprint::Content { files, ignore }) => {
+        Some(Fingerprint::Artifactsum { files, ignore }) => {
             content(config, id, files, ignore, &cancellation)
                 .await
-                .map_err(|error| format!("Content fingerprint for Artifact {id} failed: {error}"))
+                .map_err(|error| format!("Artifactsum for Artifact {id} failed: {error}"))
         }
         Some(Fingerprint::Script { .. }) => Ok(PreparedFingerprint {
             value: script(config, id, output_root, cancellation)
@@ -330,7 +330,7 @@ async fn compute(
                 .map_err(|error| format!("Fingerprint script for Artifact {id} failed: {error}"))?,
             manifest: None,
         }),
-        None => Err(format!("No fingerprint declared for Artifact {id}.")),
+        None => Err(format!("Artifact {id} declares fingerprint: false.")),
     }
 }
 
@@ -366,9 +366,9 @@ async fn content(
         manifest.files = None;
     }
     Ok(PreparedFingerprint {
-        value: format!("content:{}", files.digest)
+        value: format!("artifactsum:{}", files.digest)
             .parse()
-            .expect("content digest is a fingerprint"),
+            .expect("artifactsum digest is a fingerprint"),
         manifest: Some(manifest),
     })
 }

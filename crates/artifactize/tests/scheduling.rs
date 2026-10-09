@@ -26,7 +26,7 @@ impl Fixture {
         fs::create_dir(&repo).unwrap();
         fs::write(
             repo.join("artifactize.json"),
-            json!({"name":"test","evals":evals}).to_string(),
+            json!({"name":"test","fingerprint":false,"evals":evals}).to_string(),
         )
         .unwrap();
         Self {
@@ -225,7 +225,7 @@ fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() 
         check["payload"]["instruction"] = json!(instruction);
         fs::write(
             folder.join("artifactize.json"),
-            json!({"name":name,"evals":[check]}).to_string(),
+            json!({"name":name,"fingerprint":false,"evals":[check]}).to_string(),
         )
         .unwrap();
     }
@@ -392,7 +392,7 @@ fn budget_is_rechecked_when_a_dependency_makes_an_eval_ready() {
         }
         fs::write(
             folder.join("artifactize.json"),
-            json!({"name":name,"evals":[check]}).to_string(),
+            json!({"name":name,"fingerprint":false,"evals":[check]}).to_string(),
         )
         .unwrap();
     }

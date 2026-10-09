@@ -322,7 +322,7 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
     }
     fixture.write(
         "artifactize.json",
-        json!({"name":"test","evals":[eval("check","printf after > key")]}),
+        json!({"name":"test","fingerprint":false,"evals":[eval("check","printf after > key")]}),
     );
     let run = fixture.verify(&["--all"], 0);
     assert!(run["requests"][0]["fingerprint"].is_null());
@@ -336,7 +336,7 @@ fn preparation_covers_only_required_artifacts_but_includes_unselected_dependenci
     selected["payload"]["instruction"] = json!("Check {dependency}.");
     fixture.write(
         "a/artifactize.json",
-        json!({"name":"selected","evals":[selected]}),
+        json!({"name":"selected","fingerprint":false,"evals":[selected]}),
     );
     fixture.write(
         "b/artifactize.json",

@@ -284,6 +284,31 @@ fn keys_page_older_runs_open_and_quit() {
     );
 }
 
+#[tokio::test]
+async fn artifact_details_display_saved_tags_and_tolerate_untagged_snapshots() {
+    let view = run(json!({"artifacts":{
+        "app":{"path":"app","tags":["type:image","scope:combat"]},
+        "old":{"path":"old"},
+        "empty":{"path":"empty","tags":[]}
+    }}));
+    let app = detail(&view, &[], &Target::Artifact("app".into()), now());
+    assert_eq!(app.field("Tags"), Some("type:image, scope:combat"));
+    for id in ["old", "empty"] {
+        assert_eq!(
+            detail(&view, &[], &Target::Artifact(id.into()), now()).field("Tags"),
+            None
+        );
+    }
+    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    monitor.open = Some("run-1".parse().unwrap());
+    monitor.set_run(view, Vec::new());
+    monitor.tree.select(vec!["a:app".into()]);
+    monitor.open_detail().await;
+    let text = screen(&mut monitor);
+    assert!(text.contains("Tags"), "{text}");
+    assert!(text.contains("type:image, scope:combat"), "{text}");
+}
+
 #[test]
 fn run_screen_renders_progress_tree_and_detail() {
     let (view, requests) = live();

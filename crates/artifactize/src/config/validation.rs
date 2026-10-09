@@ -110,6 +110,19 @@ pub(super) fn text(value: &str, label: &str) -> Result<(), String> {
     Ok(())
 }
 
+pub(super) fn tags(values: &[String]) -> Result<(), String> {
+    if values.len() > MAX_INPUTS || values.iter().collect::<BTreeSet<_>>().len() != values.len() {
+        return Err("tags must contain at most 64 unique strings.".into());
+    }
+    for value in values {
+        text(value, "Artifact tag")?;
+        if value.bytes().any(|byte| byte.is_ascii_control()) {
+            return Err("Artifact tags must not contain ASCII control characters.".into());
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn script(command: &str, args: &[String]) -> Result<(), String> {
     text(command, "Script command")?;
     if command.bytes().any(|byte| byte.is_ascii_control())
