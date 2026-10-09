@@ -19,7 +19,10 @@ pub(super) fn owned(file: &File) -> io::Result<bool> {
 }
 pub(super) fn validate_directory(path: &Path) -> io::Result<()> {
     let metadata = fs::symlink_metadata(path)?;
-    if !metadata.is_dir() || metadata.uid().to_string() != user()? || metadata.mode() & 0o077 != 0 {
+    if !metadata.is_dir()
+        || metadata.uid().to_string() != user()?
+        || metadata.mode() & platform::GROUP_OTHER_BITS != 0
+    {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
     Ok(())

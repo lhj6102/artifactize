@@ -66,6 +66,62 @@ pub async fn read_session_request(state: &Path, id: &str) -> Result<Option<Reque
     .pop())
 }
 
+/// The request that owns `view`'s shared execution: a follower of another Run joins the
+/// original waiting request, which alone records the Human definition (tools and owner
+/// schemas), the claim and the result. `view` itself when it is the original.
+pub async fn read_original(state: &Path, view: &RequestView) -> Result<RequestView, String> {
+    let original = view
+        .execution
+        .as_ref()
+        .map(|execution| &execution.provenance.request_id)
+        .or_else(|| {
+            view.request
+                .provenance
+                .as_ref()
+                .map(|source| &source.request_id)
+        });
+    match original.filter(|id| *id != &view.request.id) {
+        Some(id) => read_request(state, id).await,
+        None => Ok(view.clone()),
+    }
+}
+
+/// One entry per waiting Human sign-off: followers collapse onto the original request that
+/// owns their shared execution, at the position of the first entry that names it.
+pub async fn read_waiting_originals(
+    state: &Path,
+    repo: Option<&Path>,
+) -> Result<Vec<RequestView>, String> {
+    let waiting = read_waiting(state, repo).await?;
+    let mut originals: Vec<RequestView> = Vec::with_capacity(waiting.len());
+    for view in &waiting {
+        let source = view
+            .execution
+            .as_ref()
+            .map_or(&view.request.id, |execution| {
+                &execution.provenance.request_id
+            });
+        if originals.iter().any(|seen| &seen.request.id == source) {
+            continue;
+        }
+        let original = match waiting.iter().find(|other| &other.request.id == source) {
+            Some(original) => Some(original.clone()),
+            None => read_original(state, view).await.ok(),
+        };
+        // A follower whose original is gone or no longer waits stays listed as itself.
+        let original = original
+            .filter(|original| original.request.status == crate::types::RequestStatus::WaitingHuman)
+            .unwrap_or_else(|| view.clone());
+        if !originals
+            .iter()
+            .any(|seen| seen.request.id == original.request.id)
+        {
+            originals.push(original);
+        }
+    }
+    Ok(originals)
+}
+
 /// WAITING_HUMAN requests, newest Run first, from the canonical `repo`'s Runs or every Run.
 pub async fn read_waiting(state: &Path, repo: Option<&Path>) -> Result<Vec<RequestView>, String> {
     read(

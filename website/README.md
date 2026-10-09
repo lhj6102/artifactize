@@ -5,11 +5,12 @@ deployed from this directory to Cloudflare Workers (static assets).
 
 | Path | Contents |
 |---|---|
-| `landing/` | The landing page, copied to `dist/` as is: a short hero, the scroll story (`landing/story/`, native ES modules with JSDoc types; see its `README.md`), the terminal recordings and the install block. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the media (`landing/media/`), favicons, `404.html`, `_headers`, the install scripts `install.sh` and `install.ps1` (served at `/install.sh` and `/install.ps1`, tested by `.github/workflows/binaries.yml`) and `.assetsignore`, which keeps `jsconfig.json` and `story/README.md` out of the deployed site. |
+| `landing/` | The landing page, copied to `dist/` as is: a short hero, the scroll story (`landing/story/`, native ES modules with JSDoc types; see its `README.md`), the terminal recordings and the install block. Also the shared brand fonts (`landing/fonts/`, with their OFL licenses), the promo media (`landing/media/`), `404.html`, `_headers`, the install scripts `install.sh` and `install.ps1` (served at `/install.sh` and `/install.ps1`, tested by `.github/workflows/binaries.yml`) and `.assetsignore`, which keeps `jsconfig.json` and `story/README.md` out of the deployed site. The brand images and favicons are copied from `../assets/brand/` at build time. |
 | `docs/` | The user docs as an [mdBook](https://rust-lang.github.io/mdBook/): `book.toml`, `src/` (`SUMMARY.md` and the chapters) and `theme/`. Built into `dist/docs/`. |
 | `build.sh` | Builds everything into `dist/` (gitignored) and checks every internal link. |
 | `check-links.py` | The internal link check that `build.sh` runs over `dist/`. |
-| `make-media.sh` | Re-creates the promo media in `landing/media/` from the promo master. |
+| `../assets/brand/` | The sole brand source, generated images, generator, minimum tool requirements, Artifact declarations and social card template. |
+| `make-media.sh` | Re-creates the promo media in `landing/media/` from the promo master (not the social card). |
 | `demo/` | The VHS tapes, demo projects and scripts behind the README GIFs and the landing page's terminal videos (see [Recordings](#recordings)). |
 | `wrangler.toml` | The Worker that serves `dist/` on `artifactize.dev`. |
 
@@ -46,15 +47,48 @@ links into them at `https://artifactize.dev/docs/`. Write chapters in
 - The fonts come from `/fonts/fonts.css`, shared with the landing page;
   `theme/fonts/fonts.css` only keeps mdBook from bundling its default fonts.
 
+## Brand assets
+
+All brand files live in the top-level `assets/brand/`, outside `website/`.
+`assets/brand/artifactize-icon.svg` is the owner's original and the single source
+of truth. Edit only that artwork or `assets/brand/og-template.svg`, never their
+generated outputs. The generator derives the cropped header mark, README PNG,
+standalone square favicons, opaque Apple icon and 1200×630 social card in that
+same folder. The template's text is outlined from the bundled fonts; rendering
+uses 8× supersampling and LANCZOS with no timestamps or image metadata. `build.sh`
+copies the assets to their existing served URLs and injects the favicons into a temporary mdBook
+source; no generated copies are committed under `landing/` or `docs/theme/`.
+
+```sh
+python3 assets/brand/build-icons.py
+python3 assets/brand/build-icons.py --check
+artifactize verify brand --recursive
+```
+
+Install the tools in the user's `python3` environment first: CairoSVG >=2.8,
+Pillow >=12.1 and system Cairo (`python3-cairosvg`, `python3-pil` and `libcairo2`
+on Ubuntu; or `python3 -m pip install -r assets/brand/requirements.txt`). No
+project environment or automatic installation is used. Runtime preflight reports
+missing tools clearly; artifactize's private HOME may hide `pip --user` modules.
+The committed images use CairoSVG 2.8.2 and Pillow 12.1.1; after a renderer upgrade,
+regenerate and commit the outputs if the byte check reports drift.
+
+The `brand-icon/approved` Human eval owns artwork approval; `brand/generated`
+waits for it and checks every output in memory without modifying files. The folder
+uses its default artifactsum, including the source artwork and all outputs.
+This is the brand drift check; there is no separate brand CI. The Website workflow
+still builds and deploys committed assets. The logos in `demo/`, including
+`demo/brand/logo/logo.svg`, are recording fixtures and intentionally unchanged.
+
 ## Landing page media
 
 The promo video is the owner's motion graphic (1920×1080, 60 fps). The landing page
-no longer shows it, but the social card comes from the same master and the README's GIF
-is rendered from the video (see Recordings). The master is
-not committed; `make-media.sh MASTER.mp4` writes the web versions: AV1 WebM and
-H.264 MP4 at 1600×900 and 30 fps, the poster (the "Reuse" frame) and the 1200×630
-social card (`og.jpg`). `media/promo-v10.en.vtt` holds the video's on-screen text
-as captions; keep it in step with the video.
+no longer shows it; the README's GIF is rendered from the video (see Recordings).
+The master is not committed; `make-media.sh MASTER.mp4` writes the web versions:
+AV1 WebM and H.264 MP4 at 1600×900 and 30 fps, plus the poster (the "Reuse" frame).
+The social card (`og.jpg`) is generated separately from `assets/brand/og-template.svg`.
+`media/promo-v10.en.vtt` holds the video's on-screen text as captions; keep it in
+step with the video.
 
 ## Recordings
 
@@ -94,7 +128,8 @@ with a progress bar along the bottom edge. It needs `ffmpeg`.
 ## Deploy
 
 `.github/workflows/website.yml` installs the pinned mdBook (checking the release
-checksum), runs `build.sh` on pull requests and pushes that touch `website/`, and
+checksum), runs `build.sh` on pull requests and pushes that touch `website/` or
+`assets/`, and
 on pushes to `main` deploys `website/dist` with
 `wrangler deploy --config website/wrangler.toml`. The Worker serves the
 `artifactize.dev` custom domain; unknown paths get `dist/docs/404.html` under

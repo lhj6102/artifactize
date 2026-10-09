@@ -412,6 +412,7 @@ impl Monitor {
                                 });
                             pane.request = Some(view.request.id.clone());
                             review.load_single(view);
+                            review.resolve_commands().await;
                             pane.review = Some(review);
                         }
                         Err(error) => self.notice = Some(error),
@@ -543,7 +544,7 @@ impl Monitor {
     fn review_mut(&mut self) -> Option<&mut Review> {
         self.detail.as_mut().and_then(|pane| pane.review.as_mut())
     }
-    /// A Human review that is working, confirming or editing keeps focus in Detail.
+    /// A Human review that is working or editing keeps focus in Detail.
     fn locked(&self) -> bool {
         self.detail
             .as_ref()
@@ -754,7 +755,7 @@ impl Monitor {
             self.leave_detail();
             return Action::None;
         }
-        // A Human review passes only `?` and `!`, outside a form, job or confirmation.
+        // A Human review passes only `?` and `!`, outside a form or job.
         match key.code {
             KeyCode::Char('q') => return Action::Quit,
             KeyCode::Char('?') => {
@@ -860,10 +861,10 @@ impl Monitor {
     }
 }
 
-/// A Human review takes every key while it works, or while it edits or confirms a request
+/// A Human review takes every key while it works, or while it edits a request
 /// that still waits; a request settled elsewhere leaves its form behind without keys.
 fn owns_keys(review: &Review) -> bool {
-    review.busy() || !review.settled() && (review.editing() || review.confirming())
+    review.busy() || !review.settled() && review.editing()
 }
 
 fn pane_request(view: &Option<RequestView>) -> Option<&RequestId> {

@@ -1,6 +1,6 @@
 //! Terminal protocol and hit tests over geometry from the most recently rendered frame.
 use super::{Action, DetailArea, Monitor, Pane};
-use crate::review::{Area, Control};
+use crate::review::Control;
 use crossterm::event::{
     DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     MouseButton, MouseEvent, MouseEventKind,
@@ -97,7 +97,7 @@ impl Monitor {
             if contains(self.hits.detail, point) {
                 return self.detail_mouse(event, point);
             }
-            // A working, confirming or editing review keeps focus; the wheel still scrolls.
+            // A working or editing review keeps focus; the wheel still scrolls.
             if self.locked() && matches!(event.kind, MouseEventKind::Down(_)) {
                 return Action::None;
             }
@@ -275,28 +275,10 @@ impl Monitor {
                 live.toggle(*id);
                 return Action::None;
             }
+            // The shared component: focus an area, select a row; a click on the selected tool
+            // of the focused Tools pane runs it.
             if let Some(review) = &mut pane.review {
-                let hits = &self.hits.review;
-                if contains(hits.tools, point) {
-                    review.select_area(Area::Tools);
-                }
-                if contains(hits.fields, point) {
-                    review.select_area(Area::Fields);
-                }
-                if let Some((_, index)) = hits
-                    .tool_rows
-                    .iter()
-                    .find(|(rect, _)| contains(*rect, point))
-                {
-                    review.selected_tool(*index);
-                }
-                if let Some((_, index)) = hits
-                    .field_rows
-                    .iter()
-                    .find(|(rect, _)| contains(*rect, point))
-                {
-                    review.select_field(*index);
-                }
+                return Action::Review(review.click(&self.hits.review, point));
             } else if contains(self.hits.areas[0], point) {
                 pane.focus = DetailArea::Summary;
             } else if contains(self.hits.areas[1], point) {

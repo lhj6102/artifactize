@@ -8,9 +8,10 @@ READY Human evals persist WAITING_HUMAN and release their job slot. They consume
 no `maxExecutions` budget, so even a zero budget admits a Human review. `verify`
 waits for Human results as it waits for runtime and Agent evals, and never
 fabricates a verdict. When its wait times out it exits and lists the waiting
-requests, and no worker stays alive. Waiting executions with a reuse key retain their exclusive
-claim on the key after the verifier exits. Cross-repository followers refer to that
-same execution and forward Human actions to its original request and repository.
+requests, and no worker stays alive. A waiting execution with a reuse key retains its
+exclusive claim on the key after the verifier exits, unless it is forced (`--force`): a
+forced wait holds no claim on its key. Cross-repository followers refer to the claiming
+execution and forward Human actions to its original request and repository.
 
 A submission that arrives while `verify` waits runs the Human eval's dependents in
 the same Run. Human sign-offs reuse by default: artifactsum supplies the target and
@@ -98,17 +99,27 @@ claims, runs tools, unclaims and submits in-process, and
 publishes a submission to the remote review store exactly like `request submit`.
 Without an ID it lists the WAITING_HUMAN requests of the canonical `--repo`
 (default: the current directory) or, with `--all`, of every repository (newest
-Run first: eval, request, claim, waiting time, repository); Enter opens one. With
-an ID it opens that request in any repository. It also runs on its own, for example
-in a second terminal or tmux pane.
+Run first: eval, request, claim, waiting time, repository); Enter opens one. The
+list holds one entry per waiting sign-off: followers that later Runs join to a
+waiting Human execution collapse onto its original request, which records the
+Human tools and owner schemas and receives every action, as in the monitor. With
+an ID it opens that request in any repository; a waiting follower's ID opens its
+original. It also runs on its own, for example in a second terminal or tmux pane.
 
 The waiting list and Detail use the monitor's reactive layout. With the list
 focused, it is Full and the selected request has a read-only Preview. Enter or →
 opens Detail. With Detail focused, a 30-column Compact list sits beside it. Below
 100 columns only the focused pane shows, with the breadcrumb
 `artifactize review › scope › eval`. ↑/↓ or `j`/`k` selects a request; `r` refreshes
-the list. Esc on the list stays there, never quits. The standalone UI has no `?`
-help overlay or `!` attention navigation; those keys belong to the monitor.
+the list. Tab opens the selected request with its Tools focused. Esc on the list
+stays there, never quits. The standalone UI has no `?` help overlay or `!`
+attention navigation; those keys belong to the monitor.
+
+The mouse works as in the monitor and is captured by default: a click selects a
+list row and a click on the selected row opens it, clicks in Detail act like the
+monitor's (below), and the wheel scrolls. F2 turns capture off for terminal text
+selection; the header then shows `mouse off · F2`. Bracketed paste works either
+way.
 
 ### Shared Human Detail
 
@@ -124,7 +135,16 @@ it while not editing; the expanded instruction takes 70% of the body and ↑/↓
 scrolls it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
 the wheel over the instruction scrolls it too. Tools focus widens Tools/Output
 to 60% of the available width;
-the selected tool shows its command and description.
+the selected tool shows the command Enter runs, resolved from the current
+declarations (or as declared, with the reason, when it cannot be resolved), and
+its description.
+
+The way to the tools is always on screen: the footer lists the keys of the
+focused area (for example `Tab tools, Enter run`, or `↑↓ tool · Enter run · Tab
+fields` with Tools focused), the Tools pane title names its key (`Tools (1) · Tab`,
+`Shift-Tab` while a form field takes Tab), and before a claim the one-line tools
+summary says `Tab or click: tools`. A click on a tool row focuses the Tools pane
+and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
 
 | Key | Human Detail action |
 |---|---|
@@ -136,17 +156,20 @@ the selected tool shows its command and description.
 | Ctrl-U | Release while editing |
 | Tab / Shift-Tab | Switch Tools and Fields; in edited Fields, Tab moves fields or indents JSON and Shift-Tab switches to Tools |
 | `i` / `t` | Expand the instruction / toggle Technical, while not editing |
-| Esc | Cancel work or confirmation, then stop editing, then leave Detail |
+| Enter | With Tools focused, run the selected tool at once (after claim) |
+| Esc | Cancel work, then stop editing, then leave Detail |
 | Ctrl-E | Standalone only: edit the form in `$EDITOR` |
 
 - **Claim.** Press `c` before running tools or submitting (`$USER` unless
   `--reviewer`). Those actions never claim implicitly. A request claimed by someone
   else, or no longer waiting, is read-only. GREEN/RED, submit and release require
   your claim. `u` or Release relinquishes it; leaving Detail keeps it.
-- **Tools.** With Tools focused, ↑/↓ selects and Enter runs the selected tool.
-  `j`/`k` also selects while not editing. Before a command line's first run in a session, a confirmation shows its
-  resolved command, directory and repository (with `--all`, possibly another
-  repository). `y` or Enter confirms; Esc cancels. A `launch` tool reports
+- **Tools.** With Tools focused, ↑/↓ selects and Enter runs the selected tool
+  at once; there is no confirmation step. `j`/`k` also selects while not editing.
+  The run needs your claim on a request that still waits, checked when it starts:
+  after a release or a settlement elsewhere it neither claims nor runs. Each run
+  resolves the command again, so it runs what the declarations say at that moment.
+  An open form stays open while a tool runs. A `launch` tool reports
   "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
   Ctrl-C cancels. Its stdout/stderr fill Output; PgUp/PgDn scroll. A nonzero exit
   is a tool error, not a verdict.
@@ -162,8 +185,8 @@ the selected tool shows its command and description.
   fields, not navigation. A bracketed keyboard paste goes into the focused field as
   one edit, in standalone `review` as in the monitor. Ctrl-G/Ctrl-R switches
   verdicts, keeping separate drafts.
-  Editing, tool work and confirmation lock focus moves outside Detail. Esc closes
-  one thing at a time: cancel a job or confirmation, then stop editing with its
+  Editing and tool work lock focus moves outside Detail. Esc closes
+  one thing at a time: cancel a job, then stop editing with its
   draft kept, then leave Detail. The same verdict reopens the draft. Refresh and
   leaving/reopening the same request keep drafts; opening a different request in
   standalone `review` starts fresh. A request settled by another command ends
@@ -173,7 +196,7 @@ the selected tool shows its command and description.
   submits it immediately; an empty file submits nothing. Monitor never opens
   `$EDITOR`; nested JSON stays in the TUI.
 
-Outside a form, work or confirmation, `q` quits from Detail too. Ctrl-C quits
+Outside a form or work, `q` quits from Detail too. Ctrl-C quits
 from a form, but first cancels a running tool. Standalone `review` lists claims
 this session took without submitting: `k` keeps them and quits, `u` releases them
 and quits, and Esc stays. The quit prompt sets a form aside without dropping its
@@ -290,16 +313,16 @@ not rewritten by this view.
 | `?` | Show help; the next key closes it without another action |
 | `!` | Next ERROR, RED or waiting Human eval in this Run, wrapping around |
 | `r` | Refresh outside a Human form |
-| `q` / Ctrl-C | `q` quits outside editing/work/confirmation; Ctrl-C quits or first cancels a running Human tool |
+| `q` / Ctrl-C | `q` quits outside editing/work; Ctrl-C quits or first cancels a running Human tool |
 | F2 | Toggle mouse capture for terminal text selection |
 
 From Detail, `!` opens the next attention item's Detail. Human actions work only
-with Detail focused; ordinary letters are field input while editing. Review work,
-confirmation and editing lock focus moves to other panes. Esc cancels work or
-confirmation first, then stops form editing with the draft kept, then leaves Detail.
+with Detail focused; ordinary letters are field input while editing. Review work
+and editing lock focus moves to other panes. Esc cancels work first, then stops
+form editing with the draft kept, then leaves Detail.
 
 Click focuses and selects. Double-click opens a tree row's Detail; clicking the
-peek opens it Full. The wheel scrolls the pane under the pointer without moving
+peek opens it Full. In a Human Detail, a click on the selected tool runs it. The wheel scrolls the pane under the pointer without moving
 focus. In the tree it moves the viewport, not the selection, so the peek stays on
 the same eval. Breadcrumb segments are not clickable. Bracketed keyboard paste
 works with mouse capture on or off.
@@ -368,9 +391,9 @@ Detail depends on the eval kind:
   with explicit **CLAIM → REVIEW**, instruction first, folded Technical (`t`),
   instruction expansion (`i`), tools/output and GREEN/RED fields. `c` claims only
   in focused Detail; tools and submission never claim implicitly. `g`/`r` opens
-  forms, Ctrl-G/Ctrl-R switches verdicts and Ctrl-S submits. Esc cancels work or
-  confirmation, then stops editing with the draft kept, then returns to the tree.
-  Monitor never opens `$EDITOR`. Outside editing, work or confirmation, `q` quits,
+  forms, Ctrl-G/Ctrl-R switches verdicts and Ctrl-S submits. Esc cancels work,
+  then stops editing with the draft kept, then returns to the tree.
+  Monitor never opens `$EDITOR`. Outside editing or work, `q` quits,
   `?` shows monitor help and `!` opens the next attention item.
 
 Browsing uses read-only state queries and cached Git discovery, not configuration

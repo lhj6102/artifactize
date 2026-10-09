@@ -317,7 +317,7 @@ async fn remote_failure_after_local_submit_leaves_completed_modal_not_resubmissi
 }
 
 #[tokio::test]
-async fn tool_confirmation_and_cancel_restore_the_existing_draft() {
+async fn a_tool_runs_at_once_and_keeps_the_open_draft() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;
     let mut review = opened(&state, view, "alice");
@@ -330,25 +330,17 @@ async fn tool_confirmation_and_cancel_restore_the_existing_draft() {
         Mode::Form(form) => form.draft(),
         _ => panic!("form"),
     };
+    // No confirmation step: the run job starts at once, and the form stays open meanwhile.
     let outcome = perform(&mut review, Control::RunTool).await;
-    review.finish_single(outcome);
-    assert!(review.confirming());
-    press(&mut review, KeyEvent::from(KeyCode::Char('n')));
-    assert_eq!(
-        match review.mode() {
-            Mode::Form(form) => form.draft(),
-            _ => panic!("restored form"),
-        },
-        draft
+    assert!(
+        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error),
+        "{outcome:?}"
     );
-    let outcome = perform(&mut review, Control::RunTool).await;
-    review.finish_single(outcome);
-    let outcome = perform(&mut review, Control::Confirm).await;
     review.finish_single(outcome);
     assert_eq!(
         match review.mode() {
             Mode::Form(form) => form.draft(),
-            _ => panic!("restored form"),
+            _ => panic!("kept form"),
         },
         draft
     );
@@ -397,7 +389,7 @@ async fn an_external_submission_ends_editing_and_frees_the_detail_keys() {
 }
 
 #[tokio::test]
-async fn a_confirmation_after_an_outside_release_neither_claims_nor_runs() {
+async fn a_run_after_an_outside_release_neither_claims_nor_runs() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;
     let id = view.request.id.clone();
@@ -405,22 +397,37 @@ async fn a_confirmation_after_an_outside_release_neither_claims_nor_runs() {
     let outcome = perform(&mut review, Control::Claim).await;
     review.finish_single(outcome);
     review.refresh().await;
-    let outcome = perform(&mut review, Control::RunTool).await;
-    review.finish_single(outcome);
-    assert!(review.confirming());
-    // Another terminal releases the claim; the monitor refreshes under the open prompt.
+    // Another terminal releases the claim before this review has refreshed: the job checks
+    // ownership atomically, so the stale view neither claims nor runs.
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
     human::unclaim(&receipts, &id, "alice").await.unwrap();
+    let Action::Start(job) = review.control(Control::RunTool) else {
+        panic!("the stale view still starts the job");
+    };
+    assert!(matches!(&job, Job::Run { claim: false, .. }), "{job:?}");
+    let outcome = review.start(job).await;
+    assert!(
+        matches!(
+            &outcome,
+            Outcome::Ran {
+                result: Err(_),
+                claimed: None,
+                ..
+            }
+        ),
+        "{outcome:?}"
+    );
+    review.finish_single(outcome);
+    // Once refreshed, Enter asks for a claim instead of starting anything.
     review.refresh().await;
     assert!(!review.owned());
-    assert_eq!(review.control(Control::Confirm), Action::None);
-    assert!(!review.confirming());
+    assert_eq!(review.control(Control::RunTool), Action::None);
     let saved = store::read_request(&state, &id).await.unwrap();
-    assert!(saved.claim.is_none(), "confirming never claims");
+    assert!(saved.claim.is_none(), "running never claims");
 }
 
 #[tokio::test]
-async fn a_confirmation_dropped_by_an_outside_submission_keeps_the_draft() {
+async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;
     let id = view.request.id.clone();
@@ -430,10 +437,6 @@ async fn a_confirmation_dropped_by_an_outside_submission_keeps_the_draft() {
     review.refresh().await;
     review.control(Control::Red);
     review.paste_single("draft with 한글");
-    // The RED form now lives only beside the tool's confirmation.
-    let outcome = perform(&mut review, Control::RunTool).await;
-    review.finish_single(outcome);
-    assert!(review.confirming() && review.tool_draft.is_some());
     human::submit_and_publish(
         &state,
         id.as_str(),
@@ -443,45 +446,21 @@ async fn a_confirmation_dropped_by_an_outside_submission_keeps_the_draft() {
     )
     .await
     .unwrap();
-    review.refresh().await;
-    assert!(review.settled() && !review.confirming());
-    assert_eq!(review.mode(), &Mode::Request);
-    assert!(review.tool_draft.is_none());
-    assert_eq!(review.drafts["RED"].fields[0].display(), "draft with 한글");
-}
-
-#[test]
-fn quitting_from_a_confirmation_keeps_the_draft() {
-    let mut review = super::tests::opened(Some("alice"), super::tests::demo());
-    review.control(Control::Red);
-    review.paste_single("kept");
-    let form = match review.mode() {
-        Mode::Form(form) => form.clone(),
-        _ => panic!("form"),
+    // A run started from the stale view is refused by the settled request.
+    let Action::Start(job) = review.control(Control::RunTool) else {
+        panic!("the stale view still starts the job");
     };
-    review.tool_draft = Some(form);
-    review.mode = Mode::Confirm {
-        tool: "notes_release".into(),
-        command: crate::tools::human::CommandLine {
-            repo: "/repo".into(),
-            kind: crate::config::HumanToolKind::Output,
-            program: "cat".into(),
-            args: Vec::new(),
-            cwd: "/repo".into(),
-        },
-    };
-    review.taken = vec!["run-1-3".parse().unwrap()];
-    review.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
-    assert_eq!(review.mode(), &Mode::Leave);
-    review.key(KeyEvent::from(KeyCode::Esc));
-    review.control(Control::Red);
-    assert_eq!(
-        match review.mode() {
-            Mode::Form(form) => form.fields[0].display(),
-            _ => panic!("form"),
-        },
-        "kept"
+    let outcome = review.start(job).await;
+    assert!(
+        matches!(&outcome, Outcome::Ran { result: Err(_), .. }),
+        "{outcome:?}"
     );
+    review.finish_single(outcome);
+    review.refresh().await;
+    assert!(review.settled());
+    assert_eq!(review.control(Control::RunTool), Action::None);
+    assert_eq!(review.mode(), &Mode::Request);
+    assert_eq!(review.drafts["RED"].fields[0].display(), "draft with 한글");
 }
 
 #[tokio::test]
@@ -684,4 +663,215 @@ fn keyboard_pages_flat_fields_without_mouse_capture() {
     assert!(text.contains("field-10"), "{text}");
     press(&mut review, KeyEvent::from(KeyCode::PageUp));
     assert_eq!(review.field_scroll, 0);
+}
+
+/// The owner's file Artifact sign-off: a FILE Artifact whose launch tool opens the file, and a
+/// GREEN schema whose only required property is a `const` without `type`.
+fn file_signoff() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    let brand = repo.join("assets/brand");
+    std::fs::create_dir_all(&brand).unwrap();
+    std::fs::write(brand.join("artifactize-icon.svg"), "<svg/>\n").unwrap();
+    let command = serde_json::to_string(&crate::test_os::bin("true")).unwrap();
+    let declaration = format!(
+        r#"name = "brand-icon"
+
+[views.human_tools]
+open = {{ description = "Open the original artwork of {{artifactName}}.", kind = "launch", command = {command}, args = ["{{artifactPath}}"] }}
+
+[evals.approved]
+title = "The owner approves this artwork"
+profile = {{ kind = "human" }}
+
+[evals.approved.payload]
+instruction = "Open {{brand-icon}} with the open tool."
+
+[evals.approved.pass_schema]
+type = "object"
+properties.approved = {{ const = true }}
+properties.comment = {{ type = "string" }}
+required = ["approved"]
+additionalProperties = false
+
+[evals.approved.fail_schema]
+type = "object"
+properties.change = {{ type = "array", items = {{ type = "string", minLength = 1 }}, minItems = 1 }}
+required = ["change"]
+additionalProperties = false
+"#
+    );
+    std::fs::write(brand.join("artifactize-icon.svg.artf"), declaration).unwrap();
+    (root, repo, state)
+}
+
+fn drawn(review: &mut Review) -> String {
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(140, 40)).unwrap();
+    terminal.draw(|frame| review.draw(frame)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let rows = buffer.content().chunks(buffer.area.width as usize);
+    let rows = rows.map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>());
+    rows.collect::<Vec<_>>().join("\n")
+}
+
+async fn job(review: &mut Review, action: Action) -> Outcome {
+    let Action::Start(job) = action else {
+        panic!("expected lifecycle job, got {action:?}");
+    };
+    review.start(job).await
+}
+
+#[tokio::test]
+async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_const_fields() {
+    let (_root, repo, state) = file_signoff();
+    let original = waiting(&repo, &state).await;
+    let mut followers = Vec::new();
+    for _ in 0..3 {
+        followers.push(waiting(&repo, &state).await);
+    }
+    for follower in &followers {
+        assert_eq!(follower.request.execution_id, original.request.execution_id);
+        assert!(follower.request.human_definition.is_none());
+    }
+    let tool = |review: &Review| {
+        review
+            .tools()
+            .into_iter()
+            .map(|tool| (tool.name, tool.kind))
+            .collect::<Vec<_>>()
+    };
+    let expected = vec![(
+        "open_brand-icon".to_owned(),
+        crate::config::HumanToolKind::Launch,
+    )];
+
+    // Monitor's Detail resolves a follower to the original before loading the review.
+    let monitor = crate::monitor::test_original(&state, &followers[2])
+        .await
+        .unwrap();
+    assert_eq!(monitor.request.id, original.request.id);
+    assert_eq!(tool(&opened(&state, monitor, "alice")), expected);
+
+    // The standalone list holds one entry per waiting sign-off, not one per joined Run.
+    let mut review = Review::new(state.clone(), Some(repo.clone()), "alice".into(), None);
+    review.refresh().await;
+    let listed: Vec<_> = review
+        .waiting
+        .iter()
+        .map(|view| view.request.id.clone())
+        .collect();
+    assert_eq!(listed, vec![original.request.id.clone()]);
+    assert!(drawn(&mut review).contains("Waiting Human reviews (1)"));
+
+    // Opening a follower by id reviews its original: tools, schemas and actions in one place.
+    let mut review = Review::new(
+        state.clone(),
+        Some(repo.clone()),
+        "alice".into(),
+        Some(followers[0].request.id.to_string()),
+    );
+    review.refresh().await;
+    assert_eq!(review.open.as_ref(), Some(&original.request.id));
+    assert_eq!(tool(&review), expected);
+    let action = review.control(Control::Claim);
+    let outcome = job(&mut review, action).await;
+    review.finish(outcome);
+    review.refresh().await;
+    assert!(review.owned());
+    assert!(drawn(&mut review).contains("Tools (1)"));
+
+    // The launch tool resolves {artifactPath} to the file and launches from its folder; the
+    // focused Tools pane shows that command, and Enter runs it without a confirmation.
+    let Some(Ok(command)) = review.command("open_brand-icon").cloned() else {
+        panic!("resolved command");
+    };
+    let root = std::fs::canonicalize(&repo).unwrap();
+    let file = root.join("assets/brand/artifactize-icon.svg");
+    assert_eq!(command.args, vec![file.to_str().unwrap().to_owned()]);
+    assert_eq!(command.cwd, root.join("assets/brand"));
+    press(&mut review, KeyEvent::from(KeyCode::Tab));
+    let screen = drawn(&mut review);
+    assert!(screen.contains(file.to_str().unwrap()), "{screen}");
+    let action = press(&mut review, KeyEvent::from(KeyCode::Enter));
+    let outcome = job(&mut review, action).await;
+    assert!(
+        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error),
+        "{outcome:?}"
+    );
+    review.finish(outcome);
+
+    // The const property is a fixed, prefilled field and part of the submitted result.
+    review.control(Control::Green);
+    let Mode::Form(form) = review.mode() else {
+        panic!("GREEN form");
+    };
+    let fields: Vec<_> = form
+        .fields
+        .iter()
+        .map(|field| (field.name.as_str(), field.required, field.display()))
+        .collect();
+    assert_eq!(
+        fields,
+        vec![
+            ("approved", true, "true (fixed)".to_owned()),
+            ("comment", false, String::new()),
+        ]
+    );
+    assert_eq!(
+        form.result().unwrap(),
+        json!({"verdict":"GREEN","approved":true})
+    );
+    let screen = drawn(&mut review);
+    assert!(screen.contains("true (fixed)"), "{screen}");
+    assert!(!screen.contains("No owner fields"), "{screen}");
+    let action = review.control(Control::Submit);
+    let outcome = job(&mut review, action).await;
+    assert!(
+        matches!(&outcome, Outcome::Submitted { result: Ok(_), .. }),
+        "{outcome:?}"
+    );
+    review.finish(outcome);
+    for view in std::iter::once(&original).chain(&followers) {
+        let view = store::read_request(&state, &view.request.id).await.unwrap();
+        assert_eq!(view.request.status, crate::types::RequestStatus::Green);
+        assert_eq!(view.request.result.unwrap()["approved"], json!(true));
+    }
+}
+
+#[test]
+fn a_request_without_a_recorded_definition_never_offers_an_empty_form() {
+    let mut review = super::tests::opened(Some("alice"), super::tests::demo());
+    review.request.as_mut().unwrap().request.human_definition = None;
+    assert_eq!(review.control(Control::Green), Action::None);
+    assert!(!review.editing());
+    let screen = drawn(&mut review);
+    assert!(
+        screen.contains("records no Human definition")
+            && screen.contains("Unknown: no Human definition is recorded."),
+        "{screen}"
+    );
+}
+
+#[test]
+fn const_properties_are_fixed_fields_with_or_without_a_type() {
+    for approved in [
+        json!({"const":true}),
+        json!({"type":"boolean","const":true,"description":"Approve the artwork."}),
+    ] {
+        let schema = json!({
+            "type":"object",
+            "properties":{"approved":approved,"comment":{"type":"string"}},
+            "required":["approved"],
+            "additionalProperties":false,
+        });
+        let form = Form::new("GREEN", Some(&schema));
+        assert!(form.json.is_none(), "{schema}");
+        assert_eq!(form.fields[0].input, Input::Fixed(json!(true)));
+        assert_eq!(form.fields[0].display(), "true (fixed)");
+        assert_eq!(
+            form.result().unwrap(),
+            json!({"verdict":"GREEN","approved":true})
+        );
+    }
 }

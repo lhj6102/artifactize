@@ -27,48 +27,71 @@ use super::FileKind;
 
 pub(crate) use process::{Child, process_start_time, spawn_detached, spawn_gated};
 
+/// Owner-only directory mode (rwx------): these directories hold credentials, Agent sessions,
+/// sockets and review state, so no other local user may list or enter them.
+const PRIVATE_DIR_MODE: u32 = 0o700;
+
+/// Owner-only file mode (rw-------): these files hold credentials, Agent transcripts and review
+/// evidence, so no other local user may read them.
+const PRIVATE_FILE_MODE: u32 = 0o600;
+
+/// The group and other permission bits; a private path has none of them set.
+pub(crate) const GROUP_OTHER_BITS: u32 = 0o077;
+
+/// The permission bits of a mode, without the file type and set-id bits, so a file can be
+/// compared with [`PRIVATE_FILE_MODE`] exactly.
+const PERMISSION_BITS: u32 = 0o777;
+
+/// The owner, group and other execute bits; any one of them makes a file runnable.
+const EXECUTE_BITS: u32 = 0o111;
+
 /// Create a directory and its missing parents as 0700; existing ones keep their mode.
 pub(crate) fn create_private_dir_all(path: &Path) -> io::Result<()> {
-    DirBuilder::new().recursive(true).mode(0o700).create(path)
+    DirBuilder::new()
+        .recursive(true)
+        .mode(PRIVATE_DIR_MODE)
+        .create(path)
 }
 
 /// Create one directory as exactly 0700, whatever the umask.
 pub(crate) fn create_private_dir(path: &Path) -> io::Result<()> {
-    DirBuilder::new().mode(0o700).create(path)?;
-    fs::set_permissions(path, Permissions::from_mode(0o700))
+    DirBuilder::new().mode(PRIVATE_DIR_MODE).create(path)?;
+    fs::set_permissions(path, Permissions::from_mode(PRIVATE_DIR_MODE))
 }
 
 /// A new 0700 temporary directory below `parent`.
 pub(crate) fn private_tempdir_in(prefix: &str, parent: &Path) -> io::Result<TempDir> {
     let directory = tempfile::Builder::new()
         .prefix(prefix)
-        .permissions(Permissions::from_mode(0o700))
+        .permissions(Permissions::from_mode(PRIVATE_DIR_MODE))
         .tempdir_in(parent)?;
-    fs::set_permissions(directory.path(), Permissions::from_mode(0o700))?;
+    fs::set_permissions(directory.path(), Permissions::from_mode(PRIVATE_DIR_MODE))?;
     Ok(directory)
 }
 
 /// Whether a directory grants nothing to its group or others.
 pub(crate) fn is_private_dir(path: &Path) -> io::Result<bool> {
-    Ok(fs::metadata(path)?.mode() & 0o077 == 0)
+    Ok(fs::metadata(path)?.mode() & GROUP_OTHER_BITS == 0)
 }
 
 /// Whether an open file is a regular, single-link 0600 file.
 pub(crate) fn is_private_file(file: &File) -> io::Result<bool> {
     let metadata = file.metadata()?;
-    Ok(metadata.is_file() && metadata.mode() & 0o777 == 0o600 && metadata.nlink() == 1)
+    Ok(metadata.is_file()
+        && metadata.mode() & PERMISSION_BITS == PRIVATE_FILE_MODE
+        && metadata.nlink() == 1)
 }
 
 /// Options that create files as 0600.
 pub(crate) fn private_options() -> OpenOptions {
     let mut options = OpenOptions::new();
-    options.mode(0o600);
+    options.mode(PRIVATE_FILE_MODE);
     options
 }
 
 /// Make an open file 0600.
 pub(crate) fn restrict_file(file: &File) -> io::Result<()> {
-    file.set_permissions(Permissions::from_mode(0o600))
+    file.set_permissions(Permissions::from_mode(PRIVATE_FILE_MODE))
 }
 
 /// The absolute path of an existing file with every link resolved.
@@ -183,7 +206,7 @@ fn kind(file_type: fs::FileType) -> FileKind {
 /// Whether a path is a regular file with an execute bit.
 pub(crate) fn is_executable(path: &Path) -> bool {
     path.metadata()
-        .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        .is_ok_and(|m| m.is_file() && m.permissions().mode() & EXECUTE_BITS != 0)
 }
 
 /// The editor a review opens fields in when `EDITOR` is unset.

@@ -62,20 +62,7 @@ struct RuntimeLog {
 }
 
 pub async fn original(state: &Path, view: &RequestView) -> Result<RequestView, String> {
-    let original = view
-        .execution
-        .as_ref()
-        .map(|execution| &execution.provenance.request_id)
-        .or_else(|| {
-            view.request
-                .provenance
-                .as_ref()
-                .map(|source| &source.request_id)
-        });
-    match original.filter(|id| *id != &view.request.id) {
-        Some(id) => store::read_request(state, id).await,
-        None => Ok(view.clone()),
-    }
+    store::read_original(state, view).await
 }
 
 pub fn evidence(_state: &Path, view: &RequestView) -> Evidence {

@@ -17,6 +17,18 @@ fi
 rm -rf dist
 mkdir -p dist
 cp -R landing/. dist/
-"$MDBOOK" build docs --dest-dir "$PWD/dist/docs"
+# Brand assets are committed only once, outside the website source tree.
+brand="$PWD/../assets/brand"
+cp "$brand"/favicon.{svg,png} "$brand/apple-touch-icon.png" dist/
+cp "$brand"/artifactize-icon{,-mark}.svg "$brand/artifactize-icon-h56.png" \
+    "$brand/og.jpg" dist/media/
+
+# Inject the same favicons into an isolated mdBook source, never docs/theme/.
+# mdBook fingerprints the copies and rewrites links in every generated page.
+book=$(mktemp -d)
+trap 'rm -rf "$book"' EXIT
+cp -R docs/. "$book/"
+cp "$brand"/favicon.{svg,png} "$book/theme/"
+"$MDBOOK" build "$book" --dest-dir "$PWD/dist/docs"
 python3 check-links.py dist
 echo "built $(find dist -type f | wc -l) files into website/dist"

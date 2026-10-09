@@ -43,9 +43,6 @@ Sleep 2s
 Tab
 Sleep 1.5s
 Enter
-Wait+Screen /Confirm Human tool/
-Sleep 2s
-Enter
 Wait+Screen /16 px/
 Sleep 2.5s
 Type "g"

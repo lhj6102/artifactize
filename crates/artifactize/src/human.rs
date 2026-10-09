@@ -104,15 +104,19 @@ pub async fn run_human_tool(
     Ok(registry.call(tool, cancellation).await)
 }
 
-/// What a registered Human tool of a waiting request would run; needs no claim and runs nothing.
-pub async fn tool_command(
+/// What every registered Human tool of a waiting request would run, by tool name; needs no
+/// claim and runs nothing. A tool that cannot be resolved carries its error.
+pub async fn tool_commands(
     receipts: &Receipts,
     request: &str,
-    tool: &str,
-) -> Result<CommandLine, String> {
+) -> Result<std::collections::BTreeMap<String, Result<CommandLine, String>>, String> {
     let request = receipts.waiting_human(request).await?;
     let config = reconnect(&request)?;
-    Registry::new(&config, &request.eval_id)?.command(tool)
+    let registry = Registry::new(&config, &request.eval_id)?;
+    Ok(registry
+        .list()
+        .map(|tool| (tool.name.clone(), registry.command(&tool.name)))
+        .collect())
 }
 
 /// Invalid results remain correctable; only a valid submission performs the final fingerprint
@@ -133,7 +137,7 @@ pub async fn submit(
         .find(|eval| eval.id == request.eval_id)
         .expect("reconnected eval");
     if serde_json::to_vec(result).map_err(|e| e.to_string())?.len() > MAX_RESULT_BYTES {
-        return Err("Human result exceeds 256000 bytes.".into());
+        return Err(format!("Human result exceeds {MAX_RESULT_BYTES} bytes."));
     }
     let result = validate_result(&eval.declaration, result)?;
     recheck(receipts, &mut request, reviewer, &config, cancellation).await?;

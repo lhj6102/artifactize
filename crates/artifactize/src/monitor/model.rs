@@ -228,13 +228,18 @@ fn mark(name: &str, status: Option<&str>) -> String {
     format!("{} {name} {}", glyph(status), status.unwrap_or(ABSENT))
 }
 
+/// Seconds per minute, hour and day, the units a duration is shown in.
+const MINUTE: i64 = 60;
+const HOUR: i64 = 60 * MINUTE;
+const DAY: i64 = 24 * HOUR;
+
 pub fn duration(seconds: i64) -> String {
     let seconds = seconds.max(0);
     match seconds {
-        0..60 => format!("{seconds}s"),
-        60..3600 => format!("{}m {:02}s", seconds / 60, seconds % 60),
-        3600..86400 => format!("{}h {:02}m", seconds / 3600, seconds % 3600 / 60),
-        _ => format!("{}d {}h", seconds / 86400, seconds % 86400 / 3600),
+        0..MINUTE => format!("{seconds}s"),
+        MINUTE..HOUR => format!("{}m {:02}s", seconds / MINUTE, seconds % MINUTE),
+        HOUR..DAY => format!("{}h {:02}m", seconds / HOUR, seconds % HOUR / MINUTE),
+        _ => format!("{}d {}h", seconds / DAY, seconds % DAY / HOUR),
     }
 }
 

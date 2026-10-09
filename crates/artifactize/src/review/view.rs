@@ -24,7 +24,13 @@ const LIST_COMPACT: u16 = 30;
 /// Fixed columns of the Full waiting list: claim and waiting time.
 const CLAIM_WIDTH: u16 = 16;
 const WAITING_WIDTH: u16 = 8;
+/// A long repository path counts only this far towards the Full list's width, so one deep
+/// checkout does not push the Preview off a wide terminal.
 const REPO_WIDTH: u16 = 40;
+/// A popup takes this share of the terminal's width, leaving the review visible around it.
+const POPUP_WIDTH: u16 = 80;
+/// The Full waiting list's column titles; a column is never narrower than its title.
+const HEADERS: [&str; 5] = ["EVAL", "REQUEST", "CLAIM", "WAITING", "REPO"];
 
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -47,7 +53,7 @@ pub(super) fn lines(fields: Vec<(&'static str, String)>) -> Vec<Line<'static>> {
 
 fn popup(frame: &mut Frame, area: Rect, title: String, text: Vec<Line<'static>>) {
     let height = (text.len() as u16 + 2).min(area.height);
-    let [area] = Layout::horizontal([Constraint::Percentage(80)])
+    let [area] = Layout::horizontal([Constraint::Percentage(POPUP_WIDTH)])
         .flex(Flex::Center)
         .areas(area);
     let [area] = Layout::vertical([Constraint::Length(height)])
@@ -60,6 +66,19 @@ fn popup(frame: &mut Frame, area: Rect, title: String, text: Vec<Line<'static>>)
             .block(Block::bordered().title(title).cyan()),
         area,
     );
+}
+
+/// Geometry of the last drawn standalone frame for mouse hit tests.
+#[derive(Debug, Clone, Default)]
+pub(super) struct Hits {
+    /// The waiting list, Full or Compact, and its visible rows by index.
+    pub list: Rect,
+    pub rows: Vec<(Rect, usize)>,
+    /// The read-only Preview beside a focused list; a click opens the selected request.
+    pub preview: Rect,
+    /// The Full Detail and the shared component's own geometry.
+    pub detail: Rect,
+    pub review: detail::Hits,
 }
 
 fn text_width(text: &str) -> u16 {
@@ -97,15 +116,24 @@ impl Review {
             },
         ];
         let focused = usize::from(self.focus == Focus::Detail);
+        let mut hits = Hits::default();
         for (level, area, density) in layout::columns(body, &levels, focused) {
             match (level, density) {
-                (0, density) => self.draw_list(frame, area, density, rows.clone()),
-                (_, Density::Full) => {
-                    self.draw_detail(frame, area, true);
+                (0, density) => {
+                    hits.list = area;
+                    hits.rows = self.draw_list(frame, area, density, rows.clone());
                 }
-                _ => self.draw_preview(frame, area),
+                (_, Density::Full) => {
+                    hits.detail = area;
+                    hits.review = self.draw_detail(frame, area, true);
+                }
+                _ => {
+                    hits.preview = area;
+                    self.draw_preview(frame, area);
+                }
             }
         }
+        self.hits = hits;
         if self.mode == Mode::Leave {
             let mut text = vec![
                 Line::from(format!(
@@ -147,6 +175,10 @@ impl Review {
         let mut right = format!("reviewer {}", self.reviewer);
         if self.refreshed.is_none() {
             right = format!("loading… · {right}");
+        }
+        // As in monitor: only the off state needs saying.
+        if !self.mouse_capture {
+            right = format!("{right} · mouse off · F2");
         }
         let right = Line::from(right).dark_gray();
         let room = usize::from(area.width).saturating_sub(right.width() + 2);
@@ -193,7 +225,7 @@ impl Review {
             return "k keep claims and quit · u release and quit · Esc stay".into();
         }
         match self.focus {
-            Focus::List => "↑↓ request · Enter open · r refresh · q quit".into(),
+            Focus::List => "↑↓ request · Enter open review · Tab tools · r refresh · q quit".into(),
             Focus::Detail => self.detail_hints(),
         }
     }
@@ -235,7 +267,7 @@ impl Review {
         area: Rect,
         density: Density,
         rows: Vec<[String; 5]>,
-    ) {
+    ) -> Vec<(Rect, usize)> {
         let focused = density == Density::Full;
         let block = Block::bordered()
             .title(format!(" Waiting Human reviews ({}) ", self.waiting.len()))
@@ -254,7 +286,7 @@ impl Review {
                 Paragraph::new(text).wrap(Wrap { trim: false }).block(block),
                 area,
             );
-            return;
+            return Vec::new();
         }
         // The selected row is reversed only where focus is, and bold elsewhere.
         let highlight = if focused {
@@ -276,7 +308,7 @@ impl Review {
                 .row_highlight_style(highlight)
                 .block(block);
             frame.render_stateful_widget(table, area, &mut self.list);
-            return;
+            return self.row_hits(area, 0);
         }
         let [eval, request, claim, waiting, _] = column_widths(&rows);
         let table = Table::new(
@@ -289,10 +321,22 @@ impl Review {
                 Constraint::Fill(1),
             ],
         )
-        .header(Row::new(["EVAL", "REQUEST", "CLAIM", "WAITING", "REPO"]).bold())
+        .header(Row::new(HEADERS).bold())
         .row_highlight_style(highlight)
         .block(block);
         frame.render_stateful_widget(table, area, &mut self.list);
+        self.row_hits(area, 1)
+    }
+
+    /// The visible list rows inside the bordered `area`, below `header` rows, from the table's
+    /// scroll offset after rendering.
+    fn row_hits(&self, area: Rect, header: u16) -> Vec<(Rect, usize)> {
+        let inner = area.inner(ratatui::layout::Margin::new(1, 1));
+        let top = inner.y.saturating_add(header);
+        (self.list.offset()..self.waiting.len())
+            .zip(top..inner.bottom())
+            .map(|(index, y)| (Rect::new(inner.x, y, inner.width, 1), index))
+            .collect()
     }
 
     /// The Detail Preview of the selected request, read-only.
@@ -345,7 +389,9 @@ impl Review {
 /// Widths of the Full list's columns; claim and waiting time keep fixed widths, and a long
 /// repository path counts only up to `REPO_WIDTH` towards the natural width.
 fn column_widths(rows: &[[String; 5]]) -> [u16; 5] {
-    let mut widths = [4, 7, CLAIM_WIDTH, WAITING_WIDTH, 4];
+    let mut widths = HEADERS.map(text_width);
+    widths[2] = CLAIM_WIDTH;
+    widths[3] = WAITING_WIDTH;
     for row in rows {
         for column in [0, 1, 4] {
             widths[column] = widths[column].max(text_width(&row[column]));

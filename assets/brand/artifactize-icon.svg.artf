@@ -1,0 +1,26 @@
+name = "brand-icon"
+
+[views.human_tools]
+open = { description = "Open the original artwork of {artifactName} in the default image viewer.", kind = "launch", command = "xdg-open", args = ["{artifactPath}"] }
+
+[evals.approved]
+title = "The owner approves this artwork as the Artifactize icon"
+profile = { kind = "human" }
+
+[evals.approved.payload]
+instruction = """
+Open {brand-icon} with the open tool. Submit GREEN with approved: true when the owner approves \
+this artwork as the Artifactize icon; otherwise submit RED and list the changes required."""
+
+[evals.approved.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved"]
+additionalProperties = false
+
+[evals.approved.fail_schema]
+type = "object"
+properties.change = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
+required = ["change"]
+additionalProperties = false

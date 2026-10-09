@@ -77,11 +77,16 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
     command.spawn()
 }
 
+/// The index of `starttime` (field 22 of /proc/PID/stat, see proc(5)) among the fields after
+/// the command name. The name, field 2, is cut off at its closing parenthesis because it may
+/// contain spaces, so the remaining fields start at field 3: 22 - 3 = 19.
+const START_TIME_AFTER_NAME: usize = 22 - 3;
+
 /// Field 22 of /proc/PID/stat: the start time in clock ticks since boot.
 pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
     stat.rsplit_once(')')
-        .and_then(|(_, fields)| fields.split_whitespace().nth(19))
+        .and_then(|(_, fields)| fields.split_whitespace().nth(START_TIME_AFTER_NAME))
         .and_then(|value| value.parse().ok())
         .ok_or_else(|| io::Error::other("invalid child process start time"))
 }
