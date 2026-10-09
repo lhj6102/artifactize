@@ -147,11 +147,19 @@ impl Review {
                 } else {
                     "failSchema"
                 };
-                let schema = self
+                // Without the recorded definition the owner schemas are unknown, not empty: an
+                // empty form would submit a verdict the schema then rejects.
+                let Some(definition) = self
                     .request
                     .as_ref()
                     .and_then(|view| view.request.human_definition.as_ref())
-                    .and_then(|definition| definition["eval"]["declaration"].get(key));
+                else {
+                    return self.notify(
+                        "This request records no Human definition; open the original request its actions go to.",
+                        true,
+                    );
+                };
+                let schema = definition["eval"]["declaration"].get(key);
                 let form = self
                     .drafts
                     .remove(verdict)

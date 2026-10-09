@@ -567,12 +567,16 @@ impl Review {
             .title(format!(" Tools ({}) ", tools.len()))
             .border_style(focused_border(focused));
         if tools.is_empty() {
-            frame.render_widget(
-                Paragraph::new("No Human tools are declared in this eval's scope.")
-                    .dark_gray()
-                    .block(block),
-                list,
-            );
+            let recorded = self
+                .request
+                .as_ref()
+                .is_some_and(|view| view.request.human_definition.is_some());
+            let text = if recorded {
+                "No Human tools are declared in this eval's scope."
+            } else {
+                "Unknown: no Human definition is recorded."
+            };
+            frame.render_widget(Paragraph::new(text).dark_gray().block(block), list);
         } else {
             let inner = block.inner(list);
             let selected = rows.iter().position(|(_, index)| *index == self.tool);

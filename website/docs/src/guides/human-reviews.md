@@ -98,9 +98,12 @@ claims, runs tools, unclaims and submits in-process, and
 publishes a submission to the remote review store exactly like `request submit`.
 Without an ID it lists the WAITING_HUMAN requests of the canonical `--repo`
 (default: the current directory) or, with `--all`, of every repository (newest
-Run first: eval, request, claim, waiting time, repository); Enter opens one. With
-an ID it opens that request in any repository. It also runs on its own, for example
-in a second terminal or tmux pane.
+Run first: eval, request, claim, waiting time, repository); Enter opens one. The
+list holds one entry per waiting sign-off: followers that later Runs join to a
+waiting Human execution collapse onto its original request, which records the
+Human tools and owner schemas and receives every action, as in the monitor. With
+an ID it opens that request in any repository; a waiting follower's ID opens its
+original. It also runs on its own, for example in a second terminal or tmux pane.
 
 The waiting list and Detail use the monitor's reactive layout. With the list
 focused, it is Full and the selected request has a read-only Preview. Enter or →

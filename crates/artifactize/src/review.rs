@@ -282,16 +282,25 @@ impl Review {
             return Action::None;
         }
         // The standalone list stays beside the open request; monitor reads only the request.
+        // Followers of later Runs collapse onto the original request, which records the Human
+        // definition (tools and owner schemas) and receives every action, as in monitor.
         let mut result = Ok(());
         if self.standalone {
-            result = store::read_waiting(&self.state, self.repo.as_deref())
+            result = store::read_waiting_originals(&self.state, self.repo.as_deref())
                 .await
                 .map(|waiting| self.set_waiting(waiting));
         }
         if let (Ok(()), Some(id)) = (&result, self.open.clone()) {
-            result = store::read_request(&self.state, &id)
-                .await
-                .map(|view| self.show(view));
+            result = match store::read_request(&self.state, &id).await {
+                Ok(view) if view.request.status == crate::types::RequestStatus::WaitingHuman => {
+                    store::read_original(&self.state, &view).await
+                }
+                other => other,
+            }
+            .map(|view| {
+                self.open = Some(view.request.id.clone());
+                self.show(view)
+            });
         }
         let now = OffsetDateTime::now_utc();
         match result {

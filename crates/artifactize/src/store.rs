@@ -30,7 +30,10 @@ pub use receipts::{
     DATABASE, EARLIER_STATE, LastRequest, Receipts, Request, Run, RunView, StoppedBackend,
     read_latest_requests, read_run, read_state_id, schema_error, state_schema,
 };
-pub use requests::{RequestView, read_request, read_requests, read_session_request, read_waiting};
+pub use requests::{
+    RequestView, read_original, read_request, read_requests, read_session_request, read_waiting,
+    read_waiting_originals,
+};
 
 /// Let concurrent readers/writers finish short SQLite transactions without an
 /// immediate busy error, while limiting how long one database operation can block.
