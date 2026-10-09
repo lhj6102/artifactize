@@ -193,7 +193,11 @@ fn datetimes_are_rejected_anywhere_with_the_full_owner_key_path() {
     }
     let quoted = "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }\npayload = { instruction = 'Check.', date = '1979-05-27' }";
     assert_eq!(
-        parse_declaration(quoted).unwrap().evals[0].payload.as_ref().unwrap().extra["date"],
+        parse_declaration(quoted).unwrap().evals[0]
+            .payload
+            .as_ref()
+            .unwrap()
+            .extra["date"],
         "1979-05-27"
     );
 }
@@ -217,7 +221,7 @@ fn errors_name_the_declaration_and_parser_or_serde_positions() {
         ("name = '_bad'", "Artifact name must match", ""),
         (
             "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }",
-            "missing field `payload`",
+            "Eval payload is required",
             "line 2",
         ),
     ] {
@@ -348,5 +352,68 @@ fn individually_ignored_legacy_markers_do_not_fail_discovery() {
     assert_eq!(
         read_workspace_config(root.path()).unwrap().artifacts.len(),
         2
+    );
+}
+
+#[test]
+fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel_case() {
+    let source = "name = 'release'\n[evals.ready]\ntitle = 'Inputs are ready'\nprofile = { kind = 'dependency', depends_on = ['input'] }";
+    let declaration = parse_declaration(source).unwrap();
+    assert_eq!(declaration.evals[0].id, "ready");
+    assert!(declaration.evals[0].payload.is_none());
+    assert!(
+        matches!(&declaration.evals[0].profile, Profile::Dependency { depends_on } if depends_on == &["input"])
+    );
+    let expected = json!({"kind":"dependency","dependsOn":["input"]});
+    assert_eq!(
+        serde_json::to_value(&declaration.evals[0].profile).unwrap(),
+        expected
+    );
+    let stored = artifactize::config::StoredProfile::from(&declaration.evals[0].profile);
+    let stored_value = serde_json::to_value(&stored).unwrap();
+    assert_eq!(stored_value, expected);
+    assert_eq!(
+        serde_json::to_value(
+            serde_json::from_value::<artifactize::config::StoredProfile>(stored_value).unwrap()
+        )
+        .unwrap(),
+        expected
+    );
+    let error = parse_declaration(&source.replace("depends_on", "dependsOn")).unwrap_err();
+    assert!(error.contains("unknown field `dependsOn`"), "{error}");
+    for extra in [
+        "payload = { instruction = 'Inspect.' }",
+        "pass_schema = {}",
+        "fail_schema = {}",
+        "profile_variants = {}",
+    ] {
+        let error = parse_declaration(&format!("{source}\n{extra}")).unwrap_err();
+        assert!(error.contains("Dependency Evals cannot declare"), "{error}");
+    }
+    let root = tempfile::tempdir().unwrap();
+    write(root.path(), "index.artf", source);
+    write(
+        root.path(),
+        "input/index.artf",
+        "name = 'input'\nbasis = true",
+    );
+    let config = read_workspace_config(root.path()).unwrap();
+    let view = artifactize::query::graph(&config, &artifactize::project::selection::Selection::All)
+        .unwrap();
+    let wire = serde_json::to_value(&view).unwrap();
+    assert_eq!(wire["evals"][0]["declaration"]["profile"], expected);
+    assert!(wire["evals"][0]["declaration"].get("payload").is_none());
+    let saved = artifactize::store::definitions::Definitions::from_view(&view).unwrap();
+    assert_eq!(serde_json::to_value(saved).unwrap(), wire);
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        .arg("--repo")
+        .arg(root.path())
+        .args(["config", "graph", "--json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        serde_json::from_slice::<Value>(&output.stdout).unwrap(),
+        wire
     );
 }

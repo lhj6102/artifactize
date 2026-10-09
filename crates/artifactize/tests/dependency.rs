@@ -116,10 +116,7 @@ fn dependency_declarations_are_strict_and_other_profiles_still_require_payload()
     ] {
         let mut invalid = valid.clone();
         invalid["evals"][0]["profile"]["depends_on"] = targets;
-        assert!(
-            parse(&invalid).is_err(),
-            "{invalid}"
-        );
+        assert!(parse(&invalid).is_err(), "{invalid}");
     }
     let mut missing = valid.clone();
     missing["evals"][0]["profile"]
@@ -136,10 +133,7 @@ fn dependency_declarations_are_strict_and_other_profiles_still_require_payload()
         for value in [value, Value::Null] {
             let mut invalid = valid.clone();
             invalid["evals"][0][field] = value;
-            assert!(
-                parse(&invalid).is_err(),
-                "{invalid}"
-            );
+            assert!(parse(&invalid).is_err(), "{invalid}");
         }
     }
     for profile in [
@@ -665,7 +659,8 @@ async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations()
     fs::create_dir_all(&fixture.repo).unwrap();
     support::declaration::write(
         fixture.repo.join("index.artf"),
-        json!({"name":"root","basis":true,"review_policy":{"dependency_gates":"ignore"}}).to_string(),
+        json!({"name":"root","basis":true,"review_policy":{"dependency_gates":"ignore"}})
+            .to_string(),
     )
     .unwrap();
     fixture.declare("art", vec![runtime("/bin/false")]);
