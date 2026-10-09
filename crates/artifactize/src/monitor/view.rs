@@ -13,7 +13,6 @@ use ratatui::{
     widgets::{Block, Cell, Clear, Paragraph, Row, Table, Wrap},
 };
 use time::OffsetDateTime;
-use tui_tree_widget::{Tree, TreeItem};
 
 /// Reserve most of the terminal for the three panes; the modal keeps a small visible border.
 const MODAL_MARGIN: u16 = 2;
@@ -41,21 +40,6 @@ fn color(status: Option<&str>) -> Style {
 }
 fn status(status: &str) -> Span<'static> {
     Span::styled(status.to_owned(), color(Some(status)))
-}
-fn item(node: model::Node) -> std::io::Result<TreeItem<'static, String>> {
-    let text = Line::from(vec![
-        Span::styled(
-            format!("{} ", model::glyph(node.status.as_deref())),
-            color(node.status.as_deref()),
-        ),
-        Span::raw(node.text),
-    ]);
-    let children = node
-        .children
-        .into_iter()
-        .map(item)
-        .collect::<Result<_, _>>()?;
-    TreeItem::new(node.id, text, children)
 }
 fn lines(detail: model::Detail) -> Vec<Line<'static>> {
     detail
@@ -107,7 +91,7 @@ impl Monitor {
         if let Some(message) = self.error.as_ref().or(self.notice.as_ref()) {
             frame.render_widget(Line::from(message.as_str()).red(), notice);
         }
-        frame.render_widget(Line::from(if self.modal.is_some() { "Esc close/cancel · Tab focus · Ctrl-S Submit · F2 mouse capture · paste works with mouse on/off" } else { "←/→ panes · Tab cycle · ↑/↓ select · h/l/Space tree · Enter/double-click detail · r refresh · F2 mouse · q quit" }).dark_gray(), keys);
+        frame.render_widget(Line::from(if self.modal.is_some() { "Esc close/cancel · Tab focus · Ctrl-S Submit · F2 mouse capture · paste works with mouse on/off".to_owned() } else { format!("←/→ panes · Tab cycle · ↑/↓ select · h/l/Space tree{} · Enter/double-click detail · r refresh · F2 mouse · q quit", self.blocker_hint()) }).dark_gray(), keys);
         let [repositories, runs, artifacts] = Layout::horizontal([
             Constraint::Percentage(25),
             Constraint::Percentage(30),
@@ -195,7 +179,7 @@ impl Monitor {
         let mut summary = vec![
             Line::from(vec![
                 status(&progress.status),
-                format!(" · validation {}", progress.validation).into(),
+                format!(" · {}", progress.validation).into(),
             ]),
             Line::from(progress.work),
         ];
@@ -227,26 +211,24 @@ impl Monitor {
             top,
         );
         self.hits.panes[2] = tree_area;
-        let items = model::tree(run, requests, now)
-            .into_iter()
-            .map(item)
-            .collect::<Result<Vec<_>, _>>();
-        match items
-            .as_ref()
-            .map_err(ToString::to_string)
-            .and_then(|items| Tree::new(items).map_err(|error| error.to_string()))
-        {
-            Ok(tree) => frame.render_stateful_widget(
-                tree.block(block(
-                    " Artifacts and evals ".into(),
-                    self.focus == Pane::Artifacts,
-                ))
-                .highlight_style(Modifier::REVERSED.into()),
-                tree_area,
-                &mut self.tree,
+        let nodes = self.nodes();
+        let upstream = self.highlighted(&nodes);
+        super::rows::draw(
+            frame,
+            tree_area,
+            block(
+                " Artifacts and evals ".into(),
+                self.focus == Pane::Artifacts,
             ),
-            Err(error) => frame.render_widget(Paragraph::new(error).red(), tree_area),
-        }
+            &nodes,
+            &mut self.tree,
+            super::rows::Layout {
+                total: 0,
+                compact: false,
+                upstream: &upstream,
+                now,
+            },
+        );
     }
     fn draw_modal(&mut self, frame: &mut Frame, area: Rect) {
         let Some(modal) = &mut self.modal else {

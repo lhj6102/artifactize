@@ -142,22 +142,39 @@ fn live_progress_tree_and_details_are_pure_projections() {
             .collect::<Vec<_>>(),
         ["a:lib", "a:dep", "a:p1", "a:p2", "a:app"]
     );
-    assert_eq!(find(&nodes, "a:p1").status.as_deref(), Some("GREEN"));
-    assert_eq!(find(&nodes, "a:p2").status.as_deref(), Some("ERROR"));
-    assert_eq!(find(&nodes, "a:app").status.as_deref(), Some("RUNNING"));
-    assert_eq!(find(&nodes, "a:app").text, "app  RUNNING 0/2");
+    let lines: Vec<_> = ["a:lib", "a:dep", "e:dep/check", "a:p1", "e:p1/check"]
+        .into_iter()
+        .chain(["a:p2", "e:p2/check", "a:app", "e:app/check", "e:app/review"])
+        .map(|id| find(&nodes, id).line())
+        .collect();
     assert_eq!(
-        find(&nodes, "e:app/check").text,
-        "check RUNNING 1m 05s  ← lib, dep"
+        lines,
+        [
+            "◇ lib  basis",
+            "- dep  not in this Run  0/1",
+            "- check  not in this Run",
+            "✓ p1  1/1",
+            "✓ check  GREEN  3s",
+            "! p2  ERROR: check  0/1",
+            "! check  ERROR · [SPAWN] spawn failed  2s",
+            "◐ app  in progress: check, review  0/2",
+            "◐ check  running · runtime true  1m 05s",
+            "? review  Human sign-off · claimed by alice  1m 05s",
+        ]
     );
-    assert_eq!(find(&nodes, "e:p1/check").text, "check GREEN 3s");
-    let absent = find(&nodes, "e:dep/check");
+    // One row per eval: no relation rows, no `← deps`.
+    assert!(search(&nodes, "r:dep").is_none());
+    let app = find(&nodes, "e:app/check");
     assert_eq!(
-        (absent.status.as_deref(), absent.text.as_str()),
-        (None, "check not in Run")
+        app.upstream
+            .iter()
+            .map(|up| (up.artifact.as_str(), up.completion))
+            .collect::<Vec<_>>(),
+        [
+            ("dep", Completion::Waiting { blocked: false }),
+            ("lib", Completion::Complete)
+        ]
     );
-    assert_eq!(find(&nodes, "r:lib").text, "⇐ lib (mount shared)");
-    assert_eq!(find(&nodes, "r:dep").text, "⇐ dep ({dep} in app/check)");
 
     let absent = detail(&view, &requests, &Target::Eval("dep/check".into()), now());
     assert!(
@@ -320,14 +337,19 @@ fn run_screen_renders_progress_tree_and_detail() {
         "Run run-1",
         "running app/check",
         "waiting Human app/review · claimed by alice",
-        "◇ lib  BASIS",
-        "▼ ! p2  ERROR 0/1",
-        "▼ ◐ app  RUNNING 0/2",
+        "│   ◇ lib       basis   ",
+        "│ ▸ ✓ p1        ",
+        "│ ▾ ! p2        ERROR: check  ",
+        "│     ! check   ERROR · [SPAWN] spawn failed  ",
+        "│ ▾ ◐ app       in progress: check, review  ",
+        "│     ? review  Human sign-off · claimed by alice  ",
         "Artifacts and evals",
     ] {
         assert!(text.contains(expected), "{expected}\n{text}");
     }
-    assert_eq!(monitor.target(), Some(Target::Artifact("lib".into())));
+    // All-done Artifacts start folded; the cursor starts on the first failed or running eval.
+    assert!(!text.contains("GREEN  3s"), "{text}");
+    assert_eq!(monitor.target(), Some(Target::Eval("p2/check".into())));
 }
 
 #[test]

@@ -1,5 +1,6 @@
 //! Repository/worktree → Run → artifacts/evals, with shared single-request Human review jobs.
 mod catalog;
+mod fold;
 pub(crate) mod input;
 mod modal;
 mod model;
@@ -9,18 +10,23 @@ mod pane_tests;
 mod pty_fixture_tests;
 #[cfg(test)]
 mod redesign_tests;
+mod rows;
 mod session;
 #[cfg(test)]
 mod session_tests;
 mod terminal;
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(test)]
+mod tree_tests;
 mod view;
 pub use catalog::{Repository, Scope};
 #[cfg(test)]
 pub(crate) use modal::original as test_original;
 pub use model::{
-    Detail, Node, Progress, RunRow, Target, detail, duration, glyph, progress, run_rows, tree,
+    Activity, Busy, Completion, Detail, EvalView, Kind, Node, NotRun, Progress, Queue, RunRow,
+    Segment, Source, Target, Tone, Upstream, Waits, Weight, detail, duration, glyph, progress,
+    run_rows, tree, upstream_index,
 };
 pub use terminal::run;
 pub(crate) use terminal::{repaint, suspend};
@@ -99,6 +105,7 @@ pub struct Monitor {
     open: Option<RunId>,
     run: Option<(RunView, Vec<RequestView>)>,
     tree: TreeState<String>,
+    folds: fold::Folds,
     modal: Option<Modal>,
     modal_serial: u64,
     reviews: std::collections::BTreeMap<RequestId, Review>,
@@ -128,6 +135,7 @@ impl Monitor {
             open: None,
             run: None,
             tree: TreeState::default(),
+            folds: fold::Folds::default(),
             modal: None,
             modal_serial: 0,
             reviews: std::collections::BTreeMap::new(),
@@ -244,17 +252,9 @@ impl Monitor {
             .is_none_or(|(old, _)| old.run.id != run.run.id);
         if first {
             self.tree = TreeState::default();
-            let nodes = tree(&run, &requests, OffsetDateTime::now_utc());
-            for node in &nodes {
-                if !node.id.starts_with("f:") {
-                    self.tree.open(vec![node.id.clone()]);
-                }
-            }
-            if let Some(node) = nodes.first() {
-                self.tree.select(vec![node.id.clone()]);
-            }
         }
         self.run = Some((run, requests));
+        self.sync_tree(first);
     }
     fn selected_run(&self) -> Option<&RunSummary> {
         self.list.selected().and_then(|index| self.runs.get(index))
@@ -593,15 +593,17 @@ impl Monitor {
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.tree.key_up();
                 }
-                KeyCode::Char('h') => {
-                    self.tree.key_left();
+                KeyCode::Char('h' | 'l' | ' ') => {
+                    let before = self.tree.opened().clone();
+                    match key.code {
+                        KeyCode::Char('h') => self.tree.key_left(),
+                        KeyCode::Char('l') => self.tree.key_right(),
+                        _ => self.tree.toggle_selected(),
+                    };
+                    self.touched(&before);
                 }
-                KeyCode::Char('l') => {
-                    self.tree.key_right();
-                }
-                KeyCode::Char(' ') => {
-                    self.tree.toggle_selected();
-                }
+                KeyCode::Char('b') => self.jump_blocker(),
+                KeyCode::Backspace => self.jump_back(),
                 KeyCode::Enter | KeyCode::Char('o') => return Action::OpenDetail,
                 _ => {}
             },

@@ -1,6 +1,6 @@
 use crate::types::{Fingerprint, RequestId, RequestStatus, ReuseKey, RunId, RunStatus, SessionId};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -111,6 +111,10 @@ pub struct Run {
     /// Agent backends this Run stopped admitting reviews on, in the order they stopped.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stopped_backends: Vec<StoppedBackend>,
+    /// Verdicts the Run took from saved results for evals it has no request for, such as the
+    /// dependencies of a partial Run, so readers judge gates on the Run's own evidence.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub evidence: BTreeMap<String, crate::types::RequestStatus>,
 }
 
 /// An Agent backend a Run stopped after an AUTHENTICATION or QUOTA failure, which every

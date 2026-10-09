@@ -6,7 +6,7 @@ use std::{
 };
 
 use artifactize::{
-    monitor::{self, Monitor, Node, Target},
+    monitor::{self, Completion, EvalView, Kind, Monitor, Node, NotRun, Target, Upstream},
     store::{self, RequestView, RunView},
 };
 use crossterm::event::{KeyCode, KeyEvent};
@@ -292,7 +292,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
     all.refresh().await;
     let done = screen(&mut all);
     assert!(
-        done.contains("GREEN 2") && done.contains("validation SATISFIED"),
+        done.contains("GREEN 2") && done.contains("SATISFIED at Run end"),
         "{done}"
     );
     assert!(!done.contains("running slow/wait"));
@@ -372,36 +372,48 @@ async fn saved_tree_details_without_repository_or_writes() {
             "{id}"
         );
     }
+    let eval = |id: &str| match &node(id).kind {
+        Kind::Eval(view) => view.clone(),
+        kind => panic!("{kind:?}"),
+    };
     for request in &requests {
-        assert!(
-            node(&format!("e:{}", request.request.eval_id))
-                .status
-                .is_some()
+        assert_ne!(
+            eval(&format!("e:{}", request.request.eval_id)),
+            EvalView::NotRun(NotRun::Absent)
         );
     }
-    assert_eq!(node("a:checkout").status.as_deref(), Some("GREEN"));
-    assert_eq!(node("a:search").status.as_deref(), Some("GREEN"));
-    assert!(node("a:cycle-a").text.contains('↻') && node("a:cycle-b").text.contains('↻'));
-    let cycle_input = node("a:cycle-a")
-        .children
-        .iter()
-        .find(|node| node.id == "r:cycle-b")
-        .unwrap();
-    assert!(
-        cycle_input.text.contains("{cycle-b} in cycle-a/check ↻"),
-        "{}",
-        cycle_input.text
-    );
-    let mounted = &node("a:cycle-b").children;
-    assert!(mounted.iter().any(|node| node.text.contains("mount base")));
-    assert!(
-        node("a:red")
-            .children
+    for id in ["a:checkout", "a:search"] {
+        assert_eq!(node(id).line(), format!("✓ {}  1/1", &id[2..]));
+        assert!(node(id).done());
+    }
+    // Peers are marked, and the cycle is never a wait between them.
+    assert_eq!(node("a:cycle-a").marks, "  ↻ cycle-b");
+    assert_eq!(node("a:cycle-b").marks, "  ↻ cycle-a");
+    for id in ["e:cycle-a/check", "e:cycle-b/check"] {
+        let upstream: Vec<_> = node(id)
+            .upstream
             .iter()
-            .any(|node| node.id == "r:part" && node.text.contains("child part"))
+            .map(|up| up.artifact.as_str())
+            .collect();
+        assert_eq!(upstream, ["input"], "{id}");
+    }
+    // One row per eval: relations live in the Artifact detail, not in the tree.
+    assert!(all.iter().all(|node| !node.id.starts_with("r:")));
+    assert_eq!(eval("e:red/check"), EvalView::Failed { verdict: true });
+    let red = node("e:red/check").line();
+    assert!(red.starts_with("✗ check  RED · exitCode 7"), "{red}");
+    assert_eq!(
+        node("e:checkout/review").upstream,
+        [Upstream {
+            artifact: "input".into(),
+            completion: Completion::Complete
+        }]
     );
-    assert_eq!(node("e:red/check").status.as_deref(), Some("RED"));
-    assert!(node("e:checkout/review").text.contains("← input"));
+    let waits = monitor::detail(&view, &requests, &Target::Eval("cycle-a/check".into()), now);
+    assert_eq!(
+        waits.field("Waits for"),
+        Some("↑ input ✓ complete · mount base → cycle-b")
+    );
 
     let red = monitor::detail(&view, &requests, &Target::Eval("red/check".into()), now);
     assert_eq!(red.field("Status"), Some("RED — criteria not met"));
@@ -468,10 +480,16 @@ async fn saved_tree_details_without_repository_or_writes() {
     monitor.refresh().await;
     let run = screen(&mut monitor);
     assert!(
-        run.contains("checkout  GREEN") && run.contains("validation NOT SATISFIED (unmet: red)"),
+        run.contains("▸ ✓ checkout ") && run.contains("NOT SATISFIED at Run end (unmet: red)"),
         "{run}"
     );
-    // Collapsed Artifacts stay reachable: expand an Artifact to select its eval.
+    // The cursor starts on the RED eval.
+    assert_eq!(monitor.target(), Some(Target::Eval("red/check".into())));
+    // Folded Artifacts stay reachable: unfold an Artifact to select its eval.
+    for _ in 0..40 {
+        press(&mut monitor, KeyCode::Up);
+        screen(&mut monitor);
+    }
     let mut steps = 0;
     while monitor.target() != Some(Target::Artifact("checkout".into())) {
         press(&mut monitor, KeyCode::Down);
@@ -479,14 +497,12 @@ async fn saved_tree_details_without_repository_or_writes() {
         steps += 1;
         assert!(steps < 40, "Artifact node not reachable");
     }
-    press(&mut monitor, KeyCode::Char('h'));
-    let collapsed = screen(&mut monitor);
-    assert!(collapsed.contains("▶ ✓ checkout  GREEN 1/1"), "{collapsed}");
     press(&mut monitor, KeyCode::Char('l'));
     screen(&mut monitor);
     press(&mut monitor, KeyCode::Down);
     let expanded = screen(&mut monitor);
-    assert!(expanded.contains("checkout  GREEN 1/1"), "{expanded}");
+    assert!(expanded.contains("▾ ✓ checkout "), "{expanded}");
+    assert!(expanded.contains("✓ review "), "{expanded}");
     assert_eq!(
         monitor.target(),
         Some(Target::Eval("checkout/review".into()))
@@ -498,6 +514,136 @@ async fn saved_tree_details_without_repository_or_writes() {
     writer.execute_batch("ROLLBACK").unwrap();
     drop(writer);
     assert_eq!(dump(&fixture.state), before);
+}
+
+/// Gates in the tree follow the evidence and effective statuses the Run's graph used:
+/// saved results outside a partial Run, and GREEN results masked behind a RED upstream.
+#[tokio::test]
+async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    let flag = root.path().join("fail");
+    let check = format!("test ! -e '{}'", flag.display());
+    let fingerprint =
+        |name: &str| json!({"script":{"command":"echo","args":[format!("{name}-v1")]}});
+    declare(
+        &repo.join("a"),
+        json!({"name":"a","fingerprint":fingerprint("a"),
+            "evals":[eval("x", runtime("sh", &["-c", &check]), "Check.")]}),
+    );
+    declare(
+        &repo.join("b"),
+        json!({"name":"b","fingerprint":fingerprint("b"),
+            "evals":[eval("x", runtime("true", &[]), "Check {a}.")]}),
+    );
+    declare(
+        &repo.join("c"),
+        json!({"name":"c","fingerprint":fingerprint("c"),"evals":[
+            eval("x", runtime("true", &[]), "Check {b}."),
+            eval("y", runtime("true", &[]), "Check {b}.")]}),
+    );
+    let verify = |args: &[&str], code: i32| -> String {
+        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .env("PATH", support::os::path())
+            .arg("--repo")
+            .arg(&repo)
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("verify")
+            .args(args)
+            .arg("--json")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(code),
+            "{args:?}: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+        value["id"].as_str().unwrap().to_owned()
+    };
+    let load = |id: String| {
+        let state = state.clone();
+        async move {
+            (
+                store::read_run(&state, &id).await.unwrap(),
+                store::read_requests(&state, Some(&id)).await.unwrap(),
+            )
+        }
+    };
+    let now = OffsetDateTime::now_utc();
+    verify(&["--all"], 0);
+
+    // A partial forced Run of c: a and b have no requests, only saved results.
+    let (view, requests) = load(verify(&["c", "--force", "--jobs", "1"], 0)).await;
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        view.run.evidence,
+        [
+            ("a/x".to_owned(), artifactize::types::RequestStatus::Green),
+            ("b/x".to_owned(), artifactize::types::RequestStatus::Green),
+        ]
+        .into()
+    );
+    let nodes = monitor::tree(&view, &requests, now);
+    let mut all = Vec::new();
+    flatten(&nodes, &mut all);
+    let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
+    assert_eq!(
+        node("e:b/x").kind,
+        Kind::Eval(EvalView::Done(monitor::Source::Saved))
+    );
+    assert_eq!(
+        node("e:c/y").kind,
+        Kind::Eval(EvalView::Done(monitor::Source::Executed))
+    );
+    assert!(all.iter().all(|node| !node.changed));
+
+    // a turns RED; b's reused GREEN is masked BLOCKED, and c is blocked by b.
+    fs::write(&flag, "").unwrap();
+    let (view, requests) = load(verify(
+        &["--evals", "a/x,c/x,c/y", "--recursive", "--force"],
+        1,
+    ))
+    .await;
+    let saved = |id: &str| {
+        view.run.validation["artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|artifact| artifact["id"] == id)
+            .unwrap()["status"]
+            .clone()
+    };
+    assert_eq!(
+        (saved("b"), saved("c")),
+        (json!("BLOCKED"), json!("BLOCKED"))
+    );
+    let nodes = monitor::tree(&view, &requests, now);
+    let mut all = Vec::new();
+    flatten(&nodes, &mut all);
+    let node = |id: &str| *all.iter().find(|node| node.id == id).unwrap();
+    assert_eq!(
+        node("e:a/x").kind,
+        Kind::Eval(EvalView::Failed { verdict: true })
+    );
+    assert_eq!(
+        node("e:b/x").kind,
+        Kind::Eval(EvalView::Done(monitor::Source::Reused))
+    );
+    assert_eq!(node("a:b").line(), "⊘ b  done, but blocked by a  0/1");
+    assert_eq!(
+        node("e:c/x").kind,
+        Kind::Eval(EvalView::BlockedBy(vec!["b".into()]))
+    );
+    assert_eq!(node("a:c").line(), "⊘ c  not run: blocked by b  0/2");
+    assert!(
+        all.iter().all(|node| !node.changed),
+        "nothing changed after the Run"
+    );
 }
 
 /// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.

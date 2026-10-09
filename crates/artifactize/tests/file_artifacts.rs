@@ -573,7 +573,7 @@ async fn runtime_verify_reuses_after_sibling_changes_but_not_target_changes_and_
     assert!(
         nodes
             .iter()
-            .any(|node| node.text.contains("[file: files/input.txt]"))
+            .any(|node| node.id == "a:file" && node.marks.contains("[file]"))
     );
     assert!(detail.title.contains("[file]"));
     assert_eq!(detail.field("Path"), Some("files/input.txt"));

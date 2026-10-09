@@ -1,4 +1,9 @@
-use std::{collections::BTreeSet, path::Path, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::Path,
+    sync::Arc,
+    time::Duration,
+};
 
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -177,6 +182,7 @@ pub async fn verify(
         validation: Value::Null,
         error: None,
         stopped_backends: Vec::new(),
+        evidence: BTreeMap::new(),
     };
     let mut requests: Vec<_> = evals
         .iter()

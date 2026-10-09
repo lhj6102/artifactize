@@ -455,7 +455,7 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
             player
                 .children
                 .iter()
-                .any(|node| node.id == "e:player/ready" && node.text.contains("derived"))
+                .any(|node| node.id == "e:player/ready" && node.marks.contains("[dep]"))
         );
     }
 }
