@@ -136,7 +136,11 @@ fn map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 #[test]
 fn every_example_passes_static_queries_and_reports_status() {
     let session = Session::new();
-    for (name, artifacts, evals) in [("runtime-relations", 4, 3), ("agent-tools", 2, 2)] {
+    for (name, artifacts, evals) in [
+        ("runtime-relations", 4, 3),
+        ("agent-tools", 2, 2),
+        ("posts", 4, 3),
+    ] {
         let repo = example(name);
         let before = files(&repo);
         assert_eq!(
@@ -248,6 +252,182 @@ fn runtime_relations_reuses_fingerprints_and_turns_red() {
             ("intro/heading", "GREEN"),
             ("usage/heading", "RED"),
         ])
+    );
+}
+
+#[test]
+fn file_posts_reuse_independently_and_track_the_shared_style() {
+    let session = Session::new();
+    let repo = example("posts");
+    let before = files(&repo);
+    let green = map(&[
+        ("release-notes/style", "GREEN"),
+        ("tip/style", "GREEN"),
+        ("welcome/style", "GREEN"),
+    ]);
+    let graph = session.json(&repo, &["config", "graph", "--json"], 0);
+    assert_eq!(graph["artifacts"]["house-style"]["basis"], true);
+    for name in ["release-notes", "tip", "welcome"] {
+        let artifact = &graph["artifacts"][name];
+        assert_eq!(artifact["kind"], "file");
+        assert_eq!(artifact["path"], format!("{name}.md"));
+        assert_eq!(artifact["children"], json!({}));
+        assert_eq!(artifact["mounts"], json!({"style": "house-style"}));
+    }
+    assert!(
+        graph["relations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|relation| relation["kind"] != "child")
+    );
+
+    let first = session.json(&repo, &["verify", "--all", "--json"], 0);
+    assert_eq!(statuses(&first), green);
+    assert_eq!(first["executionsStarted"], 3);
+    let first_requests = requests(&first);
+    for (name, limit) in [("tip", "40"), ("welcome", "120"), ("release-notes", "120")] {
+        let request = &first_requests[&format!("{name}/style")];
+        assert_eq!(Path::new(request["cwd"].as_str().unwrap()), repo);
+        assert_eq!(
+            request["argv"],
+            json!([
+                "python3",
+                repo.join("house-style/check.py"),
+                repo.join(format!("{name}.md")),
+                repo.join("house-style/banned.txt"),
+                limit
+            ])
+        );
+        assert!(
+            request["fingerprint"]
+                .as_str()
+                .unwrap()
+                .starts_with("artifactsum:")
+        );
+    }
+    assert_eq!(
+        first_requests["tip/style"]["title"],
+        "The brief post fits in 40 words and follows the house style"
+    );
+    let second = session.json(&repo, &["verify", "--all", "--json"], 0);
+    assert_eq!(second["executionsStarted"], 0);
+    assert_eq!(executions(&second), executions(&first));
+    let selected = session.json(&repo, &["verify", "tip/style", "--json"], 0);
+    assert_eq!(statuses(&selected), map(&[("tip/style", "GREEN")]));
+    assert_eq!(selected["executionsStarted"], 0);
+    let selected = session.json(&repo, &["verify", "tip", "--json"], 0);
+    assert_eq!(statuses(&selected), map(&[("tip/style", "GREEN")]));
+    let selected = session.json(
+        &repo,
+        &["verify", "--evals", "welcome/style,tip/style", "--json"],
+        0,
+    );
+    assert_eq!(
+        statuses(&selected),
+        map(&[("tip/style", "GREEN"), ("welcome/style", "GREEN")])
+    );
+    assert_eq!(selected["executionsStarted"], 0);
+    let status = session.json(&repo, &["status", "--json"], 0);
+    assert_eq!(status["counts"]["reuse"], 3);
+    assert_eq!(files(&repo), before);
+
+    let copy = session.copy("posts");
+    append(&copy.join("README.md"), "Unrelated notes.\n");
+    let unrelated = session.json(&copy, &["verify", "--all", "--json"], 0);
+    assert_eq!(unrelated["executionsStarted"], 0);
+    assert_eq!(executions(&unrelated), executions(&first));
+    append(&copy.join("tip.md.artf"), "\n# Declaration-only comment.\n");
+    let comment = session.json(&copy, &["verify", "--all", "--json"], 0);
+    assert_eq!(comment["executionsStarted"], 0);
+
+    // README: a banned word re-runs only the edited post, and restoring it reuses GREEN.
+    let tip = copy.join("tip.md");
+    let original = fs::read_to_string(&tip).unwrap();
+    append(&tip, "It helps you leverage every run.\n");
+    let status = session.json(&copy, &["status", "--json"], 1);
+    assert_eq!(status["counts"]["execute"], 1);
+    assert_eq!(status["counts"]["reuse"], 2);
+    let changed = status["evals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|eval| eval["id"] == "tip/style")
+        .unwrap();
+    assert_eq!(changed["changes"]["summary"], "changed: tip.md");
+    let red = session.json(&copy, &["verify", "--all", "--json"], 1);
+    assert_eq!(
+        statuses(&red),
+        map(&[
+            ("release-notes/style", "GREEN"),
+            ("tip/style", "RED"),
+            ("welcome/style", "GREEN"),
+        ])
+    );
+    assert_eq!(red["executionsStarted"], 1);
+    let red_requests = requests(&red);
+    assert!(
+        red_requests["tip/style"]["result"]["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("banned word: leverage")
+    );
+    assert_ne!(
+        executions(&red)["tip/style"],
+        executions(&first)["tip/style"]
+    );
+    for id in ["release-notes/style", "welcome/style"] {
+        assert_eq!(executions(&red)[id], executions(&first)[id]);
+    }
+    fs::write(&tip, &original).unwrap();
+    let restored = session.json(&copy, &["verify", "--all", "--json"], 0);
+    assert_eq!(executions(&restored), executions(&first));
+
+    fs::write(&tip, original.split_once('\n').unwrap().1).unwrap();
+    let heading = session.json(&copy, &["verify", "tip", "--json"], 1);
+    assert!(
+        requests(&heading)["tip/style"]["result"]["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("the first line is not a '# ' title")
+    );
+    fs::write(&tip, format!("{original}{}\n", "word ".repeat(41))).unwrap();
+    let long = session.json(&copy, &["verify", "tip", "--json"], 1);
+    assert!(
+        requests(&long)["tip/style"]["result"]["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("more than 40")
+    );
+    fs::write(&tip, &original).unwrap();
+
+    // The mounted basis covers the shared checker and rules, not just each post.
+    append(
+        &copy.join("house-style/check.py"),
+        "\n# Shared checker change.\n",
+    );
+    let checker = session.json(&copy, &["verify", "--all", "--json"], 0);
+    assert_eq!(statuses(&checker), green);
+    assert_eq!(checker["executionsStarted"], 3);
+    for id in green.keys() {
+        assert_ne!(executions(&checker)[id], executions(&first)[id]);
+    }
+    append(&copy.join("house-style/banned.txt"), "tools\n");
+    let rules = session.json(&copy, &["verify", "--all", "--json"], 1);
+    assert_eq!(rules["executionsStarted"], 3);
+    assert_eq!(
+        statuses(&rules),
+        map(&[
+            ("release-notes/style", "GREEN"),
+            ("tip/style", "GREEN"),
+            ("welcome/style", "RED"),
+        ])
+    );
+    assert!(
+        requests(&rules)["welcome/style"]["result"]["stdout"]
+            .as_str()
+            .unwrap()
+            .contains("banned word: tools")
     );
 }
 
