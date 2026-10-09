@@ -1,0 +1,10 @@
+name = "docs"
+fingerprint = {}
+
+[evals.heading]
+title = "The guide has a top-level heading"
+profile = { kind = "runtime", command = "grep", args = ["-m", "1", "^# ", "guide.md"], timeout_ms = 5000 }
+
+[evals.heading.payload]
+instruction = """
+Check that {docs}/guide.md starts with a top-level heading."""

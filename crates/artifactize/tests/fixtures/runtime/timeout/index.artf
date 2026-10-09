@@ -1,0 +1,10 @@
+fingerprint = false
+name = "timeout"
+
+[evals.check]
+title = "Check timeout"
+profile = { kind = "runtime", command = "/bin/sleep", args = ["30"], timeout_ms = 100 }
+
+[evals.check.payload]
+instruction = """
+Check runtime."""

@@ -1,0 +1,37 @@
+name = "code-style"
+fingerprint = { files = ["STYLE.md"] }
+
+[views.agent_tools]
+
+[views.agent_tools.read_style]
+description = "Print the code checklist STYLE.md of {artifactName}."
+input_schema = { type = "object", properties = {}, additionalProperties = false }
+protocol = "plain"
+command = "cat"
+args = ["STYLE.md"]
+timeout_ms = 10000
+
+[views.human_tools]
+open = { description = "Open STYLE.md of {artifactName} in GNOME Text Editor.", kind = "launch", command = "gnome-text-editor", args = ["{artifactPath}/STYLE.md"] }
+
+[evals.approved]
+title = "The owner approves the checklist as the code standard"
+profile = { kind = "human" }
+
+[evals.approved.payload]
+instruction = """
+Open STYLE.md of {code-style} with the open tool. Submit GREEN with approved: true when every item \
+is one the codebase should follow; otherwise submit RED and list the items to change."""
+
+[evals.approved.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string" }
+required = ["approved"]
+additionalProperties = false
+
+[evals.approved.fail_schema]
+type = "object"
+properties.change = { type = "array", items = { type = "string", minLength = 1 }, minItems = 1 }
+required = ["change"]
+additionalProperties = false

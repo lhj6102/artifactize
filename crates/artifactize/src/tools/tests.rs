@@ -55,9 +55,9 @@ impl Fixture {
 
 fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
     fs::create_dir_all(path).unwrap();
-    fs::write(path.join("artifactize.json"), json!({
+    crate::test_declaration::write(path.join("index.artf"), json!({
         "name":name,
-        "views":{"agentTools":tools},
+        "views":{"agent_tools":tools},
         "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":instruction}}],
     }).to_string()).unwrap();
 }
@@ -76,7 +76,9 @@ fn text(result: &ToolResult) -> &str {
 #[test]
 fn flat_declarations_validate_strictly_and_inertly() {
     let parse = |tool| {
-        parse_declaration(&json!({"name":"a","views":{"agentTools":{"inspect":tool}}}).to_string())
+        parse_declaration(&crate::test_declaration::to_toml(
+            json!({"name":"a","views":{"agent_tools":{"inspect":tool}}}),
+        )?)
     };
     assert!(parse(command()).is_ok());
     for builtin in ["read", "list", "glob", "grep", "view_image"] {
@@ -96,25 +98,25 @@ fn flat_declarations_validate_strictly_and_inertly() {
         ("description", json!("")),
         ("description", json!("{other}")),
         ("description", json!("x".repeat(4001))),
-        ("inputSchema", json!({"type":"string"})),
+        ("input_schema", json!({"type":"string"})),
         (
-            "inputSchema",
+            "input_schema",
             json!({"type":"object","properties":{"n":{"minimum":"no"}}}),
         ),
         (
-            "inputSchema",
+            "input_schema",
             json!({"type":"object","$ref":"https://example.invalid/schema"}),
         ),
         (
-            "inputSchema",
+            "input_schema",
             json!({"type":"object","$ref":"file:///etc/passwd"}),
         ),
-        ("inputSchema", Value::Null),
-        ("timeoutMs", json!(0)),
-        ("timeoutMs", json!(2_147_483_648u64)),
-        ("timeoutMs", json!(null)),
-        ("executionPaths", json!(["../outside"])),
-        ("executionPaths", json!(["same", "same"])),
+        ("input_schema", Value::Null),
+        ("timeout_ms", json!(0)),
+        ("timeout_ms", json!(2_147_483_648u64)),
+        ("timeout_ms", json!(null)),
+        ("execution_paths", json!(["../outside"])),
+        ("execution_paths", json!(["same", "same"])),
         ("protocol", json!("shell")),
         ("observation", json!("content")),
         ("command", json!("{command}")),
@@ -127,7 +129,7 @@ fn flat_declarations_validate_strictly_and_inertly() {
     tool["protocol"] = json!("plain");
     tool["args"] = json!(["--q={query}"]);
     assert!(parse(tool.clone()).is_err());
-    tool["inputSchema"] =
+    tool["input_schema"] =
         json!({"type":"object","properties":{"query":{"type":["string","null"]}}});
     assert!(parse(tool).is_ok());
 }
@@ -135,7 +137,7 @@ fn flat_declarations_validate_strictly_and_inertly() {
 #[tokio::test]
 async fn argument_validation_precedes_spawn_and_output_creation() {
     let mut tool = command();
-    tool["inputSchema"] = json!({
+    tool["input_schema"] = json!({
         "type":"object","$defs":{"positive":{"type":"integer","minimum":1}},
         "properties":{"n":{"$ref":"#/$defs/positive"}},"required":["n"],"additionalProperties":false
     });
@@ -172,7 +174,7 @@ async fn argument_validation_precedes_spawn_and_output_creation() {
 #[tokio::test]
 async fn json_context_has_private_paths_declared_material_and_owner_cwd() {
     let mut tool = command();
-    tool["executionPaths"] = json!(["shared.txt"]);
+    tool["execution_paths"] = json!(["shared.txt"]);
     let fixture = Fixture::new(tool);
     fs::write(fixture.repo.join("shared.txt"), "material").unwrap();
     fixture.script(r#"import json, os, sys
@@ -355,7 +357,7 @@ async fn plain_substitution_is_literal_single_pass_and_handles_escaping() {
         "{{query}}",
         "{{\"literal\":true}}"
     ]);
-    tool["inputSchema"] = json!({"type":"object","properties":{"query":{"type":"string"},"n":{"type":"integer"},"items":{"type":"array"}},"required":["query","n","items"]});
+    tool["input_schema"] = json!({"type":"object","properties":{"query":{"type":"string"},"n":{"type":"integer"},"items":{"type":"array"}},"required":["query","n","items"]});
     let fixture = Fixture::new(tool);
     fixture
         .script("import json, sys\nassert sys.stdin.read() == ''\nprint(json.dumps(sys.argv[1:]))");
@@ -457,8 +459,8 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
     for (key, value) in [
         ("command", json!("../outside")),
         ("command", json!("link/outside")),
-        ("executionPaths", json!(["link"])),
-        ("executionPaths", json!(["missing"])),
+        ("execution_paths", json!(["link"])),
+        ("execution_paths", json!(["missing"])),
         ("args", json!(["tool.py", "{outside}"])),
         ("args", json!(["tool.py", "{a}/../escape"])),
         ("args", json!(["tool.py", "{a}/link"])),
@@ -526,7 +528,7 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
         !registry
             .call(
                 "read_b",
-                json!({"path":"artifactize.json"}),
+                json!({"path":"index.artf"}),
                 &fixture.output,
                 CancellationToken::new()
             )
@@ -573,7 +575,7 @@ fn concatenated_tool_name_collisions_are_rejected() {
 #[tokio::test]
 async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
     let mut tool = command();
-    tool["timeoutMs"] = json!(50);
+    tool["timeout_ms"] = json!(50);
     let fixture = Fixture::new(tool);
     fixture.script("import time\ntime.sleep(60)");
     assert_eq!(
@@ -599,14 +601,13 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
 async fn json_scope_contains_only_paths_mounts_and_children() {
     let fixture = Fixture::new(command());
     let mut root: Value =
-        serde_json::from_str(&fs::read_to_string(fixture.repo.join("artifactize.json")).unwrap())
-            .unwrap();
+        crate::test_declaration::read(fs::read(fixture.repo.join("index.artf")).unwrap()).unwrap();
     root["mounts"] = json!({"alias":"leaf"});
-    root["views"]["humanTools"] = json!({"humanOnly":{"description":"Human only","kind":"output","command":"missing","args":[]}});
-    fs::write(fixture.repo.join("artifactize.json"), root.to_string()).unwrap();
+    root["views"]["human_tools"] = json!({"humanOnly":{"description":"Human only","kind":"output","command":"missing","args":[]}});
+    crate::test_declaration::write(fixture.repo.join("index.artf"), root.to_string()).unwrap();
     fs::create_dir_all(fixture.repo.join("cases")).unwrap();
-    fs::write(
-        fixture.repo.join("cases/artifactize.json"),
+    crate::test_declaration::write(
+        fixture.repo.join("cases/index.artf"),
         json!({"name":"leaf"}).to_string(),
     )
     .unwrap();

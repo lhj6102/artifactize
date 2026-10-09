@@ -27,7 +27,7 @@ impl Repo {
     fn write(&self, path: &str, contents: &str) {
         let path = self.root.path().join(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(path, contents).unwrap();
+        crate::test_declaration::write(path, contents).unwrap();
     }
 
     fn artifact(&self, folder: &str, value: Value) {
@@ -100,6 +100,8 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
         "target/debug/app",
         ".git",
         "child/c.txt",
+        "file.png.artf",
+        "sub/nested.artf",
     ] {
         repo.write(path, "v1");
     }
@@ -129,6 +131,8 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
         "target/debug/app",
         ".git",
         "child/c.txt",
+        "file.png.artf",
+        "sub/nested.artf",
         "build/new/file",
     ] {
         repo.write(path, "v2");
@@ -140,6 +144,18 @@ async fn content_skips_generated_ignored_child_and_declaration_files() {
     }
     repo.write("sub/keep.tmp", "v2");
     assert_ne!(repo.fingerprint("root").await.unwrap().value, before);
+}
+
+#[tokio::test]
+async fn explicitly_named_declarations_are_not_hashed_but_artf_folders_are() {
+    let repo = Repo::new();
+    repo.artifact(
+        "",
+        json!({"name":"root","fingerprint":{"files":["file.png.artf","index.artf","bundle.artf"]}}),
+    );
+    repo.write("file.png.artf", "not TOML");
+    repo.write("bundle.artf/data.txt", "data");
+    assert_eq!(repo.files("root").await, ["bundle.artf/data.txt"]);
 }
 
 #[tokio::test]
@@ -270,7 +286,7 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
             .as_object_mut()
             .unwrap()
             .extend(extra.as_object().unwrap().clone());
-        serde_json::from_value(declaration).unwrap()
+        crate::test_declaration::eval(declaration).unwrap()
     };
     let agent = |model: &str, extra: Value| {
         let mut profile = json!({"kind":"agent","backend":"openai","model":model});
@@ -284,15 +300,15 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
     for profile in [
         agent("b", json!({})),
         agent("a", json!({"reasoning":"high"})),
-        agent("a", json!({"timeoutMs":5})),
-        agent("a", json!({"maxToolCalls":5,"maxTokens":5})),
+        agent("a", json!({"timeout_ms":5})),
+        agent("a", json!({"max_tool_calls":5,"max_tokens":5})),
     ] {
         assert_eq!(eval_definition_hash(&eval(profile, json!({}))), base);
     }
     assert_eq!(
         eval_definition_hash(&eval(
             agent("a", json!({})),
-            json!({"id":"other","title":"Other","profileVariants":{"fast":agent("b", json!({}))}})
+            json!({"id":"other","title":"Other","profile_variants":{"fast":agent("b", json!({}))}})
         )),
         base
     );
@@ -303,11 +319,11 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
         ),
         eval(
             agent("a", json!({})),
-            json!({"passSchema":{"type":"object"}}),
+            json!({"pass_schema":{"type":"object"}}),
         ),
         eval(
             agent("a", json!({})),
-            json!({"failSchema":{"type":"object"}}),
+            json!({"fail_schema":{"type":"object"}}),
         ),
         eval(json!({"kind":"human"}), json!({})),
     ] {
@@ -316,7 +332,7 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
     let runtime = |args: Value, timeout: Value| {
         let mut profile = json!({"kind":"runtime","command":"check","args":args});
         if !timeout.is_null() {
-            profile["timeoutMs"] = timeout;
+            profile["timeout_ms"] = timeout;
         }
         eval_definition_hash(&eval(profile, json!({})))
     };
@@ -446,17 +462,17 @@ fn changes_name_target_files_and_dependency_fingerprints() {
 /// The upgrade invalidates even script keys, without changing the Eval strategy hash.
 #[test]
 fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
-    let agent: EvalDeclaration = serde_json::from_value(json!({
+    let agent: EvalDeclaration = crate::test_declaration::eval(json!({
         "id":"spec-coverage","title":"Spec coverage",
-        "profile":{"kind":"agent","backend":"openai","model":"gpt-5.1","reasoning":"high","timeoutMs":60000,"maxToolCalls":20},
+        "profile":{"kind":"agent","backend":"openai","model":"gpt-5.1","reasoning":"high","timeout_ms":60000,"max_tool_calls":20},
         "payload":{"instruction":"Check that {spec} covers every requirement.","focus":["errors","limits"]},
-        "passSchema":{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"]},
-        "failSchema":{"type":"object","properties":{"missing":{"type":"array","items":{"type":"string"}}},"required":["missing"]}
+        "pass_schema":{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"]},
+        "fail_schema":{"type":"object","properties":{"missing":{"type":"array","items":{"type":"string"}}},"required":["missing"]}
     }))
     .unwrap();
-    let runtime: EvalDeclaration = serde_json::from_value(json!({
+    let runtime: EvalDeclaration = crate::test_declaration::eval(json!({
         "id":"tests","title":"Tests",
-        "profile":{"kind":"runtime","command":"./check.sh","args":["{spec}/rules.md","--strict"],"timeoutMs":9000},
+        "profile":{"kind":"runtime","command":"./check.sh","args":["{spec}/rules.md","--strict"],"timeout_ms":9000},
         "payload":{"instruction":"Run the checks."}
     }))
     .unwrap();

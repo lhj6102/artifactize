@@ -37,26 +37,26 @@ impl Fixture {
         let release = repo.join("release");
         fs::create_dir_all(&release).unwrap();
         fs::write(release.join("notes.md"), "# Release notes\n- Ready.\n").unwrap();
-        fs::write(
-            release.join("artifactize.json"),
+        support::declaration::write(
+            release.join("index.artf"),
             json!({
                 "name":"release","fingerprint":{"files":["."]},
-                "views":{"humanTools":{
+                "views":{"human_tools":{
                     "notes":{"description":"Print the release notes.","kind":"output","command":bin("cat"),"args":["{artifactPath}/notes.md"]},
                     "fail":{"description":"Fail.","kind":"output","command":bin("false"),"args":[]},
                     "open":{"description":"Open.","kind":"launch","command":bin("true"),"args":["{artifactPath}"]}
                 }},
                 "evals":[{"id":"signoff","title":"A person approves the release","profile":{"kind":"human"},
                     "payload":{"instruction":"Read the release notes and approve them."},
-                    "passSchema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
-                    "failSchema":{"type":"object","properties":{"reason":{"type":"string","minLength":1}},"required":["reason"],"additionalProperties":false}}]
+                    "pass_schema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
+                    "fail_schema":{"type":"object","properties":{"reason":{"type":"string","minLength":1}},"required":["reason"],"additionalProperties":false}}]
             })
             .to_string(),
         )
         .unwrap();
         fs::create_dir_all(repo.join("ship")).unwrap();
-        fs::write(
-            repo.join("ship/artifactize.json"),
+        support::declaration::write(
+            repo.join("ship/index.artf"),
             json!({"name":"ship","evals":[{"id":"check","title":"Ship","profile":{"kind":"runtime","command":bin("true"),"args":[]},
                 "payload":{"instruction":"Ship {release}."}}]})
             .to_string(),

@@ -177,9 +177,9 @@ fn status_selection_policy_and_final_obligations_match_verify() {
     assert_eq!(row(&ignored, "evals", "blocked/check")["action"], "execute");
     assert_eq!(ignored["obligations"], json!(["blocked", "red"]));
 
-    fs::write(
-        fixture.repo.join("artifactize.json"),
-        r#"{"name":"project","basis":true,"reviewPolicy":{"dependencyGates":"ignore"}}"#,
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
+        r#"{"name":"project","basis":true,"review_policy":{"dependency_gates":"ignore"}}"#,
     )
     .unwrap();
     let configured = fixture.json(&["status", "blocked"], 1);
@@ -222,12 +222,12 @@ fn status_selection_policy_and_final_obligations_match_verify() {
 #[test]
 fn profiles_rebuild_static_gates_without_running_commands() {
     let fixture = Fixture::new("runtime");
-    let path = fixture.repo.join("red/artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    declaration["evals"][0]["profileVariants"] = json!({"dependent":{
+    let path = fixture.repo.join("red/index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    declaration["evals"][0]["profile_variants"] = json!({"dependent":{
         "kind":"runtime","command":"missing-command","args":["{green}/missing.txt"]
     }});
-    fs::write(&path, declaration.to_string()).unwrap();
+    support::declaration::write(&path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status", "red", "--profile", "dependent"], 1);
     assert_eq!(row(&view, "evals", "red/check")["state"], "WAIT_DEPENDENCY");
     assert_eq!(
@@ -245,12 +245,12 @@ fn profiles_rebuild_static_gates_without_running_commands() {
 #[test]
 fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     let fixture = Fixture::new("runtime");
-    let path = fixture.repo.join("review/artifactize.json");
-    let mut review: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let path = fixture.repo.join("review/index.artf");
+    let mut review: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     review["mounts"] = json!({"source":"input"});
-    fs::write(path, review.to_string()).unwrap();
-    fs::write(
-        fixture.repo.join("artifactize.json"),
+    support::declaration::write(path, review.to_string()).unwrap();
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
         r#"{"name":"project","basis":true}"#,
     )
     .unwrap();
@@ -342,11 +342,11 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     fixture.json(&["config", "graph"], 0);
     assert!(!marker.exists());
     assert!(!fixture.state.exists());
-    let path = fixture.repo.join("review/artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let path = fixture.repo.join("review/index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     declaration["fingerprint"]["script"] =
         json!({"command":bin("/bin/echo"),"args":["current-fingerprint"]});
-    fs::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");
     assert_eq!(row(&view, "evals", "review/agent")["action"], "execute");

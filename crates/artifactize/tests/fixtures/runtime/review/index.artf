@@ -1,0 +1,10 @@
+fingerprint = false
+name = "green"
+
+[evals.check]
+title = "Check green"
+profile = { kind = "runtime", command = "/bin/sh", args = ["check.sh", "{input}/data.txt"], timeout_ms = 1000 }
+
+[evals.check.payload]
+instruction = """
+Check runtime."""

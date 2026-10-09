@@ -1,0 +1,10 @@
+fingerprint = false
+name = "cycle-a"
+
+[evals.check]
+title = "Check cycle-a"
+profile = { kind = "runtime", command = "/bin/true", args = [], timeout_ms = 1000 }
+
+[evals.check.payload]
+instruction = """
+Check {cycle-b}."""

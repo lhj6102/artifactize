@@ -1,0 +1,10 @@
+name = "intro"
+fingerprint = {}
+
+[evals.heading]
+title = "The page has a top-level heading"
+profile = { kind = "runtime", command = "grep", args = ["-m", "1", "^# ", "page.md"], timeout_ms = 5000 }
+
+[evals.heading.payload]
+instruction = """
+Check that {intro} starts with a top-level heading."""

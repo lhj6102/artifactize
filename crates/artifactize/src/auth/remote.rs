@@ -1,7 +1,7 @@
 //! Remote review store configuration and its bearer token.
 //!
 //! The remote is configured only by `$STATE/remote.json` and the environment, never by
-//! `artifactize.json`. Callers must never print or log the token.
+//! `index.artf`. Callers must never print or log the token.
 #[cfg(test)]
 mod lookup_tests;
 

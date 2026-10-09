@@ -1,0 +1,37 @@
+name = "review"
+mounts = { source = "input" }
+fingerprint = { script = { command = "hook.sh", args = [], files = ["hook.sh"], timeout_ms = 1000 } }
+
+[views.agent_tools]
+read = { description = "Read {artifactName}", input_schema = { type = "object" }, timeout_ms = 1000, command = "sh", args = ["hook.sh"], protocol = "plain" }
+
+[views.human_tools]
+read = { description = "Read {artifactName}", kind = "output", command = "sh", args = ["hook.sh"] }
+
+[evals.runtime]
+title = "Check input"
+profile = { kind = "runtime", command = "sh", args = ["hook.sh"], timeout_ms = 1000 }
+
+[evals.runtime.payload]
+instruction = """
+Check {source}."""
+owner = { literal = "$HOME" }
+
+[evals.agent]
+title = "Review input"
+profile = { kind = "agent", backend = "openai", model = "not-called", reasoning = "high" }
+
+[evals.agent.payload]
+instruction = """
+Inspect {source}."""
+
+[evals.agent.pass_schema]
+properties.notes = { type = "string" }
+
+[evals.human]
+title = "Inspect input"
+profile = { kind = "human" }
+
+[evals.human.payload]
+instruction = """
+Inspect {source}."""

@@ -110,7 +110,7 @@ fn storage_is_atomic_private_and_refuses_links() {
         assert!(storage.read::<Secret>("secret.json").is_err());
         fs::remove_file(&path).unwrap();
     }
-    fs::write(&path, r#"{"token":"readable"}"#).unwrap();
+    crate::test_declaration::write(&path, r#"{"token":"readable"}"#).unwrap();
     grant_everyone_read(&path);
     assert!(storage.read::<Secret>("secret.json").is_err());
     fs::remove_file(&path).unwrap();
@@ -155,7 +155,7 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
             && refusal.ends_with("or set ARTIFACTIZE_CODEX_AUTH_FILE."),
         "{refusal}"
     );
-    fs::write(repo.join("artifactize.json"), "{}").unwrap();
+    crate::test_declaration::write(repo.join("index.artf"), "{}").unwrap();
     let Err(refusal) = Storage::new(Some(&repo.join("state")), None, Tokens::Codex) else {
         panic!("auth storage inside an artifactize workspace");
     };

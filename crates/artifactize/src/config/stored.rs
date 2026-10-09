@@ -227,7 +227,11 @@ mod tests {
                 .get("timeoutMs")
                 .is_some_and(serde_json::Value::is_null)
             {
-                assert!(serde_json::from_value::<Profile>(value).is_err());
+                let mut declaration = value;
+                let object = declaration.as_object_mut().unwrap();
+                let timeout = object.remove("timeoutMs").unwrap();
+                object.insert("timeout_ms".into(), timeout);
+                assert!(serde_json::from_value::<Profile>(declaration).is_err());
             }
         }
         let missing: StoredProfile =

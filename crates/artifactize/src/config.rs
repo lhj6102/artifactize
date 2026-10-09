@@ -22,11 +22,11 @@ use validation::{path, paths, positive_integer, present, script, tags, text, tim
 
 /// Format version for artifactize configuration documents.
 pub const CONFIG_FORMAT_VERSION: u32 = 1;
-pub const CONFIG_FILE: &str = "artifactize.json";
+pub const CONFIG_FILE: &str = "index.artf";
 /// Gitignore-style folder patterns, at the workspace root, that discovery skips.
 /// Bound named variants and declared input lists to keep discovery and preparation finite.
 const MAX_DECLARED_ITEMS: usize = 64;
-pub const IGNORE_FILE: &str = ".artifactizeignore";
+pub const IGNORE_FILE: &str = ".artfignore";
 
 #[derive(Debug, Error)]
 #[error("{path}: {message}")]
@@ -114,31 +114,35 @@ pub enum Profile {
         #[serde(default, deserialize_with = "present")]
         reasoning: Option<String>,
         #[serde(
-            rename = "timeoutMs",
+            rename(serialize = "timeoutMs", deserialize = "timeout_ms"),
             default,
             deserialize_with = "timeout",
             serialize_with = "validation::milliseconds::serialize"
         )]
         timeout_ms: Option<std::time::Duration>,
         #[serde(
-            rename = "maxToolCalls",
+            rename(serialize = "maxToolCalls", deserialize = "max_tool_calls"),
             default,
             deserialize_with = "positive_integer"
         )]
         max_tool_calls: Option<u64>,
-        #[serde(rename = "maxTokens", default, deserialize_with = "positive_integer")]
+        #[serde(
+            rename(serialize = "maxTokens", deserialize = "max_tokens"),
+            default,
+            deserialize_with = "positive_integer"
+        )]
         max_tokens: Option<u64>,
     },
     Human {},
     Dependency {
-        #[serde(rename = "dependsOn")]
+        #[serde(rename(serialize = "dependsOn", deserialize = "depends_on"))]
         depends_on: Vec<String>,
     },
     Runtime {
         command: String,
         args: Vec<String>,
         #[serde(
-            rename = "timeoutMs",
+            rename(serialize = "timeoutMs", deserialize = "timeout_ms"),
             default,
             deserialize_with = "timeout",
             serialize_with = "validation::milliseconds::serialize"
@@ -169,7 +173,7 @@ impl Profile {
                     || depends_on.iter().collect::<BTreeSet<_>>().len() != depends_on.len()
                 {
                     return Err(
-                        "Dependency profile dependsOn must contain 1–64 unique Artifact names."
+                        "Dependency profile depends_on must contain 1–64 unique Artifact names."
                             .into(),
                     );
                 }
@@ -245,9 +249,8 @@ pub struct EvalDeclaration {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 struct EvalFields {
-    id: String,
     title: String,
     profile: Profile,
     #[serde(default, deserialize_with = "present")]
@@ -270,13 +273,13 @@ impl TryFrom<EvalFields> for EvalDeclaration {
                 || fields.fail_schema.is_some()
                 || fields.profile_variants.is_some()
             {
-                return Err("Dependency Evals cannot declare payload, passSchema, failSchema or profileVariants.".into());
+                return Err("Dependency Evals cannot declare payload, pass_schema, fail_schema or profile_variants.".into());
             }
         } else if fields.payload.is_none() {
             return Err("Eval payload is required for runtime, agent and human profiles.".into());
         }
         Ok(Self {
-            id: fields.id,
+            id: String::new(),
             title: fields.title,
             profile: fields.profile,
             profile_variants: fields.profile_variants.unwrap_or_default(),
@@ -299,7 +302,7 @@ impl EvalDeclaration {
             crate::agent::verdict::validate_schema(schema)?;
         }
         if self.profile_variants.len() > MAX_DECLARED_ITEMS {
-            return Err("profileVariants must contain at most 64 named profiles.".into());
+            return Err("profile_variants must contain at most 64 named profiles.".into());
         }
         for (name, profile) in &self.profile_variants {
             identifier(name, "Profile variant name")?;
@@ -313,7 +316,10 @@ impl EvalDeclaration {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(
+    rename_all(serialize = "camelCase", deserialize = "snake_case"),
+    deny_unknown_fields
+)]
 pub struct Views {
     #[serde(default)]
     pub agent_tools: BTreeMap<String, AgentTool>,
@@ -361,7 +367,7 @@ struct ScriptForm {
 }
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 struct ScriptFields {
     command: String,
     args: Vec<String>,
@@ -504,19 +510,22 @@ pub enum DependencyGates {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(
+    rename_all(serialize = "camelCase", deserialize = "snake_case"),
+    deny_unknown_fields
+)]
 pub struct ReviewPolicy {
     #[serde(default, deserialize_with = "present")]
     pub dependency_gates: Option<DependencyGates>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct ArtifactDeclaration {
     pub name: String,
     #[serde(default)]
     pub tags: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "declared_evals")]
     pub evals: Vec<EvalDeclaration>,
     #[serde(default)]
     pub views: Views,
@@ -537,16 +546,9 @@ impl ArtifactDeclaration {
     fn validate(&self) -> Result<(), String> {
         identifier(&self.name, "Artifact name")?;
         tags(&self.tags)?;
-        let mut ids = BTreeSet::new();
         for eval in &self.evals {
             eval.validate()
                 .map_err(|message| format!("Eval {}: {message}", eval.id))?;
-            if !ids.insert(&eval.id) {
-                return Err(format!(
-                    "Duplicate local Eval in {}: {}",
-                    self.name, eval.id
-                ));
-            }
         }
         if self.basis == Some(true) && !self.evals.is_empty() {
             return Err(format!("Basis Artifact {} cannot own Evals.", self.name));
@@ -563,34 +565,79 @@ impl ArtifactDeclaration {
     }
 }
 
+/// Eval ids live in table keys, not fields; BTreeMap also fixes their discovery order.
+fn declared_evals<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<EvalDeclaration>, D::Error> {
+    let evals = BTreeMap::<String, EvalDeclaration>::deserialize(deserializer)?;
+    Ok(evals
+        .into_iter()
+        .map(|(id, mut eval)| {
+            eval.id = id;
+            eval
+        })
+        .collect())
+}
+
 /// Validate an Artifact declaration without opening scripts or declared inputs.
-pub fn parse_declaration(json: &str) -> Result<ArtifactDeclaration, String> {
-    let value: Value = serde_json::from_str(json).map_err(|error| error.to_string())?;
+pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
+    let value: toml::Value = toml::from_str(source).map_err(|error| error.to_string())?;
+    reject_non_json_values(&value, "")?;
     if value.get("family").is_some() {
         return Err(
             "family was removed in 0.9.0; declare each instance as its own Artifact.".into(),
         );
     }
-    // Both earlier names fail with the new shape instead of an unknown-field error.
-    for key in ["staleKey", "stale"] {
+    for key in ["stale_key", "stale"] {
         if value.get(key).is_some() {
             return Err(format!(
-                r#"{key} was renamed to fingerprint: use "fingerprint": {{"files": ["."], "ignore": []}} or "fingerprint": {{"script": {{...}}}}."#
+                "{key} was renamed to fingerprint: use fingerprint = {{ files = [\".\"], ignore = [] }} or [fingerprint.script]."
             ));
         }
     }
-    for eval in value["evals"].as_array().into_iter().flatten() {
-        if eval.get("resultCheck").is_some() {
-            return Err(format!(
-                "Eval {}: resultCheck was removed in 0.6.0; remove it. The review's tool calls are in its saved session (artifactize session show).",
-                eval["id"].as_str().unwrap_or("?")
-            ));
+    if let Some(evals) = value.get("evals").and_then(toml::Value::as_table) {
+        for (id, eval) in evals {
+            if eval.get("result_check").is_some() {
+                return Err(format!(
+                    "Eval {id}: result_check was removed in 0.6.0; remove it. The review's tool calls are in its saved session (artifactize session show)."
+                ));
+            }
         }
     }
     let declaration: ArtifactDeclaration =
-        serde_json::from_value(value).map_err(|error| error.to_string())?;
+        toml::from_str(source).map_err(|error| error.to_string())?;
     declaration.validate()?;
     Ok(declaration)
+}
+
+/// Reject TOML values that would become lossy or implementation-specific owner JSON.
+fn reject_non_json_values(value: &toml::Value, path: &str) -> Result<(), String> {
+    match value {
+        toml::Value::Datetime(_) => Err(format!(
+            "{path}: TOML date/time values have no JSON equivalent; use a quoted string."
+        )),
+        toml::Value::Float(number) if !number.is_finite() => Err(format!(
+            "{path}: TOML non-finite floats have no JSON equivalent."
+        )),
+        toml::Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                reject_non_json_values(item, &format!("{path}[{index}]"))?;
+            }
+            Ok(())
+        }
+        toml::Value::Table(table) => {
+            for (key, value) in table {
+                let child = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{path}.{key}")
+                };
+                reject_non_json_values(value, &child)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -669,6 +716,15 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             .map_err(|error| ConfigError::new(&directory, error))?;
         let mut entries = entries;
         entries.sort_by_key(|entry| entry.file_name());
+        if entries.iter().any(|entry| {
+            entry.file_name() == "artifactize.json"
+                && !ignored.matched(entry.path(), false).is_ignore()
+        }) {
+            return Err(ConfigError::new(
+                directory.join("artifactize.json"),
+                "artifactize.json is no longer read; declare this Artifact in index.artf (TOML).",
+            ));
+        }
         if let Some(marker) = entries
             .iter()
             .find(|entry| entry.file_name() == CONFIG_FILE)
@@ -678,18 +734,16 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 .file_type()
                 .map_err(|error| ConfigError::new(&file, error))?;
             if !kind.is_file() {
-                return Err(ConfigError::new(
-                    file,
-                    "artifactize.json must be a regular file.",
-                ));
+                return Err(ConfigError::new(file, "index.artf must be a regular file."));
             }
-            let json = fs::read_to_string(&file).map_err(|error| ConfigError::new(&file, error))?;
+            let source =
+                fs::read_to_string(&file).map_err(|error| ConfigError::new(&file, error))?;
             let declaration =
-                parse_declaration(&json).map_err(|error| ConfigError::new(&file, error))?;
+                parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
             if !relative.as_os_str().is_empty() && declaration.review_policy.is_some() {
                 return Err(ConfigError::new(
                     &file,
-                    "reviewPolicy belongs only to the repository root artifactize.json.",
+                    "review_policy belongs only to the repository root index.artf.",
                 ));
             }
             let ArtifactDeclaration {
@@ -758,16 +812,23 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
     if config.artifacts.is_empty() {
         return Err(ConfigError::new(
             &config.root,
-            "Workspace must contain at least one artifactize.json Artifact.",
+            "Workspace must contain at least one index.artf Artifact.",
         ));
     }
     crate::scope::resolve_config(&mut config)?;
     Ok(config)
 }
 
-/// The folders the workspace root's `.artifactizeignore` (gitignore syntax) keeps out of
-/// discovery, such as test fixtures or example projects with their own `artifactize.json`.
+/// The folders the workspace root's `.artfignore` (gitignore syntax) keeps out of
+/// discovery, such as test fixtures or example projects with their own `index.artf`.
 fn discovery_ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigError> {
+    let legacy = root.join(".artifactizeignore");
+    if fs::symlink_metadata(&legacy).is_ok() {
+        return Err(ConfigError::new(
+            legacy,
+            ".artifactizeignore was renamed to .artfignore.",
+        ));
+    }
     let file = root.join(IGNORE_FILE);
     let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
     // A regular file only: discovery never follows links.

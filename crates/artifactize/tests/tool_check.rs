@@ -22,24 +22,24 @@ fn fixture(repo: &Path) {
     support::os::make_executable(&tool);
     let command = format!("./{TOOL}");
     let profile = json!({"kind":"agent","backend":"openai","model":"test"});
-    fs::write(repo.join("a/artifactize.json"), json!({
+    support::declaration::write(repo.join("a/index.artf"), json!({
         "name":"a","views":{
-            "agentTools":{
+            "agent_tools":{
                 "read":{"builtin":"read"},"image":{"builtin":"view_image"},
-                "env":{"description":"Environment","command":command,"args":[],"protocol":"plain","inputSchema":{"type":"object","additionalProperties":false}},
-                "data":{"description":"JSON","command":bin("/bin/echo"),"args":["{\"content\":[{\"type\":\"json\",\"data\":{\"answer\":42}}]}"],"protocol":"json","inputSchema":{"type":"object"}},
-                "error":{"description":"Authored error","command":bin("/bin/echo"),"args":["{\"content\":[{\"type\":\"text\",\"text\":\"Owner error\"}],\"isError\":true}"],"protocol":"json","inputSchema":{"type":"object"}}
+                "env":{"description":"Environment","command":command,"args":[],"protocol":"plain","input_schema":{"type":"object","additionalProperties":false}},
+                "data":{"description":"JSON","command":bin("/bin/echo"),"args":["{\"content\":[{\"type\":\"json\",\"data\":{\"answer\":42}}]}"],"protocol":"json","input_schema":{"type":"object"}},
+                "error":{"description":"Authored error","command":bin("/bin/echo"),"args":["{\"content\":[{\"type\":\"text\",\"text\":\"Owner error\"}],\"isError\":true}"],"protocol":"json","input_schema":{"type":"object"}}
             },
-            "humanTools":{"env":{"description":"Environment","kind":"output","command":command,"args":[]}}
+            "human_tools":{"env":{"description":"Environment","kind":"output","command":command,"args":[]}}
         },
         "evals":[
             {"id":"review","title":"Review","profile":profile,"payload":{"instruction":"Review a."}},
             {"id":"human","title":"Human","profile":{"kind":"human"},"payload":{"instruction":"Review a."}}
         ]
     }).to_string()).unwrap();
-    fs::write(
-        repo.join("b/artifactize.json"),
-        json!({"name":"b","views":{"agentTools":{"read":{"builtin":"read"}}},"basis":true})
+    support::declaration::write(
+        repo.join("b/index.artf"),
+        json!({"name":"b","views":{"agent_tools":{"read":{"builtin":"read"}}},"basis":true})
             .to_string(),
     )
     .unwrap();
@@ -88,14 +88,14 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     }));
     assert!(!repo.join("a/touched").exists());
     assert!(!state.exists());
-    let declaration_path = repo.join("a/artifactize.json");
+    let declaration_path = repo.join("a/index.artf");
     let original = fs::read(&declaration_path).unwrap();
-    let mut declaration: Value = serde_json::from_slice(&original).unwrap();
-    declaration["views"]["agentTools"]["env"]["executionPaths"] = json!(["missing-input"]);
-    fs::write(&declaration_path, declaration.to_string()).unwrap();
+    let mut declaration: Value = support::declaration::read(&original).unwrap();
+    declaration["views"]["agent_tools"]["env"]["execution_paths"] = json!(["missing-input"]);
+    support::declaration::write(&declaration_path, declaration.to_string()).unwrap();
     assert_eq!(parsed(&check(&repo, &state, &["a/review"]), 1)["ok"], false);
     assert!(!repo.join("a/touched").exists());
-    fs::write(&declaration_path, original).unwrap();
+    support::declaration::write(&declaration_path, original).unwrap();
     let scoped = parsed(&check(&repo, &state, &["a/review"]), 0);
     assert_eq!(scoped["scopes"].as_array().unwrap().len(), 1);
     assert!(

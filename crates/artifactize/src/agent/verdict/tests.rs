@@ -99,10 +99,10 @@ fn diagnostics_never_echo_invalid_values_or_instance_names() {
 
 #[test]
 fn parsed_human_submission_uses_same_validation_without_repair() {
-    let eval: EvalDeclaration = serde_json::from_value(json!({
+    let eval: EvalDeclaration = crate::test_declaration::eval(json!({
         "id":"human", "title":"Review", "profile":{"kind":"human"},
         "payload":{"instruction":"Review."},
-        "passSchema":{"properties":{"reason":{"type":"string"}},"required":["reason"]}
+        "pass_schema":{"properties":{"reason":{"type":"string"}},"required":["reason"]}
     }))
     .unwrap();
     let valid = json!({"verdict":"GREEN","reason":"  preserved  "});
@@ -120,11 +120,11 @@ fn parsed_human_submission_uses_same_validation_without_repair() {
 
 #[test]
 fn human_submission_errors_list_bounded_failing_paths() {
-    let eval: EvalDeclaration = serde_json::from_value(json!({
+    let eval: EvalDeclaration = crate::test_declaration::eval(json!({
         "id":"human", "title":"Review", "profile":{"kind":"human"},
         "payload":{"instruction":"Review."},
-        "passSchema":{"properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
-        "failSchema":{"properties":{"reason":{"type":"string","minLength":1}},"patternProperties":{"^x":{}},"required":["reason"]}
+        "pass_schema":{"properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},
+        "fail_schema":{"properties":{"reason":{"type":"string","minLength":1}},"patternProperties":{"^x":{}},"required":["reason"]}
     }))
     .unwrap();
     let error = |value| validate_result(&eval, &value).unwrap_err();

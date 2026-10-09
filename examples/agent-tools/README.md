@@ -20,14 +20,14 @@ What it demonstrates:
 - **An Agent eval with strict schemas.** `spec/review` returns exactly one JSON
   object. GREEN must carry `covered` (requirement IDs) and `diagramMatches: true`,
   with optional `notes`. RED must carry `findings`. Fields outside
-  `passSchema`/`failSchema` are rejected, and an invalid answer gets one repair
-  turn with tools disabled. The profile also sets budgets: `timeoutMs`,
-  `maxToolCalls` and `maxTokens`.
+  `pass_schema`/`fail_schema` are rejected, and an invalid answer gets one repair
+  turn with tools disabled. The profile also sets budgets: `timeout_ms`,
+  `max_tool_calls` and `max_tokens`.
 - **Built-in tools.** `read`, `grep` and `view_image` are declared as
-  `{"builtin": ...}`. They run inside artifactize, read only, and see `spec` plus
+  `{ builtin = "read" }`. They run inside artifactize, read only, and see `spec` plus
   its mount, so `reqs/requirements.md` can be read through the alias.
 - **A declared `plain` tool.** `section` validates `{"title": ...}` against its
-  `inputSchema` and substitutes the value for `{title}` as one argv element.
+  `input_schema` and substitutes the value for `{title}` as one argv element.
   Its stdout is the text result, and a nonzero exit makes it a tool error.
 - **A declared `json` tool.** `coverage` reads `{version, context, args}` on
   stdin. Its argv gets `{reqs}/requirements.md` as an absolute path. It prints a
@@ -44,7 +44,7 @@ What it demonstrates:
   the notes in the terminal. Human tools take no arguments and run in your real
   environment.
 
-`spec` declares no fingerprint, so every `verify` asks for a fresh review.
+`spec` uses the default artifactsum fingerprint, so unchanged files reuse earlier reviews.
 
 ## Check the tools (no model needed)
 
@@ -72,10 +72,10 @@ unavailable. `notes_spec` works in any terminal.
 ## Choose a backend and model
 
 `spec/review` names exactly one backend and one exact model. There is no
-fallback or model catalog. The default profile uses `"backend": "openai"` with
+fallback or model catalog. The default profile uses `backend = "openai"` with
 the placeholder `YOUR_OPENAI_MODEL_ID`. The `anthropic` and `codex` entries in
-`profileVariants` are complete alternative profiles. Replace the `model`
-placeholder of the profile you use in `spec/artifactize.json`:
+`profile_variants` are complete alternative profiles. Replace the `model`
+placeholder of the profile you use in `spec/index.artf`:
 
 | Backend | Credentials | Models | Review command |
 |---|---|---|---|
@@ -130,5 +130,5 @@ stays open. A RED sign-off looks like
 `--verdict RED --fields '{"unresolved":["Which files count as old?"]}'`.
 Once you submit, `verify` records the sign-off and exits 4: the Run stays
 INCOMPLETE while `spec/review` has no result, because an Artifact is satisfied
-only when every one of its evals is GREEN. Without a fingerprint, a submission
-settles only its own Run, and a later `verify` asks for a new sign-off.
+only when every one of its evals is GREEN. The default artifactsum fingerprint lets a later `verify` reuse the sign-off while the files
+and eval criteria remain unchanged. Set `fingerprint = false` to ask for a fresh sign-off every time.

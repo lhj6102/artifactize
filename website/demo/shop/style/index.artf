@@ -1,0 +1,10 @@
+name = "style"
+fingerprint = {}
+
+[evals.tokens]
+title = "Every color token is a hex color"
+profile = { kind = "runtime", command = "python3", args = ["check_tokens.py", "tokens.css"], timeout_ms = 10000 }
+
+[evals.tokens.payload]
+instruction = """
+Check that every custom property in {style}/tokens.css is a hex color."""

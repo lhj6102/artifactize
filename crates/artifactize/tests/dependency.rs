@@ -22,8 +22,12 @@ struct Fixture {
     state: PathBuf,
 }
 
+fn parse(value: &Value) -> Result<artifactize::config::ArtifactDeclaration, String> {
+    parse_declaration(&support::declaration::to_toml(value.clone())?)
+}
+
 fn dependency(targets: &[&str]) -> Value {
-    json!({"id":"ready","title":"Inputs are ready","profile":{"kind":"dependency","dependsOn":targets}})
+    json!({"id":"ready","title":"Inputs are ready","profile":{"kind":"dependency","depends_on":targets}})
 }
 
 fn runtime(command: &str) -> Value {
@@ -47,7 +51,7 @@ impl Fixture {
     fn write(&self, name: &str, value: Value) {
         let folder = self.repo.join(name);
         fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join("artifactize.json"), value.to_string()).unwrap();
+        support::declaration::write(folder.join("index.artf"), value.to_string()).unwrap();
     }
 
     fn command(&self) -> Command {
@@ -100,7 +104,7 @@ impl Fixture {
 #[test]
 fn dependency_declarations_are_strict_and_other_profiles_still_require_payload() {
     let valid = json!({"name":"player","evals":[dependency(&["movement", "art"])]});
-    let declaration = parse_declaration(&valid.to_string()).unwrap();
+    let declaration = parse(&valid).unwrap();
     assert!(declaration.evals[0].payload.is_none());
     for targets in [
         json!([]),
@@ -111,9 +115,9 @@ fn dependency_declarations_are_strict_and_other_profiles_still_require_payload()
         json!(vec!["art"; 65]),
     ] {
         let mut invalid = valid.clone();
-        invalid["evals"][0]["profile"]["dependsOn"] = targets;
+        invalid["evals"][0]["profile"]["depends_on"] = targets;
         assert!(
-            parse_declaration(&invalid.to_string()).is_err(),
+            parse(&invalid).is_err(),
             "{invalid}"
         );
     }
@@ -121,19 +125,19 @@ fn dependency_declarations_are_strict_and_other_profiles_still_require_payload()
     missing["evals"][0]["profile"]
         .as_object_mut()
         .unwrap()
-        .remove("dependsOn");
-    assert!(parse_declaration(&missing.to_string()).is_err());
+        .remove("depends_on");
+    assert!(parse(&missing).is_err());
     for (field, value) in [
         ("payload", json!({"instruction":"No."})),
-        ("passSchema", json!({})),
-        ("failSchema", json!({})),
-        ("profileVariants", json!({})),
+        ("pass_schema", json!({})),
+        ("fail_schema", json!({})),
+        ("profile_variants", json!({})),
     ] {
         for value in [value, Value::Null] {
             let mut invalid = valid.clone();
             invalid["evals"][0][field] = value;
             assert!(
-                parse_declaration(&invalid.to_string()).is_err(),
+                parse(&invalid).is_err(),
                 "{invalid}"
             );
         }
@@ -145,12 +149,12 @@ fn dependency_declarations_are_strict_and_other_profiles_still_require_payload()
     ] {
         let invalid =
             json!({"name":"player","evals":[{"id":"check","title":"Check","profile":profile}]});
-        assert!(parse_declaration(&invalid.to_string()).is_err());
+        assert!(parse(&invalid).is_err());
     }
     let mut max = valid;
-    max["evals"][0]["profile"]["dependsOn"] =
+    max["evals"][0]["profile"]["depends_on"] =
         json!((0..64).map(|i| format!("a{i}")).collect::<Vec<_>>());
-    assert!(parse_declaration(&max.to_string()).is_ok());
+    assert!(parse(&max).is_ok());
 }
 
 #[test]
@@ -659,9 +663,9 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
 async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations() {
     let fixture = Fixture::new();
     fs::create_dir_all(&fixture.repo).unwrap();
-    fs::write(
-        fixture.repo.join("artifactize.json"),
-        json!({"name":"root","basis":true,"reviewPolicy":{"dependencyGates":"ignore"}}).to_string(),
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
+        json!({"name":"root","basis":true,"review_policy":{"dependency_gates":"ignore"}}).to_string(),
     )
     .unwrap();
     fixture.declare("art", vec![runtime("/bin/false")]);
@@ -752,7 +756,7 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
 fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
     let fixture = Fixture::new();
     let mut eval = runtime("/bin/false");
-    eval["profileVariants"] =
+    eval["profile_variants"] =
         json!({"fast":{"kind":"runtime","command":support::os::bin("/bin/true"),"args":[]}});
     fixture.declare("art", vec![eval]);
     for derived in [false, true] {

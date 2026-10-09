@@ -34,7 +34,7 @@ impl Location {
         let marked = directory.ancestors().find_map(|ancestor| {
             [
                 (".git", "git work tree"),
-                ("artifactize.json", "artifactize workspace"),
+                ("index.artf", "artifactize workspace"),
             ]
             .into_iter()
             .find(|(marker, _)| ancestor.join(marker).exists())

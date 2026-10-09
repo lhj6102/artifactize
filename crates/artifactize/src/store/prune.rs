@@ -279,7 +279,7 @@ fn real_path(path: &Path) -> Result<PathBuf, String> {
 }
 
 fn reject_repository(path: &Path) -> Result<(), String> {
-    for marker in [".git", "artifactize.json"] {
+    for marker in [".git", "index.artf"] {
         match path.join(marker).symlink_metadata() {
             Ok(_) => {
                 return Err(format!(

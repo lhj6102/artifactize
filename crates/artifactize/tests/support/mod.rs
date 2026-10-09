@@ -27,6 +27,7 @@ use std::{
 
 use serde_json::{Value, json};
 
+pub mod declaration;
 pub mod os;
 
 /// Copy `tests/fixtures/<name>` to `target`. The fixtures name Unix commands, so that the
@@ -87,7 +88,7 @@ fn port(path: &Path, deadlines: bool) {
                         }
                         Value::Number(deadline)
                             if deadlines
-                                && key == "timeoutMs"
+                                && key == "timeout_ms"
                                 && deadline.as_u64().is_some_and(|ms| ms >= 1000) =>
                         {
                             *value = json!(os::slow(deadline.as_u64().unwrap()));
@@ -110,10 +111,11 @@ fn port(path: &Path, deadlines: bool) {
     }
     match path.file_name().and_then(|name| name.to_str()) {
         // Rewritten only when needed: a declaration's bytes can be part of a fingerprint.
-        Some("artifactize.json") => {
-            let mut declaration: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+        Some("index.artf") => {
+            let mut declaration: Value =
+                toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
             if commands(&mut declaration, deadlines) {
-                fs::write(path, serde_json::to_string_pretty(&declaration).unwrap()).unwrap();
+                fs::write(path, declaration::to_toml(declaration).unwrap()).unwrap();
             }
         }
         Some("check.sh") => {

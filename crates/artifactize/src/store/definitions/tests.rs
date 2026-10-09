@@ -53,7 +53,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
 #[test]
 fn current_graph_capture_serializes_identically_to_pinned_query_view() {
     let root = tempfile::tempdir().unwrap();
-    std::fs::write(root.path().join("artifactize.json"), json!({"name":"app","views":{"agentTools":{"read":{"builtin":"read"}}},"fingerprint":{"script":{"command":"echo","args":["v1"]}},"evals":[{"id":"check","title":"Check","profile":{"kind":"agent","backend":"openai","model":"fixture"},"payload":{"instruction":"Check.","owner":{"nested":[1,2]}},"passSchema":{"type":"object"}}]}).to_string()).unwrap();
+    crate::test_declaration::write(root.path().join("index.artf"), json!({"name":"app","views":{"agent_tools":{"read":{"builtin":"read"}}},"fingerprint":{"script":{"command":"echo","args":["v1"]}},"evals":[{"id":"check","title":"Check","profile":{"kind":"agent","backend":"openai","model":"fixture"},"payload":{"instruction":"Check.","owner":{"nested":[1,2]}},"pass_schema":{"type":"object"}}]}).to_string()).unwrap();
     let config = config::read_workspace_config(root.path()).unwrap();
     let selection = Selection::All;
     let view = crate::query::graph(&config, &selection).unwrap();

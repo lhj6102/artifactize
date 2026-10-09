@@ -34,3 +34,6 @@ pub mod workspace;
 #[cfg(test)]
 #[path = "../tests/support/os.rs"]
 mod test_os;
+
+#[cfg(test)]
+mod test_declaration;

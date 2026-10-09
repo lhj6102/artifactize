@@ -24,11 +24,13 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
     };
     for &(name, basis, evals) in definitions {
         let declaration = parse_declaration(
-            &json!({"name": name, "basis": basis, "evals": evals.iter().map(|id| {
+            &crate::test_declaration::to_toml(
+                json!({"name": name, "basis": basis, "evals": evals.iter().map(|id| {
                 json!({"id": id, "title": "Check", "profile": {"kind": "human"},
                     "payload": {"instruction": "Inspect."}})
-            }).collect::<Vec<_>>()})
-            .to_string(),
+            }).collect::<Vec<_>>() }),
+            )
+            .unwrap(),
         )
         .unwrap();
         for eval in declaration.evals {
@@ -333,7 +335,7 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
     ] {
         let path = fixture.path().join(path);
         std::fs::create_dir_all(&path).unwrap();
-        std::fs::write(path.join("artifactize.json"), declaration.to_string()).unwrap();
+        crate::test_declaration::write(path.join("index.artf"), declaration.to_string()).unwrap();
     }
     let config = read_workspace_config(fixture.path()).unwrap();
     assert_eq!(config.relations.len(), 4);

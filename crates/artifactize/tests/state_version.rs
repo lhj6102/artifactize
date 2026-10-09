@@ -1,5 +1,7 @@
 //! A state of another schema version is refused, never migrated: 0.6.0 starts a new state.
 
+mod support;
+
 use std::{fs, path::Path, process::Command};
 
 use artifactize::store::{EARLIER_STATE, STATE_SCHEMA_VERSION};
@@ -40,8 +42,8 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();
     fs::create_dir_all(root.join("home")).unwrap();
-    fs::write(
-        repo.join("artifactize.json"),
+    support::declaration::write(
+        repo.join("index.artf"),
         json!({"name":"app","evals":[{"id":"check","title":"Check",
             "profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Check."}}]})
         .to_string(),

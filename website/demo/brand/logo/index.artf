@@ -1,0 +1,35 @@
+name = "logo"
+fingerprint = {}
+
+[views.human_tools]
+notes = { description = "Print the design notes for {artifactName}.", kind = "output", command = "cat", args = ["{artifactPath}/notes.md"] }
+
+[evals.svg]
+title = "The logo is well-formed SVG"
+profile = { kind = "runtime", command = "python3", args = ["-c", "import sys, xml.dom.minidom; xml.dom.minidom.parse(sys.argv[1])", "logo.svg"], timeout_ms = 10000 }
+
+[evals.svg.payload]
+instruction = """
+Check that {logo}/logo.svg parses as XML."""
+
+[evals.signoff]
+title = "A designer signs off on the logo"
+profile = { kind = "human" }
+
+[evals.signoff.payload]
+instruction = """
+Read the design notes of {logo} with the notes tool. Submit GREEN when the logo matches them; \
+otherwise submit RED with the changes it needs."""
+
+[evals.signoff.pass_schema]
+type = "object"
+properties.approved = { const = true }
+properties.comment = { type = "string", minLength = 1 }
+required = ["approved", "comment"]
+additionalProperties = false
+
+[evals.signoff.fail_schema]
+type = "object"
+properties.changes = { type = "string", minLength = 1 }
+required = ["changes"]
+additionalProperties = false

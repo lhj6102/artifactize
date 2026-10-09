@@ -29,7 +29,7 @@ impl Fixture {
 
     fn repo(&self, name: &str, value: Value) -> PathBuf {
         let repo = self.root.path().join(name);
-        write(&repo, "artifactize.json", value);
+        write(&repo, "index.artf", value);
         repo
     }
 
@@ -104,7 +104,7 @@ impl Fixture {
     fn shared_repo(&self, name: &str, script: &str) -> PathBuf {
         let repo = self.repo(name, json!({"name":"shared","fingerprint":fingerprint("concurrent"),"evals":[{
             "id":"check","title":"Review","profile":{"kind":"runtime","command":bin("/bin/sh"),
-                "args":["review.sh",self.root.path().join("starts"),self.root.path().join("release")],"timeoutMs":10000},
+                "args":["review.sh",self.root.path().join("starts"),self.root.path().join("release")],"timeout_ms":10000},
             "payload":{"instruction":"Review."}
         }]}));
         fs::write(repo.join("review.sh"), script).unwrap();
@@ -115,14 +115,14 @@ impl Fixture {
     /// deadline has to fall after the waiter starts waiting, and early enough that the owner
     /// has stopped within `finish`'s five seconds of the release.
     fn erroring_owner(&self, repo: &Path) {
-        let path = repo.join("artifactize.json");
-        let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let path = repo.join("index.artf");
+        let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
         declaration["evals"][0] = erroring(declaration["evals"][0].take(), 3000);
-        fs::write(path, declaration.to_string()).unwrap();
+        support::declaration::write(path, declaration.to_string()).unwrap();
     }
 
     fn release(&self) {
-        fs::write(self.root.path().join("release"), "").unwrap();
+        support::declaration::write(self.root.path().join("release"), "").unwrap();
     }
 
     /// Started review scripts; the shell creates the file before it writes the line.
@@ -217,7 +217,7 @@ const ERROR_CODE: &str = "TIMEOUT";
 /// option, so the eval keeps its key.
 fn erroring(mut eval: Value, timeout_ms: u64) -> Value {
     if cfg!(windows) {
-        eval["profile"]["timeoutMs"] = json!(timeout_ms);
+        eval["profile"]["timeout_ms"] = json!(timeout_ms);
     }
     eval
 }
@@ -290,7 +290,7 @@ fn kill_orphans(starts: &str) {
 fn write(repo: &Path, path: &str, value: Value) {
     let path = repo.join(path);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, value.to_string()).unwrap();
+    support::declaration::write(path, value.to_string()).unwrap();
 }
 
 fn eval(id: &str, script: &str) -> Value {
@@ -334,14 +334,14 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     same["title"] = json!("Renamed review");
     write(
         &target,
-        "dependency/artifactize.json",
+        "dependency/index.artf",
         json!({"name":"dependency","fingerprint":fingerprint("shared:red"),"evals":[same]}),
     );
     let mut consumer = eval("check", "touch must-not-run");
     consumer["payload"]["instruction"] = json!("Check {dependency}.");
     write(
         &target,
-        "consumer/artifactize.json",
+        "consumer/index.artf",
         json!({"name":"consumer","evals":[consumer]}),
     );
 
@@ -412,8 +412,8 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
         {"id":"fail","title":"Fail","profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},"payload":{"instruction":"Review."}}
     ]}));
     let run = fixture.command(&repo, &["verify", "--all", "--jobs", "1"], 1);
-    let pass = &run["requests"][0];
-    let fail = &run["requests"][1];
+    let pass = &run["requests"][1];
+    let fail = &run["requests"][0];
     assert_eq!(pass["status"], "GREEN");
     assert_eq!(fail["status"], "RED");
     assert_ne!(pass["executionId"], fail["executionId"]);
@@ -423,8 +423,8 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
     assert_eq!(fixture.count("executions"), 2);
     assert_eq!(fixture.records(), 2);
     let status = fixture.command(&repo, &["status"], 1);
-    assert_eq!(status["evals"][0]["state"], "PASS");
-    assert_eq!(status["evals"][1]["state"], "RED");
+    assert_eq!(status["evals"][1]["state"], "PASS");
+    assert_eq!(status["evals"][0]["state"], "RED");
     assert_eq!(status["counts"]["reuse"], 2);
     let hit = fixture.command(&repo, &["verify", "--all"], 1);
     for (new, original) in hit["requests"]
@@ -444,7 +444,7 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
     let entries = fixture.command(&repo, &["cache", "list"], 0);
     assert_eq!(entries.as_array().unwrap().len(), 2);
     // One fingerprint, two eval strategies: two keys.
-    let (pass_key, fail_key) = (key(&run, 0), key(&run, 1));
+    let (pass_key, fail_key) = (key(&run, 1), key(&run, 0));
     assert_ne!(pass_key, fail_key);
     let cached = fixture.command(&repo, &["cache", "show", &pass_key], 0);
     assert_eq!(cached["evalDefHash"], pass["evalDefHash"]);
@@ -475,7 +475,7 @@ fn fingerprint_false_executes_each_time_and_never_reads_or_publishes_cache() {
     let before = fixture.entries();
     write(
         &repo,
-        "artifactize.json",
+        "index.artf",
         json!({"name":"test","fingerprint":false,"evals":[eval("check","echo run >> starts; exit 8")]}),
     );
     for _ in 0..2 {
@@ -506,7 +506,7 @@ fn errors_are_audited_but_never_published() {
     assert_eq!(fixture.count("executions"), 2);
     write(
         &repo,
-        "artifactize.json",
+        "index.artf",
         json!({"name":"test","fingerprint":fingerprint("retryable"),"evals":[eval("check","exit 0")]}),
     );
     fixture.command(&repo, &["verify", "--all"], 0);
@@ -587,7 +587,7 @@ fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies
     fixture.command(&dependency, &["verify", "--all"], 0);
     write(
         &repo,
-        "dependency/artifactize.json",
+        "dependency/index.artf",
         json!({"name":"dep","fingerprint":fingerprint("dependency"),"evals":[eval("check","exit 0")]}),
     );
     let forced = fixture.command(&repo, &["verify", "test", "--recursive", "--force"], 0);
@@ -631,7 +631,7 @@ fn status_uses_current_fingerprint_and_only_prepares_the_selected_closure() {
     assert!(!repo.join("executed").exists());
     write(
         &repo,
-        "selected/artifactize.json",
+        "selected/index.artf",
         json!({"name":"selected","fingerprint":fingerprint("isolated"),"evals":[eval("check","touch must-not-run")]}),
     );
     let selected = fixture.command(&repo, &["status", "selected"], 1);
@@ -939,7 +939,7 @@ fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget()
     let shared = fixture.shared_repo("a-target/a-shared", "touch must-not-run");
     write(
         &target,
-        "independent/artifactize.json",
+        "independent/index.artf",
         json!({"name":"z-independent","fingerprint":false,"evals":[eval("check", "touch ran")]}),
     );
     let owner = fixture.spawn(&source, &[]);
@@ -1108,7 +1108,7 @@ fn automatic_gc_enforces_the_entry_cap_in_lru_order_and_touches_hits() {
     assert!(used.as_str() > "2000");
     write(
         &repo,
-        "artifactize.json",
+        "index.artf",
         json!({"name":"test","fingerprint":fingerprint("new"),"evals":[eval("check","exit 0")]}),
     );
     let new = key(&fixture.command(&repo, &["verify", "--all"], 0), 0);
@@ -1375,7 +1375,7 @@ fn gc_failure_does_not_replace_a_completed_result() {
     db.execute_batch("CREATE TRIGGER fail_gc BEFORE UPDATE OF completed_at ON executions WHEN NEW.completed_at IS NULL BEGIN SELECT RAISE(FAIL,'GC unavailable'); END;").unwrap();
     write(
         &repo,
-        "artifactize.json",
+        "index.artf",
         json!({"name":"test","fingerprint":fingerprint("second"),"evals":[eval("check","exit 0")]}),
     );
     let verified = fixture.spawn(&repo, &[]).wait_with_output().unwrap();
@@ -1421,13 +1421,13 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
         changed.pointer_mut(parent).unwrap()[key] = value;
         write(
             &repo,
-            "artifactize.json",
+            "index.artf",
             json!({"name":"test","fingerprint":fingerprint("unchanged"),"evals":[changed]}),
         );
     };
     // Execution options and names are not part of the key.
     for (pointer, value) in [
-        ("/profile/timeoutMs", json!(1000)),
+        ("/profile/timeout_ms", json!(1000)),
         ("/title", json!("Renamed")),
     ] {
         change(pointer, value);
@@ -1442,12 +1442,12 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
     }
     for (pointer, value, code) in [
         (
-            "/passSchema",
+            "/pass_schema",
             json!({"type":"object","properties":{"extra":{"type":"string"}}}),
             0,
         ),
         (
-            "/failSchema",
+            "/fail_schema",
             json!({"type":"object","properties":{"reason":{"type":"string"}}}),
             0,
         ),
@@ -1480,10 +1480,10 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
 fn profile_variants_share_a_result_unless_they_change_the_strategy() {
     let fixture = Fixture::new();
     let mut declaration = eval("check", "exit 0");
-    declaration["profile"]["timeoutMs"] = json!(5000);
-    declaration["profileVariants"] = json!({
+    declaration["profile"]["timeout_ms"] = json!(5000);
+    declaration["profile_variants"] = json!({
         "fail":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
-        "patient":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c","exit 0"],"timeoutMs":60000}
+        "patient":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c","exit 0"],"timeout_ms":60000}
     });
     let repo = fixture.repo(
         "repo",
@@ -1541,10 +1541,10 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
         different["requests"][0]["evalDefHash"],
         default["requests"][0]["evalDefHash"]
     );
-    declaration["profileVariants"]["fail"]["args"] = json!(["changed unused variant"]);
+    declaration["profile_variants"]["fail"]["args"] = json!(["changed unused variant"]);
     write(
         &repo,
-        "artifactize.json",
+        "index.artf",
         json!({"name":"test","fingerprint":fingerprint("variants"),"evals":[declaration]}),
     );
     assert_eq!(
@@ -1555,38 +1555,40 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
 }
 #[test]
 fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() {
-    use artifactize::{cache::eval_definition_hash, config::EvalDeclaration};
-    let first: EvalDeclaration = serde_json::from_str(r#"{"id":"one","title":"First","profile":{"kind":"agent","backend":"anthropic","model":"model","reasoning":"high","maxToolCalls":3,"maxTokens":10,"timeoutMs":1000},"payload":{"instruction":"Review.","nested":{"b":2,"a":1}},"passSchema":{"type":"object","properties":{"b":{"type":"number"},"a":{"type":"string"}}}}"#).unwrap();
-    let second: EvalDeclaration = serde_json::from_str(r#"{"title":"Second","id":"two","payload":{"nested":{"a":1,"b":2},"instruction":"Review."},"passSchema":{"properties":{"a":{"type":"string"},"b":{"type":"number"}},"type":"object"},"profile":{"maxTokens":10,"maxToolCalls":3,"timeoutMs":1000,"reasoning":"high","model":"model","backend":"anthropic","kind":"agent"}}"#).unwrap();
+    use artifactize::{cache::eval_definition_hash, config::parse_declaration};
+    let parse = |value| {
+        parse_declaration(
+            &support::declaration::to_toml(json!({"name":"app","evals":[value]})).unwrap(),
+        )
+        .unwrap()
+        .evals
+        .remove(0)
+    };
+    let first_value = json!({"id":"one","title":"First","profile":{"kind":"agent","backend":"anthropic","model":"model","reasoning":"high","max_tool_calls":3,"max_tokens":10,"timeout_ms":1000},"payload":{"instruction":"Review.","nested":{"b":2,"a":1}},"pass_schema":{"type":"object","properties":{"b":{"type":"number"},"a":{"type":"string"}}}});
+    let first = parse(first_value.clone());
+    let second = parse(
+        json!({"title":"Second","id":"two","payload":{"nested":{"a":1,"b":2},"instruction":"Review."},"pass_schema":{"properties":{"a":{"type":"string"},"b":{"type":"number"}},"type":"object"},"profile":{"max_tokens":10,"max_tool_calls":3,"timeout_ms":1000,"reasoning":"high","model":"model","backend":"anthropic","kind":"agent"}}),
+    );
     let hash = eval_definition_hash(&first);
     assert_eq!(hash, eval_definition_hash(&second));
     for (key, value) in [
         ("backend", json!("openai")),
         ("model", json!("other")),
         ("reasoning", json!("low")),
-        ("maxToolCalls", json!(4)),
-        ("maxTokens", json!(11)),
-        ("timeoutMs", json!(2000)),
+        ("max_tool_calls", json!(4)),
+        ("max_tokens", json!(11)),
+        ("timeout_ms", json!(2000)),
     ] {
-        let mut changed = serde_json::to_value(&first).unwrap();
+        let mut changed = first_value.clone();
         changed["profile"][key] = value;
-        changed.as_object_mut().unwrap().remove("failSchema");
-        assert_eq!(
-            hash,
-            eval_definition_hash(&serde_json::from_value(changed).unwrap()),
-            "{key}"
-        );
+        assert_eq!(hash, eval_definition_hash(&parse(changed)), "{key}");
     }
     let mut human = first.clone();
     human.profile = artifactize::config::Profile::Human {};
     assert_ne!(hash, eval_definition_hash(&human));
-    let mut nested = serde_json::to_value(&first).unwrap();
+    let mut nested = first_value;
     nested["payload"]["nested"]["a"] = json!(3);
-    nested.as_object_mut().unwrap().remove("failSchema");
-    assert_ne!(
-        hash,
-        eval_definition_hash(&serde_json::from_value(nested).unwrap())
-    );
+    assert_ne!(hash, eval_definition_hash(&parse(nested)));
 }
 #[test]
 fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
@@ -1600,13 +1602,13 @@ fn concurrent_claims_dedupe_each_definition_without_blocking_another() {
         ("fail-two", "fail"),
     ] {
         let repo = fixture.shared_repo(name, &script);
-        let path = repo.join("artifactize.json");
-        let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let path = repo.join("index.artf");
+        let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
         declaration["evals"][0]["profile"]["args"]
             .as_array_mut()
             .unwrap()
             .push(json!(verdict));
-        fs::write(path, declaration.to_string()).unwrap();
+        support::declaration::write(path, declaration.to_string()).unwrap();
         repos.push(repo);
     }
     let children: Vec<_> = repos.iter().map(|repo| fixture.spawn(repo, &[])).collect();
@@ -1649,7 +1651,7 @@ fn gc_and_removal_protect_only_the_matching_key() {
     let fixture = Fixture::new();
     let repo = fixture.repo("repo", json!({"name":"test","fingerprint":fingerprint("shared"),"evals":[eval("pass","exit 0"),eval("fail","exit 1")]}));
     let run = fixture.command(&repo, &["verify", "--all"], 1);
-    let (active, other) = (key(&run, 0), key(&run, 1));
+    let (active, other) = (key(&run, 1), key(&run, 0));
     let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
     db.execute("INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,data) VALUES ('active',?,'active','WAITING_HUMAN',1,1,'{}')", [&active]).unwrap();
     assert_eq!(

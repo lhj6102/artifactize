@@ -39,10 +39,10 @@ impl Project {
             let folder = repo.join(name);
             fs::create_dir_all(&folder).unwrap();
             fs::write(folder.join("notes.md"), format!("{name}: R1 holds.\n")).unwrap();
-            fs::write(
-                folder.join("artifactize.json"),
+            support::declaration::write(
+                folder.join("index.artf"),
                 json!({"name":name,"fingerprint":{},
-                    "views":{"agentTools":{"read":{"builtin":"read"}}},
+                    "views":{"agent_tools":{"read":{"builtin":"read"}}},
                     "evals":[{"id":"review","title":"Review","profile":profile,
                         "payload":{"instruction":format!("Review {{{name}}}.")}}]})
                 .to_string(),
@@ -100,7 +100,7 @@ impl Project {
 }
 
 fn agent(backend: &str) -> Value {
-    json!({"kind":"agent","backend":backend,"model":format!("{backend}-model"),"timeoutMs":20000})
+    json!({"kind":"agent","backend":backend,"model":format!("{backend}-model"),"timeout_ms":20000})
 }
 
 fn request<'a>(run: &'a Value, eval: &str) -> &'a Value {
@@ -283,7 +283,7 @@ fn every_backend_retries_and_reports_exhausted_failures_by_code() {
 #[test]
 fn a_retry_after_past_the_deadline_fails_at_once() {
     let mut profile = agent("openai");
-    profile["timeoutMs"] = json!(5000);
+    profile["timeout_ms"] = json!(5000);
     let project = Project::new(&[("notes", profile)]);
     let provider = FakeProvider::start(|_| {
         error(

@@ -75,7 +75,7 @@ impl Fixture {
     }
 
     fn runtime(&self, program: &str, args: &[&str]) {
-        fs::write(self.repo.join("artifactize.json"), json!({
+        support::declaration::write(self.repo.join("index.artf"), json!({
             "name":"test", "fingerprint":false, "evals":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":bin(program),"args":args}, "payload":{"instruction":"Check runtime."}}]
         }).to_string()).unwrap();
     }
@@ -231,11 +231,7 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
     }
     fs::write(fixture.repo.join("unreviewed.json"), "irrelevant").unwrap();
     let empty = Fixture::new();
-    fs::write(
-        empty.repo.join("artifactize.json"),
-        r#"{"name":"unreviewed"}"#,
-    )
-    .unwrap();
+    support::declaration::write(empty.repo.join("index.artf"), r#"{"name":"unreviewed"}"#).unwrap();
     assert_eq!(
         empty
             .command()
@@ -326,10 +322,10 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
 fn human_waiting_does_not_prevent_runtime_execution() {
     let fixture = Fixture::new();
     fixture.runtime("/bin/true", &[]);
-    let path = fixture.repo.join("artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let path = fixture.repo.join("index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     declaration["evals"].as_array_mut().unwrap().push(json!({"id":"review","title":"Human review","profile":{"kind":"human"},"payload":{"instruction":"Review."}}));
-    fs::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(path, declaration.to_string()).unwrap();
     // The Human wait times out at once, after the runtime eval executed.
     let run = fixture.verify(&["--all", "--timeout-ms", "1"], 3);
     assert_eq!(run["requests"][0]["status"], "GREEN");
@@ -347,8 +343,8 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
     let check = json!({"kind":"runtime","command":bin("/bin/sh"),
         "args":["-c","echo run >> \"$1\"","sh",marker.to_str().unwrap()]});
     let report = json!({"kind":"runtime","command":bin("/bin/true"),"args":[]});
-    fs::write(
-        fixture.repo.join("artifactize.json"),
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
         r#"{"name":"root","basis":true}"#,
     )
     .unwrap();
@@ -361,7 +357,7 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
         fs::write(folder.join("version"), "v1\n").unwrap();
         let declaration = json!({"name":artifact,"fingerprint":fingerprint,"evals":[{"id":eval,
             "title":eval,"profile":profile,"payload":{"instruction":instruction}}]});
-        fs::write(folder.join("artifactize.json"), declaration.to_string()).unwrap();
+        support::declaration::write(folder.join("index.artf"), declaration.to_string()).unwrap();
     }
     let reuse_only = ["--all", "--reuse-only", "runtime"];
 
@@ -507,12 +503,12 @@ fn selection_errors_fail_before_discovery_or_receipts() {
 fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_patching_sources() {
     let fixture = Fixture::new();
     support::copy_fixture("runtime", &fixture.repo);
-    let source = fixture.repo.join("review/artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&source).unwrap()).unwrap();
-    declaration["evals"][0]["profileVariants"] = json!({
-        "brief": {"kind":"runtime","command":bin("/bin/echo"),"args":["variant", "{input}/data.txt"],"timeoutMs":support::os::slow(1000)}
+    let source = fixture.repo.join("review/index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&source).unwrap()).unwrap();
+    declaration["evals"][0]["profile_variants"] = json!({
+        "brief": {"kind":"runtime","command":bin("/bin/echo"),"args":["variant", "{input}/data.txt"],"timeout_ms":support::os::slow(1000)}
     });
-    fs::write(&source, declaration.to_string()).unwrap();
+    support::declaration::write(&source, declaration.to_string()).unwrap();
     let original = fs::read(&source).unwrap();
     let selected = fixture
         .command()
@@ -556,7 +552,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
         ),
     ] {
         for content in [json.to_owned(), format!("\u{feff}{lines}")] {
-            fs::write(&path, content).unwrap();
+            support::declaration::write(&path, content).unwrap();
             let output = fixture
                 .command()
                 .args(["verify", flag])
@@ -727,11 +723,11 @@ fn ignore_gates_saves_actual_verdicts_but_never_waives_final_obligations() {
     assert_eq!(request(&recursive, "red/check")["status"], "RED");
     assert_eq!(recursive["validation"]["obligations"], json!(["red"]));
 
-    let path = fixture.repo.join("blocked/artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let path = fixture.repo.join("blocked/index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     declaration["evals"][0]["profile"] =
         json!({"kind":"runtime","command":"/missing-command","args":[]});
-    fs::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(path, declaration.to_string()).unwrap();
     let failed = fixture.verify(&["blocked", "--ignore-gates"], 2);
     assert_eq!(request(&failed, "blocked/check")["status"], "ERROR");
     assert_eq!(failed["status"], "ERROR");
@@ -747,9 +743,9 @@ async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
     use tokio_util::sync::CancellationToken;
 
     let fixture = Fixture::runtime_fixture();
-    fs::write(
-        fixture.repo.join("artifactize.json"),
-        r#"{"name":"root","basis":true,"reviewPolicy":{"dependencyGates":"ignore"}}"#,
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
+        r#"{"name":"root","basis":true,"review_policy":{"dependency_gates":"ignore"}}"#,
     )
     .unwrap();
     let inherited = fixture.verify(&["blocked"], 4);
@@ -777,9 +773,9 @@ async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
     let saved = read_run(&fixture.state, &enforced.run.id).await.unwrap();
     assert!(!saved.run.ignore_gates);
 
-    fs::write(
-        fixture.repo.join("artifactize.json"),
-        r#"{"name":"root","basis":true,"reviewPolicy":{"dependencyGates":"green"}}"#,
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
+        r#"{"name":"root","basis":true,"review_policy":{"dependency_gates":"green"}}"#,
     )
     .unwrap();
     let override_green = fixture.verify(&["blocked", "--ignore-gates"], 4);
@@ -791,11 +787,8 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
     let fixture = Fixture::new();
     fixture.runtime("/bin/true", &[]);
     fs::create_dir(fixture.repo.join("input")).unwrap();
-    fs::write(
-        fixture.repo.join("input/artifactize.json"),
-        r#"{"name":"input"}"#,
-    )
-    .unwrap();
+    support::declaration::write(fixture.repo.join("input/index.artf"), r#"{"name":"input"}"#)
+        .unwrap();
     let individual = fixture.verify(&["test"], 4);
     assert_eq!(individual["validation"]["obligations"], json!(["input"]));
     assert_eq!(individual["requests"][0]["status"], "GREEN");
@@ -809,16 +802,16 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
     assert_eq!(text.status.code(), Some(4));
     assert!(String::from_utf8_lossy(&text.stdout).contains("Unmet obligation: input"));
 
-    fs::write(
-        fixture.repo.join("artifactize.json"),
+    support::declaration::write(
+        fixture.repo.join("index.artf"),
         r#"{"name":"test","basis":true}"#,
     )
     .unwrap();
     let basis = fixture.verify(&["test"], 4);
     assert!(basis["requests"].as_array().unwrap().is_empty());
     assert_eq!(basis["validation"]["obligations"], json!(["input"]));
-    fs::write(
-        fixture.repo.join("input/artifactize.json"),
+    support::declaration::write(
+        fixture.repo.join("input/index.artf"),
         r#"{"name":"input","basis":true}"#,
     )
     .unwrap();
@@ -829,11 +822,11 @@ fn basis_and_all_keep_no_eval_dependency_obligations() {
 fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
     let fixture = Fixture::runtime_fixture();
     for folder in ["blocked", "red"] {
-        let path = fixture.repo.join(folder).join("artifactize.json");
-        let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        declaration["evals"][0]["profileVariants"] =
+        let path = fixture.repo.join(folder).join("index.artf");
+        let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+        declaration["evals"][0]["profile_variants"] =
             json!({"pass":{"kind":"runtime","command":bin("/bin/echo"),"args":["{input}"]}});
-        fs::write(path, declaration.to_string()).unwrap();
+        support::declaration::write(path, declaration.to_string()).unwrap();
     }
     let recursive = fixture.verify(&["blocked", "--recursive", "--profile", "pass"], 0);
     assert_eq!(recursive["requests"].as_array().unwrap().len(), 2);
@@ -867,12 +860,12 @@ fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
 fn recursive_eval_selection_includes_sibling_evals_on_the_same_artifact() {
     let fixture = Fixture::new();
     fixture.runtime("/bin/true", &[]);
-    let path = fixture.repo.join("artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let path = fixture.repo.join("index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     let mut sibling = declaration["evals"][0].clone();
     sibling["id"] = json!("sibling");
     declaration["evals"].as_array_mut().unwrap().push(sibling);
-    fs::write(path, declaration.to_string()).unwrap();
+    support::declaration::write(path, declaration.to_string()).unwrap();
     let individual = fixture.verify(&["--eval", "test/check"], 4);
     assert_eq!(individual["validation"]["obligations"], json!(["test"]));
     let recursive = fixture.verify(&["--eval", "test/check", "--recursive", "--force"], 0);
@@ -889,10 +882,10 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
     ] {
         let fixture = Fixture::new();
         fixture.runtime("/bin/true", &[]);
-        let path = fixture.repo.join("artifactize.json");
-        let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let path = fixture.repo.join("index.artf");
+        let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
         declaration["evals"].as_array_mut().unwrap().push(json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":backend,"model":"exact-model"},"payload":{"instruction":"Review."}}));
-        fs::write(path, declaration.to_string()).unwrap();
+        support::declaration::write(path, declaration.to_string()).unwrap();
         let output = fixture
             .command()
             .args(["verify", "--all", "--json"])
@@ -901,22 +894,22 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         assert_eq!(output.status.code(), Some(2));
         let run = json_output(&output);
         assert_eq!(
-            run["requests"][0]["status"], "GREEN",
+            run["requests"][1]["status"], "GREEN",
             "backend={backend}: {run}"
         );
         assert_eq!(
-            run["requests"][1]["status"], "ERROR",
+            run["requests"][0]["status"], "ERROR",
             "backend={backend}: {run}"
         );
         assert!(
-            run["requests"][1]["error"]
+            run["requests"][0]["error"]
                 .as_str()
                 .unwrap()
                 .contains(expected)
         );
-        assert_eq!(run["requests"][1]["usage"], json!([]));
-        assert!(run["requests"][1].get("toolCalls").is_none());
-        assert!(run["requests"][1]["result"].is_null());
+        assert_eq!(run["requests"][0]["usage"], json!([]));
+        assert!(run["requests"][0].get("toolCalls").is_none());
+        assert!(run["requests"][0]["result"].is_null());
         fs::remove_dir_all(&fixture.repo).unwrap();
         let shown = fixture
             .command()
@@ -931,10 +924,10 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
 fn runtime_and_agent_starts_share_the_run_budget() {
     let fixture = Fixture::new();
     fixture.runtime("/bin/true", &[]);
-    let path = fixture.repo.join("artifactize.json");
-    let mut declaration: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-    declaration["evals"].as_array_mut().unwrap().push(json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"not-called"},"payload":{"instruction":"Review."}}));
-    fs::write(path, declaration.to_string()).unwrap();
+    let path = fixture.repo.join("index.artf");
+    let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
+    declaration["evals"].as_array_mut().unwrap().push(json!({"id":"zz-agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"not-called"},"payload":{"instruction":"Review."}}));
+    support::declaration::write(path, declaration.to_string()).unwrap();
     let run = fixture.verify(&["--all", "--jobs", "1", "--max-executions", "1"], 4);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["requests"][0]["status"], "GREEN");

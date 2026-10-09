@@ -34,8 +34,8 @@ impl Fixture {
                     json!({"script":{"command": "printf", "args": ["v1"]}});
             }
             fs::create_dir_all(repo.join(name)).unwrap();
-            fs::write(
-                repo.join(name).join("artifactize.json"),
+            support::declaration::write(
+                repo.join(name).join("index.artf"),
                 declaration.to_string(),
             )
             .unwrap();

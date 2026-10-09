@@ -1,0 +1,11 @@
+name = "site"
+mounts = { brand = "logo" }
+fingerprint = {}
+
+[evals.embed]
+title = "The header embeds the signed-off logo"
+profile = { kind = "runtime", command = "grep", args = ["-q", "logo.svg", "header.html"], timeout_ms = 5000 }
+
+[evals.embed.payload]
+instruction = """
+Check that {site}/header.html embeds the logo from {brand}."""

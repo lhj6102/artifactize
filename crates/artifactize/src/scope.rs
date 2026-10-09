@@ -508,7 +508,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 }
                 if !deps.insert(source.to_owned()) {
                     return Err(error(ScopeError(
-                        "Dependency profile dependsOn must resolve to unique Artifacts.".into(),
+                        "Dependency profile depends_on must resolve to unique Artifacts.".into(),
                     )));
                 }
                 relations.push(Relation {

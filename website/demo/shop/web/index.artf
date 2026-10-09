@@ -1,0 +1,10 @@
+name = "web"
+fingerprint = {}
+
+[evals.colors]
+title = "The page uses only defined color tokens"
+profile = { kind = "runtime", command = "python3", args = ["check_colors.py", "index.html", "{style}/tokens.css"], timeout_ms = 10000 }
+
+[evals.colors.payload]
+instruction = """
+Check that every var(--token) in {web}/index.html is defined in {style}."""
