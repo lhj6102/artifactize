@@ -11,6 +11,7 @@ fn run(path: &Path) -> CatalogRun {
         repository: Identity::default(),
         status: RunStatus::Green,
         red: 0,
+        error: 0,
         waiting: Vec::new(),
     }
 }

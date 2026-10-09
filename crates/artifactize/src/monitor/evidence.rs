@@ -44,6 +44,12 @@ pub struct Evidence {
     pub title: String,
     pub text: String,
 }
+impl Evidence {
+    /// Human and Dependency evals have no evidence beside their sections.
+    pub fn is_empty(&self) -> bool {
+        self.title.is_empty() && self.text.is_empty()
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,7 +93,7 @@ pub fn evidence(_state: &Path, view: &RequestView) -> Evidence {
             let text = match logs {
                 Some(logs) => format!("exit code: {}\ncapture truncated: {}\n\nstdout\n{}\n\nstderr\n{}", logs.exit_code.map_or("unreported".into(), |code| code.to_string()), logs.truncated, logs.stdout, logs.stderr),
                 None if view.request.origin.is_some() => "Logs unavailable: this remote result contains only a summary; stdout/stderr were not saved here.".into(),
-                None if view.request.status == RequestStatus::Running => "Logs unavailable while running: only completed runtime output is saved; this modal does not stream live pipes.".into(),
+                None if view.request.status == RequestStatus::Running => "Logs unavailable while running: only completed runtime output is saved; this view does not stream live pipes.".into(),
                 None => "Logs unavailable: stdout/stderr were not saved for this request (for example timeout, cancellation, operational failure, or a summary-only reused result).".into(),
             };
             Evidence {

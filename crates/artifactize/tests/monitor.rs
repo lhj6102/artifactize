@@ -241,18 +241,21 @@ async fn live_verify_progress_and_runs_across_repositories() {
     all.refresh().await;
     let progress = screen(&mut all);
     assert!(progress.contains(&format!("Run {live}")), "{progress}");
-    assert!(progress.contains("running slow/wait"), "{progress}");
+    assert!(progress.contains("◐ slow/wait  running"), "{progress}");
     assert!(
-        progress.contains("waiting Human human/review · unclaimed"),
+        progress.contains("? human/review  waiting Human · unclaimed"),
         "{progress}"
     );
-    assert!(progress.contains("RUNNING 1") && progress.contains("WAITING_HUMAN 1"));
+    assert!(
+        progress.contains("◐ RUNNING · validation pending · ◐1 ?1"),
+        "{progress}"
+    );
 
     fs::write(&fixture.release, "").unwrap();
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
     loop {
         all.refresh().await;
-        if screen(&mut all).contains("GREEN 1") {
+        if screen(&mut all).contains("◐ RUNNING · validation pending · ?1 ✓1") {
             break;
         }
         assert!(
@@ -266,7 +269,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
         &["request", "claim", &human, "--reviewer", "tester"],
         0,
     );
-    assert!(screen(&mut all).contains("waiting Human human/review · unclaimed"));
+    assert!(screen(&mut all).contains("? human/review  waiting Human · unclaimed"));
     all.refresh().await;
     assert!(screen(&mut all).contains("claimed by tester"));
     fixture.json(
@@ -292,14 +295,19 @@ async fn live_verify_progress_and_runs_across_repositories() {
     all.refresh().await;
     let done = screen(&mut all);
     assert!(
-        done.contains("GREEN 2") && done.contains("SATISFIED at Run end"),
+        done.contains("✓ GREEN · SATISFIED at Run end · ✓2 · took"),
         "{done}"
     );
-    assert!(!done.contains("running slow/wait"));
+    assert!(!done.contains("slow/wait  running"));
     assert_eq!(press(&mut all, KeyCode::Esc), monitor::Action::None);
     all.refresh().await;
     assert!(screen(&mut all).contains("Runs (3)"));
-    assert_eq!(press(&mut all, KeyCode::Esc), monitor::Action::Quit);
+    // Esc steps back to Scope and never quits; q does.
+    for _ in 0..2 {
+        assert_eq!(press(&mut all, KeyCode::Esc), monitor::Action::None);
+        assert_eq!(all.focus, monitor::Pane::Repositories);
+    }
+    assert_eq!(press(&mut all, KeyCode::Char('q')), monitor::Action::Quit);
 }
 
 fn flatten<'a>(nodes: &'a [Node], out: &mut Vec<&'a Node>) {
@@ -430,7 +438,15 @@ async fn saved_tree_details_without_repository_or_writes() {
         source.starts_with(&format!("reused from Run {first} request {first}-")),
         "{source}"
     );
-    let result: Value = serde_json::from_str(red.field("Result").unwrap()).unwrap();
+    // The Outcome shows the verdict first; the whole result is under What.
+    let summary = red.field("Result").unwrap();
+    assert!(
+        summary.starts_with("verdict RED\n")
+            && summary.contains("\nexitCode 7")
+            && !summary.contains("stdout"),
+        "{summary}"
+    );
+    let result: Value = serde_json::from_str(red.field("Raw result").unwrap()).unwrap();
     assert_eq!(result["verdict"], "RED");
     assert_eq!(result["exitCode"], 7);
     assert_eq!(result["stdout"], "finding\n");
@@ -480,8 +496,12 @@ async fn saved_tree_details_without_repository_or_writes() {
     monitor.refresh().await;
     let run = screen(&mut monitor);
     assert!(
-        run.contains("▸ ✓ checkout ") && run.contains("NOT SATISFIED at Run end (unmet: red)"),
+        run.contains("▸ ✓ checkout ") && run.contains("NOT SATISFIED at Run end"),
         "{run}"
+    );
+    assert_eq!(
+        monitor::detail(&view, &requests, &Target::Run, now).field("Validation"),
+        Some("NOT SATISFIED at Run end (unmet: red)")
     );
     // The cursor starts on the RED eval.
     assert_eq!(monitor.target(), Some(Target::Eval("red/check".into())));

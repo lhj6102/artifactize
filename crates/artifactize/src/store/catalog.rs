@@ -23,6 +23,7 @@ pub struct CatalogRun {
     pub repository: Identity,
     pub status: RunStatus,
     pub red: u64,
+    pub error: u64,
     pub waiting: Vec<Signoff>,
 }
 
@@ -60,7 +61,7 @@ pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
             let mut statement = transaction.prepare("SELECT id,json_object('repoPath',repo,'commonDir',json_extract(data,'$.commonDir'),'worktreePath',json_extract(data,'$.worktreePath'),'branch',json_extract(data,'$.branch'),'status',status) FROM runs ORDER BY rowid")?;
             statement.query_map([], |row| Ok((row.get::<_, crate::types::RunId>(0)?, row.get::<_, String>(1)?)))?.collect::<Result<Vec<_>, _>>()?
         };
-        let mut requests = transaction.prepare("SELECT q.status,q.execution_id,coalesce(json_extract(e.data,'$.provenance.requestId'),json_extract(q.data,'$.provenance.requestId'),q.id) FROM requests q LEFT JOIN executions e ON e.id=q.execution_id WHERE q.run_id=? AND q.status IN ('RED','WAITING_HUMAN')")?;
+        let mut requests = transaction.prepare("SELECT q.status,q.execution_id,coalesce(json_extract(e.data,'$.provenance.requestId'),json_extract(q.data,'$.provenance.requestId'),q.id) FROM requests q LEFT JOIN executions e ON e.id=q.execution_id WHERE q.run_id=? AND q.status IN ('RED','ERROR','WAITING_HUMAN')")?;
         let catalog = runs.into_iter().map(|(id, data)| {
             let facts: Facts = serde_json::from_str(&data)?;
             outside_workspace(&facts.repo_path, &state).map_err(|error| Error::Invalid(error.to_string()))?;
@@ -68,6 +69,7 @@ pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
             Ok(CatalogRun {
                 repo_path: facts.repo_path, repository: facts.repository, status: facts.status,
                 red: attention.iter().filter(|(status, _, _)| *status == RequestStatus::Red).count() as u64,
+                error: attention.iter().filter(|(status, _, _)| *status == RequestStatus::Error).count() as u64,
                 waiting: attention.into_iter().filter(|(status, _, _)| *status == RequestStatus::WaitingHuman)
                     .map(|(_, execution, request)| execution.map_or(Signoff::Request(request), Signoff::Execution)).collect(),
             })

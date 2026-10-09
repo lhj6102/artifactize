@@ -239,24 +239,31 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     use ratatui::{Terminal, backend::TestBackend};
     let (root, live) = history();
     let mut monitor = Monitor::new(root.path().into(), None);
-    monitor.modal = Some(Modal {
+    monitor.detail = Some(DetailPane {
         run_id: "run".parse().unwrap(),
         target: Target::Eval("app/check".into()),
         request: None,
-        evidence: modal::Evidence::default(),
+        evidence: evidence::Evidence::default(),
         evidence_stamp: None,
-        detail: Detail::default(),
+        detail: Detail {
+            title: "app/check · Title".into(),
+            summary: "RUNNING 3s · agent openai m · ← lib".into(),
+            fields: vec![("Status", "RUNNING — executing".into())],
+        },
         review: None,
-        focus: ModalPane::Evidence,
+        focus: DetailArea::Evidence,
         scroll: [0; 2],
         live: Some(live),
         show_details: false,
+        technical: false,
+        pending: false,
     });
+    monitor.focus = Pane::Detail;
     let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
     terminal.draw(|frame| monitor.draw(frame)).unwrap();
-    complete(monitor.modal.as_mut().unwrap().live.as_mut().unwrap());
+    complete(monitor.detail.as_mut().unwrap().live.as_mut().unwrap());
     terminal.draw(|frame| monitor.draw(frame)).unwrap();
-    let evidence = monitor.hits.modal_panes[1];
+    let evidence = monitor.hits.areas[1];
     let mouse = |kind| MouseEvent {
         kind,
         column: evidence.x + 1,
@@ -264,7 +271,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         modifiers: KeyModifiers::empty(),
     };
     let old = monitor
-        .modal
+        .detail
         .as_ref()
         .unwrap()
         .live
@@ -275,7 +282,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     monitor.mouse(mouse(MouseEventKind::ScrollUp));
     assert_eq!(
         monitor
-            .modal
+            .detail
             .as_ref()
             .unwrap()
             .live
@@ -288,7 +295,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     monitor.key(KeyEvent::from(KeyCode::End));
     assert_eq!(
         monitor
-            .modal
+            .detail
             .as_ref()
             .unwrap()
             .live
@@ -301,7 +308,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     monitor.key(KeyEvent::from(KeyCode::Home));
     assert_eq!(
         monitor
-            .modal
+            .detail
             .as_ref()
             .unwrap()
             .live
@@ -325,7 +332,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     });
     assert_eq!(
         monitor
-            .modal
+            .detail
             .as_ref()
             .unwrap()
             .live
@@ -337,7 +344,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     );
     monitor.key(KeyEvent::from(KeyCode::F(2)));
     let top = monitor
-        .modal
+        .detail
         .as_ref()
         .unwrap()
         .live
@@ -348,7 +355,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     monitor.mouse(mouse(MouseEventKind::ScrollUp));
     assert_eq!(
         monitor
-            .modal
+            .detail
             .as_ref()
             .unwrap()
             .live
@@ -359,12 +366,12 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         top
     );
     monitor.key(KeyEvent::from(KeyCode::PageUp));
-    let live = monitor.modal.as_ref().unwrap().live.as_ref().unwrap();
+    let live = monitor.detail.as_ref().unwrap().live.as_ref().unwrap();
     assert_eq!(live.scroll.top, top - live.scroll.height);
     monitor.key(KeyEvent::from(KeyCode::Char('d')));
-    assert!(monitor.modal.as_ref().unwrap().show_details);
+    assert!(monitor.detail.as_ref().unwrap().show_details);
     let position = monitor
-        .modal
+        .detail
         .as_ref()
         .unwrap()
         .live
@@ -375,7 +382,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     monitor.key(KeyEvent::from(KeyCode::Up));
     assert_eq!(
         monitor
-            .modal
+            .detail
             .as_ref()
             .unwrap()
             .live
@@ -393,7 +400,10 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         .map(|cell| cell.symbol())
         .collect::<String>();
     assert!(text.contains("following") && text.contains("bottom"));
-    let live = monitor.modal.as_mut().unwrap().live.as_mut().unwrap();
+    // The one-line outcome stays in the title; only a Human review advertises Ctrl-S.
+    assert!(text.contains("app/check · Title · RUNNING 3s · agent openai m · ← lib"));
+    assert!(!text.contains("Ctrl-S") && text.contains("d details · Esc back"));
+    let live = monitor.detail.as_mut().unwrap().live.as_mut().unwrap();
     live.scroll.total = 100000;
     live.scroll.top = live.scroll.bottom();
     live.scroll.mode = Mode::Following;
@@ -423,4 +433,166 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
             .iter()
             .any(|(_, button)| *button == input::Button::SessionBottom)
     );
+}
+
+#[test]
+fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_reader_on() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let (root, source) = fixture();
+    append(&source, &answer("first thought"));
+    append(&source, &answer("Reading reference/cli.md now"));
+    let (view, requests) = tests::live();
+    let mut monitor = Monitor::new(root.path().into(), None);
+    monitor.open = Some("run-1".parse().unwrap());
+    monitor.set_run(view, requests);
+    monitor.focus = Pane::Artifacts;
+    monitor
+        .tree
+        .select(vec!["a:app".into(), "e:app/check".into()]);
+    let id = monitor.selected_request().unwrap().request.id.clone();
+    monitor.peek = Some(Peek {
+        request: id,
+        stamp: evidence::EvidenceStamp::new(monitor.selected_request().unwrap()),
+        live: Some(session::Live::new(7, source)),
+        text: String::new(),
+    });
+    let mut terminal = Terminal::new(TestBackend::new(160, 30)).unwrap();
+    let screen = |terminal: &Terminal<TestBackend>| {
+        terminal
+            .backend()
+            .buffer()
+            .content
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>()
+    };
+    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    assert!(screen(&terminal).contains("last: reading the session…"));
+    complete(monitor.live_mut().unwrap());
+    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    assert!(
+        screen(&terminal).contains("last: Reading reference/cli.md now"),
+        "{}",
+        screen(&terminal)
+    );
+    // At one pane the peek is hidden and nothing is read for it.
+    terminal.backend_mut().resize(90, 30);
+    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    assert!(!screen(&terminal).contains("last:"));
+}
+
+#[tokio::test]
+async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
+    let root = tempfile::tempdir().unwrap();
+    let (view, mut requests) = tests::live();
+    let agent = requests
+        .iter_mut()
+        .find(|view| view.request.eval_id == "app/check")
+        .unwrap();
+    agent.request.profile =
+        serde_json::from_value(serde_json::json!({"kind":"agent","backend":"openai","model":"m"}))
+            .unwrap();
+    let mut monitor = Monitor::new(root.path().into(), None);
+    monitor.open = Some("run-1".parse().unwrap());
+    monitor.set_run(view, requests);
+    monitor
+        .tree
+        .select(vec!["a:app".into(), "e:app/check".into()]);
+    monitor.size = ratatui::layout::Rect::new(0, 0, 160, 30);
+    monitor.focus = Pane::Runs;
+    monitor.sync_peek().await;
+    assert!(monitor.peek.is_none(), "no peek without tree focus");
+    monitor.focus = Pane::Artifacts;
+    monitor.size.width = 90;
+    monitor.sync_peek().await;
+    assert!(monitor.peek.is_none(), "no peek at one pane");
+    monitor.size.width = 160;
+    monitor.sync_peek().await;
+    let peek = monitor.peek.as_ref().unwrap();
+    assert!(
+        peek.live.is_none() && !peek.text.is_empty(),
+        "{}",
+        peek.text
+    );
+    monitor
+        .tree
+        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    monitor.sync_peek().await;
+    assert!(
+        monitor.peek.is_none(),
+        "only a running Agent has a transcript peek"
+    );
+}
+
+#[tokio::test]
+async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_readers_stay() {
+    use serde_json::json;
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    std::fs::create_dir_all(&repo).unwrap();
+    let receipts = store::Receipts::open(&state, &repo).await.unwrap();
+    let run: store::Run = serde_json::from_value(json!({"id":"run-1","repoPath":repo,
+        "stateDir":state,"status":"RUNNING","createdAt":"2026-01-01T00:00:00Z",
+        "selection":{"kind":"all"},"validation":null}))
+    .unwrap();
+    let mut request = tests::request(
+        "app/check",
+        "RUNNING",
+        json!({"profile":{"kind":"agent","backend":"openai","model":"m"},
+            "startedAt":"2026-01-01T00:00:00Z"}),
+    )
+    .request;
+    request.cwd = repo.clone();
+    receipts.create_run(&run, &[request.clone()]).await.unwrap();
+    let mut monitor = Monitor::new(state.clone(), None);
+    monitor.refresh().await;
+    monitor.focus = Pane::Artifacts;
+    monitor.size = ratatui::layout::Rect::new(0, 0, 160, 30);
+    monitor
+        .tree
+        .select(vec!["a:app".into(), "e:app/check".into()]);
+    monitor.sync_peek().await;
+    let failed = monitor.peek.as_ref().unwrap();
+    assert!(failed.live.is_none() && !failed.text.is_empty());
+    // A refresh lets the next frame resolve the failed peek again.
+    monitor.refresh().await;
+    assert!(monitor.peek.is_none());
+    monitor.sync_peek().await;
+    assert!(monitor.peek.as_ref().unwrap().live.is_none());
+    // The session appears: the peek reads it after the refresh that brings it.
+    let session = |id: &str| crate::agent::session::SessionRef {
+        producer: store::Producer::current().name,
+        state: String::new(),
+        run_id: "run-1".parse().unwrap(),
+        request_id: request.id.clone(),
+        session_id: id.parse().unwrap(),
+    };
+    let state_id = receipts.state_id().await.unwrap();
+    request.session = Some(crate::agent::session::SessionRef {
+        state: state_id.clone(),
+        ..session("session-1")
+    });
+    receipts.save_request(&request).await.unwrap();
+    monitor.refresh().await;
+    monitor.sync_peek().await;
+    let serial = monitor.peek.as_ref().unwrap().live.as_ref().unwrap().serial;
+    // Unchanged facts keep the reader; nothing is resolved per frame or per refresh.
+    monitor.refresh().await;
+    monitor.sync_peek().await;
+    assert_eq!(
+        monitor.peek.as_ref().unwrap().live.as_ref().unwrap().serial,
+        serial
+    );
+    // A replaced session is resolved again and read from the start.
+    request.session = Some(crate::agent::session::SessionRef {
+        state: state_id,
+        ..session("session-2")
+    });
+    receipts.save_request(&request).await.unwrap();
+    monitor.refresh().await;
+    monitor.sync_peek().await;
+    let live = monitor.peek.as_ref().unwrap().live.as_ref().unwrap();
+    assert_ne!(live.serial, serial);
+    assert_eq!(live.source.reference.session_id.as_str(), "session-2");
 }
