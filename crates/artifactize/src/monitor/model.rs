@@ -1,4 +1,8 @@
 //! Pure projections of saved state for the monitor screens.
+mod states;
+mod tree;
+pub use states::{Activity, Busy, Completion, EvalView, NotRun, Queue, Source, Upstream, Waits};
+pub use tree::{Kind, Node, Segment, Tone, Weight, completion, tree, upstream_index};
 
 use serde_json::Value;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
@@ -16,12 +20,11 @@ pub enum Target {
 }
 
 impl Target {
-    /// Relation nodes (`r:`) open the input Artifact they point to.
     pub fn parse(id: &str) -> Option<Self> {
         let (kind, name) = id.split_once(':')?;
         let name = name.to_owned();
         match kind {
-            "a" | "r" => Some(Self::Artifact(name)),
+            "a" => Some(Self::Artifact(name)),
             "e" => Some(Self::Eval(name)),
             _ => None,
         }
@@ -53,14 +56,6 @@ pub struct Progress {
     pub errors: Vec<(String, String)>,
 }
 
-#[derive(Debug, Clone)]
-pub struct Node {
-    pub id: String,
-    pub status: Option<String>,
-    pub text: String,
-    pub children: Vec<Node>,
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct Detail {
     pub title: String,
@@ -81,11 +76,17 @@ impl Detail {
             self.fields.push((key, value));
         }
     }
+
+    fn insert_after(&mut self, after: &str, key: &'static str, value: String) {
+        if value.is_empty() {
+            return;
+        }
+        let index = self.fields.iter().position(|(name, _)| *name == after);
+        let index = index.map_or(self.fields.len(), |index| index + 1);
+        self.fields.insert(index, (key, value));
+    }
 }
 
-/// Most to least urgent, for live Artifact roll-ups.
-const URGENCY: &str = "ERROR RED BLOCKED RUNNING WAITING_HUMAN QUEUED BUDGET_EXHAUSTED \
-    WAIT_DEPENDENCY WAIT STALE UNREVIEWED INCOMPLETE GREEN BASIS";
 const ABSENT: &str = "not in Run";
 
 pub fn glyph(status: Option<&str>) -> &'static str {
@@ -117,11 +118,6 @@ fn meaning(status: &str) -> &'static str {
         "BUDGET_EXHAUSTED" => "maxExecutions reached before it started",
         _ => "not executed",
     }
-}
-
-fn rollup<'a>(statuses: impl IntoIterator<Item = &'a str>) -> Option<String> {
-    let rank = |status: &&str| URGENCY.split_whitespace().position(|s| s == *status);
-    statuses.into_iter().min_by_key(rank).map(str::to_owned)
 }
 
 fn strs(value: &Value) -> impl Iterator<Item = &str> {
@@ -229,11 +225,12 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
     Progress {
         status: run.status.to_string(),
         repo: run.repo_path.display().to_string(),
+        // The saved snapshot; the tree shows the current state.
         validation: match run.validation.get("satisfied") {
             None => "pending".into(),
-            Some(Value::Bool(true)) => "SATISFIED".into(),
-            Some(_) if unmet.is_empty() => "NOT SATISFIED".into(),
-            Some(_) => format!("NOT SATISFIED (unmet: {unmet})"),
+            Some(Value::Bool(true)) => "SATISFIED at Run end".into(),
+            Some(_) if unmet.is_empty() => "NOT SATISFIED at Run end".into(),
+            Some(_) => format!("NOT SATISFIED at Run end (unmet: {unmet})"),
         },
         timing: format!(
             "started {} · {} {}",
@@ -334,17 +331,21 @@ impl<'a> Saved<'a> {
         self.request(eval).map(|view| view.request.status.as_str())
     }
 
-    /// Dependency-first component order, then any other saved or requested Artifact.
+    /// Dependency-first component order with cycle peers by name, then any other saved or
+    /// requested Artifact.
     fn artifact_ids(&self) -> Vec<&'a str> {
         let components = self.components().iter();
         let saved = components
             .flat_map(|component| {
-                component
+                let mut members: Vec<_> = component
                     .artifacts
                     .value()
                     .into_iter()
                     .flatten()
                     .map(String::as_str)
+                    .collect();
+                members.sort_unstable();
+                members
             })
             .chain(self.artifacts().map(|(id, _)| id.as_str()))
             .chain(
@@ -381,35 +382,6 @@ impl<'a> Saved<'a> {
         let saved = self.run.run.validation["artifacts"].as_array();
         let saved = saved.and_then(|artifacts| artifacts.iter().find(|a| a["id"] == artifact));
         saved.unwrap_or(&Value::Null)
-    }
-
-    /// Saved validation when the Run finished, otherwise a live roll-up of its requests.
-    fn artifact_state(&self, id: &str) -> (Option<String>, u64, u64) {
-        let saved = self.validation(id);
-        if !saved.is_null() {
-            let count = |key| saved[key].as_u64().unwrap_or(0);
-            return (
-                saved["status"].as_str().map(str::to_owned),
-                count("passed"),
-                count("total"),
-            );
-        }
-        let evals = self.evals(id);
-        let statuses: Vec<_> = evals.iter().filter_map(|(id, _)| self.status(id)).collect();
-        let status = if self
-            .artifact(id)
-            .and_then(|artifact| artifact.basis.value())
-            .copied()
-            == Some(true)
-        {
-            Some("BASIS".into())
-        } else if evals.is_empty() {
-            Some("UNREVIEWED".into())
-        } else {
-            rollup(statuses.iter().copied())
-        };
-        let passed = statuses.iter().filter(|status| **status == "GREEN").count();
-        (status, passed as u64, evals.len() as u64)
     }
 
     fn component(&self, id: &str) -> Option<&'a crate::store::definitions::Component> {
@@ -468,90 +440,6 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
     } else {
         kind
     }
-}
-
-fn artifact_node(saved: &Saved, id: &str, now: OffsetDateTime) -> Node {
-    let (status, passed, total) = saved.artifact_state(id);
-    let mut children: Vec<_> = saved
-        .evals(id)
-        .into_iter()
-        .map(|(eval, definition)| {
-            let request = saved.request(eval);
-            let status = request.map(|view| view.request.status.to_string());
-            let local = eval.rsplit_once('/').map_or(eval, |(_, local)| local);
-            let mut text = format!("{local} {}", status.as_deref().unwrap_or(ABSENT));
-            if let Some(time) = request.and_then(|view| elapsed(view, now)) {
-                text = format!("{text} {time}");
-            }
-            let deps = match request {
-                Some(view) => join(&view.request.deps, ", "),
-                None => join(
-                    definition
-                        .and_then(|eval| eval.deps.value())
-                        .into_iter()
-                        .flatten(),
-                    ", ",
-                ),
-            };
-            if !deps.is_empty() {
-                text = format!("{text}  ← {deps}");
-            }
-            Node {
-                id: format!("e:{eval}"),
-                status,
-                text,
-                children: Vec::new(),
-            }
-        })
-        .collect();
-    let mut inputs: Vec<(&str, Vec<String>)> = Vec::new();
-    for relation in saved.relations(id, true) {
-        let source = relation.source.as_str();
-        match inputs.iter_mut().find(|(id, _)| *id == source) {
-            Some((_, kinds)) => kinds.push(relation_kind(relation)),
-            None => inputs.push((source, vec![relation_kind(relation)])),
-        }
-    }
-    children.extend(inputs.into_iter().map(|(source, kinds)| Node {
-        id: format!("r:{source}"),
-        status: saved.artifact_state(source).0,
-        text: format!("⇐ {source} ({})", kinds.join(", ")),
-        children: Vec::new(),
-    }));
-    let cycle = if saved
-        .component(id)
-        .and_then(|component| component.cyclic.value())
-        == Some(&true)
-    {
-        " ↻"
-    } else {
-        ""
-    };
-    let file = saved
-        .artifact(id)
-        .filter(|artifact| artifact.kind.value() == Some(&crate::config::ArtifactKind::File))
-        .and_then(|artifact| artifact.path.value())
-        .map_or_else(String::new, |path| format!(" [file: {}]", path.display()));
-    let text = format!(
-        "{id}{cycle}{file}  {} {passed}/{total}",
-        status.as_deref().unwrap_or(ABSENT)
-    );
-    Node {
-        id: format!("a:{id}"),
-        status,
-        text,
-        children,
-    }
-}
-
-/// Every saved or requested Artifact appears exactly once.
-pub fn tree(run: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Vec<Node> {
-    let saved = Saved { run, requests };
-    saved
-        .artifact_ids()
-        .into_iter()
-        .map(|id| artifact_node(&saved, id, now))
-        .collect()
 }
 
 fn profile(profile: &crate::config::StoredProfile) -> String {
@@ -738,8 +626,11 @@ pub fn detail(
     let mut detail = Detail::default();
     match target {
         Target::Eval(id) => {
+            let waits = tree::waits_for(&saved, id, now);
             if let Some(view) = saved.request(id) {
-                return request_detail(view, now);
+                let mut detail = request_detail(view, now);
+                detail.insert_after("Status", "Waits for", waits);
+                return detail;
             }
             let declaration = saved
                 .eval_definitions()
@@ -753,6 +644,7 @@ pub fn detail(
                     .map_or("", String::as_str)
             );
             detail.push("Status", "not in this Run (outside the selection)");
+            detail.push("Waits for", waits);
             detail.push(
                 "Instruction",
                 declaration
@@ -787,9 +679,19 @@ pub fn detail(
                     .and_then(|artifact| artifact.tags.value())
                     .map_or_else(String::new, |tags| tags.join(", ")),
             );
-            let (status, passed, total) = saved.artifact_state(id);
-            let status = status.as_deref().unwrap_or(ABSENT);
-            detail.push("Status", format!("{status} · {passed}/{total} Evals GREEN"));
+            detail.push("Status", tree::artifact_status(&saved, id, now));
+            let snapshot = saved.validation(id);
+            if let Some(status) = snapshot["status"].as_str() {
+                let count = |key| snapshot[key].as_u64().unwrap_or(0);
+                detail.push(
+                    "At Run end",
+                    format!(
+                        "{status} · {}/{} Evals GREEN",
+                        count("passed"),
+                        count("total")
+                    ),
+                );
+            }
             detail.push(
                 "Path",
                 artifact

@@ -6,7 +6,7 @@ use std::{
 };
 
 use artifactize::{
-    monitor::{self, Monitor, Node, Target},
+    monitor::{self, Completion, EvalView, Kind, Monitor, Node, NotRun, Target, Upstream},
     store::{self, RequestView, RunView},
 };
 use crossterm::event::{KeyCode, KeyEvent};
@@ -292,7 +292,7 @@ async fn live_verify_progress_and_runs_across_repositories() {
     all.refresh().await;
     let done = screen(&mut all);
     assert!(
-        done.contains("GREEN 2") && done.contains("validation SATISFIED"),
+        done.contains("GREEN 2") && done.contains("SATISFIED at Run end"),
         "{done}"
     );
     assert!(!done.contains("running slow/wait"));
@@ -372,36 +372,48 @@ async fn saved_tree_details_without_repository_or_writes() {
             "{id}"
         );
     }
+    let eval = |id: &str| match &node(id).kind {
+        Kind::Eval(view) => view.clone(),
+        kind => panic!("{kind:?}"),
+    };
     for request in &requests {
-        assert!(
-            node(&format!("e:{}", request.request.eval_id))
-                .status
-                .is_some()
+        assert_ne!(
+            eval(&format!("e:{}", request.request.eval_id)),
+            EvalView::NotRun(NotRun::Absent)
         );
     }
-    assert_eq!(node("a:checkout").status.as_deref(), Some("GREEN"));
-    assert_eq!(node("a:search").status.as_deref(), Some("GREEN"));
-    assert!(node("a:cycle-a").text.contains('↻') && node("a:cycle-b").text.contains('↻'));
-    let cycle_input = node("a:cycle-a")
-        .children
-        .iter()
-        .find(|node| node.id == "r:cycle-b")
-        .unwrap();
-    assert!(
-        cycle_input.text.contains("{cycle-b} in cycle-a/check ↻"),
-        "{}",
-        cycle_input.text
-    );
-    let mounted = &node("a:cycle-b").children;
-    assert!(mounted.iter().any(|node| node.text.contains("mount base")));
-    assert!(
-        node("a:red")
-            .children
+    for id in ["a:checkout", "a:search"] {
+        assert_eq!(node(id).line(), format!("✓ {}  1/1", &id[2..]));
+        assert!(node(id).done());
+    }
+    // Peers are marked, and the cycle is never a wait between them.
+    assert_eq!(node("a:cycle-a").marks, "  ↻ cycle-b");
+    assert_eq!(node("a:cycle-b").marks, "  ↻ cycle-a");
+    for id in ["e:cycle-a/check", "e:cycle-b/check"] {
+        let upstream: Vec<_> = node(id)
+            .upstream
             .iter()
-            .any(|node| node.id == "r:part" && node.text.contains("child part"))
+            .map(|up| up.artifact.as_str())
+            .collect();
+        assert_eq!(upstream, ["input"], "{id}");
+    }
+    // One row per eval: relations live in the Artifact detail, not in the tree.
+    assert!(all.iter().all(|node| !node.id.starts_with("r:")));
+    assert_eq!(eval("e:red/check"), EvalView::Failed { verdict: true });
+    let red = node("e:red/check").line();
+    assert!(red.starts_with("✗ check  RED · exitCode 7"), "{red}");
+    assert_eq!(
+        node("e:checkout/review").upstream,
+        [Upstream {
+            artifact: "input".into(),
+            completion: Completion::Complete
+        }]
     );
-    assert_eq!(node("e:red/check").status.as_deref(), Some("RED"));
-    assert!(node("e:checkout/review").text.contains("← input"));
+    let waits = monitor::detail(&view, &requests, &Target::Eval("cycle-a/check".into()), now);
+    assert_eq!(
+        waits.field("Waits for"),
+        Some("↑ input ✓ complete · mount base → cycle-b")
+    );
 
     let red = monitor::detail(&view, &requests, &Target::Eval("red/check".into()), now);
     assert_eq!(red.field("Status"), Some("RED — criteria not met"));
@@ -468,10 +480,16 @@ async fn saved_tree_details_without_repository_or_writes() {
     monitor.refresh().await;
     let run = screen(&mut monitor);
     assert!(
-        run.contains("checkout  GREEN") && run.contains("validation NOT SATISFIED (unmet: red)"),
+        run.contains("▸ ✓ checkout ") && run.contains("NOT SATISFIED at Run end (unmet: red)"),
         "{run}"
     );
-    // Collapsed Artifacts stay reachable: expand an Artifact to select its eval.
+    // The cursor starts on the RED eval.
+    assert_eq!(monitor.target(), Some(Target::Eval("red/check".into())));
+    // Folded Artifacts stay reachable: unfold an Artifact to select its eval.
+    for _ in 0..40 {
+        press(&mut monitor, KeyCode::Up);
+        screen(&mut monitor);
+    }
     let mut steps = 0;
     while monitor.target() != Some(Target::Artifact("checkout".into())) {
         press(&mut monitor, KeyCode::Down);
@@ -479,14 +497,12 @@ async fn saved_tree_details_without_repository_or_writes() {
         steps += 1;
         assert!(steps < 40, "Artifact node not reachable");
     }
-    press(&mut monitor, KeyCode::Char('h'));
-    let collapsed = screen(&mut monitor);
-    assert!(collapsed.contains("▶ ✓ checkout  GREEN 1/1"), "{collapsed}");
     press(&mut monitor, KeyCode::Char('l'));
     screen(&mut monitor);
     press(&mut monitor, KeyCode::Down);
     let expanded = screen(&mut monitor);
-    assert!(expanded.contains("checkout  GREEN 1/1"), "{expanded}");
+    assert!(expanded.contains("▾ ✓ checkout "), "{expanded}");
+    assert!(expanded.contains("✓ review "), "{expanded}");
     assert_eq!(
         monitor.target(),
         Some(Target::Eval("checkout/review".into()))
