@@ -66,7 +66,7 @@ recorded with [VHS](https://github.com/charmbracelet/vhs) from the tapes in
 |---|---|---|
 | `reuse.tape` | `status`, then `verify` executes everything and the next `verify` reuses it all | `demo/shop` |
 | `change.tape` | one changed file: `status` predicts one execution and names the file, `verify` re-reviews only that | `demo/shop` |
-| `human.tape` | `verify` waits by default; the three-pane `monitor` opens an eval modal, explicitly claims the request, runs an output tool and submits the GREEN schema form | `demo/brand` |
+| `human.tape` | `verify` waits by default; in `monitor`, Enter drills from the Run to the waiting eval and opens its Detail pane beside the tree, `c` claims the request, Tab reaches the tools, an output tool runs, `g` opens the GREEN schema form and Ctrl-S submits | `demo/brand` |
 | `team.tape` | Alice's `verify` publishes to an `artifactize server`; Bob's `status` and `verify` reuse it | `demo/shop` |
 
 ```sh

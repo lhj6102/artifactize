@@ -214,9 +214,7 @@ shows live local sessions with scrolling and expandable tool activity groups;
 reused results keep their original evidence when it is available.
 
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/human.gif" width="800"
-     alt="A Human sign-off in the terminal: verify waits, the reviewer explicitly claims the request, runs the notes tool, submits GREEN and the waiting Run completes.">
-
-This recording shows the earlier layout; 0.9 opens reviews in Detail instead.
+     alt="A Human sign-off in the terminal: verify waits; in the monitor, Enter opens the waiting eval's Detail pane beside the Run tree, c claims the request, the notes tool prints the design notes, g opens the GREEN form, Ctrl-S submits and the waiting Run completes.">
 
 [Human reviews](https://artifactize.dev/docs/guides/human-reviews.html)
 
