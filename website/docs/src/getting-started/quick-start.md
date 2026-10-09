@@ -81,10 +81,12 @@ artifactize run show RUN_ID
 
 `claim`, `tool` and `submit` use `$USER` as the reviewer unless you pass
 `--reviewer NAME`; `request unclaim REQUEST_ID` gives a claim back. `artifactize
-review` does the same in a terminal UI: it lists waiting requests, claims on the
-first tool run or submission, asks before a tool's first run and fills the owner
-fields in a form. `verify` waits for Human results like any other, so dependents
-continue in the same Run; once the sign-off arrives it exits 4 here, because
+review` does the same in a terminal UI: it lists waiting requests and previews the
+instruction. Enter opens Detail, `c` explicitly claims, Tab focuses tools and
+Enter runs one after confirmation. `g`/`r` opens the GREEN/RED fields; Ctrl-S
+submits. Esc stops editing before returning to the list, keeping the draft.
+`verify` waits for Human results like any other, so dependents continue in the
+same Run; once the sign-off arrives it exits 4 here, because
 `spec/review` has no result yet.
 
 For a real Agent review, put an exact model ID in the profile you use in `examples/agent-tools/spec/index.artf`,
@@ -109,9 +111,12 @@ Each eval has one row. `waits for X` and `blocked by X` name upstream Artifacts;
 end**; a dim `*` marks rows changed by later request updates. Enter on the Run row
 opens usage, budgets and counts. Agent Detail shows its saved conversation;
 Runtime Detail shows saved logs; dependency Detail shows derived requirements.
-A waiting Human Detail has an explicit `c` claim, tools, GREEN/RED fields and
-Ctrl-S submission. Nested JSON is edited in the TUI. F2 toggles mouse capture for
-terminal text selection; keyboard paste works either way. Browsing runs no owner
+A waiting Human Detail is the same component as `review`: `c` claims, `g`/`r`
+opens a verdict form and Ctrl-S submits. `i` expands its instruction; `t` opens
+Technical. Esc stops editing with the draft kept before leaving Detail. Nested
+JSON stays in the TUI; only standalone `review` offers Ctrl-E for `$EDITOR`.
+F2 toggles mouse capture for terminal text selection; keyboard paste works either
+way. Browsing runs no owner
 code; explicit Human tools and submissions use the review APIs. See
 [Human reviews and monitor](../guides/human-reviews.md#monitor).
 

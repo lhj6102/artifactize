@@ -102,33 +102,85 @@ Run first: eval, request, claim, waiting time, repository); Enter opens one. Wit
 an ID it opens that request in any repository. It also runs on its own, for example
 in a second terminal or tmux pane.
 
-The request screen shows the request, Run, repository, status, claim, instruction,
-GREEN and RED owner schemas and the declared Human tools with their commands and
-args. Opening a request claims nothing.
+The waiting list and Detail use the monitor's reactive layout. With the list
+focused, it is Full and the selected request has a read-only Preview. Enter or →
+opens Detail. With Detail focused, a 30-column Compact list sits beside it. Below
+100 columns only the focused pane shows, with the breadcrumb
+`artifactize review › scope › eval`. ↑/↓ or `j`/`k` selects a request; `r` refreshes
+the list. Esc on the list stays there, never quits. The standalone UI has no `?`
+help overlay or `!` attention navigation; those keys belong to the monitor.
 
-- **Claim on first action.** Running a tool or submitting claims the request for
-  the reviewer (`$USER` unless `--reviewer`) if it is unclaimed. A request claimed
-  by someone else, or no longer waiting, is read-only. `u` releases your claim. On
-  quit, claims this session took without submitting are listed: `k` keeps them,
-  `u` releases them.
-- **Tools.** `j`/`k` select a tool and Enter runs it. Before the first run of a
-  command line in a session, a confirmation shows the resolved command, its
-  directory and the repository it comes from (with `--all` it may be another
-  repository); `y` runs it. A `launch` tool reports "launched" and the UI
-  continues. An `output` tool runs with a spinner (Esc cancels) and its stdout and
-  stderr fill the output pane (PgUp/PgDn scroll). A nonzero exit is shown as a tool
-  error, not a verdict.
-- **Submit.** `s`, then `g` (GREEN) or `r` (RED). A form opens when the verdict's
-  owner schema is a flat object whose properties are `const`, `boolean`, `string`
-  (with `minLength`, `maxLength` or `enum`), `integer` or `number`; `const` fields
-  are prefilled and fixed. Tab or ↑/↓ move, Space or ←/→ choose, typing edits,
-  Enter submits. Any other schema (nested objects, arrays, composition, `$ref`),
-  or Ctrl-E in the form, opens `$EDITOR` (default `vi`) on a JSON template of the
-  owner fields; saving submits it, and an empty file submits nothing. A validation
-  error keeps the request waiting and returns to the form with the failing paths.
-- After a submission the list returns if more requests wait; otherwise `review`
-  exits. Esc goes back and `q` quits. The monitor embeds the same review controller
-  and lifecycle jobs rather than launching this standalone command.
+### Shared Human Detail
+
+The monitor and standalone `review` use **one Human review component**. Opening
+or previewing a request claims nothing. The instruction comes first, below one
+line of status, claim and waiting time. `t` shows or hides Technical: request,
+Run, repository, full claim details, shared execution, creation time and GREEN/RED
+owner schemas. For a follower, the destination request and repository stay visible.
+
+Before claim, the instruction fills the body and tools appear on one line. After
+claim, it folds to two rows above Tools/Output and the fields. `i` expands or folds
+it while not editing; the expanded instruction takes 70% of the body and ↑/↓
+scrolls it. Ctrl-PgUp/PgDn scrolls long criteria from any sub-area; in monitor,
+the wheel over the instruction scrolls it too. Tools focus widens Tools/Output
+to 60% of the available width;
+the selected tool shows its command and description.
+
+| Key | Human Detail action |
+|---|---|
+| `c` | Explicitly claim a waiting request; active only with Detail focused |
+| `g` / `r` | Choose GREEN / RED and open its form, after claim |
+| `u` | Release your claim without a verdict |
+| Ctrl-G / Ctrl-R | Choose or switch verdict while editing |
+| Ctrl-S | Submit the chosen form |
+| Ctrl-U | Release while editing |
+| Tab / Shift-Tab | Switch Tools and Fields; in edited Fields, Tab moves fields or indents JSON and Shift-Tab switches to Tools |
+| `i` / `t` | Expand the instruction / toggle Technical, while not editing |
+| Esc | Cancel work or confirmation, then stop editing, then leave Detail |
+| Ctrl-E | Standalone only: edit the form in `$EDITOR` |
+
+- **Claim.** Press `c` before running tools or submitting (`$USER` unless
+  `--reviewer`). Those actions never claim implicitly. A request claimed by someone
+  else, or no longer waiting, is read-only. GREEN/RED, submit and release require
+  your claim. `u` or Release relinquishes it; leaving Detail keeps it.
+- **Tools.** With Tools focused, ↑/↓ or `j`/`k` selects and Enter runs the selected
+  tool. Before a command line's first run in a session, a confirmation shows its
+  resolved command, directory and repository (with `--all`, possibly another
+  repository). `y` or Enter confirms; Esc cancels. A `launch` tool reports
+  "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
+  Ctrl-C cancels. Its stdout/stderr fill Output; PgUp/PgDn scroll. A nonzero exit
+  is a tool error, not a verdict.
+- **Form.** `g`/`r` opens the schema-backed GREEN/RED form directly; there is no
+  verdict popup. A flat object with `const`, `boolean`, `string` (`minLength`,
+  `maxLength`, `enum`), `integer` or `number` properties gets typed fields. `const`
+  fields are prefilled and fixed. Tab or ↑/↓ moves between fields, Space or ←/→
+  chooses, and typing edits. Other schemas (nested objects, arrays, composition,
+  `$ref`) open a JSON template inside the TUI. Enter inserts a JSON newline and
+  Tab indents; Enter never submits a flat form. Ctrl-S or Submit submits. A
+  validation error keeps the request waiting and shows the failing paths.
+- **Editing.** Ordinary letters (`q`, `c`, `i`, `t`, …), ←/→ and Tab belong to the
+  fields, not navigation. Ctrl-G/Ctrl-R switches verdicts, keeping separate drafts.
+  Editing, tool work and confirmation lock focus moves outside Detail. Esc closes
+  one thing at a time: cancel a job or confirmation, then stop editing with its
+  draft kept, then leave Detail. The same verdict reopens the draft. Refresh and
+  leaving/reopening the same request keep drafts; opening a different request in
+  standalone `review` starts fresh. A request settled by another command ends
+  editing on refresh and releases the focus lock.
+- **External editor.** Only standalone `review` offers Ctrl-E in a form. It opens
+  `$EDITOR` (default `vi`) on the owner-fields JSON. Saving a valid nonempty object
+  submits it immediately; an empty file submits nothing. Monitor never opens
+  `$EDITOR`; nested JSON stays in the TUI.
+
+Outside a form, work or confirmation, `q` quits from Detail too. Ctrl-C quits
+from a form, but first cancels a running tool. Standalone `review` lists claims
+this session took without submitting: `k` keeps them and quits, `u` releases them
+and quits, and Esc stays. The quit prompt sets a form aside without dropping its
+draft. Monitor keeps claims on exit; release with `u` first if you want to give
+one back. Esc never quits either UI.
+
+After a standalone submission the list returns if more requests wait; otherwise
+`review` exits. Monitor keeps the completed result open in Detail. Both use the
+same in-process lifecycle jobs; monitor does not launch the standalone command.
 
 ## Monitor
 
@@ -236,13 +288,13 @@ not rewritten by this view.
 | `?` | Show help; the next key closes it without another action |
 | `!` | Next ERROR, RED or waiting Human eval in this Run, wrapping around |
 | `r` | Refresh outside a Human form |
-| `q` / Ctrl-C | Quit outside editing; Ctrl-C first cancels a running Human tool |
+| `q` / Ctrl-C | `q` quits outside editing/work/confirmation; Ctrl-C quits or first cancels a running Human tool |
 | F2 | Toggle mouse capture for terminal text selection |
 
 From Detail, `!` opens the next attention item's Detail. Human actions work only
 with Detail focused; ordinary letters are field input while editing. Review work,
-confirmation and editing lock focus moves to other panes. Esc cancels a tool or
-confirmation first, otherwise leaves Detail with the draft kept.
+confirmation and editing lock focus moves to other panes. Esc cancels work or
+confirmation first, then stops form editing with the draft kept, then leaves Detail.
 
 Click focuses and selects. Double-click opens a tree row's Detail; clicking the
 peek opens it Full. The wheel scrolls the pane under the pointer without moving
@@ -310,18 +362,14 @@ Detail depends on the eval kind:
   there is no live-log recorder.
 - **Dependency:** the saved derived state and `blockedBy` requirements, marked
   `derived (no execution)`. It has no claim, tools or verdict form.
-- **Human:** completed result, or an explicit **CLAIM → REVIEW** flow. Claim (`c`)
-  enables tools on the left and GREEN/RED fields on the right. Request instructions
-  stay visible above them in CLAIM and REVIEW; the wheel there or Ctrl-PgUp/PgDn
-  scrolls long criteria without scrolling the form. GREEN/RED (`g`/`r`
-  before editing, Ctrl-G/Ctrl-R while editing) selects the existing schema form.
-  Flat schemas retain typed fields; nested/array schemas use a JSON template edited
-  inside the TUI, never `$EDITOR`. Enter inserts a JSON newline; Ctrl-S or Submit
-  submits. Shift-Tab switches between tools and fields; Tab moves flat fields or
-  indents JSON. Run tool/Enter in the tool pane preserves first-command
-  confirmation and cancellation. Release (`u`, or Ctrl-U while editing) unclaims.
-  Refresh, leaving/reopening Detail and verdict switches retain drafts. Ordinary
-  letters in fields are input, not global shortcuts.
+- **Human:** the same [Human Detail](#shared-human-detail) as standalone `review`,
+  with explicit **CLAIM → REVIEW**, instruction first, folded Technical (`t`),
+  instruction expansion (`i`), tools/output and GREEN/RED fields. `c` claims only
+  in focused Detail; tools and submission never claim implicitly. `g`/`r` opens
+  forms, Ctrl-G/Ctrl-R switches verdicts and Ctrl-S submits. Esc cancels work or
+  confirmation, then stops editing with the draft kept, then returns to the tree.
+  Monitor never opens `$EDITOR`. Outside editing, work or confirmation, `q` quits,
+  `?` shows monitor help and `!` opens the next attention item.
 
 Browsing uses read-only state queries and cached Git discovery, not configuration
 rediscovery or fingerprints on each refresh. Local monitor/review readers share a

@@ -171,7 +171,13 @@ generate and commit their own `.artf` files.
 State schema 6 requires a new state directory; there is no migration. Reuse-key v2
 matches no earlier result, including in a team review store or with a script
 fingerprint. The first full `verify` reviews every executable eval once, Human
-sign-offs included; dependency evals derive their current verdicts. See [Upgrading to 0.9](https://artifactize.dev/docs/concepts/fingerprints-and-reuse.html#upgrading-to-09).
+sign-offs included; dependency evals derive their current verdicts.
+
+The terminal UIs share Human Detail and require an explicit `c` claim. In standalone
+`review`, `s` no longer opens a verdict popup and Enter no longer submits: use
+`g`/`r`, then Ctrl-S. Esc stops editing before leaving Detail and never quits.
+See [Upgrading to 0.9](https://artifactize.dev/docs/getting-started/install.html#upgrading-to-09)
+for the removed keys and state/declaration changes.
 
 ## Reuse
 
@@ -191,11 +197,15 @@ down through Scope → Runs → Run tree → Detail. Its focused pane gets the s
 context and previews appear when the terminal is wide enough. `j`/`k` selects an
 eval and reveals its outcome in the peek; Enter or `o` opens Detail. Press `c` to
 claim a waiting Human request, run the tools its owner declared, choose GREEN or
-RED, and submit the schema-backed form with Ctrl-S. A submission resumes the
-waiting Run's dependents.
+RED with `g`/`r`, and submit the schema-backed form with Ctrl-S. Standalone
+`artifactize review` uses the same Human Detail and keys. `i` expands the
+instruction and `t` opens Technical while not editing. Esc first stops editing,
+keeping the draft, then leaves Detail. A submission resumes the waiting Run's
+dependents.
 
 `?` shows help and `!` finds the next error, RED or waiting Human eval. Esc steps
-back and never quits; `q` or Ctrl-C quits outside editing. The tree names what an
+back and never quits; `q` quits outside editing and Ctrl-C quits or cancels a
+running Human tool first. The tree names what an
 eval waits for; `b` jumps upstream and Backspace returns. Validation stays **at Run
 end** in the headline; a dim `*` marks rows changed by later request updates.
 
