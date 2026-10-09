@@ -13,7 +13,9 @@ fn typed_picker_catalog_preserves_skips_defaults_and_malformed_listed_entry_erro
     assert_eq!(
         serde_json::to_value(picker_models(&serde_json::to_vec(&body).unwrap()).unwrap()).unwrap(),
         json!([
-            {"slug":"first","display_name":"first"}, {"slug":"second","display_name":"second"}, {"slug":"third","display_name":""}
+            {"slug":"first","display_name":"first"},
+            {"slug":"second","display_name":"second"},
+            {"slug":"third","display_name":""},
         ])
     );
     for body in [
@@ -48,7 +50,8 @@ fn typed_picker_catalog_preserves_skips_defaults_and_malformed_listed_entry_erro
             .unwrap()
             .is_empty()
     );
-    let duplicates = br#"{"models":null,"models":[{"visibility":"hide","visibility":"list","slug":17,"slug":"last","display_name":"old","display_name":null}]}"#;
+    let duplicates =
+        br#"{"models":null,"models":[{"visibility":"hide","visibility":"list","slug":17,"slug":"last","display_name":"old","display_name":null}]}"#;
     assert_eq!(
         serde_json::to_value(picker_models(duplicates).unwrap()).unwrap(),
         json!([{"slug":"last","display_name":"last"}])
@@ -58,10 +61,19 @@ fn typed_picker_catalog_preserves_skips_defaults_and_malformed_listed_entry_erro
 #[test]
 fn usage_limits_name_the_plan_and_reset_and_never_retry() {
     let resets = crate::auth::codex::now().unwrap() + 30 * 60;
-    let body = json!({"error":{"type":"usage_limit_reached","message":"The usage limit has been reached","plan_type":"PRO","resets_at":resets}});
+    let body = json!({
+        "error":{
+            "type":"usage_limit_reached",
+            "message":"The usage limit has been reached",
+            "plan_type":"PRO",
+            "resets_at":resets,
+        },
+    });
     let message = describe(Some(429), &body, "fallback");
     assert!(
-        message.starts_with("usage_limit_reached: You have hit your ChatGPT usage limit (pro plan). Try again in ~30 min."),
+        message.starts_with(
+            "usage_limit_reached: You have hit your ChatGPT usage limit (pro plan). Try again in ~30 min."
+        ),
         "{message}"
     );
     assert!(message.ends_with("(HTTP 429)"), "{message}");
@@ -92,7 +104,10 @@ fn rejected_credentials_say_how_to_sign_in_again() {
         "{message}"
     );
     assert!(message.contains("artifactize login codex"), "{message}");
-    let failed = json!({"type":"response.failed","response":{"error":{"code":"server_error","message":"Model failed"}}});
+    let failed = json!({
+        "type":"response.failed",
+        "response":{"error":{"code":"server_error","message":"Model failed"}},
+    });
     assert_eq!(
         describe(None, &failed, "fallback"),
         "server_error: Model failed"

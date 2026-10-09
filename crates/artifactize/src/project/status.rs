@@ -282,7 +282,8 @@ pub async fn status(
                     )
                 },
             ),
-            // verify takes cached results before gates resolve, even behind RED; the state keeps the gate.
+            // verify takes cached results before gates resolve, even behind RED; the state keeps
+            // the gate.
             _ if matches!(current.evidence, Some(Evidence::Current(_))) => (
                 VerifyAction::Reuse,
                 format!(

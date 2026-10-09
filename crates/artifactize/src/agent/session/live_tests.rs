@@ -27,7 +27,16 @@ pub(crate) fn fixture() -> (tempfile::TempDir, Source) {
 fn header(source: &Source) -> String {
     format!(
         "{}\n",
-        json!({"kind":"review","version":1,"sessionId":source.reference.session_id,"runId":source.reference.run_id,"requestId":source.reference.request_id,"producer":source.reference.producer,"state":source.reference.state,"futureMetadata":7})
+        json!({
+            "kind":"review",
+            "version":1,
+            "sessionId":source.reference.session_id,
+            "runId":source.reference.run_id,
+            "requestId":source.reference.request_id,
+            "producer":source.reference.producer,
+            "state":source.reference.state,
+            "futureMetadata":7,
+        })
     )
 }
 pub(crate) fn write(source: &Source, text: &str) {
@@ -416,7 +425,10 @@ async fn resolution_running_foreign_and_remote_never_uses_remote_path() {
     let mut view = crate::monitor::tests::request(
         "app/check",
         "RUNNING",
-        json!({"profile":{"kind":"agent","backend":"openai","model":"fixture"},"sessionId":"session"}),
+        json!({
+            "profile":{"kind":"agent","backend":"openai","model":"fixture"},
+            "sessionId":"session",
+        }),
     );
     let Resolution::Local(source) = live::resolve(&state, &view).await.unwrap() else {
         panic!("running local");
@@ -453,17 +465,37 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    let run: store::Run = serde_json::from_value(json!({"id":"run-1","repoPath":repo,"stateDir":state,"status":"RUNNING","createdAt":"2026-01-01T00:00:00Z","selection":{"kind":"all"},"validation":null})).unwrap();
+    let run: store::Run = serde_json::from_value(json!({
+        "id":"run-1",
+        "repoPath":repo,
+        "stateDir":state,
+        "status":"RUNNING",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "selection":{"kind":"all"},
+        "validation":null,
+    }))
+    .unwrap();
     let mut original = crate::monitor::tests::request(
         "app/original",
         "RUNNING",
         json!({"profile":{"kind":"agent","backend":"openai","model":"fixture"}}),
     );
-    let provenance: store::Provenance = serde_json::from_value(json!({"repoPath":repo,"runId":"run-1","requestId":original.request.id,"evalId":"app/original","evalDefHash":"hash","completedAt":null})).unwrap();
+    let provenance: store::Provenance = serde_json::from_value(json!({
+        "repoPath":repo,
+        "runId":"run-1",
+        "requestId":original.request.id,
+        "evalId":"app/original",
+        "evalDefHash":"hash",
+        "completedAt":null,
+    }))
+    .unwrap();
     let mut follower = crate::monitor::tests::request(
         "app/follower",
         "QUEUED",
-        json!({"profile":{"kind":"agent","backend":"openai","model":"fixture"},"provenance":provenance}),
+        json!({
+            "profile":{"kind":"agent","backend":"openai","model":"fixture"},
+            "provenance":provenance,
+        }),
     );
     receipts
         .create_run(&run, &[original.request.clone(), follower.request.clone()])
@@ -483,7 +515,27 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
     let mut producer = store::Producer::current();
     producer.session = Some(source.reference.clone());
     follower.request.provenance = None;
-    follower.execution = Some(serde_json::from_value(json!({"id":"execution-fixture","key":null,"fingerprint":null,"evalDefHash":"hash","ownerPid":0,"ownerStartTime":0,"status":"RUNNING","result":null,"error":null,"errorCode":null,"profile":{"kind":"agent","backend":"openai","model":"fixture"},"usage":null,"provenance":provenance,"startedAt":"2026-01-01T00:00:00Z","completedAt":null,"producer":producer})).unwrap());
+    follower.execution = Some(
+        serde_json::from_value(json!({
+            "id":"execution-fixture",
+            "key":null,
+            "fingerprint":null,
+            "evalDefHash":"hash",
+            "ownerPid":0,
+            "ownerStartTime":0,
+            "status":"RUNNING",
+            "result":null,
+            "error":null,
+            "errorCode":null,
+            "profile":{"kind":"agent","backend":"openai","model":"fixture"},
+            "usage":null,
+            "provenance":provenance,
+            "startedAt":"2026-01-01T00:00:00Z",
+            "completedAt":null,
+            "producer":producer,
+        }))
+        .unwrap(),
+    );
     let Resolution::Local(execution_source) = live::resolve(&state, &follower).await.unwrap()
     else {
         panic!("execution reference");

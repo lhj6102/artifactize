@@ -145,7 +145,10 @@ fn eval_tables_reject_array_shape_id_fields_and_invalid_identifiers() {
     ] {
         assert!(parse_declaration(source).is_err(), "{source}");
     }
-    let error = parse_declaration("name = 'a'\n[evals.check]\nid = 'check'\ntitle = 'Check'\nprofile = { kind = 'human' }\npayload = { instruction = 'Check.' }").unwrap_err();
+    let error = parse_declaration(
+        "name = 'a'\n[evals.check]\nid = 'check'\ntitle = 'Check'\nprofile = { kind = 'human' }\npayload = { instruction = 'Check.' }",
+    )
+    .unwrap_err();
     assert!(error.contains("unknown field `id`"), "{error}");
     let duplicate = "name = 'a'\n[evals.check]\ntitle = 'Check'\n[evals.check]\ntitle = 'Again'";
     assert!(

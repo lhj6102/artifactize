@@ -264,11 +264,24 @@ fn an_eval_depends_on_its_target_mounts_children_and_named_artifacts_only() {
     let repo = Repo::new();
     repo.artifact(
         "a",
-        json!({"name":"a","mounts":{"next":"b"},"evals":[
-            {"id":"plain","title":"Plain","profile":{"kind":"human"},"payload":{"instruction":"Review."}},
-            {"id":"named","title":"Named","profile":{"kind":"runtime","command":"cat","args":["{d}/x"]},
-                "payload":{"instruction":"Compare with {e}."}}
-        ]}),
+        json!({
+            "name":"a",
+            "mounts":{"next":"b"},
+            "evals":[
+                {
+                    "id":"plain",
+                    "title":"Plain",
+                    "profile":{"kind":"human"},
+                    "payload":{"instruction":"Review."},
+                },
+                {
+                    "id":"named",
+                    "title":"Named",
+                    "profile":{"kind":"runtime","command":"cat","args":["{d}/x"]},
+                    "payload":{"instruction":"Compare with {e}."},
+                },
+            ],
+        }),
     );
     repo.artifact("b", json!({"name":"b","mounts":{"next":"c"}}));
     repo.artifact("c", json!({"name":"c","mounts":{"next":"a"}}));
@@ -400,11 +413,30 @@ fn changes_name_target_files_and_dependency_fingerprints() {
                      fingerprints: BTreeMap<String, crate::types::Fingerprint>|
      -> Execution {
         serde_json::from_value(json!({
-            "id":"execution-1","key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","fingerprint":"old","fingerprints":fingerprints,
-            "evalDefHash":"hash","ownerPid":1,"ownerStartTime":1,
-            "status":"GREEN","result":null,"error":null,"errorCode":null,"profile":{"kind":"human"},"usage":null,
-            "provenance":{"repoPath":"/repo","runId":"run-1","requestId":"run-1-1","evalId":"a/check","evalDefHash":"hash","completedAt":null},
-            "startedAt":"now","completedAt":"now","manifest":manifest
+            "id":"execution-1",
+            "key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "fingerprint":"old",
+            "fingerprints":fingerprints,
+            "evalDefHash":"hash",
+            "ownerPid":1,
+            "ownerStartTime":1,
+            "status":"GREEN",
+            "result":null,
+            "error":null,
+            "errorCode":null,
+            "profile":{"kind":"human"},
+            "usage":null,
+            "provenance":{
+                "repoPath":"/repo",
+                "runId":"run-1",
+                "requestId":"run-1-1",
+                "evalId":"a/check",
+                "evalDefHash":"hash",
+                "completedAt":null,
+            },
+            "startedAt":"now",
+            "completedAt":"now",
+            "manifest":manifest,
         }))
         .unwrap()
     };
@@ -473,17 +505,42 @@ fn changes_name_target_files_and_dependency_fingerprints() {
 #[test]
 fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
     let agent: EvalDeclaration = crate::test_declaration::eval(json!({
-        "id":"spec-coverage","title":"Spec coverage",
-        "profile":{"kind":"agent","backend":"openai","model":"gpt-5.1","reasoning":"high","timeout_ms":60000,"max_tool_calls":20},
-        "payload":{"instruction":"Check that {spec} covers every requirement.","focus":["errors","limits"]},
-        "pass_schema":{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"]},
-        "fail_schema":{"type":"object","properties":{"missing":{"type":"array","items":{"type":"string"}}},"required":["missing"]}
+        "id":"spec-coverage",
+        "title":"Spec coverage",
+        "profile":{
+            "kind":"agent",
+            "backend":"openai",
+            "model":"gpt-5.1",
+            "reasoning":"high",
+            "timeout_ms":60000,
+            "max_tool_calls":20,
+        },
+        "payload":{
+            "instruction":"Check that {spec} covers every requirement.",
+            "focus":["errors","limits"],
+        },
+        "pass_schema":{
+            "type":"object",
+            "properties":{"summary":{"type":"string"}},
+            "required":["summary"],
+        },
+        "fail_schema":{
+            "type":"object",
+            "properties":{"missing":{"type":"array","items":{"type":"string"}}},
+            "required":["missing"],
+        },
     }))
     .unwrap();
     let runtime: EvalDeclaration = crate::test_declaration::eval(json!({
-        "id":"tests","title":"Tests",
-        "profile":{"kind":"runtime","command":"./check.sh","args":["{spec}/rules.md","--strict"],"timeout_ms":9000},
-        "payload":{"instruction":"Run the checks."}
+        "id":"tests",
+        "title":"Tests",
+        "profile":{
+            "kind":"runtime",
+            "command":"./check.sh",
+            "args":["{spec}/rules.md","--strict"],
+            "timeout_ms":9000,
+        },
+        "payload":{"instruction":"Run the checks."},
     }))
     .unwrap();
     let fingerprints: BTreeMap<String, crate::types::Fingerprint> =

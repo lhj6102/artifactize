@@ -43,8 +43,16 @@ fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
     support::declaration::write(
         path.join("index.artf"),
         json!({
-            "name":name,"views":{"human_tools":tools,"agent_tools":{"read":{"builtin":"read"}}},
-            "evals":[{"id":"review","title":"Review","profile":{"kind":"human"},"payload":{"instruction":instruction}}]
+            "name":name,
+            "views":{"human_tools":tools,"agent_tools":{"read":{"builtin":"read"}}},
+            "evals":[
+                {
+                    "id":"review",
+                    "title":"Review",
+                    "profile":{"kind":"human"},
+                    "payload":{"instruction":instruction},
+                },
+            ],
         })
         .to_string(),
     )
@@ -298,7 +306,16 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
     write_artifact(
         repo.path(),
         "a",
-        json!({"inspect":tool("output", "sh", &["-c", "printf '\\033[31mhello\\033[0m\\000\\t\\n'; printf '\\033[31mproblem\\033[0m\\000' >&2; exit 3"])}),
+        json!({
+            "inspect":tool(
+                "output",
+                "sh",
+                &[
+                    "-c",
+                    "printf '\\033[31mhello\\033[0m\\000\\t\\n'; printf '\\033[31mproblem\\033[0m\\000' >&2; exit 3",
+                ],
+            ),
+        }),
         "Review.",
     );
     let result = call(repo.path()).await;
@@ -320,7 +337,13 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
     write_artifact(
         repo.path(),
         "a",
-        json!({"inspect":tool("output", "python3", &python("import sys; print('界'*100000); print('界'*100000,file=sys.stderr)"))}),
+        json!({
+            "inspect":tool(
+                "output",
+                "python3",
+                &python("import sys; print('界'*100000); print('界'*100000,file=sys.stderr)"),
+            ),
+        }),
         "Review.",
     );
     let result = call(repo.path()).await;
@@ -460,7 +483,15 @@ async fn human_environment_and_launch_probe() {
     write_artifact(
         repo,
         "a",
-        json!({"inspect":tool("output", "python3", &python("import os; print(os.environ['ARTIFACTIZE_HUMAN_MARKER']); print(os.environ['HOME']); print(os.environ['DISPLAY']); print(os.environ['WAYLAND_DISPLAY']); print(os.environ['XDG_CONFIG_HOME'])"))}),
+        json!({
+            "inspect":tool(
+                "output",
+                "python3",
+                &python(
+                    "import os; print(os.environ['ARTIFACTIZE_HUMAN_MARKER']); print(os.environ['HOME']); print(os.environ['DISPLAY']); print(os.environ['WAYLAND_DISPLAY']); print(os.environ['XDG_CONFIG_HOME'])",
+                ),
+            ),
+        }),
         "Review.",
     );
     let result = call(repo).await;
@@ -476,8 +507,23 @@ async fn human_environment_and_launch_probe() {
     );
     let mut declaration: Value =
         support::declaration::read(fs::read(repo.join("index.artf")).unwrap()).unwrap();
-    declaration["evals"].as_array_mut().unwrap().push(json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},"payload":{"instruction":"Review."}}));
-    declaration["views"]["agent_tools"] = json!({"inspect":{"description":"Inspect","protocol":"plain","command":"python3","args":["-c","import os; print(os.environ.get('ARTIFACTIZE_HUMAN_MARKER','absent')); print(os.environ['HOME'])"]}});
+    declaration["evals"].as_array_mut().unwrap().push(json!({
+        "id":"agent",
+        "title":"Agent",
+        "profile":{"kind":"agent","backend":"openai","model":"test","reasoning":"high"},
+        "payload":{"instruction":"Review."},
+    }));
+    declaration["views"]["agent_tools"] = json!({
+        "inspect":{
+            "description":"Inspect",
+            "protocol":"plain",
+            "command":"python3",
+            "args":[
+                "-c",
+                "import os; print(os.environ.get('ARTIFACTIZE_HUMAN_MARKER','absent')); print(os.environ['HOME'])",
+            ],
+        },
+    });
     declaration["views"]["human_tools"]["inspect"] = tool(
         "launch",
         "sh",

@@ -246,13 +246,29 @@ fn profile_fixture() -> tempfile::TempDir {
     crate::test_declaration::write(
         directory.path().join("index.artf"),
         json!({
-            "name":"target", "evals":[
-                {"id":"z", "title":"Z", "profile":{"kind":"runtime","command":"/bin/true","args":[]},
-                 "profile_variants":{"careful":{"kind":"runtime","command":"/bin/echo","args":["{input}"],"timeout_ms":9}},
-                 "payload":{"instruction":"Check."}},
-                {"id":"a", "title":"A", "profile":{"kind":"runtime","command":"/bin/true","args":[]},
-                 "payload":{"instruction":"Check."}}
-            ]
+            "name":"target",
+            "evals":[
+                {
+                    "id":"z",
+                    "title":"Z",
+                    "profile":{"kind":"runtime","command":"/bin/true","args":[]},
+                    "profile_variants":{
+                        "careful":{
+                            "kind":"runtime",
+                            "command":"/bin/echo",
+                            "args":["{input}"],
+                            "timeout_ms":9,
+                        },
+                    },
+                    "payload":{"instruction":"Check."},
+                },
+                {
+                    "id":"a",
+                    "title":"A",
+                    "profile":{"kind":"runtime","command":"/bin/true","args":[]},
+                    "payload":{"instruction":"Check."},
+                },
+            ],
         })
         .to_string(),
     )
@@ -341,10 +357,19 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
 #[test]
 fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
     let declaration = |variants| {
-        crate::test_declaration::to_toml(json!({"name":"target", "evals":[{
-        "id":"check", "title":"Check", "profile":{"kind":"runtime", "command":"/bin/true","args":[]},
-        "payload":{"instruction":"Check."}, "profile_variants": variants
-    }]})).unwrap()
+        crate::test_declaration::to_toml(json!({
+            "name":"target",
+            "evals":[
+                {
+                    "id":"check",
+                    "title":"Check",
+                    "profile":{"kind":"runtime", "command":"/bin/true","args":[]},
+                    "payload":{"instruction":"Check."},
+                    "profile_variants": variants,
+                },
+            ],
+        }))
+        .unwrap()
     };
     let valid = json!({"kind":"runtime", "command":"/bin/false", "args":[], "timeout_ms":1});
     let variants: BTreeMap<_, _> = (0..64).map(|i| (format!("v{i}"), valid.clone())).collect();

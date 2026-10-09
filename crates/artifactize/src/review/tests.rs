@@ -24,21 +24,60 @@ fn spinner_frames_keep_the_existing_hundred_millisecond_cadence_and_cast_order()
 fn definition(pass: Value, fail: Value) -> Value {
     json!({
         "repo":"/repo",
-        "eval":{"id":"release/signoff","target":"release","references":{},"deps":[],
-            "declaration":{"id":"signoff","title":"Approve","profile":{"kind":"human"},
-                "payload":{"instruction":"Approve the notes."},"passSchema":pass,"failSchema":fail}},
-        "artifacts":{"release":{"path":"release","views":{"agentTools":{},"humanTools":{
-            "notes":{"description":"Print the notes of {artifactName}.","kind":"output","command":"cat","args":["{artifactPath}/notes.md"]},
-            "open":{"description":"Open {artifactName}.","kind":"launch","command":"xdg-open","args":["{artifactPath}"]}
-        }}}}
+        "eval":{
+            "id":"release/signoff",
+            "target":"release",
+            "references":{},
+            "deps":[],
+            "declaration":{
+                "id":"signoff",
+                "title":"Approve",
+                "profile":{"kind":"human"},
+                "payload":{"instruction":"Approve the notes."},
+                "passSchema":pass,
+                "failSchema":fail,
+            },
+        },
+        "artifacts":{
+            "release":{
+                "path":"release",
+                "views":{
+                    "agentTools":{},
+                    "humanTools":{
+                        "notes":{
+                            "description":"Print the notes of {artifactName}.",
+                            "kind":"output",
+                            "command":"cat",
+                            "args":["{artifactPath}/notes.md"],
+                        },
+                        "open":{
+                            "description":"Open {artifactName}.",
+                            "kind":"launch",
+                            "command":"xdg-open",
+                            "args":["{artifactPath}"],
+                        },
+                    },
+                },
+            },
+        },
     })
 }
 
 /// The review-demo schemas: GREEN needs `approved: const true`, RED a non-empty reason.
 pub(crate) fn demo() -> Value {
     definition(
-        json!({"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false}),
-        json!({"type":"object","properties":{"reason":{"type":"string","minLength":1}},"required":["reason"],"additionalProperties":false}),
+        json!({
+            "type":"object",
+            "properties":{"approved":{"const":true}},
+            "required":["approved"],
+            "additionalProperties":false,
+        }),
+        json!({
+            "type":"object",
+            "properties":{"reason":{"type":"string","minLength":1}},
+            "required":["reason"],
+            "additionalProperties":false,
+        }),
     )
 }
 
@@ -53,10 +92,21 @@ pub(crate) fn claim(reviewer: &str) -> HumanClaim {
 fn view(status: &str, reviewer: Option<&str>, definition: Value) -> RequestView {
     RequestView {
         request: serde_json::from_value(json!({
-            "id":ID,"runId":"run-1","evalId":"release/signoff","target":"release","title":"Approve",
-            "profile":{"kind":"human"},"requestedProfile":{"kind":"human"},"evalDefHash":"hash",
-            "payload":{"instruction":"Approve the notes."},"references":{},"deps":[],"status":status,
-            "createdAt":"2026-01-01T00:00:00Z","cwd":"/repo","humanDefinition":definition
+            "id":ID,
+            "runId":"run-1",
+            "evalId":"release/signoff",
+            "target":"release",
+            "title":"Approve",
+            "profile":{"kind":"human"},
+            "requestedProfile":{"kind":"human"},
+            "evalDefHash":"hash",
+            "payload":{"instruction":"Approve the notes."},
+            "references":{},
+            "deps":[],
+            "status":status,
+            "createdAt":"2026-01-01T00:00:00Z",
+            "cwd":"/repo",
+            "humanDefinition":definition,
         }))
         .unwrap(),
         claim: reviewer.map(claim),
@@ -603,10 +653,24 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
 #[test]
 fn other_schemas_edit_inline_and_ctrl_e_opens_the_editor() {
     let nested = definition(
-        json!({"type":"object","properties":{"approved":{"const":true},"checks":{"type":"array","items":{"type":"string"}},
-            "meta":{"type":"object","properties":{"ticket":{"type":"string"},"size":{"type":"integer"}}}},
-            "required":["approved"],"additionalProperties":false}),
-        json!({"type":"object","properties":{"reason":{"$ref":"#/$defs/text"}},"$defs":{"text":{"type":"string"}}}),
+        json!({
+            "type":"object",
+            "properties":{
+                "approved":{"const":true},
+                "checks":{"type":"array","items":{"type":"string"}},
+                "meta":{
+                    "type":"object",
+                    "properties":{"ticket":{"type":"string"},"size":{"type":"integer"}},
+                },
+            },
+            "required":["approved"],
+            "additionalProperties":false,
+        }),
+        json!({
+            "type":"object",
+            "properties":{"reason":{"$ref":"#/$defs/text"}},
+            "$defs":{"text":{"type":"string"}},
+        }),
     );
     let mut review = opened(Some("alice"), nested);
     assert_eq!(press(&mut review, KeyCode::Char('g')), Action::None);
@@ -674,14 +738,19 @@ fn other_schemas_edit_inline_and_ctrl_e_opens_the_editor() {
 
 #[test]
 fn flat_forms_cover_booleans_choices_numbers_and_optional_fields() {
-    let schema = json!({"type":"object","additionalProperties":false,"required":["ok","level","count"],"properties":{
-        "ok":{"type":"boolean","description":"Did it work?"},
-        "level":{"enum":["low","high"]},
-        "count":{"type":"integer","minimum":0},
-        "score":{"type":"number"},
-        "note":{"type":"string","maxLength":20},
-        "seen":{"type":"boolean"}
-    }});
+    let schema = json!({
+        "type":"object",
+        "additionalProperties":false,
+        "required":["ok","level","count"],
+        "properties":{
+            "ok":{"type":"boolean","description":"Did it work?"},
+            "level":{"enum":["low","high"]},
+            "count":{"type":"integer","minimum":0},
+            "score":{"type":"number"},
+            "note":{"type":"string","maxLength":20},
+            "seen":{"type":"boolean"},
+        },
+    });
     let mut form = Form::new("GREEN", Some(&schema));
     assert!(form.json.is_none());
     let names: Vec<_> = form
@@ -770,9 +839,13 @@ fn flat_forms_cover_booleans_choices_numbers_and_optional_fields() {
     let empty = Form::new("GREEN", None);
     assert_eq!(empty.result().unwrap(), json!({"verdict":"GREEN"}));
     assert_eq!(
-        template(
-            &json!({"properties":{"a":{"enum":["x"]},"b":{"type":["integer","null"]},"c":{"$ref":"#/x"}}})
-        ),
+        template(&json!({
+            "properties":{
+                "a":{"enum":["x"]},
+                "b":{"type":["integer","null"]},
+                "c":{"$ref":"#/x"},
+            },
+        })),
         json!({"a":"x","b":0,"c":null})
     );
 }

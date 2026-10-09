@@ -55,7 +55,16 @@ fn verify(state: &Path, repo: &Path, profile: Value, code: i32) -> Value {
     support::declaration::write(
         repo.join("index.artf"),
         json!({
-            "name":"a", "fingerprint":false, "evals":[{"id":"review", "title":"Review", "payload":{"instruction":"Review"}, "profile":profile}]
+            "name":"a",
+            "fingerprint":false,
+            "evals":[
+                {
+                    "id":"review",
+                    "title":"Review",
+                    "payload":{"instruction":"Review"},
+                    "profile":profile,
+                },
+            ],
         })
         .to_string(),
     )

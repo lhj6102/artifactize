@@ -28,7 +28,17 @@ fn saved_run(
     state: &Path,
     identity: crate::repository::Identity,
 ) -> store::Run {
-    let mut run: store::Run = serde_json::from_value(json!({"id":id,"repoPath":repo,"stateDir":state,"status":"GREEN","createdAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:00:01Z","selection":{"kind":"all"},"validation":null})).unwrap();
+    let mut run: store::Run = serde_json::from_value(json!({
+        "id":id,
+        "repoPath":repo,
+        "stateDir":state,
+        "status":"GREEN",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "completedAt":"2026-01-01T00:00:01Z",
+        "selection":{"kind":"all"},
+        "validation":null,
+    }))
+    .unwrap();
     run.repository = identity;
     run
 }
@@ -365,7 +375,10 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
     let mut view = super::tests::request(
         "app/check",
         "GREEN",
-        json!({"profile":{"kind":"agent","backend":"openai","model":"fixture"},"sessionId":"session-1"}),
+        json!({
+            "profile":{"kind":"agent","backend":"openai","model":"fixture"},
+            "sessionId":"session-1",
+        }),
     );
     let text = crate::agent::session::live::resolve(root.path(), &view)
         .await
@@ -424,7 +437,15 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
     let runtime = super::tests::request(
         "app/runtime",
         "GREEN",
-        json!({"result":{"verdict":"GREEN","exitCode":0,"stdout":"hello","stderr":"warning","truncated":true}}),
+        json!({
+            "result":{
+                "verdict":"GREEN",
+                "exitCode":0,
+                "stdout":"hello",
+                "stderr":"warning",
+                "truncated":true,
+            },
+        }),
     );
     let text = evidence::evidence(root.path(), &runtime).text;
     assert!(text.contains("hello") && text.contains("warning") && text.contains("truncated: true"));
@@ -515,9 +536,13 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
     monitor.detail.as_mut().unwrap().scroll[1] = 7;
     request.status = crate::types::RequestStatus::Green;
     request.completed_at = Some("2026-01-01T00:00:01Z".into());
-    request.result = Some(
-        json!({"verdict":"GREEN","stdout":"final output","stderr":"final stderr","exitCode":0,"truncated":false}),
-    );
+    request.result = Some(json!({
+        "verdict":"GREEN",
+        "stdout":"final output",
+        "stderr":"final stderr",
+        "exitCode":0,
+        "truncated":false,
+    }));
     receipts.save_request(&request).await.unwrap();
     monitor.refresh().await;
     assert!(

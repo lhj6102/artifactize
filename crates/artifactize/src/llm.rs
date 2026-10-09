@@ -158,7 +158,12 @@ impl Client {
         }
         Ok(match backend {
             Backend::Openai => {
-                let mut value = json!({"store":false, "parallel_tool_calls":false, "include":["reasoning.encrypted_content"], "prompt_cache_key":session});
+                let mut value = json!({
+                    "store":false,
+                    "parallel_tool_calls":false,
+                    "include":["reasoning.encrypted_content"],
+                    "prompt_cache_key":session,
+                });
                 if let Some(reasoning) = reasoning {
                     value["reasoning"] = json!({"effort":reasoning});
                 }

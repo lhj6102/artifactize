@@ -83,7 +83,12 @@ impl Fixture {
 }
 
 fn eval(id: &str, script: &str) -> Value {
-    json!({"id":id,"title":"Check", "profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script]},"payload":{"instruction":"Check input."}})
+    json!({
+        "id":id,
+        "title":"Check",
+        "profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script]},
+        "payload":{"instruction":"Check input."},
+    })
 }
 
 fn fingerprint(script: &str) -> Value {
@@ -111,7 +116,14 @@ fn exact_output_is_validated_before_any_review_can_start() {
         &[b'x'; 129],
     ] {
         fs::write(fixture.repo.join("key"), bytes).unwrap();
-        fixture.write("index.artf", json!({"name":"test","fingerprint":fingerprint("cat key"),"evals":[eval("check", "touch executed")]}));
+        fixture.write(
+            "index.artf",
+            json!({
+                "name":"test",
+                "fingerprint":fingerprint("cat key"),
+                "evals":[eval("check", "touch executed")],
+            }),
+        );
         let error = fixture.verify(&["--all"], 2);
         assert!(
             error["error"].as_str().unwrap().contains("Artifact test"),
@@ -195,7 +207,7 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
     {
         fixture.write(
             "index.artf",
-            json!({"name":"test","fingerprint":declared,"evals":[eval("check","touch executed")]}),
+            json!({"name":"test","fingerprint":declared,"evals":[eval("check", "touch executed")]}),
         );
         let error = fixture.verify(&["--all"], 2);
         let error = error["error"].as_str().unwrap();
@@ -239,7 +251,14 @@ print('protocol:v1')
         json!("$HOME; ../literal $(touch executed)"),
         json!("{test}/key"),
     ]);
-    fixture.write("owner/index.artf", json!({"name":"test","fingerprint":{"script":{"command":command,"args":args,"files":["key"]}},"evals":[eval("one","exit 0"),eval("two","exit 3")]}));
+    fixture.write(
+        "owner/index.artf",
+        json!({
+            "name":"test",
+            "fingerprint":{"script":{"command":command,"args":args,"files":["key"]}},
+            "evals":[eval("one", "exit 0"),eval("two", "exit 3")],
+        }),
+    );
     fs::write(fixture.repo.join("owner/key"), "material").unwrap();
     let path = fixture.repo.join("owner/fingerprint.py");
     support::declaration::write(&path, script).unwrap();
@@ -296,7 +315,7 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
         declared["script"]["files"] = json!(["key"]);
         fixture.write(
             "index.artf",
-            json!({"name":"test","fingerprint":declared,"evals":[eval("check",review)]}),
+            json!({"name":"test","fingerprint":declared,"evals":[eval("check", review)]}),
         );
         let run = fixture.verify(&["--all"], 2);
         let request = &run["requests"][0];
@@ -322,7 +341,7 @@ fn changed_input_or_failed_recheck_cannot_become_a_semantic_verdict() {
     }
     fixture.write(
         "index.artf",
-        json!({"name":"test","fingerprint":false,"evals":[eval("check","printf after > key")]}),
+        json!({"name":"test","fingerprint":false,"evals":[eval("check", "printf after > key")]}),
     );
     let run = fixture.verify(&["--all"], 0);
     assert!(run["requests"][0]["fingerprint"].is_null());
@@ -342,7 +361,14 @@ fn preparation_covers_only_required_artifacts_but_includes_unselected_dependenci
         "b/index.artf",
         json!({"name":"dependency","basis":true,"fingerprint":fingerprint("printf dependency:v1")}),
     );
-    fixture.write("c/index.artf", json!({"name":"unrelated","fingerprint":fingerprint("exit 9"),"evals":[eval("check","touch executed")]}));
+    fixture.write(
+        "c/index.artf",
+        json!({
+            "name":"unrelated",
+            "fingerprint":fingerprint("exit 9"),
+            "evals":[eval("check", "touch executed")],
+        }),
+    );
     let run = fixture.verify(&["--eval", "selected/check"], 0);
     assert_eq!(run["requests"].as_array().unwrap().len(), 1);
     assert!(run["requests"][0]["fingerprint"].is_null());
@@ -375,7 +401,14 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
             if recheck { "test -e executed" } else { "true" },
             marker.display()
         );
-        fixture.write("index.artf", json!({"name":"test","fingerprint":fingerprint(&source),"evals":[eval("check","touch executed")]}));
+        fixture.write(
+            "index.artf",
+            json!({
+                "name":"test",
+                "fingerprint":fingerprint(&source),
+                "evals":[eval("check", "touch executed")],
+            }),
+        );
         let child = fixture
             .command()
             .args(["verify", "--all", "--json"])
@@ -443,9 +476,23 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     // The JSON from issue #48: a global Artifact name in both fingerprint and runtime argv.
     let api = |reference: &str, mounts: Value| {
         json!({
-            "name":"api","mounts":mounts,
-            "fingerprint":{"script":{"command":"python3","args":["../fingerprint.py",".",reference]}},
-            "evals":[{"id":"tests","title":"Tests","profile":{"kind":"runtime","command":"python3","args":["-B","test_api.py",reference]},"payload":{"instruction":"Run the API tests."}}]
+            "name":"api",
+            "mounts":mounts,
+            "fingerprint":{
+                "script":{"command":"python3","args":["../fingerprint.py",".",reference]},
+            },
+            "evals":[
+                {
+                    "id":"tests",
+                    "title":"Tests",
+                    "profile":{
+                        "kind":"runtime",
+                        "command":"python3",
+                        "args":["-B","test_api.py",reference],
+                    },
+                    "payload":{"instruction":"Run the API tests."},
+                },
+            ],
         })
     };
     fixture.write("api/index.artf", api("{core}", json!({})));
@@ -510,9 +557,13 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
         let name = format!("part{index}");
         fixture.write(
             &format!("{name}/index.artf"),
-            json!({"name":name,
-                "fingerprint":{"script":{"command":bin("/bin/sh"),"args":["-c",script,"sh",name,markers]}},
-                "evals":[eval("check", "exit 0")]}),
+            json!({
+                "name":name,
+                "fingerprint":{
+                    "script":{"command":bin("/bin/sh"),"args":["-c",script,"sh",name,markers]},
+                },
+                "evals":[eval("check", "exit 0")],
+            }),
         );
     }
     markers
@@ -583,8 +634,14 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
     ] {
         fixture.write(
             &format!("{name}/index.artf"),
-            json!({"name":name,"fingerprint":fingerprint(&format!("touch '{}.{name}'; {script}", started.display())),
-                "evals":[eval("check", "touch executed")]}),
+            json!({
+                "name":name,
+                "fingerprint":fingerprint(&format!(
+                    "touch '{}.{name}'; {script}",
+                    started.display()
+                )),
+                "evals":[eval("check", "touch executed")],
+            }),
         );
     }
     let begin = Instant::now();

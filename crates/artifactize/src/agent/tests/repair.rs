@@ -39,7 +39,13 @@ async fn fenced_json_is_repaired_with_same_settings_and_no_tools() {
 #[tokio::test]
 async fn schema_invalid_response_repairs_and_preserves_owner_fields() {
     let mut fixture = Fixture::new("openai");
-    fixture.config.evals[0].declaration.pass_schema = json!({"type":"object","properties":{"reason":{"type":"string","minLength":1}},"required":["reason"]}).as_object().cloned();
+    fixture.config.evals[0].declaration.pass_schema = json!({
+        "type":"object",
+        "properties":{"reason":{"type":"string","minLength":1}},
+        "required":["reason"],
+    })
+    .as_object()
+    .cloned();
     let result = json!({"verdict":"GREEN","reason":"  Owner text stays unchanged.  "});
     let (review, http) = fixture
         .run(vec![

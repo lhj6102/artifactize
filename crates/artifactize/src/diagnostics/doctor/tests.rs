@@ -19,7 +19,14 @@ fn readiness_check_status_wire_display_and_severity_are_pinned() {
         assert_eq!(report.ok, ready);
         assert_eq!(
             serde_json::to_value(&report.checks).unwrap(),
-            json!([{"name":"fixture","status":wire,"message":"pinned message","details":{"fixture":true}}])
+            json!([
+                {
+                    "name":"fixture",
+                    "status":wire,
+                    "message":"pinned message",
+                    "details":{"fixture":true},
+                },
+            ])
         );
     }
     let mut report = DoctorReport {

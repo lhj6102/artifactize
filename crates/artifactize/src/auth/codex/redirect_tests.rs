@@ -7,7 +7,15 @@ use rig_core::test_utils::MockHttpResponse;
 async fn shared_port_redirect_matches_authorize_callback_and_token_exchange() {
     let directory = tempfile::tempdir().unwrap();
     let storage = Storage::new(Some(directory.path()), None, Tokens::Codex).unwrap();
-    let server = Server::new(vec![MockHttpResponse::success(json!({"access_token":jwt("fixture-account", now().unwrap()+3600),"refresh_token":"fixture-refresh","expires_in":3600}).to_string())]).await;
+    let server = Server::new(vec![MockHttpResponse::success(
+        json!({
+            "access_token":jwt("fixture-account", now().unwrap() + 3600),
+            "refresh_token":"fixture-refresh",
+            "expires_in":3600,
+        })
+        .to_string(),
+    )])
+    .await;
     let redirect = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
     assert_eq!(redirect, "http://localhost:1455/auth/callback");
     let (send, receive) = oneshot::channel();

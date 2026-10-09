@@ -15,17 +15,57 @@ async fn live_session_pty_fixture() {
     let state = root.join("state");
     fs::create_dir_all(&repo).unwrap();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    let run: store::Run = serde_json::from_value(json!({"id":"fixture-run","repoPath":repo,"stateDir":state,"status":"RUNNING","createdAt":"2026-01-01T00:00:00Z","selection":{"kind":"all"},"validation":null,"definitions":{"artifacts":{"app":{"path":""}},"evals":[{"id":"app/check","target":"app","deps":[],"declaration":{"title":"Fixture Agent","profile":{"kind":"agent","backend":"openai","model":"fixture"},"payload":{"instruction":"fixture"}}},{"id":"app/runtime","target":"app","deps":[],"declaration":{"title":"Fixture Runtime","profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"fixture"}}}]}})).unwrap();
+    let run: store::Run = serde_json::from_value(json!({
+        "id":"fixture-run",
+        "repoPath":repo,
+        "stateDir":state,
+        "status":"RUNNING",
+        "createdAt":"2026-01-01T00:00:00Z",
+        "selection":{"kind":"all"},
+        "validation":null,
+        "definitions":{
+            "artifacts":{"app":{"path":""}},
+            "evals":[
+                {
+                    "id":"app/check",
+                    "target":"app",
+                    "deps":[],
+                    "declaration":{
+                        "title":"Fixture Agent",
+                        "profile":{"kind":"agent","backend":"openai","model":"fixture"},
+                        "payload":{"instruction":"fixture"},
+                    },
+                },
+                {
+                    "id":"app/runtime",
+                    "target":"app",
+                    "deps":[],
+                    "declaration":{
+                        "title":"Fixture Runtime",
+                        "profile":{"kind":"runtime","command":"true","args":[]},
+                        "payload":{"instruction":"fixture"},
+                    },
+                },
+            ],
+        },
+    }))
+    .unwrap();
     let mut view = tests::request(
         "app/check",
         "RUNNING",
-        json!({"profile":{"kind":"agent","backend":"openai","model":"fixture"},"sessionId":"fixture-session"}),
+        json!({
+            "profile":{"kind":"agent","backend":"openai","model":"fixture"},
+            "sessionId":"fixture-session",
+        }),
     );
     view.request.run_id = run.id.clone();
     let mut runtime = tests::request(
         "app/runtime",
         "GREEN",
-        json!({"completedAt":"2026-01-01T00:01:00Z","result":{"verdict":"GREEN","exitCode":0,"stdout":"other modal unaffected","stderr":""}}),
+        json!({
+            "completedAt":"2026-01-01T00:01:00Z",
+            "result":{"verdict":"GREEN","exitCode":0,"stdout":"other modal unaffected","stderr":""},
+        }),
     );
     runtime.request.run_id = run.id.clone();
     receipts

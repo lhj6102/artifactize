@@ -9,7 +9,8 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 
 /// Some of the tables of a 0.5 state, before the four of 0.6.
-const EARLIER: &str = "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+const EARLIER: &str =
+    "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
     CREATE TABLE run_members(run_id TEXT NOT NULL, eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, request_id TEXT NOT NULL);
     CREATE TABLE cache_entries(execution_id TEXT PRIMARY KEY, key TEXT NOT NULL);";
 
@@ -44,8 +45,17 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
     fs::create_dir_all(root.join("home")).unwrap();
     support::declaration::write(
         repo.join("index.artf"),
-        json!({"name":"app","evals":[{"id":"check","title":"Check",
-            "profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Check."}}]})
+        json!({
+            "name":"app",
+            "evals":[
+                {
+                    "id":"check",
+                    "title":"Check",
+                    "profile":{"kind":"runtime","command":"true","args":[]},
+                    "payload":{"instruction":"Check."},
+                },
+            ],
+        })
         .to_string(),
     )
     .unwrap();

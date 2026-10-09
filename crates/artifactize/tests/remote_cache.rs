@@ -194,9 +194,18 @@ fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
         let folder = repo.join(artifact);
         write(
             &folder,
-            json!({"name":artifact,"fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
-                "evals":[{"id":"check","title":"Check","profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
-                    "payload":{"instruction":"Check."}}]}),
+            json!({
+                "name":artifact,
+                "fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
+                "evals":[
+                    {
+                        "id":"check",
+                        "title":"Check",
+                        "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
+                        "payload":{"instruction":"Check."},
+                    },
+                ],
+            }),
         );
         fs::write(folder.join("version"), format!("{artifact}-{version}\n")).unwrap();
     }
@@ -207,8 +216,18 @@ fn human_repo(root: &Path, name: &str) -> PathBuf {
     let repo = root.join(name);
     write(
         &repo,
-        json!({"name":"brand","fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
-            "evals":[{"id":"signoff","title":"Sign off","profile":{"kind":"human"},"payload":{"instruction":"Sign off."}}]}),
+        json!({
+            "name":"brand",
+            "fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
+            "evals":[
+                {
+                    "id":"signoff",
+                    "title":"Sign off",
+                    "profile":{"kind":"human"},
+                    "payload":{"instruction":"Sign off."},
+                },
+            ],
+        }),
     );
     fs::write(repo.join("version"), "brand-v1\n").unwrap();
     repo
@@ -297,7 +316,11 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
     assert_eq!(run["requests"][0]["origin"]["publisher"], "alice-laptop");
     assert_eq!(
         run["requests"][0]["source"],
-        json!({"runId":source,"requestId":run["requests"][0]["provenance"]["requestId"],"kind":"remote"})
+        json!({
+            "runId":source,
+            "requestId":run["requests"][0]["provenance"]["requestId"],
+            "kind":"remote",
+        })
     );
     let key = run["requests"][0]["key"].as_str().unwrap();
     let shown = bob.json(&repo_b, &["cache", "show", key], 0);
@@ -534,9 +557,22 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
         let repo = root.path().join(name);
         write(
             &repo,
-            json!({"name":"app","fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
-                "evals":[{"id":"check","title":"Check","profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c","test ! -e broken"]},
-                    "payload":{"instruction":"Check."}}]}),
+            json!({
+                "name":"app",
+                "fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
+                "evals":[
+                    {
+                        "id":"check",
+                        "title":"Check",
+                        "profile":{
+                            "kind":"runtime",
+                            "command":bin("/bin/sh"),
+                            "args":["-c","test ! -e broken"],
+                        },
+                        "payload":{"instruction":"Check."},
+                    },
+                ],
+            }),
         );
         fs::write(repo.join("version"), "app-v1\n").unwrap();
         repo

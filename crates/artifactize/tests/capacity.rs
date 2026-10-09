@@ -324,8 +324,17 @@ fn a_request_waiting_for_a_slot_holds_no_job_slot() {
     fs::create_dir_all(&check).unwrap();
     support::declaration::write(
         check.join("index.artf"),
-        json!({"name":"check","evals":[{"id":"run","title":"Run",
-            "profile":{"kind":"runtime","command":"true","args":[]},"payload":{"instruction":"Run."}}]})
+        json!({
+            "name":"check",
+            "evals":[
+                {
+                    "id":"run",
+                    "title":"Run",
+                    "profile":{"kind":"runtime","command":"true","args":[]},
+                    "payload":{"instruction":"Run."},
+                },
+            ],
+        })
         .to_string(),
     )
     .unwrap();

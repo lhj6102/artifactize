@@ -381,8 +381,16 @@ pub mod anthropic {
                 "role":"assistant","model":request.body["model"],"content":[],
                 "stop_reason":null,"stop_sequence":null,
                 "usage":{"input_tokens":input,"output_tokens":0}}}),
-            json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
-            json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":text}}),
+            json!({
+                "type":"content_block_start",
+                "index":0,
+                "content_block":{"type":"text","text":""},
+            }),
+            json!({
+                "type":"content_block_delta",
+                "index":0,
+                "delta":{"type":"text_delta","text":text},
+            }),
             json!({"type":"content_block_stop","index":0}),
             json!({"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},
                 "usage":{"output_tokens":output}}),
@@ -393,7 +401,14 @@ pub mod anthropic {
     pub fn models(ids: &[&str]) -> Reply {
         let data: Vec<_> = ids
             .iter()
-            .map(|id| json!({"id":id,"type":"model","display_name":id,"created_at":"2026-01-01T00:00:00Z"}))
+            .map(|id| {
+                json!({
+                    "id":id,
+                    "type":"model",
+                    "display_name":id,
+                    "created_at":"2026-01-01T00:00:00Z",
+                })
+            })
             .collect();
         Reply::Json(
             200,
@@ -445,7 +460,12 @@ pub mod codex {
     pub fn tokens(access: &str, refresh: &str) -> Reply {
         Reply::Json(
             200,
-            json!({"access_token":access,"refresh_token":refresh,"expires_in":3600,"id_token":"id"}),
+            json!({
+                "access_token":access,
+                "refresh_token":refresh,
+                "expires_in":3600,
+                "id_token":"id",
+            }),
         )
     }
 }

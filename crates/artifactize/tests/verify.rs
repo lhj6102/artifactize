@@ -78,7 +78,16 @@ impl Fixture {
         support::declaration::write(
             self.repo.join("index.artf"),
             json!({
-                "name":"test", "fingerprint":false, "evals":[{"id":"check","title":"Check", "profile":{"kind":"runtime","command":bin(program),"args":args}, "payload":{"instruction":"Check runtime."}}]
+                "name":"test",
+                "fingerprint":false,
+                "evals":[
+                    {
+                        "id":"check",
+                        "title":"Check",
+                        "profile":{"kind":"runtime","command":bin(program),"args":args},
+                        "payload":{"instruction":"Check runtime."},
+                    },
+                ],
             })
             .to_string(),
         )
@@ -329,7 +338,12 @@ fn human_waiting_does_not_prevent_runtime_execution() {
     fixture.runtime("/bin/true", &[]);
     let path = fixture.repo.join("index.artf");
     let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
-    declaration["evals"].as_array_mut().unwrap().push(json!({"id":"review","title":"Human review","profile":{"kind":"human"},"payload":{"instruction":"Review."}}));
+    declaration["evals"].as_array_mut().unwrap().push(json!({
+        "id":"review",
+        "title":"Human review",
+        "profile":{"kind":"human"},
+        "payload":{"instruction":"Review."},
+    }));
     support::declaration::write(path, declaration.to_string()).unwrap();
     // The Human wait times out at once, after the runtime eval executed.
     let run = fixture.verify(&["--all", "--timeout-ms", "1"], 3);
@@ -511,7 +525,12 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
     let source = fixture.repo.join("review/index.artf");
     let mut declaration: Value = support::declaration::read(fs::read(&source).unwrap()).unwrap();
     declaration["evals"][0]["profile_variants"] = json!({
-        "brief": {"kind":"runtime","command":bin("/bin/echo"),"args":["variant", "{input}/data.txt"],"timeout_ms":support::os::slow(1000)}
+        "brief": {
+            "kind":"runtime",
+            "command":bin("/bin/echo"),
+            "args":["variant", "{input}/data.txt"],
+            "timeout_ms":support::os::slow(1000),
+        },
     });
     support::declaration::write(&source, declaration.to_string()).unwrap();
     let original = fs::read(&source).unwrap();
@@ -889,7 +908,12 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         fixture.runtime("/bin/true", &[]);
         let path = fixture.repo.join("index.artf");
         let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
-        declaration["evals"].as_array_mut().unwrap().push(json!({"id":"agent","title":"Agent","profile":{"kind":"agent","backend":backend,"model":"exact-model"},"payload":{"instruction":"Review."}}));
+        declaration["evals"].as_array_mut().unwrap().push(json!({
+            "id":"agent",
+            "title":"Agent",
+            "profile":{"kind":"agent","backend":backend,"model":"exact-model"},
+            "payload":{"instruction":"Review."},
+        }));
         support::declaration::write(path, declaration.to_string()).unwrap();
         let output = fixture
             .command()
@@ -931,7 +955,12 @@ fn runtime_and_agent_starts_share_the_run_budget() {
     fixture.runtime("/bin/true", &[]);
     let path = fixture.repo.join("index.artf");
     let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
-    declaration["evals"].as_array_mut().unwrap().push(json!({"id":"zz-agent","title":"Agent","profile":{"kind":"agent","backend":"openai","model":"not-called"},"payload":{"instruction":"Review."}}));
+    declaration["evals"].as_array_mut().unwrap().push(json!({
+        "id":"zz-agent",
+        "title":"Agent",
+        "profile":{"kind":"agent","backend":"openai","model":"not-called"},
+        "payload":{"instruction":"Review."},
+    }));
     support::declaration::write(path, declaration.to_string()).unwrap();
     let run = fixture.verify(&["--all", "--jobs", "1", "--max-executions", "1"], 4);
     assert_eq!(run["executionsStarted"], 1);

@@ -9,7 +9,45 @@ fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
-    crate::test_declaration::write(repo.join("index.artf"), json!({"name":"signoff","fingerprint":{},"views":{"human_tools":{"inspect":{"kind":"output","description":"Inspect","command":crate::test_os::bin("true"),"args":[]}}},"evals":[{"id":"review","title":"Approve","profile":{"kind":"human"},"payload":{"instruction":"Inspect."},"pass_schema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false},"fail_schema":{"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"],"additionalProperties":false}}]}).to_string()).unwrap();
+    crate::test_declaration::write(
+        repo.join("index.artf"),
+        json!({
+            "name":"signoff",
+            "fingerprint":{},
+            "views":{
+                "human_tools":{
+                    "inspect":{
+                        "kind":"output",
+                        "description":"Inspect",
+                        "command":crate::test_os::bin("true"),
+                        "args":[],
+                    },
+                },
+            },
+            "evals":[
+                {
+                    "id":"review",
+                    "title":"Approve",
+                    "profile":{"kind":"human"},
+                    "payload":{"instruction":"Inspect."},
+                    "pass_schema":{
+                        "type":"object",
+                        "properties":{"approved":{"const":true}},
+                        "required":["approved"],
+                        "additionalProperties":false,
+                    },
+                    "fail_schema":{
+                        "type":"object",
+                        "properties":{"reason":{"type":"string"}},
+                        "required":["reason"],
+                        "additionalProperties":false,
+                    },
+                },
+            ],
+        })
+        .to_string(),
+    )
+    .unwrap();
     (root, repo, state)
 }
 async fn waiting(repo: &std::path::Path, state: &std::path::Path) -> RequestView {
@@ -129,7 +167,13 @@ async fn explicit_claim_race_follower_dedup_and_release_use_original_request() {
 
 #[test]
 fn nested_json_is_utf8_editable_and_enter_is_not_submit() {
-    let schema = json!({"type":"object","properties":{"nested":{"type":"object","properties":{"name":{"type":"string"}}},"list":{"type":"array","items":{"type":"string"}}}});
+    let schema = json!({
+        "type":"object",
+        "properties":{
+            "nested":{"type":"object","properties":{"name":{"type":"string"}}},
+            "list":{"type":"array","items":{"type":"string"}},
+        },
+    });
     let mut form = Form::new("RED", Some(&schema));
     form.json = Some(String::new());
     form.cursor = 0;
@@ -508,9 +552,17 @@ async fn keyboard_reclaim_restores_the_release_draft() {
 fn wrapped_flat_fields_share_their_actual_rendered_hit_rows() {
     let form = Form::new(
         "RED",
-        Some(
-            &json!({"type":"object","properties":{"a":{"type":"string","description":"A long hint that wraps over several narrow terminal rows"},"b":{"type":"string"},"c":{"type":"string"}}}),
-        ),
+        Some(&json!({
+            "type":"object",
+            "properties":{
+                "a":{
+                    "type":"string",
+                    "description":"A long hint that wraps over several narrow terminal rows",
+                },
+                "b":{"type":"string"},
+                "c":{"type":"string"},
+            },
+        })),
     );
     let area = ratatui::layout::Rect::new(5, 4, 22, 20);
     let hits = view::field_hits(area, &form, 0);

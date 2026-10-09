@@ -26,10 +26,23 @@ impl Project {
         fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
         support::declaration::write(
             repo.join("spec/index.artf"),
-            json!({"name":"spec","views":{"agent_tools":{"read":{"builtin":"read"}}},
-                "evals":[{"id":"review","title":"Review","profile":profile,
-                    "payload":{"instruction":"Review {spec}."},
-                    "pass_schema":{"type":"object","properties":{"covered":{"type":"array","items":{"type":"string"}}},"required":["covered"]}}]})
+            json!({
+                "name":"spec",
+                "views":{"agent_tools":{"read":{"builtin":"read"}}},
+                "evals":[
+                    {
+                        "id":"review",
+                        "title":"Review",
+                        "profile":profile,
+                        "payload":{"instruction":"Review {spec}."},
+                        "pass_schema":{
+                            "type":"object",
+                            "properties":{"covered":{"type":"array","items":{"type":"string"}}},
+                            "required":["covered"],
+                        },
+                    },
+                ],
+            })
             .to_string(),
         )
         .unwrap();
@@ -76,9 +89,13 @@ fn check<'a>(report: &'a Value, name: &str) -> &'a Value {
 
 #[test]
 fn openai_review_calls_tools_against_the_fake_and_passes_reasoning_exactly() {
-    let project = Project::new(
-        json!({"kind":"agent","backend":"openai","model":"fake-model","reasoning":"max","max_tool_calls":2}),
-    );
+    let project = Project::new(json!({
+        "kind":"agent",
+        "backend":"openai",
+        "model":"fake-model",
+        "reasoning":"max",
+        "max_tool_calls":2,
+    }));
     let provider = FakeProvider::start(|request| {
         let replayed = request.body["input"].as_array().is_some_and(|input| {
             input

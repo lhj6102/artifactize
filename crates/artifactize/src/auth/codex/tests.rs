@@ -370,9 +370,16 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
     let access = jwt("claim-account", now().unwrap() + 3600);
     let write = |value: Value| fs::write(&path, value.to_string()).unwrap();
 
-    write(
-        json!({"OPENAI_API_KEY":null,"tokens":{"id_token":"id","access_token":access,"refresh_token":"r","account_id":"file-account"},"last_refresh":"2026-10-01T00:00:00Z"}),
-    );
+    write(json!({
+        "OPENAI_API_KEY":null,
+        "tokens":{
+            "id_token":"id",
+            "access_token":access,
+            "refresh_token":"r",
+            "account_id":"file-account",
+        },
+        "last_refresh":"2026-10-01T00:00:00Z",
+    }));
     let before = (
         fs::read(&path).unwrap(),
         path.metadata().unwrap().modified().unwrap(),
@@ -432,7 +439,15 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
     let path = temp.path().join("fixture-auth.json");
     let access = jwt("claim-account", now().unwrap() + 3600);
     for account in [Value::Null, json!(17), json!([]), json!({}), json!("")] {
-        fs::write(&path, json!({"extra":{"ignored":true},"tokens":{"access_token":access,"account_id":account,"refresh_token":42}}).to_string()).unwrap();
+        fs::write(
+            &path,
+            json!({
+                "extra":{"ignored":true},
+                "tokens":{"access_token":access,"account_id":account,"refresh_token":42},
+            })
+            .to_string(),
+        )
+        .unwrap();
         assert_eq!(read_auth_file(&path).unwrap().account_id, "claim-account");
     }
     for contents in [
@@ -455,7 +470,11 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
             "{contents}"
         );
     }
-    fs::write(&path, r#"{"tokens":{"access_token":"first","access_token":"last","account_id":"first","account_id":"last"}}"#).unwrap();
+    fs::write(
+        &path,
+        r#"{"tokens":{"access_token":"first","access_token":"last","account_id":"first","account_id":"last"}}"#,
+    )
+    .unwrap();
     let token = read_auth_file(&path).unwrap();
     assert_eq!(
         (token.access_token.as_str(), token.account_id.as_str()),

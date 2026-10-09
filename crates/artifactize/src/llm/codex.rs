@@ -335,7 +335,9 @@ pub(super) fn describe(status: Option<u16>, body: &Value, fallback: &str) -> Str
         message.push_str(&format!(" (HTTP {status})"));
     }
     if matches!(status, Some(401 | 403)) {
-        message.push_str(" Sign in again with `artifactize login codex`, or with Codex when ARTIFACTIZE_CODEX_AUTH_FILE is set.");
+        message.push_str(
+            " Sign in again with `artifactize login codex`, or with Codex when ARTIFACTIZE_CODEX_AUTH_FILE is set.",
+        );
     }
     super::clean_diagnostic(&message)
 }

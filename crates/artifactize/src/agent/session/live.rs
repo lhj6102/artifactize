@@ -416,7 +416,10 @@ impl Reader {
                 || producer.is_none()
                 || state.is_none());
         if mismatch || incomplete {
-            return Err("Session header does not match its state, producer, Run, request and session identity.".into());
+            return Err(
+                "Session header does not match its state, producer, Run, request and session identity."
+                    .into(),
+            );
         }
         if version.is_some_and(|version| version != super::VERSION) {
             return Err("Unsupported saved session version.".into());

@@ -128,7 +128,10 @@ pub(super) fn script(command: &str, args: &[String]) -> Result<(), String> {
     if command.bytes().any(|byte| byte.is_ascii_control())
         || args.iter().any(|arg| arg.contains('\0'))
     {
-        return Err("A script requires a fixed command without control characters and string args without NUL.".into());
+        return Err(
+            "A script requires a fixed command without control characters and string args without NUL."
+                .into(),
+        );
     }
     Ok(())
 }

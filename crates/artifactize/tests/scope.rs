@@ -29,10 +29,25 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
     support::declaration::write(
         root.join("review/index.artf"),
         json!({
-            "name":"review", "mounts":{"source":"input"}, "evals":[{
-                "id":"read", "title":"Read inputs", "payload":{"instruction":"Inspect inputs."},
-                "profile":{"kind":"runtime", "command":bin("/bin/cat"), "args":["local", "{review}/nested/file", "{review}/source/file", "{input}/file"]}
-            }]
+            "name":"review",
+            "mounts":{"source":"input"},
+            "evals":[
+                {
+                    "id":"read",
+                    "title":"Read inputs",
+                    "payload":{"instruction":"Inspect inputs."},
+                    "profile":{
+                        "kind":"runtime",
+                        "command":bin("/bin/cat"),
+                        "args":[
+                            "local",
+                            "{review}/nested/file",
+                            "{review}/source/file",
+                            "{input}/file",
+                        ],
+                    },
+                },
+            ],
         })
         .to_string(),
     )

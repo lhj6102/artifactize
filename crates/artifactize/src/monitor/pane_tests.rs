@@ -84,7 +84,10 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
     let mut view = tests::request(
         "app/review",
         "WAITING_HUMAN",
-        json!({"profile":{"kind":"human"},"humanDefinition":{"eval":{"declaration":{"failSchema":schema}}}}),
+        json!({
+            "profile":{"kind":"human"},
+            "humanDefinition":{"eval":{"declaration":{"failSchema":schema}}},
+        }),
     );
     view.claim = Some(store::HumanClaim {
         request_id: view.request.id.clone(),

@@ -96,7 +96,9 @@ mod tests {
     use super::*;
     #[test]
     fn porcelain_paths_are_not_split_on_whitespace() {
-        let trees = parse_worktrees(b"worktree /a space\nline\0HEAD abc\0branch refs/heads/main\0\0worktree /detached\0HEAD def\0detached\0\0");
+        let trees = parse_worktrees(
+            b"worktree /a space\nline\0HEAD abc\0branch refs/heads/main\0\0worktree /detached\0HEAD def\0detached\0\0",
+        );
         assert_eq!(trees[0].path, PathBuf::from("/a space\nline"));
         assert_eq!(trees[0].branch.as_deref(), Some("main"));
         assert_eq!(trees[1].branch, None);

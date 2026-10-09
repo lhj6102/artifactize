@@ -132,7 +132,9 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
     assert!(refusal.starts_with("Remote token storage "), "{refusal}");
     assert!(
         refusal.contains("auth is inside the git work tree ")
-            && refusal.ends_with("; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_REMOTE_TOKEN."),
+            && refusal.ends_with(
+                "; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_REMOTE_TOKEN."
+            ),
         "{refusal}"
     );
     let alias = temp.path().join("alias");

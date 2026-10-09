@@ -4,8 +4,13 @@ use super::*;
 
 fn eval(profile: Value) -> Value {
     json!({
-        "id": "check", "title": "Check the artifact", "profile": profile,
-        "payload": { "instruction": "Inspect {input}.", "ownerData": [true, "literal", {"value": 42}] }
+        "id": "check",
+        "title": "Check the artifact",
+        "profile": profile,
+        "payload": {
+            "instruction": "Inspect {input}.",
+            "ownerData": [true, "literal", {"value": 42}],
+        },
     })
 }
 
@@ -100,7 +105,10 @@ fn identifiers_and_eval_requirements_are_strict() {
 #[test]
 fn duplicate_evals_and_basis_with_evals_are_rejected() {
     let declared = eval(json!({"kind": "human"}));
-    let error = parse_declaration("name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }\npayload = { instruction = 'Inspect.' }\n[evals.check]\ntitle = 'Duplicate'").unwrap_err();
+    let error = parse_declaration(
+        "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }\npayload = { instruction = 'Inspect.' }\n[evals.check]\ntitle = 'Duplicate'",
+    )
+    .unwrap_err();
     assert!(error.contains("duplicate key"), "{error}");
     assert!(
         parse(json!({"name": "a", "basis": true, "evals": [declared.clone()]}))
@@ -112,7 +120,15 @@ fn duplicate_evals_and_basis_with_evals_are_rejected() {
 
 #[test]
 fn profile_fields_and_numeric_limits_match_declarations() {
-    let profile = json!({"kind": "agent", "backend":"openai", "model": "model", "reasoning": "high", "timeout_ms": 2147483647, "max_tool_calls": 9007199254740991_u64, "max_tokens": 1.0});
+    let profile = json!({
+        "kind": "agent",
+        "backend":"openai",
+        "model": "model",
+        "reasoning": "high",
+        "timeout_ms": 2147483647,
+        "max_tool_calls": 9007199254740991_u64,
+        "max_tokens": 1.0,
+    });
     assert!(parse(json!({"name": "a", "evals": [eval(profile.clone())]})).is_ok());
     let mut invalid = profile.clone();
     invalid["timeout_ms"] = json!(2147483648_u64);
@@ -158,16 +174,42 @@ fn fixed_scripts_preserve_literal_args_but_reject_invalid_process_fields() {
     assert!(parse(json!({"name": "a", "evals": [bad_command]})).is_err());
     let bad_arg = eval(json!({"kind": "runtime", "command": "sh", "args": ["\u{0}"]}));
     assert!(parse(json!({"name": "a", "evals": [bad_arg]})).is_err());
-    assert!(parse(json!({"name": "a", "fingerprint": {"script":{"command": "fingerprint.sh", "args": [], "shell": true}}})).is_err());
+    assert!(
+        parse(json!({
+            "name": "a",
+            "fingerprint": {"script":{"command": "fingerprint.sh", "args": [], "shell": true}},
+        }))
+        .is_err()
+    );
 }
 
 #[test]
 fn all_hook_timeouts_are_checked_without_opening_scripts() {
     let valid = json!({
         "name": "a",
-        "fingerprint": {"script":{"command": "fingerprint.sh", "args": [],"timeout_ms": 2147483647}},
-        "views": {"agent_tools": {"read": {"description": "Read {artifactName}", "input_schema": {"type": "object"}, "timeout_ms": 1000, "protocol": "json", "command": "sh", "args": ["view.sh"]}}},
-        "evals": [{"id": "review", "title": "Review", "profile": {"kind": "agent", "backend":"openai", "model": "m", "reasoning": "high"}, "payload": {"instruction": "Review"}}]
+        "fingerprint": {
+            "script":{"command": "fingerprint.sh", "args": [],"timeout_ms": 2147483647},
+        },
+        "views": {
+            "agent_tools": {
+                "read": {
+                    "description": "Read {artifactName}",
+                    "input_schema": {"type": "object"},
+                    "timeout_ms": 1000,
+                    "protocol": "json",
+                    "command": "sh",
+                    "args": ["view.sh"],
+                },
+            },
+        },
+        "evals": [
+            {
+                "id": "review",
+                "title": "Review",
+                "profile": {"kind": "agent", "backend":"openai", "model": "m", "reasoning": "high"},
+                "payload": {"instruction": "Review"},
+            },
+        ],
     });
     assert!(parse(valid.clone()).is_ok());
     let mut invalid = valid.clone();
@@ -195,8 +237,31 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
         "a\u{7f}b",
     ] {
         assert!(validation::path(path).is_err(), "{path:?}");
-        assert!(parse(json!({"name":"a","fingerprint":{"script":{"command":"entry","args":[],"files":[path]}}})).is_err());
-        assert!(parse(json!({"name":"a","views":{"agent_tools":{"read":{"description":"Read","input_schema":{"type":"object"},"protocol":"json","execution_paths":[path],"command":"sh","args":[]}}}})).is_err());
+        assert!(
+            parse(json!({
+                "name":"a",
+                "fingerprint":{"script":{"command":"entry","args":[],"files":[path]}},
+            }))
+            .is_err()
+        );
+        assert!(
+            parse(json!({
+                "name":"a",
+                "views":{
+                    "agent_tools":{
+                        "read":{
+                            "description":"Read",
+                            "input_schema":{"type":"object"},
+                            "protocol":"json",
+                            "execution_paths":[path],
+                            "command":"sh",
+                            "args":[],
+                        },
+                    },
+                },
+            }))
+            .is_err()
+        );
     }
     for path in ["file", "nested/file", "C:relative", "1:/relative", "a:b"] {
         assert!(validation::path(path).is_ok(), "{path:?}");
@@ -209,7 +274,11 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
 
 #[test]
 fn response_schemas_are_validated_without_rewriting_owner_fields() {
-    let schema = json!({"type":"object","properties":{"ownerField":{"anyOf":[{"type":"string"},{"type":"integer"}]}}, "ownerKeyword":true});
+    let schema = json!({
+        "type":"object",
+        "properties":{"ownerField":{"anyOf":[{"type":"string"},{"type":"integer"}]}},
+        "ownerKeyword":true,
+    });
     let mut declared = eval(json!({"kind": "human"}));
     declared["pass_schema"] = schema.clone();
     let declaration = parse(json!({"name": "a", "evals": [declared.clone()]})).unwrap();
@@ -221,7 +290,14 @@ fn response_schemas_are_validated_without_rewriting_owner_fields() {
 
 #[test]
 fn fingerprint_scripts_are_inert_declarations() {
-    let script = json!({"script":{"command":"missing.sh","args":["literal"],"files":["missing-input"],"timeout_ms":1000}});
+    let script = json!({
+        "script":{
+            "command":"missing.sh",
+            "args":["literal"],
+            "files":["missing-input"],
+            "timeout_ms":1000,
+        },
+    });
     let declaration = parse(json!({"name":"a","fingerprint":script})).unwrap();
     let Some(Fingerprint::Script {
         command,
@@ -390,11 +466,20 @@ fn dropped_configuration_fields_are_rejected() {
         assert!(parse(declaration).unwrap_err().contains("unknown field"));
     }
     assert!(
-        parse(
-            json!({"name":"a","views":{"agent_tools":{"read":{
-                "description":"Read", "protocol":"json", "command":"read.sh", "args":[], "observation":"content"
-            }}}})
-        )
+        parse(json!({
+            "name":"a",
+            "views":{
+                "agent_tools":{
+                    "read":{
+                        "description":"Read",
+                        "protocol":"json",
+                        "command":"read.sh",
+                        "args":[],
+                        "observation":"content",
+                    },
+                },
+            },
+        }))
         .is_err()
     );
 }
@@ -601,12 +686,18 @@ fn duration_timeouts_keep_integral_millisecond_json_at_every_config_edge() {
             };
             assert_eq!(duration, std::time::Duration::from_millis(millis));
         }
-        let tool: CommandTool = serde_json::from_str(&format!(r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeout_ms":{number}}}"#)).unwrap();
+        let tool: CommandTool = serde_json::from_str(&format!(
+            r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeout_ms":{number}}}"#
+        ))
+        .unwrap();
         assert_eq!(
             serde_json::to_value(tool).unwrap()["timeoutMs"],
             json!(millis)
         );
-        let tool: HumanTool = serde_json::from_str(&format!(r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeout_ms":{number}}}"#)).unwrap();
+        let tool: HumanTool = serde_json::from_str(&format!(
+            r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeout_ms":{number}}}"#
+        ))
+        .unwrap();
         assert_eq!(
             serde_json::to_value(tool).unwrap()["timeoutMs"],
             json!(millis)
@@ -627,8 +718,18 @@ fn duration_timeouts_keep_integral_millisecond_json_at_every_config_edge() {
             ))
             .is_err()
         );
-        assert!(serde_json::from_str::<CommandTool>(&format!(r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeout_ms":{invalid}}}"#)).is_err());
-        assert!(serde_json::from_str::<HumanTool>(&format!(r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeout_ms":{invalid}}}"#)).is_err());
+        assert!(
+            serde_json::from_str::<CommandTool>(&format!(
+                r#"{{"description":"fixture","protocol":"plain","command":"fixture","args":[],"timeout_ms":{invalid}}}"#
+            ))
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<HumanTool>(&format!(
+                r#"{{"description":"fixture","kind":"output","command":"fixture","args":[],"timeout_ms":{invalid}}}"#
+            ))
+            .is_err()
+        );
         assert!(
             serde_json::from_str::<Fingerprint>(&format!(
                 r#"{{"script":{{"command":"fixture","args":[],"timeout_ms":{invalid}}}}}"#

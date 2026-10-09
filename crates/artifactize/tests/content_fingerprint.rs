@@ -81,8 +81,17 @@ impl Fixture {
 
 fn artifact(name: &str, fingerprint: Value, mounts: Value, args: &[&str]) -> Value {
     json!({
-        "name": name, "mounts": mounts, "fingerprint": fingerprint,
-        "evals": [{"id":"check","title":"Check","profile":{"kind":"runtime","command":bin("/bin/sh"),"args":args},"payload":{"instruction":"Check."}}]
+        "name": name,
+        "mounts": mounts,
+        "fingerprint": fingerprint,
+        "evals": [
+            {
+                "id":"check",
+                "title":"Check",
+                "profile":{"kind":"runtime","command":bin("/bin/sh"),"args":args},
+                "payload":{"instruction":"Check."},
+            },
+        ],
     })
 }
 
@@ -181,9 +190,21 @@ fn a_tool_declaration_change_alone_reuses() {
     let fixture = Fixture::new();
     let mut declaration = artifact("app", json!({}), json!({}), PASS);
     let tool = |description: &str| {
-        json!({"agent_tools":{"lint":{"description":description,
-            "input_schema":{"type":"object","properties":{"path":{"type":"string"}},"additionalProperties":false},
-            "protocol":"json","command":bin("/bin/true"),"args":[]}}})
+        json!({
+            "agent_tools":{
+                "lint":{
+                    "description":description,
+                    "input_schema":{
+                        "type":"object",
+                        "properties":{"path":{"type":"string"}},
+                        "additionalProperties":false,
+                    },
+                    "protocol":"json",
+                    "command":bin("/bin/true"),
+                    "args":[],
+                },
+            },
+        })
     };
     declaration["views"] = tool("Lint a file.");
     fixture.artifact("app", declaration.clone());

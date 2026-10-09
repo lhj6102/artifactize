@@ -33,7 +33,8 @@ const INITIALIZATION_RETRY_INTERVAL: Duration = Duration::from_millis(20);
 ///   clear them, and the execution stays.
 /// - `state_meta`: named values of the state itself: `id`, a random UUID made when the
 ///   database is created, which identifies the state in Agent session references.
-const SCHEMA: &str = "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
+const SCHEMA: &str =
+    "CREATE TABLE runs(id TEXT PRIMARY KEY, repo TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
     CREATE TABLE requests(id TEXT PRIMARY KEY, run_id TEXT NOT NULL REFERENCES runs(id), eval_id TEXT NOT NULL, ordinal INTEGER NOT NULL, execution_id TEXT REFERENCES executions(id), status TEXT NOT NULL, claimed_by TEXT, claimed_at TEXT, data TEXT NOT NULL, UNIQUE(run_id, eval_id), UNIQUE(run_id, ordinal));
     CREATE TABLE executions(id TEXT PRIMARY KEY, key TEXT, eval_def_hash TEXT NOT NULL, status TEXT NOT NULL, owner_pid INTEGER NOT NULL, owner_start_time INTEGER NOT NULL, backend TEXT, completed_at TEXT, bytes INTEGER, last_used TEXT, data TEXT NOT NULL);
     CREATE TABLE state_meta(name TEXT PRIMARY KEY, value TEXT NOT NULL);

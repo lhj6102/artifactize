@@ -19,7 +19,11 @@ pub(in crate::tools) fn fixtures() -> [(&'static str, Vec<u8>); 3] {
     );
     chunk(&mut png, b"IEND", &[]);
     // One-pixel white JPEG and WebP, materialized in memory without decoder dependencies.
-    let jpeg = STANDARD.decode("/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==").unwrap();
+    let jpeg = STANDARD
+        .decode(
+            "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgICAgMCAgIDAwMDBAYEBAQEBAgGBgUGCQgKCgkICQkKDA8MCgsOCwkJDRENDg8QEBEQCgwSExIQEw8QEBD/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q==",
+        )
+        .unwrap();
     let webp = STANDARD
         .decode("UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAgA0JaQAA3AA/vuUAAA=")
         .unwrap();
@@ -150,7 +154,17 @@ fn image_validation_rejects_unsupported_signatures_mime_and_base64() {
             .is_err()
         );
     }
-    assert!(result::parse(&serde_json::to_vec(&json!({"isError":true,"content":[{"type":"image","mimeType":"image/png","data":encoded}]})).unwrap(), output.path()).is_err());
+    assert!(
+        result::parse(
+            &serde_json::to_vec(&json!({
+                "isError":true,
+                "content":[{"type":"image","mimeType":"image/png","data":encoded}],
+            }))
+            .unwrap(),
+            output.path()
+        )
+        .is_err()
+    );
 }
 
 #[test]

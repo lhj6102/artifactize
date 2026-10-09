@@ -42,13 +42,48 @@ impl Fixture {
             repo.join("index.artf"),
             json!({
                 "name":"a",
-                "evals":[{"id":"review","title":"Review","profile":{"kind":"agent","backend":backend,"model":"exact-model","reasoning":"high"},"payload":{"instruction":"Check {a}","owner":"unchanged"},"pass_schema":{"type":"object","properties":{"reason":{"type":"string","description":"Why it passes"}}}}],
-                "views":{"agent_tools":{"inspect":{"description":"Inspect {artifactName}","protocol":"json","command":"python3","args":["tool.py"],"input_schema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}}}},
+                "evals":[
+                    {
+                        "id":"review",
+                        "title":"Review",
+                        "profile":{
+                            "kind":"agent",
+                            "backend":backend,
+                            "model":"exact-model",
+                            "reasoning":"high",
+                        },
+                        "payload":{"instruction":"Check {a}","owner":"unchanged"},
+                        "pass_schema":{
+                            "type":"object",
+                            "properties":{"reason":{"type":"string","description":"Why it passes"}},
+                        },
+                    },
+                ],
+                "views":{
+                    "agent_tools":{
+                        "inspect":{
+                            "description":"Inspect {artifactName}",
+                            "protocol":"json",
+                            "command":"python3",
+                            "args":["tool.py"],
+                            "input_schema":{
+                                "type":"object",
+                                "properties":{"path":{"type":"string"}},
+                                "required":["path"],
+                                "additionalProperties":false,
+                            },
+                        },
+                    },
+                },
             })
             .to_string(),
         )
         .unwrap();
-        fs::write(repo.join("tool.py"), "import json,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'text','text':'tool evidence'},{'type':'json','data':{'ok':True}}]}))\n").unwrap();
+        fs::write(
+            repo.join("tool.py"),
+            "import json,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'text','text':'tool evidence'},{'type':'json','data':{'ok':True}}]}))\n",
+        )
+        .unwrap();
         let config = read_workspace_config(&repo).unwrap();
         Self {
             directory,
@@ -177,17 +212,45 @@ fn openai_response(
                 .push(json!({"type":"response.output_item.done","output_index":index,"item":item}));
         }
     }
-    let response = json!({"id":"resp_1","object":"response","created_at":1,"model":model,"status":status,"output":output,"usage":usage});
-    events.push(json!({"type":if status == "completed" {"response.completed"} else {"response.incomplete"},"response":response}));
+    let response = json!({
+        "id":"resp_1",
+        "object":"response",
+        "created_at":1,
+        "model":model,
+        "status":status,
+        "output":output,
+        "usage":usage,
+    });
+    events.push(json!({
+        "type":if status == "completed" {
+            "response.completed"
+        } else {
+            "response.incomplete"
+        },
+        "response":response,
+    }));
     sse(events)
 }
 
 fn message(text: &str) -> Value {
-    json!({"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":text,"annotations":[]}]})
+    json!({
+        "type":"message",
+        "id":"msg_1",
+        "role":"assistant",
+        "status":"completed",
+        "content":[{"type":"output_text","text":text,"annotations":[]}],
+    })
 }
 
 fn call(id: &str, name: &str) -> Value {
-    json!({"type":"function_call","id":format!("fc_{id}"),"call_id":id,"name":name,"arguments":"{\"path\":\"file.txt\"}","status":"completed"})
+    json!({
+        "type":"function_call",
+        "id":format!("fc_{id}"),
+        "call_id":id,
+        "name":name,
+        "arguments":"{\"path\":\"file.txt\"}",
+        "status":"completed",
+    })
 }
 
 fn final_openai() -> MockHttpResponse {
@@ -195,7 +258,13 @@ fn final_openai() -> MockHttpResponse {
         "exact-model",
         "completed",
         vec![message("{\"verdict\":\"GREEN\"}")],
-        json!({"input_tokens":10,"output_tokens":4,"total_tokens":14,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":2}}),
+        json!({
+            "input_tokens":10,
+            "output_tokens":4,
+            "total_tokens":14,
+            "input_tokens_details":{"cached_tokens":0},
+            "output_tokens_details":{"reasoning_tokens":2},
+        }),
     )
 }
 
@@ -211,11 +280,33 @@ fn anthropic_response(tools: bool, stop: &str) -> MockHttpResponse {
         json!({"type":"text_delta","text":"{\"verdict\":\"RED\"}"})
     };
     sse(vec![
-        json!({"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"exact-model","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0,"cache_read_input_tokens":2,"cache_creation_input_tokens":5,"cache_creation":{"ephemeral_1h_input_tokens":3,"ephemeral_5m_input_tokens":2}}}}),
+        json!({
+            "type":"message_start",
+            "message":{
+                "id":"msg_1",
+                "type":"message",
+                "role":"assistant",
+                "model":"exact-model",
+                "content":[],
+                "stop_reason":null,
+                "stop_sequence":null,
+                "usage":{
+                    "input_tokens":10,
+                    "output_tokens":0,
+                    "cache_read_input_tokens":2,
+                    "cache_creation_input_tokens":5,
+                    "cache_creation":{"ephemeral_1h_input_tokens":3,"ephemeral_5m_input_tokens":2},
+                },
+            },
+        }),
         json!({"type":"content_block_start","index":0,"content_block":content}),
         json!({"type":"content_block_delta","index":0,"delta":delta}),
         json!({"type":"content_block_stop","index":0}),
-        json!({"type":"message_delta","delta":{"stop_reason":stop,"stop_sequence":null},"usage":{"output_tokens":4}}),
+        json!({
+            "type":"message_delta",
+            "delta":{"stop_reason":stop,"stop_sequence":null},
+            "usage":{"output_tokens":4},
+        }),
         json!({"type":"message_stop"}),
     ])
 }
@@ -241,7 +332,19 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
     assert!(!failed);
     assert!(result.contains("tool evidence"));
     assert_eq!(review.attempts[0].usage, serde_json::Map::new());
-    assert_eq!(review.attempts[1].usage, json!({"inputTokens":10,"outputTokens":4,"totalTokens":14,"cacheReadTokens":0,"reasoningTokens":2}).as_object().unwrap().clone());
+    assert_eq!(
+        review.attempts[1].usage,
+        json!({
+            "inputTokens":10,
+            "outputTokens":4,
+            "totalTokens":14,
+            "cacheReadTokens":0,
+            "reasoningTokens":2,
+        })
+        .as_object()
+        .unwrap()
+        .clone()
+    );
     let requests = http.requests();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].uri, "https://api.openai.com/v1/responses");
@@ -381,7 +484,9 @@ async fn retries_are_bounded_and_auth_quota_are_permanent() {
     assert_eq!(http.requests().len(), 3);
     assert_eq!(review.attempts[2].error_code.as_deref(), Some("TRANSIENT"));
     for status in [StatusCode::UNAUTHORIZED, StatusCode::TOO_MANY_REQUESTS] {
-        let error = json!({"error":{"code":"insufficient_quota","message":"Your account quota is exhausted."}});
+        let error = json!({
+            "error":{"code":"insufficient_quota","message":"Your account quota is exhausted."},
+        });
         let (review, http) = fixture
             .run(vec![
                 MockHttpResponse::error(status, error.to_string()),
@@ -400,8 +505,24 @@ async fn retries_are_bounded_and_auth_quota_are_permanent() {
 async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
     let fixture = Fixture::new("openai");
     let partial = sse(vec![
-        json!({"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"in_progress","content":[]}}),
-        json!({"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"partial"}),
+        json!({
+            "type":"response.output_item.added",
+            "output_index":0,
+            "item":{
+                "type":"message",
+                "id":"msg_1",
+                "role":"assistant",
+                "status":"in_progress",
+                "content":[],
+            },
+        }),
+        json!({
+            "type":"response.output_text.delta",
+            "item_id":"msg_1",
+            "output_index":0,
+            "content_index":0,
+            "delta":"partial",
+        }),
     ]);
     let (review, http) = fixture.run(vec![partial, final_openai()]).await;
     assert!(review.result.is_err());
@@ -434,9 +555,19 @@ async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
     let second: Value = serde_json::from_slice(&http.requests()[1].body).unwrap();
     let third: Value = serde_json::from_slice(&http.requests()[2].body).unwrap();
     assert_eq!(second["input"], third["input"]);
-    let partial_usage = sse(vec![
-        json!({"type":"message_start","message":{"id":"msg","type":"message","role":"assistant","model":"exact-model","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":10,"output_tokens":0}}}),
-    ]);
+    let partial_usage = sse(vec![json!({
+        "type":"message_start",
+        "message":{
+            "id":"msg",
+            "type":"message",
+            "role":"assistant",
+            "model":"exact-model",
+            "content":[],
+            "stop_reason":null,
+            "stop_sequence":null,
+            "usage":{"input_tokens":10,"output_tokens":0},
+        },
+    })]);
     let (review, http) = Fixture::new("anthropic")
         .run(vec![partial_usage, anthropic_response(false, "end_turn")])
         .await;
@@ -539,7 +670,13 @@ async fn registry_image_blocks_reach_both_provider_wires() {
     let png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aY9sAAAAASUVORK5CYII=";
     for backend in ["openai", "anthropic"] {
         let fixture = Fixture::new(backend);
-        fs::write(fixture.config.root.join("tool.py"), format!("import json\nprint(json.dumps({{'content':[{{'type':'image','mimeType':'image/png','data':'{png}'}}]}}))\n")).unwrap();
+        fs::write(
+            fixture.config.root.join("tool.py"),
+            format!(
+                "import json\nprint(json.dumps({{'content':[{{'type':'image','mimeType':'image/png','data':'{png}'}}]}}))\n"
+            ),
+        )
+        .unwrap();
         let responses = if backend == "openai" {
             vec![
                 openai_response(

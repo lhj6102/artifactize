@@ -74,8 +74,15 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     let fixture = Fixture::new();
     fixture.artifact(
         "outer",
-        json!({"name":"parent","evals":[eval("Inspect {child}.")],
-            "views":{"agent_tools":{"read":{"description":"Read","protocol":"json","command":"not-run","args":[]}}}}),
+        json!({
+            "name":"parent",
+            "evals":[eval("Inspect {child}.")],
+            "views":{
+                "agent_tools":{
+                    "read":{"description":"Read","protocol":"json","command":"not-run","args":[]},
+                },
+            },
+        }),
     );
     fixture.artifact("outer/unmarked/deep", json!({"name":"child"}));
     fixture.artifact(
@@ -258,7 +265,7 @@ fn mount_validation_rejects_unknown_ambiguous_and_physical_aliases() {
         ("input", "third", "Ambiguous mount alias"),
         ("review", "input", "Ambiguous mount alias"),
     ] {
-        fixture.artifact("review", json!({"name":"review","mounts":{alias:target}}));
+        fixture.artifact("review", json!({"name":"review","mounts":{alias: target}}));
         assert!(
             read_workspace_config(&fixture.0)
                 .unwrap_err()
@@ -533,6 +540,12 @@ fn invalid_runtime_references_fail_statically_but_literals_stay_literal() {
             .to_string()
             .contains("Unknown Artifact reference")
     );
-    fixture.artifact("review", json!({"name":"review","evals":[eval(r"Literal \{missing} {{missing}} ${missing} { unmatched")]}));
+    fixture.artifact(
+        "review",
+        json!({
+            "name":"review",
+            "evals":[eval(r"Literal \{missing} {{missing}} ${missing} { unmatched")],
+        }),
+    );
     fixture.config();
 }

@@ -39,9 +39,24 @@ fn write_repo(repo: &Path, profile: Value) {
     .unwrap();
     support::declaration::write(
         repo.join("index.artf"),
-        json!({"name":"app","fingerprint":{"script":{"command":bin("cat"),"args":["fingerprint"]}},
-            "evals":[{"id":"check","title":"Check","profile":profile,"payload":{"instruction":"Review."},
-                "pass_schema":{"type":"object","properties":{"approved":{"const":true}},"required":["approved"],"additionalProperties":false}}]})
+        json!({
+            "name":"app",
+            "fingerprint":{"script":{"command":bin("cat"),"args":["fingerprint"]}},
+            "evals":[
+                {
+                    "id":"check",
+                    "title":"Check",
+                    "profile":profile,
+                    "payload":{"instruction":"Review."},
+                    "pass_schema":{
+                        "type":"object",
+                        "properties":{"approved":{"const":true}},
+                        "required":["approved"],
+                        "additionalProperties":false,
+                    },
+                },
+            ],
+        })
         .to_string(),
     )
     .unwrap();
@@ -148,7 +163,11 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     let shown = cli(&consumer_state, &["cache", "show", &key]);
     assert_eq!(
         shown["origin"],
-        json!({"store":"https://reviews.example/","publisher":"alice-laptop","publishedAt":"2026-10-04T00:00:00Z"})
+        json!({
+            "store":"https://reviews.example/",
+            "publisher":"alice-laptop",
+            "publishedAt":"2026-10-04T00:00:00Z",
+        })
     );
     assert_eq!(shown["producer"], json!(producer));
     assert_eq!(shown["status"], "GREEN");
@@ -317,8 +336,20 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     };
     let root = tempfile::tempdir().unwrap();
     let repo = root.path().join("repo");
-    let declared = json!({"kind":"agent","backend":"openai","model":"model-a","reasoning":"high","timeout_ms":60000});
-    let fast = json!({"kind":"agent","backend":"anthropic","model":"model-b","reasoning":"low","max_tokens":500});
+    let declared = json!({
+        "kind":"agent",
+        "backend":"openai",
+        "model":"model-a",
+        "reasoning":"high",
+        "timeout_ms":60000,
+    });
+    let fast = json!({
+        "kind":"agent",
+        "backend":"anthropic",
+        "model":"model-b",
+        "reasoning":"low",
+        "max_tokens":500,
+    });
     write_repo(&repo, declared.clone());
     let path = repo.join("index.artf");
     let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
@@ -412,11 +443,23 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     let shown = cli(&state, &["cache", "show", &key.value]);
     assert_eq!(
         shown["options"],
-        json!({"backend":"anthropic","model":"model-b","reasoning":"low","maxTokens":500,"variant":"fast"})
+        json!({
+            "backend":"anthropic",
+            "model":"model-b",
+            "reasoning":"low",
+            "maxTokens":500,
+            "variant":"fast",
+        })
     );
 
     // A model, reasoning or limit change alone keeps reusing it.
-    declaration["evals"][0]["profile"] = json!({"kind":"agent","backend":"openai","model":"model-c","max_tool_calls":3,"timeout_ms":1000});
+    declaration["evals"][0]["profile"] = json!({
+        "kind":"agent",
+        "backend":"openai",
+        "model":"model-c",
+        "max_tool_calls":3,
+        "timeout_ms":1000,
+    });
     support::declaration::write(&path, declaration.to_string()).unwrap();
     let again = verify(&repo, &state).await;
     assert_eq!(again.run.executions_started, 0);

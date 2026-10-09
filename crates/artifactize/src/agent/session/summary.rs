@@ -205,13 +205,29 @@ mod tests {
         let events = vec![
             json!({"kind":"review","backend":"openai","model":"m","at":"2026-10-06T01:00:00Z"}),
             json!({"kind":"attempt","turn":1,"attempt":1,"usage":{},"error":"busy"}),
-            json!({"kind":"attempt","turn":1,"attempt":2,"usage":{"inputTokens":10,"outputTokens":4,"cacheReadTokens":2}}),
+            json!({
+                "kind":"attempt",
+                "turn":1,
+                "attempt":2,
+                "usage":{"inputTokens":10,"outputTokens":4,"cacheReadTokens":2},
+            }),
             json!({"kind":"message","turn":1,"message":answer}),
             json!({"kind":"message","turn":2,"message":results,"isError":[true,false]}),
-            json!({"kind":"attempt","turn":2,"attempt":1,"usage":{"inputTokens":20,"outputTokens":6}}),
+            json!({
+                "kind":"attempt",
+                "turn":2,
+                "attempt":1,
+                "usage":{"inputTokens":20,"outputTokens":6},
+            }),
             json!({"kind":"end","result":{"verdict":"GREEN"}}),
             json!({"kind":"send","send":1}),
-            json!({"kind":"attempt","send":1,"turn":1,"attempt":1,"usage":{"inputTokens":30,"outputTokens":1,"reasoningTokens":1}}),
+            json!({
+                "kind":"attempt",
+                "send":1,
+                "turn":1,
+                "attempt":1,
+                "usage":{"inputTokens":30,"outputTokens":1,"reasoningTokens":1},
+            }),
             json!({"kind":"message","send":1,"turn":1,"message":unanswered}),
             json!({"kind":"answer","send":1,"error":"stopped","at":"2026-10-06T01:00:02.5Z"}),
         ];

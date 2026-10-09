@@ -44,7 +44,19 @@ fn shown(blocks: &BTreeMap<BlockId, String>) -> String {
 fn prose_real_newlines_markdown_and_verdict_are_readable_without_envelope_or_media() {
     let mut transcript = Transcript::default();
     let mut blocks = BTreeMap::new();
-    let message:Message=serde_json::from_value(json!({"role":"user","content":[{"type":"text","text":"first\nsecond\n```rust\nlet x = 1;\n```"},{"type":"image","data":{"type":"base64","value":"OPAQUE_MEDIA_PAYLOAD"},"media_type":"png","detail":null}]})).unwrap();
+    let message: Message = serde_json::from_value(json!({
+        "role":"user",
+        "content":[
+            {"type":"text","text":"first\nsecond\n```rust\nlet x = 1;\n```"},
+            {
+                "type":"image",
+                "data":{"type":"base64","value":"OPAQUE_MEDIA_PAYLOAD"},
+                "media_type":"png",
+                "detail":null,
+            },
+        ],
+    }))
+    .unwrap();
     apply(&mut transcript, &mut blocks, &event(message, vec![]));
     apply(
         &mut transcript,
@@ -53,9 +65,11 @@ fn prose_real_newlines_markdown_and_verdict_are_readable_without_envelope_or_med
             at: None,
             send: None,
             kind: Kind::End(super::End {
-                result: Some(
-                    json!({"verdict":"GREEN","summary":"# Complete\nWorks","custom":{"approved":true}}),
-                ),
+                result: Some(json!({
+                    "verdict":"GREEN",
+                    "summary":"# Complete\nWorks",
+                    "custom":{"approved":true},
+                })),
                 ..super::End::default()
             }),
         },
@@ -78,7 +92,11 @@ fn prose_real_newlines_markdown_and_verdict_are_readable_without_envelope_or_med
 
 #[test]
 fn final_json_is_kept_until_matching_end_then_owner_failure_fields_remain_readable() {
-    let result = json!({"verdict":"RED","mismatches":[{"path":"src/a.rs","reason":"wrong behavior"}],"custom":{"expected":"value"}});
+    let result = json!({
+        "verdict":"RED",
+        "mismatches":[{"path":"src/a.rs","reason":"wrong behavior"}],
+        "custom":{"expected":"value"},
+    });
     let mut transcript = Transcript::default();
     let mut blocks = BTreeMap::new();
     apply(

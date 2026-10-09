@@ -324,10 +324,22 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
     for (path, declaration) in [
         (
             "owner",
-            json!({"name":"owner", "mounts":{"input":"mounted"}, "evals":[
-                {"id":"check", "title":"Check", "profile":{"kind":"runtime", "command":"not-run", "args":["{argument}/file"]},
-                 "payload":{"instruction":"Inspect {instruction}."}}
-            ]}),
+            json!({
+                "name":"owner",
+                "mounts":{"input":"mounted"},
+                "evals":[
+                    {
+                        "id":"check",
+                        "title":"Check",
+                        "profile":{
+                            "kind":"runtime",
+                            "command":"not-run",
+                            "args":["{argument}/file"],
+                        },
+                        "payload":{"instruction":"Inspect {instruction}."},
+                    },
+                ],
+            }),
         ),
         ("owner/child", json!({"name":"child", "basis":true})),
         ("mounted", json!({"name":"mounted", "basis":true})),
