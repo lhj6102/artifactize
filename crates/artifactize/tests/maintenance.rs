@@ -389,6 +389,16 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
             .contains("repository")
     );
     assert!(output.is_dir());
+    fs::remove_file(output.join("index.artf")).unwrap();
+    fs::write(output.join("file.txt"), "input").unwrap();
+    support::declaration::write(output.join("file.txt.artf"), r#"{"name":"file"}"#).unwrap();
+    assert!(
+        result(command(&state).arg("prune"), 2)["error"]
+            .as_str()
+            .unwrap()
+            .contains("repository")
+    );
+    assert!(output.join("file.txt").is_file());
     for duration in ["-1d", "10", "1.5h", "999999999999999999999d"] {
         result(command(&state).args(["prune", "--older-than", duration]), 2);
     }

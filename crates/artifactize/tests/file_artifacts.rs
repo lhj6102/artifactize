@@ -169,15 +169,22 @@ fn missing_directory_declaration_and_declaration_targets_are_rejected_at_the_sid
 fn symlink_targets_and_declarations_are_rejected() {
     let fixture = Fixture::new();
     fixture.write("actual", "input");
-    support::os::symlink_file(fixture.repo.join("actual"), fixture.repo.join("linked"));
+    if support::os::symlink_file(fixture.repo.join("actual"), fixture.repo.join("linked")).is_none()
+    {
+        return;
+    }
     fixture.declare("linked.artf", json!({"name":"file"}));
     fixture.error("linked.artf", "not a symlink");
     fs::remove_file(fixture.repo.join("linked.artf")).unwrap();
     fixture.write("actual-declaration", "name = 'file'");
-    support::os::symlink_file(
+    if support::os::symlink_file(
         fixture.repo.join("actual-declaration"),
         fixture.repo.join("actual.artf"),
-    );
+    )
+    .is_none()
+    {
+        return;
+    }
     fixture.error("actual.artf", "declaration must be a regular file");
 }
 
@@ -273,7 +280,14 @@ async fn file_artifactsum_hashes_only_owner_relative_target_bytes_while_folder_s
     digest.update(Sha256::digest(b"original"));
     assert_eq!(
         first["file"].value.to_string(),
-        format!("artifactsum:{:x}", digest.finalize())
+        format!(
+            "artifactsum:{}",
+            digest
+                .finalize()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        )
     );
     assert_eq!(
         first["file"]
@@ -337,6 +351,10 @@ async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
     assert!(names.contains(&"read_reference"));
     assert!(!names.iter().any(|name| name.ends_with("_child")));
     let listing = call(&registry, "list_file", json!({}), &fixture.state).await;
+    assert_eq!(
+        call(&registry, "list_file", json!({"path":"."}), &fixture.state).await,
+        listing
+    );
     assert_eq!(
         listing["entries"]
             .as_array()
@@ -509,7 +527,7 @@ async fn runtime_verify_reuses_after_sibling_changes_but_not_target_changes_and_
         ),
     );
     let first = fixture.json(&["verify", "--all"], 0);
-    assert_eq!(first["requests"][0]["verdict"], "GREEN");
+    assert_eq!(first["requests"][0]["result"]["verdict"], "GREEN");
     assert_eq!(
         first["requests"][0]["cwd"],
         fixture.config().root.join("files").to_str().unwrap()
@@ -551,10 +569,149 @@ async fn runtime_verify_reuses_after_sibling_changes_but_not_target_changes_and_
         &Target::Artifact("file".into()),
         time::OffsetDateTime::now_utc(),
     );
+    let nodes = monitor::tree(&saved, &[], time::OffsetDateTime::now_utc());
+    assert!(
+        nodes
+            .iter()
+            .any(|node| node.text.contains("[file: files/input.txt]"))
+    );
     assert!(detail.title.contains("[file]"));
     assert_eq!(detail.field("Path"), Some("files/input.txt"));
     assert_eq!(
         serde_json::to_value(&saved.run.definitions).unwrap()["artifacts"]["file"]["kind"],
         "file"
     );
+}
+
+#[tokio::test]
+async fn dependency_evals_can_live_on_files_and_target_files() {
+    let fixture = Fixture::new();
+    fixture.write("input.txt", "input");
+    fixture.declare("input.txt.artf", runtime("input", &["-c", "exit 0"]));
+    fixture.write("ready.txt", "ready");
+    fixture.declare("ready.txt.artf", json!({"name":"ready","evals":[{"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["input"]}}]}));
+    fixture.declare("folder/index.artf", json!({"name":"folder","evals":[{"id":"ready","title":"Ready","profile":{"kind":"dependency","depends_on":["ready"]}}]}));
+    let run = fixture.json(&["verify", "--all"], 0);
+    for id in ["ready/ready", "folder/ready"] {
+        let request = run["requests"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|request| request["evalId"] == id)
+            .unwrap();
+        assert_eq!(request["status"], "GREEN");
+        assert!(request["executionId"].is_null());
+    }
+    fixture.declare("input.txt.artf", runtime("input", &["-c", "exit 1"]));
+    let run = fixture.json(&["verify", "--all"], 1);
+    let blocked = run["requests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|request| request["evalId"] == "ready/ready")
+        .unwrap();
+    assert_ne!(blocked["status"], "GREEN");
+    assert!(
+        blocked["blockedBy"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|id| id == "input/check")
+    );
+}
+
+#[tokio::test]
+async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_metadata() {
+    let fixture = Fixture::new();
+    fixture.write("files/input.txt", "input");
+    fixture.write("files/tool.py", "import json,os,sys\nx=json.load(sys.stdin)\nprint(json.dumps({'content':[{'type':'json','data':{'cwd':os.getcwd(),'argv':sys.argv[1:],'scope':x['context']['scope']}}]}))\n");
+    fixture.declare("files/input.txt.artf", json!({"name":"file","views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"json","command":"python3","args":["tool.py","{file}"]}}}}));
+    let config = fixture.config();
+    let registry = Registry::for_artifact(&config, "file").unwrap();
+    registry.preflight("inspect_file").unwrap();
+    let data = call(&registry, "inspect_file", json!({}), &fixture.state).await;
+    assert_eq!(data["cwd"], config.root.join("files").to_str().unwrap());
+    assert_eq!(
+        data["argv"][0],
+        config.root.join("files/input.txt").to_str().unwrap()
+    );
+    assert_eq!(data["scope"]["file"]["kind"], "file");
+    assert_eq!(
+        data["scope"]["file"]["path"],
+        config.root.join("files/input.txt").to_str().unwrap()
+    );
+}
+
+#[tokio::test]
+async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_discovery() {
+    let fixture = Fixture::new();
+    fixture.write("input.txt", "input");
+    fixture.declare("input.txt.artf", json!({"name":"file","views":{"agent_tools":{"read":{"builtin":"read"},"list":{"builtin":"list"}}}}));
+    let config = fixture.config();
+    let registry = Registry::for_artifact(&config, "file").unwrap();
+    fs::remove_file(fixture.repo.join("input.txt")).unwrap();
+    fs::create_dir(fixture.repo.join("input.txt")).unwrap();
+    fixture.write("input.txt/secret", "secret");
+    assert!(
+        cache::prepare(
+            &config,
+            ["file"],
+            &fixture.state,
+            &Parallelism::new(1),
+            CancellationToken::new()
+        )
+        .await
+        .unwrap_err()
+        .contains("must remain a regular file")
+    );
+    for (tool, args) in [
+        ("read_file", json!({"path":"input.txt"})),
+        ("read_file", json!({"path":"input.txt/secret"})),
+        ("list_file", json!({})),
+    ] {
+        assert!(
+            registry
+                .call(tool, args, &fixture.state, CancellationToken::new())
+                .await
+                .is_error
+        );
+    }
+    fs::remove_dir_all(fixture.repo.join("input.txt")).unwrap();
+    fixture.write("sibling.txt", "secret");
+    if support::os::symlink_file(
+        fixture.repo.join("sibling.txt"),
+        fixture.repo.join("input.txt"),
+    )
+    .is_none()
+    {
+        return;
+    }
+    assert!(
+        registry
+            .call(
+                "read_file",
+                json!({"path":"input.txt"}),
+                &fixture.state,
+                CancellationToken::new()
+            )
+            .await
+            .is_error
+    );
+}
+
+#[test]
+fn json_tool_file_references_reject_suffixes_at_the_declaration() {
+    let fixture = Fixture::new();
+    fixture.write("input", "input");
+    fixture.declare("input.artf", json!({"name":"file","views":{"agent_tools":{"inspect":{"description":"Inspect","protocol":"json","command":"cat","args":["{file}/sibling"]}}}}));
+    fixture.error("input.artf", "cannot have a /path suffix");
+}
+
+#[test]
+fn artfignore_skips_sidecars_in_excluded_folders() {
+    let fixture = Fixture::new();
+    fixture.declare("index.artf", json!({"name":"folder"}));
+    fixture.write("excluded/missing.artf", "invalid TOML");
+    fixture.write(".artfignore", "excluded/\n");
+    assert_eq!(fixture.config().artifacts.len(), 1);
 }

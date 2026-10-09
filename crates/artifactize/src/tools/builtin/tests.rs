@@ -712,3 +712,37 @@ async fn typed_inputs_preserve_defaults_integral_float_pages_and_grep_options() 
     let glob = fixture.data("glob_a", json!({"pattern":"*.txt"})).await;
     assert_eq!(glob["files"], json!(["page.txt"]));
 }
+
+#[tokio::test]
+async fn file_artifact_image_view_is_limited_to_the_target() {
+    let fixture = Fixture::new();
+    let bytes = &image::tests::fixtures()[0].1;
+    fixture.write("images/hero.png", bytes);
+    fixture.write("images/sibling.png", bytes);
+    fixture.write(
+        "images/hero.png.artf",
+        json!({"name":"hero","views":{"agent_tools":{"view_image":{"builtin":"view_image"}}}})
+            .to_string(),
+    );
+    let config = read_workspace_config(&fixture.root).unwrap();
+    let registry = Registry::for_artifact(&config, "hero").unwrap();
+    let result = registry
+        .call(
+            "view_image_hero",
+            json!({"path":"hero.png"}),
+            &fixture.root.join("never-created"),
+            CancellationToken::new(),
+        )
+        .await;
+    assert!(!result.is_error, "{result:?}");
+    assert!(matches!(result.content.as_slice(), [Content::Image { .. }]));
+    let result = registry
+        .call(
+            "view_image_hero",
+            json!({"path":"sibling.png"}),
+            &fixture.root.join("never-created"),
+            CancellationToken::new(),
+        )
+        .await;
+    assert!(result.is_error);
+}

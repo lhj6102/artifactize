@@ -96,6 +96,7 @@ struct Walk {
     /// The owner folder relative to the repository root, where `.gitignore` bases start.
     prefix: String,
     inputs: Vec<String>,
+    file: bool,
     /// Child Artifact folders and declaration files, skipped while walking.
     excluded: BTreeSet<String>,
     ignore: Gitignore,
@@ -139,6 +140,7 @@ impl Walk {
             owner,
             prefix,
             inputs,
+            file: artifact.file_name().is_some(),
             excluded,
             ignore: matcher(ignore)?,
         })
@@ -150,6 +152,11 @@ impl Walk {
             let label = if input.is_empty() { "." } else { input };
             let file =
                 scope::open_scoped(&self.owner, input).map_err(|e| format!("{label}: {e}"))?;
+            if self.file && !file.metadata().map_err(|e| e.to_string())?.is_file() {
+                return Err(format!(
+                    "{label}: File Artifact target must remain a regular file."
+                ));
+            }
             if file.metadata().map_err(|e| e.to_string())?.is_dir() {
                 let mut gitignores = self.ancestors(input)?;
                 self.directory(&file, input, &mut gitignores, &mut state, cancellation)?;

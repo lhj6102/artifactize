@@ -468,7 +468,20 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
         let mut tool = command();
         tool[key] = value;
         write_artifact(&fixture.repo, "a", json!({"inspect":tool}), "Review.");
-        assert!(fixture.call(json!({})).await.is_error);
+        if let Ok(config) = read_workspace_config(&fixture.repo) {
+            let registry = Registry::new(&config, "a/review").unwrap();
+            assert!(
+                registry
+                    .call(
+                        "inspect_a",
+                        json!({}),
+                        &fixture.output,
+                        CancellationToken::new()
+                    )
+                    .await
+                    .is_error
+            );
+        }
         assert!(!fixture.repo.join("spawned").exists());
     }
     write_artifact(&fixture.repo, "a", json!({"inspect":command()}), "Review.");
@@ -598,7 +611,7 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
 }
 
 #[tokio::test]
-async fn json_scope_contains_only_paths_mounts_and_children() {
+async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
     let fixture = Fixture::new(command());
     let mut root: Value =
         crate::test_declaration::read(fs::read(fixture.repo.join("index.artf")).unwrap()).unwrap();
@@ -638,9 +651,9 @@ async fn json_scope_contains_only_paths_mounts_and_children() {
     assert_eq!(data["leaf"]["path"], json!(fixture.repo.join("cases")));
     assert_eq!(
         data["leaf"],
-        json!({"path":fixture.repo.join("cases"),"children":{},"mounts":{}})
+        json!({"path":fixture.repo.join("cases"),"kind":"folder","children":{},"mounts":{}})
     );
-    assert_eq!(data["a"].as_object().unwrap().len(), 3);
+    assert_eq!(data["a"].as_object().unwrap().len(), 4);
 }
 
 #[tokio::test]

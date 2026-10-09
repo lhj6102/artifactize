@@ -108,9 +108,14 @@ pub(super) fn call(
         reader.check_cancelled()?;
         let data = match input {
             Input::Read(input) => reader.read(&input.path, input.offset, input.limit),
-            Input::List(input) => reader.list(&input.path, input.offset, input.limit),
-            Input::Glob(input) => reader.glob(&input.path, &input.pattern),
-            Input::Grep(input) => reader.grep(&input),
+            Input::List(input) => {
+                reader.list(reader.root_path(&input.path), input.offset, input.limit)
+            }
+            Input::Glob(input) => reader.glob(reader.root_path(&input.path), &input.pattern),
+            Input::Grep(mut input) => {
+                input.path = reader.root_path(&input.path).to_owned();
+                reader.grep(&input)
+            }
             Input::ViewImage(input) => return reader.view_image(&input.path),
         }?;
         if serde_json::to_vec(&data).unwrap().len() > RESULT_BYTES {
@@ -135,6 +140,14 @@ struct Reader<'a> {
 }
 
 impl Reader<'_> {
+    fn root_path<'a>(&self, path: &'a str) -> &'a str {
+        if path == "." && self.scope.artifacts[self.owner].file_name().is_some() {
+            ""
+        } else {
+            path
+        }
+    }
+
     fn check_cancelled(&self) -> Result<(), String> {
         if self.cancellation.is_cancelled() {
             Err("Agent tool call was cancelled.".into())

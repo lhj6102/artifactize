@@ -20,6 +20,16 @@ pub(crate) fn has_artifact_marker(path: &Path) -> io::Result<bool> {
             Err(error) => return Err(error),
         }
     }
+    let entries = match std::fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) if matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    for entry in entries {
+        if entry?.file_name().as_encoded_bytes().ends_with(b".artf") {
+            return Ok(true);
+        }
+    }
     Ok(false)
 }
 
@@ -81,7 +91,7 @@ mod tests {
 
     #[test]
     fn state_and_output_creation_refuse_other_current_or_legacy_workspaces() {
-        for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
+        for marker in ["index.artf", "artifactize.json", ".artifactizeignore", "file.txt.artf"] {
             let root = tempfile::tempdir().unwrap();
             let reviewed = root.path().join("reviewed");
             let other = root.path().join("other");

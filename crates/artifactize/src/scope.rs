@@ -472,6 +472,22 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 message,
             )
         };
+        for (name, tool) in &artifact.views.agent_tools {
+            if let crate::config::AgentTool::Command(tool) = tool
+                && tool.protocol == crate::config::ToolProtocol::Json
+            {
+                for argument in &tool.args {
+                    if let Some(reference) = argument_reference(argument)
+                        .map_err(|failure| error(&["views", "agent_tools", name, "args"], format!("Agent tool {name}: {failure}")))?
+                    {
+                        let target = reference_target(config, id, reference.name)
+                            .map_err(|failure| error(&["views", "agent_tools", name, "args"], format!("Agent tool {name}: {failure}")))?;
+                        reference_path(config, target, reference.path)
+                            .map_err(|failure| error(&["views", "agent_tools", name, "args"], format!("Agent tool {name}: {failure}")))?;
+                    }
+                }
+            }
+        }
         if let Some(Fingerprint::Script { args, .. }) = &artifact.fingerprint {
             for argument in args {
                 if let Some(reference) = argument_reference(argument).map_err(|failure| {
@@ -603,7 +619,11 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 });
             }
         }
-        let instruction = eval.declaration.payload.as_ref().map_or("", |payload| payload.instruction.as_str());
+        let instruction = eval
+            .declaration
+            .payload
+            .as_ref()
+            .map_or("", |payload| payload.instruction.as_str());
         for reference in instruction::references(instruction) {
             let name = reference.name;
             let source = reference_target(config, &eval.target, name)
@@ -611,7 +631,12 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             if instruction[reference.end..].starts_with('/') {
                 reference_path(config, source, "/").map_err(|failure| error(&["payload", "instruction"], failure))?;
             }
-            references.insert(name.to_owned(), source.to_owned());
+            if references
+                .insert(name.to_owned(), source.to_owned())
+                .is_some()
+            {
+                continue;
+            }
             if source != eval.target {
                 deps.insert(source.to_owned());
                 relations.push(Relation {

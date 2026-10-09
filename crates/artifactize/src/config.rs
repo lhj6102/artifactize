@@ -921,6 +921,18 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             owner = Some(name);
         }
         for marker in &entries {
+            if marker
+                .file_name()
+                .as_encoded_bytes()
+                .ends_with(b".artf.artf")
+            {
+                return Err(ConfigError::new(
+                    marker.path(),
+                    "File Artifact target must not be a declaration (.artf).",
+                ));
+            }
+        }
+        for marker in &entries {
             let filename = marker.file_name();
             if !filename.as_encoded_bytes().ends_with(b".artf") {
                 continue;
@@ -954,6 +966,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     "File Artifact target must not be a declaration (.artf).",
                 ));
             }
+            path(target).map_err(|error| ConfigError::new(&file, error))?;
             let target_path = directory.join(target);
             let metadata = fs::symlink_metadata(&target_path).map_err(|error| {
                 ConfigError::new(

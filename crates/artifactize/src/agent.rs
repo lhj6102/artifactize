@@ -654,11 +654,15 @@ fn prompt(
                         .filter(|tool| tool.artifact_id == id)
                         .map(|tool| tool.name.as_str())
                         .collect();
-                    format!(
-                        "Artifact {id} (path: {}; tools: {})",
-                        config.artifacts[&id].path.display(),
-                        tools.join(", ")
-                    )
+                    if config.artifacts[&id].file_name().is_some() {
+                        format!(
+                            "Artifact {id} (path: {}; tools: {})",
+                            config.artifacts[&id].path.display(),
+                            tools.join(", ")
+                        )
+                    } else {
+                        format!("Artifact {id} (tools: {})", tools.join(", "))
+                    }
                 }
             })
             .collect();
