@@ -790,18 +790,19 @@ fn upstream_rows_are_marked_counted_off_screen_and_reached_with_b() {
     }
     monitor.key(KeyEvent::from(KeyCode::Backspace));
     assert_eq!(monitor.target(), Some(Target::Eval("m1/x".into())));
-    // Off-screen marks are counted on the borders, separately above and below.
+    // Off-screen marks are counted on the borders, separately above and below. The Run
+    // headline leaves eleven tree rows at this height.
     monitor.tree.select(vec!["a:m6".into(), "e:m6/x".into()]);
-    let text = render(&mut monitor, 200, 22);
+    let text = render(&mut monitor, 200, 18);
     assert!(text.contains("↑1 above"), "{text}");
     assert!(!text.contains("below"), "{text}");
     monitor.tree.select(vec!["a:m1".into(), "e:m1/x".into()]);
-    render(&mut monitor, 200, 22);
+    render(&mut monitor, 200, 18);
     monitor.tree.scroll_down(3);
-    let text = render(&mut monitor, 200, 22);
+    let text = render(&mut monitor, 200, 18);
     assert!(text.contains("↑2 above"), "{text}");
     monitor.tree.scroll_up(20);
-    let text = render(&mut monitor, 200, 22);
+    let text = render(&mut monitor, 200, 18);
     assert!(!text.contains("above") && !text.contains("below"), "{text}");
     // A row without upstream: no marks, no hint, and `b` stays put.
     monitor.tree.select(vec!["a:m2".into(), "e:m2/x".into()]);
@@ -1395,4 +1396,29 @@ fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
             .collect::<Vec<_>>(),
         [("e:a/one".to_owned(), true)]
     );
+}
+
+#[tokio::test]
+async fn detail_shows_waits_for_as_a_section_with_pending_evals_behind_w() {
+    let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+    wide(&mut monitor);
+    monitor.tree.select(vec!["a:m1".into(), "e:m1/x".into()]);
+    // The peek names the Artifacts and how many of their evals are pending.
+    let text = render(&mut monitor, 200, 40);
+    assert!(text.contains("Waits for:"), "{text}");
+    assert!(text.contains("↑ up-a ◐ in progress"), "{text}");
+    assert!(text.contains("1 pending evals · w shows"), "{text}");
+    monitor.open_detail().await;
+    let text = render(&mut monitor, 200, 40);
+    let at = |text: &str, needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("{needle}\n{text}"))
+    };
+    assert!(at(&text, "Outcome") < at(&text, "Waits for"));
+    assert!(at(&text, "Waits for") < at(&text, "What"));
+    assert!(!text.contains("◐ x  running"), "{text}");
+    monitor.key(KeyEvent::from(KeyCode::Char('w')));
+    let text = render(&mut monitor, 200, 40);
+    assert!(text.contains("◐ x  running"), "{text}");
+    assert!(!text.contains("w shows"), "{text}");
 }

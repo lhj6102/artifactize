@@ -126,7 +126,8 @@ fn live_progress_tree_and_details_are_pure_projections() {
         progress.errors,
         [("p2/check".into(), "[SPAWN] spawn failed".into())]
     );
-    assert!(progress.work.starts_with("executions 2/5 · jobs 4"));
+    assert_eq!(progress.budget, "executions 2/5 · jobs 4");
+    assert_eq!(progress.work, "executed 0 · reused 0 · derived 0");
     assert_eq!(
         progress.counts.iter().map(|(_, n)| n).sum::<u64>(),
         4,
@@ -224,9 +225,14 @@ fn run_rows_and_durations() {
         [5, 65, 3_700, 90_000, -3].map(duration),
         ["5s", "1m 05s", "1h 01m", "1d 1h", "0s"]
     );
-    let rows = run_rows(&[summary("run-a", 2)], now());
+    let mut finished = summary("run-b", 0);
+    finished.completed_at = Some("2026-01-01T00:00:42Z".into());
+    let rows = run_rows(&[summary("run-a", 2), finished], now());
     assert_eq!(rows[0].age, "1m 05s");
-    assert_eq!(rows[0].counts, "GREEN 2  RED 1");
+    // Runs show the same glyphs as the tree, most urgent first and without zero counts.
+    assert_eq!(rows[0].counts, "✗1 ✓2");
+    assert_eq!((rows[0].took.as_str(), rows[1].took.as_str()), ("", "42s"));
+    assert_eq!(rows[1].counts, "✗1");
 }
 
 pub(super) fn summary(id: &str, green: u64) -> RunSummary {
@@ -244,7 +250,11 @@ pub(super) fn summary(id: &str, green: u64) -> RunSummary {
 }
 
 fn screen(monitor: &mut Monitor) -> String {
-    let mut terminal = Terminal::new(TestBackend::new(220, 40)).unwrap();
+    sized(monitor, 220, 40)
+}
+
+pub(super) fn sized(monitor: &mut Monitor, width: u16, height: u16) -> String {
+    let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
     terminal.draw(|frame| monitor.draw(frame)).unwrap();
     let buffer = terminal.backend().buffer();
     let rows = buffer.content().chunks(buffer.area.width as usize);
@@ -294,7 +304,12 @@ fn keys_page_older_runs_open_and_quit() {
     assert_eq!(monitor.key(key(KeyCode::Esc)), Action::None);
     assert_eq!(monitor.focus, Pane::Runs);
     assert_eq!(monitor.key(key(KeyCode::Char('r'))), Action::Refresh);
-    assert_eq!(monitor.key(key(KeyCode::Esc)), Action::Quit);
+    // Esc steps back one level and never quits, even on the first level.
+    for pane in [Pane::Repositories, Pane::Repositories] {
+        assert_eq!(monitor.key(key(KeyCode::Esc)), Action::None);
+        assert_eq!(monitor.focus, pane);
+    }
+    assert_eq!(monitor.key(key(KeyCode::Char('q'))), Action::Quit);
     assert_eq!(
         monitor.key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
         Action::Quit
@@ -321,8 +336,13 @@ async fn artifact_details_display_saved_tags_and_tolerate_untagged_snapshots() {
     monitor.set_run(view, Vec::new());
     monitor.tree.select(vec!["a:app".into()]);
     monitor.open_detail().await;
+    assert_eq!(monitor.focus, Pane::Detail);
+    // Tags are Technical: folded, but named, until `t` shows them.
     let text = screen(&mut monitor);
-    assert!(text.contains("Tags"), "{text}");
+    assert!(text.contains("▸ Technical  Tags"), "{text}");
+    assert!(!text.contains("type:image, scope:combat"), "{text}");
+    monitor.key(KeyEvent::from(KeyCode::Char('t')));
+    let text = screen(&mut monitor);
     assert!(text.contains("type:image, scope:combat"), "{text}");
 }
 
@@ -335,21 +355,274 @@ fn run_screen_renders_progress_tree_and_detail() {
     let text = screen(&mut monitor);
     for expected in [
         "Run run-1",
-        "running app/check",
-        "waiting Human app/review · claimed by alice",
         "│   ◇ lib       basis   ",
         "│ ▸ ✓ p1        ",
         "│ ▾ ! p2        ERROR: check  ",
         "│     ! check   ERROR · [SPAWN] spawn failed  ",
         "│ ▾ ◐ app       in progress: check, review  ",
         "│     ? review  Human sign-off · claimed by alice  ",
-        "Artifacts and evals",
+        "◐ RUNNING · validation pending · !1 ◐1 ?1 ✓1 · elapsed",
+        "! p2/check  [SPAWN] spawn failed",
+        "? app/review  waiting Human · claimed by alice",
+        "◐ app/check  running",
+        "│   ◐ Run       Enter: usage, budgets, counts",
     ] {
         assert!(text.contains(expected), "{expected}\n{text}");
     }
     // All-done Artifacts start folded; the cursor starts on the first failed or running eval.
     assert!(!text.contains("GREEN  3s"), "{text}");
     assert_eq!(monitor.target(), Some(Target::Eval("p2/check".into())));
+}
+
+/// Usage, budgets and errors that used to push the Run summary's last lines off.
+fn heavy() -> (RunView, Vec<RequestView>) {
+    let (mut view, mut requests) = live();
+    let usage = json!([{"turn":1,"attempt":1,"usage":{"inputTokens":3915049,"outputTokens":51234,
+        "cacheReadTokens":3618816,"cacheWriteTokens":0,"reasoningTokens":20480,"totalTokens":3966283}}]);
+    for (index, eval) in ["p1/check", "p2/check"].into_iter().enumerate() {
+        let request = &mut requests
+            .iter_mut()
+            .find(|view| view.request.eval_id == eval)
+            .unwrap()
+            .request;
+        request.provenance = Some(
+            serde_json::from_value(
+                json!({"repoPath":"/repo","runId":"run-1","requestId":request.id,
+                "evalId":eval,"evalDefHash":"hash","completedAt":"2026-01-01T00:00:04Z"}),
+            )
+            .unwrap(),
+        );
+        request.execution_id = Some(format!("execution-{index}").parse().unwrap());
+        request.usage = Some(serde_json::from_value(usage.clone()).unwrap());
+    }
+    view.requests = requests.iter().map(|view| view.request.clone()).collect();
+    (view, requests)
+}
+
+#[test]
+fn run_headline_keeps_attention_lines_at_every_width_and_moves_usage_to_run_detail() {
+    let (view, requests) = heavy();
+    let progress = progress(&view, &requests, now());
+    assert!(progress.usage.contains("cacheReadTokens 7237632"));
+    assert_eq!(progress.tokens, Some(7_932_566));
+    let strip = strip(&progress);
+    assert!(
+        strip.headline.ends_with("· tokens 7.9M"),
+        "{}",
+        strip.headline
+    );
+    for (width, height) in [(160, 45), (100, 30), (80, 24)] {
+        for focus in [Pane::Runs, Pane::Artifacts] {
+            let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
+            monitor.open = Some("run-1".parse().unwrap());
+            let (view, requests) = heavy();
+            monitor.set_run(view, requests);
+            monitor.focus = focus;
+            let text = sized(&mut monitor, width, height);
+            if width < 100 && focus == Pane::Runs {
+                continue;
+            }
+            for expected in [
+                "tokens 7.9M",
+                "! p2/check  [SPAWN] spawn fa",
+                "? app/review  waiting Human",
+                "◐ app/check  running",
+            ] {
+                assert!(
+                    text.contains(expected),
+                    "{width}x{height} {focus:?}: {expected}\n{text}"
+                );
+            }
+            // Counter names and budgets belong to the Run detail.
+            for absent in ["cacheReadTokens", "executions 2/5", "jobs 4"] {
+                assert!(!text.contains(absent), "{width}x{height}: {absent}\n{text}");
+            }
+        }
+    }
+    let detail = detail(&view, &requests, &Target::Run, now());
+    assert_eq!(detail.field("Budget"), Some("executions 2/5 · jobs 4"));
+    assert_eq!(
+        detail.field("Work"),
+        Some("executed 2 · reused 0 · derived 0")
+    );
+    assert!(
+        detail
+            .field("Usage")
+            .unwrap()
+            .contains("cacheReadTokens 7237632")
+    );
+    assert_eq!(
+        detail.field("Errors"),
+        Some("p2/check  [SPAWN] spawn failed")
+    );
+    assert_eq!(Target::parse("run:run-1"), Some(Target::Run));
+}
+
+#[test]
+fn more_than_three_attention_items_fold_into_more() {
+    let (view, mut requests) = live();
+    for eval in ["x/one", "x/two"] {
+        requests.push(request(eval, "ERROR", json!({"error":"boom"})));
+    }
+    let strip = strip(&progress(&view, &requests, now()));
+    assert_eq!(
+        strip
+            .attention
+            .iter()
+            .map(|(status, _)| status.as_str())
+            .collect::<Vec<_>>(),
+        ["ERROR", "ERROR", "ERROR"]
+    );
+    assert_eq!(strip.more, 2);
+    let mut monitor = Monitor::new("/state".into(), None);
+    monitor.open = Some("run-1".parse().unwrap());
+    monitor.set_run(view, requests);
+    monitor.focus = Pane::Artifacts;
+    let text = sized(&mut monitor, 160, 40);
+    assert!(text.contains("+2 more · Enter on the Run node"), "{text}");
+}
+
+#[tokio::test]
+async fn tree_peek_follows_selection_and_detail_orders_sections_verdict_first() {
+    let (view, mut requests) = live();
+    requests.push(request(
+        "p1/review",
+        "RED",
+        json!({"result":{"verdict":"RED","reason":"two mismatches\nsecond line","findings":[1,2]}}),
+    ));
+    let mut monitor = Monitor::new("/state".into(), None);
+    monitor.open = Some("run-1".parse().unwrap());
+    monitor.set_run(view, requests);
+    monitor.focus = Pane::Artifacts;
+    monitor
+        .tree
+        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    let text = sized(&mut monitor, 160, 40);
+    assert!(text.contains("Error: [SPAWN] spawn failed"), "{text}");
+    // The peek is the outcome only; provenance and hashes wait for Enter.
+    assert!(
+        !text.contains("Fingerprint") && !text.contains("Timing"),
+        "{text}"
+    );
+    monitor
+        .tree
+        .select(vec!["a:p1".into(), "e:p1/review".into()]);
+    let text = sized(&mut monitor, 160, 40);
+    assert!(text.contains("Result: verdict RED"), "{text}");
+    assert!(text.contains("reason two mismatches …"), "{text}");
+    assert!(text.contains("findings [2 items]"), "{text}");
+    monitor.open_detail().await;
+    assert_eq!(monitor.focus, Pane::Detail);
+    let text = sized(&mut monitor, 160, 40);
+    let at = |needle: &str| {
+        text.find(needle)
+            .unwrap_or_else(|| panic!("{needle}\n{text}"))
+    };
+    assert!(at("Outcome") < at("What"));
+    assert!(at("What") < at("Provenance"));
+    assert!(at("Provenance") < at("▸ Technical"));
+    assert!(at("Status: RED") < at("Instruction:"));
+    assert!(
+        !text.contains("Fingerprint: none"),
+        "Technical is folded: {text}"
+    );
+    // Detail keeps at most two panes: the tree as Compact context and Detail.
+    assert!(!text.contains("Runs ("), "{text}");
+    assert!(!text.contains("Ctrl-S"), "{text}");
+    monitor.key(KeyEvent::from(KeyCode::Char('t')));
+    assert!(sized(&mut monitor, 160, 40).contains("Fingerprint: none"));
+}
+
+#[test]
+fn header_names_the_selected_scope_and_counts_attention_globally() {
+    let mut monitor = Monitor::new("/state".into(), None);
+    monitor.catalog.update(
+        &[crate::store::CatalogRun {
+            repo_path: "/work/alpha".into(),
+            repository: Default::default(),
+            status: crate::types::RunStatus::Running,
+            red: 2,
+            error: 1,
+            waiting: Vec::new(),
+        }],
+        None,
+    );
+    let text = sized(&mut monitor, 120, 20);
+    assert!(text.contains("artifactize › all repositories"), "{text}");
+    assert!(text.contains("!1 ✗2 ◐1"), "{text}");
+    monitor.scope = Scope::Worktree(
+        Repository::Workspace("/work/alpha".into()),
+        "/work/alpha".into(),
+    );
+    let text = sized(&mut monitor, 120, 20);
+    let header = text.lines().next().unwrap();
+    assert!(
+        header.starts_with("artifactize › alpha (non-Git)"),
+        "{header}"
+    );
+    assert!(!header.contains("all repositories"), "{header}");
+    // The Scope pane merges the repository row and `ALL`, and badges share the glyphs.
+    let rows: Vec<_> = monitor
+        .catalog
+        .rows
+        .iter()
+        .map(|row| (row.label.as_str(), row.badge.text()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("ALL", "!1 ✗2 ◐1".to_owned()),
+            ("alpha", "!1 ✗2 ◐1".to_owned()),
+            ("alpha (non-Git)", "!1 ✗2 ◐1".to_owned()),
+        ]
+    );
+}
+
+#[test]
+fn breadcrumb_shortens_earlier_segments_then_drops_the_program_name() {
+    let segments = [
+        "tui/reactive-layout · tui-redesign",
+        "run-bUYY1e",
+        "docs/matches-cli",
+    ]
+    .map(String::from);
+    assert_eq!(
+        view::breadcrumb(&segments, 200),
+        "artifactize › tui/reactive-layout · tui-redesign › run-bUYY1e › docs/matches-cli"
+    );
+    assert_eq!(
+        view::breadcrumb(&segments, 64),
+        "artifactize › tui/reactive-la… › run-bUYY1e › docs/matches-cli"
+    );
+    assert_eq!(
+        view::breadcrumb(&segments, 60),
+        "artifactize › tui/react… › run-bUYY1e › docs/matches-cli"
+    );
+    assert_eq!(
+        view::breadcrumb(&segments, 44),
+        "tui/react… › run-bUYY1e › docs/matches-cli"
+    );
+    assert_eq!(view::breadcrumb(&segments, 20), "… › docs/matches-cli");
+}
+
+#[test]
+fn runs_pane_draws_counts_age_and_took_and_keeps_age_when_narrow() {
+    let mut monitor = Monitor::new("/state".into(), None);
+    let mut finished = summary("run-done", 3);
+    finished.completed_at = Some("2026-01-01T00:00:42Z".into());
+    monitor.set_runs(vec![summary("run-a", 2), finished]);
+    let text = sized(&mut monitor, 160, 20);
+    assert!(text.contains("✗ RED run-a "), "{text}");
+    assert!(text.contains("✗1 ✓2"), "{text}");
+    assert!(text.contains("took 42s"), "{text}");
+    let age = run_rows(&monitor.runs, OffsetDateTime::now_utc())[1]
+        .age
+        .clone();
+    let age = age.split(' ').next().unwrap();
+    let text = sized(&mut monitor, 22, 20);
+    // Narrow Runs keep the glyph, id and age; the status word and counts go first.
+    assert!(text.contains(&format!("✗ run-done {age}")), "{text}");
+    assert!(!text.contains("RED") && !text.contains("✓3"), "{text}");
 }
 
 #[test]
@@ -371,7 +644,7 @@ fn review_key_hands_off_only_waiting_human_requests() {
             .select(path.iter().map(|id| (*id).to_owned()).collect());
         assert_eq!(monitor.key(review), action, "{path:?}");
     }
-    assert!(screen(&mut monitor).contains("detail"));
+    assert!(screen(&mut monitor).contains("Enter open"));
     monitor.notice = Some("review exited with exit status: 2: Review request not found.".into());
     assert!(screen(&mut monitor).contains("review exited with exit status: 2"));
     monitor.key(KeyEvent::from(KeyCode::Char('j')));

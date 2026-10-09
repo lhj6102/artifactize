@@ -26,33 +26,37 @@ pub enum Scope {
 pub struct Badge {
     pub waiting: BTreeSet<Signoff>,
     pub red: u64,
+    pub error: u64,
     pub running: u64,
 }
 impl Badge {
     fn add(&mut self, run: &CatalogRun) {
         self.waiting.extend(run.waiting.iter().cloned());
         self.red += run.red;
+        self.error += run.error;
         self.running += u64::from(run.status == RunStatus::Running);
     }
+    /// Status glyphs and counts in the urgency order of the header, Runs and the tree:
+    /// `!1 ✗2 ◐1 ?1`.
+    pub fn parts(&self) -> Vec<(&'static str, u64)> {
+        let mut parts: Vec<_> = [
+            ("WAITING_HUMAN", self.waiting.len() as u64),
+            ("RED", self.red),
+            ("ERROR", self.error),
+            ("RUNNING", self.running),
+        ]
+        .into_iter()
+        .filter(|(_, count)| *count > 0)
+        .collect();
+        parts.sort_by_key(|(status, _)| super::model::urgency(status));
+        parts
+    }
     pub fn text(&self) -> String {
-        format!(
-            "{}{}{}",
-            if self.waiting.is_empty() {
-                String::new()
-            } else {
-                format!(" ?{}", self.waiting.len())
-            },
-            if self.red == 0 {
-                String::new()
-            } else {
-                format!(" RED{}", self.red)
-            },
-            if self.running == 0 {
-                String::new()
-            } else {
-                format!(" ◐{}", self.running)
-            }
-        )
+        self.parts()
+            .into_iter()
+            .map(|(status, count)| format!("{}{count}", super::model::glyph(Some(status))))
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 #[derive(Debug, Clone)]
@@ -61,6 +65,8 @@ pub struct CatalogRow {
     pub label: String,
     pub badge: Badge,
     pub depth: usize,
+    /// A row standing for this repository's worktrees without Runs; Space shows or hides them.
+    pub fold: Option<Repository>,
 }
 #[derive(Default)]
 pub struct Catalog {
@@ -68,6 +74,10 @@ pub struct Catalog {
     trees: BTreeMap<PathBuf, Vec<Worktree>>,
     pub rows: Vec<CatalogRow>,
     paths: BTreeMap<Scope, BTreeSet<PathBuf>>,
+    /// Repositories whose worktrees without Runs are shown.
+    expanded: BTreeSet<Repository>,
+    /// The selected scope stays listed even without Runs.
+    pub selected: Option<Scope>,
 }
 impl Catalog {
     fn identity(&mut self, path: &Path) -> Identity {
@@ -175,6 +185,7 @@ impl Catalog {
             label: "ALL".into(),
             badge: badges.get(&Scope::All).cloned().unwrap_or_default(),
             depth: 0,
+            fold: None,
         }];
         for repository in repositories {
             let root = match &repository {
@@ -186,44 +197,75 @@ impl Catalog {
                 .unwrap_or(root.as_os_str())
                 .to_string_lossy()
                 .into_owned();
+            // The repository row is the whole repository; there is no separate `ALL` row.
             let scope = Scope::Repository(repository.clone());
             rows.push(CatalogRow {
                 scope: scope.clone(),
-                label: format!("▾ {label}"),
+                label,
                 badge: badges.get(&scope).cloned().unwrap_or_default(),
                 depth: 0,
+                fold: None,
             });
-            rows.push(CatalogRow {
-                scope: scope.clone(),
-                label: "ALL".into(),
-                badge: badges.get(&scope).cloned().unwrap_or_default(),
-                depth: 1,
-            });
-            for (scope, _) in paths.iter().filter(
+            let mut folded = 0;
+            let expanded = self.expanded.contains(&repository);
+            for (scope, workspaces) in paths.iter().filter(
                 |(scope, _)| matches!(scope, Scope::Worktree(repo, _) if repo == &repository),
             ) {
                 let Scope::Worktree(_, tree) = scope else {
                     unreachable!("worktree filter")
                 };
+                if workspaces.is_empty() && !expanded && self.selected.as_ref() != Some(scope) {
+                    folded += 1;
+                    continue;
+                }
                 let branch = branches.get(scope).and_then(Option::as_deref);
                 let name = tree
                     .file_name()
                     .unwrap_or(tree.as_os_str())
                     .to_string_lossy();
-                let label = branch.map_or_else(
-                    || format!("{name} (detached/non-Git)"),
-                    |branch| format!("{branch} · {name}"),
-                );
+                let label = match (branch, &repository) {
+                    (Some(branch), _) if branch == name => branch.to_owned(),
+                    (Some(branch), _) => format!("{branch} · {name}"),
+                    (None, Repository::Git(_)) => format!("{name} (detached)"),
+                    (None, Repository::Workspace(_)) => format!("{name} (non-Git)"),
+                };
                 rows.push(CatalogRow {
                     scope: scope.clone(),
                     label,
                     badge: badges.get(scope).cloned().unwrap_or_default(),
                     depth: 1,
+                    fold: None,
+                });
+            }
+            let empty = paths
+                .iter()
+                .filter(|(scope, workspaces)| {
+                    matches!(scope, Scope::Worktree(repo, _) if repo == &repository)
+                        && workspaces.is_empty()
+                })
+                .count();
+            if folded > 0 || expanded && empty > 0 {
+                rows.push(CatalogRow {
+                    scope: scope.clone(),
+                    label: if expanded {
+                        format!("− hide {empty} without Runs (Space)")
+                    } else {
+                        format!("+{folded} without Runs (Space)")
+                    },
+                    badge: Badge::default(),
+                    depth: 1,
+                    fold: Some(repository.clone()),
                 });
             }
         }
         self.rows = rows;
         self.paths = paths;
+    }
+    /// Show or hide a repository's worktrees without Runs; applied on the next update.
+    pub fn toggle(&mut self, repository: &Repository) {
+        if !self.expanded.remove(repository) {
+            self.expanded.insert(repository.clone());
+        }
     }
     pub fn paths(&self, scope: &Scope) -> Option<Vec<PathBuf>> {
         match scope {

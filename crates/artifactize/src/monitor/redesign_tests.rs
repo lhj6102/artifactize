@@ -19,6 +19,9 @@ fn render(monitor: &mut Monitor, width: u16, height: u16) {
         .draw(|frame| monitor.draw(frame))
         .unwrap();
 }
+fn render_text(monitor: &mut Monitor, width: u16, height: u16) -> String {
+    super::tests::sized(monitor, width, height)
+}
 fn saved_run(
     id: &str,
     repo: &Path,
@@ -181,12 +184,52 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
     );
     let mut fresh = Monitor::new(state.clone(), None);
     fresh.refresh().await;
-    assert!(
-        fresh
+    // Worktrees without Runs fold into one row until Space shows them.
+    let listed = |monitor: &Monitor| {
+        monitor
             .catalog
             .rows
             .iter()
             .any(|row| matches!(&row.scope, Scope::Worktree(_, path) if path == &empty))
+    };
+    assert!(!listed(&fresh));
+    let fold = fresh
+        .catalog
+        .rows
+        .iter()
+        .position(|row| row.fold.is_some())
+        .unwrap();
+    assert_eq!(fresh.catalog.rows[fold].label, "+1 without Runs (Space)");
+    fresh.focus = Pane::Repositories;
+    assert_eq!(
+        fresh.select_scope(fold),
+        Action::None,
+        "a fold row is no scope"
+    );
+    assert_eq!(
+        fresh.key(KeyEvent::from(KeyCode::Char(' '))),
+        Action::Refresh
+    );
+    fresh.refresh().await;
+    assert!(listed(&fresh));
+    assert_eq!(
+        fresh.catalog.rows[fold + 1].label,
+        "− hide 1 without Runs (Space)"
+    );
+    assert_eq!(
+        fresh.repositories.selected(),
+        Some(fold + 1),
+        "the fold row stays selected"
+    );
+    // The repository row is the whole repository; there is no separate `ALL` row below it.
+    assert_eq!(
+        fresh
+            .catalog
+            .rows
+            .iter()
+            .filter(|row| row.label == "ALL")
+            .count(),
+        1
     );
     assert!(fresh.catalog.rows.iter().any(|row| matches!(&row.scope, Scope::Worktree(Repository::Workspace(_), path) if path == &other)), "deleted legacy paths must not be guessed into a Git group");
     fs::remove_dir_all(&repo).unwrap();
@@ -214,6 +257,7 @@ fn waiting_badges_deduplicate_execution_and_original_request() {
         repository: Default::default(),
         status: crate::types::RunStatus::Running,
         red: 1,
+        error: 0,
         waiting: vec![store::Signoff::Execution("execution-1".parse().unwrap())],
     }];
     rows.push(rows[0].clone());
@@ -232,8 +276,9 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
     let mut monitor = Monitor::new("/fixture-state".into(), None);
     monitor.set_runs(vec![super::tests::summary("run-1", 1)]);
     monitor.set_run(view, requests);
+    monitor.focus = Pane::Artifacts;
     render(&mut monitor, 200, 45);
-    let area = monitor.hits.panes[2];
+    let area = monitor.hits.tree;
     let point = (area.x + 5, area.y + 1);
     assert_eq!(
         monitor.mouse(mouse(
@@ -253,16 +298,19 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
     );
     monitor.open_detail().await;
     render(&mut monitor, 200, 45);
-    let focus = monitor.focus;
-    monitor.mouse(mouse(MouseEventKind::Down(MouseButton::Left), 1, 2));
-    assert_eq!(monitor.focus, focus);
-    let evidence = monitor.hits.modal_panes[1];
+    assert_eq!(monitor.focus, Pane::Detail);
+    let sections = monitor.hits.areas[0];
     monitor.mouse(mouse(
         MouseEventKind::ScrollDown,
-        evidence.x + 1,
-        evidence.y + 1,
+        sections.x + 1,
+        sections.y + 1,
     ));
-    assert_eq!(monitor.modal.as_ref().unwrap().scroll[1], 3);
+    assert_eq!(monitor.detail.as_ref().unwrap().scroll[0], 3);
+    // The wheel over the tree scrolls it without taking focus from Detail.
+    let tree = monitor.hits.tree;
+    monitor.mouse(mouse(MouseEventKind::ScrollDown, tree.x + 2, tree.y + 1));
+    assert_eq!(monitor.focus, Pane::Detail);
+    assert!(monitor.detail.is_some());
     render(&mut monitor, 100, 30);
     let close = monitor
         .hits
@@ -276,18 +324,33 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
         close.x + 1,
         close.y,
     ));
-    assert!(monitor.modal.is_none());
+    assert!(monitor.detail.is_none());
+    assert_eq!(monitor.focus, Pane::Artifacts);
     let before = monitor.target();
     monitor.key(KeyEvent::from(KeyCode::F(2)));
     monitor.mouse(mouse(MouseEventKind::ScrollDown, area.x + 2, area.y + 2));
     assert_eq!(monitor.target(), before);
-    let tree_area = monitor.hits.panes[2];
+    monitor.key(KeyEvent::from(KeyCode::F(2)));
+    render(&mut monitor, 100, 30);
+    let tree_area = monitor.hits.tree;
     assert!(
         monitor
             .tree
             .rendered_at(Position::new(tree_area.x + 2, tree_area.y + 1))
             .is_some()
     );
+    // A click on the Runs pane moves focus there; the wheel elsewhere never does.
+    monitor.focus = Pane::Runs;
+    render(&mut monitor, 160, 30);
+    let tree = monitor.hits.tree;
+    monitor.mouse(mouse(MouseEventKind::ScrollDown, tree.x + 1, tree.y + 1));
+    assert_eq!(monitor.focus, Pane::Runs);
+    monitor.mouse(mouse(
+        MouseEventKind::Down(MouseButton::Left),
+        tree.x + 2,
+        tree.y + 1,
+    ));
+    assert_eq!(monitor.focus, Pane::Artifacts);
 }
 
 #[tokio::test]
@@ -357,7 +420,7 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
         "GREEN",
         json!({"result":{"verdict":"GREEN","exitCode":0,"stdout":"hello","stderr":"warning","truncated":true}}),
     );
-    let text = modal::evidence(root.path(), &runtime).text;
+    let text = evidence::evidence(root.path(), &runtime).text;
     assert!(text.contains("hello") && text.contains("warning") && text.contains("truncated: true"));
     let summary = super::tests::request(
         "app/runtime",
@@ -365,7 +428,7 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
         json!({"result":{"verdict":"GREEN","exitCode":0}}),
     );
     assert!(
-        modal::evidence(root.path(), &summary)
+        evidence::evidence(root.path(), &summary)
             .text
             .contains("Logs unavailable")
     );
@@ -391,7 +454,7 @@ async fn selected_last_page_run_and_artifact_modal_survive_new_runs() {
     monitor.refresh().await;
     monitor.open_detail().await;
     assert_eq!(
-        monitor.modal.as_ref().unwrap().detail.field("Path"),
+        monitor.detail.as_ref().unwrap().detail.field("Path"),
         Some("path-0")
     );
     receipts
@@ -404,7 +467,7 @@ async fn selected_last_page_run_and_artifact_modal_survive_new_runs() {
     monitor.refresh().await;
     assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-0");
     assert_eq!(
-        monitor.modal.as_ref().unwrap().detail.field("Path"),
+        monitor.detail.as_ref().unwrap().detail.field("Path"),
         Some("path-0")
     );
     assert_eq!(monitor.runs.len(), 101);
@@ -436,14 +499,14 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
     monitor.open_detail().await;
     assert!(
         monitor
-            .modal
+            .detail
             .as_ref()
             .unwrap()
             .evidence
             .text
             .contains("while running")
     );
-    monitor.modal.as_mut().unwrap().scroll[1] = 7;
+    monitor.detail.as_mut().unwrap().scroll[1] = 7;
     request.status = crate::types::RequestStatus::Green;
     request.completed_at = Some("2026-01-01T00:00:01Z".into());
     request.result = Some(
@@ -453,14 +516,14 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
     monitor.refresh().await;
     assert!(
         monitor
-            .modal
+            .detail
             .as_ref()
             .unwrap()
             .evidence
             .text
             .contains("final output")
     );
-    assert_eq!(monitor.modal.as_ref().unwrap().scroll[1], 7);
+    assert_eq!(monitor.detail.as_ref().unwrap().scroll[1], 7);
 }
 
 #[tokio::test]
@@ -474,11 +537,11 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     monitor.open_detail().await;
     let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
     review.control(review::Control::Red);
-    monitor.modal.as_mut().unwrap().review = Some(review);
-    monitor.modal.as_mut().unwrap().focus = ModalPane::Fields;
+    monitor.detail.as_mut().unwrap().review = Some(review);
+    monitor.detail.as_mut().unwrap().focus = DetailArea::Fields;
     monitor.paste("qrg한글");
     let draft = |monitor: &Monitor| match monitor
-        .modal
+        .detail
         .as_ref()
         .unwrap()
         .review
@@ -491,11 +554,11 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     };
     let before = draft(&monitor);
     monitor.key(KeyEvent::from(KeyCode::BackTab));
-    assert_eq!(monitor.modal.as_ref().unwrap().focus, ModalPane::Tools);
+    assert_eq!(monitor.detail.as_ref().unwrap().focus, DetailArea::Tools);
     monitor.paste("must not modify hidden field");
     assert_eq!(draft(&monitor), before);
     monitor.key(KeyEvent::from(KeyCode::Tab));
-    assert_eq!(monitor.modal.as_ref().unwrap().focus, ModalPane::Fields);
+    assert_eq!(monitor.detail.as_ref().unwrap().focus, DetailArea::Fields);
     render(&mut monitor, 160, 40);
     for control in [review::Control::Green, review::Control::Red] {
         let area = monitor
@@ -516,6 +579,44 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
         render(&mut monitor, 160, 40);
     }
     assert_eq!(draft(&monitor), before);
+    // While a form is edited, a click on the tree cannot move focus out of Detail.
+    let tree = monitor.hits.tree;
+    monitor.mouse(mouse(
+        MouseEventKind::Down(MouseButton::Left),
+        tree.x + 2,
+        tree.y + 1,
+    ));
+    assert_eq!(monitor.focus, Pane::Detail);
+    // Human keys are text here: q, ? and ! never quit, open help or move the tree.
+    for key in ['q', '?', '!'] {
+        monitor.key(KeyEvent::from(KeyCode::Char(key)));
+        assert_eq!(monitor.focus, Pane::Detail);
+        assert!(!monitor.help);
+    }
+    let before = draft(&monitor);
+    // Ctrl-S submits only inside a Human review, and the keys line says so only there.
+    assert!(render_text(&mut monitor, 160, 40).contains("Ctrl-S submit"));
+    // Esc steps back to the tree and keeps the draft for the next open.
+    monitor.key(KeyEvent::from(KeyCode::Esc));
+    assert_eq!(monitor.focus, Pane::Artifacts);
+    assert!(monitor.detail.is_none());
+    assert!(!render_text(&mut monitor, 160, 40).contains("Ctrl-S"));
+    let id = monitor.reviews.keys().next().unwrap().clone();
+    match monitor.reviews[&id].mode() {
+        review::Mode::Form(form) => assert_eq!(form.draft(), before),
+        _ => panic!("form"),
+    }
+    monitor.detail = None;
+    monitor.reviews.clear();
+    monitor
+        .tree
+        .select(vec!["a:app".into(), "e:app/review".into()]);
+    monitor.open_detail().await;
+    let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
+    review.control(review::Control::Red);
+    monitor.detail.as_mut().unwrap().review = Some(review);
+    monitor.detail.as_mut().unwrap().focus = DetailArea::Fields;
+    assert_eq!(monitor.focus, Pane::Detail);
     monitor.key(KeyEvent::from(KeyCode::F(2)));
     monitor.paste(" off");
     assert!(draft(&monitor).contains(" off"));

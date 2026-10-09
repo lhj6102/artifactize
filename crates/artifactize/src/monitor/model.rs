@@ -15,6 +15,8 @@ use crate::{
 /// What a tree node shows in the detail pane, parsed from its stable tree identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
+    /// The open Run itself, from the node above its Artifacts.
+    Run,
     Artifact(String),
     Eval(String),
 }
@@ -24,9 +26,55 @@ impl Target {
         let (kind, name) = id.split_once(':')?;
         let name = name.to_owned();
         match kind {
+            "run" => Some(Self::Run),
             "a" => Some(Self::Artifact(name)),
             "e" => Some(Self::Eval(name)),
             _ => None,
+        }
+    }
+}
+
+/// Where a Detail field goes, in display order. Technical is folded by default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Section {
+    Outcome,
+    /// The Artifacts an eval waits for, each with its pending evals.
+    Waits,
+    What,
+    Provenance,
+    Technical,
+}
+
+impl Section {
+    pub const ALL: [Self; 5] = [
+        Self::Outcome,
+        Self::Waits,
+        Self::What,
+        Self::Provenance,
+        Self::Technical,
+    ];
+
+    /// The verdict first; identifiers and hashes last. Unknown fields stay visible in What.
+    pub fn of(key: &str) -> Self {
+        match key {
+            "Status" | "Error" | "Reason" | "Blocked by" | "Result" | "Claim" | "Source"
+            | "At Run end" | "Validation" | "Counts" | "Errors" | "Waiting" | "Running"
+            | "Evals" | "Gates" => Self::Outcome,
+            "Waits for" => Self::Waits,
+            "Timing" | "Usage" | "Budget" | "Work" | "Saved usage" => Self::Provenance,
+            "Request" | "Execution" | "Fingerprint" | "Key" | "Key covers" | "Path" | "Tags"
+            | "Cycle" | "Run" | "Repository" => Self::Technical,
+            _ => Self::What,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Outcome => "Outcome",
+            Self::Waits => "Waits for",
+            Self::What => "What",
+            Self::Provenance => "Provenance",
+            Self::Technical => "Technical",
         }
     }
 }
@@ -36,8 +84,11 @@ pub struct RunRow {
     pub id: String,
     pub repo: String,
     pub status: String,
+    /// Request status glyphs with their counts, most urgent first, such as `✗1 ✓2`.
     pub counts: String,
     pub age: String,
+    /// Wall time of a finished Run.
+    pub took: String,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -46,8 +97,21 @@ pub struct Progress {
     pub repo: String,
     pub validation: String,
     pub timing: String,
+    /// Elapsed time of a running Run, or how long a finished one took.
+    pub elapsed: String,
+    pub finished: bool,
+    /// The saved validation snapshot: `None` until the Run ends.
+    pub satisfied: Option<bool>,
     pub counts: Vec<(String, u64)>,
+    /// Executions against their budget, and jobs.
+    pub budget: String,
+    /// Executed, reused and derived requests.
     pub work: String,
+    /// Every spent token counter, and the counters reuse saved.
+    pub usage: String,
+    pub saved: String,
+    /// The spent token total, the only usage the Run headline shows.
+    pub tokens: Option<u64>,
     /// Eval ID and elapsed time.
     pub running: Vec<(String, String)>,
     /// Eval ID and claim state.
@@ -56,9 +120,22 @@ pub struct Progress {
     pub errors: Vec<(String, String)>,
 }
 
+/// The Run headline: one status line, then what needs attention.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Strip {
+    pub status: String,
+    pub headline: String,
+    /// Status and text: errors, then waiting Human reviews, then running evals.
+    pub attention: Vec<(String, String)>,
+    /// Attention lines beyond the shown ones.
+    pub more: usize,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Detail {
     pub title: String,
+    /// One-line outcome: state, elapsed time, profile and dependencies.
+    pub summary: String,
     pub fields: Vec<(&'static str, String)>,
 }
 
@@ -87,6 +164,12 @@ impl Detail {
     }
 }
 
+/// Attention lines shown in the Run headline before `+N more`.
+const ATTENTION_LINES: usize = 3;
+
+/// Most to least urgent, for status counts in the header, Scope, Runs and the headline.
+const URGENCY: &str = "ERROR RED BLOCKED RUNNING WAITING_HUMAN QUEUED BUDGET_EXHAUSTED \
+    WAIT_DEPENDENCY WAIT STALE UNREVIEWED INCOMPLETE GREEN BASIS";
 const ABSENT: &str = "not in Run";
 
 pub fn glyph(status: Option<&str>) -> &'static str {
@@ -162,17 +245,48 @@ fn span(start: &str, end: Option<&str>, now: OffsetDateTime) -> Option<String> {
     Some(duration((end - parse(start)?).whole_seconds()))
 }
 
+/// Position in the urgency order; unknown statuses come last.
+pub fn urgency(status: &str) -> usize {
+    URGENCY
+        .split_whitespace()
+        .position(|known| known == status)
+        .unwrap_or(usize::MAX)
+}
+
+/// Status counts as glyphs, most urgent first and zero counts left out: `!2 ✓1`.
+pub fn counts<'a>(counts: impl IntoIterator<Item = (&'a str, u64)>) -> String {
+    let mut counts: Vec<_> = counts.into_iter().filter(|(_, n)| *n > 0).collect();
+    counts.sort_by_key(|(status, _)| urgency(status));
+    join(
+        counts
+            .into_iter()
+            .map(|(status, n)| format!("{}{n}", glyph(Some(status)))),
+        " ",
+    )
+}
+
+/// Token totals for a headline: `950`, `12.3k`, `3.9M`.
+pub fn tokens(total: u64) -> String {
+    match total {
+        0..1_000 => total.to_string(),
+        1_000..1_000_000 => format!("{:.1}k", total as f64 / 1e3),
+        _ => format!("{:.1}M", total as f64 / 1e6),
+    }
+}
+
 pub fn run_rows(runs: &[RunSummary], now: OffsetDateTime) -> Vec<RunRow> {
     runs.iter()
         .map(|run| RunRow {
             id: run.id.to_string(),
             repo: run.repo_path.display().to_string(),
             status: run.status.to_string(),
-            counts: join(
-                run.counts.iter().map(|(status, n)| format!("{status} {n}")),
-                "  ",
-            ),
+            counts: counts(run.counts.iter().map(|(status, n)| (status.as_str(), *n))),
             age: span(&run.created_at, None, now).unwrap_or_default(),
+            took: run
+                .completed_at
+                .as_deref()
+                .and_then(|end| span(&run.created_at, Some(end), now))
+                .unwrap_or_default(),
         })
         .collect()
 }
@@ -221,7 +335,15 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
     };
     let usage = pairs(&summary["usage"]);
     let saved = pairs(&output["usage"]["saved"]);
+    let spent = &summary["usage"];
+    let tokens = spent["totalTokens"].as_u64().or_else(|| {
+        let input = spent["inputTokens"].as_u64();
+        let output = spent["outputTokens"].as_u64();
+        (input.is_some() || output.is_some())
+            .then(|| input.unwrap_or(0).saturating_add(output.unwrap_or(0)))
+    });
     let unmet = join(strs(&run.validation["obligations"]), ", ");
+    let wall = span(&run.created_at, run.completed_at.as_deref(), now).unwrap_or_default();
     Progress {
         status: run.status.to_string(),
         repo: run.repo_path.display().to_string(),
@@ -233,44 +355,39 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             Some(_) => format!("NOT SATISFIED at Run end (unmet: {unmet})"),
         },
         timing: format!(
-            "started {} · {} {}",
+            "started {} · {} {wall}",
             run.created_at,
             if run.completed_at.is_some() {
                 "took"
             } else {
                 "elapsed"
             },
-            span(&run.created_at, run.completed_at.as_deref(), now).unwrap_or_default()
         ),
+        elapsed: wall,
+        finished: run.completed_at.is_some(),
+        satisfied: run.validation.get("satisfied").map(|value| value == true),
         counts: summary["counts"]
             .as_object()
             .into_iter()
             .flatten()
             .map(|(status, count)| (status.clone(), count.as_u64().unwrap_or(0)))
             .collect(),
-        work: format!(
-            "executions {}/{} · jobs {} · executed {} · reused {}{}{}{}",
+        budget: format!(
+            "executions {}/{} · jobs {}",
             run.executions_started,
             run.max_executions
                 .map_or("unlimited".into(), |max| max.to_string()),
             run.jobs,
+        ),
+        work: format!(
+            "executed {} · reused {} · derived {}",
             summary["executed"]["total"],
             summary["reused"]["total"],
-            summary["derived"]
-                .as_u64()
-                .filter(|count| *count > 0)
-                .map_or_else(String::new, |count| format!(" · derived {count}")),
-            if usage.is_empty() {
-                usage
-            } else {
-                format!(" · usage {usage}")
-            },
-            if saved.is_empty() {
-                saved
-            } else {
-                format!(" · saved {saved}")
-            }
+            summary["derived"].as_u64().unwrap_or(0),
         ),
+        usage,
+        saved,
+        tokens,
         running: with("RUNNING")
             .map(|view| {
                 (
@@ -292,6 +409,128 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             .chain(run.error.clone().map(|error| ("Run".into(), error)))
             .collect(),
     }
+}
+
+/// The Run headline from its progress: snapshot verdict, counts, time and token total.
+pub fn strip(progress: &Progress) -> Strip {
+    let validation = match progress.satisfied {
+        None => "validation pending".to_owned(),
+        Some(true) => "SATISFIED at Run end".to_owned(),
+        Some(false) => "NOT SATISFIED at Run end".to_owned(),
+    };
+    let counts = counts(
+        progress
+            .counts
+            .iter()
+            .map(|(status, n)| (status.as_str(), *n)),
+    );
+    let time = format!(
+        "{} {}",
+        if progress.finished { "took" } else { "elapsed" },
+        progress.elapsed
+    );
+    let tokens = progress
+        .tokens
+        .map(|total| format!("tokens {}", tokens(total)));
+    let headline = join(
+        [Some(validation), Some(counts), Some(time), tokens]
+            .into_iter()
+            .flatten()
+            .filter(|part| !part.is_empty()),
+        " · ",
+    );
+    let mut attention: Vec<(String, String)> = progress
+        .errors
+        .iter()
+        .map(|(eval, error)| ("ERROR".into(), format!("{eval}  {error}")))
+        .chain(progress.waiting.iter().map(|(eval, claim)| {
+            (
+                "WAITING_HUMAN".into(),
+                format!("{eval}  waiting Human · {claim}"),
+            )
+        }))
+        .chain(progress.running.iter().map(|(eval, time)| {
+            (
+                "RUNNING".into(),
+                format!("{eval}  running {time}").trim_end().to_owned(),
+            )
+        }))
+        .collect();
+    let more = attention.len().saturating_sub(ATTENTION_LINES);
+    attention.truncate(ATTENTION_LINES);
+    Strip {
+        status: progress.status.clone(),
+        headline,
+        attention,
+        more,
+    }
+}
+
+/// The row above the Artifacts; Enter on it opens the Run detail.
+pub fn run_node(run: &RunView) -> Node {
+    let status = run.run.status.to_string();
+    Node {
+        id: format!("run:{}", run.run.id),
+        clock: None,
+        kind: Kind::Artifact {
+            completion: Completion::Complete,
+            basis: false,
+        },
+        glyph: glyph(Some(&status)),
+        tone: match status.as_str() {
+            "GREEN" => Tone::Green,
+            "RED" => Tone::Red,
+            "ERROR" => Tone::Error,
+            "RUNNING" => Tone::Running,
+            "BLOCKED" | "BUDGET_EXHAUSTED" | "INCOMPLETE" => Tone::Blocked,
+            _ => Tone::Muted,
+        },
+        weight: Weight::Normal,
+        name: "Run".into(),
+        marks: String::new(),
+        text: vec![Segment {
+            text: "Enter: usage, budgets, counts".into(),
+            tone: Some(Tone::Muted),
+        }],
+        right: String::new(),
+        compact: String::new(),
+        changed: false,
+        upstream: Vec::new(),
+        children: Vec::new(),
+    }
+}
+
+/// Top-level entries of a result, one line each, such as `verdict GREEN`. Saved runtime
+/// logs are left to the evidence view.
+fn result_summary(result: &Value) -> String {
+    let Some(object) = result.as_object() else {
+        return result
+            .to_string()
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .to_owned();
+    };
+    // The verdict first, then the other entries in their saved order.
+    let mut entries: Vec<_> = object
+        .iter()
+        .filter(|(key, _)| !matches!(key.as_str(), "stdout" | "stderr"))
+        .collect();
+    entries.sort_by_key(|(key, _)| *key != "verdict");
+    let parts = entries.into_iter().map(|(key, value)| match value {
+        Value::String(text) => {
+            let line = text.lines().next().unwrap_or_default();
+            if line.len() < text.trim_end().len() {
+                format!("{key} {line} …")
+            } else {
+                format!("{key} {line}")
+            }
+        }
+        Value::Array(items) => format!("{key} [{} items]", items.len()),
+        Value::Object(fields) => format!("{key} {{{} fields}}", fields.len()),
+        other => format!("{key} {other}"),
+    });
+    join(parts, "\n")
 }
 
 /// Saved Run definitions joined with the Run's requests.
@@ -488,8 +727,27 @@ fn options(options: &crate::store::ExecutionOptions) -> String {
 fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     let request = &view.request;
     let summary = &query::request_output(view, now)["summary"];
+    let deps = join(&request.deps, ", ");
     let mut detail = Detail {
         title: format!("{} · {}", request.eval_id, request.title),
+        summary: join(
+            [
+                format!(
+                    "{}{}",
+                    request.status,
+                    elapsed(view, now).map_or(String::new(), |time| format!(" {time}"))
+                ),
+                profile(&request.profile),
+                if deps.is_empty() {
+                    deps
+                } else {
+                    format!("← {deps}")
+                },
+            ]
+            .into_iter()
+            .filter(|part| !part.is_empty()),
+            " · ",
+        ),
         fields: Vec::new(),
     };
     detail.push(
@@ -574,8 +832,9 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             .map_or(String::new(), |argv| argv.join(" ")),
     );
     if let Some(result) = &request.result {
+        detail.push("Result", result_summary(result));
         detail.push(
-            "Result",
+            "Raw result",
             serde_json::to_string_pretty(result).unwrap_or_default(),
         );
     }
@@ -620,6 +879,41 @@ pub fn detail(
     let saved = Saved { run, requests };
     let mut detail = Detail::default();
     match target {
+        Target::Run => {
+            let progress = progress(run, requests, now);
+            let strip = strip(&progress);
+            detail.title = format!("Run {}", run.run.id);
+            detail.summary = format!("{} · {}", progress.status, strip.headline);
+            detail.push("Status", progress.status.as_str());
+            detail.push("Validation", progress.validation.as_str());
+            detail.push(
+                "Counts",
+                join(
+                    progress
+                        .counts
+                        .iter()
+                        .filter(|(_, n)| *n > 0)
+                        .map(|(status, n)| format!("{} {status} {n}", glyph(Some(status)))),
+                    " · ",
+                ),
+            );
+            let lines = |items: &[(String, String)]| {
+                join(
+                    items.iter().map(|(eval, text)| format!("{eval}  {text}")),
+                    "\n",
+                )
+            };
+            detail.push("Errors", lines(&progress.errors));
+            detail.push("Waiting", lines(&progress.waiting));
+            detail.push("Running", lines(&progress.running));
+            detail.push("Timing", progress.timing.as_str());
+            detail.push("Budget", progress.budget.as_str());
+            detail.push("Work", progress.work.as_str());
+            detail.push("Usage", progress.usage.as_str());
+            detail.push("Saved usage", progress.saved.as_str());
+            detail.push("Run", run.run.id.as_str());
+            detail.push("Repository", progress.repo.as_str());
+        }
         Target::Eval(id) => {
             let waits = tree::waits_for(&saved, id, now);
             if let Some(view) = saved.request(id) {
@@ -674,7 +968,8 @@ pub fn detail(
                     .and_then(|artifact| artifact.tags.value())
                     .map_or_else(String::new, |tags| tags.join(", ")),
             );
-            detail.push("Status", tree::artifact_status(&saved, id, now));
+            detail.summary = tree::artifact_status(&saved, id, now);
+            detail.push("Status", detail.summary.clone());
             let snapshot = saved.validation(id);
             if let Some(status) = snapshot["status"].as_str() {
                 let count = |key| snapshot[key].as_u64().unwrap_or(0);

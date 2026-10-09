@@ -77,9 +77,9 @@ async fn watch(
         match action {
             Action::Quit => {
                 if let Some(review) = monitor
-                    .modal
+                    .detail
                     .as_ref()
-                    .and_then(|modal| modal.review.as_ref())
+                    .and_then(|pane| pane.review.as_ref())
                 {
                     review.cancel_single();
                 }
@@ -95,11 +95,7 @@ async fn watch(
             Action::OpenDetail => monitor.open_detail().await,
             Action::Capture(capture) => input::protocols(capture, true)?,
             Action::Review(review::Action::Start(job)) => {
-                if let Some(review) = monitor
-                    .modal
-                    .as_mut()
-                    .and_then(|modal| modal.review.as_mut())
-                {
+                if let Some(review) = monitor.review_mut() {
                     pending = Some(Box::pin(review.start(job)));
                 }
             }
@@ -108,17 +104,14 @@ async fn watch(
             }
             _ => {}
         }
+        monitor.sync_peek().await;
         terminal
             .draw(|frame| monitor.draw(frame))
             .map_err(|error| error.to_string())?;
-        // A modal switch drops the obsolete job's result. There is at most one bounded job;
-        // render only marks geometry dirty and never performs I/O or spawns tasks.
+        // A Detail or peek switch drops the obsolete job's result. There is at most one bounded
+        // job; render only marks geometry dirty and never performs I/O or spawns tasks.
         if session_job.is_none()
-            && let Some(job) = monitor
-                .modal
-                .as_mut()
-                .and_then(|modal| modal.live.as_mut())
-                .and_then(super::session::Live::job)
+            && let Some(job) = monitor.live_mut().and_then(super::session::Live::job)
         {
             session_job = Some(tokio::task::spawn_blocking(move || {
                 let mut job = job;
@@ -144,7 +137,7 @@ async fn watch(
                 session_job = None;
                 match outcome {
                     Ok((job, window)) => {
-                        if let Some(live) = monitor.modal.as_mut().and_then(|modal| modal.live.as_mut())
+                        if let Some(live) = monitor.live_mut()
                             && live.serial == job.serial && live.source.reference == job.reader.source.reference
                         { live.finish(job, window); }
                     }
@@ -153,14 +146,14 @@ async fn watch(
                 Action::None
             }
             _ = session_probe.tick() => {
-                if let Some(live) = monitor.modal.as_mut().and_then(|modal| modal.live.as_mut()) { live.invalidate(); }
+                if let Some(live) = monitor.live_mut() { live.invalidate(); }
                 Action::None
             },
             outcome = async { match &mut pending { Some(job) => Some(job.await), None => None } }, if pending.is_some() => {
                 pending = None;
                 // Publishing may have emitted a fail-open warning on stderr.
                 repaint(terminal)?;
-                match (outcome, monitor.modal.as_mut().and_then(|modal| modal.review.as_mut())) {
+                match (outcome, monitor.review_mut()) {
                     (Some(outcome), Some(review)) => Action::Review(review.finish_single(outcome)),
                     _ => Action::Refresh,
                 }
@@ -170,7 +163,7 @@ async fn watch(
             change = changes.next() => match change {
                 crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => Action::Refresh,
                 crate::changes::Change::SessionInvalidated(id) => {
-                    if let Some(live) = monitor.modal.as_mut().and_then(|modal| modal.live.as_mut()) && live.source.reference.session_id == id { live.invalidate(); }
+                    if let Some(live) = monitor.live_mut() && live.source.reference.session_id == id { live.invalidate(); }
                     Action::None
                 }
             },
