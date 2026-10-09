@@ -6,7 +6,6 @@ use super::{
     model::{self, Section},
     rows::{fit, plain},
 };
-use crate::review::Control;
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
@@ -394,16 +393,7 @@ impl Monitor {
             }
             Pane::Detail => match &self.detail {
                 Some(pane) => match &pane.review {
-                    Some(review) if review.confirming() => "Enter confirm · Esc cancel",
-                    Some(review) if review.busy() => "Esc or Ctrl-C cancel",
-                    Some(review) if review.settled() => "PgUp/PgDn scroll · Esc back",
-                    Some(review) if review.owned() && review.editing() => {
-                        "Ctrl-S submit · Ctrl-G/R verdict · Tab tools/fields · Esc back"
-                    }
-                    Some(review) if review.owned() => {
-                        "g GREEN · r RED · u release · Tab tools · Esc back"
-                    }
-                    Some(_) => "c claim · Tab tools · Esc back",
+                    Some(review) => return review.detail_hints(),
                     None if pane.live.is_some() && !pane.show_details => {
                         "↑↓ PgUp/PgDn scroll · Home/End · Space tools · d details · Esc back"
                     }
@@ -731,56 +721,30 @@ impl Monitor {
         };
         self.hits.detail = area;
         let detail = pane.detail.clone();
-        let title = match &pane.review {
-            Some(review) => {
-                let stage = if review.settled() {
-                    "completed"
-                } else if review.owned() {
-                    "REVIEW (yours)"
-                } else {
-                    "CLAIM"
-                };
-                let status = detail.summary.split(' ').next().unwrap_or_default();
-                format!(" {} · {status} · {stage} ", plain(&detail.title))
-            }
-            None if detail.summary.is_empty() => format!(" {} ", plain(&detail.title)),
-            None => format!(" {} · {} ", plain(&detail.title), plain(&detail.summary)),
+        // A Human review is the shared component, the same one the standalone review draws.
+        if let Some(review) = &mut pane.review {
+            let hits = review.draw_detail(frame, area, true);
+            self.hits.areas = [hits.tools, hits.fields];
+            self.hits.buttons = hits
+                .buttons
+                .iter()
+                .map(|(rect, control)| (*rect, Button::Review(*control)))
+                .chain((hits.close != Rect::default()).then_some((hits.close, Button::Close)))
+                .collect();
+            self.hits.review = hits;
+            return;
+        }
+        let title = if detail.summary.is_empty() {
+            format!(" {} ", plain(&detail.title))
+        } else {
+            format!(" {} · {} ", plain(&detail.title), plain(&detail.summary))
         };
         let outer = Block::bordered().title(title).cyan();
         let inner = outer.inner(area);
         frame.render_widget(outer, area);
         let [content, buttons] =
             Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(inner);
-        if let Some(review) = &mut pane.review {
-            let (tools, fields, instruction) =
-                review.draw_single(frame, content, pane.focus == DetailArea::Tools);
-            self.hits.instruction = instruction;
-            self.hits.tools = tools;
-            self.hits.field_rows = review.field_hits(fields);
-            let [left, right] =
-                Layout::horizontal([Constraint::Percentage(45), Constraint::Fill(1)])
-                    .areas(content);
-            self.hits.areas = [left, right];
-            let controls = if review.confirming() {
-                vec![
-                    ("Confirm", Button::Review(Control::Confirm)),
-                    ("Cancel", Button::Review(Control::Cancel)),
-                ]
-            } else if review.settled() {
-                Vec::new()
-            } else if review.owned() {
-                vec![
-                    ("Release", Button::Review(Control::Release)),
-                    ("GREEN", Button::Review(Control::Green)),
-                    ("RED", Button::Review(Control::Red)),
-                    ("Submit", Button::Review(Control::Submit)),
-                    ("Run tool", Button::Review(Control::RunTool)),
-                ]
-            } else {
-                vec![("Claim", Button::Review(Control::Claim))]
-            };
-            self.draw_buttons(frame, buttons, controls);
-        } else if let Some(live) = &mut pane.live {
+        if let Some(live) = &mut pane.live {
             let [transcript, footer] =
                 Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(content);
             self.hits.areas = [Rect::default(), transcript];
@@ -917,6 +881,11 @@ impl Monitor {
 /// `artifactize › scope › Run › node` in `room` columns. Earlier segments shorten first, then
 /// the program name goes, and the focused end of the path stays longest.
 pub(super) fn breadcrumb(segments: &[String], room: usize) -> String {
+    crumbs("artifactize", segments, room)
+}
+
+/// A breadcrumb under any program name, such as `artifactize review`.
+pub(crate) fn crumbs(root: &str, segments: &[String], room: usize) -> String {
     let fits = |text: &str| Line::from(text).width() <= room;
     for limit in [usize::MAX, 24, 16, 10] {
         let shown: Vec<String> = segments
@@ -931,7 +900,7 @@ pub(super) fn breadcrumb(segments: &[String], room: usize) -> String {
             })
             .collect();
         let path = shown.join(" › ");
-        let full = format!("artifactize › {path}");
+        let full = format!("{root} › {path}");
         if fits(&full) {
             return full;
         }
@@ -970,7 +939,12 @@ const HELP: &[(&str, &str)] = &[
     ("Tab", "sections and evidence; Human tools and fields"),
     ("d / Space", "Agent: details, tool groups"),
     ("c g r u", "Human: claim, GREEN, RED, release"),
-    ("Ctrl-S", "Human: submit the review"),
+    ("i", "Human: expand or fold the instruction"),
+    (
+        "Ctrl-S",
+        "Human: submit the review; Ctrl-G/R pick a verdict while editing",
+    ),
+    ("Esc", "Human: stop editing, then step back"),
     ("Mouse", ""),
     ("click", "focus and select; double-click opens"),
     ("wheel", "scroll the pane under the pointer"),

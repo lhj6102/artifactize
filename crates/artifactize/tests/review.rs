@@ -16,7 +16,7 @@ use artifactize::{
     review::{Action, Mode, Review},
     store,
 };
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
 use serde_json::{Value, json};
 use support::os::bin;
@@ -118,9 +118,13 @@ fn screen(review: &mut Review) -> String {
         .join("\n")
 }
 
+fn ctrl(c: char) -> KeyEvent {
+    KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL)
+}
+
 /// Press a key and carry out its jobs and refreshes like the terminal driver does.
-async fn press(review: &mut Review, code: KeyCode) -> Action {
-    let mut action = review.key(KeyEvent::from(code));
+async fn press(review: &mut Review, key: impl Into<KeyEvent>) -> Action {
+    let mut action = review.key(key.into());
     loop {
         action = match action {
             Action::Start(job) => {
@@ -174,42 +178,50 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
         list.contains("Waiting Human reviews (1)") && list.contains(&id),
         "{list}"
     );
+    assert!(
+        list.contains("Read the release notes and approve them."),
+        "{list}"
+    );
     assert_eq!(press(&mut review, KeyCode::Enter).await, Action::None);
     let details = screen(&mut review);
-    assert!(details.contains("Claim: unclaimed"), "{details}");
+    assert!(details.contains("WAITING_HUMAN · unclaimed"), "{details}");
     assert!(details.contains("fail_release (output)") && details.contains("open_release (launch)"));
     assert_eq!(fixture.claim(&id).await, None, "opening claims nothing");
+
+    // Tools wait for an explicit claim.
+    press(&mut review, KeyCode::Tab).await;
+    press(&mut review, KeyCode::Enter).await;
+    assert!(screen(&mut review).contains("Claim this request before reviewing it."));
+    assert_eq!(fixture.claim(&id).await, None);
+    press(&mut review, KeyCode::Char('c')).await;
+    assert_eq!(fixture.claim(&id).await.as_deref(), Some("alice"));
+    assert!(screen(&mut review).contains("REVIEW (yours)"));
 
     // fail_release, notes_release, open_release: run notes first, after confirming it.
     press(&mut review, KeyCode::Char('j')).await;
     press(&mut review, KeyCode::Enter).await;
     let release = support::os::canonical(&fixture.repo.join("release"));
     let confirm = screen(&mut review);
-    assert!(
-        confirm.contains(&format!(
-            "Repository: {}",
-            support::os::canonical(&fixture.repo).display()
-        )),
-        "{confirm}"
-    );
-    let notes = release.join("notes.md").display().to_string();
-    let command = artifactize::review::shell([bin("cat").as_str(), notes.as_str()]);
-    let expected = format!("Command: {command}");
-    // A stand-in's long path wraps inside the dialog: compare the text without the layout.
+    // A long path wraps inside the dialog: compare the text without the layout.
     let unwrapped = |text: &str| -> String {
         text.chars()
             .filter(|c| !c.is_whitespace() && !"│┌┐└┘─".contains(*c))
             .collect()
     };
+    let repository = format!(
+        "Repository: {}",
+        support::os::canonical(&fixture.repo).display()
+    );
     assert!(
-        confirm.contains(&expected)
-            || (support::os::stand_ins() && unwrapped(&confirm).contains(&unwrapped(&expected))),
+        unwrapped(&confirm).contains(&unwrapped(&repository)),
         "{confirm}"
     );
-    assert_eq!(
-        fixture.claim(&id).await,
-        None,
-        "confirmation claims nothing"
+    let notes = release.join("notes.md").display().to_string();
+    let command = artifactize::review::shell([bin("cat").as_str(), notes.as_str()]);
+    let expected = format!("Command: {command}");
+    assert!(
+        unwrapped(&confirm).contains(&unwrapped(&expected)),
+        "{confirm}"
     );
     press(&mut review, KeyCode::Char('y')).await;
     let notes = screen(&mut review);
@@ -218,7 +230,6 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
         "{notes}"
     );
     assert!(notes.contains("claimed by you (alice)"), "{notes}");
-    assert_eq!(fixture.claim(&id).await.as_deref(), Some("alice"));
 
     press(&mut review, KeyCode::Char('k')).await;
     press(&mut review, KeyCode::Enter).await;
@@ -244,9 +255,9 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     assert_eq!(review.mode(), &Mode::Request);
     assert!(screen(&mut review).contains("notes_release finished."));
 
-    press(&mut review, KeyCode::Char('s')).await;
+    // RED with an empty reason fails validation and keeps the form.
     press(&mut review, KeyCode::Char('r')).await;
-    press(&mut review, KeyCode::Enter).await;
+    press(&mut review, ctrl('s')).await;
     let invalid = screen(&mut review);
     assert!(
         invalid.contains(r#"- instancePath "/reason": "" is shorter than 1 character"#),
@@ -256,11 +267,10 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     let view = store::read_request(&fixture.state, &id).await.unwrap();
     assert_eq!(view.request.status.as_str(), "WAITING_HUMAN");
     press(&mut review, KeyCode::Esc).await;
-    press(&mut review, KeyCode::Char('s')).await;
     press(&mut review, KeyCode::Char('g')).await;
     assert!(screen(&mut review).contains("approved*: true (fixed)"));
     // Nothing else waits after the submission, so the review hands back to its caller.
-    assert_eq!(press(&mut review, KeyCode::Enter).await, Action::Quit);
+    assert_eq!(press(&mut review, ctrl('s')).await, Action::Quit);
 
     let (code, run) = finish(child);
     assert_eq!(code, Some(0), "{run}");
@@ -296,18 +306,23 @@ async fn review_respects_other_claims_and_releases_its_own() {
         Some(id.clone()),
     );
     review.refresh().await;
-    for key in [KeyCode::Enter, KeyCode::Char('s'), KeyCode::Char('u')] {
+    assert!(screen(&mut review).contains("claimed by bob · read-only"));
+    assert_eq!(press(&mut review, KeyCode::Char('c')).await, Action::None);
+    assert!(screen(&mut review).contains("Claimed by bob; read-only for alice."));
+    for key in [
+        KeyEvent::from(KeyCode::Char('g')),
+        KeyEvent::from(KeyCode::Char('u')),
+        ctrl('s'),
+    ] {
         assert_eq!(press(&mut review, key).await, Action::None);
-        assert!(screen(&mut review).contains("Claimed by bob; read-only for alice."));
+        assert!(screen(&mut review).contains("Claim this request before reviewing it."));
     }
     assert_eq!(fixture.claim(&id).await.as_deref(), Some("bob"));
     human::unclaim(&receipts, &id, "bob").await.unwrap();
     review.refresh().await;
 
-    // The unclaim key releases, and another reviewer can then claim.
-    press(&mut review, KeyCode::Char('j')).await;
-    press(&mut review, KeyCode::Enter).await;
-    press(&mut review, KeyCode::Char('y')).await;
+    // c claims, u releases, and another reviewer can then claim.
+    press(&mut review, KeyCode::Char('c')).await;
     assert_eq!(fixture.claim(&id).await.as_deref(), Some("alice"));
     press(&mut review, KeyCode::Char('u')).await;
     assert!(screen(&mut review).contains("Claim released."));
@@ -316,7 +331,7 @@ async fn review_respects_other_claims_and_releases_its_own() {
     human::unclaim(&receipts, &id, "bob").await.unwrap();
 
     // Quitting after a claim this session took asks; releasing frees it for others.
-    press(&mut review, KeyCode::Enter).await;
+    press(&mut review, KeyCode::Char('c')).await;
     assert_eq!(fixture.claim(&id).await.as_deref(), Some("alice"));
     assert_eq!(press(&mut review, KeyCode::Char('q')).await, Action::None);
     assert!(screen(&mut review).contains("This session claimed 1 request(s)"));

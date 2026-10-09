@@ -1,6 +1,6 @@
 //! Terminal protocol and hit tests over geometry from the most recently rendered frame.
 use super::{Action, DetailArea, Monitor, Pane};
-use crate::review::Control;
+use crate::review::{Area, Control};
 use crossterm::event::{
     DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     MouseButton, MouseEvent, MouseEventKind,
@@ -41,11 +41,10 @@ pub(super) struct Hits {
     pub tree: Rect,
     /// The opened Detail pane; empty for a peek.
     pub detail: Rect,
-    pub instruction: Rect,
     /// Sections and evidence, or a Human review's tools and fields.
     pub areas: [Rect; 2],
-    pub tools: Rect,
-    pub field_rows: Vec<(Rect, usize)>,
+    /// The Human review component's own geometry.
+    pub review: crate::review::Hits,
     pub buttons: Vec<(Rect, Button)>,
     pub session_groups: Vec<(Rect, crate::agent::session::transcript::BlockId)>,
 }
@@ -276,41 +275,32 @@ impl Monitor {
                 live.toggle(*id);
                 return Action::None;
             }
-            if contains(self.hits.areas[0], point) {
-                pane.focus = if pane.review.is_some() {
-                    DetailArea::Tools
-                } else {
-                    DetailArea::Summary
-                };
-            }
-            if contains(self.hits.areas[1], point) {
-                pane.focus = if pane.review.is_some() {
-                    DetailArea::Fields
-                } else {
-                    DetailArea::Evidence
-                };
-            }
             if let Some(review) = &mut pane.review {
-                if contains(self.hits.tools, point) {
-                    let inner = self.hits.tools.height.saturating_sub(2);
-                    let scroll = (3 * (review.tool_index() as u16 + 1)).saturating_sub(inner);
-                    let index = usize::from(
-                        point
-                            .y
-                            .saturating_sub(self.hits.tools.y + 1)
-                            .saturating_add(scroll)
-                            / 3,
-                    );
-                    review.selected_tool(index);
+                let hits = &self.hits.review;
+                if contains(hits.tools, point) {
+                    review.select_area(Area::Tools);
                 }
-                if let Some((_, index)) = self
-                    .hits
+                if contains(hits.fields, point) {
+                    review.select_area(Area::Fields);
+                }
+                if let Some((_, index)) = hits
+                    .tool_rows
+                    .iter()
+                    .find(|(rect, _)| contains(*rect, point))
+                {
+                    review.selected_tool(*index);
+                }
+                if let Some((_, index)) = hits
                     .field_rows
                     .iter()
                     .find(|(rect, _)| contains(*rect, point))
                 {
                     review.select_field(*index);
                 }
+            } else if contains(self.hits.areas[0], point) {
+                pane.focus = DetailArea::Summary;
+            } else if contains(self.hits.areas[1], point) {
+                pane.focus = DetailArea::Evidence;
             }
         }
         let delta = match event.kind {
@@ -318,7 +308,7 @@ impl Monitor {
             MouseEventKind::ScrollUp => -WHEEL_ROWS,
             _ => return Action::None,
         };
-        if contains(self.hits.instruction, point)
+        if contains(self.hits.review.instruction, point)
             && let Some(review) = &mut pane.review
         {
             review.scroll_instruction(delta);
