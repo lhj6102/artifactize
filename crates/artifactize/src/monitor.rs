@@ -110,6 +110,9 @@ struct Peek {
     text: String,
 }
 
+/// A shared, cached tree.
+type Rows = std::sync::Arc<Vec<Node>>;
+
 /// Semantic selection/drafts live here, independently of render geometry.
 pub struct Monitor {
     state: PathBuf,
@@ -126,6 +129,8 @@ pub struct Monitor {
     run: Option<(RunView, Vec<RequestView>)>,
     tree: TreeState<String>,
     folds: fold::Folds,
+    /// The cached tree it was built from, and that tree with the Run row above it.
+    framed: Option<(Rows, Rows)>,
     detail: Option<DetailPane>,
     serial: u64,
     peek: Option<Peek>,
@@ -160,6 +165,7 @@ impl Monitor {
             run: None,
             tree: TreeState::default(),
             folds: fold::Folds::default(),
+            framed: None,
             detail: None,
             serial: 0,
             peek: None,
@@ -544,7 +550,7 @@ impl Monitor {
         self.detail
             .as_ref()
             .and_then(|pane| pane.review.as_ref())
-            .is_some_and(|review| review.busy() || review.confirming() || review.editing())
+            .is_some_and(owns_keys)
     }
     /// Select the next ERROR, RED or waiting Human eval after the selection, wrapping around.
     fn next_attention(&mut self) -> bool {
@@ -745,11 +751,7 @@ impl Monitor {
         }
         // A Human review owns every key only while it edits, works or confirms; otherwise the
         // common Detail keys come first and its own keys (c, g, r, u, Ctrl-S…) follow.
-        let exclusive = pane
-            .review
-            .as_ref()
-            .is_some_and(|review| review.editing() || review.busy() || review.confirming());
-        if !exclusive {
+        if !pane.review.as_ref().is_some_and(owns_keys) {
             match key.code {
                 KeyCode::Char('q') => return Action::Quit,
                 KeyCode::Char('?') => {
@@ -869,6 +871,12 @@ impl Monitor {
             review.paste_single(text);
         }
     }
+}
+
+/// A Human review takes every key while it works, or while it edits or confirms a request
+/// that still waits; a request settled elsewhere leaves its form behind without keys.
+fn owns_keys(review: &Review) -> bool {
+    review.busy() || !review.settled() && (review.editing() || review.confirming())
 }
 
 fn pane_request(view: &Option<RequestView>) -> Option<&RequestId> {

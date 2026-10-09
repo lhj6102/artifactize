@@ -9,6 +9,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph},
 };
+use std::borrow::Cow;
 use time::OffsetDateTime;
 use tui_tree_widget::{Tree, TreeItem, TreeState};
 use unicode_segmentation::UnicodeSegmentation;
@@ -30,16 +31,35 @@ pub(super) fn color(tone: Tone) -> Color {
     }
 }
 
+/// Text for one row: line breaks and tabs become spaces and other control characters go,
+/// so widths are measured on what the terminal shows (and `cell_width` never sees a control).
+pub(super) fn plain(text: &str) -> Cow<'_, str> {
+    if !text.contains(char::is_control) {
+        return Cow::Borrowed(text);
+    }
+    Cow::Owned(
+        text.chars()
+            .filter_map(|character| match character {
+                '\n' | '\t' => Some(' '),
+                character if character.is_control() => None,
+                character => Some(character),
+            })
+            .collect(),
+    )
+}
+
 fn width(text: &str) -> usize {
-    text.graphemes(true)
+    plain(text)
+        .graphemes(true)
         .map(|grapheme| usize::from(grapheme.cell_width()))
         .sum()
 }
 
-/// At most `max` columns, ending in `…` when cut.
+/// At most `max` columns of [`plain`] text, ending in `…` when cut.
 pub(super) fn fit(text: &str, max: usize) -> String {
-    if width(text) <= max {
-        return text.to_owned();
+    let text = plain(text);
+    if width(&text) <= max {
+        return text.into_owned();
     }
     let mut fitted = String::new();
     let mut used = 0;
@@ -114,10 +134,13 @@ fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -
     // The glyph and its space, and in the full tree the gap before the status text.
     let room = budget.saturating_sub(if layout.compact { 2 } else { 4 });
     let (name, marks) = if width(&node.name) + width(&node.marks) <= room {
-        (node.name.clone(), node.marks.clone())
+        (
+            plain(&node.name).into_owned(),
+            plain(&node.marks).into_owned(),
+        )
     } else if width(&node.name) < room {
         let marks = fit(&node.marks, room - width(&node.name));
-        (node.name.clone(), marks)
+        (plain(&node.name).into_owned(), marks)
     } else {
         (fit(&node.name, room), String::new())
     };
@@ -161,7 +184,7 @@ fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -
         } else {
             Style::new()
         };
-        spans.push(Span::styled(right.clone(), right_style));
+        spans.push(Span::styled(plain(right).into_owned(), right_style));
         if node.changed {
             spans.push(Span::styled(
                 " *",

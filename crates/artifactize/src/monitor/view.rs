@@ -4,7 +4,7 @@ use super::{
     input::{Button, Hits},
     layout::{self, Density, Hints},
     model::{self, Section},
-    rows::fit,
+    rows::{fit, plain},
 };
 use crate::review::Control;
 use ratatui::{
@@ -14,6 +14,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Cell, Clear, Paragraph, Row, Table, Wrap},
 };
+use std::sync::Arc;
 use time::OffsetDateTime;
 
 /// Buttons stay two columns apart so adjacent hit areas never overlap.
@@ -162,7 +163,7 @@ fn highlight(focused: bool) -> Style {
 /// Display columns. Natural widths add up in `usize` and become `u16` only through `cap`, so a
 /// saved text of any length cannot overflow them.
 fn width(text: &str) -> usize {
-    Line::from(text).width()
+    Line::from(plain(text).as_ref()).width()
 }
 fn cap(columns: usize) -> u16 {
     u16::try_from(columns).unwrap_or(u16::MAX)
@@ -193,7 +194,11 @@ fn run_cells(row: &model::RunRow, workspace: bool) -> [String; 7] {
         } else {
             format!("took {}", row.took)
         },
-        if workspace { name } else { String::new() },
+        if workspace {
+            plain(&name).into_owned()
+        } else {
+            String::new()
+        },
     ]
 }
 /// Column widths of non-empty columns; narrow widths drop workspace, took, counts and then
@@ -259,17 +264,24 @@ impl Monitor {
             frame.render_widget(Line::from(message.as_str()).red(), notice);
         }
         frame.render_widget(Line::from(self.key_hints()).dark_gray(), keys);
-        // The cached tree, with the Run row above it.
+        // The cached tree with the Run row above it, built once per cached tree.
         let tree = self.nodes();
-        let nodes = self.run.as_ref().map(|(run, _)| {
-            std::iter::once(model::run_node(run))
-                .chain(tree.iter().cloned())
-                .collect::<Vec<_>>()
-        });
+        let nodes = match &self.framed {
+            Some((source, framed)) if Arc::ptr_eq(source, &tree) => Some(framed.clone()),
+            _ => self.run.as_ref().map(|(run, _)| {
+                let framed = Arc::new(
+                    std::iter::once(model::run_node(run))
+                        .chain(tree.iter().cloned())
+                        .collect::<Vec<_>>(),
+                );
+                self.framed = Some((tree.clone(), framed.clone()));
+                framed
+            }),
+        };
         let hints = Hints {
             scope: self.scope_width(),
             runs: self.runs_width(now),
-            tree: nodes.as_deref().map_or(0, |nodes| {
+            tree: nodes.as_deref().map_or(0, |nodes: &Vec<model::Node>| {
                 let strip = self.run.as_ref().map_or(0, |(run, requests)| {
                     strip_width(&model::strip(&model::progress(run, requests, now)))
                 });
@@ -350,6 +362,10 @@ impl Monitor {
         }
         let right = Line::from(right);
         let room = usize::from(area.width).saturating_sub(right.width() + 2);
+        let segments: Vec<String> = segments
+            .iter()
+            .map(|segment| plain(segment).into_owned())
+            .collect();
         let crumb = breadcrumb(&segments, room);
         let [left, end] = Layout::horizontal([
             Constraint::Fill(1),
@@ -442,7 +458,7 @@ impl Monitor {
             .max()
             .unwrap_or(0);
         let rows = self.catalog.rows.iter().map(|row| {
-            let label = format!("{}{}", "  ".repeat(row.depth), row.label);
+            let label = format!("{}{}", "  ".repeat(row.depth), plain(&row.label));
             let label = if row.fold.is_some() {
                 Span::raw(label).dark_gray()
             } else {
@@ -550,7 +566,7 @@ impl Monitor {
         frame: &mut Frame,
         area: Rect,
         density: Density,
-        nodes: Option<Vec<model::Node>>,
+        nodes: Option<Arc<Vec<model::Node>>>,
         now: OffsetDateTime,
     ) {
         let focused = self.focus == Pane::Artifacts;
@@ -669,7 +685,7 @@ impl Monitor {
                 " {} ",
                 detail
                     .as_ref()
-                    .map_or("Detail", |detail| detail.title.as_str())
+                    .map_or_else(|| "Detail".into(), |detail| plain(&detail.title))
             ),
             false,
         );
@@ -725,10 +741,10 @@ impl Monitor {
                     "CLAIM"
                 };
                 let status = detail.summary.split(' ').next().unwrap_or_default();
-                format!(" {} · {status} · {stage} ", detail.title)
+                format!(" {} · {status} · {stage} ", plain(&detail.title))
             }
-            None if detail.summary.is_empty() => format!(" {} ", detail.title),
-            None => format!(" {} · {} ", detail.title, detail.summary),
+            None if detail.summary.is_empty() => format!(" {} ", plain(&detail.title)),
+            None => format!(" {} · {} ", plain(&detail.title), plain(&detail.summary)),
         };
         let outer = Block::bordered().title(title).cyan();
         let inner = outer.inner(area);

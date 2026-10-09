@@ -694,3 +694,75 @@ async fn claim_and_completed_human_details_keep_help_attention_back_and_quit() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_form_settled_by_an_outside_submission_releases_keys_and_focus() {
+    let (view, requests) = super::tests::live();
+    let mut monitor = Monitor::new("/fixture-state".into(), None);
+    monitor.open = Some("run-1".parse().unwrap());
+    monitor.set_run(view, requests);
+    monitor
+        .tree
+        .select(vec!["a:app".into(), "e:app/review".into()]);
+    monitor.open_detail().await;
+    let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
+    review.control(review::Control::Red);
+    monitor.detail.as_mut().unwrap().review = Some(review);
+    monitor.detail.as_mut().unwrap().focus = DetailArea::Fields;
+    // While the request waits, the form owns the keys and keeps focus.
+    monitor.key(KeyEvent::from(KeyCode::Char('?')));
+    assert!(!monitor.help);
+    // Another command submits it; a refresh loads the settled request under the open form.
+    let review = monitor.detail.as_mut().unwrap().review.as_mut().unwrap();
+    review.load_single(super::tests::request(
+        "app/review",
+        "GREEN",
+        json!({"profile":{"kind":"human"},"result":{"verdict":"GREEN"}}),
+    ));
+    assert!(review.editing() && review.settled());
+    render(&mut monitor, 160, 40);
+    assert!(!monitor.locked());
+    let tree = monitor.hits.tree;
+    monitor.mouse(mouse(
+        MouseEventKind::Down(MouseButton::Left),
+        tree.x + 2,
+        tree.y + 1,
+    ));
+    assert_eq!(
+        monitor.focus,
+        Pane::Artifacts,
+        "clicks leave a settled form"
+    );
+    monitor.open_detail().await;
+    let review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
+    monitor.detail.as_mut().unwrap().review = Some(review);
+    let review = monitor.detail.as_mut().unwrap().review.as_mut().unwrap();
+    review.control(review::Control::Red);
+    review.load_single(super::tests::request(
+        "app/review",
+        "GREEN",
+        json!({"profile":{"kind":"human"},"result":{"verdict":"GREEN"}}),
+    ));
+    assert_eq!(
+        monitor.key(KeyEvent::from(KeyCode::Char('?'))),
+        Action::None
+    );
+    assert!(monitor.help);
+    monitor.key(KeyEvent::from(KeyCode::Esc));
+    assert_eq!(monitor.key(KeyEvent::from(KeyCode::Left)), Action::None);
+    assert_eq!(monitor.focus, Pane::Artifacts);
+    monitor.open_detail().await;
+    let review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
+    monitor.detail.as_mut().unwrap().review = Some(review);
+    let review = monitor.detail.as_mut().unwrap().review.as_mut().unwrap();
+    review.control(review::Control::Red);
+    review.load_single(super::tests::request(
+        "app/review",
+        "GREEN",
+        json!({"profile":{"kind":"human"},"result":{"verdict":"GREEN"}}),
+    ));
+    assert_eq!(
+        monitor.key(KeyEvent::from(KeyCode::Char('q'))),
+        Action::Quit
+    );
+}

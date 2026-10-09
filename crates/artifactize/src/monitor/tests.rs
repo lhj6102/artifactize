@@ -699,6 +699,78 @@ fn saved_texts_of_any_length_never_overflow_natural_widths() {
 }
 
 #[test]
+fn one_row_text_turns_line_breaks_and_tabs_into_spaces_and_drops_other_controls() {
+    assert_eq!(rows::plain("plain"), "plain");
+    assert_eq!(rows::plain("a\nb\tc\r\nd\u{7}e"), "a b c de");
+    assert_eq!(rows::fit("a\nb\tc\u{7}d", 10), "a b cd");
+    assert_eq!(rows::fit("first\nsecond", 8), "first s…");
+}
+
+#[tokio::test]
+async fn control_characters_in_saved_texts_never_reach_cell_widths() {
+    let messy = "first diagnostic\nsecond\tdiagnostic\r\nthird\u{7}diagnostic";
+    let (view, mut requests) = live();
+    for view in &mut requests {
+        if view.request.eval_id == "p2/check" {
+            view.request.error = Some(messy.into());
+        }
+        if view.request.eval_id == "app/check" {
+            view.request.profile = serde_json::from_value(
+                json!({"kind":"runtime","command":"line\nbreak","args":["tab\there"]}),
+            )
+            .unwrap();
+        }
+    }
+    let mut monitor = Monitor::new("/state".into(), None);
+    let path = "/work/line\nbreak\tname";
+    monitor.catalog.update(
+        &[crate::store::CatalogRun {
+            repo_path: path.into(),
+            repository: Default::default(),
+            status: crate::types::RunStatus::Running,
+            red: 0,
+            error: 1,
+            waiting: Vec::new(),
+        }],
+        None,
+    );
+    let mut row = summary("run-1", 1);
+    row.repo_path = path.into();
+    monitor.set_runs(vec![row]);
+    monitor.open = Some("run-1".parse().unwrap());
+    monitor.set_run(view, requests);
+    monitor
+        .tree
+        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    for (focus, expected) in [
+        (Pane::Repositories, "line break name (non-Git)"),
+        (Pane::Runs, "line break name"),
+        // The attention line and the tree row (Full) keep one row each.
+        (
+            Pane::Artifacts,
+            "! p2/check  [SPAWN] first diagnostic second diagnostic thirddiagnostic",
+        ),
+        (Pane::Artifacts, "ERROR · [SPAWN] first diagnostic  "),
+        (Pane::Artifacts, "running · runtime line break  "),
+    ] {
+        monitor.focus = focus;
+        for (width, height) in [(160, 30), (100, 24), (80, 24)] {
+            let text = sized(&mut monitor, width, height);
+            if width == 160 {
+                assert!(text.contains(expected), "{focus:?}: {expected}\n{text}");
+            }
+        }
+    }
+    // The Compact tree beside Detail, and Detail keeps the full text on its own lines.
+    monitor.focus = Pane::Artifacts;
+    monitor.open_detail().await;
+    let text = sized(&mut monitor, 160, 30);
+    assert!(text.contains("Error: [SPAWN] first diagnostic"), "{text}");
+    assert!(text.contains("  seconddiagnostic"), "{text}");
+    assert!(text.contains("│     ! check"), "{text}");
+}
+
+#[test]
 fn short_terminals_keep_every_attention_line_or_count_the_rest() {
     for height in [15, 18] {
         for focus in [Pane::Runs, Pane::Artifacts] {
