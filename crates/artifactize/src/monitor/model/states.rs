@@ -10,8 +10,6 @@ use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
 };
 
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
-
 use super::Saved;
 use crate::{
     config::ProfileKind,
@@ -330,8 +328,6 @@ pub(super) struct States<'a> {
     pub index: Index<'a>,
     pub running: bool,
     ignore_gates: bool,
-    /// When the Run ended, for rows that changed afterwards.
-    end: Option<OffsetDateTime>,
     views: RefCell<HashMap<&'a str, Option<EvalView>>>,
     effective: RefCell<HashMap<&'a str, Option<EvalStatus>>>,
     completions: RefCell<HashMap<&'a str, Completion>>,
@@ -348,10 +344,6 @@ impl<'a> States<'a> {
             index: Index::new(saved),
             running: run.status == RunStatus::Running,
             ignore_gates: run.ignore_gates,
-            end: run
-                .completed_at
-                .as_deref()
-                .and_then(|end| OffsetDateTime::parse(end, &Rfc3339).ok()),
             views: RefCell::new(HashMap::new()),
             effective: RefCell::new(HashMap::new()),
             completions: RefCell::new(HashMap::new()),
@@ -769,40 +761,5 @@ impl<'a> States<'a> {
             )
         });
         upstream
-    }
-
-    /// The eval's request completed after the Run ended, such as a late Human submission.
-    fn completed_late(&self, eval: &str) -> bool {
-        let completed = self
-            .request(eval)
-            .and_then(|view| view.request.completed_at.as_deref())
-            .and_then(|time| OffsetDateTime::parse(time, &Rfc3339).ok());
-        matches!((self.end, completed), (Some(end), Some(completed)) if completed > end)
-    }
-
-    /// The row changed after the Run ended: its own request completed later, or it was held
-    /// by its dependencies and one of those completed later. Effective statuses the graph
-    /// already applied at the Run's end are not changes.
-    pub fn changed(&self, eval: &'a str) -> bool {
-        if self.end.is_none() {
-            return false;
-        }
-        if self.completed_late(eval) {
-            return true;
-        }
-        let held = self.request(eval).is_some_and(|view| {
-            matches!(
-                view.request.status,
-                RequestStatus::Queued
-                    | RequestStatus::WaitDependency
-                    | RequestStatus::Unreviewed
-                    | RequestStatus::Blocked
-            )
-        });
-        held && self.upstream(eval).iter().any(|artifact| {
-            self.evals(artifact)
-                .iter()
-                .any(|upstream| self.completed_late(upstream))
-        })
     }
 }

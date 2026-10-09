@@ -1311,3 +1311,88 @@ fn effective_statuses_saved_at_run_end_are_not_changes() {
     );
     assert!(nodes.iter().all(|node| !node.changed), "{nodes:#?}");
 }
+
+/// Rows marked with `*`, as `id` → changed.
+fn marks(nodes: &[Node]) -> Vec<(String, bool)> {
+    nodes
+        .iter()
+        .flat_map(|node| std::iter::once(node).chain(&node.children))
+        .map(|node| (node.id.clone(), node.changed))
+        .collect()
+}
+
+fn human(eval: &str, status: &str, extra: Value) -> RequestView {
+    let mut extra = extra;
+    extra["profile"] = json!({"kind":"human"});
+    request(eval, status, extra)
+}
+
+#[test]
+fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
+    let late = json!({"completedAt":"2026-01-01T00:06:00Z"});
+    // (a) One of two Human evals of a is approved later: a changes, b still waits for a.
+    let pair = definitions(
+        &[(&["a"], &[]), (&["b"], &[0])],
+        vec![runtime("a/one"), runtime("a/two"), runtime("b/x")],
+    );
+    let requests = vec![
+        human("a/one", "GREEN", late.clone()),
+        human("a/two", "WAITING_HUMAN", json!({})),
+        request("b/x", "WAIT_DEPENDENCY", json!({})),
+    ];
+    let (run, requests) = saved(pair, false, requests);
+    let nodes = tree(&run, &requests, now());
+    assert_eq!(
+        marks(&nodes),
+        [
+            ("a:a".to_owned(), true),
+            ("e:a/one".to_owned(), true),
+            ("e:a/two".to_owned(), false),
+            ("a:b".to_owned(), false),
+            ("e:b/x".to_owned(), false),
+        ]
+    );
+    assert_eq!(
+        line(&nodes, "e:b/x"),
+        "○ x  not run: waited for a ? in progress"
+    );
+
+    // (b) a's late GREEN opens the gate of b's reused GREEN: b completes, c can run.
+    let three = definitions(
+        &[(&["a"], &[]), (&["b"], &[0]), (&["c"], &[1])],
+        vec![runtime("a/one"), runtime("b/x"), runtime("c/x")],
+    );
+    let requests = vec![
+        human("a/one", "GREEN", late.clone()),
+        request("b/x", "GREEN", reused()),
+        request("c/x", "WAIT_DEPENDENCY", json!({})),
+    ];
+    let (run, requests) = saved(three.clone(), false, requests);
+    let nodes = tree(&run, &requests, now());
+    assert_eq!(line(&nodes, "a:b"), "✓ b  1/1 *");
+    assert_eq!(line(&nodes, "e:b/x"), "✓ x  GREEN · reused");
+    assert_eq!(line(&nodes, "a:c"), "○ c  not reviewed  0/1 *");
+    assert_eq!(line(&nodes, "e:c/x"), "○ x  not reviewed *");
+
+    // A later claim alone changes the Human row, nothing downstream.
+    let mut waiting = human("a/one", "WAITING_HUMAN", json!({}));
+    waiting.claim = Some(crate::store::HumanClaim {
+        request_id: waiting.request.id.clone(),
+        reviewer: "hj".into(),
+        claimed_at: "2026-01-01T00:07:00Z".into(),
+    });
+    let requests = vec![
+        waiting,
+        request("b/x", "WAIT_DEPENDENCY", json!({})),
+        request("c/x", "WAIT_DEPENDENCY", json!({})),
+    ];
+    let (run, requests) = saved(three, false, requests);
+    let nodes = tree(&run, &requests, now());
+    assert_eq!(
+        marks(&nodes)
+            .into_iter()
+            .filter(|(_, changed)| *changed)
+            .collect::<Vec<_>>(),
+        [("e:a/one".to_owned(), true)]
+    );
+}

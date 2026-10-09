@@ -384,7 +384,7 @@ fn eval_node<'a>(states: &States<'a>, eval: &'a str, now: OffsetDateTime) -> Nod
         text: text(states, &view, request),
         compact: compact(&view, &right),
         right,
-        changed: states.changed(eval),
+        changed: false,
         upstream: states.upstream_states(eval),
         children: Vec::new(),
         kind: Kind::Eval(view),
@@ -576,7 +576,7 @@ fn artifact_node<'a>(
         text,
         compact: right.clone(),
         right,
-        changed: children.iter().any(|node| node.changed),
+        changed: false,
         upstream: Vec::new(),
         children,
     }
@@ -585,6 +585,16 @@ fn artifact_node<'a>(
 /// Every saved or requested Artifact appears exactly once, upstream first where the graph
 /// allows: dependency-first component order, cycle peers by name.
 pub fn tree(run: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Vec<Node> {
+    let mut nodes = build(run, requests, now);
+    // A finished Run: derive the same snapshot once more as of its end and mark every row
+    // whose derived state differs.
+    if let Some(ended) = at_end(run, requests) {
+        mark(&mut nodes, &build(run, &ended, now));
+    }
+    nodes
+}
+
+fn build(run: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Vec<Node> {
     let saved = Saved { run, requests };
     let states = States::new(&saved);
     states
@@ -593,6 +603,81 @@ pub fn tree(run: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Vec
         .iter()
         .map(|id| artifact_node(&states, &saved, id, now))
         .collect()
+}
+
+/// The requests as they stood when the Run ended, or `None` when nothing changed since
+/// (or the Run has not ended). A request that completed later goes back to waiting for its
+/// Human (or running), and a later claim is dropped; the Run's recorded evidence is fixed.
+fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
+    let parse = |time: &str| OffsetDateTime::parse(time, &Rfc3339).ok();
+    let end = parse(run.run.completed_at.as_deref()?)?;
+    let late = |time: Option<&str>| time.and_then(parse).is_some_and(|time| time > end);
+    let changed = requests.iter().any(|view| {
+        late(view.request.completed_at.as_deref())
+            || late(view.claim.as_ref().map(|claim| claim.claimed_at.as_str()))
+    });
+    if !changed {
+        return None;
+    }
+    let mut ended = requests.to_vec();
+    for view in &mut ended {
+        if late(view.claim.as_ref().map(|claim| claim.claimed_at.as_str())) {
+            view.claim = None;
+        }
+        let request = &mut view.request;
+        if late(request.completed_at.as_deref()) {
+            request.status = if request.profile.kind() == crate::config::ProfileKind::Human {
+                crate::types::RequestStatus::WaitingHuman
+            } else {
+                crate::types::RequestStatus::Running
+            };
+            request.completed_at = None;
+            request.result = None;
+            request.error = None;
+            request.error_code = None;
+        }
+    }
+    Some(ended)
+}
+
+/// The state a row derives, without the root-cause note (an explanation, not a state).
+fn state(node: &Node) -> (Kind, &'static str, String) {
+    let kind = match &node.kind {
+        Kind::Eval(EvalView::WaitingOn(waits)) => Kind::Eval(EvalView::WaitingOn(Waits {
+            x: waits.x.clone(),
+            root: None,
+        })),
+        Kind::Eval(EvalView::NotRun(NotRun::Dependency(waits))) => {
+            Kind::Eval(EvalView::NotRun(NotRun::Dependency(Waits {
+                x: waits.x.clone(),
+                root: None,
+            })))
+        }
+        kind => kind.clone(),
+    };
+    // Artifact rows compare their whole summary; eval rows their state and glyph.
+    let summary = match node.kind {
+        Kind::Artifact { .. } => format!("{} {}", node.status(), node.right),
+        Kind::Eval(_) => String::new(),
+    };
+    (kind, node.glyph, summary)
+}
+
+/// Mark the rows whose derived state differs from the Run-end derivation.
+fn mark(nodes: &mut [Node], ended: &[Node]) {
+    let mut before = std::collections::HashMap::new();
+    for node in ended {
+        before.insert(node.id.as_str(), state(node));
+        for child in &node.children {
+            before.insert(child.id.as_str(), state(child));
+        }
+    }
+    for node in nodes {
+        node.changed = before.get(node.id.as_str()) != Some(&state(node));
+        for child in &mut node.children {
+            child.changed = before.get(child.id.as_str()) != Some(&state(child));
+        }
+    }
 }
 
 /// Every eval's direct dependency Artifacts, from the Run's saved definitions.
