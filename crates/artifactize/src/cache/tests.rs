@@ -65,7 +65,10 @@ async fn manifest_digest_prefix_remains_first_sixteen_hex_characters_not_full_id
     let fingerprint = repo.fingerprint("root").await.unwrap();
     let manifest = fingerprint.manifest.unwrap();
     assert_eq!(manifest.files.unwrap()["a.txt"], "ba7816bf8f01cfea");
-    assert_eq!(manifest.inputs.len(), 64);
+    assert_eq!(
+        manifest.inputs,
+        "e4f6b6f577a7a9d1317c8277472a2cf20ab370750350f87150dc6169e62a7506"
+    );
     assert_eq!(fingerprint.value.len(), 72);
     assert_eq!(
         fingerprint.value.as_str(),
@@ -226,28 +229,6 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
         );
         assert!(read_workspace_config(repo.root.path()).is_err(), "{ignore}");
     }
-}
-
-#[tokio::test]
-async fn family_instances_hash_shared_files_and_only_their_own_material() {
-    let repo = Repo::new();
-    repo.artifact(
-        "posts",
-        json!({"name":"posts","family":{"instances":"instances.json"},"fingerprint":{}}),
-    );
-    repo.write(
-        "posts/instances.json",
-        &json!({"one":{"material":["one.md"]},"two":{"material":["two.md"]}}).to_string(),
-    );
-    for path in ["posts/check.py", "posts/one.md", "posts/two.md"] {
-        repo.write(path, "v1");
-    }
-    assert_eq!(repo.files("one").await, ["check.py", "one.md"]);
-    let one = repo.fingerprint("one").await.unwrap().value;
-    repo.write("posts/two.md", "v2");
-    assert_eq!(repo.fingerprint("one").await.unwrap().value, one);
-    repo.write("posts/check.py", "v2");
-    assert_ne!(repo.fingerprint("one").await.unwrap().value, one);
 }
 
 #[test]

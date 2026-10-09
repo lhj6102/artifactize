@@ -51,8 +51,6 @@ pub struct Graph {
     pub relations: Field<Vec<Relation>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub components: Field<Vec<Component>>,
-    #[serde(default, skip_serializing_if = "missing")]
-    pub families: Field<BTreeMap<String, Family>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -89,19 +87,11 @@ impl Graph {
             _ => &[],
         }
     }
-    pub fn family(&self, name: &str) -> Option<&Family> {
-        match &self.families {
-            Field::Value(families) => families.get(name),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
-    #[serde(default, skip_serializing_if = "missing")]
-    pub family: Field<Membership>,
     #[serde(default, skip_serializing_if = "missing")]
     pub path: Field<PathBuf>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -118,17 +108,6 @@ pub struct Artifact {
     pub fingerprint: Field<Fingerprint>,
     #[serde(default, skip_serializing_if = "missing")]
     pub review_policy: Field<Policy>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
-}
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct Membership {
-    #[serde(default, skip_serializing_if = "missing")]
-    pub name: Field<String>,
-    #[serde(default, skip_serializing_if = "missing")]
-    pub instances: Field<String>,
-    #[serde(default, skip_serializing_if = "missing")]
-    pub material: Field<Vec<String>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
@@ -257,16 +236,6 @@ pub struct Component {
     pub gates: Field<Vec<String>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub cyclic: Field<bool>,
-    #[serde(flatten)]
-    pub extra: Map<String, Value>,
-}
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Family {
-    #[serde(default, skip_serializing_if = "missing")]
-    pub path: Field<PathBuf>,
-    #[serde(default, skip_serializing_if = "missing")]
-    pub artifact_ids: Field<Vec<String>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

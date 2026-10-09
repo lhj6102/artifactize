@@ -42,7 +42,6 @@ pub struct StatusView {
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactState {
     pub id: String,
-    pub family: Option<String>,
     pub state: ArtifactCondition,
     pub reason: String,
     pub eval_ids: Vec<String>,
@@ -240,10 +239,6 @@ pub async fn status(
         *counts.artifacts.entry(status).or_default() += 1;
         artifacts.push(ArtifactState {
             id: (*id).to_owned(),
-            family: config.artifacts[*id]
-                .family
-                .as_ref()
-                .map(|family| family.name.clone()),
             state: status,
             reason,
             eval_ids: own.evals.iter().map(|id| (*id).to_owned()).collect(),

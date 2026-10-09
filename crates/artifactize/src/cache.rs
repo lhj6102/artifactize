@@ -30,7 +30,7 @@ use crate::{
 const MANIFEST_BYTES: usize = 64 * 1024;
 /// Keep change explanations readable in CLI output; the complete path list remains in Changes.
 const MAX_SUMMARY_PATHS: usize = 10;
-/// Fingerprint scripts receive version 1's artifact identity/family stdin envelope. Its
+/// Fingerprint scripts receive version 1's Artifact identity stdin envelope. Its
 /// explicit format version lets owner scripts distinguish future envelopes, not DB schemas.
 const FINGERPRINT_INPUT_VERSION: u32 = 1;
 /// Keep per-file change explanations compact with 8 digest bytes (16 hex characters).
@@ -481,10 +481,7 @@ async fn script(
         unreachable!("fingerprint script")
     };
     let cwd = scope::scoped_path(&config.root, &artifact.path).map_err(|e| e.to_string())?;
-    for input in files
-        .iter()
-        .chain(artifact.family.iter().flat_map(|family| &family.material))
-    {
+    for input in files {
         scope::scoped_path(&cwd, Path::new(input)).map_err(|e| e.to_string())?;
     }
     let program = if !Path::new(command).is_absolute() && command.contains('/') {
@@ -499,10 +496,7 @@ async fn script(
     };
     let scope = scope::argv_scope(config, artifact_id, args).map_err(|e| e.to_string())?;
     let args = scope::resolve_argv(config, &scope, artifact_id, args).map_err(|e| e.to_string())?;
-    let mut input = json!({"version":FINGERPRINT_INPUT_VERSION,"artifactId":artifact_id});
-    if let Some(family) = &artifact.family {
-        input["family"] = json!({"name":family.name,"material":family.material});
-    }
+    let input = json!({"version":FINGERPRINT_INPUT_VERSION,"artifactId":artifact_id});
     let output_root =
         workspace::prepare_directory(output_root, &config.root).map_err(|e| e.to_string())?;
     let disposable = tempfile::Builder::new()

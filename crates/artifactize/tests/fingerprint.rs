@@ -366,38 +366,6 @@ fn preparation_covers_only_required_artifacts_but_includes_unselected_dependenci
 }
 
 #[test]
-fn family_context_is_per_instance_and_fingerprint_material_is_rechecked() {
-    let fixture = Fixture::new();
-    fixture.write("artifactize.json", json!({"name":"root","basis":true}));
-    fixture.write("family/artifactize.json", json!({
-        "name":"family","family":{"instances":{"first":{"material":["first.txt"]},"second":{"material":["second.txt"]}}},
-        "fingerprint":{"script":{"command":"python3","args":["fingerprint.py"]}},
-        "evals":[eval("check","exit 0")]
-    }));
-    fs::write(fixture.repo.join("family/fingerprint.py"), "import json, sys\nx = json.load(sys.stdin)\nassert x == {'version': 1, 'artifactId': x['artifactId'], 'family': {'name': 'family', 'material': [x['artifactId'] + '.txt']}}\nprint(open(x['family']['material'][0]).read(), end='')\n").unwrap();
-    fs::write(
-        fixture.repo.join("family/python3"),
-        "not executable and must not shadow PATH",
-    )
-    .unwrap();
-    fs::write(fixture.repo.join("family/first.txt"), "first:v1").unwrap();
-    fs::write(fixture.repo.join("family/second.txt"), "second:v2").unwrap();
-    let run = fixture.verify(&["family"], 0);
-    assert_eq!(run["requests"][0]["fingerprint"], "first:v1");
-    assert_eq!(run["requests"][1]["fingerprint"], "second:v2");
-    let mut declaration: Value =
-        serde_json::from_slice(&fs::read(fixture.repo.join("family/artifactize.json")).unwrap())
-            .unwrap();
-    declaration["evals"] = json!([eval("check", "rm first.txt")]);
-    fixture.write("family/artifactize.json", declaration);
-    let run = fixture.verify(&["first", "--force"], 2);
-    assert_eq!(
-        run["requests"][0]["errorCode"],
-        "FINGERPRINT_RECHECK_FAILED"
-    );
-}
-
-#[test]
 fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_output() {
     for recheck in [false, true] {
         let fixture = Fixture::new();
@@ -515,14 +483,9 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
     assert_eq!(run(&["config", "check"]).0, Some(0));
     fixture.verify(&["--all"], 0);
 
-    // Unknown, family and escaping references fail closed in config check and status alike.
-    fixture.write(
-        "family/artifactize.json",
-        json!({"name":"posts","family":{"instances":{"one":{}}},"basis":true}),
-    );
+    // Unknown and escaping references fail closed in config check and status alike.
     for (reference, message) in [
         ("{missing}", "Unknown Artifact reference {missing}"),
-        ("{posts}", "names an Artifact family"),
         ("{core}/../api", "safe relative logical path"),
     ] {
         fixture.write("api/artifactize.json", api(reference, json!({})));

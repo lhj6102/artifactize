@@ -65,14 +65,12 @@ impl Selection {
                     .extend(config.artifacts.keys().map(String::as_str));
             }
             Self::Artifact { artifact_id } => {
-                result
-                    .roots
-                    .extend(selected_artifacts(config, artifact_id)?);
+                result.roots.push(selected_artifact(config, artifact_id)?);
             }
             Self::Artifacts { artifact_ids } => {
                 nonempty(artifact_ids)?;
                 for id in artifact_ids {
-                    result.roots.extend(selected_artifacts(config, id)?);
+                    result.roots.push(selected_artifact(config, id)?);
                 }
             }
             Self::Eval { eval_id } => {
@@ -143,25 +141,12 @@ fn nonempty(ids: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-fn selected_artifacts<'a>(config: &'a RepoConfig, id: &str) -> Result<Vec<&'a str>, String> {
-    if let Some((id, _)) = config.artifacts.get_key_value(id) {
-        return Ok(vec![id.as_str()]);
-    }
-    let instances: Vec<_> = config
+fn selected_artifact<'a>(config: &'a RepoConfig, id: &str) -> Result<&'a str, String> {
+    config
         .artifacts
-        .iter()
-        .filter(|(_, artifact)| {
-            artifact
-                .family
-                .as_ref()
-                .is_some_and(|family| family.name == id)
-        })
+        .get_key_value(id)
         .map(|(id, _)| id.as_str())
-        .collect();
-    if instances.is_empty() {
-        return Err(format!("Unknown Artifact: {id}"));
-    }
-    Ok(instances)
+        .ok_or_else(|| format!("Unknown Artifact: {id}"))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

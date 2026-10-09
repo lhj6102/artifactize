@@ -96,7 +96,7 @@ struct Walk {
     /// The owner folder relative to the repository root, where `.gitignore` bases start.
     prefix: String,
     inputs: Vec<String>,
-    /// Child Artifact folders, declaration files and family material, skipped while walking.
+    /// Child Artifact folders and declaration files, skipped while walking.
     excluded: BTreeSet<String>,
     ignore: Gitignore,
 }
@@ -123,15 +123,8 @@ impl Walk {
             .ok_or("Artifact paths must be UTF-8.")?
             .to_owned();
         let mut excluded = BTreeSet::from([CONFIG_FILE.to_owned()]);
-        for (path, child) in &artifact.children {
-            let folder = if config.artifacts[child].family.is_some() {
-                path.strip_suffix(&format!("/{child}")).unwrap_or(path)
-            } else {
-                path
-            };
-            excluded.insert(folder.to_owned());
-        }
-        let mut inputs: Vec<_> = inputs
+        excluded.extend(artifact.children.keys().cloned());
+        let inputs: Vec<_> = inputs
             .iter()
             .map(|input| {
                 if input == "." {
@@ -141,17 +134,6 @@ impl Walk {
                 }
             })
             .collect();
-        if let Some(family) = &artifact.family {
-            excluded.extend(family.instances.iter().cloned());
-            for sibling in config.artifacts.values() {
-                if let Some(membership) = &sibling.family
-                    && membership.name == family.name
-                {
-                    excluded.extend(membership.material.iter().cloned());
-                }
-            }
-            inputs.extend(family.material.iter().cloned());
-        }
         Ok(Self {
             root: config.root.clone(),
             owner,

@@ -54,7 +54,8 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     let first = root.path().join("first");
     let second = root.path().join("second");
     let state = root.path().join("state");
-    fs::create_dir_all(first.join("scenarios")).unwrap();
+    fs::create_dir_all(first.join("scenarios/checkout")).unwrap();
+    fs::create_dir_all(first.join("scenarios/search")).unwrap();
     fs::create_dir(first.join("input")).unwrap();
     fs::create_dir(first.join("unselected")).unwrap();
     fs::create_dir(&second).unwrap();
@@ -68,25 +69,18 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         r#"{"name":"unselected","basis":true}"#,
     )
     .unwrap();
-    fs::write(
-        first.join("scenarios/material.txt"),
-        "saved family material",
-    )
-    .unwrap();
-    fs::write(first.join("scenarios/artifactize.json"), json!({
-        "name":"scenarios",
-        "family":{"instances":{
-            "checkout":{"material":["material.txt"],"params":{"label":"Checkout"}},
-            "search":{"material":["material.txt"],"params":{"label":"Search"}}
-        }},
-        "evals":[{
-            "id":"review","title":{"$param":"/label"},
-            "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
-            "profileVariants":{"brief":{"kind":"runtime","command":bin("/bin/echo"),"args":["saved result"]}},
-            "payload":{"instruction":"Inspect {input}."},
-            "passSchema":{"type":"object"}
-        }]
-    }).to_string()).unwrap();
+    for (name, title) in [("checkout", "Checkout"), ("search", "Search")] {
+        fs::write(first.join(format!("scenarios/{name}/artifactize.json")), json!({
+            "name":name,
+            "evals":[{
+                "id":"review","title":title,
+                "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+                "profileVariants":{"brief":{"kind":"runtime","command":bin("/bin/echo"),"args":["saved result"]}},
+                "payload":{"instruction":"Inspect {input}."},
+                "passSchema":{"type":"object"}
+            }]
+        }).to_string()).unwrap();
+    }
     fs::write(second.join("artifactize.json"), json!({
         "name":"other",
         "evals":[
@@ -96,12 +90,13 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         ]
     }).to_string()).unwrap();
 
-    let family = query(
+    let selected = query(
         &first,
         &state,
         &[
             "verify",
-            "scenarios",
+            "--artifacts",
+            "checkout,search",
             "--profile",
             "brief",
             "--force",
@@ -126,30 +121,26 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         &["verify", "--eval", "checkout/review", "--profile", "brief"],
         0,
     );
-    assert_eq!(family["profile"], "brief");
+    assert_eq!(selected["profile"], "brief");
     assert_eq!(
-        family["selection"],
-        json!({"kind":"artifact","artifactId":"scenarios"})
+        selected["selection"],
+        json!({"kind":"artifacts","artifactIds":["checkout","search"]})
     );
-    assert_eq!(family["jobs"], 2);
-    assert_eq!(family["maxExecutions"], 3);
-    assert_eq!(family["force"], true);
-    assert_eq!(family["ignoreGates"], true);
-    let definitions = &family["definitions"];
+    assert_eq!(selected["jobs"], 2);
+    assert_eq!(selected["maxExecutions"], 3);
+    assert_eq!(selected["force"], true);
+    assert_eq!(selected["ignoreGates"], true);
+    let definitions = &selected["definitions"];
     assert_eq!(definitions["artifacts"].as_object().unwrap().len(), 3);
     assert_eq!(definitions["artifacts"]["input"]["basis"], true);
     assert!(definitions["artifacts"].get("unselected").is_none());
     assert_eq!(
-        definitions["artifacts"]["checkout"]["family"]["name"],
-        "scenarios"
+        definitions["artifacts"]["checkout"]["path"],
+        "scenarios/checkout"
     );
     assert_eq!(
-        definitions["artifacts"]["checkout"]["family"]["material"],
-        json!(["material.txt"])
-    );
-    assert_eq!(
-        definitions["families"]["scenarios"]["artifactIds"],
-        json!(["checkout", "search"])
+        definitions["artifacts"]["search"]["path"],
+        "scenarios/search"
     );
     assert_eq!(definitions["evals"][0]["declaration"]["title"], "Checkout");
     assert_eq!(
@@ -161,8 +152,13 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         json!({"type":"object"})
     );
     assert_eq!(
-        last["definitions"]["families"]["scenarios"]["artifactIds"],
-        json!(["checkout"])
+        last["definitions"]["artifacts"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["checkout", "input"]
     );
 
     fs::remove_dir_all(&first).unwrap();
@@ -171,7 +167,12 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     let before = fs::read(state.join("state.sqlite")).unwrap();
     let all = query(&first, &state, &["run", "list", "--all"], 0);
     assert_eq!(all.as_array().unwrap().len(), 3);
-    for (summary, saved) in all.as_array().unwrap().iter().zip([&last, &other, &family]) {
+    for (summary, saved) in all
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip([&last, &other, &selected])
+    {
         for field in ["id", "repoPath", "createdAt", "completedAt", "status"] {
             assert_eq!(summary[field], saved[field], "{field}");
         }
@@ -181,7 +182,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         all[1]["counts"],
         json!({"GREEN":1,"RED":1,"WAITING_HUMAN":1})
     );
-    for saved in [&family, &last, &other] {
+    for saved in [&selected, &last, &other] {
         let shown = query(
             &first,
             &state,
@@ -210,7 +211,10 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
             assert_eq!(shown["result"], request["result"]);
         }
     }
-    assert_eq!(family["requests"][0]["result"]["stdout"], "saved result\n");
+    assert_eq!(
+        selected["requests"][0]["result"]["stdout"],
+        "saved result\n"
+    );
     assert_eq!(query(&second, &state, &["run", "list"], 0), json!([all[1]]));
     assert_eq!(
         query(&first, &state, &["run", "list", "--repo-only"], 0),
@@ -269,7 +273,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     let text =
         String::from_utf8(output(&first, &state, &["run", "list", "--all"], 0).stdout).unwrap();
     assert!(text.contains("WAITING_HUMAN=1"));
-    assert!(text.contains(family["id"].as_str().unwrap()));
+    assert!(text.contains(selected["id"].as_str().unwrap()));
     assert_eq!(fs::read(state.join("state.sqlite")).unwrap(), before);
 }
 

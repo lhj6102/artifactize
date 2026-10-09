@@ -24,7 +24,6 @@ pub struct GraphView<'a> {
     pub evals: Vec<&'a Eval>,
     pub relations: Vec<GraphRelation<'a>>,
     pub components: Vec<GraphComponent<'a>>,
-    pub families: BTreeMap<&'a str, FamilyGroup<'a>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -41,13 +40,6 @@ pub struct GraphComponent<'a> {
     pub dependencies: Vec<usize>,
     pub gates: Vec<&'a str>,
     pub cyclic: bool,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FamilyGroup<'a> {
-    pub path: &'a Path,
-    pub artifact_ids: Vec<&'a str>,
 }
 
 /// Full static definitions, restricted to the selected dependency closure.
@@ -98,19 +90,6 @@ pub fn graph<'a>(
                 }),
         })
         .collect();
-    let mut families = BTreeMap::new();
-    for (&id, artifact) in &artifacts {
-        if let Some(family) = &artifact.family {
-            families
-                .entry(family.name.as_str())
-                .or_insert_with(|| FamilyGroup {
-                    path: &config.families[&family.name],
-                    artifact_ids: Vec::new(),
-                })
-                .artifact_ids
-                .push(id);
-        }
-    }
     Ok(GraphView {
         version: 1,
         repo_path: &config.root,
@@ -119,6 +98,5 @@ pub fn graph<'a>(
         evals,
         relations,
         components,
-        families,
     })
 }

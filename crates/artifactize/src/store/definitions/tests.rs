@@ -8,11 +8,10 @@ use sha2::{Digest, Sha256};
 fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
     let mut wire = json!({
         "version":1,"repoPath":"/saved/workspace","selection":{"kind":"all"},"futureTop":{"v":7},
-        "artifacts":{"page":{"path":"pages","name":"page","family":{"name":"pages","instances":null,"material":["file.md"],"futureMembership":true},"children":{},"mounts":{},"basis":null,"fingerprint":{"script":{"command":"echo","args":["v1"],"files":[],"timeoutMs":null,"futureScript":true}},"reviewPolicy":{"dependencyGates":null,"futurePolicy":1},"views":{"agentTools":{"read":{"builtin":"read","futureTool":true}},"humanTools":{"inspect":{"description":"Inspect","kind":"output","command":"cat","args":["file.md"],"futureHumanTool":1}},"futureView":[]},"futureArtifact":"kept"}},
+        "artifacts":{"page":{"path":"pages","name":"page","children":{},"mounts":{},"basis":null,"fingerprint":{"script":{"command":"echo","args":["v1"],"files":[],"timeoutMs":null,"futureScript":true}},"reviewPolicy":{"dependencyGates":null,"futurePolicy":1},"views":{"agentTools":{"read":{"builtin":"read","futureTool":true}},"humanTools":{"inspect":{"description":"Inspect","kind":"output","command":"cat","args":["file.md"],"futureHumanTool":1}},"futureView":[]},"futureArtifact":"kept"}},
         "evals":[{"id":"page/check","target":"page","references":{},"deps":["input"],"declaration":{"id":"check","title":"Inspect","profile":{"kind":"runtime","command":"true","args":[],"timeoutMs":null},"profileVariants":{},"payload":{"instruction":"Inspect {input}.","owner":[true,null,42]},"passSchema":{"type":"object","properties":{"accepted":{"const":true}}},"failSchema":null,"futureDeclaration":true},"futureEval":2}],
         "relations":[{"source":"input","target":"page","kind":"instruction","evalId":"page/check","name":"input","cyclic":true,"futureRelation":false}],
-        "components":[{"id":0,"artifacts":["input","page"],"dependencies":[],"gates":["input/check"],"cyclic":true,"futureComponent":3}],
-        "families":{"pages":{"path":"pages","artifactIds":["page"],"futureFamily":null}}
+        "components":[{"id":0,"artifacts":["input","page"],"dependencies":[],"gates":["input/check"],"cyclic":true,"futureComponent":3}]
     });
     wire["selection"]["futureSelection"] = json!({"v":true});
     wire["evals"][0]["declaration"]["profile"]["futureProfile"] = json!({"v":1});
@@ -59,6 +58,41 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
     let selection = Selection::All;
     let view = crate::query::graph(&config, &selection).unwrap();
     let before = serde_json::to_value(&view).unwrap();
+    assert_eq!(
+        before
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [
+            "artifacts",
+            "components",
+            "evals",
+            "relations",
+            "repoPath",
+            "selection",
+            "version"
+        ]
+    );
+    assert_eq!(
+        before["artifacts"]["app"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        [
+            "basis",
+            "children",
+            "fingerprint",
+            "mounts",
+            "name",
+            "path",
+            "reviewPolicy",
+            "views"
+        ]
+    );
     let snapshot = Definitions::from_view(&view).unwrap();
     assert_eq!(serde_json::to_value(snapshot).unwrap(), before);
     // The eval definition and reuse key are calculated from live declarations, never this display snapshot.

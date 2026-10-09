@@ -168,15 +168,8 @@ pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
     for artifact in &view.artifacts {
         writeln!(
             out,
-            "  Artifact {}: {} ({}/{} Evals){}",
-            artifact.id,
-            artifact.state,
-            artifact.passed,
-            artifact.total,
-            artifact
-                .family
-                .as_ref()
-                .map_or(String::new(), |family| format!(" [family {family}]"))
+            "  Artifact {}: {} ({}/{} Evals)",
+            artifact.id, artifact.state, artifact.passed, artifact.total
         )?;
     }
     for eval in &view.evals {
@@ -233,9 +226,6 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
         view.artifacts.len(),
         view.evals.len()
     )?;
-    for (name, family) in &view.families {
-        writeln!(out, "  Family {name}: {}", family.artifact_ids.join(", "))?;
-    }
     for component in &view.components {
         writeln!(
             out,

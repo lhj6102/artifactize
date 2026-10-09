@@ -10,7 +10,7 @@ fn populated() -> Monitor {
     let (run, requests) = tests::live();
     let mut monitor = Monitor::new("/fixture-state".into(), None);
     monitor.set_run(run, requests);
-    monitor.tree.select(vec!["f:pages".into()]);
+    monitor.tree.select(vec!["a:p2".into()]);
     // Tree key navigation uses paths from its most recently drawn frame.
     ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 40))
         .unwrap()
@@ -50,16 +50,17 @@ fn main_arrows_move_both_directions_without_wrapping_or_changing_tree() {
 fn tree_h_l_and_space_still_expand_and_collapse() {
     let mut monitor = populated();
     monitor.focus = Pane::Artifacts;
-    let family = vec!["f:pages".to_owned()];
-    assert!(!monitor.tree.opened().contains(&family));
-    assert_eq!(press(&mut monitor, KeyCode::Char('l')), Action::None);
-    assert!(monitor.tree.opened().contains(&family));
+    let artifact = vec!["a:p2".to_owned()];
     press(&mut monitor, KeyCode::Char('h'));
-    assert!(!monitor.tree.opened().contains(&family));
+    assert!(!monitor.tree.opened().contains(&artifact));
+    assert_eq!(press(&mut monitor, KeyCode::Char('l')), Action::None);
+    assert!(monitor.tree.opened().contains(&artifact));
+    press(&mut monitor, KeyCode::Char('h'));
+    assert!(!monitor.tree.opened().contains(&artifact));
     press(&mut monitor, KeyCode::Char(' '));
-    assert!(monitor.tree.opened().contains(&family));
+    assert!(monitor.tree.opened().contains(&artifact));
     press(&mut monitor, KeyCode::Char(' '));
-    assert!(!monitor.tree.opened().contains(&family));
+    assert!(!monitor.tree.opened().contains(&artifact));
 }
 
 #[tokio::test]
