@@ -20,10 +20,11 @@
         <meta name="theme-color" content="#090B0F">
 
         {{#if favicon_svg}}
-        <link rel="icon" href="{{ resource "favicon.svg" }}">
+        {{!-- artifactize: standalone emerald favicons with explicit MIME types and PNG size --}}
+        <link rel="icon" href="{{ resource "favicon.svg" }}" type="image/svg+xml">
         {{/if}}
         {{#if favicon_png}}
-        <link rel="shortcut icon" href="{{ resource "favicon.png" }}">
+        <link rel="shortcut icon" href="{{ resource "favicon.png" }}" type="image/png" sizes="48x48">
         {{/if}}
         <link rel="stylesheet" href="{{ resource "css/variables.css" }}">
         <link rel="stylesheet" href="{{ resource "css/general.css" }}">
@@ -167,7 +168,7 @@
 
                     {{!-- artifactize: wordmark linking to the landing page --}}
                     <a class="az-brand" href="/" aria-label="Artifactize home">
-                        <svg class="az-mark" viewBox="0 0 164 164" aria-hidden="true"><rect x="9" y="9" width="146" height="146" rx="36" fill="none" stroke="currentColor" stroke-width="13"/><path d="M49 85 L73 109 L117 59" fill="none" stroke="#3EE08F" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                        <img class="az-mark" src="/media/artifactize-icon-mark.svg" width="27" height="24" alt="" aria-hidden="true">
                         <span class="az-word">Artifactize</span>
                         <span class="az-tag">docs</span>
                     </a>

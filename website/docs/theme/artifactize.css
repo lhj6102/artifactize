@@ -110,10 +110,10 @@ body {
 }
 
 .az-mark {
-    width: 24px;
+    width: auto;
     height: 24px;
     flex: none;
-    color: var(--fg-strong);
+    object-fit: contain;
 }
 
 .az-word {

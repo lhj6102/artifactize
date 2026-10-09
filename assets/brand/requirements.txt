@@ -1,0 +1,5 @@
+# Install in the Python environment used by python3 (not a hidden HOME cache).
+# System Cairo is also required: libcairo2 on Ubuntu.
+# Committed outputs currently use CairoSVG 2.8.2 and Pillow 12.1.1.
+CairoSVG>=2.8
+Pillow>=12.1
