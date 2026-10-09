@@ -135,7 +135,7 @@ impl ExecutionOptions {
                 options.max_tokens = *max_tokens;
             }
             Profile::Runtime { timeout_ms, .. } => options.timeout_ms = *timeout_ms,
-            Profile::Human {} => {}
+            Profile::Human {} | Profile::Dependency { .. } => {}
         }
         options
     }

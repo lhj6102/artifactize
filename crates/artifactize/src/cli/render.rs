@@ -70,6 +70,9 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
             }
         )
         .map_err(|e| e.to_string())?;
+        if let Some(count) = summary["derived"].as_u64().filter(|count| *count > 0) {
+            writeln!(stdout, "Derived: {count} dependency evals (no execution).").map_err(|e| e.to_string())?;
+        }
         let usage = &output["usage"];
         if *usage != json!({"spent":{},"saved":{}}) {
             writeln!(
@@ -102,6 +105,9 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
 /// Where a reused result came from: its source Run, plus the producer for a remote result,
 /// or the reviewer and the authenticated publisher for a remote Human sign-off.
 fn reuse_marker(request: &crate::store::Request) -> String {
+    if request.profile.kind() == crate::config::ProfileKind::Dependency {
+        return " (derived)".into();
+    }
     let Some(source) = crate::query::source(request) else {
         return String::new();
     };
@@ -221,6 +227,9 @@ pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
         "Verify actions: will execute {}, will reuse {}, wait {}, blocked {}",
         view.counts.execute, view.counts.reuse, view.counts.wait, view.counts.blocked
     )?;
+    if view.counts.derive > 0 {
+        writeln!(out, "  derive {} dependency evals from current evidence (no execution or reuse).", view.counts.derive)?;
+    }
     if view.counts.wait > 0 {
         writeln!(
             out,
@@ -283,6 +292,7 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
         let detail = match &edge.relation.kind {
             RelationKind::Child { path } => format!("child path={path}"),
             RelationKind::Mount { alias } => format!("mount alias={alias}"),
+            RelationKind::Dependency { eval_id, name } => format!("dependency eval={eval_id} name={name}"),
             RelationKind::Instruction { eval_id, name } => {
                 format!("instruction eval={eval_id} name={name}")
             }

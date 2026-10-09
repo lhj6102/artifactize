@@ -200,6 +200,9 @@ pub struct Request {
     pub error: Option<String>,
     pub error_code: Option<String>,
     pub blocked_reason: Option<String>,
+    /// Unfulfilled Artifacts and Evals behind a derived dependency verdict.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub blocked_by: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

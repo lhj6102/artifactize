@@ -8,7 +8,7 @@ pub use status::{
     status,
 };
 
-mod verify;
+pub(crate) mod verify;
 pub use verify::{DEFAULT_HUMAN_WAIT, DEFAULT_JOBS, VerifyOptions, verify};
 
 /// The fingerprint bound `status` and `verify` use: `--fingerprint-jobs`, else the CPUs.

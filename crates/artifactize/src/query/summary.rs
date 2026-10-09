@@ -16,6 +16,8 @@ pub enum SourceKind {
     Joined,
     /// A record from the remote review store.
     Remote,
+    /// Current graph evidence, without an execution or reusable record.
+    Derived,
 }
 
 /// The request whose execution produced a reused result.
@@ -31,6 +33,9 @@ pub struct Source<'a> {
 /// result from an execution yet. The one rule behind `source`, `summary.reused`, the text
 /// marker and the monitor.
 pub fn source(request: &Request) -> Option<Source<'_>> {
+    if request.profile.kind() == crate::config::ProfileKind::Dependency {
+        return Some(Source { run_id: &request.run_id, request_id: &request.id, kind: SourceKind::Derived });
+    }
     let provenance = request
         .provenance
         .as_ref()
@@ -51,7 +56,7 @@ pub fn source(request: &Request) -> Option<Source<'_>> {
 
 /// The result came from another request's execution, possibly in this Run.
 pub fn reused(request: &Request) -> bool {
-    source(request).is_some()
+    source(request).is_some_and(|source| source.kind != SourceKind::Derived)
 }
 
 /// A saved request as output: `source` stands for the saved `joined` flag.
@@ -91,6 +96,7 @@ struct Kinds {
     runtime: u64,
     agent: u64,
     human: u64,
+    dependency: u64,
 }
 impl Kinds {
     fn add(&mut self, kind: crate::config::ProfileKind) {
@@ -99,6 +105,7 @@ impl Kinds {
             crate::config::ProfileKind::Runtime => self.runtime += 1,
             crate::config::ProfileKind::Agent => self.agent += 1,
             crate::config::ProfileKind::Human => self.human += 1,
+            crate::config::ProfileKind::Dependency => self.dependency += 1,
         }
     }
 }
@@ -122,6 +129,7 @@ struct RequestSummary<'a> {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunSummary {
+    derived: u64,
     counts: BTreeMap<crate::types::RequestStatus, u64>,
     executed: Kinds,
     reused: Reuses,
@@ -184,6 +192,7 @@ pub fn run_output(view: &RunView, now: OffsetDateTime) -> Value {
     }
     value["usage"] = json!({"spent":usage.usage,"saved":saved});
     value["summary"] = json!(RunSummary {
+        derived: view.requests.iter().filter(|request| request.profile.kind() == crate::config::ProfileKind::Dependency).count() as u64,
         counts,
         executed,
         reused: reuses,

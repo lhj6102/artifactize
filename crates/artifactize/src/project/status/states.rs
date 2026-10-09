@@ -92,6 +92,7 @@ impl fmt::Display for EvalCondition {
 #[serde(rename_all = "lowercase")]
 pub enum VerifyAction {
     Execute,
+    Derive,
     Reuse,
     Wait,
     Blocked,
@@ -100,6 +101,7 @@ impl fmt::Display for VerifyAction {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::Execute => "execute",
+            Self::Derive => "derive",
             Self::Reuse => "reuse",
             Self::Wait => "wait",
             Self::Blocked => "blocked",

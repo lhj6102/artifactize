@@ -214,7 +214,11 @@ pub struct SelectionArgs {
 impl SelectionArgs {
     fn resolve(self) -> Result<Selection, String> {
         if let Some(artifact_id) = self.artifact {
-            Ok(Selection::Artifact { artifact_id })
+            if artifact_id.contains('/') {
+                Ok(Selection::Eval { eval_id: artifact_id })
+            } else {
+                Ok(Selection::Artifact { artifact_id })
+            }
         } else if let Some(eval_id) = self.eval {
             Ok(Selection::Eval { eval_id })
         } else if let Some(ids) = self.evals {

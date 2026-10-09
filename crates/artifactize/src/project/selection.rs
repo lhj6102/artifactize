@@ -118,7 +118,25 @@ impl Selection {
     ) -> Result<Vec<&'a Eval>, String> {
         let selected = self.resolve(config)?;
         if !recursive {
-            return Ok(selected.evals);
+            let graph = Graph::new(config).map_err(|error| error.to_string())?;
+            let mut included = selected.evals;
+            let mut seen: BTreeSet<_> = included.iter().map(|eval| eval.id.as_str()).collect();
+            let mut index = 0;
+            while index < included.len() {
+                let eval = included[index];
+                if matches!(eval.declaration.profile, crate::config::Profile::Dependency { .. }) {
+                    let roots: Vec<_> = eval.deps.iter().map(String::as_str).collect();
+                    let required: BTreeSet<_> = graph.dependency_closure(&roots)
+                        .map_err(|error| error.to_string())?.into_iter().collect();
+                    for dependency in &config.evals {
+                        if required.contains(dependency.target.as_str()) && seen.insert(dependency.id.as_str()) {
+                            included.push(dependency);
+                        }
+                    }
+                }
+                index += 1;
+            }
+            return Ok(included);
         }
         let graph = Graph::new(config).map_err(|error| error.to_string())?;
         let required: BTreeSet<_> = graph

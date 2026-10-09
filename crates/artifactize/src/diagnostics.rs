@@ -138,7 +138,7 @@ pub async fn check_tools(
     let selected = options.eval.as_ref().or(options.selector.as_ref());
     if let Some(id) = selected
         && !config.evals.iter().any(|eval| {
-            &eval.id == id && !matches!(eval.declaration.profile, Profile::Runtime { .. })
+            &eval.id == id && matches!(eval.declaration.profile, Profile::Agent { .. } | Profile::Human {})
         })
     {
         return Err("Select a declared Agent or Human eval.".into());
@@ -184,7 +184,7 @@ pub async fn check_tools(
                     Audience::Human,
                     human::Registry::new(&config, &eval.id).map(Catalog::Human),
                 ),
-                Profile::Runtime { .. } => continue,
+                Profile::Runtime { .. } | Profile::Dependency { .. } => continue,
             };
             catalogs.push((Some(eval.id.as_str()), None, audience, catalog));
         }

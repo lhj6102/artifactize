@@ -45,7 +45,7 @@ fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
         .remove("instruction");
     assert!(parse(json!({"name":"a","evals":[missing]})).is_err());
     let parsed = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
-    let payload = &parsed.evals[0].payload;
+    let payload = parsed.evals[0].payload.as_ref().unwrap();
     assert_eq!(payload.instruction, "Inspect {input}.");
     assert_eq!(payload.extra["ownerData"], declared["payload"]["ownerData"]);
     assert_eq!(serde_json::to_value(payload).unwrap(), declared["payload"]);

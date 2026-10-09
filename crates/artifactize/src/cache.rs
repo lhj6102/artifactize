@@ -47,6 +47,7 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
     let kind = match &eval.profile {
         Profile::Agent { .. } => "agent",
         Profile::Human {} => "human",
+        Profile::Dependency { .. } => "dependency",
         Profile::Runtime { .. } => "runtime",
     };
     let mut strategy = json!({
@@ -58,6 +59,9 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
     if let Profile::Runtime { command, args, .. } = &eval.profile {
         strategy["command"] = json!(command);
         strategy["args"] = json!(args);
+    }
+    if let Profile::Dependency { depends_on } = &eval.profile {
+        strategy["dependsOn"] = json!(depends_on);
     }
     strategy.sort_all_objects();
     content::hex(&Sha256::digest(
@@ -96,6 +100,8 @@ pub struct Key {
 /// Why an eval has no reuse key: an Artifact it depends on declares `fingerprint: false`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Unkeyed {
+    /// Dependency Evals are always derived, never cached.
+    Derived,
     /// The eval's own target.
     Target,
     /// A mount, child or referenced Artifact.
@@ -154,6 +160,9 @@ pub fn eval_key(
     eval: &Eval,
     fingerprints: &BTreeMap<&str, PreparedFingerprint>,
 ) -> Result<Key, Unkeyed> {
+    if matches!(eval.declaration.profile, Profile::Dependency { .. }) {
+        return Err(Unkeyed::Derived);
+    }
     if !fingerprints.contains_key(eval.target.as_str()) {
         return Err(Unkeyed::Target);
     }

@@ -16,7 +16,7 @@ use crate::{
     agent::error::{self as agent_error, Code},
     cache,
     config::{ProfileKind, RepoConfig},
-    graph::{Evidence, Graph},
+    graph::{Evidence, Graph, EvalEvaluation, EvalStatus},
     limits::Limits,
     process,
     remote::Session,
@@ -255,6 +255,17 @@ struct Scheduler<'a, 'g> {
     tasks: &'a mut JoinSet<Result<(usize, Request), String>>,
 }
 
+/// A dependency request is audit-only: no execution, claim, capacity or cache evidence.
+pub(crate) fn derive(request: &mut Request, eval: &EvalEvaluation<'_>) {
+    request.status = crate::project::verify::status(eval.status);
+    request.blocked_by = eval.blocked_by.iter().map(|id| (*id).to_owned()).collect();
+    request.blocked_reason = (!request.blocked_by.is_empty()).then(|| format!(
+        "Derived dependency verdict: waiting for current GREEN evidence from {}.", request.blocked_by.join(", ")
+    ));
+    request.result = (eval.status == EvalStatus::Green).then(|| serde_json::json!({"verdict":"GREEN", "derived":true}));
+    request.completed_at = (eval.status == EvalStatus::Green || eval.status == EvalStatus::Blocked).then(now);
+}
+
 impl Scheduler<'_, '_> {
     async fn run(&mut self) -> Result<BTreeMap<String, Evidence>, String> {
         // Registration precedes any baseline/scheduling read; racing commits stay dirty.
@@ -381,6 +392,16 @@ impl Scheduler<'_, '_> {
                         || request.status == crate::types::RequestStatus::WaitingHuman
                         || evidence.contains_key(&request.eval_id)
                     {
+                        continue;
+                    }
+                    if request.profile.kind() == ProfileKind::Dependency {
+                        let eval = &evaluation.evals[request.eval_id.as_str()];
+                        let status = crate::project::verify::status(eval.status);
+                        let blocked_by: Vec<_> = eval.blocked_by.iter().map(|id| (*id).to_owned()).collect();
+                        if request.status != status || request.blocked_by != blocked_by {
+                            derive(request, eval);
+                            self.receipts.save_request(request).await?;
+                        }
                         continue;
                     }
                     if !evaluation.evals[request.eval_id.as_str()].can_execute() {

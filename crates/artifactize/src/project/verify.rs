@@ -207,7 +207,7 @@ pub async fn verify(
             payload: (&eval.declaration.payload).into(),
             references: json!(eval.references),
             deps: eval.deps.clone(),
-            force: options.force && selected_ids.contains(eval.id.as_str()),
+            force: options.force && selected_ids.contains(eval.id.as_str()) && !matches!(eval.declaration.profile, crate::config::Profile::Dependency { .. }),
             fingerprint: fingerprints
                 .get(eval.target.as_str())
                 .map(|fingerprint| fingerprint.value.clone()),
@@ -228,6 +228,7 @@ pub async fn verify(
             error: None,
             error_code: None,
             blocked_reason: None,
+            blocked_by: Vec::new(),
         })
         .collect();
     receipts.create_run(&run, &requests).await?;
@@ -266,6 +267,10 @@ pub async fn verify(
     };
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
+        if request.profile.kind() == ProfileKind::Dependency {
+            broker::derive(request, &evaluation.evals[request.eval_id.as_str()]);
+            continue;
+        }
         if evidence.contains_key(&request.eval_id)
             || request.status == crate::types::RequestStatus::WaitingHuman
         {
@@ -362,7 +367,7 @@ pub async fn verify(
             }
             artifact
         }).collect::<Vec<_>>(),
-        "evals":required_evals.iter().map(|(id, eval)| json!({"id":id,"status":status(eval.status),"blockedBy":eval.unmet_gates})).collect::<Vec<_>>(),
+        "evals":required_evals.iter().map(|(id, eval)| json!({"id":id,"status":status(eval.status),"blockedBy":eval.blocked_by})).collect::<Vec<_>>(),
     });
     receipts.finish(&run, &requests).await?;
     // Saved Agent conversations past their size bound are collected; a failure only warns.
@@ -383,7 +388,7 @@ pub async fn verify(
     store::read_run(&run.state_dir, &run.id).await
 }
 
-fn status(status: EvalStatus) -> crate::types::RequestStatus {
+pub(crate) fn status(status: EvalStatus) -> crate::types::RequestStatus {
     match status {
         EvalStatus::Green => crate::types::RequestStatus::Green,
         EvalStatus::Red => crate::types::RequestStatus::Red,

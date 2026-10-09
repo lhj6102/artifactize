@@ -45,9 +45,9 @@ pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
     canonical_target(&path).map_err(|e| e.to_string())
 }
 
-/// SQLite `user_version` for artifactize state databases. 5 since 0.6.0, whose four tables no
-/// earlier state is migrated to.
-pub const STATE_SCHEMA_VERSION: u32 = 5;
+/// SQLite `user_version`; dependency requests and derived verdicts require schema 6.
+/// Earlier state is not migrated.
+pub const STATE_SCHEMA_VERSION: u32 = 6;
 
 #[derive(Debug, thiserror::Error)]
 #[cfg_attr(
