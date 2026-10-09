@@ -406,4 +406,10 @@ fn pty_review_restores_the_terminal_on_quit() {
     let output = String::from_utf8_lossy(&output);
     assert!(output.starts_with("\x1b[?1049h"), "{output:?}");
     assert!(output.ends_with("\x1b[?25h\x1b[?1049l"), "{output:?}");
+    // Bracketed paste is on while the review runs and off again before the screen is restored.
+    let on = output.find("\x1b[?2004h").expect("bracketed paste enabled");
+    let off = output
+        .rfind("\x1b[?2004l")
+        .expect("bracketed paste disabled");
+    assert!(on < off, "{output:?}");
 }
