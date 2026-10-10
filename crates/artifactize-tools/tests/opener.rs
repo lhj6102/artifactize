@@ -5,7 +5,7 @@
 #[path = "support/os.rs"]
 mod os;
 
-use std::{ffi::OsStr, fs, process::Command};
+use std::{ffi::OsStr, fs};
 
 #[test]
 fn target_is_one_literal_argument() {
@@ -30,8 +30,7 @@ fn target_is_one_literal_argument() {
     }
     let root = os::tempdir();
     os::recording_program(root.path(), os::OPENER);
-    let output = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "target_is_one_literal_argument", "--nocapture"])
+    let output = os::rerun("target_is_one_literal_argument")
         .env("PATH", root.path())
         .env(os::RECORD, root.path().join("record"))
         .output()

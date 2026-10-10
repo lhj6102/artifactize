@@ -59,7 +59,10 @@ fn resolve_from(
     found.ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
-            format!("Program is unavailable: {}", program.display()),
+            format!(
+                "Program is unavailable: {}",
+                program.to_string_lossy().replace('\\', "/")
+            ),
         )
     })
 }

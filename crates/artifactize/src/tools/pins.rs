@@ -5,7 +5,7 @@ use std::{
     collections::BTreeMap,
     fs::{self, File},
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use sha2::{Digest, Sha256};
@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use super::Registry;
 use crate::{
     config::{AgentTool, RepoConfig},
-    scope,
+    platform, scope,
 };
 
 /// Bound traversal and retained digest metadata for a tool's executable directory pin.
@@ -62,13 +62,15 @@ fn pin(path: &Path) -> Result<String, String> {
     let metadata = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     let mut bytes = 0;
     if metadata.is_file() {
-        return Ok(hex(&hash_file(path, &mut bytes)?));
+        let file = File::open(path).map_err(|e| e.to_string())?;
+        return Ok(hex(&hash_file(file, &mut bytes)?));
     }
     if !metadata.is_dir() {
         return Err("execution paths must be regular files or directories.".into());
     }
+    let directory = platform::open_directory(path).map_err(|e| e.to_string())?;
     let mut entries = Vec::new();
-    walk(path, PathBuf::new(), &mut entries, &mut bytes)?;
+    walk(&directory, path, "", &mut entries, &mut bytes)?;
     entries.sort();
     let mut digest = Sha256::new();
     for (relative, kind, entry) in entries {
@@ -80,44 +82,55 @@ fn pin(path: &Path) -> Result<String, String> {
     Ok(hex(&digest.finalize()))
 }
 
-/// Collect `(relative path, kind, digest)` for each file (`f`) and symlink (`l`) below `root`.
+/// Collect `(logical path, kind, digest)` for each file (`f`) and link (`l`) below the
+/// pinned `directory`, which `path` names; entries are opened relative to their parent
+/// without following links.
 fn walk(
-    root: &Path,
-    relative: PathBuf,
+    directory: &File,
+    path: &Path,
+    relative: &str,
     entries: &mut Vec<(String, u8, [u8; 32])>,
     bytes: &mut u64,
 ) -> Result<(), String> {
-    let directory = root.join(&relative);
-    for entry in fs::read_dir(&directory).map_err(|e| e.to_string())? {
+    for entry in platform::read_dir(directory).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
-        let child = relative.join(entry.file_name());
-        let label = child
-            .to_str()
-            .ok_or("execution paths must be UTF-8.")?
-            .to_owned();
+        let name = entry.file_name();
+        let text = name.to_str().ok_or("execution paths must be UTF-8.")?;
+        let label = if relative.is_empty() {
+            text.to_owned()
+        } else {
+            format!("{relative}/{text}")
+        };
         if entries.len() >= MAX_ENTRIES {
             return Err(format!("more than {MAX_ENTRIES} entries to pin."));
         }
-        let kind = entry.file_type().map_err(|e| e.to_string())?;
-        if kind.is_dir() {
-            walk(root, child, entries, bytes)?;
-        } else if kind.is_file() {
-            entries.push((label, b'f', hash_file(&root.join(&child), bytes)?));
-        } else if kind.is_symlink() {
-            let target = fs::read_link(root.join(&child)).map_err(|e| e.to_string())?;
-            let target = target.to_str().ok_or("execution paths must be UTF-8.")?;
-            entries.push((label, b'l', Sha256::digest(target.as_bytes()).into()));
-        } else {
-            return Err(format!(
-                "{label} is not a regular file, directory or symlink."
-            ));
+        let open = || {
+            let entry_name = platform::EntryName::new(&name).ok_or("invalid entry name.")?;
+            platform::open_entry(directory, &entry_name).map_err(|e| e.to_string())
+        };
+        match entry.file_type().map_err(|e| e.to_string())? {
+            platform::FileKind::Directory => {
+                walk(&open()?, &path.join(&name), &label, entries, bytes)?;
+            }
+            platform::FileKind::File => {
+                entries.push((label, b'f', hash_file(open()?, bytes)?));
+            }
+            platform::FileKind::Symlink => {
+                let target = platform::link_target(&path.join(&name)).map_err(|e| e.to_string())?;
+                let target = target.to_str().ok_or("execution paths must be UTF-8.")?;
+                entries.push((label, b'l', Sha256::digest(target.as_bytes()).into()));
+            }
+            platform::FileKind::Other => {
+                return Err(format!(
+                    "{label} is not a regular file, directory or symlink."
+                ));
+            }
         }
     }
     Ok(())
 }
 
-fn hash_file(path: &Path, bytes: &mut u64) -> Result<[u8; 32], String> {
-    let mut file = File::open(path).map_err(|e| e.to_string())?;
+fn hash_file(mut file: File, bytes: &mut u64) -> Result<[u8; 32], String> {
     let mut digest = Sha256::new();
     let mut buffer = vec![0; crate::cache::HASH_BUFFER_BYTES];
     loop {

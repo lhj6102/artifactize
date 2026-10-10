@@ -1,5 +1,4 @@
 use crate::config::CONFIG_FILE;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
 
@@ -11,14 +10,13 @@ struct Fixture(PathBuf);
 
 impl Fixture {
     fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
+        let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/test-fixtures");
+        fs::create_dir_all(&parent).unwrap();
+        let root = tempfile::Builder::new()
+            .prefix("scope-")
+            .tempdir_in(&parent)
             .unwrap()
-            .as_nanos();
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/test-fixtures")
-            .join(format!("scope-{}-{nonce}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
+            .keep();
         Self(crate::platform::canonicalize(&root).unwrap())
     }
 

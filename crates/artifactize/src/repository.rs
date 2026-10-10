@@ -2,8 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::{
+    ffi::OsStr,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,22 +17,11 @@ pub struct Identity {
     pub branch: Option<String>,
 }
 
-/// Git, found through the shared program lookup; `None` when it is not installed.
-fn git_command() -> Option<Command> {
-    let cwd = std::env::current_dir().ok()?;
-    artifactize_tools::program::resolve(std::ffi::OsStr::new("git"), &cwd)
-        .ok()
-        .map(Command::new)
-}
-
 fn git(path: &Path, args: &[&str]) -> Option<Vec<u8>> {
-    let output = git_command()?
-        .arg("-C")
-        .arg(path)
-        .args(args)
-        .output()
-        .ok()?;
-    output.status.success().then_some(output.stdout)
+    let args = [OsStr::new("-C"), path.as_os_str()]
+        .into_iter()
+        .chain(args.iter().map(OsStr::new));
+    crate::process::tool_output("git", args)
 }
 
 fn git_path(path: &Path, arg: &str) -> Option<PathBuf> {
@@ -72,18 +61,12 @@ pub struct Worktree {
 
 /// NUL-delimited porcelain does not quote spaces, tabs or newlines in paths.
 pub fn worktrees(common_dir: &Path) -> Vec<Worktree> {
-    let Some(mut git) = git_command() else {
-        return Vec::new();
-    };
-    let output = git
-        .arg("--git-dir")
-        .arg(common_dir)
-        .args(["worktree", "list", "--porcelain", "-z"])
-        .output();
-    match output {
-        Ok(output) if output.status.success() => parse_worktrees(&output.stdout),
-        _ => Vec::new(),
-    }
+    let args = [OsStr::new("--git-dir"), common_dir.as_os_str()]
+        .into_iter()
+        .chain(["worktree", "list", "--porcelain", "-z"].map(OsStr::new));
+    crate::process::tool_output("git", args)
+        .map(|output| parse_worktrees(&output))
+        .unwrap_or_default()
 }
 
 fn parse_worktrees(bytes: &[u8]) -> Vec<Worktree> {

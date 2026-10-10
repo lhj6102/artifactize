@@ -344,7 +344,7 @@ impl Receipts {
                     "INSERT INTO runs(id,repo,status,data) VALUES (?,?,?,?)",
                     params![
                         run.id,
-                        run.repo_path.to_string_lossy(),
+                        crate::platform::path_text(&run.repo_path),
                         run.status,
                         serde_json::to_string(&run)?
                     ],
@@ -576,7 +576,7 @@ pub async fn read_latest_requests(
             ) WHERE rank=1 ORDER BY eval_id",
                 )?;
                 statement
-                    .query_map([repo.to_string_lossy()], |row| {
+                    .query_map([crate::platform::path_text(&repo)], |row| {
                         Ok((
                             row.get(0)?,
                             LastRequest {

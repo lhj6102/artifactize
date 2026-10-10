@@ -532,7 +532,7 @@ fn doctor_never_probes_or_creates_state_inside_current_or_legacy_workspaces() {
 #[cfg(target_os = "macos")]
 #[test]
 fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links() {
-    let root = tempfile::tempdir_in("/tmp").unwrap();
+    let root = support::os::tempdir_below_tmp_alias();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();

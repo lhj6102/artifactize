@@ -105,9 +105,11 @@ impl Drop for Tree {
 /// Hand the target to ShellExecute's default verb on a blocking thread.
 pub(crate) async fn open_desktop(target: &OsStr) -> io::Result<()> {
     let target = target.to_owned();
-    tokio::task::spawn_blocking(move || shell_execute(&target))
-        .await
-        .map_err(io::Error::other)?
+    match tokio::task::spawn_blocking(move || shell_execute(&target)).await {
+        Ok(result) => result,
+        Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
+        Err(error) => Err(io::Error::other(error)),
+    }
 }
 
 fn shell_execute(target: &OsStr) -> io::Result<()> {

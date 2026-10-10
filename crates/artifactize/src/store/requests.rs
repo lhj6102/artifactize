@@ -167,7 +167,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
         .id
         .map(str::parse::<crate::types::RequestId>)
         .transpose()?;
-    let repo = repo.map(|repo| repo.to_string_lossy().into_owned());
+    let repo = repo.map(|repo| crate::platform::path_text(&repo));
     let waiting = filter.waiting;
     let session = filter
         .session

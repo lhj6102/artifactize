@@ -4,6 +4,7 @@
 //! opener.
 
 pub mod files;
+pub(crate) mod process;
 pub mod program;
 
 #[cfg(unix)]

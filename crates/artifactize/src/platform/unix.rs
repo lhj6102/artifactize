@@ -138,6 +138,18 @@ pub(crate) const STATE_VARIABLES: &[&str] = &["XDG_STATE_HOME"];
 /// The variables naming the signed-in user, in order.
 pub(crate) const USER_VARIABLES: &[&str] = &["USER", "LOGNAME"];
 
+/// The text a path is stored as: Unix paths already separate components with `/`.
+pub(crate) fn path_text(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
+}
+
+/// The user's home directory.
+pub(crate) fn home_directory() -> Option<std::path::PathBuf> {
+    std::env::var_os(HOME_VARIABLE)
+        .filter(|path| !path.is_empty())
+        .map(Into::into)
+}
+
 /// A path from the raw bytes a tool such as git prints: any bytes name a Unix path.
 pub(crate) fn path_from_bytes(bytes: &[u8]) -> std::path::PathBuf {
     use std::os::unix::ffi::OsStringExt;

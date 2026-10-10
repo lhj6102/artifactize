@@ -55,6 +55,23 @@ pub struct Output {
     pub duration: Duration,
 }
 
+/// Run a program artifactize itself uses, such as git, found through the shared program
+/// lookup, and return its standard output when it succeeds. `None` when it is missing or
+/// fails.
+pub(crate) fn tool_output<'a>(
+    program: &str,
+    args: impl IntoIterator<Item = &'a std::ffi::OsStr>,
+) -> Option<Vec<u8>> {
+    let cwd = std::env::current_dir().ok()?;
+    let program = artifactize_tools::program::resolve(std::ffi::OsStr::new(program), &cwd).ok()?;
+    let output = std::process::Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    output.status.success().then_some(output.stdout)
+}
+
 /// Starts a built-in's program, such as `help`'s, through this process layer: admitted
 /// before it runs, kept in one process group or Job Object and cleaned up with its children,
 /// with exactly the environment given here.

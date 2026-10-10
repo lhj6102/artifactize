@@ -106,7 +106,6 @@ fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
         Command::new(env!("CARGO_BIN_EXE_artifactize-tools"))
             .current_dir(root.path())
             .env("PATH", root.path())
-            .env("PATHEXT", ".EXE")
             .args(["help", "stub", arg])
             .output()
             .unwrap()

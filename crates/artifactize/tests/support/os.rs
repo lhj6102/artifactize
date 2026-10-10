@@ -177,6 +177,13 @@ pub fn current_uid() -> u32 {
     unsafe { libc::geteuid() }
 }
 
+/// A temporary directory below macOS's `/tmp`, the system alias of `/private/tmp`, as an
+/// operator's state path may name it.
+#[cfg(target_os = "macos")]
+pub fn tempdir_below_tmp_alias() -> tempfile::TempDir {
+    tempfile::tempdir_in("/tmp").unwrap()
+}
+
 /// The null device: `/dev/null` on Unix, `NUL` on Windows.
 pub fn null_device() -> &'static Path {
     Path::new(if cfg!(windows) { "NUL" } else { "/dev/null" })

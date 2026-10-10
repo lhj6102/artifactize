@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
     disable_help_subcommand = true,
     version,
     about = "Portable scoped tools for artifactize",
-    long_about = "Portable scoped tools for artifactize. Filesystem targets must be relative to the current directory and stay below it. Parent components, absolute paths, and symlinks are refused. Use '.' for the current directory. Only open accepts HTTP(S) URLs. help resolves a literal program through PATH (PATHEXT on Windows)."
+    long_about = "Portable scoped tools for artifactize. Filesystem targets must be relative to the current directory and stay below it. Parent components, absolute paths, and symlinks are refused. Use '.' for the current directory. Only open accepts HTTP(S) URLs. help resolves a literal program through the system's program search path."
 )]
 struct Cli {
     #[command(subcommand)]

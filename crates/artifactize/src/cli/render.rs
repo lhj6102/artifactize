@@ -187,7 +187,7 @@ pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
             artifact.id,
             tags(&artifact.tags),
             if artifact.kind == crate::config::ArtifactKind::File {
-                format!(" [file: {}]", artifact.path.display())
+                format!(" [file: {}]", crate::platform::path_text(&artifact.path))
             } else {
                 String::new()
             },

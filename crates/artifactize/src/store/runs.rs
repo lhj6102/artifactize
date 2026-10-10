@@ -50,7 +50,7 @@ pub async fn read_scoped_runs(
                 .map(|path| {
                     let path = canonical_target(path).map_err(|error| error.to_string())?;
                     outside_workspace(&path, &state).map_err(|error| error.to_string())?;
-                    Ok(path)
+                    Ok(crate::platform::path_text(&path))
                 })
                 .collect::<Result<Vec<_>, String>>()
         })

@@ -59,6 +59,14 @@ pub const OPENER: &str = if cfg!(target_os = "macos") {
     "xdg-open"
 };
 
+/// This test binary, set to run only the test `name`: for a test that runs itself again in
+/// an environment of its own, such as a `PATH` that holds only stand-ins.
+pub fn rerun(name: &str) -> Command {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command.args(["--exact", name, "--nocapture"]);
+    command
+}
+
 /// The environment variable naming the file a recording program appends to.
 pub const RECORD: &str = "ARTIFACTIZE_OPENER_RECORD";
 

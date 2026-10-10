@@ -23,8 +23,8 @@ fn command(program: &str, args: &[&str]) -> Command {
     Command {
         program: bin(program).into(),
         args: args.iter().map(OsString::from).collect(),
-        cwd: PathBuf::from("/"),
-        env: BTreeMap::from([("PATH".into(), "/usr/bin:/bin".into())]),
+        cwd: std::env::temp_dir(),
+        env: BTreeMap::from([("PATH".into(), support::os::path())]),
         timeout: TEST_TIMEOUT,
     }
 }

@@ -690,7 +690,8 @@ fn prompt(
                 "dependency"
             };
             json!({
-                "id":id, "path":artifact.path, "kind":artifact.kind, "role":role,
+                "id":id, "path":artifactize_tools::scope::logical_from_native(&artifact.path),
+                "kind":artifact.kind, "role":role,
                 "includedFolders":artifact.children, "mounts":artifact.mounts,
             })
         })

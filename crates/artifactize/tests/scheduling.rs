@@ -127,7 +127,9 @@ fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
             "CREATE TABLE fixture_update_count(count INTEGER); INSERT INTO fixture_update_count VALUES(0); CREATE TRIGGER fixture_budget_updates AFTER UPDATE ON requests WHEN NEW.status='BUDGET_EXHAUSTED' BEGIN UPDATE fixture_update_count SET count=count+1; END;",
         )
         .unwrap();
-    thread::sleep(Duration::from_millis(350));
+    fs::write(fixture.repo.join("release"), "finish").unwrap();
+    let run = finish(child, 4);
+    // Every rewrite while the execution ran is counted by the time the Run has finished.
     let count: i64 = database
         .query_row("SELECT count FROM fixture_update_count", [], |row| {
             row.get(0)
@@ -137,8 +139,6 @@ fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
         count <= 2,
         "self-invalidations repeatedly rewrote a budget decision: {count}"
     );
-    fs::write(fixture.repo.join("release"), "finish").unwrap();
-    let run = finish(child, 4);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
 }
@@ -156,7 +156,6 @@ fn expired_human_deadline_still_drains_parallel_runtime_without_rewriting_waiter
     ]);
     let child = fixture.spawn(&["--jobs", "2", "--timeout-ms", "10"]);
     wait_until(|| fixture.starts().len() == 1);
-    thread::sleep(Duration::from_millis(100));
     fs::write(fixture.repo.join("release"), "finish").unwrap();
     let run = finish(child, 3);
     assert_eq!(run["waitTimedOut"], true);

@@ -182,7 +182,12 @@ pub async fn call_fixed(
         )
     })
     .await
-    .unwrap_or_else(|_| ToolResult::error("Built-in tool execution failed."))
+    .unwrap_or_else(|error| {
+        if error.is_panic() {
+            std::panic::resume_unwind(error.into_panic());
+        }
+        ToolResult::error("Built-in tool execution failed.")
+    })
 }
 
 /// The model's input to a fixed `section` tool: the heading, when the declaration leaves

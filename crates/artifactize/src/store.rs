@@ -75,7 +75,7 @@ pub fn state_home() -> Result<PathBuf, StateHomeError> {
     resolve_state_home(
         env::var_os("ARTIFACTIZE_STATE_HOME").map(PathBuf::from),
         state.map(PathBuf::from),
-        env::var_os(platform::HOME_VARIABLE).map(PathBuf::from),
+        platform::home_directory(),
     )
 }
 

@@ -192,8 +192,13 @@ impl Scope {
             &location.path
         };
         let resolved = scoped_path(&owner, Path::new(path))?;
-        open_input(root, artifact, path).map_err(|error| ScopeError(error.to_string()))?;
-        if artifact.file_name().is_some() && !resolved.is_file() {
+        let file =
+            open_input(root, artifact, path).map_err(|error| ScopeError(error.to_string()))?;
+        let regular = file
+            .metadata()
+            .map_err(|error| ScopeError(error.to_string()))?
+            .is_file();
+        if artifact.file_name().is_some() && !regular {
             return Err(ScopeError(
                 "File Artifact target must remain a regular file.".into(),
             ));
@@ -287,23 +292,21 @@ pub fn open_scoped(root: &Path, path: &str) -> Result<File, OpenError> {
     if !root.is_absolute() {
         return Err(ScopeError("Scoped roots must be absolute.".into()).into());
     }
-    let target = root.join(path);
-    // `/`, or on Windows the volume or share root such as `C:\`.
-    let filesystem_root = target.ancestors().last().unwrap_or(&target);
+    let (filesystem_root, names) = platform::split_root(root)
+        .ok_or_else(|| ScopeError("Artifact path must not traverse parent directories.".into()))?;
     let mut directory =
         platform::open_directory(filesystem_root).map_err(|e| ScopeError(e.to_string()))?;
-    // Host-selected roots may use system aliases (Windows TEMP commonly uses 8.3 names).
-    // Logical components below that trusted root must use exact entry spellings. Both
-    // walks stay descriptor-relative and refuse links in every component.
-    let components = root.components().map(|component| (component, false)).chain(
-        Path::new(path)
-            .components()
-            .map(|component| (component, true)),
+    // Host-selected roots may use system aliases, such as short names. Logical components
+    // below that trusted root must use exact entry spellings. Both walks stay
+    // descriptor-relative and refuse links in every component.
+    let components = names.into_iter().map(|name| (name, false)).chain(
+        path.split('/')
+            .filter(|part| !part.is_empty())
+            .map(|part| (std::ffi::OsStr::new(part), true)),
     );
-    for (component, exact) in components {
-        directory = match component {
-            Component::Prefix(_) | Component::RootDir => continue,
-            Component::Normal(name) => open_named(&directory, name, exact)?,
+    for (name, exact) in components {
+        directory = match name {
+            name if name != ".." && name != "." => open_named(&directory, name, exact)?,
             _ => {
                 return Err(ScopeError(
                     "Artifact path must not traverse parent directories.".into(),
@@ -396,8 +399,10 @@ pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
     // The pinned, no-follow walk decides: it refuses links, special files and spellings
     // other than the directory entry's own, so the returned path names what it opened.
     match open_scoped(root, &relative) {
-        Ok(_) if relative.is_empty() => Ok(root.to_owned()),
-        Ok(_) => Ok(root.join(&relative)),
+        Ok(_) => Ok(relative
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .fold(root.to_owned(), |path, part| path.join(part))),
         Err(OpenError::NotFound) => Err(ScopeError(format!(
             "Artifact input does not exist: {relative}"
         ))),
