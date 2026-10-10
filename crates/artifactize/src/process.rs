@@ -73,6 +73,17 @@ pub enum Error {
     OutputDidNotClose,
 }
 
+impl Error {
+    pub(crate) fn argument_refusal(&self) -> Option<String> {
+        match self {
+            Self::Spawn(error) if error.kind() == io::ErrorKind::InvalidInput => Some(format!(
+                "Process arguments could not be passed safely: {error}"
+            )),
+            _ => None,
+        }
+    }
+}
+
 /// Register the inert child before allowing exec. A rejected, cancelled, or timed-out
 /// registration cannot start user code. The callback must not block its executor.
 /// Dropping this future cancels execution; its supervisor still kills and reaps it.
@@ -144,7 +155,20 @@ where
         return Err(Error::Timeout);
     }
 
-    let mut child = tokio::process::Command::new(&command.program);
+    let program = artifactize_tools::program::resolve_with(
+        &command.program,
+        &command.cwd,
+        command
+            .env
+            .get(std::ffi::OsStr::new("PATH"))
+            .map(OsString::as_os_str),
+        command
+            .env
+            .get(std::ffi::OsStr::new("PATHEXT"))
+            .map(OsString::as_os_str),
+    )
+    .map_err(Error::Spawn)?;
+    let mut child = tokio::process::Command::new(&program);
     child
         .args(&command.args)
         .current_dir(&command.cwd)
@@ -158,7 +182,7 @@ where
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    let (gate, mut spawning) = platform::spawn_gated(child)?;
+    let (gate, mut spawning) = platform::spawn_gated(child).map_err(Error::Spawn)?;
     let admission = tokio::select! {
         biased;
         _ = cancellation.cancelled() => Err(Error::Cancelled),
@@ -266,6 +290,7 @@ pub(crate) fn launch_detached(
     args: &[String],
     cwd: &std::path::Path,
 ) -> Result<(), Error> {
+    let program = artifactize_tools::program::resolve(program, cwd).map_err(Error::Spawn)?;
     let mut command = tokio::process::Command::new(program);
     command
         .args(args)

@@ -279,25 +279,7 @@ impl<'a> Registry<'a> {
 }
 
 fn executable(root: &Path, scope: &Scope<'_>, owner: &str, command: &str) -> Result<OsString, ()> {
-    if !Path::new(command).is_absolute() && command.contains('/') {
-        let relative = command.strip_prefix("./").unwrap_or(command);
-        let artifact = scope.artifacts[owner];
-        let mounted = artifact
-            .mounts
-            .contains_key(relative.split('/').next().unwrap_or(""));
-        let program = if artifact.file_name().is_some() && !mounted {
-            let folder = scope::scoped_path(root, artifact.folder()).map_err(|_| ())?;
-            scope::scoped_path(&folder, Path::new(relative)).map_err(|_| ())?
-        } else {
-            scope.resolve_input(root, owner, relative).map_err(|_| ())?
-        };
-        if !program.is_file() {
-            return Err(());
-        }
-        Ok(program.into_os_string())
-    } else {
-        Ok(command.into())
-    }
+    scope::executable(root, scope, owner, command).map_err(|_| ())
 }
 
 fn preflight_executable(
@@ -308,14 +290,7 @@ fn preflight_executable(
 ) -> Result<(), String> {
     let program = executable(root, scope, owner, command)
         .map_err(|_| "Tool executable path is unavailable or outside scope.".to_owned())?;
-    let found = if Path::new(&program).is_absolute() {
-        crate::platform::is_executable(Path::new(&program))
-    } else {
-        let cwd =
-            scope::scoped_path(root, scope.artifacts[owner].folder()).map_err(|e| e.to_string())?;
-        std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
-            .any(|dir| crate::platform::is_executable(&cwd.join(dir).join(&program)))
-    };
+    let found = crate::platform::is_executable(Path::new(&program));
     if found {
         Ok(())
     } else {
@@ -367,21 +342,23 @@ async fn invoke(
         let output = command
             .tool_output(input, OUTPUT_LIMIT, cancellation.clone())
             .await
-            .map_err(|error| match error {
-                crate::process::Error::Timeout => "Agent tool timed out.",
-                crate::process::Error::Cancelled => "Agent tool call was cancelled.",
-                _ => "Agent tool execution failed.",
+            .map_err(|error| {
+                error.argument_refusal().unwrap_or_else(|| match error {
+                    crate::process::Error::Timeout => "Agent tool timed out.".into(),
+                    crate::process::Error::Cancelled => "Agent tool call was cancelled.".into(),
+                    _ => "Agent tool execution failed.".into(),
+                })
             })?;
         match protocol {
             ToolProtocol::Json => {
                 if !output.status.success() {
-                    return Err("Agent tool execution failed.");
+                    return Err("Agent tool execution failed.".to_owned());
                 }
                 if output.truncated {
-                    return Err("Agent tool returned invalid output.");
+                    return Err("Agent tool returned invalid output.".to_owned());
                 }
                 result::parse(&output.stdout, &output_dir)
-                    .map_err(|_| "Agent tool returned invalid output.")
+                    .map_err(|_| "Agent tool returned invalid output.".to_owned())
             }
             ToolProtocol::Plain => Ok(result::plain(&output)),
         }

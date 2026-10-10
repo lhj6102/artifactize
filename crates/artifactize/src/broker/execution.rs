@@ -276,8 +276,9 @@ pub(super) fn prepare(
         scope::resolve_argv(config, &scope, &eval.target, args).map_err(|e| e.to_string())?;
     let cwd = scope::scoped_path(&config.root, config.artifacts[&eval.target].folder())
         .map_err(|e| e.to_string())?;
+    let program = scope::executable(&config.root, &scope, &eval.target, command)?;
     let mut prepared = runtime::Command::prepare(
-        command.into(),
+        program,
         args.iter().map(Into::into).collect(),
         &config.root,
         run_dir,

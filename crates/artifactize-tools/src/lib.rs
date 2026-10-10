@@ -3,6 +3,8 @@
 pub mod builtin;
 pub mod files;
 pub mod image;
+pub mod opener;
+pub mod program;
 pub mod result;
 pub mod schema;
 pub mod scope;

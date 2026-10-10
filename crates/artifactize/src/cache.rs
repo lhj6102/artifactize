@@ -555,17 +555,9 @@ async fn script(
     for input in files {
         scope::scoped_path(&cwd, Path::new(input)).map_err(|e| e.to_string())?;
     }
-    let program = if !Path::new(command).is_absolute() && command.contains('/') {
-        let relative = command.strip_prefix("./").unwrap_or(command);
-        let program = scope::scoped_path(&cwd, Path::new(relative)).map_err(|e| e.to_string())?;
-        if !program.is_file() {
-            return Err("Fingerprint executable must be a regular file.".into());
-        }
-        program.into_os_string()
-    } else {
-        command.clone().into()
-    };
     let scope = scope::argv_scope(config, artifact_id, args).map_err(|e| e.to_string())?;
+    let program = scope::executable(&config.root, &scope, artifact_id, command)
+        .map_err(|error| format!("Fingerprint executable could not be spawned: {error}"))?;
     let args = scope::resolve_argv(config, &scope, artifact_id, args).map_err(|e| e.to_string())?;
     let input = json!({"version":FINGERPRINT_INPUT_VERSION,"artifactId":artifact_id});
     let output_root =
