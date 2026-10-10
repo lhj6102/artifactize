@@ -58,7 +58,7 @@ fn copy(source: &Path, target: &Path, deadlines: bool) {
             copy(&entry.path(), &destination, deadlines);
         } else {
             fs::copy(entry.path(), &destination).unwrap();
-            if os::stand_ins() {
+            if os::stand_ins() || cfg!(target_os = "macos") {
                 port(&destination, deadlines);
             }
         }
@@ -83,8 +83,10 @@ fn port(path: &Path, deadlines: bool) {
                                     || command.starts_with("/usr/bin/")
                                     || command == "sh") =>
                         {
-                            *command = os::bin(command);
-                            true
+                            let resolved = os::bin(command);
+                            let changed = *command != resolved;
+                            *command = resolved;
+                            changed
                         }
                         Value::Number(deadline)
                             if deadlines

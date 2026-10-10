@@ -52,6 +52,11 @@ fn matcher(patterns: &[String]) -> Result<Gitignore, String> {
         return Err("fingerprint.ignore must contain at most 64 unique patterns.".into());
     }
     let mut builder = GitignoreBuilder::new(".");
+    // Match actual entry spellings on every volume: a differently cased rule must never
+    // widen the ignored set and silently hide a content change.
+    builder
+        .case_insensitive(false)
+        .expect("case-sensitive ignore matching");
     for pattern in BUILTIN_IGNORES {
         builder.add_line(None, pattern).expect("built-in pattern");
     }
@@ -291,6 +296,11 @@ fn read_gitignore(directory: &File) -> Result<Option<Gitignore>, String> {
         return Err("A .gitignore file exceeds 1 MiB.".into());
     }
     let mut builder = GitignoreBuilder::new(".");
+    // Match actual entry spellings on every volume: a differently cased rule must never
+    // widen the ignored set and silently hide a content change.
+    builder
+        .case_insensitive(false)
+        .expect("case-sensitive ignore matching");
     for line in String::from_utf8_lossy(&text).lines() {
         let _ = builder.add_line(None, line);
     }

@@ -89,6 +89,8 @@ impl Dirty {
 }
 #[derive(Default)]
 struct Inbox {
+    #[cfg(test)]
+    connected: std::sync::atomic::AtomicBool,
     dirty: Mutex<Dirty>,
     wake: Notify,
 }
@@ -364,6 +366,8 @@ async fn watch(
                 _ = cancel.cancelled() => break,
                 result = connection => {
                     if let Ok(Ok((stream, epoch))) = result {
+                        #[cfg(test)]
+                        inbox.connected.store(true, std::sync::atomic::Ordering::SeqCst);
                         inbox.add(Change::Resync);
                         if let Some(ready) = ready.take() {
                             let _ = ready.send(());
@@ -374,6 +378,8 @@ async fn watch(
                             tokio::select! {
                                 _ = cancel.cancelled() => break,
                                 _ = &mut receive => {
+                                    #[cfg(test)]
+                                    inbox.connected.store(false, std::sync::atomic::Ordering::SeqCst);
                                     inbox.add(Change::Resync);
                                     break;
                                 }

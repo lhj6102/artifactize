@@ -191,10 +191,16 @@ pub(crate) fn executable(
         )
         .into_iter()
         .find_map(|candidate| {
+            #[cfg(windows)]
+            let candidate = if Path::new(relative).extension().is_none() {
+                executable_spelling(root, scope, owner, &cwd, &candidate, mounted)?
+            } else {
+                candidate
+            };
             let resolved = if artifact.file_name().is_some() && !mounted {
                 scoped_path(&cwd, &candidate)
             } else {
-                scope.resolve_input(root, owner, candidate.to_str()?)
+                scope.resolve_input(root, owner, &candidate.to_str()?.replace('\\', "/"))
             };
             match resolved {
                 Ok(program) if program.is_file() => Some(program),
@@ -212,6 +218,35 @@ pub(crate) fn executable(
         PathBuf::from(command)
     };
     Ok(program.into_os_string())
+}
+
+/// PATHEXT supplies a suffix, not a model-authored name: use its actual directory-entry
+/// spelling before strict scoped validation. Parent components retain their input spelling.
+#[cfg(windows)]
+fn executable_spelling(
+    root: &Path,
+    scope: &Scope<'_>,
+    owner: &str,
+    cwd: &Path,
+    candidate: &Path,
+    mounted: bool,
+) -> Option<PathBuf> {
+    let parent = candidate.parent().unwrap_or(Path::new(""));
+    let directory = if scope.artifacts[owner].file_name().is_some() && !mounted {
+        scoped_path(cwd, parent).ok()?
+    } else {
+        scope.resolve_input(root, owner, parent.to_str()?).ok()?
+    };
+    let requested = candidate.file_name()?.to_str()?;
+    std::fs::read_dir(directory)
+        .ok()?
+        .filter_map(Result::ok)
+        .find_map(|entry| {
+            let name = entry.file_name();
+            name.to_str()?
+                .eq_ignore_ascii_case(requested)
+                .then(|| candidate.with_file_name(name))
+        })
 }
 
 pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, ScopeError> {

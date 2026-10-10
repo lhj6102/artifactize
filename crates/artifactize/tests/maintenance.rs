@@ -542,3 +542,58 @@ fn doctor_never_probes_or_creates_state_inside_current_or_legacy_workspaces() {
         assert!(!state.exists(), "{marker}: doctor created state");
     }
 }
+
+/// The operator's standard macOS temp prefix is usable, but a symlink below it is not.
+#[cfg(target_os = "macos")]
+#[test]
+fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links() {
+    let root = tempfile::tempdir_in("/tmp").unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir(&repo).unwrap();
+    support::declaration::write(
+        repo.join("index.artf"),
+        json!({"name":"a","fingerprint":false,"evals":[{
+            "id":"check","title":"Check","payload":{"instruction":"Check"},
+            "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]}
+        }]})
+        .to_string(),
+    )
+    .unwrap();
+    let invoke = |args: &[&str], code| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        command
+            .arg("--repo")
+            .arg(&repo)
+            .arg("--json")
+            .env("ARTIFACTIZE_STATE_HOME", &state)
+            .args(args);
+        result(&mut command, code)
+    };
+    let run = invoke(&["verify", "--all"], 0);
+    assert_eq!(run["status"], "GREEN");
+    assert_eq!(
+        run["stateDir"],
+        support::os::canonical(&state).to_str().unwrap()
+    );
+    // Noncached evidence satisfies its Run only; status correctly reports another review.
+    assert_eq!(invoke(&["status"], 1)["evals"][0]["action"], "execute");
+    let dry = invoke(&["prune", "--dry-run", "--older-than", "0s"], 0);
+    assert!(!dry["wouldRemove"].as_array().unwrap().is_empty());
+    let removed = invoke(&["prune", "--older-than", "0s"], 0);
+    assert_eq!(removed["removed"], dry["wouldRemove"]);
+    assert!(repo.join("index.artf").is_file());
+    let alias = root.path().join("alias");
+    link_dir(&state, &alias);
+    let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+    command
+        .arg("--json")
+        .env("ARTIFACTIZE_STATE_HOME", alias)
+        .arg("prune");
+    assert!(
+        result(&mut command, 2)["error"]
+            .as_str()
+            .unwrap()
+            .contains("symlink")
+    );
+}

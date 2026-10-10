@@ -468,14 +468,6 @@ fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() 
     assert!(show.status.success());
     assert!(json_output(&show)["requests"][0]["result"].is_null());
     let grandchild = fs::read_to_string(marker).unwrap();
-    #[cfg(unix)]
-    if let Ok(stat) = fs::read_to_string(format!("/proc/{}/stat", grandchild.trim())) {
-        assert!(
-            stat.split_once(") ").unwrap().1.starts_with('Z'),
-            "descendant still running: {stat}"
-        );
-    }
-    #[cfg(windows)]
     assert!(
         !support::os::running(grandchild.trim().parse().unwrap()),
         "descendant still running"

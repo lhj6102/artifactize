@@ -63,19 +63,12 @@ async fn registration_observes_inert_group_leader_before_exec() {
         assert!(!marker.exists());
         #[cfg(unix)]
         {
-            let stat = std::fs::read_to_string(format!("/proc/{}/stat", child.pid))?;
-            let fields: Vec<_> = stat
-                .rsplit_once(')')
-                .unwrap()
-                .1
-                .split_whitespace()
-                .collect();
-            assert_eq!(fields[2].parse::<u32>().unwrap(), child.pid);
-            assert_eq!(fields[19].parse::<u64>().unwrap(), child.start_time);
+            // SAFETY: getpgid only queries the live registered child.
+            assert_eq!(unsafe { libc::getpgid(child.pid as i32) }, child.pid as i32);
         }
-        // Windows holds the child suspended in its job; its identity is already final.
-        #[cfg(windows)]
         assert_eq!(support::os::start_time(child.pid), child.start_time);
+        // Windows holds the child suspended in its job; its identity is already final.
+
         tokio::time::sleep(Duration::from_millis(50)).await;
         assert!(
             !marker.exists(),
@@ -191,7 +184,7 @@ async fn stdout_and_stderr_are_drained_concurrently_after_capture_limit() {
 async fn assert_gone(pid: u32) {
     assert!(pid > 0, "must have observed a real process");
     #[cfg(unix)]
-    wait_for(|| !PathBuf::from(format!("/proc/{pid}")).exists()).await;
+    wait_for(|| !support::os::exists(pid)).await;
     #[cfg(windows)]
     wait_for(|| !support::os::running(pid)).await;
 }

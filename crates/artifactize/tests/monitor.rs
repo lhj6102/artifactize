@@ -697,8 +697,7 @@ fn pty_session_restores_the_terminal_on_quit() {
         env!("CARGO_BIN_EXE_artifactize"),
         root.path().join("state").display()
     );
-    let mut child = Command::new("script")
-        .args(["-qec", &command, "/dev/null"])
+    let mut child = support::os::pty_command(&command)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()

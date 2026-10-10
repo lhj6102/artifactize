@@ -1,4 +1,4 @@
-//! Process groups, the pre-exec admission gate, and `/proc` start times.
+//! Process groups, the pre-exec admission gate, and OS process start times.
 
 use std::{
     io::{self, Read, Write},
@@ -16,7 +16,7 @@ use tokio::{
 };
 
 /// The child's process group, killed when dropped.
-pub(crate) struct Child(Box<dyn ChildWrapper>);
+pub(crate) struct Child(Box<dyn ChildWrapper>, #[cfg(target_os = "macos")] u32);
 
 impl Child {
     pub fn stdin(&mut self) -> &mut Option<ChildStdin> {
@@ -45,9 +45,68 @@ impl Child {
     pub fn kill(&mut self) -> io::Result<()> {
         match self.0.start_kill() {
             Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
+            #[cfg(target_os = "macos")]
+            Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
+                // Darwin can report EPERM after the leader was reaped and its group
+                // disappeared. Suppress it only when the kernel confirms no members.
+                if process_group_empty(self.1)? {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            }
             result => result,
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn process_group_empty(pgid: u32) -> io::Result<bool> {
+    let mut query = [
+        libc::CTL_KERN,
+        libc::KERN_PROC,
+        libc::KERN_PROC_PGRP,
+        i32::try_from(pgid).map_err(|_| io::ErrorKind::InvalidInput)?,
+    ];
+    let mut bytes = 0;
+    // SAFETY: the four-element MIB is writable and bytes is a live size output. A null
+    // oldp requests the size of the process records without allocating or reading them.
+    if unsafe {
+        libc::sysctl(
+            query.as_mut_ptr(),
+            query.len() as u32,
+            std::ptr::null_mut(),
+            &mut bytes,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    // Darwin's size-only query includes spare capacity for processes that could appear
+    // before the copy. Only an actual copy's returned byte count proves the group empty.
+    const MAX_GROUP_INFO_BYTES: usize = 16 * 1024 * 1024;
+    if bytes > MAX_GROUP_INFO_BYTES {
+        return Err(io::Error::other("process group information exceeds 16 MiB"));
+    }
+    let mut records = vec![0_u8; bytes.max(1)];
+    // SAFETY: the writable byte buffer has the queried capacity. No record is interpreted;
+    // an ENOMEM race is kept as an error, never retried or mistaken for an empty group.
+    if unsafe {
+        libc::sysctl(
+            query.as_mut_ptr(),
+            query.len() as u32,
+            records.as_mut_ptr().cast(),
+            &mut bytes,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(bytes == 0)
 }
 
 impl Drop for Child {
@@ -80,14 +139,62 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
 /// The index of `starttime` (field 22 of /proc/PID/stat, see proc(5)) among the fields after
 /// the command name. The name, field 2, is cut off at its closing parenthesis because it may
 /// contain spaces, so the remaining fields start at field 3: 22 - 3 = 19.
+#[cfg(not(target_os = "macos"))]
 const START_TIME_AFTER_NAME: usize = 22 - 3;
 
 /// Field 22 of /proc/PID/stat: the start time in clock ticks since boot.
+#[cfg(not(target_os = "macos"))]
 pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
     stat.rsplit_once(')')
         .and_then(|(_, fields)| fields.split_whitespace().nth(START_TIME_AFTER_NAME))
         .and_then(|value| value.parse().ok())
+        .ok_or_else(|| io::Error::other("invalid child process start time"))
+}
+
+/// macOS exposes the kernel's process birth timestamp, in microseconds since the epoch.
+/// Keep its full precision: seconds alone cannot distinguish rapidly reused PIDs.
+#[cfg(target_os = "macos")]
+pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
+    let pid = i32::try_from(pid).map_err(|_| io::ErrorKind::InvalidInput)?;
+    if pid <= 0 {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+    // SAFETY: a writable buffer of the exact size required by PROC_PIDTBSDINFO. The
+    // initialized fields are read only if the kernel reports the complete struct.
+    let read = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        )
+    };
+    if read <= 0 {
+        let error = io::Error::last_os_error();
+        // proc_pidinfo reports ESRCH for a departed PID; liveness treats this like
+        // Linux procfs ENOENT, not a supervision error.
+        return Err(if error.raw_os_error() == Some(libc::ESRCH) {
+            io::ErrorKind::NotFound.into()
+        } else {
+            error
+        });
+    }
+    if read != size {
+        return Err(io::Error::other("incomplete child process information"));
+    }
+    // SAFETY: proc_pidinfo wrote the entire struct.
+    let info = unsafe { info.assume_init() };
+    if info.pbi_pid != pid as u32 {
+        return Err(io::Error::other("invalid child process identity"));
+    }
+    const MICROSECONDS_PER_SECOND: u64 = 1_000_000;
+    info.pbi_start_tvsec
+        .checked_mul(MICROSECONDS_PER_SECOND)
+        .and_then(|seconds| seconds.checked_add(info.pbi_start_tvusec))
         .ok_or_else(|| io::Error::other("invalid child process start time"))
 }
 
@@ -166,7 +273,17 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
     }
     // std spawn waits for exec's error pipe, so it cannot run on the task that
     // opens the gate. Returning a guarded child also covers a dropped join handle.
-    let spawning = tokio::task::spawn_blocking(move || command.spawn().map(Child));
+    let spawning = tokio::task::spawn_blocking(move || {
+        command.spawn().map(|child| {
+            #[cfg(target_os = "macos")]
+            let pid = child.id().expect("new child has a PID");
+            Child(
+                child,
+                #[cfg(target_os = "macos")]
+                pid,
+            )
+        })
+    });
     Ok((gate, spawning))
 }
 
@@ -186,7 +303,7 @@ mod tests {
         command.wrap(ProcessGroup::leader());
         let (gate, spawning) = spawn(command).unwrap();
         let pid = gate.pid().await.unwrap();
-        assert!(std::fs::exists(format!("/proc/{pid}")).unwrap());
+        assert!(process_start_time(pid).is_ok());
         drop(gate);
         let error = tokio::time::timeout(Duration::from_secs(2), spawning)
             .await
@@ -195,6 +312,6 @@ mod tests {
             .err()
             .expect("the child must not exec");
         assert_eq!(error.raw_os_error(), Some(libc::ECANCELED));
-        assert!(!std::fs::exists(format!("/proc/{pid}")).unwrap());
+        assert!(process_start_time(pid).is_err());
     }
 }
