@@ -19,9 +19,7 @@ const LAYOUT_EVENTS: usize = 128;
 const ENTRY: u64 = 24;
 
 fn temporary() -> Result<File, String> {
-    let file = tempfile::tempfile().map_err(|error| error.to_string())?;
-    crate::platform::restrict_file(&file).map_err(|error| error.to_string())?;
-    Ok(file)
+    crate::platform::private_anonymous_file().map_err(|error| error.to_string())
 }
 
 struct Text {

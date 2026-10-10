@@ -174,8 +174,8 @@ enum Recording {
 struct Pending {
     path: PathBuf,
     reference: SessionRef,
-    eval_id: Option<String>,
-    target: Option<String>,
+    eval_id: Option<crate::types::EvalId>,
+    target: Option<crate::types::ArtifactName>,
 }
 
 impl Recorder {
@@ -211,8 +211,8 @@ impl Recorder {
                     request_id: request.id.clone(),
                     session_id: id.clone(),
                 },
-                eval_id: Some(request.eval_id.to_string()),
-                target: Some(request.target.to_string()),
+                eval_id: Some(request.eval_id.clone()),
+                target: Some(request.target.clone()),
             })),
             publisher: crate::changes::Publisher::new(&saving.state),
         }

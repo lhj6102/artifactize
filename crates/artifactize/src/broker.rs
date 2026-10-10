@@ -233,7 +233,12 @@ struct Scheduler<'a, 'g> {
 }
 
 /// A dependency request is audit-only: no execution, claim, capacity or cache evidence.
-pub(crate) fn derive(request: &mut Request, eval: &EvalEvaluation<'_>) {
+/// A GREEN or BLOCKED request completes at `at`.
+pub(crate) fn derive(
+    request: &mut Request,
+    eval: &EvalEvaluation<'_>,
+    at: crate::types::Timestamp,
+) {
     request.status = crate::project::verify::status(eval.status);
     request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
     request.blocked_reason = (!request.blocked_by.is_empty()).then(|| {
@@ -255,7 +260,7 @@ pub(crate) fn derive(request: &mut Request, eval: &EvalEvaluation<'_>) {
         .into()
     });
     request.completed_at =
-        (eval.status == EvalStatus::Green || eval.status == EvalStatus::Blocked).then(now);
+        (eval.status == EvalStatus::Green || eval.status == EvalStatus::Blocked).then_some(at);
 }
 
 impl Scheduler<'_, '_> {
@@ -450,7 +455,7 @@ impl Scheduler<'_, '_> {
                         let blocked_by: Vec<_> =
                             eval.blocked_by.iter().copied().map(Into::into).collect();
                         if request.status != status || request.blocked_by != blocked_by {
-                            derive(request, eval);
+                            derive(request, eval, now());
                             self.receipts.save_request(request).await?;
                         }
                         continue;

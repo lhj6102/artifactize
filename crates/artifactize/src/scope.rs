@@ -161,8 +161,7 @@ pub(crate) fn executable(
 ) -> Result<std::ffi::OsString, String> {
     let artifact = scope.artifacts[owner];
     let cwd = scoped_path(root, artifact.folder()).map_err(|error| error.to_string())?;
-    let program = if !Path::new(command).is_absolute() && command.contains('/') {
-        let relative = command.strip_prefix("./").unwrap_or(command);
+    let program = if let Some(relative) = crate::platform::program::folder_relative(command) {
         let mounted = artifact
             .mounts
             .contains_key(relative.split('/').next().unwrap_or(""));

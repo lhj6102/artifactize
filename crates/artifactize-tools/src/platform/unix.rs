@@ -28,15 +28,16 @@ pub(crate) struct Tree {
 }
 
 /// A process group created by this launcher, never an arbitrary process identifier.
-struct GroupId(libc::pid_t);
+struct GroupId(rustix::process::Pid);
 
 /// Start `command` as the leader of a new process group.
 pub(crate) fn spawn_tree(command: &mut tokio::process::Command) -> io::Result<Tree> {
     command.process_group(0);
     let child = command.spawn()?;
-    let group = child
-        .id()
-        .map(|pid| GroupId(libc::pid_t::try_from(pid).expect("Unix process IDs fit pid_t")));
+    let group = child.id().map(|pid| {
+        let pid = i32::try_from(pid).expect("Unix process IDs fit pid_t");
+        GroupId(rustix::process::Pid::from_raw(pid).expect("a child's process ID is positive"))
+    });
     Ok(Tree { child, group })
 }
 
@@ -44,8 +45,8 @@ impl Tree {
     /// Kill every process left in the group; a group that has already gone is fine.
     pub(crate) fn kill(&mut self) {
         if let Some(group) = self.group.take() {
-            // SAFETY: a plain signal to the process group this tree started.
-            unsafe { libc::killpg(group.0, libc::SIGKILL) };
+            // A group that has already gone is the expected outcome, not an error.
+            let _ = rustix::process::kill_process_group(group.0, rustix::process::Signal::KILL);
         }
     }
 }

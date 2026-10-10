@@ -442,8 +442,9 @@ impl Transcript {
             Kind::End(end) => {
                 self.stopped(&mut dirty);
                 if let Some(result) = end.result() {
+                    let result = result.to_json();
                     let digest: [u8; 32] = Sha256::digest(result.to_string().as_bytes()).into();
-                    let text = result_text(result);
+                    let text = result_text(&result);
                     if let Some((id, candidate)) = self.result_candidate.take()
                         && candidate == digest
                     {

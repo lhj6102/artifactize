@@ -13,8 +13,8 @@ use super::Conversation;
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
     pub backend: Option<String>,
-    pub model: Option<String>,
-    pub reasoning: Option<String>,
+    pub model: Option<crate::config::ModelId>,
+    pub reasoning: Option<crate::config::Reasoning>,
     /// The first and last event's time.
     pub started_at: Option<crate::types::Timestamp>,
     pub ended_at: Option<crate::types::Timestamp>,
@@ -69,7 +69,7 @@ impl Summary {
                     .to_owned()
             }),
             model: header.model.clone(),
-            reasoning: header.reasoning.clone(),
+            reasoning: header.reasoning,
             started_at,
             ended_at,
             duration_ms,

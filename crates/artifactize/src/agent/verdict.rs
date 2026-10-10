@@ -224,7 +224,7 @@ mod tests;
 
 /// A schema-checked verdict with unchanged owner fields. The stored JSON envelope stays
 /// identical; only the core gets a typed verdict instead of reparsing the JSON.
-#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ValidatedResult {
     pub verdict: crate::runtime::Verdict,
     #[serde(flatten)]
@@ -241,6 +241,10 @@ impl ValidatedResult {
         Self { verdict, fields }
     }
     pub fn into_json(self) -> Value {
+        serde_json::to_value(self).expect("validated result is JSON")
+    }
+    /// The saved JSON envelope, as `into_json` builds it.
+    pub fn to_json(&self) -> Value {
         serde_json::to_value(self).expect("validated result is JSON")
     }
 }

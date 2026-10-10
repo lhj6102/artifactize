@@ -185,14 +185,19 @@ where
 {
     let cancellation = cancellation.child_token();
     let _cancel_on_drop = cancellation.clone().drop_guard();
-    tokio::spawn(run_inner(
+    match tokio::spawn(run_inner(
         command,
         input,
         output_limit,
         cancellation,
         register,
     ))
-    .await?
+    .await
+    {
+        Ok(result) => result,
+        Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
+        Err(error) => Err(Error::Task(error)),
+    }
 }
 
 async fn run_inner<F, R>(

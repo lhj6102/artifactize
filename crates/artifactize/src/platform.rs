@@ -183,7 +183,8 @@ mod state_directory_tests {
 
 mod interaction;
 pub(crate) use interaction::{
-    is_within, label, paths_equal, private_temp_file, run_editor, selected_editor,
+    is_within, label, paths_equal, private_anonymous_file, private_temp_file, run_editor,
+    selected_editor,
 };
 
 /// Whether an entry exists without following links (including dangling links).

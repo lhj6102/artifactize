@@ -1,4 +1,5 @@
 //! Mutually exclusive saved success/failure envelopes, with the original JSON keys.
+use crate::agent::verdict::ValidatedResult;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -6,7 +7,8 @@ use serde_json::Value;
 pub enum End {
     #[default]
     Empty,
-    Completed(Value),
+    /// The review's typed verdict; only the owner-defined fields stay JSON.
+    Completed(ValidatedResult),
     Failed {
         code: Option<crate::agent::error::Code>,
         message: Option<String>,
@@ -22,20 +24,31 @@ pub enum Answer {
         message: Option<String>,
     },
 }
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Wire<T> {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     result: Option<T>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     error_code: Option<crate::agent::error::Code>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
+// Every field is optional, whatever the result type.
+impl<T> Default for Wire<T> {
+    fn default() -> Self {
+        Self {
+            result: None,
+            text: None,
+            error_code: None,
+            error: None,
+        }
+    }
+}
 impl End {
-    pub fn result(&self) -> Option<&Value> {
+    pub fn result(&self) -> Option<&ValidatedResult> {
         if let Self::Completed(value) = self {
             Some(value)
         } else {
@@ -93,7 +106,7 @@ impl Serialize for End {
 }
 impl<'de> Deserialize<'de> for End {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let wire = Wire::<Value>::deserialize(deserializer)?;
+        let wire = Wire::<ValidatedResult>::deserialize(deserializer)?;
         match (wire.result, wire.error_code, wire.error) {
             (Some(value), None, None) => Ok(Self::Completed(value)),
             (Some(_), _, _) => Err(serde::de::Error::custom(
@@ -163,8 +176,11 @@ mod tests {
                 .is_err()
         );
         assert!(
-            serde_json::from_value::<End>(serde_json::json!({"result":{},"error":"failed"}))
-                .is_err()
+            serde_json::from_value::<End>(
+                serde_json::json!({"result":{"verdict":"RED"},"error":"failed"})
+            )
+            .is_err()
         );
+        assert!(serde_json::from_value::<End>(serde_json::json!({"result":{}})).is_err());
     }
 }

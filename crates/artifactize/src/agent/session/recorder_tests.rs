@@ -44,7 +44,7 @@ fn initial_header_is_lazy_authoritative_and_end_preserves_saved_reference() {
         version: Some(999),
         session_id: Some("wrong".parse().unwrap()),
         producer: Some("wrong@host".into()),
-        model: Some("fixture-model".into()),
+        model: Some("fixture-model".parse().unwrap()),
         ..Header::default()
     });
     let reference = recorder.reference().unwrap().clone();
@@ -54,11 +54,13 @@ fn initial_header_is_lazy_authoritative_and_end_preserves_saved_reference() {
     assert_eq!(reference.producer, saving.producer);
     assert_eq!(reference.session_id, id);
     recorder.start(Header {
-        model: Some("ignored".into()),
+        model: Some("ignored".parse().unwrap()),
         ..Header::default()
     });
     recorder.message(1, &Message::user("recorded"), false);
-    recorder.event(Kind::End(End::Completed(json!({"verdict":"GREEN"}))));
+    recorder.event(Kind::End(End::Completed(
+        serde_json::from_value(json!({"verdict":"GREEN"})).unwrap(),
+    )));
     recorder.event(Kind::Answer(Answer::Completed("after end".into())));
     assert_eq!(recorder.reference(), Some(&reference));
     let conversation = Conversation::load(&path(&saving.state, &id).unwrap())

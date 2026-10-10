@@ -36,6 +36,11 @@ pub(crate) const PRIVATE_FILE: &str = "readable by their owner only (mode 0600)"
 /// The group and other permission bits; a private path has none of them set.
 pub(crate) const GROUP_OTHER_BITS: u32 = 0o077;
 
+/// The group and other write bits. A system alias's parent with either set could be
+/// replaced by another user, so the alias it holds cannot be trusted.
+#[cfg(target_os = "macos")]
+const GROUP_OTHER_WRITE_BITS: u32 = 0o022;
+
 /// The permission bits of a mode, without the file type and set-id bits, so a file can be
 /// compared with [`PRIVATE_FILE_MODE`] exactly.
 const PERMISSION_BITS: u32 = 0o777;
@@ -211,7 +216,10 @@ pub(crate) fn resolve_system_aliases(path: &Path) -> io::Result<std::path::PathB
             }
             for parent in [Path::new("/"), Path::new("/private")] {
                 let metadata = parent.symlink_metadata()?;
-                if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+                if !metadata.is_dir()
+                    || metadata.uid() != 0
+                    || metadata.mode() & GROUP_OTHER_WRITE_BITS != 0
+                {
                     return Err(io::Error::other(
                         "System alias parents must not be replaceable.",
                     ));

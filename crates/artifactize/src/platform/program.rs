@@ -11,6 +11,14 @@ pub(crate) fn reject_link_ancestors(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// The folder-relative path a declared command names, without a leading `./`: a command
+/// with a `/` that is not an absolute path on this system. A bare name (looked up on `PATH`)
+/// or an absolute path stays literal, so it is `None`.
+pub(crate) fn folder_relative(command: &str) -> Option<&str> {
+    (!Path::new(command).is_absolute() && command.contains('/'))
+        .then(|| command.strip_prefix("./").unwrap_or(command))
+}
+
 pub(crate) fn candidates(path: &Path) -> Vec<PathBuf> {
     artifactize_tools::program::candidates(path, super::environment::var)
 }

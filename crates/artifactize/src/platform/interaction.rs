@@ -51,6 +51,14 @@ pub(crate) fn private_temp_file(prefix: &str) -> io::Result<PrivateTempFile> {
     })
 }
 
+/// An unnamed owner-only scratch file in the system temporary directory, removed when
+/// closed.
+pub(crate) fn private_anonymous_file() -> io::Result<std::fs::File> {
+    let file = tempfile::tempfile()?;
+    super::restrict_file(&file)?;
+    Ok(file)
+}
+
 /// Do not expose signal-specific process statuses outside the platform boundary.
 pub(crate) async fn run_editor(command: &str, file: &Path) -> io::Result<()> {
     let status = super::editor(command, file).status().await?;

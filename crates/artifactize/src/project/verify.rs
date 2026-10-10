@@ -283,7 +283,7 @@ pub async fn verify(
             if request.status == crate::types::RequestStatus::Error {
                 continue;
             }
-            broker::derive(request, &evaluation.evals[request.eval_id.as_str()]);
+            broker::derive(request, &evaluation.evals[request.eval_id.as_str()], now());
             continue;
         }
         if evidence.contains_key(request.eval_id.as_str())

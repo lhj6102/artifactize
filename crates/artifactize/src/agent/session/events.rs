@@ -77,9 +77,9 @@ pub struct Header {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<Backend>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
+    pub model: Option<crate::config::ModelId>,
     #[serde(default)]
-    pub reasoning: Option<String>,
+    pub reasoning: Option<crate::config::Reasoning>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budgets: Option<Budgets>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -89,9 +89,9 @@ pub struct Header {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<crate::types::StateId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub eval_id: Option<String>,
+    pub eval_id: Option<crate::types::EvalId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
+    pub target: Option<crate::types::ArtifactName>,
     /// Provider-specific parameters remain dynamic.
     #[serde(default)]
     pub parameters: Value,

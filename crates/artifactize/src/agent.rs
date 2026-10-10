@@ -112,9 +112,7 @@ async fn review(
     )
     .await;
     recorder.event(match &review.result {
-        Ok(result) => session::Kind::End(session::End::Completed(
-            serde_json::to_value(result).expect("validated result is JSON"),
-        )),
+        Ok(result) => session::Kind::End(session::End::Completed(result.clone())),
         Err(failure) => session::Kind::End(session::End::Failed {
             code: Some(failure.code),
             message: Some(failure.message.clone()),
@@ -339,8 +337,8 @@ async fn run(
     )?);
     recorder.start(session::Header {
         backend: Some(*backend),
-        model: Some(model.to_string()),
-        reasoning: reasoning.map(|effort| effort.to_string()),
+        model: Some(model.clone()),
+        reasoning: *reasoning,
         parameters: json!(request.additional_params),
         budgets: Some(session::Budgets {
             timeout_ms: Some(timeout_ms),
@@ -516,7 +514,7 @@ async fn continue_conversation(
     };
     let backend = header.backend.ok_or_else(invalid)?;
     let model = header.model.as_deref().ok_or_else(invalid)?;
-    let reasoning = header.reasoning.as_deref();
+    let reasoning = header.reasoning.map(crate::config::Reasoning::as_str);
     let defaults = session::Budgets::default();
     let budgets = header.budgets.as_ref().unwrap_or(&defaults);
     let deadline = Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT);

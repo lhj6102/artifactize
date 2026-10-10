@@ -304,12 +304,9 @@ async fn send(
                     .to_owned())
                 .unwrap_or_else(|| "?".into()),
             header.model.as_deref().unwrap_or("?"),
-            header
-                .reasoning
-                .as_deref()
-                .map_or(String::new(), |reasoning| format!(
-                    " (reasoning {reasoning})"
-                ))
+            header.reasoning.map_or(String::new(), |reasoning| format!(
+                " (reasoning {reasoning})"
+            ))
         ),
         files_changed,
     };
@@ -503,7 +500,7 @@ fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
                 }
             }
             session::Kind::End(end) => match end.result() {
-                Some(result) => writeln!(out, "\n── Result: {result}")?,
+                Some(result) => writeln!(out, "\n── Result: {}", result.to_json())?,
                 None => writeln!(
                     out,
                     "\n── Review failed: {} {}",
