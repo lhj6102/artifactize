@@ -561,10 +561,10 @@ async fn deadline_is_not_reset_after_registration() {
         Ok(())
     })
     .await;
-    assert!(matches!(
-        outcome,
-        Outcome::OperationalError(Error::Process(process::Error::Timeout))
-    ));
+    assert!(
+        matches!(outcome, Outcome::OperationalError(Error::Process(process::Error::Timeout))),
+        "{outcome:?}"
+    );
     assert!(!marker.exists());
 }
 
