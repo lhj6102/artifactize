@@ -27,10 +27,11 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let root = tempfile::tempdir().unwrap();
-        let repo = root.path().join("repo");
+        let base = support::os::canonical(root.path());
+        let repo = base.join("repo");
         fs::create_dir(&repo).unwrap();
         Self {
-            state: root.path().join("state"),
+            state: base.join("state"),
             repo,
             _root: root,
         }
@@ -494,9 +495,7 @@ fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
         &["{file}".into(), "--input={file}".into()],
     )
     .unwrap();
-    let file = config
-        .root
-        .join("files/input.txt")
+    let file = support::os::canonical(&config.root.join("files/input.txt"))
         .to_str()
         .unwrap()
         .to_owned();
@@ -553,7 +552,12 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
     assert_eq!(command.cwd, config.root.join("files"));
     assert_eq!(
         command.args,
-        vec![config.root.join("files/input.txt").to_str().unwrap(); 2]
+        vec![
+            support::os::canonical(&config.root.join("files/input.txt"))
+                .to_str()
+                .unwrap();
+            2
+        ]
     );
     fixture.declare(
         "files/input.txt.artf",
@@ -751,16 +755,22 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
     assert_eq!(data["cwd"], config.root.join("files").to_str().unwrap());
     assert_eq!(
         data["argv"][0],
-        config.root.join("files/input.txt").to_str().unwrap()
+        support::os::canonical(&config.root.join("files/input.txt"))
+            .to_str()
+            .unwrap()
     );
     assert_eq!(
         data["artifactPath"],
-        config.root.join("files/input.txt").to_str().unwrap()
+        support::os::canonical(&config.root.join("files/input.txt"))
+            .to_str()
+            .unwrap()
     );
     assert_eq!(data["scope"]["file"]["kind"], "file");
     assert_eq!(
         data["scope"]["file"]["path"],
-        config.root.join("files/input.txt").to_str().unwrap()
+        support::os::canonical(&config.root.join("files/input.txt"))
+            .to_str()
+            .unwrap()
     );
 }
 
