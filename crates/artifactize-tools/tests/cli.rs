@@ -131,12 +131,7 @@ fn open_passes_one_absolute_target_to_the_recording_opener() {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         fs::read_to_string(record).unwrap(),
-        format!(
-            "1\n{}\n",
-            fs::canonicalize(root.path().join("space ; notes.md"))
-                .unwrap()
-                .display()
-        )
+        format!("1\n{}\n", root.path().join("space ; notes.md").display())
     );
 }
 

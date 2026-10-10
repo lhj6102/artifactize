@@ -1,15 +1,8 @@
 use std::{
     fs,
-    path::PathBuf,
+    path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
-};
-// PTY-specific test imports are needed only for Unix terminal fixtures.
-#[cfg(unix)]
-use std::{
-    io::{Read, Write},
-    path::Path,
-    sync::mpsc,
 };
 
 use artifactize::{
@@ -421,57 +414,45 @@ fn review_rejects_unusable_options_before_taking_the_terminal() {
     }
 }
 
-#[cfg(unix)]
-fn pty(command: &str) -> (Child, mpsc::Receiver<Vec<u8>>) {
-    let mut child = support::os::pty_command(command)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut stdout = child.stdout.take().unwrap();
-    let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut buffer = [0; 4096];
-        while let Ok(read @ 1..) = stdout.read(&mut buffer) {
-            if sender.send(buffer[..read].to_vec()).is_err() {
-                break;
-            }
-        }
-    });
-    (child, receiver)
-}
-
-// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.
-#[cfg(unix)]
 #[test]
 fn pty_review_restores_the_terminal_on_quit() {
     let root = support::os::tempdir();
     let state = root.path().join("state");
-    let command = format!(
-        "stty cols 100 rows 30; exec '{}' --state-dir '{}' review --all --reviewer tester",
-        env!("CARGO_BIN_EXE_artifactize"),
-        Path::new(&state).display()
+    let (mut terminal, receiver) = support::os::PseudoTerminal::start(
+        Path::new(env!("CARGO_BIN_EXE_artifactize")),
+        &[
+            "--state-dir",
+            state.to_str().unwrap(),
+            "review",
+            "--all",
+            "--reviewer",
+            "tester",
+        ],
+        100,
+        30,
     );
-    let (mut child, receiver) = pty(&command);
+    let wait = support::os::patience(Duration::from_secs(10));
     let mut output = Vec::new();
-    while !String::from_utf8_lossy(&output).contains("waiting.") {
-        let chunk = receiver.recv_timeout(Duration::from_secs(10));
-        output.extend(chunk.expect("review did not draw"));
+    let frame = "waiting.";
+    while !String::from_utf8_lossy(&output).contains(frame) {
+        output.extend(receiver.recv_timeout(wait).expect("review did not draw"));
     }
-    child.stdin.take().unwrap().write_all(b"q").unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while let Ok(chunk) = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()))
-    {
+    terminal.type_text(b"q");
+    assert!(terminal.finish());
+    // The output ends once the terminal has closed.
+    while let Ok(chunk) = receiver.recv_timeout(wait) {
         output.extend(chunk);
     }
-    assert!(child.wait().unwrap().success());
     let output = String::from_utf8_lossy(&output);
-    assert!(output.starts_with("\x1b[?1049h"), "{output:?}");
-    assert!(output.ends_with("\x1b[?25h\x1b[?1049l"), "{output:?}");
+    support::os::assert_restored(&output, frame);
     // Bracketed paste is on while the review runs and off again before the screen is restored.
-    let on = output.find("\x1b[?2004h").expect("bracketed paste enabled");
-    let off = output
-        .rfind("\x1b[?2004l")
-        .expect("bracketed paste disabled");
-    assert!(on < off, "{output:?}");
+    // A ConPTY keeps the console's input modes to itself rather than passing them on.
+    #[cfg(unix)]
+    {
+        let on = output.find("\x1b[?2004h").expect("bracketed paste enabled");
+        let off = output
+            .rfind("\x1b[?2004l")
+            .expect("bracketed paste disabled");
+        assert!(on < off, "{output:?}");
+    }
 }

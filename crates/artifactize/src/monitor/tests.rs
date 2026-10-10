@@ -317,8 +317,13 @@ fn screen(monitor: &mut Monitor) -> String {
 }
 
 pub(super) fn sized(monitor: &mut Monitor, width: u16, height: u16) -> String {
+    sized_at(monitor, width, height, OffsetDateTime::now_utc())
+}
+
+/// `sized`, with ages and elapsed times measured at `now`.
+fn sized_at(monitor: &mut Monitor, width: u16, height: u16, now: OffsetDateTime) -> String {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    terminal.draw(|frame| monitor.draw_at(frame, now)).unwrap();
     let buffer = terminal.backend().buffer();
     let rows = buffer.content().chunks(buffer.area.width as usize);
     let rows = rows.map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>());
@@ -697,15 +702,14 @@ fn runs_pane_draws_counts_age_and_took_and_keeps_age_when_narrow() {
     let mut finished = summary("run-done", 3);
     finished.completed_at = Some("2026-01-01T00:00:42Z".parse().unwrap());
     monitor.set_runs(vec![summary("run-a", 2), finished]);
-    let text = sized(&mut monitor, 160, 20);
+    let at = now();
+    let text = sized_at(&mut monitor, 160, 20, at);
     assert!(text.contains("✗ RED run-a "), "{text}");
     assert!(text.contains("✗1 ✓2"), "{text}");
     assert!(text.contains("took 42s"), "{text}");
-    let age = run_rows(&monitor.runs, OffsetDateTime::now_utc())[1]
-        .age
-        .clone();
+    let age = run_rows(&monitor.runs, at)[1].age.clone();
     let age = age.split(' ').next().unwrap();
-    let text = sized(&mut monitor, 22, 20);
+    let text = sized_at(&mut monitor, 22, 20, at);
     // Narrow Runs keep the glyph, id and age; the status word and counts go first.
     assert!(text.contains(&format!("✗ run-done {age}")), "{text}");
     assert!(!text.contains("RED") && !text.contains("✓3"), "{text}");

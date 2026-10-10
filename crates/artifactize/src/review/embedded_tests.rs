@@ -806,7 +806,10 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     assert_eq!(command.cwd, root.join("assets/brand"));
     press(&mut review, KeyEvent::from(KeyCode::Tab));
     let screen = drawn(&mut review);
-    assert!(screen.contains(file.to_str().unwrap()), "{screen}");
+    assert!(
+        screen.contains(&crate::test_os::path_text(&file)),
+        "{screen}"
+    );
     let action = press(&mut review, KeyEvent::from(KeyCode::Enter));
     let outcome = job(&mut review, action).await;
     assert!(

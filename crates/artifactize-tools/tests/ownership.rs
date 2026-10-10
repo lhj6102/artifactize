@@ -18,7 +18,8 @@ fn id(value: &str) -> ArtifactId {
 #[test]
 fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
     let directory = os::tempdir();
-    let root = fs::canonicalize(directory.path()).unwrap();
+    // The fixture root is already canonical.
+    let root = directory.path().to_path_buf();
     fs::create_dir(root.join("Secret")).unwrap();
     fs::write(root.join("Secret/x"), "excluded").unwrap();
     fs::write(root.join("public"), "visible").unwrap();

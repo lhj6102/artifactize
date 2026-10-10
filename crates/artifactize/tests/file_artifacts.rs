@@ -744,29 +744,13 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
     let registry = Registry::for_artifact(&config, "file").unwrap();
     registry.preflight("inspect_file").unwrap();
     let data = call(&registry, "inspect_file", json!({}), &fixture.state).await;
-    assert_eq!(
-        data["cwd"],
-        support::os::path_text(&config.root.join("files"))
-    );
-    assert_eq!(
-        data["argv"][0],
-        support::os::canonical(&config.root.join("files/input.txt"))
-            .to_str()
-            .unwrap()
-    );
-    assert_eq!(
-        data["artifactPath"],
-        support::os::canonical(&config.root.join("files/input.txt"))
-            .to_str()
-            .unwrap()
-    );
+    let path = |value: &Value| PathBuf::from(value.as_str().unwrap());
+    let input = support::os::canonical(&config.root.join("files/input.txt"));
+    assert_eq!(path(&data["cwd"]), config.root.join("files"));
+    assert_eq!(path(&data["argv"][0]), input);
+    assert_eq!(path(&data["artifactPath"]), input);
     assert_eq!(data["scope"]["file"]["kind"], "file");
-    assert_eq!(
-        data["scope"]["file"]["path"],
-        support::os::canonical(&config.root.join("files/input.txt"))
-            .to_str()
-            .unwrap()
-    );
+    assert_eq!(path(&data["scope"]["file"]["path"]), input);
 }
 
 #[tokio::test]

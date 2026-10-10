@@ -222,7 +222,7 @@ print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':c
     assert_eq!(data["scope"]["a"]["children"], json!({}));
     assert_eq!(
         data["executionPaths"]["shared.txt"],
-        json!(fixture.repo.join("shared.txt"))
+        json!(crate::test_os::path_text(&fixture.repo.join("shared.txt")))
     );
     assert!(!Path::new(data["outputDir"].as_str().unwrap()).exists());
 }

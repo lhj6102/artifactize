@@ -268,9 +268,13 @@ fn short_id(id: &str) -> &str {
 
 impl Monitor {
     pub fn draw(&mut self, frame: &mut Frame) {
+        self.draw_at(frame, OffsetDateTime::now_utc());
+    }
+
+    /// Draw with ages and elapsed times measured at `now`.
+    pub(crate) fn draw_at(&mut self, frame: &mut Frame, now: OffsetDateTime) {
         self.hits = Hits::default();
         self.size = frame.area();
-        let now = OffsetDateTime::now_utc();
         let [header, body, notice, keys] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Fill(1),

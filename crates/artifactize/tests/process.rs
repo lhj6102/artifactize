@@ -131,22 +131,31 @@ async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
     assert!(!scratch.0.join("started").exists());
 }
 
-#[tokio::test]
+// The paused clock moves only when the test advances it: the held child keeps tokio from
+// advancing it on its own, so the deadline passes once registration is underway.
+#[tokio::test(start_paused = true)]
 async fn registration_is_covered_by_the_deadline() {
     let scratch = Scratch::new();
     let mut command = command("/bin/sh", &["-c", "touch started"]);
     command.cwd = scratch.0.clone();
-    command.timeout = Duration::from_millis(100);
-    let pid = Arc::new(AtomicU32::new(0));
-    let observed = pid.clone();
-    let result = process::run(command, CancellationToken::new(), move |child| async move {
-        observed.store(child.pid, Ordering::SeqCst);
-        std::future::pending().await
-    })
-    .await;
-    assert!(matches!(result, Err(process::Error::Timeout)));
+    command.timeout = Duration::from_secs(60);
+    let (registered, pid) = oneshot::channel();
+    let running = tokio::spawn(process::run(
+        command,
+        CancellationToken::new(),
+        |child: ChildIdentity| async move {
+            registered.send(child.pid).unwrap();
+            std::future::pending().await
+        },
+    ));
+    let pid = pid.await.unwrap();
+    tokio::time::advance(Duration::from_secs(60)).await;
+    assert!(matches!(
+        running.await.unwrap(),
+        Err(process::Error::Timeout)
+    ));
     assert!(!scratch.0.join("started").exists());
-    assert_gone(pid.load(Ordering::SeqCst)).await;
+    assert_gone(pid).await;
 }
 
 #[tokio::test]

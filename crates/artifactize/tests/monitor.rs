@@ -710,15 +710,8 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     );
 }
 
-// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.
-#[cfg(unix)]
 #[test]
 fn pty_session_restores_the_terminal_on_quit() {
-    use std::{
-        io::{Read, Write},
-        sync::mpsc,
-    };
-
     let root = support::os::tempdir();
     let both = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .args(["--repo", ".", "monitor", "--all"])
@@ -726,40 +719,25 @@ fn pty_session_restores_the_terminal_on_quit() {
         .unwrap();
     assert_eq!(both.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&both.stderr).contains("--repo or --all"));
-    let command = format!(
-        "stty cols 100 rows 30; exec '{}' --state-dir '{}' monitor --all",
-        env!("CARGO_BIN_EXE_artifactize"),
-        root.path().join("state").display()
+    let state = root.path().join("state");
+    let (mut terminal, receiver) = support::os::PseudoTerminal::start(
+        Path::new(env!("CARGO_BIN_EXE_artifactize")),
+        &["--state-dir", state.to_str().unwrap(), "monitor", "--all"],
+        100,
+        30,
     );
-    let mut child = support::os::pty_command(&command)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut stdout = child.stdout.take().unwrap();
-    let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut buffer = [0; 4096];
-        while let Ok(read @ 1..) = stdout.read(&mut buffer) {
-            if sender.send(buffer[..read].to_vec()).is_err() {
-                break;
-            }
-        }
-    });
+    let wait = support::os::patience(Duration::from_secs(10));
     let mut output = Vec::new();
     // Ratatui skips unchanged blank cells, so wait for one word of the refreshed empty list.
-    while !String::from_utf8_lossy(&output).contains("verify`.") {
-        let chunk = receiver.recv_timeout(Duration::from_secs(10));
-        output.extend(chunk.expect("monitor did not draw"));
+    let frame = "verify`.";
+    while !String::from_utf8_lossy(&output).contains(frame) {
+        output.extend(receiver.recv_timeout(wait).expect("monitor did not draw"));
     }
-    child.stdin.take().unwrap().write_all(b"q").unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while let Ok(chunk) = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()))
-    {
+    terminal.type_text(b"q");
+    assert!(terminal.finish());
+    // The output ends once the terminal has closed.
+    while let Ok(chunk) = receiver.recv_timeout(wait) {
         output.extend(chunk);
     }
-    assert!(finish(child).status.success());
-    let output = String::from_utf8_lossy(&output);
-    assert!(output.starts_with("\x1b[?1049h"), "{output:?}");
-    assert!(output.ends_with("\x1b[?25h\x1b[?1049l"), "{output:?}");
+    support::os::assert_restored(&String::from_utf8_lossy(&output), frame);
 }

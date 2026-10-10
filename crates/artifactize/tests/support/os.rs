@@ -691,15 +691,324 @@ fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
     (read == size).then(|| unsafe { info.assume_init() })
 }
 
-/// script(1)'s equivalent PTY invocation on util-linux and BSD/macOS.
-#[cfg(unix)]
-pub fn pty_command(command: &str) -> Command {
-    let mut pty = Command::new("script");
-    #[cfg(target_os = "macos")]
-    pty.args(["-q", "/dev/null", "/bin/sh", "-c", command]);
-    #[cfg(not(target_os = "macos"))]
-    pty.args(["-qec", command, "/dev/null"]);
-    pty
+/// A program running on a pseudo-terminal of its own: script(1) on Unix (util-linux and
+/// BSD/macOS spell it differently), a ConPTY on Windows. What it draws arrives in chunks
+/// from `start`'s receiver, which ends once `finish` has closed the terminal.
+pub struct PseudoTerminal {
+    #[cfg(unix)]
+    child: std::process::Child,
+    #[cfg(unix)]
+    input: std::process::ChildStdin,
+    #[cfg(windows)]
+    console: conpty::Console,
+}
+
+impl PseudoTerminal {
+    /// Start `program` with `args` on a terminal `columns` wide and `rows` high.
+    pub fn start(
+        program: &Path,
+        args: &[&str],
+        columns: u16,
+        rows: u16,
+    ) -> (Self, std::sync::mpsc::Receiver<Vec<u8>>) {
+        #[cfg(unix)]
+        let (terminal, output) = {
+            let quote = |text: &str| format!("'{}'", text.replace('\'', r"'\''"));
+            let command = std::iter::once(quote(program.to_str().unwrap()))
+                .chain(args.iter().map(|arg| quote(arg)))
+                .collect::<Vec<_>>()
+                .join(" ");
+            let command = format!("stty cols {columns} rows {rows}; exec {command}");
+            let mut script = Command::new("script");
+            #[cfg(target_os = "macos")]
+            script.args(["-q", "/dev/null", "/bin/sh", "-c", &command]);
+            #[cfg(not(target_os = "macos"))]
+            script.args(["-qec", &command, "/dev/null"]);
+            let mut child = script
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .unwrap();
+            let input = child.stdin.take().unwrap();
+            let output = child.stdout.take().unwrap();
+            (Self { child, input }, output)
+        };
+        #[cfg(windows)]
+        let (terminal, output) = {
+            let (console, output) = conpty::Console::start(program, args, columns, rows);
+            (Self { console }, output)
+        };
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut output = output;
+            let mut buffer = [0; 4096];
+            while let Ok(read @ 1..) = output.read(&mut buffer) {
+                if sender.send(buffer[..read].to_vec()).is_err() {
+                    break;
+                }
+            }
+        });
+        (terminal, receiver)
+    }
+
+    /// Type `text` at the terminal.
+    pub fn type_text(&mut self, text: &[u8]) {
+        use std::io::Write;
+        #[cfg(unix)]
+        self.input.write_all(text).unwrap();
+        #[cfg(windows)]
+        self.console.input.write_all(text).unwrap();
+    }
+
+    /// Wait for the program to exit, then close the terminal so that its output ends.
+    /// Whether the program succeeded.
+    pub fn finish(mut self) -> bool {
+        let deadline = std::time::Instant::now() + patience(std::time::Duration::from_secs(10));
+        #[cfg(unix)]
+        {
+            loop {
+                if let Some(status) = self.child.try_wait().unwrap() {
+                    return status.success();
+                }
+                if std::time::Instant::now() > deadline {
+                    self.child.kill().unwrap();
+                    panic!("the terminal program did not exit");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+        #[cfg(windows)]
+        {
+            let success = self
+                .console
+                .wait(deadline.saturating_duration_since(std::time::Instant::now()));
+            self.console.close();
+            success
+        }
+    }
+}
+
+/// Check that a full-screen program left the terminal as it found it, from what the
+/// terminal showed between its start and its close. On Unix script(1) passes the program's
+/// own sequences through: it enters the alternate screen first and leaves it, showing the
+/// cursor, last. A ConPTY renders the console instead and sends its own sequences: after the
+/// program's last frame the screen is redrawn without it, and the cursor shown.
+pub fn assert_restored(output: &str, frame: &str) {
+    #[cfg(unix)]
+    {
+        let _ = frame;
+        assert!(output.starts_with("\x1b[?1049h"), "{output:?}");
+        assert!(output.ends_with("\x1b[?25h\x1b[?1049l"), "{output:?}");
+    }
+    #[cfg(windows)]
+    {
+        let last = output.rfind(frame).expect("the program drew its frame");
+        let after = &output[last..];
+        assert!(
+            ["\x1b[?1049l", "\x1b[2J", "\x1b[J", "\x1b[0J"]
+                .iter()
+                .any(|erase| after.contains(erase)),
+            "the last frame is not erased: {after:?}"
+        );
+        assert!(
+            output.rfind("\x1b[?25h") > output.rfind("\x1b[?25l"),
+            "the cursor is not shown again: {after:?}"
+        );
+    }
+}
+
+/// A ConPTY driven through its pipes, the Windows pseudo-terminal.
+#[cfg(windows)]
+mod conpty {
+    use std::{
+        io::{PipeReader, PipeWriter},
+        os::windows::io::AsRawHandle,
+        path::Path,
+        time::Duration,
+    };
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0},
+        System::{
+            Console::{COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON},
+            Threading::{
+                CreateProcessW, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
+                GetExitCodeProcess, InitializeProcThreadAttributeList,
+                PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, PROCESS_INFORMATION, STARTF_USESTDHANDLES,
+                STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+            },
+        },
+    };
+
+    pub struct Console {
+        pub input: PipeWriter,
+        console: Option<HPCON>,
+        process: HANDLE,
+    }
+
+    impl Console {
+        pub fn start(program: &Path, args: &[&str], columns: u16, rows: u16) -> (Self, PipeReader) {
+            let (console_input, input) = std::io::pipe().unwrap();
+            let (output, console_output) = std::io::pipe().unwrap();
+            let size = COORD {
+                X: columns as i16,
+                Y: rows as i16,
+            };
+            let mut console = 0;
+            // SAFETY: both pipe ends are open handles; the console duplicates them.
+            let result = unsafe {
+                CreatePseudoConsole(
+                    size,
+                    console_input.as_raw_handle(),
+                    console_output.as_raw_handle(),
+                    0,
+                    &mut console,
+                )
+            };
+            assert!(result >= 0, "CreatePseudoConsole: HRESULT {result:#x}");
+            let mut bytes = 0;
+            // SAFETY: a null list asks for the size the list needs.
+            unsafe { InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut bytes) };
+            let mut list = vec![0_usize; bytes.div_ceil(size_of::<usize>())];
+            let attributes = list.as_mut_ptr().cast();
+            // SAFETY: the buffer has the size asked for and is aligned for the list; the
+            // attribute value is the console handle itself, as the attribute requires.
+            unsafe {
+                assert_ne!(
+                    InitializeProcThreadAttributeList(attributes, 1, 0, &mut bytes),
+                    0,
+                    "{}",
+                    std::io::Error::last_os_error()
+                );
+                assert_ne!(
+                    UpdateProcThreadAttribute(
+                        attributes,
+                        0,
+                        PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE as usize,
+                        console as *const std::ffi::c_void,
+                        size_of::<HPCON>(),
+                        std::ptr::null_mut(),
+                        std::ptr::null(),
+                    ),
+                    0,
+                    "{}",
+                    std::io::Error::last_os_error()
+                );
+            }
+            // SAFETY: STARTUPINFOEXW is plain data; zero is its empty value.
+            let mut startup: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
+            startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+            // Without these the program would write to the test's own redirected handles
+            // instead of the console.
+            startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+            startup.StartupInfo.hStdInput = INVALID_HANDLE_VALUE;
+            startup.StartupInfo.hStdOutput = INVALID_HANDLE_VALUE;
+            startup.StartupInfo.hStdError = INVALID_HANDLE_VALUE;
+            startup.lpAttributeList = attributes;
+            let mut command_line: Vec<u16> = std::iter::once(program.to_str().unwrap())
+                .chain(args.iter().copied())
+                .map(quote)
+                .collect::<Vec<_>>()
+                .join(" ")
+                .encode_utf16()
+                .chain([0])
+                .collect();
+            // SAFETY: PROCESS_INFORMATION is plain data that CreateProcessW fills.
+            let mut process: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
+            // SAFETY: the command line is a writable NUL-terminated buffer and the startup
+            // information holds the initialized attribute list, which outlives the call.
+            let created = unsafe {
+                CreateProcessW(
+                    std::ptr::null(),
+                    command_line.as_mut_ptr(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    0,
+                    EXTENDED_STARTUPINFO_PRESENT,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    &startup.StartupInfo,
+                    &mut process,
+                )
+            };
+            let error = std::io::Error::last_os_error();
+            // SAFETY: the list was initialized above and is deleted once.
+            unsafe { DeleteProcThreadAttributeList(attributes) };
+            assert_ne!(created, 0, "CreateProcessW: {error}");
+            // SAFETY: the thread handle is open and not used again.
+            unsafe { CloseHandle(process.hThread) };
+            // The console holds its own copies of its pipe ends.
+            drop((console_input, console_output));
+            (
+                Self {
+                    input,
+                    console: Some(console),
+                    process: process.hProcess,
+                },
+                output,
+            )
+        }
+
+        /// Wait up to `limit` for the program to exit. Whether it exited with status 0.
+        pub fn wait(&mut self, limit: Duration) -> bool {
+            let milliseconds = u32::try_from(limit.as_millis()).unwrap_or(u32::MAX - 1);
+            // SAFETY: the process handle is open until drop.
+            let waited = unsafe { WaitForSingleObject(self.process, milliseconds) };
+            assert_eq!(waited, WAIT_OBJECT_0, "the terminal program did not exit");
+            let mut code = 0;
+            // SAFETY: as above; the exit code is written to a local.
+            assert_ne!(unsafe { GetExitCodeProcess(self.process, &mut code) }, 0);
+            code == 0
+        }
+
+        /// Close the console, ending its output.
+        pub fn close(&mut self) {
+            if let Some(console) = self.console.take() {
+                // SAFETY: the console is open and closed once.
+                unsafe { ClosePseudoConsole(console) };
+            }
+        }
+    }
+
+    impl Drop for Console {
+        fn drop(&mut self) {
+            // SAFETY: the process handle is open; a program that has exited is unaffected.
+            unsafe {
+                TerminateProcess(self.process, 1);
+                CloseHandle(self.process);
+            }
+            self.close();
+        }
+    }
+
+    /// One argument as the C runtime splits a command line: quoted when it holds a space,
+    /// tab or quote, with backslashes doubled before a quote and at its end.
+    fn quote(arg: &str) -> String {
+        if !arg.is_empty() && !arg.contains([' ', '\t', '"']) {
+            return arg.to_owned();
+        }
+        let mut quoted = String::from('"');
+        let mut backslashes = 0;
+        for c in arg.chars() {
+            match c {
+                '\\' => backslashes += 1,
+                '"' => {
+                    quoted.push_str(&"\\".repeat(backslashes * 2 + 1));
+                    backslashes = 0;
+                }
+                _ => {
+                    quoted.push_str(&"\\".repeat(backslashes));
+                    backslashes = 0;
+                }
+            }
+            if c != '\\' {
+                quoted.push(c);
+            }
+        }
+        quoted.push_str(&"\\".repeat(backslashes * 2));
+        quoted.push('"');
+        quoted
+    }
 }
 
 /// A process's start time as artifactize records it: field 22 of `/proc/PID/stat` on Linux,
@@ -1187,7 +1496,8 @@ pub fn port_fixture(path: &Path, deadlines: bool) {
 
 /// Physical temporary root, without aliases that scoped reads intentionally reject.
 pub fn temp_root() -> std::path::PathBuf {
-    std::fs::canonicalize(std::env::temp_dir()).unwrap()
+    // Not `\\?\` on Windows: a verbatim path takes `/` literally, but test scripts join with it.
+    canonical(&std::env::temp_dir())
 }
 
 /// Atomically reserve a named fixture under an explicitly chosen physical parent.
