@@ -80,7 +80,7 @@ async fn verify(repo: &Path, state: &Path) -> artifactize::store::RunView {
 
 #[tokio::test]
 async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     write_repo(
         &repo,
@@ -199,7 +199,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
 
 #[tokio::test]
 async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     write_repo(
         &repo,
@@ -260,8 +260,8 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
     let text = include_str!("fixtures/legacy_remote_execution.json");
     let execution: artifactize::store::Execution = serde_json::from_str(text).unwrap();
     assert_eq!(execution.id.len(), 207);
-    let state = tempfile::tempdir().unwrap();
-    let repo = tempfile::tempdir().unwrap();
+    let state = support::os::tempdir();
+    let repo = support::os::tempdir();
     Receipts::open(state.path(), repo.path()).await.unwrap();
     let db = Connection::open(state.path().join("state.sqlite")).unwrap();
     db.execute(
@@ -296,7 +296,7 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
 
 #[tokio::test]
 async fn human_summary_keeps_owner_fields_and_the_reviewer() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     write_repo(&repo, json!({"kind":"human"}));
     let state = root.path().join("state");
@@ -334,7 +334,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         config::{Profile, read_workspace_config},
         store::{Execution, ExecutionOptions, Producer, Provenance},
     };
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let declared = json!({
         "kind":"agent",

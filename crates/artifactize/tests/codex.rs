@@ -29,7 +29,7 @@ impl Project {
     /// One `spec` Artifact with a built-in `read` tool, a content fingerprint (so its
     /// review has a reuse key) and a `codex` Agent eval.
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
         fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
@@ -394,6 +394,13 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
     project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
     let access = codex::jwt("claim-account", now() + 3600);
     let file = project.auth_file(&access);
+    // A fixed old marker makes any rewrite visible without relying on clock resolution.
+    fs::File::options()
+        .write(true)
+        .open(&file)
+        .unwrap()
+        .set_modified(UNIX_EPOCH + std::time::Duration::from_secs(1))
+        .unwrap();
     let before = (
         fs::read(&file).unwrap(),
         file.metadata().unwrap().modified().unwrap(),

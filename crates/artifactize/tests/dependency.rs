@@ -48,7 +48,7 @@ fn runtime(command: &str) -> Value {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         Self {
             repo: root.path().join("repo"),
             state: root.path().join("state"),

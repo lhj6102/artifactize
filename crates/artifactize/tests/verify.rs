@@ -22,7 +22,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         // The long, plain path artifactize reports, whatever form TEMP takes.
         let base = support::os::canonical(root.path());
         let repo = base.join("repo");
@@ -154,16 +154,11 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     assert_eq!(green["payload"]["instruction"], "Check runtime.");
     assert_eq!(
         green["cwd"],
-        fixture.repo.join("review").to_string_lossy().as_ref()
+        support::os::path_text(&fixture.repo.join("review"))
     );
     assert_eq!(
         green["argv"][2],
-        fixture
-            .repo
-            .join("input")
-            .join("data.txt")
-            .to_string_lossy()
-            .as_ref()
+        support::os::path_text(&fixture.repo.join("input/data.txt"))
     );
     let output_dir = Path::new(green["runDir"].as_str().unwrap());
     assert!(output_dir.starts_with(&fixture.state));
@@ -279,7 +274,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     );
     let state = PathBuf::from(first["stateDir"].as_str().unwrap());
     assert_eq!(state, fixture.home);
-    assert_eq!(first["repoPath"], fixture.repo.to_string_lossy().as_ref());
+    assert_eq!(first["repoPath"], support::os::path_text(&fixture.repo));
     assert!(state.join("state.sqlite").is_file());
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
@@ -289,13 +284,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
         .unwrap();
     assert!(output.status.success());
     assert_eq!(json_output(&output), first);
-    for (program, args, code) in [
-        ("/artifactize/missing-command", vec![], "SPAWN_FAILED"),
-        // Windows has no signals; its exit statuses are all verdicts.
-        #[cfg(unix)]
-        ("/bin/sh", vec!["-c", "kill -TERM $$"], "ABNORMAL_EXIT"),
-        ("/bin/cat", vec!["{test}/missing"], "PREPARATION_FAILED"),
-    ] {
+    for (program, args, code) in support::os::runtime_failures() {
         fixture.runtime(program, &args);
         let output = fixture
             .command()

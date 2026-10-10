@@ -9,7 +9,7 @@ use std::{
     process::{Command, Output, Stdio},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -30,7 +30,7 @@ struct Project {
 
 impl Project {
     fn new(backend: &str) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         let folder = repo.join("notes");
         fs::create_dir_all(&folder).unwrap();
@@ -565,9 +565,12 @@ fn anthropic_reviews_are_saved_and_continued_without_a_cache_key() {
 #[test]
 fn concurrent_sends_take_turns_in_one_thread() {
     let project = Project::new("openai");
+    let gate = support::Gate::default();
+    let (entered, waiting) = std::sync::mpsc::channel();
     let in_flight = Arc::new(AtomicUsize::new(0));
     let most = Arc::new(AtomicUsize::new(0));
     let provider = FakeProvider::start({
+        let gate = gate.clone();
         let (in_flight, most) = (in_flight.clone(), most.clone());
         move |request| {
             let asked: Vec<_> = input(request)
@@ -589,7 +592,8 @@ fn concurrent_sends_take_turns_in_one_thread() {
             };
             let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             most.fetch_max(now, Ordering::SeqCst);
-            thread::sleep(Duration::from_millis(600));
+            entered.send(()).unwrap();
+            gate.wait();
             in_flight.fetch_sub(1, Ordering::SeqCst);
             responses(request, vec![openai::message(&format!("answer to {last}"))])
         }
@@ -611,6 +615,10 @@ fn concurrent_sends_take_turns_in_one_thread() {
                 .unwrap()
         })
         .collect();
+    waiting
+        .recv_timeout(support::os::patience(Duration::from_secs(20)))
+        .unwrap();
+    gate.open();
     for child in spawned {
         assert!(child.wait_with_output().unwrap().status.success());
     }
@@ -643,13 +651,12 @@ fn written(path: &Path, seconds: u64) {
 #[test]
 fn the_session_store_is_collected_oldest_first_down_to_its_target() {
     let project = Project::new("openai");
-    let release = Arc::new(AtomicBool::new(true));
+    let release = support::Gate::default();
+    release.open();
     let provider = FakeProvider::start({
         let release = release.clone();
         move |request| {
-            while !release.load(Ordering::SeqCst) {
-                thread::sleep(Duration::from_millis(20));
-            }
+            release.wait();
             responses(
                 request,
                 vec![openai::message(r#"{"verdict":"GREEN","covered":["R1"]}"#)],
@@ -736,7 +743,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
 
     // A running review's session survives any collection; verify collects at its end.
     project.limits(json!({"agentSessions":{"maxBytes":1,"targetBytes":0}}));
-    release.store(false, Ordering::SeqCst);
+    release.close();
     let running = project
         .command(
             &provider,
@@ -764,7 +771,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
     let pruned = project.json(&provider, &["prune"], 0);
     assert_eq!(pruned["removedSessions"], json!([&reviews[2].1]));
     assert!(project.sessions().join(format!("{session}.jsonl")).exists());
-    release.store(true, Ordering::SeqCst);
+    release.open();
     let output = running.wait_with_output().unwrap();
     let run: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(run["requests"][0]["sessionId"], session.as_str());

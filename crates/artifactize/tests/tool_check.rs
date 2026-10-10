@@ -10,19 +10,19 @@ use support::os::bin;
 
 mod support;
 
-/// The owner's tool script. Windows runs a script by path only through the `.exe` stand-in
-/// beside it, which a `.sh` extension would bypass.
-const TOOL: &str = if cfg!(windows) { "env-tool" } else { "env.sh" };
+use support::os::TOOL;
 
 fn fixture(repo: &Path) {
     fs::create_dir_all(repo.join("a")).unwrap();
     fs::create_dir_all(repo.join("b")).unwrap();
     let tool = repo.join("a").join(TOOL);
-    fs::write(
+    support::os::write_script(
         &tool,
-        "#!/bin/sh\nprintf '%s|%s|%s' \"$HOME\" \"${TOOL_CHECK_SECRET-unset}\" \"$PWD\"\nprintf invoked > touched\n",
-    )
-    .unwrap();
+        &format!(
+            "printf '%s|%s|%s' \"{}\" \"${{TOOL_CHECK_SECRET-unset}}\" \"$PWD\"\nprintf invoked > touched\n",
+            support::os::home_expression()
+        ),
+    );
     support::os::make_executable(&tool);
     let command = format!("./{TOOL}");
     let profile = json!({"kind":"agent","backend":"openai","model":"test"});
@@ -98,7 +98,7 @@ fn check(repo: &Path, state: &Path, args: &[&str]) -> Output {
         .args(["tools", "check"])
         .args(args)
         .env("TOOL_CHECK_SECRET", "real-environment")
-        .env("HOME", "/reviewer-home")
+        .env(support::os::home_env(), support::os::human_tool_home())
         .output()
         .unwrap()
 }
@@ -116,7 +116,7 @@ fn parsed(output: &Output, code: i32) -> Value {
 
 #[test]
 fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fixture(&repo);
@@ -149,9 +149,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
             .all(|t| t["artifactId"] == "a")
     );
     // Windows has no execute bit to take away.
-    #[cfg(unix)]
-    {
-        support::os::deny_execution(&repo.join("a/env.sh"));
+    if support::os::revoke_execution(&repo.join("a").join(TOOL)) {
         assert_eq!(
             parsed(
                 &check(
@@ -164,7 +162,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
             false
         );
         assert!(!repo.join("a/touched").exists());
-        support::os::make_executable(&repo.join("a/env.sh"));
+        support::os::make_executable(&repo.join("a").join(TOOL));
     }
     let agent = parsed(
         &check(
@@ -183,7 +181,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
         0,
     );
     let text = agent["result"]["content"][0]["text"].as_str().unwrap();
-    let home = format!("{}home|unset|", std::path::MAIN_SEPARATOR);
+    let home = format!("{}|unset|", support::os::native("/home"));
     assert!(text.contains(&home), "{text}");
     assert!(!text.contains("reviewer-home"));
     let human = parsed(
@@ -206,7 +204,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
         human["result"]["content"][0]["text"]
             .as_str()
             .unwrap()
-            .starts_with("/reviewer-home|real-environment|")
+            .starts_with(support::os::human_tool_prefix())
     );
     let error = parsed(
         &check(

@@ -12,7 +12,7 @@ use support::os::link_dir;
 
 #[tokio::test]
 async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -101,7 +101,7 @@ async fn assert_empty_reads(state: &std::path::Path, repo: &std::path::Path) {
 
 #[tokio::test]
 async fn readers_observe_empty_state_until_schema_commits() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let template = root.path().join("template");
     let state = root.path().join("state");
@@ -156,7 +156,7 @@ async fn readers_observe_empty_state_until_schema_commits() {
 
 #[tokio::test]
 async fn repositories_share_one_state_database() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     // The long, plain paths artifactize records, whatever form TEMP takes.
     let base = support::os::canonical(root.path());
     let first = base.join("first");
@@ -195,8 +195,8 @@ async fn repositories_share_one_state_database() {
                 String::from_utf8_lossy(&output.stderr)
             );
             let run: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(run["repoPath"], repo.to_string_lossy().as_ref());
-            assert_eq!(run["stateDir"], state.to_string_lossy().as_ref());
+            assert_eq!(run["repoPath"], support::os::path_text(repo));
+            assert_eq!(run["stateDir"], support::os::path_text(&state));
             assert!(
                 state
                     .join("runs")
@@ -231,7 +231,7 @@ async fn repositories_share_one_state_database() {
 
 #[tokio::test]
 async fn schema_allows_only_one_active_execution_per_key() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -258,7 +258,7 @@ async fn schema_allows_only_one_active_execution_per_key() {
 
 #[test]
 fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(repo.join("index.artf"), r#"{"name":"basis","basis":true}"#)
@@ -267,17 +267,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     let inner = repo.join("inner");
     fs::create_dir(&inner).unwrap();
     link_dir(&inner, &root.path().join("nested-alias"));
-    for state in [
-        repo.join("state"),
-        // Windows opens a name in any case: this is the repository too.
-        #[cfg(windows)]
-        support::os::other_case(&repo).join("state"),
-        root.path().join("alias/state"),
-        // Windows drops `..` from a path before following any link, so there this names
-        // root/state, outside the repository.
-        #[cfg(unix)]
-        root.path().join("nested-alias/../state"),
-    ] {
+    for state in support::os::reviewed_state_paths(root.path(), &repo) {
         for explicit in [false, true] {
             let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
             command
@@ -312,11 +302,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the reviewed repository"));
-    // Windows removes a directory link as a directory.
-    #[cfg(unix)]
-    fs::remove_file(state.join("runs")).unwrap();
-    #[cfg(windows)]
-    fs::remove_dir(state.join("runs")).unwrap();
+    support::os::remove_link_dir(&state.join("runs"));
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_STATE_HOME", repo.join("home"))
         .arg("--repo")
@@ -337,7 +323,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
 
 #[tokio::test]
 async fn sqlite_files_cannot_redirect_writes_through_links() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -374,7 +360,7 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
         types::{RequestStatus, RunStatus},
     };
     use serde_json::json;
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
