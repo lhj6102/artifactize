@@ -576,7 +576,8 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
         run["stateDir"],
         support::os::canonical(&state).to_str().unwrap()
     );
-    invoke(&["status"], 0);
+    // Noncached evidence satisfies its Run only; status correctly reports another review.
+    assert_eq!(invoke(&["status"], 1)["evals"][0]["action"], "execute");
     let dry = invoke(&["prune", "--dry-run", "--older-than", "0s"], 0);
     assert!(!dry["wouldRemove"].as_array().unwrap().is_empty());
     let removed = invoke(&["prune", "--older-than", "0s"], 0);
