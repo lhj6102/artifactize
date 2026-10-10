@@ -317,7 +317,6 @@ async fn multiprocess_fixture() {
         let epoch = registration(&subscription, None).await;
         control.write_u8(1).await.unwrap();
         loop {
-            eprintln!("{role:?} waiting for first publication");
             if next(&mut subscription).await
                 == Change::SessionInvalidated("multiprocess-session".parse().unwrap())
             {
@@ -332,7 +331,6 @@ async fn multiprocess_fixture() {
             assert_eq!(next(&mut subscription).await, Change::Resync);
             control.write_u8(3).await.unwrap();
             loop {
-                eprintln!("{role:?} waiting for after-crash publication");
                 if next(&mut subscription).await
                     == Change::SessionInvalidated("after-crash".parse().unwrap())
                 {

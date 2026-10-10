@@ -92,9 +92,12 @@ pub(super) async fn connect(address: &Path) -> io::Result<Stream> {
 impl Listener {
     pub async fn accept(&mut self) -> io::Result<Stream> {
         let (stream, _) = self.listener.accept().await?;
-        if stream.peer_cred()?.uid().to_string() != user()? {
-            return Err(io::ErrorKind::PermissionDenied.into());
-        }
         Ok(stream)
     }
+}
+pub(super) fn validate_peer(stream: &Stream) -> io::Result<()> {
+    if stream.peer_cred()?.uid().to_string() != user()? {
+        return Err(io::ErrorKind::PermissionDenied.into());
+    }
+    Ok(())
 }

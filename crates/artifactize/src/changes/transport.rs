@@ -13,7 +13,7 @@ mod os;
 #[cfg(windows)]
 #[path = "transport/windows.rs"]
 mod os;
-pub(super) use os::{Listener, Stream};
+pub(super) use os::{Listener, Stream, validate_peer};
 
 /// Use 24 SHA-256 hex characters (96 bits) for the shared runtime-directory namespace,
 /// keeping Unix socket paths short. This is not authentication: owner/peer checks and

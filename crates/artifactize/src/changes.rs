@@ -329,8 +329,7 @@ async fn publish(publisher: Arc<Publishing>) {
             }
             Ok::<_, std::io::Error>(())
         };
-        let delivery = tokio::time::timeout(DELIVERY_TIMEOUT, delivery).await;
-        eprintln!("publish result: {delivery:?}");
+        let _ = tokio::time::timeout(DELIVERY_TIMEOUT, delivery).await;
         publisher.pending.lock().unwrap().delivered = target;
         publisher.drained.notify_one();
     }
@@ -371,8 +370,7 @@ async fn watch(
                 let endpoint = endpoint.clone();
                 let token = cancel.child_token();
                 hub = Some(tokio::spawn(async move {
-                    let result = serve(endpoint, listener, owner, token).await;
-                    eprintln!("hub ended: {result:?}");
+                    let _ = serve(endpoint, listener, owner, token).await;
                 }));
             }
             let connection = tokio::time::timeout(DELIVERY_TIMEOUT, connect(endpoint, true));
@@ -391,8 +389,7 @@ async fn watch(
                         loop {
                             tokio::select! {
                                 _ = cancel.cancelled() => break,
-                                result = &mut receive => {
-                                    eprintln!("subscriber disconnected: {result:?}");
+                                _ = &mut receive => {
                                     #[cfg(test)]
                                     inbox.registration.send_replace(None);
                                     inbox.add(Change::Resync);
@@ -481,8 +478,7 @@ async fn serve(
                     sequence.clone(),
                 );
                 clients.spawn(async move {
-                    let result = client(stream, identity, epoch, sender, sequence).await;
-                    eprintln!("hub client ended: {result:?}");
+                    let _ = client(stream, identity, epoch, sender, sequence).await;
                 });
             }
         }
@@ -498,6 +494,9 @@ async fn client(
     sender: broadcast::Sender<Hint>,
     sequence: Arc<Mutex<u64>>,
 ) -> std::io::Result<()> {
+    // Peer lookup can fail after a short-lived connection closes (Darwin ENOTCONN).
+    // Reject only that client, never tear down the listener or other subscribers.
+    transport::validate_peer(&stream)?;
     let hello = tokio::time::timeout(DELIVERY_TIMEOUT, read_frame(&mut stream)).await??;
     let Frame::Hello {
         version: VERSION,
