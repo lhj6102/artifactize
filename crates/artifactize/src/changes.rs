@@ -390,7 +390,8 @@ async fn watch(
                         loop {
                             tokio::select! {
                                 _ = cancel.cancelled() => break,
-                                _ = &mut receive => {
+                                result = &mut receive => {
+                                    eprintln!("subscriber disconnected: {result:?}");
                                     #[cfg(test)]
                                     inbox.registration.send_replace(None);
                                     inbox.add(Change::Resync);
@@ -479,7 +480,8 @@ async fn serve(
                     sequence.clone(),
                 );
                 clients.spawn(async move {
-                    let _ = client(stream, identity, epoch, sender, sequence).await;
+                    let result = client(stream, identity, epoch, sender, sequence).await;
+                    eprintln!("hub client ended: {result:?}");
                 });
             }
         }
