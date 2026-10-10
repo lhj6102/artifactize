@@ -191,8 +191,8 @@ impl Scope {
         } else {
             &location.path
         };
-        open_input(root, artifact, path).map_err(|error| ScopeError(error.to_string()))?;
         let resolved = scoped_path(&owner, Path::new(path))?;
+        open_input(root, artifact, path).map_err(|error| ScopeError(error.to_string()))?;
         if artifact.file_name().is_some() && !resolved.is_file() {
             return Err(ScopeError(
                 "File Artifact target must remain a regular file.".into(),
