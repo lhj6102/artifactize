@@ -159,8 +159,12 @@ def submit_store(package, env, api=request_json, upload=None):
         else:
             req = urllib.request.Request(submission["fileUploadUrl"], data=archive.read_bytes(), method="PUT",
                                          headers={"x-ms-blob-type": "BlockBlob"})
-            with urllib.request.urlopen(req, timeout=300):
-                pass
+            try:
+                with urllib.request.urlopen(req, timeout=300):
+                    pass
+            except urllib.error.URLError:
+                # HTTPError's usual traceback prints the SAS-bearing upload URL.
+                raise RuntimeError("Store package upload failed; check the pending submission") from None
     api(f"{base}/submissions/{submission_id}/commit", method="POST", token=token)
     print(f"store: committed submission {submission_id}; certification is asynchronous")
 
