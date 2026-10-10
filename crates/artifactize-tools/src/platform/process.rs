@@ -37,8 +37,7 @@ pub(crate) async fn run(
         )
         .map_err(|error| LaunchError::Failed(error.to_string()))?;
         Ok(Finished {
-            success: status.success(),
-            status: status.to_string(),
+            status,
             truncated: stdout.len() > limit || stderr.len() > limit,
             stdout,
             stderr,

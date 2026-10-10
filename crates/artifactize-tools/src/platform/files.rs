@@ -52,3 +52,51 @@ pub enum FileKind {
     /// FIFOs, sockets, devices, and on Windows reparse points that are not links.
     Other,
 }
+
+/// Read the process's current directory and resolve its native filesystem aliases.
+pub fn current_directory() -> std::io::Result<std::path::PathBuf> {
+    canonicalize(&std::env::current_dir()?)
+}
+
+/// Render a native path for people and JSON clients with portable `/` separators.
+pub fn path_text(path: &std::path::Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+/// Convert a native relative path into logical components; roots, traversal and non-UTF-8
+/// names are refused rather than guessing at the host's separator or prefix rules.
+pub fn logical_from_native(path: &std::path::Path) -> Option<String> {
+    use std::path::Component;
+    path.components()
+        .map(|component| match component {
+            Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(|names| names.join("/"))
+}
+
+/// Parse the physical relative input form used by declared Artifact roots. Preserve its
+/// existing rejection of backslashes and traversal while keeping native root checks here.
+pub fn scoped_relative(path: &std::path::Path) -> std::io::Result<String> {
+    let path = path.to_str().ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Artifact paths must be UTF-8.",
+        )
+    })?;
+    if path.contains(['\0', '\\'])
+        || std::path::Path::new(path).is_absolute()
+        || path.split('/').any(|part| part == "." || part == "..")
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Artifact path must be relative to its declared root.",
+        ));
+    }
+    Ok(path
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("/"))
+}

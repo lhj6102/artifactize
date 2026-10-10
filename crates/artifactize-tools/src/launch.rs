@@ -25,9 +25,8 @@ pub struct Launch {
 /// What a finished program produced.
 #[derive(Debug)]
 pub struct Finished {
-    pub success: bool,
-    /// The exit status as the operating system describes it.
-    pub status: String,
+    /// The actual exit status, not independently editable success and diagnostic fields.
+    pub status: std::process::ExitStatus,
     pub stdout: Vec<u8>,
     pub stderr: Vec<u8>,
     /// An output stream exceeded `output_limit`.

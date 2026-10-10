@@ -17,6 +17,11 @@ const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 const PNG_IHDR_HEADER: &[u8] = b"\0\0\0\rIHDR";
 /// A PNG chunk header: a 4-byte big-endian data length and a 4-byte chunk type.
 const PNG_CHUNK_HEADER_BYTES: usize = 8;
+/// PNG chunk data lengths are encoded as one big-endian u32.
+const PNG_LENGTH_BYTES: usize = std::mem::size_of::<u32>();
+/// Base64 encodes each group of three bytes as four ASCII characters.
+const BASE64_INPUT_BYTES: usize = 3;
+const BASE64_OUTPUT_BYTES: usize = 4;
 /// A PNG chunk's bytes besides its data: the header and a 4-byte CRC.
 const PNG_CHUNK_OVERHEAD_BYTES: usize = 12;
 /// The chunk type that marks an animated PNG, which reviews do not accept.
@@ -33,7 +38,7 @@ const WEBP_FORM: &[u8] = b"WEBP";
 const RIFF_FORM_TYPE: std::ops::Range<usize> = 8..12;
 
 pub fn from_base64(data: &str, mime_type: &str) -> Result<Content, String> {
-    if data.len() > IMAGE_LIMIT.div_ceil(3) * 4 {
+    if data.len() > IMAGE_LIMIT.div_ceil(BASE64_INPUT_BYTES) * BASE64_OUTPUT_BYTES {
         return Err("Image exceeds the 4 MiB limit.".into());
     }
     let decoder = GeneralPurpose::new(
@@ -103,7 +108,7 @@ fn mime_type(bytes: &[u8]) -> Option<&'static str> {
         let mut offset = PNG_SIGNATURE.len();
         while offset < bytes.len() {
             let header = bytes.get(offset..offset + PNG_CHUNK_HEADER_BYTES)?;
-            let (length, kind) = header.split_at(4);
+            let (length, kind) = header.split_at(PNG_LENGTH_BYTES);
             let length = u32::from_be_bytes(length.try_into().ok()?) as usize;
             let end = offset
                 .checked_add(PNG_CHUNK_OVERHEAD_BYTES)?

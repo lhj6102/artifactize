@@ -13,6 +13,8 @@ pub enum Input {
 }
 impl Input {
     pub fn parse(builtin: Builtin, value: Value) -> Result<Self, String> {
+        let validator = crate::schema::compile(&super::input_schema(builtin))?;
+        crate::schema::validate(&validator, &value)?;
         let input = match builtin {
             Builtin::Section | Builtin::Help | Builtin::Open => {
                 return Err("This builtin requires declared args.".into());
@@ -110,4 +112,32 @@ fn integer<'de, D: Deserializer<'de>>(deserializer: D) -> Result<usize, D::Error
         }
     }
     deserializer.deserialize_any(Integer)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn edge_rejects_out_of_range_and_unknown_arguments_without_caller_validation() {
+        for (builtin, value) in [
+            (Builtin::Read, json!({"path":"notes", "offset":0})),
+            (Builtin::Read, json!({"path":"notes", "limit":501})),
+            (Builtin::List, json!({"limit":201})),
+            (Builtin::Grep, json!({"pattern":"notes", "maxResults":0})),
+            (Builtin::Glob, json!({"pattern":""})),
+            (Builtin::ViewImage, json!({"path":"image", "unknown":true})),
+        ] {
+            assert!(Input::parse(builtin, value).is_err());
+        }
+        let Input::Read(input) = Input::parse(
+            Builtin::Read,
+            json!({"path":"notes", "offset":1.0, "limit":2.0}),
+        )
+        .unwrap() else {
+            panic!("expected a read input")
+        };
+        assert_eq!((input.offset, input.limit), (1, 2));
+    }
 }

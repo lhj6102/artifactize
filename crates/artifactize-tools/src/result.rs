@@ -178,13 +178,18 @@ const CSI_PARAMETER: std::ops::RangeInclusive<u8> = 0x30..=0x3f;
 const CSI_INTERMEDIATE: std::ops::RangeInclusive<u8> = 0x20..=0x2f;
 const CSI_FINAL: std::ops::RangeInclusive<u8> = 0x40..=0x7e;
 
+/// The two-byte prefix introducing an ECMA-48 control sequence.
+const CSI_PREFIX: &[u8] = b"\x1b[";
+/// C0 controls except tab, line feed and carriage return are not printable tool output.
+const C0_CONTROLS: &[std::ops::RangeInclusive<u8>] = &[0..=8, 11..=12, 14..=31];
+
 pub fn clean_output(bytes: &[u8]) -> Vec<u8> {
     let text = String::from_utf8_lossy(bytes);
     let mut bytes = text.as_bytes();
     let mut clean = Vec::with_capacity(bytes.len());
     while let Some((&byte, tail)) = bytes.split_first() {
-        if bytes.starts_with(b"\x1b[") {
-            let mut end = 2;
+        if bytes.starts_with(CSI_PREFIX) {
+            let mut end = CSI_PREFIX.len();
             while bytes
                 .get(end)
                 .is_some_and(|byte| CSI_PARAMETER.contains(byte))
@@ -202,7 +207,7 @@ pub fn clean_output(bytes: &[u8]) -> Vec<u8> {
                 continue;
             }
         }
-        if !matches!(byte, 0..=8 | 11..=12 | 14..=31) {
+        if !C0_CONTROLS.iter().any(|range| range.contains(&byte)) {
             clean.push(byte);
         }
         bytes = tail;

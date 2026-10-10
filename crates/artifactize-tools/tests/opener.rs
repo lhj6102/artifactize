@@ -9,7 +9,7 @@ use std::{ffi::OsStr, fs};
 
 #[test]
 fn target_is_one_literal_argument() {
-    if let Some(record) = std::env::var_os(os::RECORD) {
+    if let Some(record) = os::record_path() {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -30,11 +30,7 @@ fn target_is_one_literal_argument() {
     }
     let root = os::tempdir();
     os::recording_program(root.path(), os::OPENER);
-    let output = os::rerun("target_is_one_literal_argument")
-        .env("PATH", root.path())
-        .env(os::RECORD, root.path().join("record"))
-        .output()
-        .unwrap();
+    let output = os::rerun_recording(root.path(), "target_is_one_literal_argument");
     assert!(
         output.status.success(),
         "{}{}",
