@@ -124,7 +124,7 @@
                 if ($LASTEXITCODE -ne 0) { throw "--version exited with code $LASTEXITCODE" }
                 if ($output -ne "$command $version") { throw "--version printed '$output', not '$command $version'" }
             } catch {
-                Fail "Windows could not run the new ${command}: $($_.Exception.Message). Existing binaries were kept and Path was not changed. Smart App Control or another application control policy may block unsigned downloads. Use the Microsoft Store version instead: https://apps.microsoft.com/search?query=artifactize"
+                Fail "Windows could not run the new ${command}: $($_.Exception.Message). Existing binaries were kept and Path was not changed. Smart App Control or another application control policy may block unsigned downloads. Use the Microsoft Store version instead: https://apps.microsoft.com/detail/9PB6W4LL165D"
             }
         }
 

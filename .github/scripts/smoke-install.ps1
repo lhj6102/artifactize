@@ -76,7 +76,7 @@ try {
         try { & $Installer } catch { $message = $_.Exception.Message }
         if (-not $message) { throw "installer accepted the non-runnable $blocked" }
         Write-Host $message
-        foreach ($expected in @("new ${blocked}", 'Existing binaries were kept', 'application control policy', 'Microsoft Store', 'https://apps.microsoft.com/')) {
+        foreach ($expected in @("new ${blocked}", 'Existing binaries were kept', 'application control policy', 'Microsoft Store', 'https://apps.microsoft.com/detail/9PB6W4LL165D')) {
             if (-not $message.Contains($expected)) { throw "missing blocked-binary explanation: $expected" }
         }
         foreach ($command in $commands) {
