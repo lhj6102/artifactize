@@ -79,7 +79,7 @@ pub(in crate::tools) fn unsupported() -> Vec<Vec<u8>> {
 
 #[test]
 fn image_blocks_normalize_all_formats_and_serialize_without_paths() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_os::tempdir();
     for (mime, bytes) in fixtures() {
         let encoded = STANDARD.encode(&bytes);
         let block = json!({"type":"image","data":encoded,"mimeType":mime});
@@ -141,7 +141,7 @@ fn image_validation_rejects_unsupported_signatures_mime_and_base64() {
     ] {
         assert!(from_base64(invalid, "image/png").is_err());
     }
-    let output = tempfile::tempdir().unwrap();
+    let output = crate::test_os::tempdir();
     let encoded = STANDARD.encode(&fixtures()[0].1);
     for block in [
         json!({"type":"image","mimeType":"image/png"}),
@@ -172,7 +172,7 @@ fn image_validation_rejects_unsupported_signatures_mime_and_base64() {
 
 #[test]
 fn decoded_limit_is_inclusive_and_normalized_result_size_is_bounded() {
-    let output = tempfile::tempdir().unwrap();
+    let output = crate::test_os::tempdir();
     let mut bytes = fixtures()[1].1.clone();
     bytes.resize(IMAGE_LIMIT, 0);
     let file = output.path().join("large");
@@ -197,7 +197,7 @@ fn decoded_limit_is_inclusive_and_normalized_result_size_is_bounded() {
 
 #[test]
 fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_os::tempdir();
     let output = directory.path().join("output");
     fs::create_dir_all(output.join("nested")).unwrap();
     let bytes = &fixtures()[0].1;

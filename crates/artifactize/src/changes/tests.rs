@@ -10,6 +10,19 @@ async fn next(subscription: &mut Subscription) -> Change {
         .unwrap()
 }
 async fn registered(subscription: &mut Subscription) {
+    // Subscription::new may return a degraded baseline after a bounded connection timeout.
+    // IPC-only tests need the actual Registered ACK, not just the fallback Resync.
+    tokio::time::timeout(Duration::from_secs(4), async {
+        while !subscription
+            .inbox
+            .connected
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(next(subscription).await, Change::Resync);
     // Let the initial periodic probe finish without consuming later publication hints.
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -28,7 +41,12 @@ fn endpoint_names_keep_the_same_twenty_four_hex_character_directory_prefix() {
         let user = unsafe { libc::geteuid() };
         assert_eq!(
             directory,
-            Path::new("/tmp").join(format!(
+            Path::new(if cfg!(target_os = "macos") {
+                "/private/tmp"
+            } else {
+                "/tmp"
+            })
+            .join(format!(
                 "artifactize-ipc-{user}-{}",
                 &endpoint.identity[..24]
             ))

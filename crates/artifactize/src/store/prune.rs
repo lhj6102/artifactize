@@ -66,6 +66,10 @@ pub fn prune(
 ) -> Result<PruneReport, String> {
     // Canonical like the repositories it is compared with: on Windows, a state path typed in
     // another case, or with 8.3 short names, would otherwise slip past `outside_workspace`.
+    #[cfg(target_os = "macos")]
+    let state = macos_state_root(state)?;
+    #[cfg(target_os = "macos")]
+    let state = state.as_path();
     let state = workspace::canonical_target(&real_path(state)?).map_err(|e| e.to_string())?;
     let mut report = PruneReport::default();
     let mut repositories = Vec::new();
@@ -269,6 +273,45 @@ fn directory(path: &Path) -> Result<bool, String> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.to_string()),
     }
+}
+
+/// macOS standard aliases are OS-owned root boundaries, not operator-made symlinks.
+/// Resolve only the fixed, verified prefix; all state descendants still pass real_path.
+#[cfg(target_os = "macos")]
+fn macos_state_root(path: &Path) -> Result<PathBuf, String> {
+    use std::os::unix::fs::MetadataExt;
+    let absolute = std::path::absolute(path).map_err(|error| error.to_string())?;
+    for name in ["tmp", "var", "etc"] {
+        let alias = Path::new("/").join(name);
+        if let Ok(suffix) = absolute.strip_prefix(&alias) {
+            let metadata = alias
+                .symlink_metadata()
+                .map_err(|error| error.to_string())?;
+            let target = Path::new("/private").join(name);
+            let link = fs::read_link(&alias).map_err(|error| error.to_string())?;
+            let link = if link.is_absolute() {
+                link
+            } else {
+                Path::new("/").join(link)
+            };
+            if !metadata.is_symlink() || metadata.uid() != 0 || link != target {
+                return Err(format!(
+                    "Prune refuses untrusted system alias: {}",
+                    alias.display()
+                ));
+            }
+            for parent in [Path::new("/"), Path::new("/private")] {
+                let metadata = parent
+                    .symlink_metadata()
+                    .map_err(|error| error.to_string())?;
+                if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+                    return Err("Prune requires non-replaceable system parents.".into());
+                }
+            }
+            return Ok(target.join(suffix));
+        }
+    }
+    Ok(absolute)
 }
 
 fn real_path(path: &Path) -> Result<PathBuf, String> {

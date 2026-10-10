@@ -27,12 +27,26 @@ pub(super) fn validate_directory(path: &Path) -> io::Result<()> {
     }
     Ok(())
 }
+// MetadataExt reports u32 modes, while macOS libc uses u16 mode_t.
+const STICKY_BIT: u32 = 0o1000;
+
 pub(super) fn directory(identity: &str, user: &str) -> io::Result<PathBuf> {
     // The standard OS temporary root is shared but sticky. The 0700 child is both short
     // enough for sockaddr_un and owned by this user. No environment-chosen endpoint path.
+    // macOS's /tmp is a link. Use its fixed physical target, not a canonicalized path
+    // chosen by following an arbitrary link, and check its non-replaceable parents too.
+    #[cfg(target_os = "macos")]
+    let root = Path::new("/private/tmp");
+    #[cfg(not(target_os = "macos"))]
     let root = Path::new("/tmp");
+    for parent in root.ancestors().skip(1) {
+        let metadata = fs::symlink_metadata(parent)?;
+        if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+            return Err(io::ErrorKind::PermissionDenied.into());
+        }
+    }
     let metadata = fs::symlink_metadata(root)?;
-    if !metadata.is_dir() || metadata.mode() & libc::S_ISVTX == 0 {
+    if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & STICKY_BIT == 0 {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
     let directory = root.join(format!(
