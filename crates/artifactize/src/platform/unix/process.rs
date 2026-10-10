@@ -47,9 +47,10 @@ impl Child {
             Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
             #[cfg(target_os = "macos")]
             Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
-                // Darwin can report EPERM after the leader was reaped and its group
-                // disappeared. Suppress it only when the kernel confirms no members.
-                if process_group_empty(self.1)? {
+                // Darwin excludes zombies from killpg's signal targets and reports
+                // EPERM when none remain. Reaping can race the final group kill.
+                // Suppress it only when the kernel confirms no live members.
+                if process_group_exited(self.1)? {
                     Ok(())
                 } else {
                     Err(error)
@@ -61,52 +62,45 @@ impl Child {
 }
 
 #[cfg(target_os = "macos")]
-fn process_group_empty(pgid: u32) -> io::Result<bool> {
-    let mut query = [
-        libc::CTL_KERN,
-        libc::KERN_PROC,
-        libc::KERN_PROC_PGRP,
-        i32::try_from(pgid).map_err(|_| io::ErrorKind::InvalidInput)?,
-    ];
-    let mut bytes = 0;
-    // SAFETY: the four-element MIB is writable and bytes is a live size output. A null
-    // oldp requests the size of the process records without allocating or reading them.
-    if unsafe {
-        libc::sysctl(
-            query.as_mut_ptr(),
-            query.len() as u32,
-            std::ptr::null_mut(),
-            &mut bytes,
-            std::ptr::null_mut(),
-            0,
-        )
-    } != 0
-    {
+fn process_group_exited(pgid: u32) -> io::Result<bool> {
+    let pgid = i32::try_from(pgid).map_err(|_| io::ErrorKind::InvalidInput)?;
+    // libproc's size query includes spare PID capacity; only the copy's length is used.
+    // SAFETY: a null buffer asks for capacity and does not read or write records.
+    let bytes = unsafe { libc::proc_listpgrppids(pgid, std::ptr::null_mut(), 0) };
+    if bytes <= 0 {
         return Err(io::Error::last_os_error());
     }
-    // Darwin's size-only query includes spare capacity for processes that could appear
-    // before the copy. Only an actual copy's returned byte count proves the group empty.
-    const MAX_GROUP_INFO_BYTES: usize = 16 * 1024 * 1024;
+    // Bound kernel-reported allocations and reject a truncated list rather than
+    // overlooking a live descendant. No signalling or enumeration retries.
+    const MAX_GROUP_INFO_BYTES: i32 = 16 * 1024 * 1024;
     if bytes > MAX_GROUP_INFO_BYTES {
         return Err(io::Error::other("process group information exceeds 16 MiB"));
     }
-    let mut records = vec![0_u8; bytes.max(1)];
-    // SAFETY: the writable byte buffer has the queried capacity. No record is interpreted;
-    // an ENOMEM race is kept as an error, never retried or mistaken for an empty group.
-    if unsafe {
-        libc::sysctl(
-            query.as_mut_ptr(),
-            query.len() as u32,
-            records.as_mut_ptr().cast(),
-            &mut bytes,
-            std::ptr::null_mut(),
-            0,
-        )
-    } != 0
-    {
+    let mut pids = vec![0_i32; bytes as usize / std::mem::size_of::<i32>()];
+    // SAFETY: the aligned PID buffer has the queried byte capacity.
+    let read = unsafe { libc::proc_listpgrppids(pgid, pids.as_mut_ptr().cast(), bytes) };
+    if read < 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(bytes == 0)
+    if read >= bytes || read as usize % std::mem::size_of::<i32>() != 0 {
+        return Err(io::Error::other("incomplete process group information"));
+    }
+    for pid in pids
+        .into_iter()
+        .take(read as usize / std::mem::size_of::<i32>())
+    {
+        // Include zombies explicitly. ESRCH means the listed member was reaped
+        // during inspection; every other lookup error must remain an error.
+        match process_info(pid, 1) {
+            Ok(info) if info.pbi_pgid == pgid as u32 && info.pbi_status != libc::SZOMB => {
+                return Ok(false);
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(true)
 }
 
 impl Drop for Child {
@@ -160,6 +154,16 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     if pid <= 0 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
+    let info = process_info(pid, 0)?;
+    const MICROSECONDS_PER_SECOND: u64 = 1_000_000;
+    info.pbi_start_tvsec
+        .checked_mul(MICROSECONDS_PER_SECOND)
+        .and_then(|seconds| seconds.checked_add(info.pbi_start_tvusec))
+        .ok_or_else(|| io::Error::other("invalid child process start time"))
+}
+
+#[cfg(target_os = "macos")]
+fn process_info(pid: i32, include_zombies: u64) -> io::Result<libc::proc_bsdinfo> {
     let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
     let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
     // SAFETY: a writable buffer of the exact size required by PROC_PIDTBSDINFO. The
@@ -168,7 +172,7 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
         libc::proc_pidinfo(
             pid,
             libc::PROC_PIDTBSDINFO,
-            0,
+            include_zombies,
             info.as_mut_ptr().cast(),
             size,
         )
@@ -191,11 +195,7 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     if info.pbi_pid != pid as u32 {
         return Err(io::Error::other("invalid child process identity"));
     }
-    const MICROSECONDS_PER_SECOND: u64 = 1_000_000;
-    info.pbi_start_tvsec
-        .checked_mul(MICROSECONDS_PER_SECOND)
-        .and_then(|seconds| seconds.checked_add(info.pbi_start_tvusec))
-        .ok_or_else(|| io::Error::other("invalid child process start time"))
+    Ok(info)
 }
 
 pub(crate) struct Gate(Arc<AsyncFd<UnixStream>>);
@@ -294,6 +294,47 @@ mod tests {
     use process_wrap::tokio::ProcessGroup;
 
     use super::*;
+
+    // Darwin killpg excludes zombies and returns EPERM for a zombie-only group.
+    // Other Unix kernels already accept this signal; their cleanup tests cover it.
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn killing_a_zombie_only_group_succeeds_without_reaping_it_first() {
+        let mut command = Command::new(crate::test_os::bin("/bin/true"));
+        command.env_clear().stdin(Stdio::null());
+        let (gate, spawning) = spawn_gated(command).unwrap();
+        let pid = gate.pid().await.unwrap();
+        assert!(!process_group_exited(pid).unwrap());
+        gate.admit().unwrap();
+        drop(gate);
+        let mut child = spawning.await.unwrap().unwrap();
+        tokio::task::spawn_blocking(move || {
+            let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::uninit();
+            // SAFETY: waitid writes a full siginfo_t for our child; WNOWAIT
+            // synchronizes on exit while deliberately keeping the zombie unreaped.
+            let result = unsafe {
+                libc::waitid(
+                    libc::P_PID,
+                    pid,
+                    info.as_mut_ptr(),
+                    libc::WEXITED | libc::WNOWAIT,
+                )
+            };
+            assert_eq!(result, 0, "{}", io::Error::last_os_error());
+        })
+        .await
+        .unwrap();
+        assert!(process_group_exited(pid).unwrap());
+        // Exercise the real EPERM path, not an injected error or a delay.
+        assert_eq!(
+            child.0.start_kill().unwrap_err().raw_os_error(),
+            Some(libc::EPERM)
+        );
+        child.kill().unwrap();
+        assert!(child.wait().await.unwrap().success());
+        assert!(process_group_exited(pid).unwrap());
+        child.kill().unwrap();
+    }
 
     #[tokio::test]
     async fn parent_disconnect_before_admission_prevents_exec_and_reaps() {

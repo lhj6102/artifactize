@@ -87,12 +87,21 @@ impl Dirty {
         !self.resync && !self.state && self.sessions.is_empty()
     }
 }
-#[derive(Default)]
 struct Inbox {
     #[cfg(test)]
-    connected: std::sync::atomic::AtomicBool,
+    registration: tokio::sync::watch::Sender<Option<String>>,
     dirty: Mutex<Dirty>,
     wake: Notify,
+}
+impl Default for Inbox {
+    fn default() -> Self {
+        Self {
+            #[cfg(test)]
+            registration: tokio::sync::watch::channel(None).0,
+            dirty: Mutex::default(),
+            wake: Notify::new(),
+        }
+    }
 }
 impl Inbox {
     fn add(&self, change: Change) {
@@ -336,7 +345,10 @@ async fn watch(
     let endpoint = Endpoint::new(&state).ok();
     let mut hub = None;
     let mut probe = probe::Probe::new(state);
-    let mut reconcile = tokio::time::interval(RECONCILE);
+    // The baseline probe below already covers startup. An immediate interval tick
+    // could obscure a racing publication with a redundant Resync.
+    let mut reconcile =
+        tokio::time::interval_at(tokio::time::Instant::now() + RECONCILE, RECONCILE);
     reconcile.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     // Establish the cheap persistent baseline before the caller reads its snapshot.
     let _ = probe.changed().await;
@@ -366,9 +378,9 @@ async fn watch(
                 _ = cancel.cancelled() => break,
                 result = connection => {
                     if let Ok(Ok((stream, epoch))) = result {
-                        #[cfg(test)]
-                        inbox.connected.store(true, std::sync::atomic::Ordering::SeqCst);
                         inbox.add(Change::Resync);
+                        #[cfg(test)]
+                        inbox.registration.send_replace(Some(epoch.clone()));
                         if let Some(ready) = ready.take() {
                             let _ = ready.send(());
                         }
@@ -379,7 +391,7 @@ async fn watch(
                                 _ = cancel.cancelled() => break,
                                 _ = &mut receive => {
                                     #[cfg(test)]
-                                    inbox.connected.store(false, std::sync::atomic::Ordering::SeqCst);
+                                    inbox.registration.send_replace(None);
                                     inbox.add(Change::Resync);
                                     break;
                                 }
