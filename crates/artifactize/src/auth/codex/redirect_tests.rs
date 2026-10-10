@@ -9,7 +9,7 @@ async fn shared_port_redirect_matches_authorize_callback_and_token_exchange() {
     let storage = Storage::new(Some(directory.path()), None, Tokens::Codex).unwrap();
     let server = Server::new(vec![MockHttpResponse::success(
         json!({
-            "access_token":jwt("fixture-account", now().unwrap() + 3600),
+            "access_token":jwt("fixture-account", now().unwrap().checked_add(Duration::from_secs(3600)).unwrap().seconds()),
             "refresh_token":"fixture-refresh",
             "expires_in":3600,
         })

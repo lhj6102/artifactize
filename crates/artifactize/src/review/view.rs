@@ -240,7 +240,7 @@ impl Review {
                     if claim.reviewer == self.reviewer {
                         format!("{} (you)", claim.reviewer)
                     } else {
-                        claim.reviewer.clone()
+                        claim.reviewer.to_string()
                     }
                 });
                 let age = duration((now - request.created_at.time()).whole_seconds());

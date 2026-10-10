@@ -71,7 +71,7 @@ fn opened(state: &std::path::Path, view: RequestView, reviewer: &str) -> Review 
     let mut review = Review::new(
         state.to_path_buf(),
         None,
-        reviewer.into(),
+        reviewer.parse().unwrap(),
         Some(view.request.id.clone()),
     );
     review.load_single(view);
@@ -231,10 +231,10 @@ async fn embedded_drafts_survive_refresh_verdict_switch_and_ownership_loss() {
         "qrg한글"
     );
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    human::unclaim(&receipts, &view.request.id, "alice")
+    human::unclaim(&receipts, &view.request.id, &"alice".parse().unwrap())
         .await
         .unwrap();
-    human::claim(&receipts, &view.request.id, "bob")
+    human::claim(&receipts, &view.request.id, &"bob".parse().unwrap())
         .await
         .unwrap();
     assert!(
@@ -364,7 +364,7 @@ async fn an_external_submission_ends_editing_and_frees_the_detail_keys() {
     human::submit_and_publish(
         &state,
         view.request.id.as_str(),
-        "alice",
+        &"alice".parse().unwrap(),
         &json!({"verdict":"GREEN","approved":true}),
         CancellationToken::new(),
     )
@@ -398,7 +398,9 @@ async fn a_run_after_an_outside_release_neither_claims_nor_runs() {
     // Another terminal releases the claim before this review has refreshed: the job checks
     // ownership atomically, so the stale view neither claims nor runs.
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    human::unclaim(&receipts, &id, "alice").await.unwrap();
+    human::unclaim(&receipts, &id, &"alice".parse().unwrap())
+        .await
+        .unwrap();
     let Action::Start(job) = review.control(Control::RunTool) else {
         panic!("the stale view still starts the job");
     };
@@ -438,7 +440,7 @@ async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
     human::submit_and_publish(
         &state,
         id.as_str(),
-        "alice",
+        &"alice".parse().unwrap(),
         &json!({"verdict":"GREEN","approved":true}),
         CancellationToken::new(),
     )
@@ -469,7 +471,12 @@ async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;
     let id = view.request.id.clone();
-    let mut review = Review::new(state.clone(), None, "alice".into(), Some(id.clone()));
+    let mut review = Review::new(
+        state.clone(),
+        None,
+        "alice".parse().unwrap(),
+        Some(id.clone()),
+    );
     review.refresh().await;
     let Action::Start(job) = review.key(KeyEvent::from(KeyCode::Char('c'))) else {
         panic!("claim job");
@@ -481,7 +488,7 @@ async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     human::submit_and_publish(
         &state,
         id.as_str(),
-        "alice",
+        &"alice".parse().unwrap(),
         &json!({"verdict":"GREEN","approved":true}),
         CancellationToken::new(),
     )
@@ -756,7 +763,12 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     assert_eq!(tool(&opened(&state, monitor, "alice")), expected);
 
     // The standalone list holds one entry per waiting sign-off, not one per joined Run.
-    let mut review = Review::new(state.clone(), Some(repo.clone()), "alice".into(), None);
+    let mut review = Review::new(
+        state.clone(),
+        Some(repo.clone()),
+        "alice".parse().unwrap(),
+        None,
+    );
     review.refresh().await;
     let listed: Vec<_> = review
         .waiting
@@ -770,7 +782,7 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     let mut review = Review::new(
         state.clone(),
         Some(repo.clone()),
-        "alice".into(),
+        "alice".parse().unwrap(),
         Some(followers[0].request.id.clone()),
     );
     review.refresh().await;
@@ -837,7 +849,10 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     for view in std::iter::once(&original).chain(&followers) {
         let view = store::read_request(&state, &view.request.id).await.unwrap();
         assert_eq!(view.request.status, crate::types::RequestStatus::Green);
-        assert_eq!(view.request.result.unwrap()["approved"], json!(true));
+        assert_eq!(
+            view.request.result.unwrap().owner_fields()["approved"],
+            json!(true)
+        );
     }
 }
 

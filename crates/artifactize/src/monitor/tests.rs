@@ -108,7 +108,7 @@ pub(super) fn live() -> (RunView, Vec<RequestView>) {
     );
     waiting.claim = Some(HumanClaim {
         request_id: waiting.request.id.clone(),
-        reviewer: "alice".into(),
+        reviewer: "alice".parse().unwrap(),
         claimed_at: "2026-01-01T00:00:30Z".parse().unwrap(),
     });
     let requests = vec![

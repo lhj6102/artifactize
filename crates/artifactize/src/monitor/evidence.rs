@@ -5,7 +5,7 @@ use crate::{
     store::{self, RequestView},
     types::RequestStatus,
 };
-use serde::Deserialize;
+
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,16 +51,6 @@ impl Evidence {
     }
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct RuntimeLog {
-    stdout: String,
-    stderr: String,
-    exit_code: Option<i32>,
-    #[serde(default)]
-    truncated: bool,
-}
-
 pub async fn original(state: &Path, view: &RequestView) -> Result<RequestView, String> {
     store::read_original(state, view).await
 }
@@ -72,19 +62,22 @@ pub fn evidence(_state: &Path, view: &RequestView) -> Evidence {
             text: "Loading session…".into(),
         },
         ProfileKind::Runtime => {
-            let logs = view
-                .request
-                .result
-                .clone()
-                .and_then(|result| serde_json::from_value::<RuntimeLog>(result).ok());
+            let logs = view.request.result.clone().and_then(|result| match result {
+                store::ExecutionResult::Runtime(logs)
+                    if logs.stdout.value().is_some() && logs.stderr.value().is_some() =>
+                {
+                    Some(logs)
+                }
+                _ => None,
+            });
             let text = match logs {
                 Some(logs) => format!(
                     "exit code: {}\ncapture truncated: {}\n\nstdout\n{}\n\nstderr\n{}",
-                    logs.exit_code
+                    logs.exit_code.value()
                         .map_or("unreported".into(), |code| code.to_string()),
-                    logs.truncated,
-                    logs.stdout,
-                    logs.stderr
+                    logs.truncated.value().copied().unwrap_or(false),
+                    logs.stdout.value().expect("filtered logs"),
+                    logs.stderr.value().expect("filtered logs")
                 ),
                 None if view.request.origin.is_some() => {
                     "Logs unavailable: this remote result contains only a summary; stdout/stderr were not saved here."

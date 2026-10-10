@@ -195,6 +195,11 @@ identity!(StoreUrl, |value: &str| reqwest::Url::parse(value)
         && url.host_str().is_some()
         && url.username().is_empty()
         && url.password().is_none()));
+// Human audit labels permit printable Unicode and spaces, but never control characters.
+identity!(ReviewerId, |value: &str| !value.trim().is_empty()
+    && value.len() <= MAX_ID_BYTES
+    && !value.chars().any(char::is_control));
+
 identity!(TokenName, |value: &str| (1..=MAX_TOKEN_NAME_BYTES)
     .contains(&value.len())
     && value.bytes().all(
@@ -340,6 +345,37 @@ impl TryFrom<RequestStatus> for ExecutionStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reviewers_preserve_printable_labels_and_validate_json_and_sql() {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        for label in [
+            "alice",
+            " reviewer ",
+            "홍 길동",
+            "a/b@host",
+            &"x".repeat(200),
+        ] {
+            let reviewer: ReviewerId = label.parse().unwrap();
+            let wire = serde_json::to_string(label).unwrap();
+            assert_eq!(serde_json::to_string(&reviewer).unwrap(), wire);
+            assert_eq!(serde_json::from_str::<ReviewerId>(&wire).unwrap(), reviewer);
+            assert_eq!(
+                db.query_row("SELECT ?", [&reviewer], |row| row.get::<_, ReviewerId>(0))
+                    .unwrap(),
+                reviewer
+            );
+        }
+        for label in ["", "  ", "\t", "a\n", "a\0b", &"x".repeat(201)] {
+            assert!(label.parse::<ReviewerId>().is_err());
+            assert!(
+                serde_json::from_str::<ReviewerId>(&serde_json::to_string(label).unwrap()).is_err()
+            );
+            assert!(
+                db.query_row("SELECT ?", [label], |row| row.get::<_, ReviewerId>(0))
+                    .is_err()
+            );
+        }
+    }
     #[test]
     fn identities_validate_json_and_sql_edges() {
         for value in ["", ".", "..", "a/b", "a\\b", "a b", "a\n"] {

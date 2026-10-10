@@ -1,18 +1,18 @@
 //! Validate state-appropriate data before writes, without migrating or rejecting old reads.
 
+use super::ExecutionResult;
 use super::{Execution, Request, Run};
 use crate::types::{ExecutionStatus, RequestStatus, RunStatus};
-use serde_json::Value;
 
 fn result(
     status: RequestStatus,
-    result: Option<&Value>,
+    result: Option<&ExecutionResult>,
     error: Option<&str>,
     error_code: Option<&str>,
 ) -> Result<(), String> {
     match status {
         RequestStatus::Green | RequestStatus::Red
-            if result.is_some_and(|result| result["verdict"] == status.as_str())
+            if result.is_some_and(|result| result.verdict().as_str() == status.as_str())
                 && error.is_none()
                 && error_code.is_none() =>
         {
@@ -112,16 +112,18 @@ mod tests {
             assert!(
                 result(
                     status.parse().unwrap(),
-                    Some(&json!({"verdict":status})),
+                    Some(&json!({"verdict":status}).try_into().unwrap()),
                     None,
                     None
                 )
                 .is_ok()
             );
+            assert!(ExecutionResult::try_from(json!({"verdict":"ERROR"})).is_err());
+            let opposite = if status == "GREEN" { "RED" } else { "GREEN" };
             assert!(
                 result(
                     status.parse().unwrap(),
-                    Some(&json!({"verdict":"ERROR"})),
+                    Some(&json!({"verdict":opposite}).try_into().unwrap()),
                     None,
                     None
                 )
@@ -130,7 +132,7 @@ mod tests {
             assert!(
                 result(
                     status.parse().unwrap(),
-                    Some(&json!({"verdict":status})),
+                    Some(&json!({"verdict":status}).try_into().unwrap()),
                     Some("failed"),
                     None
                 )
@@ -149,7 +151,7 @@ mod tests {
         assert!(
             result(
                 RequestStatus::Error,
-                Some(&json!({"verdict":"GREEN"})),
+                Some(&json!({"verdict":"GREEN"}).try_into().unwrap()),
                 Some("failed"),
                 None
             )
@@ -161,7 +163,7 @@ mod tests {
             assert!(
                 result(
                     status.parse().unwrap(),
-                    Some(&json!({"verdict":"GREEN"})),
+                    Some(&json!({"verdict":"GREEN"}).try_into().unwrap()),
                     None,
                     None
                 )

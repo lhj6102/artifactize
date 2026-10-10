@@ -93,13 +93,13 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
     );
     view.claim = Some(store::HumanClaim {
         request_id: view.request.id.clone(),
-        reviewer: "alice".into(),
+        reviewer: "alice".parse().unwrap(),
         claimed_at: "2026-01-01T00:00:00Z".parse().unwrap(),
     });
     let mut review = review::Review::new(
         "/fixture-state".into(),
         None,
-        "alice".into(),
+        "alice".parse().unwrap(),
         Some(view.request.id.clone()),
     );
     review.load_single(view);

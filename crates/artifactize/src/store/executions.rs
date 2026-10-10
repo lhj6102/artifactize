@@ -3,7 +3,6 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::{
     Receipts, Request, history,
@@ -67,7 +66,7 @@ pub struct Execution {
     pub owner_pid: u32,
     pub owner_start_time: u64,
     pub status: ExecutionStatus,
-    pub result: Option<Value>,
+    pub result: Option<super::ExecutionResult>,
     pub error: Option<String>,
     pub error_code: Option<crate::types::FailureCode>,
     pub profile: crate::config::StoredProfile,
@@ -82,7 +81,7 @@ pub struct Execution {
     pub producer: Option<Producer>,
     /// The Human claimant who submitted this result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reviewer: Option<String>,
+    pub reviewer: Option<crate::types::ReviewerId>,
     /// Set only on executions mirrored from a remote review store.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Origin>,

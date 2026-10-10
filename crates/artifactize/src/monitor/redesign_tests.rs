@@ -536,13 +536,17 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
     monitor.detail.as_mut().unwrap().scroll[1] = 7;
     request.status = crate::types::RequestStatus::Green;
     request.completed_at = Some("2026-01-01T00:00:01Z".parse().unwrap());
-    request.result = Some(json!({
-        "verdict":"GREEN",
-        "stdout":"final output",
-        "stderr":"final stderr",
-        "exitCode":0,
-        "truncated":false,
-    }));
+    request.result = Some(
+        json!({
+            "verdict":"GREEN",
+            "stdout":"final output",
+            "stderr":"final stderr",
+            "exitCode":0,
+            "truncated":false,
+        })
+        .try_into()
+        .unwrap(),
+    );
     receipts.save_request(&request).await.unwrap();
     monitor.refresh().await;
     assert!(
@@ -928,7 +932,7 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
     .unwrap();
     let id = run.requests[0].id.clone();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    let reviewer = crate::human::default_reviewer().unwrap_or_else(|_| "fixture".into());
+    let reviewer = crate::human::default_reviewer().unwrap_or_else(|_| "fixture".parse().unwrap());
     crate::human::claim(&receipts, id.as_str(), &reviewer)
         .await
         .unwrap();

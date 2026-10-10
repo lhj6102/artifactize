@@ -148,9 +148,11 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
     assert_eq!(run["requests"][0]["status"], "WAITING_HUMAN");
     assert_eq!(run["executionsStarted"], 0);
     let receipts = fixture.receipts().await;
+    let alice_id = "alice".parse().unwrap();
+    let bob_id = "bob".parse().unwrap();
     let (alice, bob) = tokio::join!(
-        human::claim(&receipts, id, "alice"),
-        human::claim(&receipts, id, "bob")
+        human::claim(&receipts, id, &alice_id),
+        human::claim(&receipts, id, &bob_id)
     );
     assert_ne!(alice.is_ok(), bob.is_ok());
     let claim = alice.or(bob).unwrap();
@@ -189,16 +191,24 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     let id = &run.requests[0].id;
     let receipts = fixture.receipts().await;
     assert!(
-        human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
-            .await
-            .is_err()
+        human::submit(
+            &receipts,
+            id,
+            &"alice".parse().unwrap(),
+            &green(),
+            CancellationToken::new()
+        )
+        .await
+        .is_err()
     );
-    human::claim(&receipts, id, "alice").await.unwrap();
+    human::claim(&receipts, id, &"alice".parse().unwrap())
+        .await
+        .unwrap();
     assert!(
         human::run_human_tool(
             &receipts,
             id,
-            "bob",
+            &"bob".parse().unwrap(),
             "inspect_review",
             CancellationToken::new()
         )
@@ -206,15 +216,21 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         .is_err()
     );
     assert!(
-        human::submit(&receipts, id, "bob", &green(), CancellationToken::new())
-            .await
-            .is_err()
+        human::submit(
+            &receipts,
+            id,
+            &"bob".parse().unwrap(),
+            &green(),
+            CancellationToken::new()
+        )
+        .await
+        .is_err()
     );
     assert!(
         human::run_human_tool(
             &receipts,
             id,
-            "alice",
+            &"alice".parse().unwrap(),
             "read_review",
             CancellationToken::new()
         )
@@ -224,7 +240,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     let result = human::run_human_tool(
         &receipts,
         id,
-        "alice",
+        &"alice".parse().unwrap(),
         "inspect_review",
         CancellationToken::new(),
     )
@@ -234,7 +250,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     let result = human::run_human_tool(
         &receipts,
         id,
-        "alice",
+        &"alice".parse().unwrap(),
         "fail_review",
         CancellationToken::new(),
     )
@@ -249,9 +265,15 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         json!({"verdict":"RED","reason":"x".repeat(256_000)}),
     ] {
         assert!(
-            human::submit(&receipts, id, "alice", &result, CancellationToken::new())
-                .await
-                .is_err()
+            human::submit(
+                &receipts,
+                id,
+                &"alice".parse().unwrap(),
+                &result,
+                CancellationToken::new()
+            )
+            .await
+            .is_err()
         );
         assert_eq!(
             store::read_run(&fixture.state, &run.run.id)
@@ -263,21 +285,37 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             "WAITING_HUMAN"
         );
     }
-    let result = human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
-        .await
-        .unwrap();
+    let result = human::submit(
+        &receipts,
+        id,
+        &"alice".parse().unwrap(),
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
     assert_eq!(result.status.as_str(), "GREEN");
     assert!(
-        human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
+        human::submit(
+            &receipts,
+            id,
+            &"alice".parse().unwrap(),
+            &green(),
+            CancellationToken::new()
+        )
+        .await
+        .is_err()
+    );
+    assert!(
+        human::claim(&receipts, id, &"alice".parse().unwrap())
             .await
             .is_err()
     );
-    assert!(human::claim(&receipts, id, "alice").await.is_err());
     assert!(
         human::run_human_tool(
             &receipts,
             id,
-            "alice",
+            &"alice".parse().unwrap(),
             "inspect_review",
             CancellationToken::new()
         )
@@ -315,22 +353,30 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
         let run = fixture.verify(returning()).await;
         let id = &run.requests[0].id;
         let receipts = fixture.receipts().await;
-        human::claim(&receipts, id, "alice").await.unwrap();
+        human::claim(&receipts, id, &"alice".parse().unwrap())
+            .await
+            .unwrap();
         fs::write(fixture.repo.join("fingerprint"), "human-v2\n").unwrap();
         let error = if tool {
             human::run_human_tool(
                 &receipts,
                 id,
-                "alice",
+                &"alice".parse().unwrap(),
                 "inspect_review",
                 CancellationToken::new(),
             )
             .await
             .unwrap_err()
         } else {
-            human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
-                .await
-                .unwrap_err()
+            human::submit(
+                &receipts,
+                id,
+                &"alice".parse().unwrap(),
+                &green(),
+                CancellationToken::new(),
+            )
+            .await
+            .unwrap_err()
         };
         assert!(
             error.contains("Fingerprint changed during review"),
@@ -370,7 +416,9 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
     let run = fixture.verify(returning()).await;
     let id = &run.requests[0].id;
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, id, "alice").await.unwrap();
+    human::claim(&receipts, id, &"alice".parse().unwrap())
+        .await
+        .unwrap();
     fs::create_dir(fixture.repo.join("child")).unwrap();
     support::declaration::write(
         fixture.repo.join("child/index.artf"),
@@ -381,7 +429,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
         human::run_human_tool(
             &receipts,
             id,
-            "alice",
+            &"alice".parse().unwrap(),
             "inspect_review",
             CancellationToken::new()
         )
@@ -390,14 +438,26 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
         .contains("declarations changed")
     );
     assert!(
-        human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
-            .await
-            .is_err()
+        human::submit(
+            &receipts,
+            id,
+            &"alice".parse().unwrap(),
+            &green(),
+            CancellationToken::new()
+        )
+        .await
+        .is_err()
     );
     fs::remove_file(fixture.repo.join("child/index.artf")).unwrap();
-    human::submit(&receipts, id, "alice", &green(), CancellationToken::new())
-        .await
-        .unwrap();
+    human::submit(
+        &receipts,
+        id,
+        &"alice".parse().unwrap(),
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -437,11 +497,13 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
         "WAIT_DEPENDENCY"
     );
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, &waiting.id, "alice").await.unwrap();
+    human::claim(&receipts, &waiting.id, &"alice".parse().unwrap())
+        .await
+        .unwrap();
     human::submit(
         &receipts,
         &waiting.id,
-        "alice",
+        &"alice".parse().unwrap(),
         &green(),
         CancellationToken::new(),
     )
@@ -477,19 +539,23 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     let follower = &run.requests[0].id;
     let owner = original["requests"][0]["id"].as_str().unwrap();
     assert_eq!(
-        human::claim(&receipts, follower, "alice")
+        human::claim(&receipts, follower, &"alice".parse().unwrap())
             .await
             .unwrap()
             .request_id
             .as_str(),
         owner
     );
-    assert!(human::claim(&receipts, owner, "bob").await.is_err());
+    assert!(
+        human::claim(&receipts, owner, &"bob".parse().unwrap())
+            .await
+            .is_err()
+    );
     fs::write(other.repo.join("fingerprint"), "different-repo-input\n").unwrap();
     let result = human::run_human_tool(
         &receipts,
         follower,
-        "alice",
+        &"alice".parse().unwrap(),
         "inspect_review",
         CancellationToken::new(),
     )
@@ -502,7 +568,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     human::submit(
         &receipts,
         follower,
-        "alice",
+        &"alice".parse().unwrap(),
         &json!({"verdict":"RED","reason":"Needs work"}),
         CancellationToken::new(),
     )
@@ -512,7 +578,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         human::submit(
             &receipts,
             owner,
-            "alice",
+            &"alice".parse().unwrap(),
             &green(),
             CancellationToken::new()
         )
@@ -543,7 +609,11 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     .unwrap();
     assert_eq!(completed.run.status.as_str(), "RED");
     assert_eq!(
-        completed.requests[0].result.as_ref().unwrap()["reason"],
+        completed.requests[0]
+            .result
+            .as_ref()
+            .unwrap()
+            .owner_fields()["reason"],
         "Needs work"
     );
     assert_eq!(
@@ -578,27 +648,41 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     let follower = &run.requests[0].id;
     let receipts = fixture.receipts().await;
     assert!(
-        human::unclaim(&receipts, owner, "alice")
+        human::unclaim(&receipts, owner, &"alice".parse().unwrap())
             .await
             .unwrap_err()
             .contains("claimant")
     );
-    let claim = human::claim(&receipts, owner, "alice").await.unwrap();
+    let claim = human::claim(&receipts, owner, &"alice".parse().unwrap())
+        .await
+        .unwrap();
     for (id, reviewer) in [(owner, "bob"), (follower.as_str(), "bob"), (owner, "")] {
-        assert!(human::unclaim(&receipts, id, reviewer).await.is_err());
+        match reviewer.parse() {
+            Ok(reviewer) => assert!(human::unclaim(&receipts, id, &reviewer).await.is_err()),
+            Err(_) => assert!(
+                reviewer.is_empty(),
+                "invalid reviewer rejected at the input edge"
+            ),
+        }
     }
     // A follower forwards the release to its original request, like a claim.
-    let released = human::unclaim(&receipts, follower, "alice").await.unwrap();
+    let released = human::unclaim(&receipts, follower, &"alice".parse().unwrap())
+        .await
+        .unwrap();
     assert_eq!(
         (released.request_id.as_str(), released.claimed_at),
         (owner, claim.claimed_at)
     );
-    assert!(human::unclaim(&receipts, owner, "alice").await.is_err());
+    assert!(
+        human::unclaim(&receipts, owner, &"alice".parse().unwrap())
+            .await
+            .is_err()
+    );
     assert!(
         human::submit(
             &receipts,
             owner,
-            "alice",
+            &"alice".parse().unwrap(),
             &green(),
             CancellationToken::new()
         )
@@ -606,7 +690,7 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
         .is_err()
     );
     assert_eq!(
-        human::claim(&receipts, follower, "bob")
+        human::claim(&receipts, follower, &"bob".parse().unwrap())
             .await
             .unwrap()
             .request_id
@@ -622,12 +706,18 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
             .reviewer,
         "bob"
     );
-    human::submit(&receipts, owner, "bob", &green(), CancellationToken::new())
-        .await
-        .unwrap();
+    human::submit(
+        &receipts,
+        owner,
+        &"bob".parse().unwrap(),
+        &green(),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
     for id in [owner, follower.as_str()] {
         assert!(
-            human::unclaim(&receipts, id, "bob")
+            human::unclaim(&receipts, id, &"bob".parse().unwrap())
                 .await
                 .unwrap_err()
                 .contains("not waiting")
@@ -641,11 +731,14 @@ async fn concurrent_submissions_commit_only_once() {
     let run = fixture.verify(returning()).await;
     let id = &run.requests[0].id;
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, id, "alice").await.unwrap();
+    human::claim(&receipts, id, &"alice".parse().unwrap())
+        .await
+        .unwrap();
     let result = green();
+    let reviewer = "alice".parse().unwrap();
     let (first, second) = tokio::join!(
-        human::submit(&receipts, id, "alice", &result, CancellationToken::new()),
-        human::submit(&receipts, id, "alice", &result, CancellationToken::new()),
+        human::submit(&receipts, id, &reviewer, &result, CancellationToken::new()),
+        human::submit(&receipts, id, &reviewer, &result, CancellationToken::new()),
     );
     assert_ne!(first.is_ok(), second.is_ok());
 }
@@ -655,13 +748,13 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
     let fixture = Fixture::new(true);
     let run = fixture.verify(returning()).await;
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, &run.requests[0].id, "alice")
+    human::claim(&receipts, &run.requests[0].id, &"alice".parse().unwrap())
         .await
         .unwrap();
     human::submit(
         &receipts,
         &run.requests[0].id,
-        "alice",
+        &"alice".parse().unwrap(),
         &green(),
         CancellationToken::new(),
     )
@@ -674,7 +767,7 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
         })
         .await;
     assert_eq!(forced.requests[0].status.as_str(), "WAITING_HUMAN");
-    human::claim(&receipts, &forced.requests[0].id, "alice")
+    human::claim(&receipts, &forced.requests[0].id, &"alice".parse().unwrap())
         .await
         .unwrap();
     fs::write(fixture.repo.join("fingerprint"), "changed\n").unwrap();
@@ -682,7 +775,7 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
         human::submit(
             &receipts,
             &forced.requests[0].id,
-            "alice",
+            &"alice".parse().unwrap(),
             &green(),
             CancellationToken::new()
         )
@@ -714,13 +807,13 @@ async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() 
             .starts_with("artifactsum:")
     );
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, &run.requests[0].id, "alice")
+    human::claim(&receipts, &run.requests[0].id, &"alice".parse().unwrap())
         .await
         .unwrap();
     human::submit(
         &receipts,
         &run.requests[0].id,
-        "alice",
+        &"alice".parse().unwrap(),
         &green(),
         CancellationToken::new(),
     )
@@ -733,14 +826,18 @@ async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() 
     let changed = fixture.verify(returning()).await;
     assert_eq!(changed.requests[0].status.as_str(), "WAITING_HUMAN");
     assert_ne!(changed.requests[0].key, run.requests[0].key);
-    human::claim(&receipts, &changed.requests[0].id, "alice")
-        .await
-        .unwrap();
+    human::claim(
+        &receipts,
+        &changed.requests[0].id,
+        &"alice".parse().unwrap(),
+    )
+    .await
+    .unwrap();
     fs::write(fixture.repo.join("fingerprint"), "human-v3\n").unwrap();
     let error = human::submit(
         &receipts,
         &changed.requests[0].id,
-        "alice",
+        &"alice".parse().unwrap(),
         &green(),
         CancellationToken::new(),
     )
@@ -757,13 +854,13 @@ async fn fingerprint_false_results_are_not_reused_by_a_new_verify() {
     let fixture = Fixture::new(false);
     let run = fixture.verify(returning()).await;
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, &run.requests[0].id, "alice")
+    human::claim(&receipts, &run.requests[0].id, &"alice".parse().unwrap())
         .await
         .unwrap();
     human::submit(
         &receipts,
         &run.requests[0].id,
-        "alice",
+        &"alice".parse().unwrap(),
         &green(),
         CancellationToken::new(),
     )
@@ -796,14 +893,14 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     assert_ne!(run.requests[0].execution_id, run.requests[2].execution_id);
     assert_ne!(run.requests[0].eval_def_hash, run.requests[2].eval_def_hash);
     let receipts = fixture.receipts().await;
-    let claim = human::claim(&receipts, &run.requests[1].id, "alice")
+    let claim = human::claim(&receipts, &run.requests[1].id, &"alice".parse().unwrap())
         .await
         .unwrap();
     assert_eq!(claim.request_id, run.requests[0].id);
     human::submit(
         &receipts,
         &run.requests[1].id,
-        "alice",
+        &"alice".parse().unwrap(),
         &green(),
         CancellationToken::new(),
     )
@@ -826,7 +923,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     assert_eq!(status.counts.wait, 1);
     assert_eq!(status.evals[2].state, project::EvalCondition::WaitingHuman);
     assert_eq!(
-        human::claim(&receipts, &run.requests[2].id, "bob")
+        human::claim(&receipts, &run.requests[2].id, &"bob".parse().unwrap())
             .await
             .unwrap()
             .request_id
@@ -836,7 +933,7 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     human::submit(
         &receipts,
         &run.requests[2].id,
-        "bob",
+        &"bob".parse().unwrap(),
         &json!({"verdict":"RED","reason":"Different review"}),
         CancellationToken::new(),
     )
@@ -896,11 +993,13 @@ async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
     assert_eq!(request.status.as_str(), "WAITING_HUMAN");
     assert_eq!(request.options.variant.as_deref(), Some("lead"));
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, &request.id, "alice").await.unwrap();
+    human::claim(&receipts, &request.id, &"alice".parse().unwrap())
+        .await
+        .unwrap();
     let settled = human::submit(
         &receipts,
         &request.id,
-        "alice",
+        &"alice".parse().unwrap(),
         &green(),
         CancellationToken::new(),
     )

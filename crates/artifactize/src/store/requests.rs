@@ -207,7 +207,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                             row.get::<_, String>(1)?,
                             row.get::<_, Option<String>>(2)?,
                             row.get::<_, Option<crate::types::RequestId>>(3)?,
-                            row.get::<_, Option<String>>(4)?,
+                            row.get::<_, Option<crate::types::ReviewerId>>(4)?,
                             row.get::<_, Option<crate::types::Timestamp>>(5)?,
                             row.get::<_, Option<String>>(6)?,
                             row.get::<_, Option<String>>(7)?,

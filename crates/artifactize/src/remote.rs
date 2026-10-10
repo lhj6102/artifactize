@@ -9,7 +9,6 @@ pub use session::Session;
 use std::{collections::BTreeMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 
 use crate::store::{Execution, ExecutionOptions, Origin, Producer, Provenance};
 
@@ -47,10 +46,10 @@ pub struct Record {
     /// An Agent result's tool `executionPaths` pins.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub execution_paths: crate::tools::pins::Pins,
-    pub result: Value,
+    pub result: crate::store::ExecutionResult,
     pub usage: Option<Vec<crate::llm::Attempt>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reviewer: Option<String>,
+    pub reviewer: Option<crate::types::ReviewerId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub producer: Option<Producer>,
     pub started_at: crate::types::Timestamp,
@@ -132,7 +131,7 @@ impl Record {
                 &self.artifact_kinds,
             ) == self.key
             && matches!(self.verdict.as_str(), "GREEN" | "RED")
-            && self.result["verdict"] == self.verdict.as_str()
+            && self.result.verdict().as_str() == self.verdict.as_str()
             && self.execution_id.valid_wire()
             && valid_session(self.producer.as_ref())
             && self.execution.as_ref().is_none_or(|execution| {
@@ -216,17 +215,16 @@ impl Record {
     }
 }
 
-fn summary_result(profile: &crate::config::StoredProfile, result: &Value) -> Value {
-    if profile.kind() != crate::config::ProfileKind::Runtime {
-        // Agent and Human results are the schema-validated owner fields.
-        return result.clone();
+fn summary_result(
+    profile: &crate::config::StoredProfile,
+    result: &crate::store::ExecutionResult,
+) -> crate::store::ExecutionResult {
+    if profile.kind() == crate::config::ProfileKind::Runtime
+        && let crate::store::ExecutionResult::Runtime(runtime) = result
+    {
+        return crate::store::ExecutionResult::Runtime(runtime.summary());
     }
-    json!({
-        "verdict": result["verdict"],
-        "exitCode": result["exitCode"],
-        "durationMs": result["durationMs"],
-        "truncated": result["truncated"],
-    })
+    result.clone()
 }
 
 fn summary_usage(usage: Option<&Vec<crate::llm::Attempt>>) -> Option<Vec<crate::llm::Attempt>> {

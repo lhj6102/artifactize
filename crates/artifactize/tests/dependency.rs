@@ -541,17 +541,25 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
         .await
         .unwrap();
     assert!(
-        artifactize::human::claim(&receipts, run.requests[0].id.as_str(), "tester")
-            .await
-            .is_err()
-    );
-    artifactize::human::claim(&receipts, run.requests[1].id.as_str(), "tester")
+        artifactize::human::claim(
+            &receipts,
+            run.requests[0].id.as_str(),
+            &"tester".parse().unwrap()
+        )
         .await
-        .unwrap();
+        .is_err()
+    );
+    artifactize::human::claim(
+        &receipts,
+        run.requests[1].id.as_str(),
+        &"tester".parse().unwrap(),
+    )
+    .await
+    .unwrap();
     artifactize::human::submit(
         &receipts,
         run.requests[1].id.as_str(),
-        "tester",
+        &"tester".parse().unwrap(),
         &json!({"verdict":"GREEN"}),
         CancellationToken::new(),
     )

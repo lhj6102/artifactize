@@ -14,7 +14,7 @@ use std::{
     io::{IsTerminal, Read, Write},
     net::Ipv4Addr,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 
 use base64::{
@@ -30,6 +30,9 @@ use tokio::{
     net::TcpListener,
     sync::oneshot,
 };
+
+mod timestamp;
+pub use timestamp::Timestamp;
 
 use super::storage::{Location, MAX_CREDENTIAL_BYTES, Storage, Tokens};
 
@@ -59,9 +62,9 @@ const PKCE_VERIFIER_BYTES: usize = 32;
 /// characters. This is this client's chosen size, not an OAuth-mandated exact length.
 const OAUTH_STATE_BYTES: usize = 16;
 /// Refresh this many seconds before expiry, as the Codex CLI's refresh window does.
-const REFRESH_MARGIN: u64 = 300;
+const REFRESH_MARGIN: Duration = Duration::from_secs(300);
 /// A read-only auth file's token must outlive this many seconds.
-const FILE_MARGIN: u64 = 60;
+const FILE_MARGIN: Duration = Duration::from_secs(60);
 /// Give a person five minutes to finish browser or pasted-redirect sign-in,
 /// without leaving an unattended callback listener alive indefinitely.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
@@ -83,8 +86,10 @@ struct Credentials {
     access_token: String,
     refresh_token: String,
     account_id: crate::types::CodexAccountId,
-    expires_at: u64,
-    saved_at: u64,
+    #[serde(with = "timestamp::seconds")]
+    expires_at: Timestamp,
+    #[serde(with = "timestamp::seconds")]
+    saved_at: Timestamp,
 }
 
 /// Why no token is available. A transient failure (the token endpoint unreachable or
@@ -116,11 +121,8 @@ pub struct Token {
     pub account_id: crate::types::CodexAccountId,
 }
 
-pub(crate) fn now() -> Result<u64, String> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|time| time.as_secs())
-        .map_err(|_| "The system clock is before the Unix epoch.".into())
+pub(crate) fn now() -> Result<Timestamp, String> {
+    Timestamp::now()
 }
 
 /// The sign-in root: its loopback test endpoint, else `https://auth.openai.com`.
@@ -162,14 +164,14 @@ fn account_id(access_token: &str) -> Option<crate::types::CodexAccountId> {
     claims(access_token)?.auth.0?.0.chatgpt_account_id.0
 }
 
-fn expiry(access_token: &str) -> Option<u64> {
+fn expiry(access_token: &str) -> Option<Timestamp> {
     claims(access_token)?.exp.0
 }
 
 #[derive(Default, Deserialize)]
 struct JwtClaims {
     #[serde(default)]
-    exp: crate::json::Optional<u64>,
+    exp: crate::json::Optional<Timestamp>,
     #[serde(default, rename = "https://api.openai.com/auth")]
     auth: crate::json::Optional<crate::json::Object<AccountClaim>>,
 }
@@ -482,17 +484,21 @@ async fn open_browser(url: &Url) {
 struct TokenResponse {
     access_token: Option<String>,
     refresh_token: Option<String>,
-    expires_in: Option<u64>,
+    #[serde(
+        default,
+        deserialize_with = "timestamp::optional_duration::deserialize"
+    )]
+    expires_in: Option<Duration>,
 }
 
-fn credentials(tokens: TokenResponse, saved_at: u64) -> Result<Credentials, String> {
+fn credentials(tokens: TokenResponse, saved_at: Timestamp) -> Result<Credentials, String> {
     let invalid = || "Invalid Codex token response; nothing was saved.".to_owned();
     let access_token = tokens.access_token.filter(|token| !token.is_empty());
     let refresh_token = tokens.refresh_token.filter(|token| !token.is_empty());
     let (Some(access_token), Some(refresh_token), Some(expires_in)) = (
         access_token,
         refresh_token,
-        tokens.expires_in.filter(|n| *n > 0),
+        tokens.expires_in.filter(|duration| !duration.is_zero()),
     ) else {
         return Err(invalid());
     };
@@ -586,7 +592,7 @@ async fn stored_token(storage: &Storage, root: &str) -> Result<Token, TokenError
 async fn stored_token_at(
     storage: &Storage,
     root: &str,
-    clock: impl Fn() -> Result<u64, String>,
+    clock: impl Fn() -> Result<Timestamp, String>,
 ) -> Result<Token, TokenError> {
     let _lock = storage.lock(LOCK).await?;
     let stored = storage
@@ -691,10 +697,10 @@ impl<'de> Deserialize<'de> for AuthFileTokens {
 /// The access token of a Codex auth file (`{"tokens":{"access_token",...}}`), read
 /// once per use and never written. An expiring token is an error, never a refresh.
 fn read_auth_file(path: &Path) -> Result<Token, String> {
-    read_auth_file_at(path, now().unwrap_or(u64::MAX))
+    read_auth_file_at(path, now().unwrap_or(Timestamp::from_seconds(u64::MAX)))
 }
 
-fn read_auth_file_at(path: &Path, now: u64) -> Result<Token, String> {
+fn read_auth_file_at(path: &Path, now: Timestamp) -> Result<Token, String> {
     let name = crate::platform::path_text(path);
     let unreadable = |reason: &str| format!("{AUTH_FILE_VARIABLE}: cannot read {name}: {reason}.");
     let file =
@@ -743,15 +749,15 @@ fn read_auth_file_at(path: &Path, now: u64) -> Result<Token, String> {
 /// file reports no timestamp because the existing reader refuses it before returning a token.
 #[derive(Debug)]
 pub enum FileExpiry {
-    Usable { expires_at: Option<u64> },
+    Usable { expires_at: Option<Timestamp> },
     Expired,
 }
 
 /// Owned credentials always carry the expiry saved by the token exchange.
 #[derive(Debug)]
 pub enum StoredExpiry {
-    Usable { expires_at: u64 },
-    Expired { expires_at: u64 },
+    Usable { expires_at: Timestamp },
+    Expired { expires_at: Timestamp },
 }
 
 /// Offline sign-in states: only file states have a path, only stored states have

@@ -189,7 +189,7 @@ pub enum Command {
         all: bool,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<String>,
+        reviewer: Option<crate::types::ReviewerId>,
     },
     /// Serve or administer a shared remote review store (review-store.sqlite).
     Server {

@@ -249,7 +249,7 @@ pub(super) async fn models(
             Some(status.as_u16()),
             body.as_ref(),
             "Codex model listing failed.",
-            auth::now().ok(),
+            auth::now().ok().map(auth::Timestamp::seconds),
         ));
     }
     picker_models(&data)
@@ -274,7 +274,7 @@ pub(super) fn diagnostic(error: &ProviderError) -> String {
         error.report().http_status,
         body.as_ref(),
         &super::diagnostic(error),
-        auth::now().ok(),
+        auth::now().ok().map(auth::Timestamp::seconds),
     )
 }
 
