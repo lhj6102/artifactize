@@ -115,7 +115,7 @@ fn root_and_nested_sidecars_coexist_without_changing_folder_ownership() {
     );
     assert_eq!(
         config.artifacts["folder"].children,
-        std::collections::BTreeMap::from([("nested/deep".into(), "deep".into())])
+        std::collections::BTreeMap::from([("nested/deep".into(), "deep".parse().unwrap())])
     );
     assert!(config.artifacts["hero"].children.is_empty());
     assert!(config.artifacts["build"].children.is_empty());
@@ -267,7 +267,7 @@ async fn fingerprints(
 ) -> std::collections::BTreeMap<String, cache::PreparedFingerprint> {
     cache::prepare(
         config,
-        config.artifacts.keys().map(String::as_str),
+        config.artifacts.keys().map(|name| name.as_str()),
         output,
         &Parallelism::new(2),
         CancellationToken::new(),

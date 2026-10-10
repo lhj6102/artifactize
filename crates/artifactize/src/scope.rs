@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use crate::config::{Artifact, ConfigError, Eval, Fingerprint, Profile, RepoConfig};
+use crate::config::{Artifact, ArtifactName, ConfigError, Eval, Fingerprint, Profile, RepoConfig};
 
 mod human;
 mod instruction;
@@ -144,8 +144,8 @@ pub fn artifact_scope<'a>(config: &'a RepoConfig, roots: &[&str]) -> Result<Scop
         if artifacts.insert(id.as_str(), artifact).is_some() {
             continue;
         }
-        pending.extend(artifact.children.values().map(String::as_str));
-        pending.extend(artifact.mounts.values().map(String::as_str));
+        pending.extend(artifact.children.values().map(ArtifactName::as_str));
+        pending.extend(artifact.mounts.values().map(ArtifactName::as_str));
     }
     Ok(Scope { artifacts })
 }
@@ -251,7 +251,7 @@ fn executable_spelling(
 
 pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, ScopeError> {
     let roots: Vec<_> = std::iter::once(eval.target.as_str())
-        .chain(eval.deps.iter().map(String::as_str))
+        .chain(eval.deps.iter().map(ArtifactName::as_str))
         .collect();
     artifact_scope(config, &roots)
 }
@@ -278,17 +278,22 @@ pub enum InstructionPart {
 }
 
 /// Presentation tokens only: never expand content or mutate the authored payload.
+/// The name of an Artifact found in the workspace, whose declaration was validated.
+fn declared_name(name: &str) -> ArtifactName {
+    name.parse().expect("declared Artifact names are valid")
+}
+
 pub fn parse_artifact_instruction(
     source: &str,
     scope: &Scope<'_>,
-    references: &BTreeMap<String, String>,
+    references: &BTreeMap<String, ArtifactName>,
 ) -> Vec<InstructionPart> {
     let mut parts = Vec::new();
     let mut start = 0;
     for reference in instruction::references(source) {
         let id = references
             .get(reference.name)
-            .map_or(reference.name, String::as_str);
+            .map_or(reference.name, ArtifactName::as_str);
         if !scope.artifacts.contains_key(id) {
             continue;
         }
@@ -358,7 +363,7 @@ fn reference_target<'a>(
         .artifacts
         .get(owner)
         .ok_or_else(|| ScopeError(format!("Unknown Artifact: {owner}")))?;
-    let target = artifact.mounts.get(name).map_or(name, String::as_str);
+    let target = artifact.mounts.get(name).map_or(name, ArtifactName::as_str);
     config
         .artifacts
         .get_key_value(target)
@@ -474,8 +479,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         }
         for (path, source) in &artifact.children {
             relations.push(Relation {
-                source: source.clone(),
-                target: id.clone(),
+                source: source.to_string(),
+                target: id.to_string(),
                 kind: RelationKind::Child { path: path.clone() },
             });
         }
@@ -512,8 +517,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 }
             }
             relations.push(Relation {
-                source: source.clone(),
-                target: id.clone(),
+                source: source.to_string(),
+                target: id.to_string(),
                 kind: RelationKind::Mount {
                     alias: alias.clone(),
                 },
@@ -545,7 +550,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             let location = scope
                 .resolve_path(id, input)
                 .map_err(|failure| error(failure.0))?;
-            if location.artifact_id != *id {
+            if location.artifact_id.as_str() != id.as_str() {
                 return Err(error(format!(
                     "{input} belongs to Artifact {}; dependencies come from children, mounts and references.",
                     location.artifact_id
@@ -589,9 +594,9 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 }
                 relations.push(Relation {
                     source: source.to_owned(),
-                    target: eval.target.clone(),
+                    target: eval.target.to_string(),
                     kind: RelationKind::Dependency {
-                        eval_id: eval.id.clone(),
+                        eval_id: eval.id.to_string(),
                         name: name.clone(),
                     },
                 });
@@ -611,7 +616,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     .map_err(|failure| error(&["payload", "instruction"], failure))?;
             }
             if references
-                .insert(name.to_owned(), source.to_owned())
+                .insert(name.to_owned(), declared_name(source))
                 .is_some()
             {
                 continue;
@@ -620,9 +625,9 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 deps.insert(source.to_owned());
                 relations.push(Relation {
                     source: source.to_owned(),
-                    target: eval.target.clone(),
+                    target: eval.target.to_string(),
                     kind: RelationKind::Instruction {
-                        eval_id: eval.id.clone(),
+                        eval_id: eval.id.to_string(),
                         name: name.to_owned(),
                     },
                 });
@@ -643,9 +648,9 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     deps.insert(source.to_owned());
                     relations.push(Relation {
                         source: source.to_owned(),
-                        target: eval.target.clone(),
+                        target: eval.target.to_string(),
                         kind: RelationKind::Argument {
-                            eval_id: eval.id.clone(),
+                            eval_id: eval.id.to_string(),
                             index,
                             name: reference.name.to_owned(),
                             path: reference.path.to_owned(),
@@ -654,7 +659,10 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 }
             }
         }
-        resolved.push((references, deps.into_iter().collect()));
+        resolved.push((
+            references,
+            deps.iter().map(|dep| declared_name(dep)).collect(),
+        ));
     }
     for (eval, (references, deps)) in config.evals.iter_mut().zip(resolved) {
         eval.references = references;

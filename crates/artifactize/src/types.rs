@@ -75,6 +75,41 @@ macro_rules! identity {
                 self.0.fmt(f)
             }
         }
+        impl PartialEq<str> for $name {
+            fn eq(&self, other: &str) -> bool {
+                self.0 == other
+            }
+        }
+        impl PartialEq<&str> for $name {
+            fn eq(&self, other: &&str) -> bool {
+                self.0 == *other
+            }
+        }
+        impl PartialEq<String> for $name {
+            fn eq(&self, other: &String) -> bool {
+                &self.0 == other
+            }
+        }
+        impl PartialEq<$name> for String {
+            fn eq(&self, other: &$name) -> bool {
+                *self == other.0
+            }
+        }
+        impl PartialEq<$name> for str {
+            fn eq(&self, other: &$name) -> bool {
+                self == other.0
+            }
+        }
+        impl PartialEq<$name> for &str {
+            fn eq(&self, other: &$name) -> bool {
+                *self == other.0
+            }
+        }
+        impl Borrow<String> for $name {
+            fn borrow(&self) -> &String {
+                &self.0
+            }
+        }
         impl ToSql for $name {
             fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
                 self.0.to_sql()
@@ -90,6 +125,16 @@ macro_rules! identity {
         }
     };
 }
+/// An Artifact name or a local Eval id: `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`.
+fn name(value: &str) -> bool {
+    crate::config::identifier(value, "").is_ok()
+}
+
+identity!(ArtifactName, name);
+// A workspace-qualified Eval id: the Artifact name, `/`, and the Eval's local id.
+identity!(EvalId, |value: &str| value
+    .split_once('/')
+    .is_some_and(|(artifact, eval)| name(artifact) && name(eval)));
 identity!(RunId, segment);
 identity!(RequestId, segment);
 // Stored mirrors predate typed identities and can be 207 bytes: the unchanged

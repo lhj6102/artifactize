@@ -360,7 +360,7 @@ impl Scheduler<'_, '_> {
             if !self.cancellation.is_cancelled() {
                 let recorded = self.run.evidence.len();
                 for eval in &self.config.evals {
-                    if evidence.contains_key(&eval.id) {
+                    if evidence.contains_key(eval.id.as_str()) {
                         continue;
                     }
                     let index = self
@@ -377,11 +377,11 @@ impl Scheduler<'_, '_> {
                         continue;
                     }
                     if let Err(error) = cache::validate_file_inputs(&self.config, eval) {
-                        evidence.insert(eval.id.clone(), Evidence::OperationalError);
+                        evidence.insert(eval.id.to_string(), Evidence::OperationalError);
                         if index.is_none() && saved_evals.contains(eval.id.as_str()) {
                             self.run
                                 .evidence
-                                .insert(eval.id.clone(), crate::types::RequestStatus::Error);
+                                .insert(eval.id.to_string(), crate::types::RequestStatus::Error);
                         }
                         if let Some(index) = index {
                             let request = &mut self.requests[index];
@@ -398,10 +398,10 @@ impl Scheduler<'_, '_> {
                         && let Some(execution) = self.receipts.cached_execution(&key.value).await?
                     {
                         let verdict = execution.verdict().expect("completed cache entry");
-                        evidence.insert(eval.id.clone(), Evidence::Current(verdict));
+                        evidence.insert(eval.id.to_string(), Evidence::Current(verdict));
                         if index.is_none() && saved_evals.contains(eval.id.as_str()) {
                             self.run.evidence.insert(
-                                eval.id.clone(),
+                                eval.id.to_string(),
                                 match verdict {
                                     Verdict::Green => crate::types::RequestStatus::Green,
                                     Verdict::Red => crate::types::RequestStatus::Red,

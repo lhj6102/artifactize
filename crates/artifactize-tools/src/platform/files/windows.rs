@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn directory_records_drain_then_continue_and_malformed_record_ends_iteration() {
         use super::super::directory_scan::{DirectoryScan, Query};
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_os::tempdir();
         let handle = open_directory(directory.path()).unwrap();
         let mut reader = ReadDir {
             directory: &handle,

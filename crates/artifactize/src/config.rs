@@ -5,6 +5,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
+
+pub use crate::types::{ArtifactName, EvalId};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
@@ -258,9 +260,9 @@ pub struct EvalPayload {
 /// `[evals.<id>]` table, validated when the declaration is read.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
-pub struct EvalId(String);
+pub struct LocalEvalId(String);
 
-impl std::str::FromStr for EvalId {
+impl std::str::FromStr for LocalEvalId {
     type Err = String;
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         identifier(value, "Eval id")?;
@@ -268,26 +270,26 @@ impl std::str::FromStr for EvalId {
     }
 }
 
-impl EvalId {
+impl LocalEvalId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
 
-impl PartialEq<&str> for EvalId {
+impl PartialEq<&str> for LocalEvalId {
     fn eq(&self, other: &&str) -> bool {
         self.0 == *other
     }
 }
 
-impl std::ops::Deref for EvalId {
+impl std::ops::Deref for LocalEvalId {
     type Target = str;
     fn deref(&self) -> &str {
         &self.0
     }
 }
 
-impl std::fmt::Display for EvalId {
+impl std::fmt::Display for LocalEvalId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
     }
@@ -296,7 +298,7 @@ impl std::fmt::Display for EvalId {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvalDeclaration {
-    pub id: EvalId,
+    pub id: LocalEvalId,
     pub title: String,
     pub profile: Profile,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -326,7 +328,7 @@ struct EvalFields {
 
 impl EvalDeclaration {
     /// Check the fields of the `[evals.<id>]` table that every profile needs together.
-    fn new(id: EvalId, fields: EvalFields) -> Result<Self, String> {
+    fn new(id: LocalEvalId, fields: EvalFields) -> Result<Self, String> {
         if matches!(fields.profile, Profile::Dependency { .. }) {
             if fields.payload.is_some()
                 || fields.pass_schema.is_some()
@@ -822,7 +824,7 @@ pub use artifactize_tools::scope::ArtifactKind;
 
 /// Child paths or mount aliases with their target Artifacts as tool-side IDs.
 fn tool_ids(
-    targets: &BTreeMap<String, String>,
+    targets: &BTreeMap<String, ArtifactName>,
 ) -> BTreeMap<String, artifactize_tools::scope::ArtifactId> {
     targets
         .iter()
@@ -835,11 +837,11 @@ fn tool_ids(
 pub struct Artifact {
     pub path: PathBuf,
     pub kind: ArtifactKind,
-    pub children: BTreeMap<String, String>,
-    pub name: String,
+    pub children: BTreeMap<String, ArtifactName>,
+    pub name: ArtifactName,
     pub tags: Vec<String>,
     pub views: Views,
-    pub mounts: BTreeMap<String, String>,
+    pub mounts: BTreeMap<String, ArtifactName>,
     pub basis: Option<bool>,
     pub fingerprint: Option<Fingerprint>,
     pub review_policy: Option<ReviewPolicy>,
@@ -850,7 +852,7 @@ impl Artifact {
         artifactize_tools::scope::Artifact {
             path: self.path.clone(),
             kind: self.kind,
-            name: self.name.clone(),
+            name: self.name.to_string(),
             children: tool_ids(&self.children),
             mounts: tool_ids(&self.mounts),
         }
@@ -885,10 +887,10 @@ impl Artifact {
 #[derive(Debug, Serialize)]
 pub struct Eval {
     /// Workspace-qualified id; declaration.id remains the owner's local id.
-    pub id: String,
-    pub target: String,
-    pub references: BTreeMap<String, String>,
-    pub deps: Vec<String>,
+    pub id: EvalId,
+    pub target: ArtifactName,
+    pub references: BTreeMap<String, ArtifactName>,
+    pub deps: Vec<ArtifactName>,
     pub declaration: EvalDeclaration,
     /// The `profileVariants` entry selected for this execution, if any: an execution option,
     /// recorded with results but never part of the saved declaration.
@@ -906,7 +908,7 @@ pub enum ReviewRequirement {
 #[derive(Debug)]
 pub struct RepoConfig {
     pub root: PathBuf,
-    pub artifacts: BTreeMap<String, Artifact>,
+    pub artifacts: BTreeMap<ArtifactName, Artifact>,
     pub evals: Vec<Eval>,
     pub relations: Vec<crate::scope::Relation>,
 }
@@ -988,7 +990,10 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 let child = child
                     .to_str()
                     .ok_or_else(|| ConfigError::new(&file, "Artifact paths must be UTF-8."))?;
-                parent.children.insert(child.to_owned(), name.clone());
+                let name = name
+                    .parse()
+                    .map_err(|error: String| ConfigError::declaration(&file, &["name"], error))?;
+                parent.children.insert(child.to_owned(), name);
             }
             insert_artifact(
                 &mut config,
@@ -1165,6 +1170,9 @@ fn insert_artifact(
         fingerprint,
         review_policy,
     } = declaration;
+    let name: ArtifactName = name
+        .parse()
+        .map_err(|error: String| ConfigError::declaration(file, &["name"], error))?;
     if config.artifacts.contains_key(&name) {
         return Err(ConfigError::declaration(
             file,
@@ -1174,7 +1182,9 @@ fn insert_artifact(
     }
     for declaration in evals {
         config.evals.push(Eval {
-            id: format!("{name}/{}", declaration.id),
+            id: format!("{name}/{}", declaration.id)
+                .parse()
+                .expect("an Artifact name and a local Eval id form an Eval id"),
             target: name.clone(),
             references: BTreeMap::new(),
             deps: Vec::new(),
@@ -1191,7 +1201,15 @@ fn insert_artifact(
             name,
             tags,
             views,
-            mounts,
+            mounts: mounts
+                .into_iter()
+                .map(|(alias, target)| {
+                    target
+                        .parse()
+                        .map(|target| (alias, target))
+                        .map_err(|error: String| ConfigError::declaration(file, &["mounts"], error))
+                })
+                .collect::<Result<_, _>>()?,
             basis,
             fingerprint,
             review_policy,

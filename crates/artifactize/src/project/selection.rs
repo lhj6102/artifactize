@@ -9,7 +9,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{Eval, RepoConfig, identifier},
+    config::{ArtifactName, Eval, RepoConfig, identifier},
     graph::Graph,
 };
 
@@ -62,7 +62,7 @@ impl Selection {
                 result.evals.extend(&config.evals);
                 result
                     .roots
-                    .extend(config.artifacts.keys().map(String::as_str));
+                    .extend(config.artifacts.keys().map(ArtifactName::as_str));
             }
             Self::Artifact { artifact_id } => {
                 result.roots.push(selected_artifact(config, artifact_id)?);
@@ -128,7 +128,7 @@ impl Selection {
                     eval.declaration.profile,
                     crate::config::Profile::Dependency { .. }
                 ) {
-                    let roots: Vec<_> = eval.deps.iter().map(String::as_str).collect();
+                    let roots: Vec<_> = eval.deps.iter().map(ArtifactName::as_str).collect();
                     let required: BTreeSet<_> = graph
                         .dependency_closure(&roots)
                         .map_err(|error| error.to_string())?
@@ -232,7 +232,7 @@ pub fn select_profiles(
         profiles.insert(id.to_owned(), (name.to_owned(), variant.clone()));
     }
     for eval in &mut config.evals {
-        if let Some((name, profile)) = profiles.remove(&eval.id) {
+        if let Some((name, profile)) = profiles.remove(eval.id.as_str()) {
             eval.declaration.profile = profile;
             eval.variant = Some(name);
         }

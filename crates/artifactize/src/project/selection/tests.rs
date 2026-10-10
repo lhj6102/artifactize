@@ -19,7 +19,7 @@ fn eval_ids(selection: &Selection, config: &RepoConfig) -> Vec<String> {
         .unwrap()
         .evals
         .iter()
-        .map(|eval| eval.id.clone())
+        .map(|eval| eval.id.to_string())
         .collect()
 }
 

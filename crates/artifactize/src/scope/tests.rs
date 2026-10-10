@@ -94,13 +94,13 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     assert_eq!(
         config.artifacts["parent"].children,
         BTreeMap::from([
-            ("unmarked/deep".into(), "child".into()),
-            ("unmarked/deeper".into(), "neighbor".into()),
+            ("unmarked/deep".into(), "child".parse().unwrap()),
+            ("unmarked/deeper".into(), "neighbor".parse().unwrap()),
         ])
     );
     assert_eq!(
         config.artifacts["child"].children,
-        BTreeMap::from([("leaf".into(), "leaf".into())])
+        BTreeMap::from([("leaf".into(), "leaf".parse().unwrap())])
     );
     assert_eq!(config.artifacts["parent"].views.agent_tools.len(), 1);
     assert!(config.artifacts["child"].views.agent_tools.is_empty());
@@ -169,9 +169,9 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
     assert_eq!(
         eval.references,
         BTreeMap::from([
-            ("one".into(), "input".into()),
-            ("two".into(), "input".into()),
-            ("review".into(), "review".into()),
+            ("one".into(), "input".parse().unwrap()),
+            ("two".into(), "input".parse().unwrap()),
+            ("review".into(), "review".parse().unwrap()),
         ])
     );
     assert_eq!(eval.deps, ["input"]);

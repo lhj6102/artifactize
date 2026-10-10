@@ -6,7 +6,7 @@ use petgraph::{algo::kosaraju_scc, graph::DiGraph};
 use thiserror::Error;
 
 use crate::{
-    config::{Profile, RepoConfig},
+    config::{ArtifactName, Profile, RepoConfig},
     runtime::Verdict,
 };
 
@@ -141,7 +141,10 @@ impl<'a> Graph<'a> {
             .map(|eval| {
                 (
                     eval.id.as_str(),
-                    eval.deps.iter().map(String::as_str).collect::<Vec<_>>(),
+                    eval.deps
+                        .iter()
+                        .map(ArtifactName::as_str)
+                        .collect::<Vec<_>>(),
                 )
             })
             .collect();

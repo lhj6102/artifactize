@@ -126,11 +126,15 @@ pub async fn status(
         .map_err(|error| error.to_string())?
         .into_iter()
         .collect();
-    let selected_eval_ids: Vec<_> = selected.evals.iter().map(|eval| eval.id.clone()).collect();
+    let selected_eval_ids: Vec<_> = selected
+        .evals
+        .iter()
+        .map(|eval| eval.id.to_string())
+        .collect();
     let included_eval_ids: Vec<_> = selection
         .included_evals(&config, options.recursive)?
         .iter()
-        .map(|eval| eval.id.clone())
+        .map(|eval| eval.id.to_string())
         .collect();
     let state = store::state_dir(state_dir)?;
     let mut latest = store::read_latest_requests(&state, &config.root).await?;
@@ -142,7 +146,7 @@ pub async fn status(
         evidence.extend(
             selected_eval_ids
                 .iter()
-                .map(|id| (id.clone(), Evidence::Stale)),
+                .map(|id| (id.to_string(), Evidence::Stale)),
         );
     }
     let selected_ids: BTreeSet<_> = selected_eval_ids.iter().collect();
@@ -205,7 +209,7 @@ pub async fn status(
     for eval in &config.evals {
         if let Some(Claim::Reuse(execution)) = claim(&eval.id) {
             evidence.insert(
-                eval.id.clone(),
+                eval.id.to_string(),
                 Evidence::Current(execution.verdict().expect("completed cache entry")),
             );
         }
@@ -266,8 +270,8 @@ pub async fn status(
         .filter(|eval| required.contains(&eval.target.as_str()))
     {
         let current = &evaluation.evals[eval.id.as_str()];
-        let selected = selected_ids.contains(&eval.id);
-        let included = included_ids.contains(&eval.id);
+        let selected = selected_ids.contains(&eval.id.to_string());
+        let included = included_ids.contains(&eval.id.to_string());
         let derived = matches!(eval.declaration.profile, Profile::Dependency { .. });
         let force = options.force && selected && !derived;
         let (action, reason) = match current.readiness {
@@ -382,8 +386,8 @@ pub async fn status(
             counts.action(action);
         }
         evals.push(EvalState {
-            id: eval.id.clone(),
-            target: eval.target.clone(),
+            id: eval.id.to_string(),
+            target: eval.target.to_string(),
             title: eval.declaration.title.clone(),
             profile: eval.declaration.profile.clone(),
             selected,
@@ -414,10 +418,10 @@ pub async fn status(
                 })
                 .collect(),
             key: all_keys.get(eval.id.as_str()).map(|key| key.value.clone()),
-            last: latest.remove(&eval.id),
+            last: latest.remove(eval.id.as_str()),
             changes: keys.get(eval.id.as_str()).and_then(|key| {
                 previous
-                    .get(&(eval.id.clone(), key.eval_def_hash.clone()))
+                    .get(&(eval.id.to_string(), key.eval_def_hash.clone()))
                     .map(|execution| {
                         cache::changes(
                             execution,

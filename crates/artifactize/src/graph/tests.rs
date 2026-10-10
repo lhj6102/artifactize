@@ -35,8 +35,8 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
         .unwrap();
         for eval in declaration.evals {
             config.evals.push(Eval {
-                id: format!("{name}/{}", eval.id),
-                target: name.into(),
+                id: format!("{name}/{}", eval.id).parse().unwrap(),
+                target: name.parse().unwrap(),
                 references: BTreeMap::new(),
                 deps: Vec::new(),
                 declaration: eval,
@@ -44,15 +44,19 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
             });
         }
         config.artifacts.insert(
-            name.into(),
+            name.parse().unwrap(),
             Artifact {
                 kind: crate::config::ArtifactKind::Folder,
-                name: name.into(),
+                name: name.parse().unwrap(),
                 tags: declaration.tags,
                 basis: declaration.basis,
                 path: name.into(),
                 children: BTreeMap::new(),
-                mounts: declaration.mounts,
+                mounts: declaration
+                    .mounts
+                    .into_iter()
+                    .map(|(alias, target)| (alias, target.parse().unwrap()))
+                    .collect(),
                 views: declaration.views,
                 fingerprint: declaration.fingerprint,
                 review_policy: declaration.review_policy,
@@ -371,14 +375,14 @@ fn invalid_graph_references_fail_closed() {
             .contains("Unknown relation")
     );
     config.relations.clear();
-    config.evals[0].target = "missing".into();
+    config.evals[0].target = "missing".parse().unwrap();
     assert!(
         Graph::new(&config)
             .unwrap_err()
             .0
             .contains("Unknown Eval target")
     );
-    config.evals[0].target = "a".into();
+    config.evals[0].target = "a".parse().unwrap();
     config.evals[1].id = config.evals[0].id.clone();
     assert!(
         Graph::new(&config)

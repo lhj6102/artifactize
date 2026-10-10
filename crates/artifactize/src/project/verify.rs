@@ -192,8 +192,8 @@ pub async fn verify(
                 .parse()
                 .expect("generated request id is a safe segment"),
             run_id: run.id.clone(),
-            eval_id: eval.id.clone(),
-            target: eval.target.clone(),
+            eval_id: eval.id.to_string(),
+            target: eval.target.to_string(),
             title: eval.declaration.title.clone(),
             profile: (&eval.declaration.profile).into(),
             requested_profile: (&eval.declaration.profile).into(),
@@ -212,7 +212,7 @@ pub async fn verify(
             human_definition: None,
             payload: (&eval.declaration.payload).into(),
             references: json!(eval.references),
-            deps: eval.deps.clone(),
+            deps: eval.deps.iter().map(ToString::to_string).collect(),
             force: options.force
                 && selected_ids.contains(eval.id.as_str())
                 && !matches!(

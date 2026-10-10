@@ -19,7 +19,7 @@ pub use crate::store::history::{Entry, list, remove, show};
 pub(crate) use content::{HASH_BUFFER_BYTES, ignore_patterns};
 
 use crate::{
-    config::{Eval, EvalDeclaration, Fingerprint, Profile, RepoConfig},
+    config::{ArtifactName, Eval, EvalDeclaration, Fingerprint, Profile, RepoConfig},
     process, runtime, scope,
     store::{Execution, Request},
     workspace,
@@ -132,9 +132,9 @@ pub struct Changes {
 pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a str> {
     let target = &config.artifacts[&eval.target];
     std::iter::once(eval.target.as_str())
-        .chain(target.mounts.values().map(String::as_str))
-        .chain(target.children.values().map(String::as_str))
-        .chain(eval.deps.iter().map(String::as_str))
+        .chain(target.mounts.values().map(ArtifactName::as_str))
+        .chain(target.children.values().map(ArtifactName::as_str))
+        .chain(eval.deps.iter().map(ArtifactName::as_str))
         .collect()
 }
 

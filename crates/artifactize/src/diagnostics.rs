@@ -166,10 +166,10 @@ pub async fn check_tools(
     }
     let mut catalogs = Vec::new();
     if options.artifact.is_some() || options.audience.is_some() || options.tool.is_some() {
-        let artifacts: Vec<_> = options
-            .artifact
-            .as_ref()
-            .map_or_else(|| config.artifacts.keys().collect(), |id| vec![id]);
+        let artifacts: Vec<_> = options.artifact.as_ref().map_or_else(
+            || config.artifacts.keys().map(|name| name.as_str()).collect(),
+            |id| vec![id.as_str()],
+        );
         for artifact in artifacts {
             for audience in [Audience::Agent, Audience::Human] {
                 if options.audience.is_some_and(|a| a != audience) {
@@ -183,7 +183,7 @@ pub async fn check_tools(
                         human::Registry::for_artifact(&config, artifact).map(Catalog::Human)
                     }
                 };
-                catalogs.push((None, Some(artifact.as_str()), audience, catalog));
+                catalogs.push((None, Some(artifact), audience, catalog));
             }
         }
     } else {
