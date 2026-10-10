@@ -438,7 +438,7 @@ async fn content(
                 .map(|(path, file)| {
                     (
                         path.clone(),
-                        content::hex(&file[..MANIFEST_DIGEST_PREFIX_BYTES])
+                        content::hex(&file.as_bytes()[..MANIFEST_DIGEST_PREFIX_BYTES])
                             .parse()
                             .expect("eight-byte SHA-256 prefix"),
                     )

@@ -26,7 +26,7 @@ impl Fixture {
             repo.join("index.artf"),
             json!({
                 "name":"parent","fingerprint":false,"evals":[{"id":"check","title":"Dependent",
-                    "profile":{"kind":"runtime","command":"true","args":[]},
+                    "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
                     "payload":{"instruction":"Check child."}}]
             })
             .to_string(),
@@ -39,10 +39,10 @@ impl Fixture {
                     "inspect":{
                         "description":"Inspect",
                         "kind":"output",
-                        "command":"cat",
+                        "command":support::os::cat_program(),
                         "args":["fingerprint"],
                     },
-                    "open":{"description":"Launch","kind":"launch","command":"true","args":[]},
+                    "open":{"description":"Launch","kind":"launch","command":support::os::true_program(),"args":[]},
                 },
             },
             "evals":[
@@ -67,7 +67,8 @@ impl Fixture {
             ],
         });
         if fingerprint {
-            declaration["fingerprint"] = json!({"script":{"command":"cat","args":["fingerprint"]}});
+            declaration["fingerprint"] =
+                json!({"script":{"command":support::os::cat_program(),"args":["fingerprint"]}});
         } else {
             declaration["fingerprint"] = json!(false);
         }
@@ -390,7 +391,7 @@ fn fingerprint_false_submission_from_another_process_continues_the_same_run() {
         sibling.join("index.artf"),
         json!({
             "name":"sibling","fingerprint":false,"evals":[{"id":"check","title":"Once",
-            "profile":{"kind":"runtime","command":"true","args":[]},
+            "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
             "payload":{"instruction":"Run before the Human finishes."}}]
         })
         .to_string(),

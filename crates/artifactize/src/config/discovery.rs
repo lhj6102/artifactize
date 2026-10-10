@@ -1,7 +1,7 @@
 //! Deterministic marker discovery through the no-follow platform file interface.
 
 use super::*;
-use std::{fs, io::Read};
+use std::io::Read;
 
 struct DiscoveryEntry {
     path: PathBuf,
@@ -311,7 +311,7 @@ fn insert_artifact(
 /// discovery, such as test fixtures or example projects with their own `index.artf`.
 fn discovery_ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigError> {
     let legacy = root.join(".artifactizeignore");
-    if fs::symlink_metadata(&legacy).is_ok() {
+    if crate::platform::marker_metadata(&legacy).is_ok() {
         return Err(ConfigError::new(
             legacy,
             ".artifactizeignore was renamed to .artfignore.",

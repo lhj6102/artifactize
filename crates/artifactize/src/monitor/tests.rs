@@ -19,8 +19,8 @@ pub(crate) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
         "evalId":eval,
         "target":eval.split('/').next(),
         "title":"Title",
-        "profile":{"kind":"runtime","command":"true","args":[]},
-        "requestedProfile":{"kind":"runtime","command":"true","args":[]},
+        "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
+        "requestedProfile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
         "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "payload":{"instruction":"Check."},
         "references":{},
@@ -198,16 +198,19 @@ fn live_progress_tree_and_details_are_pure_projections() {
     assert_eq!(
         lines,
         [
-            "◇ lib  basis",
-            "- dep  not in this Run  0/1",
-            "- check  not in this Run",
-            "✓ p1  1/1",
-            "✓ check  GREEN  3s",
-            "! p2  ERROR: check  0/1",
-            "! check  ERROR · [SPAWN] spawn failed  2s",
-            "◐ app  in progress: check, review  0/2",
-            "◐ check  running · runtime true  1m 05s",
-            "? review  Human sign-off · claimed by alice  1m 05s",
+            "◇ lib  basis".to_owned(),
+            "- dep  not in this Run  0/1".to_owned(),
+            "- check  not in this Run".to_owned(),
+            "✓ p1  1/1".to_owned(),
+            "✓ check  GREEN  3s".to_owned(),
+            "! p2  ERROR: check  0/1".to_owned(),
+            "! check  ERROR · [SPAWN] spawn failed  2s".to_owned(),
+            "◐ app  in progress: check, review  0/2".to_owned(),
+            format!(
+                "◐ check  running · runtime {}  1m 05s",
+                crate::test_os::true_program()
+            ),
+            "? review  Human sign-off · claimed by alice  1m 05s".to_owned(),
         ]
     );
     // One row per eval: no relation rows, no `← deps`.

@@ -65,7 +65,7 @@ fn pin(path: &Path) -> Result<String, String> {
     let mut bytes = 0;
     if kind == platform::FileKind::File {
         let file = platform::open_regular(path).map_err(|e| e.to_string())?;
-        return Ok(hex(&hash_file(file, &mut bytes)?));
+        return Ok(hex(hash_file(file, &mut bytes)?.as_bytes()));
     }
     if kind != platform::FileKind::Directory {
         return Err("execution paths must be regular files or directories.".into());
@@ -79,7 +79,7 @@ fn pin(path: &Path) -> Result<String, String> {
         digest.update([kind]);
         digest.update(relative.as_bytes());
         digest.update([0]);
-        digest.update(entry);
+        digest.update(entry.as_bytes());
     }
     Ok(hex(&digest.finalize()))
 }
@@ -91,7 +91,7 @@ fn walk(
     directory: &File,
     path: &Path,
     relative: &str,
-    entries: &mut Vec<(String, u8, [u8; 32])>,
+    entries: &mut Vec<(String, u8, crate::types::Sha256Bytes)>,
     bytes: &mut u64,
 ) -> Result<(), String> {
     for entry in platform::read_dir(directory).map_err(|e| e.to_string())? {
@@ -121,7 +121,11 @@ fn walk(
                 let target = platform::link_target(&path.join(&name)).map_err(|e| e.to_string())?;
                 target.to_str().ok_or("execution paths must be UTF-8.")?;
                 let target = platform::path_text(&target);
-                entries.push((label, b'l', Sha256::digest(target.as_bytes()).into()));
+                entries.push((
+                    label,
+                    b'l',
+                    crate::types::Sha256Bytes::of(target.as_bytes()),
+                ));
             }
             platform::FileKind::Other => {
                 return Err(format!(
@@ -133,13 +137,15 @@ fn walk(
     Ok(())
 }
 
-fn hash_file(mut file: File, bytes: &mut u64) -> Result<[u8; 32], String> {
+fn hash_file(mut file: File, bytes: &mut u64) -> Result<crate::types::Sha256Bytes, String> {
     let mut digest = Sha256::new();
     let mut buffer = vec![0; crate::cache::HASH_BUFFER_BYTES];
     loop {
         let read = file.read(&mut buffer).map_err(|e| e.to_string())?;
         if read == 0 {
-            return Ok(digest.finalize().into());
+            return Ok(crate::types::Sha256Bytes::from_digest(
+                digest.finalize().into(),
+            ));
         }
         *bytes += read as u64;
         if *bytes > MAX_BYTES {

@@ -2,6 +2,7 @@
 
 use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::{borrow::Borrow, fmt, ops::Deref, str::FromStr};
 
 mod timestamp;
@@ -190,6 +191,28 @@ identity!(DefinitionHash, sha256_hex);
 // State UUIDs and legacy session state identifiers share the saved segment domain.
 identity!(StateId, segment);
 identity!(Sha256Digest, sha256_hex);
+
+/// A raw SHA-256 digest: 32 bytes, kept binary for streaming hash composition and byte
+/// slicing. Hex-encode into a [`Sha256Digest`] or [`DigestPrefix`] to store or show it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Sha256Bytes([u8; 32]);
+
+impl Sha256Bytes {
+    /// The SHA-256 digest of `bytes`.
+    pub fn of(bytes: &[u8]) -> Self {
+        Self(sha2::Sha256::digest(bytes).into())
+    }
+
+    /// From an already-finalized digest, such as after streaming `Sha256::update`.
+    pub fn from_digest(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 // Compact diagnostic digests are the unchanged first eight bytes of a SHA-256.
 identity!(DigestPrefix, |value: &str| value.len()
     == DIGEST_PREFIX_HEX_BYTES

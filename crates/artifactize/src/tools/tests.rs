@@ -6,7 +6,7 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::config::{parse_declaration, read_workspace_config};
-use crate::test_os::bin;
+use crate::test_os::printf_program;
 
 struct Fixture {
     directory: TempDir,
@@ -100,10 +100,10 @@ fn flat_declarations_validate_strictly_and_inertly() {
     }
     for invalid in [
         json!({"builtin":"unknown"}),
-        json!({"builtin":"read","command":"cat"}),
+        json!({"builtin":"read","command":crate::test_os::cat_program()}),
         json!({"builtin":"read","description":"   "}),
         json!({"builtin":"read","description":"Read {other}"}),
-        json!({"metadata":{"description":"Old"},"script":{"command":"cat","args":[]}}),
+        json!({"metadata":{"description":"Old"},"script":{"command":crate::test_os::cat_program(),"args":[]}}),
     ] {
         assert!(parse(invalid.clone()).is_err(), "{invalid}");
     }
@@ -454,7 +454,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
         "Review.",
     );
     assert_eq!(text(&fixture.call(json!({})).await), "from PATH");
-    tool["command"] = json!(bin("/usr/bin/printf"));
+    tool["command"] = json!(printf_program());
     tool["args"] = json!(["%s", "from PATH"]);
     write_artifact(&fixture.repo, "a", json!({"inspect":tool}), "Review.");
     assert_eq!(text(&fixture.call(json!({})).await), "from PATH");

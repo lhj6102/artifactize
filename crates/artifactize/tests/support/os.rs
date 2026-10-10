@@ -77,6 +77,11 @@ pub fn printf_program() -> String {
     bin("/usr/bin/printf")
 }
 
+/// A program that creates a file or updates its modified time, resolved through [`bin`].
+pub fn touch_program() -> String {
+    bin("/usr/bin/touch")
+}
+
 /// Whether tests run the stand-ins `bin` names.
 pub fn stand_ins() -> bool {
     cfg!(windows) || std::env::var_os("ARTIFACTIZE_TEST_STAND_INS").is_some()
@@ -307,6 +312,24 @@ pub fn leads_group(pid: u32) -> bool {
 pub fn leads_session(pid: u32) -> bool {
     // SAFETY: getsid only queries a process.
     unsafe { libc::getsid(pid as i32) == pid as i32 }
+}
+
+/// Block until `pid` exits, without reaping it: `waitid` with `WNOWAIT`, so a caller can
+/// still probe the zombie afterward.
+#[cfg(target_os = "macos")]
+pub fn wait_for_zombie(pid: u32) {
+    let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::uninit();
+    // SAFETY: waitid writes a full siginfo_t for our child; WNOWAIT synchronizes on exit
+    // while deliberately keeping the zombie unreaped.
+    let result = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            pid,
+            info.as_mut_ptr(),
+            libc::WEXITED | libc::WNOWAIT,
+        )
+    };
+    assert_eq!(result, 0, "{}", std::io::Error::last_os_error());
 }
 
 /// A pipe named like the one Git Bash's mintty hands a program: the writer and the reader,

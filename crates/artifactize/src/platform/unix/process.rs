@@ -329,22 +329,9 @@ mod tests {
         gate.admit().unwrap();
         drop(gate);
         let mut child = spawning.await.unwrap().unwrap();
-        tokio::task::spawn_blocking(move || {
-            let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::uninit();
-            // SAFETY: waitid writes a full siginfo_t for our child; WNOWAIT
-            // synchronizes on exit while deliberately keeping the zombie unreaped.
-            let result = unsafe {
-                libc::waitid(
-                    libc::P_PID,
-                    pid,
-                    info.as_mut_ptr(),
-                    libc::WEXITED | libc::WNOWAIT,
-                )
-            };
-            assert_eq!(result, 0, "{}", io::Error::last_os_error());
-        })
-        .await
-        .unwrap();
+        tokio::task::spawn_blocking(move || crate::test_os::wait_for_zombie(pid))
+            .await
+            .unwrap();
         assert!(process_group_exited(pid).unwrap());
         // Exercise the real EPERM path, not an injected error or a delay.
         assert_eq!(

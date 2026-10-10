@@ -453,7 +453,8 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
         "${missing}"
     ]);
     let mut declared = eval("No instruction dependencies.");
-    declared["profile"] = json!({"kind":"runtime","command":"echo","args":args});
+    declared["profile"] =
+        json!({"kind":"runtime","command":crate::test_os::echo_program(),"args":args});
     fixture.artifact(
         "review",
         json!({"name":"review","mounts":{"source":"input"},"evals":[declared]}),
@@ -492,7 +493,7 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
         ]
     );
     assert_eq!(&resolved[4..], &args[4..]);
-    assert_eq!(command, "echo");
+    assert_eq!(*command, crate::test_os::echo_program());
     let restricted = artifact_scope(&config, &["child"]).unwrap();
     assert!(resolve_argv(&config, &restricted, "review", args).is_err());
 }
@@ -501,7 +502,8 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
 fn argument_only_global_reference_is_an_edge_even_without_a_mount() {
     let fixture = Fixture::new();
     let mut declared = eval("Inspect.");
-    declared["profile"] = json!({"kind":"runtime","command":"cat","args":["{input}/file"]});
+    declared["profile"] =
+        json!({"kind":"runtime","command":crate::test_os::cat_program(),"args":["{input}/file"]});
     fixture.artifact("review", json!({"name":"review","evals":[declared]}));
     fixture.artifact("data", json!({"name":"input"}));
     let config = fixture.config();
@@ -527,7 +529,8 @@ fn invalid_runtime_references_fail_statically_but_literals_stay_literal() {
         "--input={review}/a\\b",
     ] {
         let mut declared = eval("Inspect.");
-        declared["profile"] = json!({"kind":"runtime","command":"echo","args":[argument]});
+        declared["profile"] =
+            json!({"kind":"runtime","command":crate::test_os::echo_program(),"args":[argument]});
         fixture.artifact("review", json!({"name":"review","evals":[declared]}));
         assert!(read_workspace_config(&fixture.0).is_err(), "{argument}");
     }

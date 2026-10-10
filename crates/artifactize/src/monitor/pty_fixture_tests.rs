@@ -42,7 +42,7 @@ async fn live_session_pty_fixture() {
                     "deps":[],
                     "declaration":{
                         "title":"Fixture Runtime",
-                        "profile":{"kind":"runtime","command":"true","args":[]},
+                        "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
                         "payload":{"instruction":"fixture"},
                     },
                 },

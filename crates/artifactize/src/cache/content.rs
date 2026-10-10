@@ -37,7 +37,7 @@ const BUILTIN_IGNORES: [&str; 5] = [".git", "__pycache__/", "*.pyc", "target/", 
 /// Sorted owner-relative file paths with their SHA-256, and one digest over all of them.
 pub(super) struct Files {
     pub digest: crate::types::Sha256Digest,
-    pub files: BTreeMap<String, [u8; 32]>,
+    pub files: BTreeMap<String, crate::types::Sha256Bytes>,
 }
 
 /// Validate declared `fingerprint.ignore` globs, which always exclude like the built-ins.
@@ -108,7 +108,7 @@ struct Walk {
 
 #[derive(Default)]
 struct State {
-    files: BTreeMap<String, [u8; 32]>,
+    files: BTreeMap<String, crate::types::Sha256Bytes>,
     entries: usize,
     bytes: u64,
 }
@@ -173,7 +173,7 @@ impl Walk {
         for (path, file) in &state.files {
             digest.update(path.as_bytes());
             digest.update([0]);
-            digest.update(file);
+            digest.update(file.as_bytes());
         }
         Ok(Files {
             digest: hex(&digest.finalize())
@@ -329,9 +329,10 @@ fn hash_file(mut file: File, path: &str, state: &mut State) -> Result<(), String
         }
         digest.update(&buffer[..read]);
     }
-    state
-        .files
-        .insert(path.to_owned(), digest.finalize().into());
+    state.files.insert(
+        path.to_owned(),
+        crate::types::Sha256Bytes::from_digest(digest.finalize().into()),
+    );
     Ok(())
 }
 

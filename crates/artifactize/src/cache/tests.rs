@@ -279,7 +279,7 @@ fn an_eval_depends_on_its_target_mounts_children_and_named_artifacts_only() {
                 {
                     "id":"named",
                     "title":"Named",
-                    "profile":{"kind":"runtime","command":"cat","args":["{d}/x"]},
+                    "profile":{"kind":"runtime","command":crate::test_os::cat_program(),"args":["{d}/x"]},
                     "payload":{"instruction":"Compare with {e}."},
                 },
             ],

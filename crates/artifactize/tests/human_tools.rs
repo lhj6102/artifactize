@@ -8,17 +8,12 @@ use artifactize::{
     },
 };
 use serde_json::{Value, json};
-use support::os::{bin, canonical};
+use support::os::canonical;
 use tokio_util::sync::CancellationToken;
 
 mod support;
 
 fn tool(kind: &str, command: &str, args: &[&str]) -> Value {
-    // The Unix utilities the tools name; elsewhere their Windows stand-ins.
-    let command = match command {
-        "sh" | "printf" | "sleep" | "touch" | "false" => bin(command),
-        other => other.to_owned(),
-    };
     json!({"description":"Inspect {artifactName}","kind":kind,"command":command,"args":args})
 }
 
@@ -127,7 +122,7 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
 #[tokio::test]
 async fn catalog_is_human_only_scoped_and_collision_checked() {
     let repo = support::os::tempdir();
-    let command = tool("output", "printf", &["ok"]);
+    let command = tool("output", &support::os::printf_program(), &["ok"]);
     write_artifact(repo.path(), "root", json!({}), "Review.");
     write_artifact(
         &repo.path().join("a"),
@@ -209,7 +204,7 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     let owner = repo.join("a");
     let command = tool(
         "output",
-        "printf",
+        &support::os::printf_program(),
         &[
             "%s\n",
             "{artifactPath}",
@@ -292,7 +287,7 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
         json!({
             "inspect":tool(
                 "output",
-                "sh",
+                &support::os::shell(),
                 &[
                     "-c",
                     "printf '\\033[31mhello\\033[0m\\000\\t\\n'; printf '\\033[31mproblem\\033[0m\\000' >&2; exit 3",
@@ -341,14 +336,14 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
 #[tokio::test]
 async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     let repo = support::os::tempdir();
-    let mut command = tool("output", "sleep", &["60"]);
+    let mut command = tool("output", &support::os::sleep_program(), &["60"]);
     command["timeout_ms"] = json!(40);
     write_artifact(repo.path(), "a", json!({"inspect":command}), "Review.");
     assert_eq!(text(&call(repo.path()).await), "Human tool timed out.");
     write_artifact(
         repo.path(),
         "a",
-        json!({"inspect":tool("launch", "touch", &["spawned"])}),
+        json!({"inspect":tool("launch", &support::os::touch_program(), &["spawned"])}),
         "Review.",
     );
     let config = read_workspace_config(repo.path()).unwrap();
@@ -372,7 +367,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     write_artifact(
         repo.path(),
         "a",
-        json!({"inspect":tool("launch", "false", &[])}),
+        json!({"inspect":tool("launch", &support::os::false_program(), &[])}),
         "Review.",
     );
     assert_eq!(
@@ -392,7 +387,7 @@ impl Drop for Launched {
 fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
     let repo = support::os::tempdir();
     // Build the Windows stand-ins before the probe needs them.
-    bin("sh");
+    support::os::shell();
     let mut command = Command::new(std::env::current_exe().unwrap());
     support::os::human_environment(&mut command, repo.path());
     let result = command
@@ -476,7 +471,7 @@ async fn human_environment_and_launch_probe() {
     });
     declaration["views"]["human_tools"]["inspect"] = tool(
         "launch",
-        "sh",
+        &support::os::shell(),
         &[
             "-c",
             &format!(

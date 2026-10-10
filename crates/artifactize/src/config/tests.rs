@@ -170,9 +170,12 @@ fn fixed_scripts_preserve_literal_args_but_reject_invalid_process_fields() {
     };
     assert_eq!(serde_json::to_value(actual).unwrap(), args);
     assert_eq!(*timeout_ms, Some(std::time::Duration::from_millis(1000)));
-    let bad_command = eval(json!({"kind": "runtime", "command": "sh\n", "args": []}));
+    let bad_command = eval(
+        json!({"kind": "runtime", "command": format!("{}\n", crate::test_os::shell()), "args": []}),
+    );
     assert!(parse(json!({"name": "a", "evals": [bad_command]})).is_err());
-    let bad_arg = eval(json!({"kind": "runtime", "command": "sh", "args": ["\u{0}"]}));
+    let bad_arg =
+        eval(json!({"kind": "runtime", "command": crate::test_os::shell(), "args": ["\u{0}"]}));
     assert!(parse(json!({"name": "a", "evals": [bad_arg]})).is_err());
     assert!(
         parse(json!({
@@ -197,7 +200,7 @@ fn all_hook_timeouts_are_checked_without_opening_scripts() {
                     "input_schema": {"type": "object"},
                     "timeout_ms": 1000,
                     "protocol": "json",
-                    "command": "sh",
+                    "command": crate::test_os::shell(),
                     "args": ["view.sh"],
                 },
             },
@@ -254,7 +257,7 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
                             "input_schema":{"type":"object"},
                             "protocol":"json",
                             "execution_paths":[path],
-                            "command":"sh",
+                            "command":crate::test_os::shell(),
                             "args":[],
                         },
                     },

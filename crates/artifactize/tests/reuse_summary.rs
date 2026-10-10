@@ -85,7 +85,7 @@ impl Fixture {
             write(
                 &folder,
                 json!({"name":artifact,"evals":[declaration],
-                    "fingerprint":{"script":{"command":"cat","args":["version"]}}}),
+                    "fingerprint":{"script":{"command":support::os::cat_program(),"args":["version"]}}}),
             );
             fs::write(folder.join("version"), format!("{artifact}-{version}\n")).unwrap();
         }

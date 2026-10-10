@@ -339,7 +339,7 @@ fn a_request_waiting_for_a_slot_holds_no_job_slot() {
                 {
                     "id":"run",
                     "title":"Run",
-                    "profile":{"kind":"runtime","command":"true","args":[]},
+                    "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
                     "payload":{"instruction":"Run."},
                 },
             ],

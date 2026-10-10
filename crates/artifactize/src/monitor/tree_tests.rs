@@ -13,7 +13,7 @@ fn now() -> OffsetDateTime {
 
 fn runtime(id: &str) -> Value {
     json!({"id":id,"target":id.split('/').next(),"deps":[],
-        "declaration":{"title":"Title","profile":{"kind":"runtime","command":"true","args":[]}}})
+        "declaration":{"title":"Title","profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]}}})
 }
 
 fn dependency(id: &str, on: &[&str]) -> Value {
@@ -151,7 +151,10 @@ fn own_facts_come_before_dependencies() {
     );
     assert_eq!(
         line(&nodes, "e:code-style/approved"),
-        "◐ approved  running · runtime true  2m 00s"
+        format!(
+            "◐ approved  running · runtime {}  2m 00s",
+            crate::test_os::true_program()
+        )
     );
     let reused = request(
         "cli/follows-style",

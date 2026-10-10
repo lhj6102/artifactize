@@ -20,7 +20,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
                 "basis":null,
                 "fingerprint":{
                     "script":{
-                        "command":"echo",
+                        "command":crate::test_os::echo_program(),
                         "args":["v1"],
                         "files":[],
                         "timeoutMs":null,
@@ -34,7 +34,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
                         "inspect":{
                             "description":"Inspect",
                             "kind":"output",
-                            "command":"cat",
+                            "command":crate::test_os::cat_program(),
                             "args":["file.md"],
                             "futureHumanTool":1,
                         },
@@ -53,7 +53,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
                 "declaration":{
                     "id":"check",
                     "title":"Inspect",
-                    "profile":{"kind":"runtime","command":"true","args":[],"timeoutMs":null},
+                    "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[],"timeoutMs":null},
                     "profileVariants":{},
                     "payload":{"instruction":"Inspect {input}.","owner":[true,null,42]},
                     "passSchema":{"type":"object","properties":{"accepted":{"const":true}}},
@@ -139,7 +139,7 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
         json!({
             "name":"app",
             "views":{"agent_tools":{"read":{"builtin":"read"}}},
-            "fingerprint":{"script":{"command":"echo","args":["v1"]}},
+            "fingerprint":{"script":{"command":crate::test_os::echo_program(),"args":["v1"]}},
             "evals":[
                 {
                     "id":"check",
@@ -240,14 +240,14 @@ async fn saved_definition_timeouts_reject_unrepresentable_writes() {
         "validation":null,
         "definitions":{
             "artifacts":{
-                "app":{"fingerprint":{"script":{"command":"echo","args":[],"timeoutMs":1}}},
+                "app":{"fingerprint":{"script":{"command":crate::test_os::echo_program(),"args":[],"timeoutMs":1}}},
             },
         },
     }))
     .unwrap();
     receipts.create_run(&run, &[]).await.unwrap();
     let wire = json!({
-        "artifacts":{"app":{"fingerprint":{"script":{"command":"echo","args":[],"timeoutMs":1}}}},
+        "artifacts":{"app":{"fingerprint":{"script":{"command":crate::test_os::echo_program(),"args":[],"timeoutMs":1}}}},
     });
     for duration in [
         std::time::Duration::ZERO,

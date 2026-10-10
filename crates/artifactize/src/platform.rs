@@ -223,3 +223,11 @@ pub(crate) fn entry_exists(path: &std::path::Path) -> std::io::Result<bool> {
         Err(error) => Err(error),
     }
 }
+
+/// A no-follow stat of `path`. Unlike [`entry_exists`], this never opens `path`'s parent, so
+/// it still works on a search-only ancestor (executable but unreadable): opening a directory
+/// needs read permission on it, while naming one of its entries by an exact path needs only
+/// search (execute) permission on every ancestor up to it.
+pub(crate) fn marker_metadata(path: &std::path::Path) -> std::io::Result<std::fs::Metadata> {
+    path.symlink_metadata()
+}

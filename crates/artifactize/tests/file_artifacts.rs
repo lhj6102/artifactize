@@ -513,7 +513,7 @@ fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
     fixture.error("files/input.txt.artf", "cannot have a /path suffix");
     fixture.declare(
         "files/input.txt.artf",
-        json!({"name":"file","fingerprint":{"script":{"command":"echo","args":["{file}/sub"]}}}),
+        json!({"name":"file","fingerprint":{"script":{"command":support::os::echo_program(),"args":["{file}/sub"]}}}),
     );
     fixture.error("files/input.txt.artf", "cannot have a /path suffix");
 }
@@ -560,7 +560,7 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
                     "open":{
                         "description":"Open",
                         "kind":"output",
-                        "command":"cat",
+                        "command":support::os::cat_program(),
                         "args":["{artifactPath}/sibling"],
                     },
                 },
@@ -829,7 +829,7 @@ fn json_tool_file_references_reject_suffixes_at_the_declaration() {
                     "inspect":{
                         "description":"Inspect",
                         "protocol":"json",
-                        "command":"cat",
+                        "command":support::os::cat_program(),
                         "args":["{file}/sibling"],
                     },
                 },
@@ -1003,7 +1003,7 @@ fn reuse_key_covers_kinds_of_target_mount_child_and_reference_but_never_paths_or
                 {
                     "id":"check",
                     "title":"Check",
-                    "profile":{"kind":"runtime","command":"true","args":[]},
+                    "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
                     "payload":{"instruction":"Check {reference}."},
                 },
             ],

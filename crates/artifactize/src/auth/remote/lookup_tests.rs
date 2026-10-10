@@ -16,7 +16,7 @@ async fn malformed_lookup_entries_are_typed_errors_next_to_valid_records() {
         "runId":"run-1",
         "requestId":"run-1-1",
         "executionId":"execution-1",
-        "profile":{"kind":"runtime","command":"true","args":[]},
+        "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
         "result":{"verdict":"GREEN"},
         "usage":null,
         "startedAt":"2026-01-01T00:00:00Z",

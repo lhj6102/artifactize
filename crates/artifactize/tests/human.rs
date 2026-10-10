@@ -12,7 +12,7 @@ use artifactize::{
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::{cat_program, false_program, true_program};
 use tokio_util::sync::CancellationToken;
 
 mod support;
@@ -90,10 +90,10 @@ fn write_human(path: &Path, fingerprint: bool) {
                 "inspect":{
                     "description":"Inspect",
                     "kind":"output",
-                    "command":bin("cat"),
+                    "command":cat_program(),
                     "args":["fingerprint"],
                 },
-                "fail":{"description":"Fail","kind":"output","command":bin("false"),"args":[]},
+                "fail":{"description":"Fail","kind":"output","command":false_program(),"args":[]},
             },
             "agent_tools":{"read":{"builtin":"read"}},
         },
@@ -120,7 +120,7 @@ fn write_human(path: &Path, fingerprint: bool) {
     });
     if fingerprint {
         declaration["fingerprint"] =
-            json!({"script":{"command":bin("cat"),"args":["fingerprint"]}});
+            json!({"script":{"command":cat_program(),"args":["fingerprint"]}});
     } else {
         declaration["fingerprint"] = json!(false);
     }
@@ -472,7 +472,7 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
                 {
                     "id":"test",
                     "title":"Dependent",
-                    "profile":{"kind":"runtime","command":"true","args":[]},
+                    "profile":{"kind":"runtime","command":true_program(),"args":[]},
                     "payload":{"instruction":"Check child."},
                 },
             ],

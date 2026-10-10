@@ -51,7 +51,7 @@ fn an_earlier_state_is_refused_and_left_as_it_is() {
                 {
                     "id":"check",
                     "title":"Check",
-                    "profile":{"kind":"runtime","command":"true","args":[]},
+                    "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
                     "payload":{"instruction":"Check."},
                 },
             ],
