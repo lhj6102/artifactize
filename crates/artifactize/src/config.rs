@@ -15,7 +15,8 @@ pub(crate) mod validation;
 pub use stored::{Field, StoredPayload, StoredProfile};
 
 pub use tools::{
-    AgentTool, Builtin, BuiltinTool, CommandTool, HumanTool, HumanToolKind, ToolProtocol,
+    AgentTool, Builtin, BuiltinTool, CommandTool, HumanBuiltinTool, HumanCommandTool, HumanTool,
+    HumanToolKind, ToolProtocol,
 };
 
 use location::Location;
@@ -716,6 +717,20 @@ pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
                     tool_location.deserialize::<CommandTool>()?;
                 }
             }
+        }
+    }
+    if let Some(tools) = document
+        .get_ref()
+        .get("views")
+        .and_then(|views| views.get_ref().get("human_tools"))
+        .and_then(|tools| tools.get_ref().as_table())
+    {
+        for (name, _) in tools {
+            location
+                .child("views")
+                .child("human_tools")
+                .child(name.get_ref())
+                .deserialize::<HumanTool>()?;
         }
     }
     let declaration =

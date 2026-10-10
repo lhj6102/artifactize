@@ -13,7 +13,7 @@ pub use result::{Content, ToolResult};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Builtin {
     Read,
@@ -21,6 +21,9 @@ pub enum Builtin {
     Glob,
     Grep,
     ViewImage,
+    Section,
+    Help,
+    Open,
 }
 
 /// JSON clients represent numbers as IEEE-754 doubles; larger integer counters

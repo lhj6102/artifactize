@@ -14,6 +14,9 @@ pub enum Input {
 impl Input {
     pub fn parse(builtin: Builtin, value: Value) -> Result<Self, String> {
         let input = match builtin {
+            Builtin::Section | Builtin::Help | Builtin::Open => {
+                return Err("This builtin requires declared args.".into());
+            }
             Builtin::Read => serde_json::from_value(value).map(Self::Read),
             Builtin::List => serde_json::from_value(value).map(Self::List),
             Builtin::Glob => serde_json::from_value(value).map(Self::Glob),

@@ -960,7 +960,7 @@ pub fn tools(request: &Request) -> Vec<Tool> {
                 .into_iter()
                 .flatten();
             declared.filter_map(move |(operation, tool)| {
-                let words = std::iter::once(&tool["command"])
+                let words = std::iter::once(tool.get("builtin").unwrap_or(&tool["command"]))
                     .chain(tool["args"].as_array().into_iter().flatten())
                     .filter_map(Value::as_str);
                 Some(Tool {

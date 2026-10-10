@@ -403,3 +403,102 @@ fn the_repair_turn_names_the_failing_schema_paths() {
     );
     assert_eq!(stubborn.requests().len(), 2);
 }
+
+#[test]
+fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_turns() {
+    let project = Project::new(
+        json!({"kind":"agent","backend":"openai","model":"fake-model","max_tool_calls":6}),
+    );
+    fs::write(
+        project.repo.join("spec/spec.md"),
+        "# First\nbody\n## Child\nchild\n# Next\nlast\n",
+    )
+    .unwrap();
+    let stub = project.repo.join("spec/help-stub");
+    fs::write(
+        &stub,
+        "#!/bin/sh\nprintf 'stub documentation: %s\\n' \"$*\"\n",
+    )
+    .unwrap();
+    support::os::make_executable(&stub);
+    let mut declaration =
+        support::declaration::read(fs::read(project.repo.join("spec/index.artf")).unwrap())
+            .unwrap();
+    declaration["views"]["agent_tools"] = json!({
+        "fixed":{"builtin":"read","args":["spec.md"]},
+        "section":{"builtin":"section","args":["spec.md"]},
+        "fixed_section":{"builtin":"section","args":["spec.md","First"]},
+        "help":{"builtin":"help","args":["./help-stub","sub"]}
+    });
+    support::declaration::write(
+        project.repo.join("spec/index.artf"),
+        declaration.to_string(),
+    )
+    .unwrap();
+    let provider = FakeProvider::start(|request| {
+        let outputs: Vec<_> = request.body["input"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|item| item["type"] == "function_call_output")
+            .collect();
+        let turn = outputs.len();
+        let call = match turn {
+            0 => openai::function_call("fixed", "fixed_spec", &json!({})),
+            1 => openai::function_call("section", "section_spec", &json!({"heading":"First"})),
+            2 => openai::function_call("missing", "section_spec", &json!({"heading":"Absent"})),
+            3 => openai::function_call("help", "help_spec", &json!({})),
+            _ => {
+                return openai::completed(
+                    request,
+                    vec![openai::message(
+                        &json!({"verdict":"GREEN","covered":["R1"]}).to_string(),
+                    )],
+                    openai::usage(30, 5),
+                );
+            }
+        };
+        openai::completed(request, vec![call], openai::usage(30, 5))
+    });
+    let run = parsed(
+        project
+            .command(&["verify", "--all"])
+            .env("ARTIFACTIZE_OPENAI_BASE_URL", provider.openai_base())
+            .output()
+            .unwrap(),
+        0,
+    );
+    assert_eq!(run["requests"][0]["status"], "GREEN");
+    let requests = provider.requests();
+    let tools = requests[0].body["tools"].as_array().unwrap();
+    for name in ["fixed_spec", "fixed_section_spec", "help_spec"] {
+        let tool = tools.iter().find(|tool| tool["name"] == name).unwrap();
+        assert_eq!(tool["parameters"]["properties"], json!({}));
+    }
+    let section = tools
+        .iter()
+        .find(|tool| tool["name"] == "section_spec")
+        .unwrap();
+    assert_eq!(section["parameters"]["required"], json!(["heading"]));
+    assert_eq!(
+        section["parameters"]["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .collect::<Vec<_>>(),
+        vec!["heading"]
+    );
+    let outputs: Vec<_> = requests.last().unwrap().body["input"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["type"] == "function_call_output")
+        .collect();
+    assert_eq!(outputs.len(), 4);
+    let result = |index: usize| outputs[index]["output"].as_str().unwrap();
+    assert_eq!(result(0), "# First\nbody\n## Child\nchild\n# Next\nlast\n");
+    assert_eq!(result(1), "# First\nbody\n## Child\nchild\n");
+    assert!(result(2).contains("No matching heading: Absent"));
+    assert!(result(2).contains("First\nChild\nNext"));
+    assert_eq!(result(3), "stub documentation: sub --help\n");
+}

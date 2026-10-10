@@ -17,10 +17,11 @@ clap = { version = "4.5", features = ["derive"] }
 globset = "0.4"
 jsonschema = { version = "0.58.4", default-features = false }
 regex = "1"
+pulldown-cmark = { version = "0.13", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["process", "rt", "time"] }
+tokio = { version = "1", features = ["process", "rt", "time", "io-util", "macros"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 
 [target.'cfg(unix)'.dependencies]
