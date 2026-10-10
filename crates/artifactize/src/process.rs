@@ -158,14 +158,8 @@ where
     let program = artifactize_tools::program::resolve_with(
         &command.program,
         &command.cwd,
-        command
-            .env
-            .get(std::ffi::OsStr::new("PATH"))
-            .map(OsString::as_os_str),
-        command
-            .env
-            .get(std::ffi::OsStr::new("PATHEXT"))
-            .map(OsString::as_os_str),
+        environment_value(&command.env, "PATH"),
+        environment_value(&command.env, "PATHEXT"),
     )
     .map_err(Error::Spawn)?;
     let mut child = tokio::process::Command::new(&program);
@@ -282,6 +276,27 @@ where
         truncated: stdout_truncated || stderr_truncated,
         duration: started.elapsed(),
     })
+}
+
+/// Windows environment names are case-insensitive even though the typed map is not.
+fn environment_value<'a>(
+    environment: &'a BTreeMap<OsString, OsString>,
+    name: &str,
+) -> Option<&'a std::ffi::OsStr> {
+    #[cfg(windows)]
+    {
+        environment.iter().find_map(|(key, value)| {
+            key.to_str()
+                .is_some_and(|key| key.eq_ignore_ascii_case(name))
+                .then_some(value.as_os_str())
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        environment
+            .get(std::ffi::OsStr::new(name))
+            .map(OsString::as_os_str)
+    }
 }
 
 /// Intentional desktop handoff: no owned process group, pipes, or kill-on-drop policy.
