@@ -114,6 +114,28 @@ async fn unsupported_wire_version_is_refused_before_registration() {
 }
 
 #[tokio::test]
+async fn disconnected_connections_do_not_stop_registered_subscribers() {
+    let state = temporary_state();
+    let mut subscriber = Subscription::new(state.path()).await;
+    registered(&mut subscriber).await;
+    let endpoint = Endpoint::new(state.path()).unwrap();
+    let epoch = registration(&subscriber, None).await;
+    // Close before the hub validates the peer or reads Hello. Darwin may report
+    // ENOTCONN during peer lookup; that must not replace the existing hub.
+    drop(endpoint.connect().await.unwrap());
+    let (mut writer, current) = connect(&endpoint, false).await.unwrap();
+    assert_eq!(current, epoch);
+    write_frame(&mut writer, &Frame::Publish(Change::StateInvalidated))
+        .await
+        .unwrap();
+    assert!(matches!(
+        read_frame(&mut writer).await.unwrap(),
+        Frame::Delivered
+    ));
+    assert_eq!(next(&mut subscriber).await, Change::StateInvalidated);
+}
+
+#[tokio::test]
 async fn oversized_frames_are_refused_before_reading_the_payload() {
     let (mut writer, mut reader) = tokio::io::duplex(16);
     writer
