@@ -432,3 +432,41 @@ fn request_open_hands_one_target_to_the_shared_opener() {
         )
     );
 }
+
+#[tokio::test]
+async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(
+        root.path().join("notes.md"),
+        "# First\nfile body\n# Next\nlast\n",
+    )
+    .unwrap();
+    support::declaration::write(root.path().join("notes.md.artf"),json!({
+        "name":"notes", "views": {
+            "human_tools": {
+                "read":{"builtin":"read","args":["{artifactPath}"]},
+                "section":{"builtin":"section","args":["{artifactPath}","First"]}
+            }
+        }, "evals":[{"id":"review","title":"Review","profile":{"kind":"human"},"payload":{"instruction":"Review."}}]
+    }).to_string()).unwrap();
+    let config = read_workspace_config(root.path()).unwrap();
+    let registry = tools::human::Registry::new(&config, "notes/review").unwrap();
+    let read = registry.call("read_notes", CancellationToken::new()).await;
+    assert!(!read.is_error, "{read:?}");
+    assert_eq!(
+        read.content,
+        vec![tools::human::Content::Text {
+            text: "# First\nfile body\n# Next\nlast\n".into()
+        }]
+    );
+    let section = registry
+        .call("section_notes", CancellationToken::new())
+        .await;
+    assert!(!section.is_error, "{section:?}");
+    assert_eq!(
+        section.content,
+        vec![tools::human::Content::Text {
+            text: "# First\nfile body\n".into()
+        }]
+    );
+}

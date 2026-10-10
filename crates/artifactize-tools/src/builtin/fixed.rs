@@ -203,12 +203,13 @@ fn read_text(
     let location = scope
         .resolve_path(owner, path)
         .map_err(|error| error.to_string())?;
-    let file = scope::open_input(
-        root,
-        &scope.artifacts[&location.artifact_id],
-        &location.path,
-    )
-    .map_err(|error| error.to_string())?;
+    let artifact = &scope.artifacts[&location.artifact_id];
+    let path = if location.path.is_empty() {
+        artifact.file_name().unwrap_or("")
+    } else {
+        &location.path
+    };
+    let file = scope::open_input(root, artifact, path).map_err(|error| error.to_string())?;
     if !file
         .metadata()
         .map_err(|error| error.to_string())?
