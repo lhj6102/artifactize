@@ -15,7 +15,7 @@ use crate::{config::read_workspace_config, project::selection::Selection};
 pub(super) struct VerifyLimits {
     pub jobs: u32,
     pub max_executions: Option<u64>,
-    pub timeout_ms: Option<u32>,
+    pub timeout_ms: Option<Duration>,
     pub reuse_only: Vec<crate::config::ProfileKind>,
 }
 
@@ -35,9 +35,7 @@ pub(super) async fn verify(
     let options = crate::project::VerifyOptions {
         jobs: jobs as usize,
         max_executions,
-        wait_timeout: timeout_ms.map_or(crate::project::DEFAULT_HUMAN_WAIT, |ms| {
-            Duration::from_millis(ms.into())
-        }),
+        wait_timeout: timeout_ms.unwrap_or(crate::project::DEFAULT_HUMAN_WAIT),
         reuse_only: reuse_only.into_iter().collect(),
         announce_run: true,
         ..policy.options()
@@ -82,16 +80,15 @@ pub(super) async fn status(
     Ok(u8::from(!view.satisfied))
 }
 
-pub(super) async fn graph(context: Context, artifact: Option<String>) -> Result<u8, String> {
+pub(super) async fn graph(
+    context: Context,
+    artifact: Option<crate::types::ArtifactName>,
+) -> Result<u8, String> {
     let config = read_workspace_config(&context.repo.unwrap_or_else(|| PathBuf::from(".")))
         .map_err(|error| error.to_string())?;
-    let selection = artifact
-        .map(|id| {
-            id.parse()
-                .map(|artifact_id| Selection::Artifact { artifact_id })
-        })
-        .transpose()?
-        .unwrap_or(Selection::All);
+    let selection = artifact.map_or(Selection::All, |artifact_id| Selection::Artifact {
+        artifact_id,
+    });
     let view = crate::query::graph(&config, &selection)?;
     if context.json {
         print_json(&view)?;

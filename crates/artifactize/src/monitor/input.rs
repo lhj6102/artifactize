@@ -19,7 +19,7 @@ const WHEEL_ROWS: i16 = 3;
 pub(super) enum Hit {
     Scope(usize),
     Run(usize),
-    Artifact(Vec<String>),
+    Artifact(Vec<super::model::NodeId>),
 }
 pub(super) struct Click {
     hit: Hit,

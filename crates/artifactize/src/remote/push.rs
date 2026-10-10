@@ -65,10 +65,7 @@ pub async fn push(
         }
         // With the read scope, a record that is already the store's latest is not sent again.
         let existing: BTreeSet<_> = if has_scope(&principal, "read") {
-            let keys: Vec<_> = records
-                .iter()
-                .map(|record| record.key.to_string())
-                .collect();
+            let keys: Vec<_> = records.iter().map(|record| record.key.clone()).collect();
             remote
                 .lookup(&keys)
                 .await

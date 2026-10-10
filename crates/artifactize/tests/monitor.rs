@@ -384,7 +384,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     for (id, _) in view.run.definitions.graph().unwrap().artifacts() {
         assert_eq!(
             all.iter()
-                .filter(|node| node.id == format!("a:{id}"))
+                .filter(|node| node.id.as_str() == format!("a:{id}"))
                 .count(),
             1,
             "{id}"
@@ -423,17 +423,27 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert_eq!(
         node("e:checkout/review").upstream,
         [Upstream {
-            artifact: "input".into(),
+            artifact: "input".parse().unwrap(),
             completion: Completion::Complete
         }]
     );
-    let waits = monitor::detail(&view, &requests, &Target::Eval("cycle-a/check".into()), now);
+    let waits = monitor::detail(
+        &view,
+        &requests,
+        &Target::Eval("cycle-a/check".parse().unwrap()),
+        now,
+    );
     assert_eq!(
         waits.field("Waits for"),
         Some("↑ input ✓ complete · mount base → cycle-b")
     );
 
-    let red = monitor::detail(&view, &requests, &Target::Eval("red/check".into()), now);
+    let red = monitor::detail(
+        &view,
+        &requests,
+        &Target::Eval("red/check".parse().unwrap()),
+        now,
+    );
     assert_eq!(red.field("Status"), Some("RED — criteria not met"));
     assert_eq!(red.field("Fingerprint"), Some("red-v1"));
     let covers = red.field("Key covers").unwrap();
@@ -469,7 +479,12 @@ async fn saved_tree_details_without_repository_or_writes() {
             .unwrap()
             .starts_with("reused: spent none")
     );
-    let reused = monitor::detail(&view, &requests, &Target::Eval("cycle-a/check".into()), now);
+    let reused = monitor::detail(
+        &view,
+        &requests,
+        &Target::Eval("cycle-a/check".parse().unwrap()),
+        now,
+    );
     assert_eq!(reused.field("Status"), Some("GREEN — criteria met"));
     assert!(
         reused
@@ -477,7 +492,12 @@ async fn saved_tree_details_without_repository_or_writes() {
             .unwrap()
             .starts_with("reused from Run")
     );
-    let artifact = monitor::detail(&view, &requests, &Target::Artifact("cycle-b".into()), now);
+    let artifact = monitor::detail(
+        &view,
+        &requests,
+        &Target::Artifact("cycle-b".parse().unwrap()),
+        now,
+    );
     assert_eq!(artifact.field("Cycle"), Some("↻ cycle-a, cycle-b"));
     assert!(
         artifact
@@ -492,7 +512,12 @@ async fn saved_tree_details_without_repository_or_writes() {
             .contains("cycle-a — {cycle-b}")
     );
     let (old, old_requests) = fixture.load(&first).await;
-    let original = monitor::detail(&old, &old_requests, &Target::Eval("red/check".into()), now);
+    let original = monitor::detail(
+        &old,
+        &old_requests,
+        &Target::Eval("red/check".parse().unwrap()),
+        now,
+    );
     assert_eq!(original.field("Source"), Some("executed in this Run"));
 
     let mut monitor = Monitor::new(fixture.state.clone(), None);
@@ -514,14 +539,17 @@ async fn saved_tree_details_without_repository_or_writes() {
         Some("NOT SATISFIED at Run end (unmet: red)")
     );
     // The cursor starts on the RED eval.
-    assert_eq!(monitor.target(), Some(Target::Eval("red/check".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Eval("red/check".parse().unwrap()))
+    );
     // Folded Artifacts stay reachable: unfold an Artifact to select its eval.
     for _ in 0..40 {
         press(&mut monitor, KeyCode::Up);
         screen(&mut monitor);
     }
     let mut steps = 0;
-    while monitor.target() != Some(Target::Artifact("checkout".into())) {
+    while monitor.target() != Some(Target::Artifact("checkout".parse().unwrap())) {
         press(&mut monitor, KeyCode::Down);
         screen(&mut monitor);
         steps += 1;
@@ -535,7 +563,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert!(expanded.contains("✓ review "), "{expanded}");
     assert_eq!(
         monitor.target(),
-        Some(Target::Eval("checkout/review".into()))
+        Some(Target::Eval("checkout/review".parse().unwrap()))
     );
     for _ in 0..3 {
         monitor.refresh().await;
@@ -673,7 +701,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     assert_eq!(node("a:b").line(), "⊘ b  done, but blocked by a  0/1");
     assert_eq!(
         node("e:c/x").kind,
-        Kind::Eval(EvalView::BlockedBy(vec!["b".into()]))
+        Kind::Eval(EvalView::BlockedBy(vec!["b".parse().unwrap()]))
     );
     assert_eq!(node("a:c").line(), "⊘ c  not run: blocked by b  0/2");
     assert!(

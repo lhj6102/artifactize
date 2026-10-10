@@ -43,11 +43,17 @@ struct Entry {
 /// The saved conversations, read without following links; a missing store is empty.
 fn entries(state: &Path) -> Result<Vec<Entry>, String> {
     let directory = directory(state);
-    let listing = match fs::read_dir(&directory) {
-        Ok(listing) => listing,
+    let handle = match crate::platform::open_no_follow(File::options().read(true), &directory) {
+        Ok(handle) => handle,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(format!("{}: {error}", directory.display())),
+        Err(error) => {
+            return Err(format!(
+                "{}: {error}",
+                crate::platform::path_text(&directory)
+            ));
+        }
     };
+    let listing = crate::platform::read_dir(&handle).map_err(|e| e.to_string())?;
     let mut entries = Vec::new();
     for entry in listing {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -59,7 +65,14 @@ fn entries(state: &Path) -> Result<Vec<Entry>, String> {
             // Not a session path; never collect arbitrary files in this directory.
             continue;
         };
-        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+        if crate::platform::entry_kind(&handle, &name).map_err(|e| e.to_string())?
+            != crate::platform::FileKind::File
+        {
+            continue;
+        }
+        let name = crate::platform::EntryName::new(&name).ok_or("Invalid session entry name.")?;
+        let file = crate::platform::open_entry(&handle, &name).map_err(|e| e.to_string())?;
+        let metadata = file.metadata().map_err(|e| e.to_string())?;
         if !metadata.is_file() {
             continue;
         }
@@ -70,6 +83,11 @@ fn entries(state: &Path) -> Result<Vec<Entry>, String> {
         });
     }
     Ok(entries)
+}
+
+/// Pure ordering shared by collection and the explicit-time contract test.
+fn order(entries: &mut [Entry]) {
+    entries.sort_by(|a, b| a.written.cmp(&b.written).then_with(|| a.id.cmp(&b.id)));
 }
 
 /// How many conversations the store holds and their bytes.
@@ -129,7 +147,7 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
         return Ok(collection);
     }
     let running = running(state)?;
-    entries.sort_by(|a, b| a.written.cmp(&b.written).then_with(|| a.id.cmp(&b.id)));
+    order(&mut entries);
     let directory = directory(state);
     for entry in entries {
         if collection.remaining <= bounds.target_bytes {
@@ -141,7 +159,10 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
         if !dry_run {
             let lock = directory.join(format!("{}.lock", entry.id));
             // A session a send holds stays; its lock goes with it.
-            let held = match File::options().read(true).write(true).open(&lock) {
+            let held = match crate::platform::open_no_follow(
+                File::options().read(true).write(true),
+                &lock,
+            ) {
                 Ok(file) => match file.try_lock() {
                     Ok(()) => Some(file),
                     Err(std::fs::TryLockError::WouldBlock) => continue,
@@ -175,22 +196,29 @@ mod tests {
 
     use super::*;
 
-    /// Sessions of `bytes` each, written a second apart in order.
+    /// Sessions with equal explicit write times; identity provides deterministic tie order.
     fn store(sizes: &[(&str, usize)]) -> tempfile::TempDir {
-        let state = tempfile::tempdir().unwrap();
+        let state = crate::test_os::tempdir();
         let sessions = directory(state.path());
         fs::create_dir_all(&sessions).unwrap();
-        for (index, (id, bytes)) in sizes.iter().enumerate() {
+        for (id, bytes) in sizes {
             let path = sessions.join(format!("{id}.jsonl"));
             fs::write(&path, vec![b'x'; *bytes]).unwrap();
-            File::options()
-                .write(true)
-                .open(&path)
-                .unwrap()
-                .set_modified(UNIX_EPOCH + Duration::from_secs(1_000 + index as u64))
-                .unwrap();
+            crate::test_os::set_modified(&path, UNIX_EPOCH + Duration::from_secs(1_000));
         }
         state
+    }
+
+    #[test]
+    fn ordering_uses_explicit_times_then_identity() {
+        let entry = |id: &str, secs| Entry {
+            id: id.parse().unwrap(),
+            bytes: 1,
+            written: UNIX_EPOCH + Duration::from_secs(secs),
+        };
+        let mut entries = [entry("a", 20), entry("c", 10), entry("b", 10)];
+        order(&mut entries);
+        assert_eq!(entries.map(|entry| entry.id.to_string()), ["b", "c", "a"]);
     }
 
     fn bounds(max_bytes: u64, target_bytes: u64) -> AgentSessions {
@@ -264,7 +292,7 @@ mod tests {
 
     #[test]
     fn a_missing_store_is_empty() {
-        let state = tempfile::tempdir().unwrap();
+        let state = crate::test_os::tempdir();
         let collection = collect(state.path(), bounds(1, 0), false).unwrap();
         assert_eq!((collection.bytes, collection.removed.len()), (0, 0));
     }

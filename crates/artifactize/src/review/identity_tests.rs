@@ -3,19 +3,17 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 #[tokio::test]
 async fn compatibility_constructor_parses_open_id_once_and_invalid_input_never_reads_state() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let state = root.path().join("absent-state");
-    let mut review = Review::new(
-        state.clone(),
+    // Invalid IDs cannot be supplied to the core constructor.
+    assert!("../escape".parse::<RequestId>().is_err());
+    assert!(!state.exists());
+    let valid = Review::new(
+        state,
         None,
         "fixture".into(),
-        Some("../escape".into()),
+        Some("run-legacy_1.3".parse().unwrap()),
     );
-    assert!(review.open.is_none());
-    assert_eq!(review.refresh().await, Action::None);
-    assert!(review.error.as_ref().unwrap().contains("Invalid RequestId"));
-    assert!(!state.exists());
-    let valid = Review::new(state, None, "fixture".into(), Some("run-legacy_1.3".into()));
     assert_eq!(valid.open.as_ref().unwrap().as_str(), "run-legacy_1.3");
 }
 

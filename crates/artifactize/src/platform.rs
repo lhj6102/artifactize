@@ -173,3 +173,28 @@ mod state_directory_tests {
         assert_eq!(resolve_state_directory(None, None, None), None);
     }
 }
+
+mod interaction;
+pub(crate) use interaction::{
+    is_within, label, paths_equal, private_temp_file, run_editor, selected_editor,
+};
+
+/// Whether an entry exists without following links (including dangling links).
+pub(crate) fn entry_exists(path: &std::path::Path) -> std::io::Result<bool> {
+    let Some(parent) = path.parent() else {
+        return Ok(false);
+    };
+    let directory = match open_directory(parent) {
+        Ok(directory) => directory,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let Some(name) = path.file_name() else {
+        return Ok(false);
+    };
+    match entry_kind(&directory, name) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}

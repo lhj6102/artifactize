@@ -155,7 +155,7 @@ pub(super) fn shared(view: &RequestView) -> Option<String> {
         let text = format!(
             "actions go to {} in {}",
             source.request_id,
-            source.repo_path.display()
+            crate::platform::path_text(&source.repo_path)
         );
         plain(&text).into_owned()
     })

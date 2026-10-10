@@ -7,7 +7,7 @@ use std::fs;
 #[tokio::test]
 #[ignore = "requires the external fixture PTY harness"]
 async fn live_session_pty_fixture() {
-    let Some(path) = std::env::var_os("ARTIFACTIZE_LIVE_PTY_FIXTURE") else {
+    let Some(path) = crate::platform::environment::var("ARTIFACTIZE_LIVE_PTY_FIXTURE") else {
         return;
     };
     let root = std::path::PathBuf::from(path);
@@ -74,7 +74,7 @@ async fn live_session_pty_fixture() {
         .unwrap();
     let saving = Saving {
         state: state.clone(),
-        state_id: receipts.state_id().await.unwrap().to_string(),
+        state_id: receipts.state_id().await.unwrap(),
         producer: store::Producer::current().name,
     };
     let mut recorder = Recorder::new(
@@ -84,10 +84,9 @@ async fn live_session_pty_fixture() {
     );
     recorder.start(Header::default());
     for n in 0..80 {
-        recorder.event(Kind::Answer(Answer {
-            text: Some(format!("initial row {n} 한글 e\u{301}")),
-            ..Answer::default()
-        }));
+        recorder.event(Kind::Answer(Answer::Completed(format!(
+            "initial row {n} 한글 e\u{301}"
+        ))));
     }
     view.request.session = recorder.reference().cloned();
     receipts.save_request(&view.request).await.unwrap();
@@ -110,10 +109,7 @@ async fn live_session_pty_fixture() {
             }
             if let Ok(text) = fs::read_to_string(control.join("append")) {
                 let _ = fs::remove_file(control.join("append"));
-                recorder.event(Kind::Answer(Answer {
-                    text: Some(text),
-                    ..Answer::default()
-                }));
+                recorder.event(Kind::Answer(Answer::Completed(text)));
                 crate::changes::drain().await;
                 fs::write(control.join("appended"), "flushed and notified").unwrap();
             }

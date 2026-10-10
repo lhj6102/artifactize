@@ -100,10 +100,38 @@ impl Command {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    clap::ValueEnum,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[value(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Verdict {
     Green,
     Red,
+}
+
+impl Verdict {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Green => "GREEN",
+            Self::Red => "RED",
+        }
+    }
+}
+
+impl std::fmt::Display for Verdict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug)]

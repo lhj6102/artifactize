@@ -5,12 +5,12 @@ use crate::{config::EvalDeclaration, tools::schema::quoted};
 
 /// Validate a parsed Agent or Human result without repair or owner-field rewriting.
 /// Errors list at most five failing instance paths, so a reviewer can correct the fields.
-pub fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<Value, String> {
+pub fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<ValidatedResult, String> {
     let schema = VerdictSchema::new(eval.pass_schema(), eval.fail_schema())?;
     schema
         .validate(value)
         .map_err(|error| schema.explain(error, value))?;
-    Ok(value.clone())
+    Ok(ValidatedResult::from_validated(value.clone()))
 }
 
 /// Bound the raw model response before parsing; prose/whitespace can exceed the semantic result.
@@ -98,7 +98,7 @@ impl VerdictSchema {
         })
     }
 
-    pub fn parse(&self, text: &str) -> Result<Value, &'static str> {
+    pub fn parse(&self, text: &str) -> Result<ValidatedResult, &'static str> {
         if text.len() > MAX_RESPONSE_BYTES {
             return Err("over_size: final JSON exceeds 1 MiB");
         }
@@ -109,7 +109,7 @@ impl VerdictSchema {
             |_| "not_json: return exactly one JSON object, without prose or code fences",
         )?;
         self.validate(&value)?;
-        Ok(value)
+        Ok(ValidatedResult::from_validated(value))
     }
 
     /// What the single repair turn tells the model: the parse error and, when the
@@ -221,3 +221,26 @@ fn branch(verdict: &str, owner: Option<&Map<String, Value>>) -> Result<Value, St
 
 #[cfg(test)]
 mod tests;
+
+/// A schema-checked verdict with unchanged owner fields. The stored JSON envelope stays
+/// identical; only the core gets a typed verdict instead of reparsing the JSON.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ValidatedResult {
+    pub verdict: crate::runtime::Verdict,
+    #[serde(flatten)]
+    pub fields: Map<String, Value>,
+}
+impl ValidatedResult {
+    fn from_validated(value: Value) -> Self {
+        let mut fields = value
+            .as_object()
+            .expect("validated result is an object")
+            .clone();
+        let verdict = serde_json::from_value(fields.remove("verdict").expect("validated verdict"))
+            .expect("schema validated the verdict");
+        Self { verdict, fields }
+    }
+    pub fn into_json(self) -> Value {
+        serde_json::to_value(self).expect("validated result is JSON")
+    }
+}

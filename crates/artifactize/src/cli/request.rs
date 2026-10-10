@@ -48,8 +48,8 @@ pub enum RequestCommand {
     /// Submit a schema-valid Human verdict and owner fields.
     Submit {
         id: RequestId,
-        #[arg(long, value_parser = ["GREEN", "RED"])]
-        verdict: String,
+        #[arg(long, value_enum)]
+        verdict: crate::runtime::Verdict,
         /// Owner fields as a JSON object (default {}).
         #[arg(long, value_name = "JSON", conflicts_with = "fields_file")]
         fields: Option<String>,
@@ -149,7 +149,7 @@ pub(super) async fn execute(
             fields_file,
             reviewer,
         } => {
-            let result = submission(&verdict, fields, fields_file)?;
+            let result = submission(verdict, fields, fields_file)?;
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
             let (cancellation, listener) = cancellation_listener()?;
             let result =
@@ -166,7 +166,7 @@ pub(super) async fn execute(
 }
 
 fn submission(
-    verdict: &str,
+    verdict: crate::runtime::Verdict,
     fields: Option<String>,
     file: Option<PathBuf>,
 ) -> Result<Value, String> {

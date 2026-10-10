@@ -1,7 +1,10 @@
 //! Read-only state queries and result projections.
 
 mod summary;
-pub use summary::{Source, SourceKind, profile_name, request_output, reused, run_output, source};
+pub use summary::{
+    Kinds, Source, SourceKind, profile_name, request_output, request_summary, reused, run_output,
+    run_summary, source,
+};
 
 use std::{collections::BTreeMap, path::Path};
 

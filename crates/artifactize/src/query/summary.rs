@@ -78,16 +78,16 @@ fn with_source(value: &mut Value, request: &Request) {
 
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct UsageTotals {
-    attempts: u64,
-    usage_state: UsageState,
-    reported_attempts: u64,
-    unreported_attempts: u64,
-    usage: BTreeMap<String, u64>,
+pub struct UsageTotals {
+    pub attempts: u64,
+    pub usage_state: UsageState,
+    pub reported_attempts: u64,
+    pub unreported_attempts: u64,
+    pub usage: BTreeMap<String, u64>,
 }
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "lowercase")]
-enum UsageState {
+pub enum UsageState {
     #[default]
     None,
     Unreported,
@@ -95,11 +95,11 @@ enum UsageState {
     Partial,
 }
 #[derive(Debug, Default, Serialize)]
-struct Kinds {
-    total: u64,
-    runtime: u64,
-    agent: u64,
-    human: u64,
+pub struct Kinds {
+    pub total: u64,
+    pub runtime: u64,
+    pub agent: u64,
+    pub human: u64,
 }
 impl Kinds {
     fn add(&mut self, kind: crate::config::ProfileKind) {
@@ -117,49 +117,39 @@ impl Kinds {
 }
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Reuses {
+pub struct Reuses {
     #[serde(flatten)]
-    kinds: Kinds,
-    other_profile: u64,
+    pub kinds: Kinds,
+    pub other_profile: u64,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RequestSummary<'a> {
-    status: crate::types::RequestStatus,
-    wall_ms: Option<u64>,
-    executor_starts: u64,
+pub struct RequestSummary<'a> {
+    pub status: crate::types::RequestStatus,
+    pub wall_ms: Option<u64>,
+    pub executor_starts: u64,
     #[serde(flatten)]
-    usage: UsageTotals,
-    execution_source: Option<&'a crate::store::Provenance>,
+    pub usage: UsageTotals,
+    pub execution_source: Option<&'a crate::store::Provenance>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct RunSummary {
-    derived: u64,
-    counts: BTreeMap<crate::types::RequestStatus, u64>,
-    executed: Kinds,
-    reused: Reuses,
-    wall_ms: Option<u64>,
-    executor_starts: u64,
+pub struct RunSummary {
+    pub derived: u64,
+    pub counts: BTreeMap<crate::types::RequestStatus, u64>,
+    pub executed: Kinds,
+    pub reused: Reuses,
+    pub wall_ms: Option<u64>,
+    pub executor_starts: u64,
     #[serde(flatten)]
-    usage: UsageTotals,
+    pub usage: UsageTotals,
 }
 
 pub fn request_output(view: &RequestView, now: OffsetDateTime) -> Value {
     let mut value = json!(view);
     let request = &view.request;
     with_source(&mut value, request);
-    let summary = RequestSummary {
-        status: request.status,
-        wall_ms: wall_ms(request.created_at, request.completed_at, now),
-        executor_starts: u64::from(
-            local_execution(request)
-                && request.started_at.is_some()
-                && request.profile.kind() != crate::config::ProfileKind::Human,
-        ),
-        usage: usage_totals((!reused(request)).then_some(request)),
-        execution_source: request.provenance.as_ref(),
-    };
+    let summary = request_summary(view, now);
     value["summary"] = json!(summary);
     value
 }
@@ -172,44 +162,9 @@ pub fn run_output(view: &RunView, now: OffsetDateTime) -> Value {
     for (output, request) in requests.iter_mut().zip(&view.requests) {
         with_source(output, request);
     }
-    let mut counts = BTreeMap::new();
-    let mut seen = BTreeSet::new();
-    let local = view.requests.iter().filter(|request| {
-        local_execution(request)
-            && request
-                .execution_id
-                .as_ref()
-                .is_some_and(|id| seen.insert(id))
-    });
-    let usage = usage_totals(local);
-    let (mut executed, mut reuses, mut saved) =
-        (Kinds::default(), Reuses::default(), BTreeMap::new());
-    for request in &view.requests {
-        *counts.entry(request.status).or_default() += 1;
-        if reused(request) {
-            for attempt in request.reused_usage.iter().flatten() {
-                add_usage(&mut saved, attempt);
-            }
-            reuses.other_profile += u64::from(request.profile != request.requested_profile);
-            reuses.kinds.add(request.profile.kind());
-        } else if local_execution(request) {
-            executed.add(request.profile.kind());
-        }
-    }
-    value["usage"] = json!({"spent":usage.usage,"saved":saved});
-    value["summary"] = json!(RunSummary {
-        derived: view
-            .requests
-            .iter()
-            .filter(|request| request.profile.kind() == crate::config::ProfileKind::Dependency)
-            .count() as u64,
-        counts,
-        executed,
-        reused: reuses,
-        wall_ms: wall_ms(view.run.created_at, view.run.completed_at, now),
-        executor_starts: view.run.executions_started,
-        usage,
-    });
+    let (summary, saved) = run_summary(view, now);
+    value["usage"] = json!({"spent":summary.usage.usage,"saved":saved});
+    value["summary"] = json!(summary);
     value
 }
 
@@ -283,15 +238,11 @@ fn usage_totals<'a>(requests: impl IntoIterator<Item = &'a Request>) -> UsageTot
 
 /// Adds one attempt's reported counters; false when it reported none.
 fn add_usage(totals: &mut BTreeMap<String, u64>, attempt: &crate::llm::Attempt) -> bool {
-    let mut has_usage = false;
-    for (key, value) in &attempt.usage {
-        if let Some(value) = value.as_u64() {
-            has_usage = true;
-            let total = totals.entry(key.clone()).or_default();
-            *total = total.saturating_add(value);
-        }
+    for (key, value) in attempt.usage.iter() {
+        let total = totals.entry(key.clone()).or_default();
+        *total = total.saturating_add(*value);
     }
-    has_usage
+    !attempt.usage.is_empty()
 }
 
 fn usage_state(reported: u64, unreported: u64) -> UsageState {
@@ -300,6 +251,73 @@ fn usage_state(reported: u64, unreported: u64) -> UsageState {
         (0, _) => UsageState::Unreported,
         (_, 0) => UsageState::Reported,
         _ => UsageState::Partial,
+    }
+}
+
+pub fn request_summary(view: &RequestView, now: OffsetDateTime) -> RequestSummary<'_> {
+    let request = &view.request;
+    RequestSummary {
+        status: request.status,
+        wall_ms: wall_ms(request.created_at, request.completed_at, now),
+        executor_starts: u64::from(
+            local_execution(request)
+                && request.started_at.is_some()
+                && request.profile.kind() != crate::config::ProfileKind::Human,
+        ),
+        usage: usage_totals((!reused(request)).then_some(request)),
+        execution_source: request.provenance.as_ref(),
+    }
+}
+
+pub fn run_summary(view: &RunView, now: OffsetDateTime) -> (RunSummary, BTreeMap<String, u64>) {
+    let mut counts = BTreeMap::new();
+    let mut seen = BTreeSet::new();
+    let local = view.requests.iter().filter(|request| {
+        local_execution(request)
+            && request
+                .execution_id
+                .as_ref()
+                .is_some_and(|id| seen.insert(id))
+    });
+    let usage = usage_totals(local);
+    let (mut executed, mut reuses, mut saved) =
+        (Kinds::default(), Reuses::default(), BTreeMap::new());
+    for request in &view.requests {
+        *counts.entry(request.status).or_default() += 1;
+        if reused(request) {
+            for attempt in request.reused_usage.iter().flatten() {
+                add_usage(&mut saved, attempt);
+            }
+            reuses.other_profile += u64::from(request.profile != request.requested_profile);
+            reuses.kinds.add(request.profile.kind());
+        } else if local_execution(request) {
+            executed.add(request.profile.kind());
+        }
+    }
+    let summary = RunSummary {
+        derived: view
+            .requests
+            .iter()
+            .filter(|request| request.profile.kind() == crate::config::ProfileKind::Dependency)
+            .count() as u64,
+        counts,
+        executed,
+        reused: reuses,
+        wall_ms: wall_ms(view.run.created_at, view.run.completed_at, now),
+        executor_starts: view.run.executions_started,
+        usage,
+    };
+    (summary, saved)
+}
+
+impl std::fmt::Display for UsageState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::None => "none",
+            Self::Unreported => "unreported",
+            Self::Reported => "reported",
+            Self::Partial => "partial",
+        })
     }
 }
 
