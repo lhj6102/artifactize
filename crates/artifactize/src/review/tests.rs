@@ -408,11 +408,11 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
             ID.parse().unwrap(),
             [
                 (
-                    "notes_release".to_owned(),
+                    "notes_release".parse().unwrap(),
                     Ok(command(&["/repo/release/notes.md"])),
                 ),
                 (
-                    "open_release".to_owned(),
+                    "open_release".parse().unwrap(),
                     Err("Tool executable path is unavailable.".into()),
                 ),
             ]
@@ -427,14 +427,14 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     let run = |tool: &str| {
         Action::Start(Job::Run {
             id: ID.parse().unwrap(),
-            tool: tool.into(),
+            tool: tool.parse().unwrap(),
             claim: false,
         })
     };
     // No confirmation: Enter starts the run job every time.
     assert_eq!(press(&mut review, KeyCode::Enter), run("notes_release"));
     let ran = review.finish(Outcome::Ran {
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claimed: None,
         result: printed("# Release notes\n", false),
     });
@@ -456,7 +456,7 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     );
 
     review.finish(Outcome::Ran {
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claimed: None,
         result: printed("Human tool exited unsuccessfully (exit status: 1).\n", true),
     });
@@ -471,7 +471,7 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
         "{text}"
     );
     review.finish(Outcome::Ran {
-        tool: "open_release".into(),
+        tool: "open_release".parse().unwrap(),
         claimed: None,
         result: Ok(ToolResult {
             content: vec![Content::Launch { launched: true }],
@@ -480,7 +480,7 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     });
     assert!(screen(&mut review).contains("open_release launched."));
     review.finish(Outcome::Ran {
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claimed: None,
         result: Err("Human Artifact scope or eval declarations changed.".into()),
     });
@@ -999,7 +999,7 @@ fn a_running_job_only_scrolls_or_cancels() {
     let mut review = opened(Some("alice"), demo());
     drop(review.start(Job::Run {
         id: ID.parse().unwrap(),
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claim: false,
     }));
     assert!(review.busy());
@@ -1029,7 +1029,7 @@ fn a_running_job_only_scrolls_or_cancels() {
         "Esc cancels before stepping back"
     );
     review.finish(Outcome::Ran {
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claimed: None,
         result: printed("Human tool call was cancelled.", true),
     });
@@ -1398,7 +1398,7 @@ fn clicks_focus_select_and_run_tools_and_f2_turns_the_mouse_off() {
         click(&mut review, row),
         Action::Start(Job::Run {
             id: ID.parse().unwrap(),
-            tool: "open_release".into(),
+            tool: "open_release".parse().unwrap(),
             claim: false,
         })
     );

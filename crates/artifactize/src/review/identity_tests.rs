@@ -38,7 +38,7 @@ fn request_jobs_and_outcomes_retain_typed_ids_while_idle_and_busy_page_steps_sta
     assert_eq!(review.scroll, u16::MAX);
     drop(review.start(Job::Run {
         id: id.clone(),
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claim: false,
     }));
     review.scroll = 5;

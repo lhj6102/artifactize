@@ -181,11 +181,20 @@ pub fn prune(
         };
         let mut owned = false;
         for (owner, status) in owners {
-            owned |= !matches!(status.as_str(), "GREEN" | "RED" | "ERROR")
-                || process::is_alive(owner).map_err(|e| e.to_string())?;
+            owned |= !matches!(
+                status,
+                crate::types::ExecutionStatus::Green
+                    | crate::types::ExecutionStatus::Red
+                    | crate::types::ExecutionStatus::Error
+            ) || process::is_alive(owner).map_err(|e| e.to_string())?;
         }
-        if !matches!(status.as_str(), "GREEN" | "RED" | "ERROR" | "INCOMPLETE")
-            || finished.is_none()
+        if !matches!(
+            status,
+            crate::types::RunStatus::Green
+                | crate::types::RunStatus::Red
+                | crate::types::RunStatus::Error
+                | crate::types::RunStatus::Incomplete
+        ) || finished.is_none()
             || cutoff.is_some_and(|cutoff| finished.is_some_and(|date| date > cutoff))
             || !requests_terminal
             || owned
@@ -313,17 +322,7 @@ fn reject_repository(path: &Path) -> Result<(), String> {
 }
 
 fn validate_tree(path: &Path, runs: &Path, repositories: &[PathBuf]) -> Result<(), String> {
-    if !path.starts_with(runs)
-        || path == runs
-        || repositories
-            .iter()
-            .any(|repo| path.starts_with(repo) || repo.starts_with(path))
-    {
-        return Err(format!(
-            "Prune target is outside Run output or overlaps a repository: {}",
-            crate::platform::path_text(path)
-        ));
-    }
+    // A link is refused first: the identity checks below would see where it leads.
     let kind = platform::path_kind(path).map_err(|e| e.to_string())?;
     if matches!(
         kind,
@@ -331,6 +330,17 @@ fn validate_tree(path: &Path, runs: &Path, repositories: &[PathBuf]) -> Result<(
     ) {
         return Err(format!(
             "Prune refuses symlinks: {}",
+            crate::platform::path_text(path)
+        ));
+    }
+    if !platform::is_within(path, runs)
+        || platform::paths_equal(path, runs)
+        || repositories
+            .iter()
+            .any(|repo| platform::is_within(path, repo) || platform::is_within(repo, path))
+    {
+        return Err(format!(
+            "Prune target is outside Run output or overlaps a repository: {}",
             crate::platform::path_text(path)
         ));
     }

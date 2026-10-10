@@ -17,6 +17,11 @@ use crate::{
     scope::Relation,
 };
 
+/// The format version of the printed graph: the shape of its Artifacts, evals, relations
+/// and components. It changes when a field is removed or changes meaning, so that scripts
+/// reading the output can refuse a shape they do not know.
+const GRAPH_FORMAT_VERSION: u32 = 1;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphView<'a> {
@@ -94,7 +99,7 @@ pub fn graph<'a>(
         })
         .collect();
     Ok(GraphView {
-        version: 1,
+        version: GRAPH_FORMAT_VERSION,
         repo_path: &config.root,
         selection,
         artifacts,

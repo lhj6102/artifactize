@@ -17,6 +17,7 @@ pub(crate) use embedded::Control;
 pub use form::{Field, Form, Input, template};
 pub use runs::Runs;
 
+use crate::config::ToolName;
 use std::{
     future::Future,
     io::Read,
@@ -84,7 +85,7 @@ pub enum Job {
     /// Claim first when `claim`, then run the tool.
     Run {
         id: RequestId,
-        tool: String,
+        tool: ToolName,
         claim: bool,
     },
     /// Claim first when `claim`, then submit and publish like `request submit`.
@@ -108,7 +109,7 @@ pub enum Outcome {
         error: String,
     },
     Ran {
-        tool: String,
+        tool: ToolName,
         claimed: Option<HumanClaim>,
         result: Result<ToolResult, String>,
     },
@@ -140,7 +141,7 @@ pub enum Action {
 /// A declared Human tool as the saved definition records it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tool {
-    pub name: String,
+    pub name: ToolName,
     pub kind: HumanToolKind,
     pub description: String,
     pub declared: Runs,
@@ -168,7 +169,7 @@ impl Drop for Busy {
 }
 
 /// Resolved command lines by tool name; a tool that cannot be resolved carries its error.
-type Commands = std::collections::BTreeMap<String, Result<CommandLine, String>>;
+type Commands = std::collections::BTreeMap<ToolName, Result<CommandLine, String>>;
 
 /// Screen state over saved data; only jobs write, through the `human` lifecycle API.
 pub struct Review {
@@ -652,7 +653,7 @@ impl Review {
         }
     }
 
-    fn run(&mut self, tool: String) -> Action {
+    fn run(&mut self, tool: ToolName) -> Action {
         match self.owned_request() {
             Ok(id) => Action::Start(Job::Run {
                 id,
@@ -961,17 +962,19 @@ pub fn tools(request: &Request) -> Vec<Tool> {
                 .and_then(|views| views.human_tools.value())
                 .into_iter()
                 .flatten()
-                .map(move |(operation, tool)| {
+                // A saved name that is not a valid tool name has no tool to run; the
+                // registry, built from the same declarations, refuses it as well.
+                .filter_map(move |(operation, tool)| {
                     let (kind, description) = match tool {
                         HumanTool::Command(tool) => (tool.kind, &tool.description),
                         HumanTool::Builtin(tool) => (tool.kind, &tool.description),
                     };
-                    Tool {
-                        name: format!("{operation}_{id}"),
+                    Some(Tool {
+                        name: format!("{operation}_{id}").parse().ok()?,
                         kind,
                         description: description.replace("{artifactName}", id.as_str()),
                         declared: Runs::parse(artifacts, id, tool),
-                    }
+                    })
                 })
         })
         .collect();

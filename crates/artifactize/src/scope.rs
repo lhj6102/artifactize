@@ -1,7 +1,6 @@
 //! Mounts, aliases, artifact references, and canonical scoped paths.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -485,15 +484,16 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     ));
                 }
             } else {
-                match fs::symlink_metadata(config.root.join(artifact.folder()).join(alias.as_str()))
-                {
-                    Ok(_) => {
+                match crate::platform::entry_exists(
+                    &config.root.join(artifact.folder()).join(alias.as_str()),
+                ) {
+                    Ok(true) => {
                         return Err(error(
                             &["mounts", alias],
                             format!("Mount {id}/{alias} conflicts with a physical entry."),
                         ));
                     }
-                    Err(failure) if failure.kind() == std::io::ErrorKind::NotFound => {}
+                    Ok(false) => {}
                     Err(failure) => return Err(error(&["mounts", alias], failure.to_string())),
                 }
             }
@@ -520,8 +520,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         let scope = artifact_scope(config, &[id]).map_err(|failure| error(failure.0))?;
         for input in inputs.iter().filter(|input| *input != ".") {
             if input.ends_with(".artf")
-                && !fs::symlink_metadata(config.root.join(artifact.folder()).join(input))
-                    .is_ok_and(|metadata| metadata.is_dir())
+                && !crate::platform::path_kind(&config.root.join(artifact.folder()).join(input))
+                    .is_ok_and(|kind| kind == crate::platform::FileKind::Directory)
             {
                 return Err(error(
                     "Artifact declarations (*.artf) cannot be explicit artifactsum inputs; declarations are excluded from artifactsum."

@@ -349,11 +349,11 @@ pub(super) fn outcome_code(run: &crate::store::Run) -> u8 {
     if run.wait_timed_out {
         return 3;
     }
-    match run.status.as_str() {
-        "GREEN" => 0,
-        "RED" => 1,
-        "INCOMPLETE" => 4,
-        _ => 2,
+    match run.status {
+        crate::types::RunStatus::Green => 0,
+        crate::types::RunStatus::Red => 1,
+        crate::types::RunStatus::Incomplete => 4,
+        crate::types::RunStatus::Running | crate::types::RunStatus::Error => 2,
     }
 }
 

@@ -86,14 +86,15 @@ pub async fn run_human_tool(
 pub async fn tool_commands(
     receipts: &Receipts,
     request: &str,
-) -> Result<std::collections::BTreeMap<String, Result<CommandLine, String>>, String> {
+) -> Result<std::collections::BTreeMap<crate::config::ToolName, Result<CommandLine, String>>, String>
+{
     let request = receipts.waiting_human(request).await?;
     let config = reconnect(&request)?;
     let registry = Registry::new(&config, &request.eval_id)?;
     Ok(registry
         .list()
         .filter(|tool| registry.is_command(&tool.name))
-        .map(|tool| (tool.name.to_string(), registry.command(&tool.name)))
+        .map(|tool| (tool.name.clone(), registry.command(&tool.name)))
         .collect())
 }
 

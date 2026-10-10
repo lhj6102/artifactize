@@ -195,11 +195,10 @@ impl Catalog {
                 Repository::Git(path) => path.parent().unwrap_or(path),
                 Repository::Workspace(path) => path.as_path(),
             };
-            let label = root
-                .file_name()
-                .unwrap_or(root.as_os_str())
-                .to_string_lossy()
-                .into_owned();
+            let label = root.file_name().map_or_else(
+                || crate::platform::path_text(root),
+                |name| name.to_string_lossy().into_owned(),
+            );
             // The repository row is the whole repository; there is no separate `ALL` row.
             let scope = Scope::Repository(repository.clone());
             rows.push(CatalogRow {
@@ -222,10 +221,10 @@ impl Catalog {
                     continue;
                 }
                 let branch = branches.get(scope).and_then(Option::as_deref);
-                let name = tree
-                    .file_name()
-                    .unwrap_or(tree.as_os_str())
-                    .to_string_lossy();
+                let name = tree.file_name().map_or_else(
+                    || crate::platform::path_text(tree),
+                    |name| name.to_string_lossy().into_owned(),
+                );
                 let label = match (branch, &repository) {
                     (Some(branch), _) if branch == name => branch.to_owned(),
                     (Some(branch), _) => format!("{branch} · {name}"),

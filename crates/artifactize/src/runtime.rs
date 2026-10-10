@@ -178,20 +178,21 @@ where
         Ok(mut output) => {
             output.stdout = clean_output(&output.stdout);
             output.stderr = clean_output(&output.stderr);
-            match output.status.code() {
-                Some(exit_code) => Outcome::Completed(ReviewResult {
-                    verdict: if exit_code == 0 {
-                        Verdict::Green
-                    } else {
-                        Verdict::Red
-                    },
-                    exit_code,
-                    output,
-                }),
-                None => Outcome::OperationalError(Error::AbnormalExit {
-                    signal: crate::platform::exit_signal(&output.status),
-                    output,
-                }),
+            match crate::platform::process_end(&output.status) {
+                crate::platform::ProcessEnd::Exited(exit_code) => {
+                    Outcome::Completed(ReviewResult {
+                        verdict: if exit_code == 0 {
+                            Verdict::Green
+                        } else {
+                            Verdict::Red
+                        },
+                        exit_code,
+                        output,
+                    })
+                }
+                crate::platform::ProcessEnd::Signaled(signal) => {
+                    Outcome::OperationalError(Error::AbnormalExit { signal, output })
+                }
             }
         }
         Err(error) => Outcome::OperationalError(Error::Process(error)),

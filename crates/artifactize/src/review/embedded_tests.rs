@@ -747,7 +747,7 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
         review
             .tools()
             .into_iter()
-            .map(|tool| (tool.name, tool.kind))
+            .map(|tool| (tool.name.to_string(), tool.kind))
             .collect::<Vec<_>>()
     };
     let expected = vec![(

@@ -130,7 +130,10 @@ impl Record {
                 &self.fingerprints,
                 &self.artifact_kinds,
             ) == self.key
-            && matches!(self.verdict.as_str(), "GREEN" | "RED")
+            && matches!(
+                self.verdict,
+                crate::types::ExecutionStatus::Green | crate::types::ExecutionStatus::Red
+            )
             && self.result.verdict().as_str() == self.verdict.as_str()
             && self.execution_id.valid_wire()
             && valid_session(self.producer.as_ref())

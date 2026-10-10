@@ -39,6 +39,23 @@ pub(crate) struct FileIdentity {
     index: u64,
 }
 
+/// How a finished process ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProcessEnd {
+    /// It exited with this code.
+    Exited(i32),
+    /// It was ended without an exit code: on Unix by a signal, when known.
+    Signaled(Option<i32>),
+}
+
+/// How the process whose `status` this is ended.
+pub(crate) fn process_end(status: &std::process::ExitStatus) -> ProcessEnd {
+    match status.code() {
+        Some(code) => ProcessEnd::Exited(code),
+        None => ProcessEnd::Signaled(exit_signal(status)),
+    }
+}
+
 /// How a finished process ended, for a message: its exit code, or on Unix the signal that
 /// ended it, in the system's own wording.
 pub(crate) fn exit_description(status: &std::process::ExitStatus) -> String {

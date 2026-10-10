@@ -1,6 +1,7 @@
 use crate::config::CONFIG_FILE;
 
 use serde_json::{Value, json};
+use std::fs;
 
 use super::*;
 use crate::config::read_workspace_config;

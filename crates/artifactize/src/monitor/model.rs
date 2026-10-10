@@ -267,7 +267,10 @@ fn elapsed(view: &RequestView, now: OffsetDateTime) -> Option<String> {
     if reused(view) {
         return Some("reused".into());
     }
-    let active = matches!(request.status.as_str(), "RUNNING" | "WAITING_HUMAN");
+    let active = matches!(
+        request.status,
+        crate::types::RequestStatus::Running | crate::types::RequestStatus::WaitingHuman
+    );
     let start = request
         .started_at
         .or(active.then_some(request.created_at))?;
