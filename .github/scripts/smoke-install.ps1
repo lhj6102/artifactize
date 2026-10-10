@@ -53,6 +53,20 @@ try {
         }
     }
 
+    # Make the previous pair byte-distinct from the offered update while keeping it
+    # runnable: Windows ignores an overlay after the PE image. This detects replacing
+    # the healthy command before discovering that the other new command is blocked.
+    foreach ($command in $commands) {
+        $exe = Join-Path $env:ARTIFACTIZE_INSTALL_DIR "$command.exe"
+        $stream = [IO.File]::Open($exe, [IO.FileMode]::Append, [IO.FileAccess]::Write)
+        try {
+            $marker = [Text.Encoding]::UTF8.GetBytes("previous-install-$command")
+            $stream.Write($marker, 0, $marker.Length)
+        } finally { $stream.Dispose() }
+        $out = & $exe --version
+        if ($LASTEXITCODE -ne 0 -or $out -ne "$command $Version") { throw "marked previous $command does not run" }
+    }
+
     # A checksum-valid archive whose .exe cannot start simulates application control.
     # Corrupt each command in turn: even when artifactize runs, a blocked tools binary
     # must leave BOTH installed files and both process/user Path values untouched.
