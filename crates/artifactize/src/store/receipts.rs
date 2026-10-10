@@ -111,7 +111,7 @@ pub struct Run {
     /// Kinds whose evals only reuse a result; one with nothing to reuse is not executed.
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub reuse_only: BTreeSet<ProfileKind>,
-    pub validation: Value,
+    pub validation: super::Validation,
     pub error: Option<String>,
     /// Agent backends this Run stopped admitting reviews on, in the order they stopped.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -119,7 +119,7 @@ pub struct Run {
     /// Verdicts the Run took from saved results for evals it has no request for, such as the
     /// dependencies of a partial Run, so readers judge gates on the Run's own evidence.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub evidence: BTreeMap<String, crate::types::RequestStatus>,
+    pub evidence: BTreeMap<crate::types::EvalId, crate::types::RequestStatus>,
 }
 
 /// An Agent backend a Run stopped after an AUTHENTICATION or QUOTA failure, which every
@@ -127,9 +127,9 @@ pub struct Run {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StoppedBackend {
-    pub backend: String,
-    pub error_code: String,
-    pub eval_id: String,
+    pub backend: crate::config::Backend,
+    pub error_code: crate::types::BackendStopCode,
+    pub eval_id: crate::types::EvalId,
     pub request_id: RequestId,
     pub error: String,
 }
@@ -143,8 +143,8 @@ fn default_jobs() -> usize {
 pub struct Request {
     pub id: RequestId,
     pub run_id: RunId,
-    pub eval_id: String,
-    pub target: String,
+    pub eval_id: crate::types::EvalId,
+    pub target: crate::types::ArtifactName,
     pub title: String,
     pub profile: crate::config::StoredProfile,
     pub requested_profile: crate::config::StoredProfile,
@@ -182,10 +182,10 @@ pub struct Request {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<crate::agent::session::SessionRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub human_definition: Option<Value>,
+    pub human_definition: Option<super::HumanDefinition>,
     pub payload: crate::config::StoredPayload,
-    pub references: Value,
-    pub deps: Vec<String>,
+    pub references: BTreeMap<String, crate::types::ArtifactName>,
+    pub deps: Vec<crate::types::ArtifactName>,
     #[serde(default)]
     pub force: bool,
     /// The target Artifact's fingerprint.
@@ -196,7 +196,7 @@ pub struct Request {
     pub key: Option<ReuseKey>,
     /// Each Artifact the key covers, with its fingerprint.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
-    pub fingerprints: std::collections::BTreeMap<String, Fingerprint>,
+    pub fingerprints: std::collections::BTreeMap<crate::types::ArtifactName, Fingerprint>,
     pub status: RequestStatus,
     pub created_at: Timestamp,
     pub started_at: Option<Timestamp>,
@@ -206,14 +206,14 @@ pub struct Request {
     #[serde(default, with = "crate::platform::path_serde::option")]
     pub run_dir: Option<PathBuf>,
     pub argv: Option<Vec<String>>,
-    pub child: Option<Value>,
+    pub child: Option<super::ChildIdentity>,
     pub result: Option<Value>,
     pub error: Option<String>,
-    pub error_code: Option<String>,
+    pub error_code: Option<crate::types::FailureCode>,
     pub blocked_reason: Option<String>,
     /// Unfulfilled Artifacts and Evals behind a derived dependency verdict.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub blocked_by: Vec<String>,
+    pub blocked_by: Vec<super::Blocker>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -273,7 +273,7 @@ impl Receipts {
         let connection = NotifyingConnection::new(connection, &state);
         // WAL initialization retries share the database contention budget.
         let deadline = tokio::time::Instant::now() + super::SQLITE_BUSY_TIMEOUT;
-        let state_id = crate::agent::uuid()?;
+        let state_id: crate::types::StateId = crate::agent::uuid()?.parse()?;
         loop {
             let state_id = state_id.clone();
             let initialized = connection
@@ -320,9 +320,9 @@ impl Receipts {
     }
 
     /// This state's stable id ([`read_state_id`]).
-    pub async fn state_id(&self) -> Result<String, String> {
+    pub async fn state_id(&self) -> Result<crate::types::StateId, String> {
         self.connection
-            .call(|db| -> Result<String, Error> {
+            .call(|db| -> Result<crate::types::StateId, Error> {
                 Ok(
                     db.query_row("SELECT value FROM state_meta WHERE name='id'", [], |row| {
                         row.get(0)
@@ -489,14 +489,14 @@ pub fn state_schema(state: &Path) -> Result<Option<u32>, String> {
 
 /// The state's stable id, read without creating anything; `None` until a command that writes
 /// the state has opened it.
-pub fn read_state_id(state: &Path) -> Result<Option<String>, String> {
+pub fn read_state_id(state: &Path) -> Result<Option<crate::types::StateId>, String> {
     let state = canonical_target(state).map_err(|e| e.to_string())?;
     check_files(&state)?;
     let database = state.join(DATABASE);
     if !database.try_exists().map_err(|e| e.to_string())? {
         return Ok(None);
     }
-    let read = || -> Result<Option<String>, Error> {
+    let read = || -> Result<Option<crate::types::StateId>, Error> {
         let mut db = rusqlite::Connection::open_with_flags(
             &database,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
@@ -518,11 +518,11 @@ pub fn read_state_id(state: &Path) -> Result<Option<String>, String> {
 pub(crate) fn regular_files(state: &Path) -> Result<(), String> {
     for suffix in ["", "-wal", "-shm"] {
         let path = state.join(format!("{DATABASE}{suffix}"));
-        match path.symlink_metadata() {
-            Ok(metadata) if !metadata.is_file() => {
+        match crate::platform::path_kind(&path) {
+            Ok(kind) if kind != crate::platform::FileKind::File => {
                 return Err(format!(
                     "State files must be regular files: {}",
-                    path.display()
+                    crate::platform::path_text(&path)
                 ));
             }
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
@@ -547,7 +547,7 @@ pub struct LastRequest {
 pub async fn read_latest_requests(
     state: &Path,
     repo: &Path,
-) -> Result<std::collections::BTreeMap<String, LastRequest>, String> {
+) -> Result<std::collections::BTreeMap<crate::types::EvalId, LastRequest>, String> {
     let state = canonical_target(state).map_err(|e| e.to_string())?;
     outside_workspace(repo, &state).map_err(|e| e.to_string())?;
     check_files(&state)?;

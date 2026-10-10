@@ -1050,7 +1050,7 @@ fn listed() -> Review {
     let mut review = Review::new("/state".into(), None, "alice".into(), None);
     let mut other = view("WAITING_HUMAN", Some("bob"), demo());
     other.request.id = "run-2-1".parse().unwrap();
-    other.request.eval_id = "docs/check".into();
+    other.request.eval_id = "docs/check".parse().unwrap();
     review.set_waiting(vec![other, view("WAITING_HUMAN", Some("alice"), demo())]);
     review.refreshed = Some(OffsetDateTime::now_utc());
     review
@@ -1240,14 +1240,18 @@ fn json_cursors_stay_on_utf8_boundaries_when_the_text_is_replaced() {
 fn control_characters_never_break_one_row_texts() {
     let mut review = listed();
     for view in &mut review.waiting {
-        view.request.eval_id = format!("{}\n\tx", view.request.eval_id);
+        assert!(
+            format!("{}\n\tx", view.request.eval_id)
+                .parse::<crate::types::EvalId>()
+                .is_err()
+        );
         view.request.title = "Ap\nprove\u{1b}[31m".into();
     }
     let rows = |text: &str| text.lines().map(str::to_owned).collect::<Vec<_>>();
     // The list cells and the Preview title stay on their rows.
     let text = screen(&mut review);
-    assert!(text.contains("docs/check  x"), "{text}");
-    assert!(text.contains("docs/check  x · Ap prove[31m"), "{text}");
+    assert!(text.contains("docs/check"), "{text}");
+    assert!(text.contains("docs/check · Ap prove[31m"), "{text}");
     assert!(!text.contains('\u{1b}'));
     for row in rows(&text) {
         assert_eq!(row.chars().count(), 140, "{text}");
@@ -1255,11 +1259,8 @@ fn control_characters_never_break_one_row_texts() {
     // So do the Detail's title and the Compact list.
     press(&mut review, KeyCode::Enter);
     let text = screen(&mut review);
-    assert!(
-        text.contains("docs/check  x · Ap prove[31m · CLAIM"),
-        "{text}"
-    );
-    assert!(text.contains("? docs/check  x"), "{text}");
+    assert!(text.contains("docs/check · Ap prove[31m · CLAIM"), "{text}");
+    assert!(text.contains("? docs/check"), "{text}");
     for row in rows(&text) {
         assert_eq!(row.chars().count(), 140, "{text}");
     }

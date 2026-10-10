@@ -1339,7 +1339,7 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
         assert_eq!(wire["artifactKinds"]["file"], "file");
         record
             .artifact_kinds
-            .insert("file".into(), ArtifactKind::Folder);
+            .insert("file".parse().unwrap(), ArtifactKind::Folder);
         assert!(record.validate().is_err());
         record.artifact_kinds.clear();
         assert!(
@@ -1349,7 +1349,7 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
         let mut record = artifactize::remote::Record::new(&execution, full).unwrap();
         record.publisher = Some("fixture".into());
         record.published_at = Some("2026-10-09T00:00:00Z".parse().unwrap());
-        let mirrored = record.mirror("fixture").unwrap();
+        let mirrored = record.mirror("https://reviews.example/").unwrap();
         assert_eq!(mirrored.artifact_kinds, execution.artifact_kinds);
         assert_eq!(mirrored.key, execution.key);
     }

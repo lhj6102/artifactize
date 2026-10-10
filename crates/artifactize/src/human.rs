@@ -166,9 +166,12 @@ pub async fn submit_and_publish(
     Ok(request)
 }
 
-pub(crate) fn definition(config: &RepoConfig, eval: &Eval) -> Result<Value, String> {
+pub(crate) fn definition(
+    config: &RepoConfig,
+    eval: &Eval,
+) -> Result<crate::store::HumanDefinition, String> {
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
-    Ok(json!({"repo":config.root,"eval":eval,"artifacts":scope.artifacts}))
+    serde_json::from_value(json!({"repo":crate::platform::path_text(&config.root),"eval":eval,"artifacts":scope.artifacts})).map_err(|e| e.to_string())
 }
 
 fn reconnect(request: &Request) -> Result<RepoConfig, String> {

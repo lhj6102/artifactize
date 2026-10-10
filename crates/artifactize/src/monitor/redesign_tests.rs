@@ -407,7 +407,7 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
     let state = root.path().join("state");
     fs::create_dir_all(&repo).unwrap();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    view.request.session.as_mut().unwrap().state = receipts.state_id().await.unwrap();
+    view.request.session.as_mut().unwrap().state = receipts.state_id().await.unwrap().to_string();
     use crate::agent::session::{
         document::Position,
         live::{Reader, Resolution},

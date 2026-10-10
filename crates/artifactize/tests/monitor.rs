@@ -613,8 +613,14 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     assert_eq!(
         view.run.evidence,
         [
-            ("a/x".to_owned(), artifactize::types::RequestStatus::Green),
-            ("b/x".to_owned(), artifactize::types::RequestStatus::Green),
+            (
+                "a/x".parse().unwrap(),
+                artifactize::types::RequestStatus::Green
+            ),
+            (
+                "b/x".parse().unwrap(),
+                artifactize::types::RequestStatus::Green
+            ),
         ]
         .into()
     );
@@ -640,7 +646,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     ))
     .await;
     let saved = |id: &str| {
-        view.run.validation["artifacts"]
+        serde_json::to_value(&view.run.validation).unwrap()["artifacts"]
             .as_array()
             .unwrap()
             .iter()
