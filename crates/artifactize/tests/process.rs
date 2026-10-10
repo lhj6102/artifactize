@@ -85,7 +85,7 @@ async fn registration_observes_inert_group_leader_before_exec() {
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap().trim(),
-        expected_cwd.display().to_string()
+        support::os::canonical(&expected_cwd).display().to_string()
     );
     assert_eq!(
         std::fs::read(scratch.0.join("started")).unwrap(),

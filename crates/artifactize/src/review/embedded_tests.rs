@@ -790,7 +790,7 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     };
     let root = crate::test_os::canonical(&repo);
     let file = crate::test_os::canonical(&root.join("assets/brand/artifactize-icon.svg"));
-    assert_eq!(command.args, vec![file.to_str().unwrap().to_owned()]);
+    assert_eq!(command.args, vec![crate::test_os::path_text(&file)]);
     assert_eq!(command.cwd, root.join("assets/brand"));
     press(&mut review, KeyEvent::from(KeyCode::Tab));
     let screen = drawn(&mut review);

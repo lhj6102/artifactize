@@ -256,8 +256,9 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
             .filter(|c| !c.is_whitespace() && !"│┌┐└┘─".contains(*c))
             .collect()
     };
-    let notes = release.join("notes.md").display().to_string();
-    let command = artifactize::review::shell([bin("cat").as_str(), notes.as_str()]);
+    let notes = support::os::path_text(&release.join("notes.md"));
+    let cat = support::os::path_text(std::path::Path::new(&bin("cat")));
+    let command = artifactize::review::shell([cat.as_str(), notes.as_str()]);
     let shown = format!("$ {command}");
     let prefix: String = unwrapped(&shown).chars().take(20).collect();
     assert!(unwrapped(&selected).contains(&prefix), "{selected}");

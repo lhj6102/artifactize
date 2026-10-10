@@ -535,7 +535,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
         run["requests"][0]["result"]["stdout"],
         format!(
             "variant {}\n",
-            fixture.repo.join("input").join("data.txt").display()
+            support::os::path_text(&fixture.repo.join("input").join("data.txt"))
         )
     );
     assert_eq!(fs::read(&source).unwrap(), original);
