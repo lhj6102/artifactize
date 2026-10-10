@@ -39,7 +39,7 @@ pub struct CommandTool {
     pub input_schema: Value,
     pub protocol: ToolProtocol,
     pub command: String,
-    pub args: Vec<String>,
+    pub args: Vec<crate::scope::Argument>,
     #[serde(
         default,
         deserialize_with = "timeout",
@@ -94,7 +94,7 @@ impl AgentTool {
                 crate::tools::schema::compile(&tool.input_schema)?;
                 if tool.protocol == ToolProtocol::Plain {
                     for arg in &tool.args {
-                        crate::tools::plain_argument(arg, |name| {
+                        crate::tools::plain_argument(&arg.to_string(), |name| {
                             if tool.input_schema["properties"].get(name).is_none() {
                                 return Err(format!("Unknown plain tool placeholder: {name}"));
                             }
@@ -160,7 +160,7 @@ pub struct HumanCommandTool {
     pub description: String,
     pub kind: HumanToolKind,
     pub command: String,
-    pub args: Vec<String>,
+    pub args: Vec<crate::scope::Argument>,
     #[serde(
         default,
         deserialize_with = "timeout",
@@ -238,35 +238,37 @@ impl HumanTool {
             Self::Builtin(tool) => tool.kind(),
         }
     }
-    pub fn args(&self) -> &[String] {
-        match self {
-            Self::Command(tool) => &tool.args,
-            Self::Builtin(tool) => &tool.args,
-        }
-    }
     pub(super) fn validate(&self) -> Result<(), String> {
         description(self.description())?;
-        if let Self::Command(tool) = self {
-            script(&tool.command, &tool.args)?;
-            if tool.command.contains(['{', '}']) {
-                return Err("Tool command must not contain placeholders.".into());
+        match self {
+            Self::Command(tool) => {
+                script(&tool.command, &tool.args)?;
+                if tool.command.contains(['{', '}']) {
+                    return Err("Tool command must not contain placeholders.".into());
+                }
+                for argument in &tool.args {
+                    crate::scope::validate_human_argument(argument)
+                        .map_err(|error| error.to_string())?;
+                }
             }
-        }
-        crate::scope::validate_human_args(self.args()).map_err(|error| error.to_string())?;
-        if let Self::Builtin(tool) = self {
-            if tool.builtin != Builtin::Help
-                && !(tool.builtin == Builtin::Open
-                    && artifactize_tools::builtin::is_url(&tool.args[0]))
-                && !tool.args[0].starts_with('{')
-            {
-                artifactize_tools::scope::logical_path(&tool.args[0])
-                    .map_err(|error| error.to_string())?;
-            }
-            if tool.builtin == Builtin::Help && tool.args.iter().any(|arg| arg.contains(['{', '}']))
-            {
-                return Err(
-                    "Help args are literal program/subcommand names, not path placeholders.".into(),
-                );
+            Self::Builtin(tool) => {
+                crate::scope::validate_human_args(&tool.args).map_err(|error| error.to_string())?;
+                if tool.builtin != Builtin::Help
+                    && !(tool.builtin == Builtin::Open
+                        && artifactize_tools::builtin::is_url(&tool.args[0]))
+                    && !tool.args[0].starts_with('{')
+                {
+                    artifactize_tools::scope::logical_path(&tool.args[0])
+                        .map_err(|error| error.to_string())?;
+                }
+                if tool.builtin == Builtin::Help
+                    && tool.args.iter().any(|arg| arg.contains(['{', '}']))
+                {
+                    return Err(
+                        "Help args are literal program/subcommand names, not path placeholders."
+                            .into(),
+                    );
+                }
             }
         }
         Ok(())

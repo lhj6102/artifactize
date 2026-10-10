@@ -9,7 +9,9 @@ use crate::config::{Artifact, ArtifactName, ConfigError, Eval, Fingerprint, Prof
 
 mod human;
 mod instruction;
-pub(crate) use human::{builtin_args, resolve_human_argv, validate_human_args};
+pub(crate) use human::{
+    builtin_args, resolve_human_argv, validate_human_args, validate_human_argument,
+};
 pub use instruction::instruction_references;
 
 pub use artifactize_tools::scope::{ArtifactId, ScopeError, ScopedPath, scoped_path};
@@ -243,12 +245,12 @@ pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, 
 pub fn argv_scope<'a>(
     config: &'a RepoConfig,
     owner: &str,
-    args: &[String],
+    args: &[Argument],
 ) -> Result<Scope<'a>, ScopeError> {
     let mut roots = vec![owner];
     for argument in args {
-        if let Some(reference) = argument_reference(argument)? {
-            roots.push(reference_target(config, owner, reference.name)?);
+        if let Argument::Reference { name, .. } = argument {
+            roots.push(reference_target(config, owner, name)?);
         }
     }
     artifact_scope(config, &roots)
@@ -288,49 +290,140 @@ pub fn parse_artifact_instruction(
     parts
 }
 
-struct ArgumentReference<'a> {
-    name: &'a str,
-    prefix: &'a str,
-    path: &'a str,
+/// A declared argument, parsed once when its declaration loads: either a plain literal, or a
+/// `{name}[/path]` / `--flag={name}[/path]` Artifact reference. Parsing here only checks shape
+/// (a single well-formed reference, a valid path suffix); whether `name` names a real Artifact
+/// is a separate, config-wide check ([`reference_target`]) run once every declaration is loaded.
+/// [`std::fmt::Display`] reconstructs the exact original text, so round-tripping through the
+/// saved `Vec<String>` forms (`StoredProfile`, Views) changes no byte and no reuse key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Argument {
+    Literal(String),
+    Reference {
+        prefix: String,
+        name: String,
+        path: String,
+    },
 }
 
-fn argument_reference(argument: &str) -> Result<Option<ArgumentReference<'_>>, ScopeError> {
-    let references = instruction::references(argument);
-    let Some(reference) = references.first() else {
-        return Ok(None);
-    };
-    let prefix = &argument[..reference.start];
-    let flag = prefix
-        .strip_prefix("--")
-        .and_then(|flag| flag.strip_suffix('='))
-        .is_some_and(|flag| {
-            !flag.is_empty()
-                && flag
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        });
-    if references.len() != 1 || (!prefix.is_empty() && !flag) {
-        return Err(ScopeError(
-            "Artifact arguments must be {name}[/path] or --flag={name}[/path].".into(),
-        ));
+impl std::str::FromStr for Argument {
+    type Err = ScopeError;
+    fn from_str(argument: &str) -> Result<Self, Self::Err> {
+        let references = instruction::references(argument);
+        let Some(reference) = references.first() else {
+            return Ok(Self::Literal(argument.to_owned()));
+        };
+        let prefix = &argument[..reference.start];
+        let flag = prefix
+            .strip_prefix("--")
+            .and_then(|flag| flag.strip_suffix('='))
+            .is_some_and(|flag| {
+                !flag.is_empty()
+                    && flag
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            });
+        if references.len() != 1 || (!prefix.is_empty() && !flag) {
+            return Err(ScopeError(
+                "Artifact arguments must be {name}[/path] or --flag={name}[/path].".into(),
+            ));
+        }
+        let suffix = &argument[reference.end..];
+        let path = if suffix.is_empty() {
+            ""
+        } else {
+            suffix
+                .strip_prefix('/')
+                .filter(|path| !path.is_empty())
+                .ok_or_else(|| {
+                    ScopeError("Artifact argument suffix must be a nonempty /path.".into())
+                })?
+        };
+        logical_path(path)?;
+        Ok(Self::Reference {
+            prefix: prefix.to_owned(),
+            name: reference.name.to_owned(),
+            path: path.to_owned(),
+        })
     }
-    let suffix = &argument[reference.end..];
-    let path = if suffix.is_empty() {
-        ""
-    } else {
-        suffix
-            .strip_prefix('/')
-            .filter(|path| !path.is_empty())
-            .ok_or_else(|| {
-                ScopeError("Artifact argument suffix must be a nonempty /path.".into())
-            })?
-    };
-    logical_path(path)?;
-    Ok(Some(ArgumentReference {
-        name: reference.name,
-        prefix,
-        path,
-    }))
+}
+
+impl std::fmt::Display for Argument {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Literal(text) => f.write_str(text),
+            Self::Reference { prefix, name, path } => {
+                write!(f, "{prefix}{{{name}}}")?;
+                if !path.is_empty() {
+                    write!(f, "/{path}")?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl TryFrom<String> for Argument {
+    type Error = ScopeError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+
+impl From<Argument> for String {
+    fn from(argument: Argument) -> Self {
+        argument.to_string()
+    }
+}
+
+impl Serialize for Argument {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Argument {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(|failure: ScopeError| D::Error::custom(failure.0))
+    }
+}
+
+/// For fixtures: a trusted literal string, as declarations and test tables already spell it.
+impl From<&str> for Argument {
+    fn from(value: &str) -> Self {
+        value.parse().expect("a valid declared argument")
+    }
+}
+
+/// Equal iff `other`, spelled as a declared argument, is the same literal or reference: not a
+/// mere prefix/suffix match, and never panics on a malformed `other` (it is just unequal).
+impl PartialEq<str> for Argument {
+    fn eq(&self, other: &str) -> bool {
+        other.parse::<Self>().is_ok_and(|parsed| *self == parsed)
+    }
+}
+impl PartialEq<&str> for Argument {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
+    }
+}
+impl PartialEq<Argument> for str {
+    fn eq(&self, other: &Argument) -> bool {
+        other == self
+    }
+}
+impl PartialEq<Argument> for String {
+    fn eq(&self, other: &Argument) -> bool {
+        other == self.as_str()
+    }
+}
+impl PartialEq<String> for Argument {
+    fn eq(&self, other: &String) -> bool {
+        self == other.as_str()
+    }
 }
 
 fn reference_target<'a>(
@@ -361,20 +454,21 @@ pub fn resolve_argv(
     config: &RepoConfig,
     scope: &Scope<'_>,
     owner: &str,
-    args: &[String],
+    args: &[Argument],
 ) -> Result<Vec<String>, ScopeError> {
     args.iter()
         .map(|argument| {
-            let Some(reference) = argument_reference(argument)? else {
-                return Ok(argument.clone());
+            let Argument::Reference { prefix, name, path } = argument else {
+                return Ok(argument.to_string());
             };
-            let id = reference_target(config, owner, reference.name)?;
-            reference_path(config, id, reference.path)?;
-            let path = scope.resolve_input(&config.root, id, reference.path)?;
-            path.to_str()
+            let id = reference_target(config, owner, name)?;
+            reference_path(config, id, path)?;
+            let resolved = scope.resolve_input(&config.root, id, path)?;
+            resolved
+                .to_str()
                 .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-            let path = crate::platform::path_text(&path);
-            Ok(format!("{}{path}", reference.prefix))
+            let resolved = crate::platform::path_text(&resolved);
+            Ok(format!("{prefix}{resolved}"))
         })
         .collect()
 }
@@ -409,20 +503,19 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 && tool.protocol == crate::config::ToolProtocol::Json
             {
                 for argument in &tool.args {
-                    if let Some(reference) = argument_reference(argument).map_err(|failure| {
-                        error(
-                            &["views", "agent_tools", name, "args"],
-                            format!("Agent tool {name}: {failure}"),
-                        )
-                    })? {
-                        let target =
-                            reference_target(config, id, reference.name).map_err(|failure| {
-                                error(
-                                    &["views", "agent_tools", name, "args"],
-                                    format!("Agent tool {name}: {failure}"),
-                                )
-                            })?;
-                        reference_path(config, target, reference.path).map_err(|failure| {
+                    if let Argument::Reference {
+                        name: ref_name,
+                        path,
+                        ..
+                    } = argument
+                    {
+                        let target = reference_target(config, id, ref_name).map_err(|failure| {
+                            error(
+                                &["views", "agent_tools", name, "args"],
+                                format!("Agent tool {name}: {failure}"),
+                            )
+                        })?;
+                        reference_path(config, target, path).map_err(|failure| {
                             error(
                                 &["views", "agent_tools", name, "args"],
                                 format!("Agent tool {name}: {failure}"),
@@ -434,20 +527,19 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         }
         if let Some(Fingerprint::Script { args, .. }) = &artifact.fingerprint {
             for argument in args {
-                if let Some(reference) = argument_reference(argument).map_err(|failure| {
-                    error(
-                        &["fingerprint", "script", "args"],
-                        format!("fingerprint.script: {failure}"),
-                    )
-                })? {
-                    let target =
-                        reference_target(config, id, reference.name).map_err(|failure| {
-                            error(
-                                &["fingerprint", "script", "args"],
-                                format!("fingerprint.script: {failure}"),
-                            )
-                        })?;
-                    reference_path(config, target, reference.path).map_err(|failure| {
+                if let Argument::Reference {
+                    name: ref_name,
+                    path,
+                    ..
+                } = argument
+                {
+                    let target = reference_target(config, id, ref_name).map_err(|failure| {
+                        error(
+                            &["fingerprint", "script", "args"],
+                            format!("fingerprint.script: {failure}"),
+                        )
+                    })?;
+                    reference_path(config, target, path).map_err(|failure| {
                         error(
                             &["fingerprint", "script", "args"],
                             format!("fingerprint.script: {failure}"),
@@ -612,14 +704,17 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         }
         if let Profile::Runtime { args, .. } = eval.declaration.profile() {
             for (index, argument) in args.iter().enumerate() {
-                let Some(reference) = argument_reference(argument)
-                    .map_err(|failure| error(&["profile", "args"], failure))?
+                let Argument::Reference {
+                    name: ref_name,
+                    path,
+                    ..
+                } = argument
                 else {
                     continue;
                 };
-                let source = reference_target(config, &eval.target, reference.name)
+                let source = reference_target(config, &eval.target, ref_name)
                     .map_err(|failure| error(&["profile", "args"], failure))?;
-                reference_path(config, source, reference.path)
+                reference_path(config, source, path)
                     .map_err(|failure| error(&["profile", "args"], failure))?;
                 if source != &eval.target {
                     deps.insert(source.clone());
@@ -629,8 +724,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                         kind: RelationKind::Argument {
                             eval_id: eval.id.clone(),
                             index,
-                            name: reference.name.to_owned(),
-                            path: reference.path.to_owned(),
+                            name: ref_name.clone(),
+                            path: path.clone(),
                         },
                     });
                 }

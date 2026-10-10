@@ -301,7 +301,7 @@ impl<'a> Registry<'a> {
                 .args
                 .iter()
                 .map(|arg| {
-                    plain_argument(arg, |name| {
+                    plain_argument(&arg.to_string(), |name| {
                         if tool.input_schema["properties"].get(name).is_none() {
                             return Err("Undeclared plain tool placeholder.".into());
                         }

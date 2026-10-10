@@ -161,7 +161,7 @@ impl From<&Profile> for StoredProfile {
                 timeout_ms,
             } => Self::Runtime {
                 command: command.clone(),
-                args: args.clone(),
+                args: args.iter().map(ToString::to_string).collect(),
                 timeout_ms: (*timeout_ms).into(),
             },
         }

@@ -204,7 +204,7 @@ pub enum Profile {
     },
     Runtime {
         command: String,
-        args: Vec<String>,
+        args: Vec<crate::scope::Argument>,
         #[serde(
             rename(serialize = "timeoutMs", deserialize = "timeout_ms"),
             default,
@@ -582,7 +582,7 @@ impl Views {
 pub enum Fingerprint {
     Script {
         command: String,
-        args: Vec<String>,
+        args: Vec<crate::scope::Argument>,
         /// Owner-relative paths that must exist on every call; never hashed.
         files: Vec<LogicalPath>,
         timeout_ms: Option<std::time::Duration>,
@@ -603,7 +603,7 @@ struct ScriptForm {
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 struct ScriptFields {
     command: String,
-    args: Vec<String>,
+    args: Vec<crate::scope::Argument>,
     #[serde(default)]
     files: Vec<LogicalPath>,
     #[serde(
