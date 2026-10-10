@@ -822,13 +822,20 @@ fn reject_non_json_values(
 
 pub use artifactize_tools::scope::ArtifactKind;
 
-/// Child paths or mount aliases with their target Artifacts as tool-side IDs.
-fn tool_ids(
+/// Child paths or mount aliases with their target Artifacts as tool-side IDs. Declarations
+/// validated both, so a failure here is a bug.
+fn tool_ids<K: Ord>(
     targets: &BTreeMap<String, ArtifactName>,
-) -> BTreeMap<String, artifactize_tools::scope::ArtifactId> {
+    key: impl Fn(&str) -> Result<K, artifactize_tools::scope::ScopeError>,
+) -> BTreeMap<K, artifactize_tools::scope::ArtifactId> {
     targets
         .iter()
-        .map(|(key, name)| (key.clone(), crate::scope::tool_id(name)))
+        .map(|(path, name)| {
+            (
+                key(path).expect("validated child prefix or mount alias"),
+                crate::scope::tool_id(name),
+            )
+        })
         .collect()
 }
 
@@ -853,8 +860,12 @@ impl Artifact {
             path: self.path.clone(),
             kind: self.kind,
             name: self.name.to_string(),
-            children: tool_ids(&self.children),
-            mounts: tool_ids(&self.mounts),
+            children: tool_ids(&self.children, |path| {
+                artifactize_tools::scope::ChildPrefix::new(path)
+            }),
+            mounts: tool_ids(&self.mounts, |alias| {
+                artifactize_tools::scope::MountAlias::new(alias)
+            }),
         }
     }
 

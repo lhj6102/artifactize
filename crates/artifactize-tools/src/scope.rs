@@ -87,6 +87,58 @@ impl PartialEq<String> for ArtifactId {
     }
 }
 
+/// A safe relative logical path below an Artifact: `/`-separated plain names, such as a
+/// child Artifact's folder prefix. It holds no empty, `.` or `..` component.
+macro_rules! logical_name {
+    ($name:ident, $what:literal, $valid:expr) => {
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+        #[serde(transparent)]
+        pub struct $name(String);
+
+        impl $name {
+            pub fn new(value: impl Into<String>) -> Result<Self, ScopeError> {
+                let value = value.into();
+                if !value.is_empty() && logical_path(&value).is_ok() && ($valid)(&value) {
+                    Ok(Self(value))
+                } else {
+                    Err(ScopeError(format!(
+                        concat!("Invalid ", $what, ": {:?}"),
+                        value
+                    )))
+                }
+            }
+
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl Borrow<str> for $name {
+            fn borrow(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl std::ops::Deref for $name {
+            type Target = str;
+            fn deref(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(&self.0)
+            }
+        }
+    };
+}
+
+logical_name!(ChildPrefix, "child folder prefix", |_: &str| true);
+// A mount alias is one name: the first component of the paths it serves.
+logical_name!(MountAlias, "mount alias", |value: &str| !value
+    .contains('/'));
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ArtifactKind {
@@ -101,9 +153,9 @@ pub struct Artifact {
     pub kind: ArtifactKind,
     pub name: String,
     /// Logical path prefix to the child Artifact that owns it.
-    pub children: BTreeMap<String, ArtifactId>,
+    pub children: BTreeMap<ChildPrefix, ArtifactId>,
     /// Mount alias to the mounted Artifact.
-    pub mounts: BTreeMap<String, ArtifactId>,
+    pub mounts: BTreeMap<MountAlias, ArtifactId>,
 }
 
 impl Artifact {

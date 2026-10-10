@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ffi::OsStr, path::PathBuf};
+use std::{collections::BTreeMap, ffi::OsStr, io::Write, path::PathBuf};
 
 use artifactize_tools::{
     Builtin, Content, builtin,
@@ -61,7 +61,7 @@ async fn main() -> std::process::ExitCode {
     match run(Cli::parse()).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("{error}");
+            let _ = writeln!(std::io::stderr(), "{error}");
             std::process::ExitCode::FAILURE
         }
     }
@@ -152,16 +152,19 @@ async fn run(cli: Cli) -> Result<(), String> {
             &cancellation,
         )
     };
+    let (mut stdout, mut stderr) = (std::io::stdout().lock(), std::io::stderr().lock());
     for content in result.content {
         match content {
-            Content::Text { text } if result.is_error => eprintln!("{text}"),
-            Content::Text { text } => print!("{text}"),
-            Content::Json { data } => println!(
+            Content::Text { text } if result.is_error => writeln!(stderr, "{text}"),
+            Content::Text { text } => write!(stdout, "{text}"),
+            Content::Json { data } => writeln!(
+                stdout,
                 "{}",
                 serde_json::to_string_pretty(&data).expect("builtin JSON")
             ),
             Content::Image { .. } => unreachable!("CLI tools produce no images"),
         }
+        .map_err(|error| error.to_string())?;
     }
     if result.is_error {
         Err("Tool failed.".into())

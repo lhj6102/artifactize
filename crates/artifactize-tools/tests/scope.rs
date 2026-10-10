@@ -1,6 +1,8 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
-use artifactize_tools::scope::{Artifact, ArtifactId, ArtifactKind, Scope, ScopedPath};
+use artifactize_tools::scope::{
+    Artifact, ArtifactId, ArtifactKind, ChildPrefix, MountAlias, Scope, ScopedPath,
+};
 
 fn id(value: &str) -> ArtifactId {
     ArtifactId::new(value).unwrap()
@@ -35,11 +37,11 @@ fn mounts_and_children_resolve_to_their_target_ids() {
         name: path.into(),
         mounts: mounts
             .iter()
-            .map(|(alias, target)| ((*alias).into(), id(target)))
+            .map(|(alias, target)| (MountAlias::new(*alias).unwrap(), id(target)))
             .collect(),
         children: children
             .iter()
-            .map(|(prefix, target)| ((*prefix).into(), id(target)))
+            .map(|(prefix, target)| (ChildPrefix::new(*prefix).unwrap(), id(target)))
             .collect(),
     };
     let scope = Scope {

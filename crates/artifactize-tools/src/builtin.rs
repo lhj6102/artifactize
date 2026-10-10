@@ -6,6 +6,29 @@ pub use fixed::{
 };
 pub use input::Input;
 
+/// One entry of a listing: its name and logical path, its kind, and for a mount the
+/// Artifact it mounts.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Entry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    artifact_id: Option<ArtifactId>,
+    kind: EntryKind,
+    name: String,
+    path: String,
+}
+
+/// What a listed entry is; symlinks and other special files are listed, never followed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum EntryKind {
+    File,
+    Directory,
+    Symlink,
+    Other,
+    Mount,
+}
+
 /// Bound the compiled regex automaton to limit search memory.
 const REGEX_BYTES: usize = 2 * 1024 * 1024;
 
@@ -18,6 +41,7 @@ use std::{
 
 use globset::{GlobBuilder, GlobMatcher};
 use regex::RegexBuilder;
+use serde::Serialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -287,7 +311,7 @@ impl Reader<'_> {
         Ok(result)
     }
 
-    fn entries(&self, path: &str) -> Result<Vec<Value>, String> {
+    fn entries(&self, path: &str) -> Result<Vec<Entry>, String> {
         self.check_cancelled()?;
         let location = self.location(path)?;
         let file = self.open(path, &location)?;
@@ -302,7 +326,7 @@ impl Reader<'_> {
             if !target.metadata().map_err(|e| e.to_string())?.is_file() {
                 return Err("File Artifact target must remain a regular file.".into());
             }
-            entries.insert(name.to_owned(), json!({"name":name,"kind":"file"}));
+            entries.insert(name.to_owned(), (EntryKind::File, None));
         } else {
             // Enumerate the pinned directory, not a path that could have been replaced by a link.
             let directory =
@@ -323,13 +347,13 @@ impl Reader<'_> {
                 let kind = entry
                     .file_type()
                     .map_err(|_| "Cannot inspect Artifact entry.")?;
-                let value = json!({"name":name,"kind":match kind {
-                    FileKind::File => "file",
-                    FileKind::Directory => "directory",
-                    FileKind::Symlink => "symlink",
-                    FileKind::Other => "other",
-                }});
-                entries.insert(name, value);
+                let kind = match kind {
+                    FileKind::File => EntryKind::File,
+                    FileKind::Directory => EntryKind::Directory,
+                    FileKind::Symlink => EntryKind::Symlink,
+                    FileKind::Other => EntryKind::Other,
+                };
+                entries.insert(name, (kind, None));
             }
         }
         if location.path.is_empty() {
@@ -345,10 +369,7 @@ impl Reader<'_> {
                     return Err("Mount is outside this eval's scope.".into());
                 }
                 if entries
-                    .insert(
-                        alias.clone(),
-                        json!({"name":alias,"kind":"mount","artifactId":id}),
-                    )
+                    .insert(alias.to_string(), (EntryKind::Mount, Some(id.clone())))
                     .is_some()
                 {
                     return Err("Logical mount conflicts with a physical entry.".into());
@@ -357,9 +378,11 @@ impl Reader<'_> {
         }
         Ok(entries
             .into_iter()
-            .map(|(name, mut value)| {
-                value["path"] = json!(join(path, &name));
-                value
+            .map(|(name, (kind, artifact_id))| Entry {
+                artifact_id,
+                kind,
+                path: join(path, &name),
+                name,
             })
             .collect())
     }
@@ -419,13 +442,14 @@ impl Reader<'_> {
                     break;
                 }
                 seen += 1;
-                let child = entry["path"].as_str().unwrap();
-                match entry["kind"].as_str().unwrap() {
-                    "file" => {
-                        files.insert(child.to_owned());
+                match entry.kind {
+                    EntryKind::File => {
+                        files.insert(entry.path);
                     }
-                    "directory" | "mount" => pending.push((child.into(), ancestors.clone())),
-                    _ => {}
+                    EntryKind::Directory | EntryKind::Mount => {
+                        pending.push((entry.path, ancestors.clone()));
+                    }
+                    EntryKind::Symlink | EntryKind::Other => {}
                 }
             }
             if truncated {

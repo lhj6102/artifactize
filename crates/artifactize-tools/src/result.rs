@@ -172,6 +172,12 @@ pub fn plain(stdout: &[u8], successful: bool, truncated: bool) -> ToolResult {
     }
 }
 
+/// ECMA-48 control sequence bytes: after `ESC [`, parameter bytes, then intermediate bytes,
+/// then one final byte end the sequence.
+const CSI_PARAMETER: std::ops::RangeInclusive<u8> = 0x30..=0x3f;
+const CSI_INTERMEDIATE: std::ops::RangeInclusive<u8> = 0x20..=0x2f;
+const CSI_FINAL: std::ops::RangeInclusive<u8> = 0x40..=0x7e;
+
 pub fn clean_output(bytes: &[u8]) -> Vec<u8> {
     let text = String::from_utf8_lossy(bytes);
     let mut bytes = text.as_bytes();
@@ -181,20 +187,17 @@ pub fn clean_output(bytes: &[u8]) -> Vec<u8> {
             let mut end = 2;
             while bytes
                 .get(end)
-                .is_some_and(|byte| (0x30..=0x3f).contains(byte))
+                .is_some_and(|byte| CSI_PARAMETER.contains(byte))
             {
                 end += 1;
             }
             while bytes
                 .get(end)
-                .is_some_and(|byte| (0x20..=0x2f).contains(byte))
+                .is_some_and(|byte| CSI_INTERMEDIATE.contains(byte))
             {
                 end += 1;
             }
-            if bytes
-                .get(end)
-                .is_some_and(|byte| (0x40..=0x7e).contains(byte))
-            {
+            if bytes.get(end).is_some_and(|byte| CSI_FINAL.contains(byte)) {
                 bytes = &bytes[end + 1..];
                 continue;
             }
