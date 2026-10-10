@@ -49,7 +49,7 @@ impl Scratch {
 
 async fn execute(command: Command) -> Outcome {
     timeout(
-        TEST_TIMEOUT + Duration::from_secs(2),
+        support::os::patience(TEST_TIMEOUT + Duration::from_secs(2)),
         runtime::execute(command, CancellationToken::new(), |_| async { Ok(()) }),
     )
     .await
@@ -184,7 +184,10 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     let child = child.await.unwrap();
     wait_for(|| scratch.workspace().join("started").exists()).await;
     cancellation.cancel();
-    let outcome = timeout(TEST_TIMEOUT, running).await.unwrap().unwrap();
+    let outcome = timeout(support::os::patience(TEST_TIMEOUT), running)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(
         matches!(
             outcome,
@@ -640,7 +643,7 @@ async fn assert_gone(pid: u32) {
 }
 
 async fn wait_for(condition: impl Fn() -> bool) {
-    timeout(TEST_TIMEOUT, async {
+    timeout(support::os::patience(TEST_TIMEOUT), async {
         while !condition() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }

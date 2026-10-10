@@ -738,7 +738,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
     let session = loop {
         let found = fs::read_dir(project.sessions())
             .unwrap()

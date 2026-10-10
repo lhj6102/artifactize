@@ -406,8 +406,10 @@ fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
     let child = pid.map(Launched);
     assert!(result.status.success(), "{result:?}");
     let child = child.expect("launcher wrote its pid");
+    // The probe that launched it has exited; the detached child outlives it, but may not
+    // have finished becoming a tracked job member or process-group leader just yet.
+    support::os::wait_until(Duration::from_secs(5), || support::os::running(child.0));
     support::os::assert_detached(child.0);
-    // The probe that launched it has exited; the detached child keeps running.
     assert!(
         support::os::running(child.0),
         "detached child is still running"

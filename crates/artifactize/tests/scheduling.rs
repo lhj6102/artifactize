@@ -121,7 +121,9 @@ fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
     let child = fixture.spawn(&["--jobs", "2", "--max-executions", "1"]);
     wait_until(|| fixture.starts().len() == 1 && fixture.state.join("state.sqlite").exists());
     let database = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    database.busy_timeout(Duration::from_secs(5)).unwrap();
+    database
+        .busy_timeout(support::os::patience(Duration::from_secs(5)))
+        .unwrap();
     database
         .execute_batch(
             "CREATE TABLE fixture_update_count(count INTEGER); INSERT INTO fixture_update_count VALUES(0); CREATE TRIGGER fixture_budget_updates AFTER UPDATE ON requests WHEN NEW.status='BUDGET_EXHAUSTED' BEGIN UPDATE fixture_update_count SET count=count+1; END;",

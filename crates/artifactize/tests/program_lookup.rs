@@ -2,13 +2,7 @@
 
 mod support;
 
-use std::{
-    fs,
-    path::PathBuf,
-    process::Command,
-    thread,
-    time::{Duration, Instant},
-};
+use std::{fs, path::PathBuf, process::Command, time::Duration};
 
 use serde_json::{Value, json};
 
@@ -120,11 +114,9 @@ fn declared_eval_fingerprint_agent_and_human_share_path_lookup_and_literal_argum
         0,
     );
     assert_eq!(launched["result"]["content"][0]["launched"], true);
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
-    while !project.repo.join("launched").exists() {
-        assert!(Instant::now() < deadline, "detached shim did not run");
-        thread::sleep(Duration::from_millis(10));
-    }
+    support::os::wait_until(Duration::from_secs(10), || {
+        project.repo.join("launched").exists()
+    });
     assert_eq!(
         fs::read_to_string(project.repo.join("launched")).unwrap(),
         "launched"

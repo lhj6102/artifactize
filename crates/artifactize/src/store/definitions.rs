@@ -119,9 +119,9 @@ pub struct Artifact {
 #[serde(rename_all = "camelCase")]
 pub struct Views {
     #[serde(default, skip_serializing_if = "missing")]
-    pub agent_tools: Field<BTreeMap<String, AgentTool>>,
+    pub agent_tools: Field<BTreeMap<config::ToolOperationName, AgentTool>>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub human_tools: Field<BTreeMap<String, HumanTool>>,
+    pub human_tools: Field<BTreeMap<config::ToolOperationName, HumanTool>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

@@ -714,7 +714,7 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
     let cancel = token.clone();
     let started = fixture.repo.join("art/started");
     let cancellation = async move {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(support::os::patience(Duration::from_secs(10)), async {
             while !started.exists() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }

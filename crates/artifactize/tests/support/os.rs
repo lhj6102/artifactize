@@ -104,6 +104,20 @@ pub fn patience(duration: std::time::Duration) -> std::time::Duration {
     std::time::Duration::from_millis(slow(duration.as_millis() as u64))
 }
 
+/// Poll `condition` until it holds, or panic after `patience(limit)`: the shared "wait for
+/// an external process or file to reach a state" loop, scaled for a slower CI host rather
+/// than checking once or sleeping a fixed real-time span.
+pub fn wait_until(limit: std::time::Duration, mut condition: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + patience(limit);
+    while !condition() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "condition was not reached"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 /// `PATH` for a spawned artifactize. With the stand-ins they come first, so that bare names
 /// such as `cat` and `true` resolve to them as they do to the utilities on Unix.
 pub fn path() -> std::ffi::OsString {

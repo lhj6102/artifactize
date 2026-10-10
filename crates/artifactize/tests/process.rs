@@ -30,7 +30,7 @@ fn command(program: &str, args: &[&str]) -> Command {
 
 async fn execute(command: Command) -> process::Output {
     timeout(
-        TEST_TIMEOUT + Duration::from_secs(2),
+        support::os::patience(TEST_TIMEOUT + Duration::from_secs(2)),
         process::run(command, CancellationToken::new(), |_| async { Ok(()) }),
     )
     .await
@@ -199,7 +199,7 @@ async fn assert_gone(pid: u32) {
 }
 
 async fn wait_for(condition: impl Fn() -> bool) {
-    timeout(TEST_TIMEOUT, async {
+    timeout(support::os::patience(TEST_TIMEOUT), async {
         while !condition() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
