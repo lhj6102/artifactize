@@ -1,6 +1,9 @@
 //! Operating-system fixtures for the unit and integration tests alike: unique temporary
 //! roots, links, executable files and a recording stand-in for the desktop opener.
-#![allow(dead_code, reason = "each test binary uses a different part")]
+#![expect(
+    dead_code,
+    reason = "each test binary uses a different subset of OS fixtures"
+)]
 
 use std::{
     fs,
@@ -59,52 +62,6 @@ pub const OPENER: &str = if cfg!(target_os = "macos") {
     "xdg-open"
 };
 
-/// Whether a process has ended, waiting for it a generous while: an ended process
-/// disappears asynchronously, so this polls, and only a failing test waits the whole time.
-pub fn ends(pid: u32) -> bool {
-    /// Long enough for a loaded CI runner to reap a killed process.
-    const PATIENCE: std::time::Duration = std::time::Duration::from_secs(20);
-    /// How often to look again.
-    const POLL: std::time::Duration = std::time::Duration::from_millis(20);
-    let deadline = std::time::Instant::now() + PATIENCE;
-    while running(pid) {
-        if std::time::Instant::now() > deadline {
-            return false;
-        }
-        std::thread::sleep(POLL);
-    }
-    true
-}
-
-/// Whether a process still exists and has not exited.
-fn running(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        // SAFETY: signal 0 only asks whether the process exists.
-        unsafe { libc::kill(pid as i32, 0) == 0 }
-    }
-    #[cfg(windows)]
-    {
-        use windows_sys::Win32::{
-            Foundation::{CloseHandle, STILL_ACTIVE},
-            System::Threading::{
-                GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-            },
-        };
-        // SAFETY: the handle is checked, queried once, and closed.
-        unsafe {
-            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-            if process.is_null() {
-                return false;
-            }
-            let mut code = 0;
-            let queried = GetExitCodeProcess(process, &mut code);
-            CloseHandle(process);
-            queried != 0 && code == STILL_ACTIVE as u32
-        }
-    }
-}
-
 /// This test binary, set to run only the test `name`: for a test that runs itself again in
 /// an environment of its own, such as a `PATH` that holds only stand-ins.
 pub fn rerun(name: &str) -> Command {
@@ -154,4 +111,141 @@ fn main() {
 }
 "#,
     )
+}
+
+/// The namespace policy of the actual fixture volume, independent of OS defaults.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CasePolicy {
+    Sensitive,
+    Insensitive,
+}
+
+pub fn case_policy(root: &Path) -> CasePolicy {
+    let probe = tempfile::Builder::new()
+        .prefix("case-Probe-")
+        .tempfile_in(root)
+        .unwrap();
+    let name = probe.path().file_name().unwrap().to_str().unwrap();
+    if root.join(name.to_ascii_uppercase()).exists() {
+        CasePolicy::Insensitive
+    } else {
+        CasePolicy::Sensitive
+    }
+}
+
+/// The command Cargo built, with native process setup kept in the OS fixture layer.
+pub fn tools(binary: &str) -> Command {
+    Command::new(binary)
+}
+
+pub fn call(binary: &str, root: &Path, args: &[&str]) -> std::process::Output {
+    tools(binary).current_dir(root).args(args).output().unwrap()
+}
+
+pub fn help(binary: &str, root: &Path, program: &str, args: &[&str]) -> std::process::Output {
+    tools(binary)
+        .current_dir(root)
+        .env("PATH", root)
+        .arg("help")
+        .arg(program)
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+pub fn record_path() -> Option<std::ffi::OsString> {
+    std::env::var_os(RECORD)
+}
+
+pub fn rerun_recording(root: &Path, test: &str) -> std::process::Output {
+    rerun(test)
+        .env("PATH", root)
+        .env(RECORD, root.join("record"))
+        .output()
+        .unwrap()
+}
+
+pub fn open_recording(binary: &str, root: &Path, target: &str) -> std::process::Output {
+    tools(binary)
+        .current_dir(root)
+        .env("PATH", root)
+        .env(RECORD, root.join("record"))
+        .args(["open", target])
+        .output()
+        .unwrap()
+}
+
+/// A help program with ordinary, oversized, and never-finishing output modes.
+pub fn help_program(root: &Path) {
+    compile(
+        root,
+        "stub",
+        r#"fn main() {
+        let args: Vec<_> = std::env::args().skip(1).collect();
+        assert_eq!(args.last().map(String::as_str), Some("--help"));
+        match args.first().map(String::as_str) {
+            Some("large") => {
+                // One byte beyond the documented 64 KiB text budget.
+                const OVERSIZED_HELP_BYTES: usize = 64 * 1024 + 1;
+                print!("{}", "x".repeat(OVERSIZED_HELP_BYTES));
+            }
+            Some("wait") => loop { std::thread::park(); },
+            _ => println!("stub help: {}", args.join("|")),
+        }
+    }"#,
+    );
+}
+
+/// The child's TCP connection is the handshake: its established stream proves startup,
+/// and EOF proves the child died. No polling, PID reuse, or scheduler delay is involved.
+pub fn timeout_tree(binary: &str, root: &Path) -> std::process::Output {
+    use std::io::Read;
+    compile(
+        root,
+        "spawner",
+        r#"fn main() {
+        let args: Vec<String> = std::env::args().collect();
+        if args.get(1).map(String::as_str) == Some("child") {
+            let stream = std::net::TcpStream::connect(&args[2]).unwrap();
+            // Keep the established connection alive until the process tree is killed.
+            let _stream = stream;
+            loop { std::thread::park(); }
+        } else {
+            // Spawn immediately, so the seam checks admission before the first instruction.
+            std::process::Command::new(std::env::current_exe().unwrap())
+                .arg("child").arg(&args[1]).spawn().unwrap();
+            loop { std::thread::park(); }
+        }
+    }"#,
+    );
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let address = listener.local_addr().unwrap().to_string();
+    let mut command = tools(binary);
+    let child = command
+        .current_dir(root)
+        .env("PATH", root)
+        .args(["help", "spawner", &address])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let (connected, connection) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let stream = listener.accept().map(|(stream, _)| stream);
+        let _ = connected.send(stream);
+    });
+    let output = child.wait_with_output().unwrap();
+    // A watchdog bounds broken startup or cleanup; success never depends on elapsed time.
+    const CLEANUP_WATCHDOG: std::time::Duration = std::time::Duration::from_secs(20);
+    let mut stream = connection
+        .recv_timeout(CLEANUP_WATCHDOG)
+        .expect("the help child completed its startup handshake")
+        .unwrap();
+    stream.set_read_timeout(Some(CLEANUP_WATCHDOG)).unwrap();
+    assert_eq!(
+        stream.read(&mut [0]).unwrap(),
+        0,
+        "the help child outlived the timeout"
+    );
+    output
 }

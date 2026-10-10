@@ -135,7 +135,7 @@ impl Drop for Whoami {
 
 #[test]
 fn login_status_overrides_and_logout_against_a_test_server() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let state = root.path().join("state");
     let token = test_token();
     let server = Whoami::start(&token);
@@ -266,7 +266,7 @@ fn login_status_overrides_and_logout_against_a_test_server() {
 
 #[test]
 fn doctor_checks_remote_configuration_without_opening_a_socket() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let state = root.path().join("state");
     let bin = root.path().join("bin");
     support::os::create_private_dir_all(&state.join("auth"));
@@ -329,11 +329,11 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     assert!(doctor(1)["message"].as_str().unwrap().contains("https://"));
 }
 
-/// Needs a pseudo-terminal from openpty(3); the Windows console has no such pair to drive.
+// Needs a pseudo-terminal from openpty(3); the Windows console has no such pair to drive.
 #[cfg(unix)]
 #[test]
 fn login_on_a_terminal_does_not_echo_the_token() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let token = test_token();
     let server = Whoami::start(&token);
     let (mut master, slave) = support::os::pty();
@@ -364,12 +364,12 @@ fn login_on_a_terminal_does_not_echo_the_token() {
     assert!(output.contains("as alice-laptop"), "{output}");
 }
 
-/// Git Bash's mintty hands a program a pipe named like a pty: a terminal to `is_terminal`, but
-/// no console whose echo can be turned off. Login then reads the token visibly and says so.
+// Git Bash's mintty hands a program a pipe named like a pty: a terminal to `is_terminal`, but
+// no console whose echo can be turned off. Login then reads the token visibly and says so.
 #[cfg(windows)]
 #[test]
 fn login_on_a_mintty_pipe_reads_the_token_visibly_with_a_warning() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let token = test_token();
     let server = Whoami::start(&token);
     let (mut writer, reader) = support::os::mintty_pipe();

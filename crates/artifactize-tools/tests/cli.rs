@@ -1,20 +1,14 @@
 #[path = "support/os.rs"]
 mod os;
 
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output},
-};
-
-/// The artifactize-tools command Cargo built for these tests.
-fn tools() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_artifactize-tools"))
+fn tools() -> std::process::Command {
+    os::tools(env!("CARGO_BIN_EXE_artifactize-tools"))
 }
-
-fn call(root: &Path, args: &[&str]) -> Output {
-    tools().current_dir(root).args(args).output().unwrap()
+fn call(root: &std::path::Path, args: &[&str]) -> Output {
+    os::call(env!("CARGO_BIN_EXE_artifactize-tools"), root, args)
 }
+use std::{fs, process::Output};
+
 fn text(output: Output) -> String {
     assert!(output.status.success(), "{output:?}");
     String::from_utf8(output.stdout).unwrap()
@@ -87,29 +81,14 @@ fn symlink_inputs_are_not_followed() {
 #[test]
 fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
     let root = os::tempdir();
-    os::compile(
-        root.path(),
-        "stub",
-        r#"fn main() {
-        let args: Vec<_> = std::env::args().skip(1).collect();
-        assert_eq!(args.last().map(String::as_str), Some("--help"));
-        match args.first().map(String::as_str) {
-            Some("large") => print!("{}", "x".repeat(65537)),
-            // Never finishes on its own: only the tool's timeout ends it.
-            Some("wait") => loop {
-                std::thread::park();
-            },
-            _ => println!("stub help: {}", args.join("|")),
-        }
-    }"#,
-    );
+    os::help_program(root.path());
     let run = |arg| {
-        tools()
-            .current_dir(root.path())
-            .env("PATH", root.path())
-            .args(["help", "stub", arg])
-            .output()
-            .unwrap()
+        os::help(
+            env!("CARGO_BIN_EXE_artifactize-tools"),
+            root.path(),
+            "stub",
+            &[arg],
+        )
     };
     assert_eq!(text(run("sub")), "stub help: sub|--help\n");
     let large = run("large");
@@ -127,46 +106,12 @@ fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
 #[test]
 fn help_timeout_ends_the_program_and_the_children_it_starts_at_once() {
     let root = os::tempdir();
-    os::compile(
-        root.path(),
-        "spawner",
-        r#"fn main() {
-        let args: Vec<String> = std::env::args().collect();
-        if args.get(1).map(String::as_str) == Some("child") {
-            std::fs::write(&args[2], std::process::id().to_string()).unwrap();
-        } else {
-            // Start a child at once, before anything else, then never finish.
-            let record = std::env::current_dir().unwrap().join("child.pid");
-            std::process::Command::new(std::env::current_exe().unwrap())
-                .arg("child")
-                .arg(&record)
-                .spawn()
-                .unwrap();
-        }
-        loop {
-            std::thread::park();
-        }
-    }"#,
-    );
-    let output = tools()
-        .current_dir(root.path())
-        .env("PATH", root.path())
-        .args(["help", "spawner"])
-        .output()
-        .unwrap();
+    let output = os::timeout_tree(env!("CARGO_BIN_EXE_artifactize-tools"), root.path());
     assert_eq!(output.status.code(), Some(1), "{output:?}");
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
             .contains("timed out")
-    );
-    let pid: u32 = fs::read_to_string(root.path().join("child.pid"))
-        .unwrap()
-        .parse()
-        .unwrap();
-    assert!(
-        os::ends(pid),
-        "the help program's child outlived the timeout"
     );
 }
 
@@ -178,13 +123,11 @@ fn open_passes_one_absolute_target_to_the_recording_opener() {
     os::recording_program(root.path(), os::OPENER);
     fs::write(root.path().join("space ; notes.md"), "notes").unwrap();
     let record = root.path().join("record");
-    let output = tools()
-        .current_dir(root.path())
-        .env("PATH", root.path())
-        .env(os::RECORD, &record)
-        .args(["open", "space ; notes.md"])
-        .output()
-        .unwrap();
+    let output = os::open_recording(
+        env!("CARGO_BIN_EXE_artifactize-tools"),
+        root.path(),
+        "space ; notes.md",
+    );
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         fs::read_to_string(record).unwrap(),

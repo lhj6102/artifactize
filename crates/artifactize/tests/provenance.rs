@@ -17,7 +17,7 @@ impl Fixture {
     /// A repository whose Agent eval has a tool executing `bin/sim` and the `rules` folder,
     /// and a fake OpenAI provider that passes every review.
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("bin")).unwrap();
         fs::create_dir_all(repo.join("rules/nested")).unwrap();
@@ -79,7 +79,7 @@ impl Fixture {
             .arg(root.join("state"))
             .args(args)
             .arg("--json")
-            .env("HOME", root.join("home"))
+            .env(support::os::home_env(), root.join("home"))
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off")

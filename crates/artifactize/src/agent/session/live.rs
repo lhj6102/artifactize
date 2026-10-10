@@ -37,9 +37,8 @@ pub enum Resolution {
 }
 
 pub async fn resolve(state: &Path, view: &RequestView) -> Result<Resolution, String> {
-    let state_id: crate::types::StateId = store::read_state_id(state)?
-        .ok_or("State has no identity.")?
-        .parse()?;
+    let state_id: crate::types::StateId =
+        store::read_state_id(state)?.ok_or("State has no identity.")?;
     let producer = store::Producer::current().name;
     let mut view = view.clone();
     // A local follower may have no session_id until completion. Resolve only its original

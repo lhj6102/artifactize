@@ -939,29 +939,35 @@ impl Job {
 
 /// Declared Human tools in the eval scope, named like the registry.
 pub fn tools(request: &Request) -> Vec<Tool> {
-    let definition = request.human_definition.as_ref();
-    let Some(artifacts) = definition.and_then(|definition| definition["artifacts"].as_object())
+    use crate::store::definitions::HumanTool;
+    let Some(artifacts) = request
+        .human_definition
+        .as_ref()
+        .and_then(|definition| definition.artifacts.value())
     else {
         return Vec::new();
     };
     let mut tools: Vec<_> = artifacts
         .iter()
         .flat_map(|(id, artifact)| {
-            let declared = artifact["views"]["humanTools"]
-                .as_object()
+            artifact
+                .views
+                .value()
+                .and_then(|views| views.human_tools.value())
                 .into_iter()
-                .flatten();
-            declared.filter_map(move |(operation, tool)| {
-                Some(Tool {
-                    name: format!("{operation}_{id}"),
-                    kind: serde_json::from_value(tool["kind"].clone()).ok()?,
-                    description: tool["description"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .replace("{artifactName}", id),
-                    declared: Runs::parse(artifacts, id, tool),
+                .flatten()
+                .map(move |(operation, tool)| {
+                    let (kind, description) = match tool {
+                        HumanTool::Command(tool) => (tool.kind, &tool.description),
+                        HumanTool::Builtin(tool) => (tool.kind, &tool.description),
+                    };
+                    Tool {
+                        name: format!("{operation}_{id}"),
+                        kind,
+                        description: description.replace("{artifactName}", id.as_str()),
+                        declared: Runs::parse(artifacts, id, tool),
+                    }
                 })
-            })
         })
         .collect();
     tools.sort_by(|a, b| a.name.cmp(&b.name));

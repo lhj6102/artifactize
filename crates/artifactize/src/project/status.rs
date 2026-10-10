@@ -140,7 +140,7 @@ pub async fn status(
     let mut latest = store::read_latest_requests(&state, &config.root).await?;
     let mut evidence: BTreeMap<_, _> = latest
         .keys()
-        .map(|id| (id.clone(), Evidence::Stale))
+        .map(|id| (id.to_string(), Evidence::Stale))
         .collect();
     if options.force {
         evidence.extend(
@@ -203,7 +203,12 @@ pub async fn status(
     let stale: Vec<_> = keys
         .iter()
         .filter(|(id, _)| !matches!(claim(id), Some(Claim::Reuse(_))))
-        .map(|(id, key)| ((*id).to_owned(), key.eval_def_hash.clone()))
+        .map(|(id, key)| {
+            (
+                (*id).parse().expect("validated Eval id"),
+                key.eval_def_hash.clone(),
+            )
+        })
         .collect();
     let previous = store::read_latest_cached(&state, &stale).await?;
     for eval in &config.evals {
@@ -421,7 +426,7 @@ pub async fn status(
             last: latest.remove(eval.id.as_str()),
             changes: keys.get(eval.id.as_str()).and_then(|key| {
                 previous
-                    .get(&(eval.id.to_string(), key.eval_def_hash.clone()))
+                    .get(&(eval.id.clone(), key.eval_def_hash.clone()))
                     .map(|execution| {
                         cache::changes(
                             execution,

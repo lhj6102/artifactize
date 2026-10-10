@@ -19,8 +19,8 @@ struct Repo {
 impl Repo {
     fn new() -> Self {
         Self {
-            root: tempfile::tempdir().unwrap(),
-            output: tempfile::tempdir().unwrap(),
+            root: crate::test_os::tempdir(),
+            output: crate::test_os::tempdir(),
         }
     }
 
@@ -221,7 +221,8 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
     if symlink_file("a.txt", &link).is_some() {
         check(repo.fingerprint("owner").await.unwrap_err());
     }
-    // A junction is a link too, and needs no privilege to create.
+    // Windows junctions are reparse links and exist only on Windows.
+    // They need no privilege to create.
     #[cfg(windows)]
     {
         let _ = fs::remove_file(&link);
@@ -367,10 +368,10 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
         runtime(json!(["b"]), json!(null))
     );
 
-    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<String, crate::types::Fingerprint> {
+    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint> {
         pairs
             .iter()
-            .map(|(name, value)| (name.to_string(), value.parse().unwrap()))
+            .map(|(name, value)| (name.parse().unwrap(), value.parse().unwrap()))
             .collect()
     };
     let one = key(&base, &fingerprints(&[("app", "v1"), ("core", "v1")]));
@@ -395,24 +396,27 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
 #[test]
 fn changes_name_target_files_and_dependency_fingerprints() {
     let manifest = |files: &[(&str, &str)]| Manifest {
-        inputs: format!("{files:?}"),
+        inputs: content::hex(&Sha256::digest(format!("{files:?}")))
+            .parse()
+            .unwrap(),
         files: Some(
             files
                 .iter()
-                .map(|(path, digest)| (path.to_string(), digest.to_string()))
+                .map(|(path, digest)| (path.to_string(), digest.repeat(16).parse().unwrap()))
                 .collect(),
         ),
     };
-    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<String, crate::types::Fingerprint> {
+    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint> {
         pairs
             .iter()
-            .map(|(name, value)| (name.to_string(), value.parse().unwrap()))
+            .map(|(name, value)| (name.parse().unwrap(), value.parse().unwrap()))
             .collect()
     };
-    let execution = |manifest: Option<Manifest>,
-                     fingerprints: BTreeMap<String, crate::types::Fingerprint>|
-     -> Execution {
-        serde_json::from_value(json!({
+    let execution =
+        |manifest: Option<Manifest>,
+         fingerprints: BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint>|
+         -> Execution {
+            serde_json::from_value(json!({
             "id":"execution-1",
             "key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "fingerprint":"old",
@@ -439,7 +443,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
             "manifest":manifest,
         }))
         .unwrap()
-    };
+        };
     let current = |pairs: &[(&str, &str)]| Key {
         value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
             .parse()
@@ -545,10 +549,10 @@ fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
         "payload":{"instruction":"Run the checks."},
     }))
     .unwrap();
-    let fingerprints: BTreeMap<String, crate::types::Fingerprint> =
+    let fingerprints: BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint> =
         [("app", "content:1111"), ("spec", "script-v2")]
             .into_iter()
-            .map(|(name, value)| (name.to_owned(), value.parse().unwrap()))
+            .map(|(name, value)| (name.parse().unwrap(), value.parse().unwrap()))
             .collect();
     for (eval, hash, pinned) in [
         (

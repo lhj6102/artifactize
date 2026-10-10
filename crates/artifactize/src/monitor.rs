@@ -318,7 +318,7 @@ impl Monitor {
         self.list.selected().and_then(|index| self.runs.get(index))
     }
     pub fn target(&self) -> Option<Target> {
-        self.tree.selected().last().and_then(|id| Target::parse(id))
+        self.tree.selected().last().map(Target::from)
     }
     /// The saved request of the selected eval node.
     fn selected_request(&self) -> Option<&RequestView> {

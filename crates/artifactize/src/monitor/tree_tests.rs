@@ -534,8 +534,9 @@ fn artifact_rows_roll_up_current_eval_rows_and_mark_changes_after_the_run() {
         request("docs/matches-cli", "WAIT_DEPENDENCY", json!({})),
     ];
     let (mut run, saved_requests) = saved(definitions.clone(), false, requests.clone());
-    run.run.validation = json!({"satisfied":false,"artifacts":[
-        {"id":"code-style","status":"UNREVIEWED","passed":0,"total":1}]});
+    run.run.validation = serde_json::from_value(json!({"satisfied":false,"artifacts":[
+        {"id":"code-style","status":"UNREVIEWED","passed":0,"total":1}]}))
+    .unwrap();
     let nodes = tree(&run, &saved_requests, now());
     // The current eval row, not the Run-end snapshot.
     assert_eq!(line(&nodes, "a:code-style"), "✓ code-style  1/1 *");
@@ -660,8 +661,8 @@ fn upstream_index_falls_back_to_relations_and_request_deps() {
     assert_eq!(
         upstream_index(&run, &requests),
         [
-            ("a/x".to_owned(), x(&[])),
-            ("b/x".to_owned(), x(&[])),
+            ("a/x".parse().unwrap(), x(&[])),
+            ("b/x".parse().unwrap(), x(&[])),
             ("c/x".to_owned(), x(&["a", "b"])),
             ("d/x".to_owned(), x(&["c"])),
         ]
@@ -1274,8 +1275,8 @@ fn saved_evidence_outside_the_runs_requests_fulfils_gates() {
     ];
     let (mut run, requests) = saved(definitions.clone(), true, requests);
     run.run.evidence = [
-        ("a/x".to_owned(), crate::types::RequestStatus::Green),
-        ("b/x".to_owned(), crate::types::RequestStatus::Green),
+        ("a/x".parse().unwrap(), crate::types::RequestStatus::Green),
+        ("b/x".parse().unwrap(), crate::types::RequestStatus::Green),
     ]
     .into();
     let nodes = tree(&run, &requests, now());
@@ -1292,7 +1293,7 @@ fn saved_evidence_outside_the_runs_requests_fulfils_gates() {
     // A saved RED outside the Run blocks like any other.
     run.run
         .evidence
-        .insert("b/x".into(), crate::types::RequestStatus::Red);
+        .insert("b/x".parse().unwrap(), crate::types::RequestStatus::Red);
     let nodes = tree(&run, &requests, now());
     assert_eq!(view(&nodes, "c/y"), &EvalView::BlockedBy(x(&["b"])));
     // Runs saved before the record: the validation saved at their end.
@@ -1301,9 +1302,10 @@ fn saved_evidence_outside_the_runs_requests_fulfils_gates() {
         request("c/y", "GREEN", json!({})),
     ];
     let (mut run, requests) = saved(definitions, false, requests);
-    run.run.validation = json!({"satisfied":true,"evals":[
+    run.run.validation = serde_json::from_value(json!({"satisfied":true,"evals":[
         {"id":"a/x","status":"GREEN"},{"id":"b/x","status":"GREEN"},
-        {"id":"c/x","status":"GREEN"},{"id":"c/y","status":"GREEN"}]});
+        {"id":"c/x","status":"GREEN"},{"id":"c/y","status":"GREEN"}]}))
+    .unwrap();
     let nodes = tree(&run, &requests, now());
     assert_eq!(line(&nodes, "a:c"), "✓ c  2/2");
     assert!(find(&nodes, "a:c").done());

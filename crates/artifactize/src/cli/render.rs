@@ -86,15 +86,26 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
         writeln!(
             stdout,
             "Validation: {}",
-            if view.run.validation["satisfied"] == true {
+            if view
+                .run
+                .validation
+                .snapshot()
+                .and_then(|v| v.satisfied.value())
+                == Some(&true)
+            {
                 "SATISFIED"
             } else {
                 "NOT SATISFIED"
             }
         )
         .map_err(|e| e.to_string())?;
-        if let Some(obligations) = view.run.validation["obligations"].as_array() {
-            for artifact in obligations.iter().filter_map(serde_json::Value::as_str) {
+        if let Some(obligations) = view
+            .run
+            .validation
+            .snapshot()
+            .and_then(|v| v.obligations.value())
+        {
+            for artifact in obligations {
                 writeln!(stdout, "  Unmet obligation: {artifact}").map_err(|e| e.to_string())?;
             }
         }

@@ -162,7 +162,7 @@ impl Review {
         let mut segments = vec![scope];
         if self.focus == Focus::Detail {
             match (&self.request, &self.open) {
-                (Some(view), _) => segments.push(view.request.eval_id.clone()),
+                (Some(view), _) => segments.push(view.request.eval_id.to_string()),
                 (None, Some(id)) => segments.push(id.to_string()),
                 _ => {}
             }
@@ -245,13 +245,15 @@ impl Review {
                 });
                 let age = duration((now - request.created_at.time()).whole_seconds());
                 let repo = request.human_definition.as_ref();
-                let repo = repo.and_then(|definition| definition["repo"].as_str());
+                let repo = repo
+                    .and_then(|definition| definition.repo.value())
+                    .map(|repo| crate::platform::path_text(repo));
                 [
-                    request.eval_id.clone(),
+                    request.eval_id.to_string(),
                     request.id.to_string(),
                     claim,
                     age,
-                    repo.unwrap_or("-").to_owned(),
+                    repo.unwrap_or_else(|| "-".into()),
                 ]
                 .map(|cell| plain(&cell).into_owned())
             })

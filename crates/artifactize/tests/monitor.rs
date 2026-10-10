@@ -47,7 +47,7 @@ impl Fixture {
     /// Repository alpha has a cycle, a child, a mount, and fingerprint-cached GREEN/RED results;
     /// beta has a long-running eval gated on a release file and a Human eval.
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let alpha = root.path().join("alpha");
         let beta = root.path().join("beta");
         let release = root.path().join("release");
@@ -578,7 +578,7 @@ async fn saved_tree_details_without_repository_or_writes() {
 /// saved results outside a partial Run, and GREEN results masked behind a RED upstream.
 #[tokio::test]
 async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     let flag = root.path().join("fail");
@@ -641,8 +641,14 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     assert_eq!(
         view.run.evidence,
         [
-            ("a/x".to_owned(), artifactize::types::RequestStatus::Green),
-            ("b/x".to_owned(), artifactize::types::RequestStatus::Green),
+            (
+                "a/x".parse().unwrap(),
+                artifactize::types::RequestStatus::Green
+            ),
+            (
+                "b/x".parse().unwrap(),
+                artifactize::types::RequestStatus::Green
+            ),
         ]
         .into()
     );
@@ -668,7 +674,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     ))
     .await;
     let saved = |id: &str| {
-        view.run.validation["artifacts"]
+        serde_json::to_value(&view.run.validation).unwrap()["artifacts"]
             .as_array()
             .unwrap()
             .iter()
@@ -704,7 +710,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     );
 }
 
-/// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.
+// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.
 #[cfg(unix)]
 #[test]
 fn pty_session_restores_the_terminal_on_quit() {
@@ -713,7 +719,7 @@ fn pty_session_restores_the_terminal_on_quit() {
         sync::mpsc,
     };
 
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let both = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .args(["--repo", ".", "monitor", "--all"])
         .output()

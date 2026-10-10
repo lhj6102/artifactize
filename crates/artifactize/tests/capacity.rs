@@ -25,21 +25,25 @@ struct Fixture {
     /// Reviews in flight at the provider, and the most at once.
     active: Arc<AtomicUsize>,
     most: Arc<AtomicUsize>,
+    gate: support::Gate,
 }
 
 impl Fixture {
-    /// A fake OpenAI provider whose every review takes 300 ms and passes.
+    /// A fake provider whose response is released explicitly by the test.
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         fs::create_dir_all(root.path().join("home")).unwrap();
         fs::create_dir_all(root.path().join("state")).unwrap();
         let (active, most) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
+        let gate = support::Gate::default();
+        gate.open();
         let provider = FakeProvider::start({
+            let gate = gate.clone();
             let (active, most) = (active.clone(), most.clone());
             move |request| {
                 let now = active.fetch_add(1, Ordering::SeqCst) + 1;
                 most.fetch_max(now, Ordering::SeqCst);
-                thread::sleep(Duration::from_millis(300));
+                gate.wait();
                 active.fetch_sub(1, Ordering::SeqCst);
                 openai::completed(
                     request,
@@ -53,6 +57,7 @@ impl Fixture {
             provider,
             active,
             most,
+            gate,
         }
     }
 
@@ -91,7 +96,7 @@ impl Fixture {
             .arg("--state-dir")
             .arg(self.state())
             .args(args)
-            .env("HOME", self.root.path().join("home"))
+            .env(support::os::home_env(), self.root.path().join("home"))
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off");
@@ -170,6 +175,7 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     let fixture = Fixture::new();
     let (first, second) = (fixture.repo("a", 3), fixture.repo("b", 3));
     fixture.limits(json!({"backends":{"openai":1,"anthropic":2}}));
+    fixture.gate.close();
     let runs = [
         fixture.spawn(&first, &["--jobs", "3"]),
         fixture.spawn(&second, &["--jobs", "3"]),
@@ -180,6 +186,7 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
             .is_ok_and(|db| capacity_waiters(&db) > 0);
         seen_waiting
     });
+    fixture.gate.open();
     for run in runs {
         let run = finish(run, 0);
         assert_eq!(run["executionsStarted"], 3);
@@ -191,10 +198,13 @@ fn verify_processes_on_one_machine_share_a_backend_limit() {
     // Without a limit the same Runs review in parallel.
     fs::remove_file(fixture.state().join("limits.json")).unwrap();
     fixture.most.store(0, Ordering::SeqCst);
+    fixture.gate.close();
     let runs = [
         fixture.spawn(&first, &["--jobs", "3"]),
         fixture.spawn(&second, &["--jobs", "3"]),
     ];
+    wait_until(|| fixture.active.load(Ordering::SeqCst) > 1);
+    fixture.gate.open();
     for run in runs {
         finish(run, 0);
     }

@@ -176,7 +176,7 @@ pub fn profile_name(profile: &crate::config::StoredProfile, options: &ExecutionO
     }
     match profile.kind() {
         crate::config::ProfileKind::Agent => [
-            options.backend.as_deref(),
+            options.backend.as_ref().map(|backend| backend.as_str()),
             options.model.as_deref(),
             options.reasoning.as_deref(),
         ]

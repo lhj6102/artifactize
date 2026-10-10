@@ -36,7 +36,7 @@ const BUILTIN_IGNORES: [&str; 5] = [".git", "__pycache__/", "*.pyc", "target/", 
 
 /// Sorted owner-relative file paths with their SHA-256, and one digest over all of them.
 pub(super) struct Files {
-    pub digest: String,
+    pub digest: crate::types::Sha256Digest,
     pub files: BTreeMap<String, [u8; 32]>,
 }
 
@@ -92,7 +92,12 @@ pub(super) async fn files(
     let token = cancellation.clone();
     tokio::task::spawn_blocking(move || walk.digest(&token))
         .await
-        .map_err(|error| error.to_string())?
+        .map_err(|error| {
+            if error.is_panic() {
+                std::panic::resume_unwind(error.into_panic());
+            }
+            error.to_string()
+        })?
 }
 
 struct Walk {
@@ -176,7 +181,9 @@ impl Walk {
             digest.update(file);
         }
         Ok(Files {
-            digest: hex(&digest.finalize()),
+            digest: hex(&digest.finalize())
+                .parse()
+                .expect("SHA-256 input digest"),
             files: state.files,
         })
     }

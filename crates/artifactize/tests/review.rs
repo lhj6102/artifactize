@@ -4,6 +4,7 @@ use std::{
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
 };
+// PTY-specific test imports are needed only for Unix terminal fixtures.
 #[cfg(unix)]
 use std::{
     io::{Read, Write},
@@ -32,7 +33,7 @@ struct Fixture {
 /// The review-demo shape: a Human sign-off with `output` and `launch` tools, and a dependent.
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         let release = repo.join("release");
         fs::create_dir_all(&release).unwrap();
@@ -426,11 +427,11 @@ fn pty(command: &str) -> (Child, mpsc::Receiver<Vec<u8>>) {
     (child, receiver)
 }
 
-/// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.
+// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.
 #[cfg(unix)]
 #[test]
 fn pty_review_restores_the_terminal_on_quit() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let state = root.path().join("state");
     let command = format!(
         "stty cols 100 rows 30; exec '{}' --state-dir '{}' review --all --reviewer tester",

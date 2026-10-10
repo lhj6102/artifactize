@@ -13,7 +13,6 @@ use artifactize::{
     tools::{Content, Registry},
 };
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 mod support;
@@ -26,7 +25,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let base = support::os::canonical(root.path());
         let repo = base.join("repo");
         fs::create_dir(&repo).unwrap();
@@ -287,19 +286,10 @@ async fn file_artifactsum_hashes_only_owner_relative_target_bytes_while_folder_s
     fixture.declare("nested/input.txt.artf", json!({"name":"file"}));
     fixture.write("nested/sibling", "sibling");
     let first = fingerprints(&fixture.config(), &fixture.state).await;
-    let mut digest = Sha256::new();
-    digest.update(b"input.txt\0");
-    digest.update(Sha256::digest(b"original"));
+    // Fixed wire-format golden, independent of the production digest implementation.
     assert_eq!(
         first["file"].value.to_string(),
-        format!(
-            "artifactsum:{}",
-            digest
-                .finalize()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        )
+        "artifactsum:6f987753e034e0a93c2498dd75777512502d3bdb2b6cd8d3a9d03b4b48aaf579"
     );
     assert_eq!(
         first["file"]
@@ -624,7 +614,7 @@ async fn runtime_verify_reuses_after_sibling_changes_but_not_target_changes_and_
     assert_eq!(first["requests"][0]["result"]["verdict"], "GREEN");
     assert_eq!(
         first["requests"][0]["cwd"],
-        fixture.config().root.join("files").to_str().unwrap()
+        support::os::path_text(&fixture.config().root.join("files"))
     );
     fixture.write("files/sibling", "unrelated");
     let second = fixture.json(&["verify", "--all"], 0);
@@ -873,9 +863,10 @@ fn artfignore_skips_sidecars_in_excluded_folders() {
 async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
     let fixture = Fixture::new();
     fixture.write("files/input.txt", "input");
-    fixture.write(
-        "files/inspect",
-        "#!/bin/sh\ntest -f input.txt && printf files\n",
+    fs::create_dir_all(fixture.repo.join("files")).unwrap();
+    support::os::write_script(
+        &fixture.repo.join("files/inspect"),
+        "test -f input.txt && printf files\n",
     );
     support::os::make_executable(&fixture.repo.join("files/inspect"));
     fixture.declare(
@@ -912,7 +903,8 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
             text: "files".into()
         }]
     );
-    fixture.write("tools/inspect", "#!/bin/sh\nprintf mounted\n");
+    fs::create_dir_all(fixture.repo.join("tools")).unwrap();
+    support::os::write_script(&fixture.repo.join("tools/inspect"), "printf mounted\n");
     support::os::make_executable(&fixture.repo.join("tools/inspect"));
     fixture.declare("tools/index.artf", json!({"name":"tools","basis":true}));
     fixture.declare(
@@ -1347,7 +1339,7 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
         assert_eq!(wire["artifactKinds"]["file"], "file");
         record
             .artifact_kinds
-            .insert("file".into(), ArtifactKind::Folder);
+            .insert("file".parse().unwrap(), ArtifactKind::Folder);
         assert!(record.validate().is_err());
         record.artifact_kinds.clear();
         assert!(
@@ -1357,7 +1349,7 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
         let mut record = artifactize::remote::Record::new(&execution, full).unwrap();
         record.publisher = Some("fixture".into());
         record.published_at = Some("2026-10-09T00:00:00Z".parse().unwrap());
-        let mirrored = record.mirror("fixture").unwrap();
+        let mirrored = record.mirror("https://reviews.example/").unwrap();
         assert_eq!(mirrored.artifact_kinds, execution.artifact_kinds);
         assert_eq!(mirrored.key, execution.key);
     }

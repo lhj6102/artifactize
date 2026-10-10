@@ -39,12 +39,12 @@ impl<'de> Deserialize<'de> for Definitions {
 pub struct Graph {
     #[serde(default, skip_serializing_if = "missing")]
     pub version: Field<u32>,
-    #[serde(default, skip_serializing_if = "missing")]
+    #[serde(default, skip_serializing_if = "missing", with = "path_field")]
     pub repo_path: Field<PathBuf>,
     #[serde(default, skip_serializing_if = "missing")]
     pub selection: Field<SavedSelection>,
     #[serde(default, skip_serializing_if = "Field::missing")]
-    pub artifacts: Field<BTreeMap<String, Artifact>>,
+    pub artifacts: Field<BTreeMap<crate::types::ArtifactName, Artifact>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub evals: Field<Vec<Eval>>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -55,7 +55,7 @@ pub struct Graph {
     pub extra: Map<String, Value>,
 }
 impl Graph {
-    pub fn artifacts(&self) -> impl Iterator<Item = (&String, &Artifact)> {
+    pub fn artifacts(&self) -> impl Iterator<Item = (&crate::types::ArtifactName, &Artifact)> {
         match &self.artifacts {
             Field::Value(map) => Some(map),
             _ => None,
@@ -94,18 +94,18 @@ impl Graph {
 pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing")]
     pub kind: Field<config::ArtifactKind>,
-    #[serde(default, skip_serializing_if = "missing")]
+    #[serde(default, skip_serializing_if = "missing", with = "path_field")]
     pub path: Field<PathBuf>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub children: Field<BTreeMap<String, String>>,
+    pub children: Field<BTreeMap<String, crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub name: Field<String>,
+    pub name: Field<crate::types::ArtifactName>,
     #[serde(default, skip_serializing_if = "missing")]
     pub tags: Field<Vec<String>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub views: Field<Views>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub mounts: Field<BTreeMap<String, String>>,
+    pub mounts: Field<BTreeMap<String, crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub basis: Field<bool>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -215,12 +215,12 @@ pub struct Policy {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Eval {
-    pub id: String,
-    pub target: String,
+    pub id: crate::types::EvalId,
+    pub target: crate::types::ArtifactName,
     #[serde(default, skip_serializing_if = "missing")]
-    pub references: Field<BTreeMap<String, String>>,
+    pub references: Field<BTreeMap<String, crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub deps: Field<Vec<String>>,
+    pub deps: Field<Vec<crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub declaration: Field<Declaration>,
     #[serde(flatten)]
@@ -230,7 +230,7 @@ pub struct Eval {
 #[serde(rename_all = "camelCase")]
 pub struct Declaration {
     #[serde(default, skip_serializing_if = "missing")]
-    pub id: Field<String>,
+    pub id: Field<crate::config::LocalEvalId>,
     #[serde(default, skip_serializing_if = "missing")]
     pub title: Field<String>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -251,11 +251,11 @@ pub struct Component {
     #[serde(default, skip_serializing_if = "missing")]
     pub id: Field<usize>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub artifacts: Field<Vec<String>>,
+    pub artifacts: Field<Vec<crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub dependencies: Field<Vec<usize>>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub gates: Field<Vec<String>>,
+    pub gates: Field<Vec<crate::types::EvalId>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub cyclic: Field<bool>,
     #[serde(flatten)]
@@ -263,8 +263,8 @@ pub struct Component {
 }
 #[derive(Debug, Clone, Serialize)]
 pub struct Relation {
-    pub source: String,
-    pub target: String,
+    pub source: crate::types::ArtifactName,
+    pub target: crate::types::ArtifactName,
     #[serde(flatten)]
     pub kind: RelationKind,
     #[serde(default, skip_serializing_if = "missing")]
@@ -331,19 +331,19 @@ pub enum RelationKind {
     },
     Dependency {
         #[serde(rename = "evalId", default, skip_serializing_if = "missing")]
-        eval_id: Field<String>,
+        eval_id: Field<crate::types::EvalId>,
         #[serde(default, skip_serializing_if = "missing")]
         name: Field<String>,
     },
     Instruction {
         #[serde(rename = "evalId")]
-        eval_id: String,
+        eval_id: crate::types::EvalId,
         name: String,
     },
     #[serde(rename = "argv")]
     Argument {
         #[serde(rename = "evalId")]
-        eval_id: String,
+        eval_id: crate::types::EvalId,
         index: usize,
         name: String,
         path: String,
@@ -380,6 +380,27 @@ mod duration_field {
         deserializer: D,
     ) -> Result<Field<Duration>, D::Error> {
         crate::config::validation::milliseconds::deserialize(deserializer)
+            .map(|value| value.map_or(Field::Null, Field::Value))
+    }
+}
+
+pub(super) mod path_field {
+    use crate::config::Field;
+    use serde::{Deserializer, Serializer};
+    use std::path::PathBuf;
+    pub fn serialize<S: Serializer>(
+        value: &Field<PathBuf>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        match value {
+            Field::Value(path) => crate::platform::path_serde::serialize(path, serializer),
+            _ => serializer.serialize_none(),
+        }
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Field<PathBuf>, D::Error> {
+        crate::platform::path_serde::option::deserialize(deserializer)
             .map(|value| value.map_or(Field::Null, Field::Value))
     }
 }

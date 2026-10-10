@@ -161,7 +161,7 @@ fn members(component: &Component) -> Vec<&str> {
         .value()
         .into_iter()
         .flatten()
-        .map(String::as_str)
+        .map(crate::types::ArtifactName::as_str)
         .collect()
 }
 
@@ -286,15 +286,26 @@ impl<'a> Index<'a> {
                         .get(eval)
                         .and_then(|definition| definition.deps.value());
                     match (definition, request) {
-                        (Some(deps), _) => deps.iter().map(String::as_str).collect(),
-                        (None, Some(request)) => request.deps.iter().map(String::as_str).collect(),
+                        (Some(deps), _) => deps
+                            .iter()
+                            .map(crate::types::ArtifactName::as_str)
+                            .collect(),
+                        (None, Some(request)) => request
+                            .deps
+                            .iter()
+                            .map(crate::types::ArtifactName::as_str)
+                            .collect(),
                         (None, None) => Vec::new(),
                     }
                 } else {
                     match (&gates, request) {
                         (Some(gates), _) => gates.clone(),
                         // Runs saved without definitions: the request's referenced Artifacts.
-                        (None, Some(request)) => request.deps.iter().map(String::as_str).collect(),
+                        (None, Some(request)) => request
+                            .deps
+                            .iter()
+                            .map(crate::types::ArtifactName::as_str)
+                            .collect(),
                         (None, None) => Vec::new(),
                     }
                 };
@@ -422,9 +433,12 @@ impl<'a> States<'a> {
         if let Some(status) = self.run.evidence.get(eval) {
             return Some(*status);
         }
-        let saved = self.run.validation["evals"].as_array()?;
-        let status = saved.iter().find(|saved| saved["id"] == eval)?["status"].as_str()?;
-        let status: RequestStatus = status.parse().ok()?;
+        let saved = self.run.validation.snapshot()?.evals.value()?;
+        let status = *saved
+            .iter()
+            .find(|saved| saved.id == eval)?
+            .status
+            .value()?;
         matches!(
             status,
             RequestStatus::Green | RequestStatus::Red | RequestStatus::Error | RequestStatus::Stale

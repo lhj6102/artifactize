@@ -17,7 +17,7 @@ const EARLIER: &str =
 fn artifactize(root: &Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_REMOTE", "off")
-        .env("HOME", root.join("home"))
+        .env(support::os::home_env(), root.join("home"))
         .arg("--repo")
         .arg(root.join("repo"))
         .arg("--state-dir")
@@ -38,7 +38,7 @@ fn names(db: &Connection, query: &str) -> Vec<String> {
 
 #[test]
 fn an_earlier_state_is_refused_and_left_as_it_is() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = support::os::tempdir();
     let root = temp.path();
     let repo = root.join("repo");
     fs::create_dir_all(&repo).unwrap();

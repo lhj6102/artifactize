@@ -592,7 +592,7 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
         request_id: request.id.clone(),
         session_id: id.parse().unwrap(),
     };
-    let state_id: crate::types::StateId = receipts.state_id().await.unwrap().parse().unwrap();
+    let state_id: crate::types::StateId = receipts.state_id().await.unwrap();
     request.session = Some(crate::agent::session::SessionRef {
         state: state_id.clone(),
         ..session("session-1")
@@ -610,7 +610,7 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     );
     // A replaced session is resolved again and read from the start.
     request.session = Some(crate::agent::session::SessionRef {
-        state: state_id,
+        state: state_id.clone(),
         ..session("session-2")
     });
     receipts.save_request(&request).await.unwrap();

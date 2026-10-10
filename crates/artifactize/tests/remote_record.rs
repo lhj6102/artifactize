@@ -80,7 +80,7 @@ async fn verify(repo: &Path, state: &Path) -> artifactize::store::RunView {
 
 #[tokio::test]
 async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     write_repo(
         &repo,
@@ -98,7 +98,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     assert_eq!(execution.fingerprint.as_deref(), Some("remote-v1"));
     assert_eq!(
         execution.fingerprints,
-        [("app".to_owned(), "remote-v1".parse().unwrap())].into()
+        [("app".parse().unwrap(), "remote-v1".parse().unwrap())].into()
     );
     let producer = execution.producer.clone().unwrap();
     assert_eq!(producer.version, env!("CARGO_PKG_VERSION"));
@@ -199,7 +199,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
 
 #[tokio::test]
 async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     write_repo(
         &repo,
@@ -260,8 +260,8 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
     let text = include_str!("fixtures/legacy_remote_execution.json");
     let execution: artifactize::store::Execution = serde_json::from_str(text).unwrap();
     assert_eq!(execution.id.len(), 207);
-    let state = tempfile::tempdir().unwrap();
-    let repo = tempfile::tempdir().unwrap();
+    let state = support::os::tempdir();
+    let repo = support::os::tempdir();
     Receipts::open(state.path(), repo.path()).await.unwrap();
     let db = Connection::open(state.path().join("state.sqlite")).unwrap();
     db.execute(
@@ -296,7 +296,7 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
 
 #[tokio::test]
 async fn human_summary_keeps_owner_fields_and_the_reviewer() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     write_repo(&repo, json!({"kind":"human"}));
     let state = root.path().join("state");
@@ -334,7 +334,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         config::{Profile, read_workspace_config},
         store::{Execution, ExecutionOptions, Producer, Provenance},
     };
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let declared = json!({
         "kind":"agent",
@@ -394,7 +394,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
             repo_path: "/elsewhere".into(),
             run_id: "run-elsewhere".parse().unwrap(),
             request_id: "run-elsewhere-1".parse().unwrap(),
-            eval_id: "app/check".into(),
+            eval_id: "app/check".parse().unwrap(),
             eval_def_hash: key.eval_def_hash.clone(),
             completed_at: Some(completed),
             execution_paths: Default::default(),
@@ -438,7 +438,10 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         declared["backend"]
     );
     assert_eq!(request.options.variant.as_deref(), Some("fast"));
-    assert_eq!(request.options.backend.as_deref(), Some("anthropic"));
+    assert_eq!(
+        request.options.backend,
+        Some(artifactize::config::Backend::Anthropic)
+    );
     assert_eq!(request.options.max_tokens, Some(500));
     let shown = cli(&state, &["cache", "show", &key.value]);
     assert_eq!(

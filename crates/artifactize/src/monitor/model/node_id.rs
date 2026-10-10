@@ -5,21 +5,25 @@ use std::{fmt, ops::Deref, str::FromStr};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct NodeId {
     text: String,
+    target: Target,
 }
 impl NodeId {
     pub fn artifact(id: crate::types::ArtifactName) -> Self {
         Self {
             text: format!("a:{id}"),
+            target: Target::Artifact(id),
         }
     }
     pub fn eval(id: crate::types::EvalId) -> Self {
         Self {
             text: format!("e:{id}"),
+            target: Target::Eval(id),
         }
     }
     pub fn run(id: &crate::types::RunId) -> Self {
         Self {
             text: format!("run:{id}"),
+            target: Target::Run,
         }
     }
     pub fn as_str(&self) -> &str {
@@ -66,6 +70,6 @@ impl From<NodeId> for String {
 }
 impl From<&NodeId> for Target {
     fn from(id: &NodeId) -> Self {
-        Target::parse(id.as_str()).expect("validated tree ID")
+        id.target.clone()
     }
 }

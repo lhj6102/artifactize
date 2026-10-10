@@ -146,7 +146,19 @@ impl Review {
                         true,
                     );
                 };
-                let schema = definition["eval"]["declaration"].get(key);
+                let schema = definition
+                    .eval
+                    .declaration
+                    .value()
+                    .and_then(|declaration| {
+                        if key == "passSchema" {
+                            declaration.pass_schema.value()
+                        } else {
+                            declaration.fail_schema.value()
+                        }
+                    })
+                    .map(|schema| serde_json::Value::Object(schema.clone()));
+                let schema = schema.as_ref();
                 let form = self
                     .drafts
                     .remove(&verdict)

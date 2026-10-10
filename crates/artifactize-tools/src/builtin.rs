@@ -6,28 +6,8 @@ pub use fixed::{
 };
 pub use input::Input;
 
-/// One entry of a listing: its name and logical path, its kind, and for a mount the
-/// Artifact it mounts.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Entry {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    artifact_id: Option<ArtifactId>,
-    kind: EntryKind,
-    name: String,
-    path: String,
-}
-
-/// What a listed entry is; symlinks and other special files are listed, never followed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-enum EntryKind {
-    File,
-    Directory,
-    Symlink,
-    Other,
-    Mount,
-}
+mod output;
+use output::{Entry, EntryKind, GrepMatch, Line, Output};
 
 /// Bound the compiled regex automaton to limit search memory.
 const REGEX_BYTES: usize = 2 * 1024 * 1024;
@@ -41,7 +21,6 @@ use std::{
 
 use globset::{GlobBuilder, GlobMatcher};
 use regex::RegexBuilder;
-use serde::Serialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
@@ -177,7 +156,9 @@ pub fn call(
         if serde_json::to_vec(&data).unwrap().len() > RESULT_BYTES {
             return Err("Built-in result exceeds 512 KiB; narrow the path or range.".into());
         }
-        Ok(Content::Json { data })
+        Ok(Content::Json {
+            data: serde_json::to_value(data).expect("builtin output is JSON"),
+        })
     })();
     match result {
         Ok(content) => ToolResult {
@@ -186,6 +167,13 @@ pub fn call(
         },
         Err(message) => ToolResult::error(message),
     }
+}
+
+/// EOF is distinct from a budget stop: only EOF makes totalLines available.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReadEnd {
+    Bounded,
+    Complete,
 }
 
 struct Reader<'a> {
@@ -234,7 +222,7 @@ impl Reader<'_> {
         image::normalize(&bytes, None)
     }
 
-    fn read(&self, path: &str, offset: usize, limit: usize) -> Result<Value, String> {
+    fn read(&self, path: &str, offset: usize, limit: usize) -> Result<Output, String> {
         let location = self.location(path)?;
         let file = self.open(path, &location)?;
         if !file.metadata().map_err(|e| e.to_string())?.is_file() {
@@ -245,7 +233,7 @@ impl Reader<'_> {
         let mut line = Vec::new();
         let mut current = 1;
         let mut returned_bytes = 0;
-        let mut complete = false;
+        let mut read_end = ReadEnd::Bounded;
         let mut partial_line = false;
         loop {
             self.check_cancelled()?;
@@ -254,7 +242,7 @@ impl Reader<'_> {
                 if !line.is_empty() {
                     lines.push(text_line(current, &line)?);
                 }
-                complete = true;
+                read_end = ReadEnd::Complete;
                 break;
             }
             let end = bytes
@@ -287,28 +275,27 @@ impl Reader<'_> {
                 }
                 current += 1;
                 if lines.len() == limit || returned_bytes == READ_BYTES {
-                    complete = reader.fill_buf().map_err(|e| e.to_string())?.is_empty();
+                    if reader.fill_buf().map_err(|e| e.to_string())?.is_empty() {
+                        read_end = ReadEnd::Complete;
+                    }
                     break;
                 }
             }
         }
         let count = lines.len();
-        let mut result = json!({
-            "artifactId":self.owner,
-            "resolvedArtifactId":location.artifact_id,
-            "path":path,
-            "lines":lines,
-            "startLine":offset,
-            "endLine":if count == 0 { None } else { Some(offset + count - 1) },
-            "lineCount":count,
-            "truncated":!complete,
-            "nextOffset":if complete { None } else { Some(offset + count) },
-        });
-        if complete {
-            let total = current - 1 + usize::from(partial_line);
-            result["totalLines"] = json!(total);
-        }
-        Ok(result)
+        Ok(Output::Read(output::Read {
+            artifact_id: self.owner.clone(),
+            resolved_artifact_id: location.artifact_id,
+            path: path.to_owned(),
+            lines,
+            start_line: offset,
+            end_line: (count != 0).then(|| offset + count - 1),
+            line_count: count,
+            truncated: read_end == ReadEnd::Bounded,
+            next_offset: (read_end == ReadEnd::Bounded).then_some(offset + count),
+            total_lines: (read_end == ReadEnd::Complete)
+                .then(|| current - 1 + usize::from(partial_line)),
+        }))
     }
 
     fn entries(&self, path: &str) -> Result<Vec<Entry>, String> {
@@ -326,7 +313,7 @@ impl Reader<'_> {
             if !target.metadata().map_err(|e| e.to_string())?.is_file() {
                 return Err("File Artifact target must remain a regular file.".into());
             }
-            entries.insert(name.to_owned(), (EntryKind::File, None));
+            entries.insert(name.to_owned(), EntryKind::File);
         } else {
             // Enumerate the pinned directory, not a path that could have been replaced by a link.
             let directory =
@@ -353,7 +340,7 @@ impl Reader<'_> {
                     FileKind::Symlink => EntryKind::Symlink,
                     FileKind::Other => EntryKind::Other,
                 };
-                entries.insert(name, (kind, None));
+                entries.insert(name, kind);
             }
         }
         if location.path.is_empty() {
@@ -369,7 +356,12 @@ impl Reader<'_> {
                     return Err("Mount is outside this eval's scope.".into());
                 }
                 if entries
-                    .insert(alias.to_string(), (EntryKind::Mount, Some(id.clone())))
+                    .insert(
+                        alias.to_string(),
+                        EntryKind::Mount {
+                            artifact_id: id.clone(),
+                        },
+                    )
                     .is_some()
                 {
                     return Err("Logical mount conflicts with a physical entry.".into());
@@ -378,8 +370,7 @@ impl Reader<'_> {
         }
         Ok(entries
             .into_iter()
-            .map(|(name, (kind, artifact_id))| Entry {
-                artifact_id,
+            .map(|(name, kind)| Entry {
                 kind,
                 path: join(path, &name),
                 name,
@@ -387,7 +378,7 @@ impl Reader<'_> {
             .collect())
     }
 
-    fn list(&self, path: &str, offset: usize, limit: usize) -> Result<Value, String> {
+    fn list(&self, path: &str, offset: usize, limit: usize) -> Result<Output, String> {
         let entries = self.entries(path)?;
         let total = entries.len();
         let mut bytes = RESULT_ENVELOPE_BYTES + serde_json::to_vec(path).unwrap().len();
@@ -404,13 +395,13 @@ impl Reader<'_> {
             return Err("Listing entry exceeds 512 KiB; narrow the path.".into());
         }
         let next = offset + entries.len();
-        Ok(json!({
-            "artifactId":self.owner,
-            "path":path,
-            "entries":entries,
-            "totalEntries":total,
-            "truncated":next<total,
-            "nextOffset":if next<total {Some(next)} else {None},
+        Ok(Output::List(output::List {
+            artifact_id: self.owner.clone(),
+            path: path.to_owned(),
+            entries,
+            total_entries: total,
+            truncated: next < total,
+            next_offset: (next < total).then_some(next),
         }))
     }
 
@@ -446,7 +437,7 @@ impl Reader<'_> {
                     EntryKind::File => {
                         files.insert(entry.path);
                     }
-                    EntryKind::Directory | EntryKind::Mount => {
+                    EntryKind::Directory | EntryKind::Mount { .. } => {
                         pending.push((entry.path, ancestors.clone()));
                     }
                     EntryKind::Symlink | EntryKind::Other => {}
@@ -459,7 +450,7 @@ impl Reader<'_> {
         Ok((files, truncated))
     }
 
-    fn glob(&self, path: &str, pattern: &str) -> Result<Value, String> {
+    fn glob(&self, path: &str, pattern: &str) -> Result<Output, String> {
         let matcher = glob(pattern)?;
         let location = self.location(path)?;
         if !self
@@ -494,10 +485,14 @@ impl Reader<'_> {
             }
             matches.push(file);
         }
-        Ok(json!({"path":path,"files":matches,"truncated":truncated}))
+        Ok(Output::Glob(output::Glob {
+            path: path.to_owned(),
+            files: matches,
+            truncated,
+        }))
     }
 
-    fn grep(&self, input: &input::Grep) -> Result<Value, String> {
+    fn grep(&self, input: &input::Grep) -> Result<Output, String> {
         let path = input.path.as_str();
         let regex = RegexBuilder::new(&input.pattern)
             .case_insensitive(input.case_insensitive)
@@ -558,7 +553,11 @@ impl Reader<'_> {
                 if !regex.is_match(line) {
                     continue;
                 }
-                let entry = json!({"path":file,"line":index + 1,"text":line});
+                let entry = GrepMatch {
+                    path: file.clone(),
+                    line: index + 1,
+                    text: line.to_owned(),
+                };
                 bytes += serde_json::to_vec(&entry).unwrap().len() + 1;
                 if matches.len() == limit || bytes > RESULT_BYTES {
                     truncated = true;
@@ -567,7 +566,11 @@ impl Reader<'_> {
                 matches.push(entry);
             }
         }
-        Ok(json!({"path":path,"matches":matches,"truncated":truncated}))
+        Ok(Output::Grep(output::Grep {
+            path: path.to_owned(),
+            matches,
+            truncated,
+        }))
     }
 }
 
@@ -585,10 +588,13 @@ fn missing(owner: &ArtifactId, path: &str) -> String {
     }
 }
 
-fn text_line(number: usize, line: &[u8]) -> Result<Value, String> {
+fn text_line(number: usize, line: &[u8]) -> Result<Line, String> {
     let text = std::str::from_utf8(line)
         .map_err(|_| "Artifact contains invalid UTF-8 in the requested lines.")?;
-    Ok(json!({"number":number,"text":text}))
+    Ok(Line {
+        number,
+        text: text.to_owned(),
+    })
 }
 
 fn join(base: &str, name: &str) -> String {

@@ -15,7 +15,7 @@ use crate::{
 };
 
 /// What a tree node shows in the detail pane, parsed from its stable tree identifier.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Target {
     /// The open Run itself, from the node above its Artifacts.
     Run,
@@ -27,7 +27,7 @@ impl Target {
     pub fn parse(id: &str) -> Option<Self> {
         let (kind, name) = id.split_once(':')?;
         match kind {
-            "run" => Some(Self::Run),
+            "run" => name.parse::<crate::types::RunId>().ok().map(|_| Self::Run),
             "a" => name.parse().ok().map(Self::Artifact),
             "e" => name.parse().ok().map(Self::Eval),
             _ => None,
@@ -204,14 +204,6 @@ fn meaning(status: &str) -> &'static str {
     }
 }
 
-fn strs(value: &Value) -> impl Iterator<Item = &str> {
-    value
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-}
-
 fn join<T: AsRef<str>>(items: impl IntoIterator<Item = T>, separator: &str) -> String {
     let items: Vec<_> = items
         .into_iter()
@@ -345,15 +337,24 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         (input.is_some() || output.is_some())
             .then(|| input.unwrap_or(0).saturating_add(output.unwrap_or(0)))
     });
-    let unmet = join(strs(&run.validation["obligations"]), ", ");
+    let validation = run.validation.snapshot();
+    let unmet = validation
+        .and_then(|v| v.obligations.value())
+        .map(|ids| {
+            ids.iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
     let wall = span(run.created_at, run.completed_at, now).unwrap_or_default();
     Progress {
         status: run.status.to_string(),
         repo: crate::platform::path_text(&run.repo_path),
         // The saved snapshot; the tree shows the current state.
-        validation: match run.validation.get("satisfied") {
+        validation: match validation.and_then(|v| v.satisfied.value()) {
             None => "pending".into(),
-            Some(Value::Bool(true)) => "SATISFIED at Run end".into(),
+            Some(true) => "SATISFIED at Run end".into(),
             Some(_) if unmet.is_empty() => "NOT SATISFIED at Run end".into(),
             Some(_) => format!("NOT SATISFIED at Run end (unmet: {unmet})"),
         },
@@ -368,7 +369,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         ),
         elapsed: wall,
         finished: run.completed_at.is_some(),
-        satisfied: run.validation.get("satisfied").map(|value| value == true),
+        satisfied: validation.and_then(|v| v.satisfied.value()).copied(),
         counts: summary
             .counts
             .iter()
@@ -391,18 +392,18 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         running: with("RUNNING")
             .map(|view| {
                 (
-                    view.request.eval_id.clone(),
+                    view.request.eval_id.to_string(),
                     elapsed(view, now).unwrap_or_default(),
                 )
             })
             .collect(),
         waiting: with("WAITING_HUMAN")
-            .map(|view| (view.request.eval_id.clone(), claim(view)))
+            .map(|view| (view.request.eval_id.to_string(), claim(view)))
             .collect(),
         errors: with("ERROR")
             .map(|view| {
                 (
-                    view.request.eval_id.clone(),
+                    view.request.eval_id.to_string(),
                     error(view).unwrap_or_default(),
                 )
             })
@@ -545,7 +546,12 @@ impl<'a> Saved<'a> {
     }
     fn artifacts(
         &self,
-    ) -> impl Iterator<Item = (&'a String, &'a crate::store::definitions::Artifact)> {
+    ) -> impl Iterator<
+        Item = (
+            &'a crate::types::ArtifactName,
+            &'a crate::store::definitions::Artifact,
+        ),
+    > {
         self.definitions()
             .into_iter()
             .flat_map(|graph| graph.artifacts())
@@ -581,7 +587,7 @@ impl<'a> Saved<'a> {
                     .value()
                     .into_iter()
                     .flatten()
-                    .map(String::as_str)
+                    .map(crate::types::ArtifactName::as_str)
                     .collect();
                 members.sort_unstable();
                 members
@@ -612,10 +618,15 @@ impl<'a> Saved<'a> {
         evals
     }
 
-    fn validation(&self, artifact: &str) -> &'a Value {
-        let saved = self.run.run.validation["artifacts"].as_array();
-        let saved = saved.and_then(|artifacts| artifacts.iter().find(|a| a["id"] == artifact));
-        saved.unwrap_or(&Value::Null)
+    fn validation(&self, artifact: &str) -> Option<&'a crate::store::ArtifactValidation> {
+        self.run
+            .run
+            .validation
+            .snapshot()?
+            .artifacts
+            .value()?
+            .iter()
+            .find(|a| a.id == artifact)
     }
 
     fn component(&self, id: &str) -> Option<&'a crate::store::definitions::Component> {
@@ -659,7 +670,7 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
         RelationKind::Dependency { name, eval_id } => format!(
             "dependency {} in {}",
             name.value().map_or("", String::as_str),
-            eval_id.value().map_or("", String::as_str)
+            eval_id.value().map_or("", crate::types::EvalId::as_str)
         ),
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
         RelationKind::Argument {
@@ -758,7 +769,15 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     detail.push("Reason", request.blocked_reason.clone().unwrap_or_default());
     if request.profile.kind() == crate::config::ProfileKind::Dependency {
         detail.push("Source", "derived (no execution)");
-        detail.push("Blocked by", request.blocked_by.join(", "));
+        detail.push(
+            "Blocked by",
+            request
+                .blocked_by
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
     }
     detail.push("Error", error(view).unwrap_or_default());
     detail.push("Instruction", request.payload.instruction());
@@ -977,14 +996,16 @@ pub fn detail(
             detail.summary = tree::artifact_status(&saved, id, now);
             detail.push("Status", detail.summary.clone());
             let snapshot = saved.validation(id);
-            if let Some(status) = snapshot["status"].as_str() {
-                let count = |key| snapshot[key].as_u64().unwrap_or(0);
+            if let Some(status) = snapshot.and_then(|s| s.status.value()) {
                 detail.push(
                     "At Run end",
                     format!(
                         "{status} · {}/{} Evals GREEN",
-                        count("passed"),
-                        count("total")
+                        snapshot
+                            .and_then(|s| s.passed.value())
+                            .copied()
+                            .unwrap_or(0),
+                        snapshot.and_then(|s| s.total.value()).copied().unwrap_or(0)
                     ),
                 );
             }
@@ -1005,8 +1026,10 @@ pub fn detail(
             );
             detail.push(
                 "Fingerprint",
-                saved.validation(id)["fingerprint"]
-                    .as_str()
+                saved
+                    .validation(id)
+                    .and_then(|s| s.fingerprint.value())
+                    .map(|f| f.as_str())
                     .unwrap_or_default(),
             );
             let component = saved.component(id);

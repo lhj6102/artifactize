@@ -171,7 +171,9 @@ fn schema(schema: Option<&Value>) -> String {
 pub(super) fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
     let request = &view.request;
     let definition = request.human_definition.as_ref();
-    let declaration = definition.map(|definition| &definition["eval"]["declaration"]);
+    let declaration = definition
+        .and_then(|definition| definition.eval.declaration.value())
+        .map(|declaration| serde_json::to_value(declaration).expect("saved declaration is JSON"));
     let status = match (&request.error, &request.error_code) {
         (Some(error), Some(code)) => format!("{} [{code}] {error}", request.status),
         (Some(error), None) => format!("{} {error}", request.status),
@@ -196,9 +198,9 @@ pub(super) fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str
         (
             "Repository",
             definition
-                .and_then(|definition| definition["repo"].as_str())
-                .unwrap_or("-")
-                .to_owned(),
+                .and_then(|definition| definition.repo.value())
+                .map(|repo| crate::platform::path_text(repo))
+                .unwrap_or_else(|| "-".into()),
         ),
         ("Status", status),
         ("Claim", claim),
@@ -207,7 +209,13 @@ pub(super) fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str
         fields.push(("Shared", shared));
     }
     fields.push(("Created", request.created_at.to_string()));
-    let owner = |key| schema(declaration.and_then(|declaration| declaration.get(key)));
+    let owner = |key| {
+        schema(
+            declaration
+                .as_ref()
+                .and_then(|declaration| declaration.get(key)),
+        )
+    };
     fields.push(("GREEN fields", owner("passSchema")));
     fields.push(("RED fields", owner("failSchema")));
     fields

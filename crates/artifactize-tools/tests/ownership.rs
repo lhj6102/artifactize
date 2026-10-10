@@ -57,7 +57,7 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
     // changing its case on an insensitive volume; distinct names remain usable otherwise.
     fs::create_dir(root.join("remote")).unwrap();
     fs::write(root.join("remote/x"), "physical").unwrap();
-    let insensitive = root.join("Remote").exists();
+    let insensitive = os::case_policy(&root) == os::CasePolicy::Insensitive;
     let result = call(Builtin::Read, json!({"path":"remote/x"}));
     assert_eq!(result.is_error, insensitive, "{result:?}");
     if !insensitive {
@@ -76,7 +76,7 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
     }
 
     // On a case-sensitive volume an independently created lowercase directory stays usable.
-    if !root.join("secret").exists() {
+    if !insensitive {
         fs::create_dir(root.join("secret")).unwrap();
         fs::write(root.join("secret/x"), "distinct").unwrap();
         let result = call(Builtin::Read, json!({"path":"secret/x"}));
