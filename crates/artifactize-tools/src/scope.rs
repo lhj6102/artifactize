@@ -258,10 +258,18 @@ pub fn open_scoped(root: &Path, path: &str) -> Result<File, OpenError> {
     let filesystem_root = target.ancestors().last().unwrap_or(&target);
     let mut directory =
         platform::open_directory(filesystem_root).map_err(|e| ScopeError(e.to_string()))?;
-    for component in target.components() {
+    // Host-selected roots may use system aliases (Windows TEMP commonly uses 8.3 names).
+    // Logical components below that trusted root must use exact entry spellings. Both
+    // walks stay descriptor-relative and refuse links in every component.
+    let components = root.components().map(|component| (component, false)).chain(
+        Path::new(path)
+            .components()
+            .map(|component| (component, true)),
+    );
+    for (component, exact) in components {
         directory = match component {
             Component::Prefix(_) | Component::RootDir => continue,
-            Component::Normal(name) => open_child(&directory, name)?,
+            Component::Normal(name) => open_named(&directory, name, exact)?,
             _ => {
                 return Err(ScopeError(
                     "Artifact path must not traverse parent directories.".into(),
@@ -275,6 +283,10 @@ pub fn open_scoped(root: &Path, path: &str) -> Result<File, OpenError> {
 
 /// Open one entry of a pinned directory without following a symlink.
 pub fn open_child(directory: &File, name: &std::ffi::OsStr) -> Result<File, OpenError> {
+    open_named(directory, name, true)
+}
+
+fn open_named(directory: &File, name: &std::ffi::OsStr, exact: bool) -> Result<File, OpenError> {
     let entry_name = platform::EntryName::new(name)
         .ok_or_else(|| ScopeError("Invalid Artifact path.".into()))?;
     let file = platform::open_entry(directory, &entry_name).map_err(|error| {
@@ -286,7 +298,7 @@ pub fn open_child(directory: &File, name: &std::ffi::OsStr) -> Result<File, Open
             ScopeError(format!("Cannot open Artifact input: {error}")).into()
         }
     })?;
-    if !platform::exact_name(&file, name).map_err(|error| ScopeError(error.to_string()))? {
+    if exact && !platform::exact_name(&file, name).map_err(|error| ScopeError(error.to_string()))? {
         return Err(
             ScopeError("Artifact path must use the exact directory entry name.".into()).into(),
         );
