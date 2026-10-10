@@ -193,7 +193,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                 let mut statement = transaction.prepare(
                     "SELECT q.data,r.repo,e.data,h.id,h.claimed_by,h.claimed_at,
                 json_extract(r.data,'$.definitions.artifacts'),
-                (SELECT value FROM json_each(r.data,'$.definitions.evals') WHERE json_extract(value,'$.id')=q.eval_id)
+                (SELECT value FROM json_each(r.data,'$.definitions.evals') WHERE json_extract(value,'$.id')=q.eval_id),r.data
                 FROM requests q JOIN runs r ON r.id=q.run_id
                 LEFT JOIN executions e ON e.id=q.execution_id
                 LEFT JOIN requests h ON h.id=json_extract(e.data,'$.provenance.requestId') AND h.claimed_by IS NOT NULL
@@ -213,6 +213,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                             row.get::<_, Option<crate::types::Timestamp>>(5)?,
                             row.get::<_, Option<String>>(6)?,
                             row.get::<_, Option<String>>(7)?,
+                            row.get::<_, String>(8)?,
                         ))
                     })?
                     .map(|row| {
@@ -225,7 +226,11 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                             claimed_at,
                             artifacts,
                             eval,
+                            run_data,
                         ) = row?;
+                        if super::unreadable::evidence::<super::Run>("run", &run_data).is_none() {
+                            return Ok(None);
+                        }
                         outside_workspace(Path::new(&repo), &state)
                             .map_err(|e| Error::Invalid(e.to_string()))?;
                         let Some(request) = super::unreadable::evidence::<Request>("request", &data) else {

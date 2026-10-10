@@ -304,7 +304,10 @@ impl Monitor {
                 .or(Some(0))
                 .filter(|_| !self.runs.is_empty()),
         );
-        self.open = self.selected_run().map(|run| run.id.clone());
+        self.open = self
+            .selected_run()
+            .filter(|run| !run.unreadable.iter().any(|record| record.kind == "run"))
+            .map(|run| run.id.clone());
         if self.open.is_none() {
             self.run = None;
         }
@@ -360,7 +363,10 @@ impl Monitor {
             return Action::None;
         }
         self.list.select(Some(index));
-        self.open = self.selected_run().map(|run| run.id.clone());
+        self.open = self
+            .selected_run()
+            .filter(|run| !run.unreadable.iter().any(|record| record.kind == "run"))
+            .map(|run| run.id.clone());
         Action::Refresh
     }
     pub async fn open_detail(&mut self) {

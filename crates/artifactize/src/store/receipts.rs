@@ -71,8 +71,41 @@ pub enum Error {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(try_from = "RunWire", into = "RunWire")]
 pub struct Run {
+    pub id: RunId,
+    pub repo_path: PathBuf,
+    /// Optional display metadata; schema 5 Runs written before this remain readable.
+    pub repository: crate::repository::Identity,
+    pub state_dir: PathBuf,
+    pub state: super::RunState,
+    pub created_at: Timestamp,
+    pub selection: crate::project::selection::Selection,
+    pub profile: Option<crate::project::selection::ProfileSelection>,
+    pub definitions: super::definitions::Definitions,
+    pub recursive: bool,
+    pub force: bool,
+    pub ignore_gates: bool,
+    pub jobs: usize,
+    /// Fingerprints computed at once; absent in Runs saved before 0.5.
+    pub fingerprint_jobs: Option<usize>,
+    pub max_executions: Option<u64>,
+    pub executions_started: u64,
+    pub wait_timeout_ms: Option<Duration>,
+    pub wait_timed_out: bool,
+    /// Kinds whose evals only reuse a result; one with nothing to reuse is not executed.
+    pub reuse_only: BTreeSet<ProfileKind>,
+    pub validation: super::Validation,
+    /// Agent backends this Run stopped admitting reviews on, in the order they stopped.
+    pub stopped_backends: Vec<StoppedBackend>,
+    /// Verdicts the Run took from saved results for evals it has no request for, such as the
+    /// dependencies of a partial Run, so readers judge gates on the Run's own evidence.
+    pub evidence: BTreeMap<crate::types::EvalId, crate::types::RequestStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RunWire {
     pub id: RunId,
     #[serde(with = "crate::platform::path_serde")]
     pub repo_path: PathBuf,
@@ -120,6 +153,78 @@ pub struct Run {
     /// dependencies of a partial Run, so readers judge gates on the Run's own evidence.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub evidence: BTreeMap<crate::types::EvalId, crate::types::RequestStatus>,
+}
+
+impl TryFrom<RunWire> for Run {
+    type Error = String;
+    fn try_from(wire: RunWire) -> Result<Self, Self::Error> {
+        let state = super::RunState::from_parts(wire.status, wire.completed_at, wire.error)?;
+        Ok(Self {
+            state,
+            id: wire.id,
+            repo_path: wire.repo_path,
+            repository: wire.repository,
+            state_dir: wire.state_dir,
+            created_at: wire.created_at,
+            selection: wire.selection,
+            profile: wire.profile,
+            definitions: wire.definitions,
+            recursive: wire.recursive,
+            force: wire.force,
+            ignore_gates: wire.ignore_gates,
+            jobs: wire.jobs,
+            fingerprint_jobs: wire.fingerprint_jobs,
+            max_executions: wire.max_executions,
+            executions_started: wire.executions_started,
+            wait_timeout_ms: wire.wait_timeout_ms,
+            wait_timed_out: wire.wait_timed_out,
+            reuse_only: wire.reuse_only,
+            validation: wire.validation,
+            stopped_backends: wire.stopped_backends,
+            evidence: wire.evidence,
+        })
+    }
+}
+impl From<Run> for RunWire {
+    fn from(record: Run) -> Self {
+        Self {
+            status: record.status(),
+            completed_at: record.completed_at(),
+            error: record.error().map(str::to_owned),
+            id: record.id,
+            repo_path: record.repo_path,
+            repository: record.repository,
+            state_dir: record.state_dir,
+            created_at: record.created_at,
+            selection: record.selection,
+            profile: record.profile,
+            definitions: record.definitions,
+            recursive: record.recursive,
+            force: record.force,
+            ignore_gates: record.ignore_gates,
+            jobs: record.jobs,
+            fingerprint_jobs: record.fingerprint_jobs,
+            max_executions: record.max_executions,
+            executions_started: record.executions_started,
+            wait_timeout_ms: record.wait_timeout_ms,
+            wait_timed_out: record.wait_timed_out,
+            reuse_only: record.reuse_only,
+            validation: record.validation,
+            stopped_backends: record.stopped_backends,
+            evidence: record.evidence,
+        }
+    }
+}
+impl Run {
+    pub fn status(&self) -> RunStatus {
+        self.state.status()
+    }
+    pub fn completed_at(&self) -> Option<Timestamp> {
+        self.state.completed_at()
+    }
+    pub fn error(&self) -> Option<&str> {
+        self.state.error()
+    }
 }
 
 /// An Agent backend a Run stopped after an AUTHENTICATION or QUOTA failure, which every
@@ -523,7 +628,6 @@ impl Receipts {
     }
 
     pub async fn create_run(&self, run: &Run, requests: &[Request]) -> Result<(), String> {
-        run.validate()?;
         for request in requests {
             if request.run_id != run.id {
                 return Err("Request belongs to another Run.".into());
@@ -539,7 +643,7 @@ impl Receipts {
                     params![
                         run.id,
                         crate::platform::path_text(&run.repo_path),
-                        run.status,
+                        run.status(),
                         serde_json::to_string(&run)?
                     ],
                 )?;
@@ -572,13 +676,12 @@ impl Receipts {
     }
 
     pub async fn save_run(&self, run: &Run) -> Result<(), String> {
-        run.validate()?;
         let run = run.clone();
         self.connection
             .call(move |db| -> Result<(), Error> {
                 db.execute(
                     "UPDATE runs SET status=?,data=? WHERE id=?",
-                    params![run.status, serde_json::to_string(&run)?, run.id],
+                    params![run.status(), serde_json::to_string(&run)?, run.id],
                 )?;
                 Ok(())
             })
@@ -587,7 +690,6 @@ impl Receipts {
     }
 
     pub async fn finish(&self, run: &Run, requests: &[Request]) -> Result<(), String> {
-        run.validate()?;
         let run = run.clone();
         let requests = requests.to_vec();
         self.connection
@@ -602,7 +704,7 @@ impl Receipts {
                 }
                 transaction.execute(
                     "UPDATE runs SET status=?,data=? WHERE id=?",
-                    params![run.status, serde_json::to_string(&run)?, run.id],
+                    params![run.status(), serde_json::to_string(&run)?, run.id],
                 )?;
                 transaction.commit()?;
                 Ok(())
@@ -761,8 +863,8 @@ pub async fn read_latest_requests(
             }
             let latest = {
                 let mut statement = transaction.prepare(
-                    "SELECT data FROM (
-                SELECT q.eval_id,q.data,
+                    "SELECT data,run_data FROM (
+                SELECT q.eval_id,q.data,r.data AS run_data,
                     row_number() OVER (PARTITION BY q.eval_id ORDER BY r.rowid DESC) AS rank
                 FROM requests q JOIN runs r ON r.id=q.run_id
                 WHERE r.repo=?
@@ -770,22 +872,26 @@ pub async fn read_latest_requests(
                 )?;
                 statement
                     .query_map([crate::platform::path_text(&repo)], |row| {
-                        row.get::<_, String>(0)
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                     })?
                     .filter_map(|row| match row {
                         Err(error) => Some(Err(error)),
-                        Ok(data) => super::unreadable::evidence::<Request>("request", &data).map(
-                            |request| {
-                                Ok((
-                                    request.eval_id.clone(),
-                                    LastRequest {
-                                        run_id: request.run_id.clone(),
-                                        verdict: request.status(),
-                                        fingerprint: request.fingerprint,
-                                    },
-                                ))
-                            },
-                        ),
+                        Ok((data, run_data)) => {
+                            super::unreadable::evidence::<Run>("run", &run_data)
+                                .and_then(|_| {
+                                    super::unreadable::evidence::<Request>("request", &data)
+                                })
+                                .map(|request| {
+                                    Ok((
+                                        request.eval_id.clone(),
+                                        LastRequest {
+                                            run_id: request.run_id.clone(),
+                                            verdict: request.status(),
+                                            fingerprint: request.fingerprint,
+                                        },
+                                    ))
+                                })
+                        }
                     })
                     .collect::<Result<_, _>>()?
             };
@@ -822,7 +928,8 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
             let (repo, data) = saved.ok_or_else(|| Error::Invalid("Run not found.".into()))?;
             outside_workspace(Path::new(&repo), &state)
                 .map_err(|e| Error::Invalid(e.to_string()))?;
-            let run = serde_json::from_str(&data)?;
+            let run = super::unreadable::decode("run", &id, &data)
+                .map_err(|error| Error::Invalid(error.to_string()))?;
             let requests = {
                 let mut statement = transaction
                     .prepare("SELECT data FROM requests WHERE run_id=? ORDER BY ordinal")?;

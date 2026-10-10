@@ -14,11 +14,11 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
             stdout,
             "Run: {}\nExecution: {}\nState: {}",
             view.run.id,
-            view.run.status,
+            view.run.status(),
             crate::platform::path_text(&view.run.state_dir)
         )
         .map_err(|e| e.to_string())?;
-        if let Some(error) = &view.run.error {
+        if let Some(error) = view.run.error() {
             writeln!(stdout, "Reason: {error}").map_err(|e| e.to_string())?;
         }
         for request in &view.requests {
@@ -354,7 +354,7 @@ pub(super) fn outcome_code(run: &crate::store::Run) -> u8 {
     if run.wait_timed_out {
         return 3;
     }
-    match run.status {
+    match run.status() {
         crate::types::RunStatus::Green => 0,
         crate::types::RunStatus::Red => 1,
         crate::types::RunStatus::Incomplete => 4,

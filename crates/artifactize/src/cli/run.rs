@@ -66,7 +66,7 @@ pub(super) async fn show(
     let state = crate::store::state_dir(context.state_dir.as_deref())?;
     let deadline = tokio::time::Instant::now() + timeout_ms.unwrap_or(DEFAULT_RUN_WAIT);
     let mut view = crate::store::read_run(&state, &run_id).await?;
-    while wait && view.run.status == crate::types::RunStatus::Running {
+    while wait && view.run.status() == crate::types::RunStatus::Running {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
             break;
@@ -81,7 +81,7 @@ pub(super) async fn show(
     if !wait {
         return Ok(0);
     }
-    if view.run.status == crate::types::RunStatus::Running {
+    if view.run.status() == crate::types::RunStatus::Running {
         writeln!(
             io::stderr().lock(),
             "Waiting timed out; Run {run_id} is still RUNNING."

@@ -303,7 +303,7 @@ pub fn run_summary(view: &RunView, now: OffsetDateTime) -> (RunSummary, BTreeMap
         counts,
         executed,
         reused: reuses,
-        wall_ms: wall_ms(view.run.created_at, view.run.completed_at, now),
+        wall_ms: wall_ms(view.run.created_at, view.run.completed_at(), now),
         executor_starts: view.run.executions_started,
         usage,
     };

@@ -88,7 +88,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     );
     let producer_state = root.path().join("producer");
     let produced = verify(&repo, &producer_state).await;
-    assert_eq!(produced.run.status.as_str(), "GREEN");
+    assert_eq!(produced.run.status().as_str(), "GREEN");
     let key = produced.requests[0].key.clone().unwrap();
     let execution = cache::show(&producer_state, &key, false)
         .await
@@ -179,7 +179,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     );
 
     let reused = verify(&repo, &consumer_state).await;
-    assert_eq!(reused.run.status.as_str(), "GREEN");
+    assert_eq!(reused.run.status().as_str(), "GREEN");
     assert_eq!(reused.run.executions_started, 0);
     assert_eq!(reused.requests[0].execution_id.as_ref(), Some(&mirrored.id));
 
@@ -244,7 +244,7 @@ async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
                 mirror.id
             );
             let reused = verify(&repo, &state).await;
-            assert_eq!(reused.run.status.as_str(), "GREEN");
+            assert_eq!(reused.run.status().as_str(), "GREEN");
             assert_eq!(reused.run.executions_started, 0);
             assert_eq!(reused.requests[0].execution_id.as_ref(), Some(&mirror.id));
         }
@@ -429,7 +429,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
 
     // The declared profile (another backend, model, reasoning and timeout) reuses it.
     let reused = verify(&repo, &state).await;
-    assert_eq!(reused.run.status.as_str(), "GREEN");
+    assert_eq!(reused.run.status().as_str(), "GREEN");
     assert_eq!(reused.run.executions_started, 0);
     let request = &reused.requests[0];
     assert_eq!(

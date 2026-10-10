@@ -1,7 +1,7 @@
 //! Payload-carrying lifecycle states; the legacy flat JSON is parsed at the edge.
 
 use super::ExecutionResult;
-use crate::types::{ExecutionStatus, FailureCode, RequestStatus, Timestamp};
+use crate::types::{ExecutionStatus, FailureCode, RequestStatus, RunStatus, Timestamp};
 
 /// Non-active, non-verdict request states historically allow an optional completion time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,6 +219,82 @@ impl From<ExecutionState> for RequestState {
             ExecutionState::WaitingHuman => Self::WaitingHuman,
             ExecutionState::Completed { result, at } => Self::Completed { result, at },
             ExecutionState::Failed { error, code, at } => Self::Failed { error, code, at },
+        }
+    }
+}
+
+/// Run completion data exists only in a finished lifecycle state.
+#[derive(Debug, Clone)]
+pub enum RunState {
+    Running,
+    Green {
+        at: Timestamp,
+    },
+    Red {
+        at: Timestamp,
+    },
+    Error {
+        at: Timestamp,
+        error: Option<String>,
+    },
+    Incomplete {
+        at: Timestamp,
+        error: Option<String>,
+    },
+}
+
+impl RunState {
+    pub(super) fn from_parts(
+        status: RunStatus,
+        at: Option<Timestamp>,
+        error: Option<String>,
+    ) -> Result<Self, String> {
+        match status {
+            RunStatus::Running if at.is_none() && error.is_none() => Ok(Self::Running),
+            RunStatus::Running => {
+                Err("A running Run cannot be completed or carry an error.".into())
+            }
+            RunStatus::Green | RunStatus::Red if error.is_some() || at.is_none() => Err(
+                "A completed verdict Run needs a completion time and cannot carry an error.".into(),
+            ),
+            RunStatus::Green => Ok(Self::Green {
+                at: at.expect("validated completion time"),
+            }),
+            RunStatus::Red => Ok(Self::Red {
+                at: at.expect("validated completion time"),
+            }),
+            RunStatus::Error => Ok(Self::Error {
+                at: at.ok_or("A finished Run needs its completion time.")?,
+                error,
+            }),
+            RunStatus::Incomplete => Ok(Self::Incomplete {
+                at: at.ok_or("A finished Run needs its completion time.")?,
+                error,
+            }),
+        }
+    }
+    pub fn status(&self) -> RunStatus {
+        match self {
+            Self::Running => RunStatus::Running,
+            Self::Green { .. } => RunStatus::Green,
+            Self::Red { .. } => RunStatus::Red,
+            Self::Error { .. } => RunStatus::Error,
+            Self::Incomplete { .. } => RunStatus::Incomplete,
+        }
+    }
+    pub fn completed_at(&self) -> Option<Timestamp> {
+        match self {
+            Self::Running => None,
+            Self::Green { at }
+            | Self::Red { at }
+            | Self::Error { at, .. }
+            | Self::Incomplete { at, .. } => Some(*at),
+        }
+    }
+    pub fn error(&self) -> Option<&str> {
+        match self {
+            Self::Error { error, .. } | Self::Incomplete { error, .. } => error.as_deref(),
+            _ => None,
         }
     }
 }

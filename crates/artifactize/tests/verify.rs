@@ -770,7 +770,7 @@ async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
     .await
     .unwrap();
     assert!(!enforced.run.ignore_gates);
-    assert_eq!(enforced.run.status.as_str(), "INCOMPLETE");
+    assert_eq!(enforced.run.status().as_str(), "INCOMPLETE");
     assert_eq!(enforced.requests[0].status().as_str(), "WAIT_DEPENDENCY");
     let saved = read_run(&fixture.state, &enforced.run.id).await.unwrap();
     assert!(!saved.run.ignore_gates);
