@@ -16,7 +16,7 @@ use std::{
     process::ExitStatus,
 };
 
-use tempfile::TempDir;
+pub(crate) use tempfile::TempDir as PrivateTempDir;
 use tokio::signal::unix::{SignalKind, signal};
 
 pub(crate) use process::{Child, process_start_time, spawn_detached, spawn_gated};
@@ -55,7 +55,7 @@ pub(crate) fn create_private_dir(path: &Path) -> io::Result<()> {
 }
 
 /// A new 0700 temporary directory below `parent`.
-pub(crate) fn private_tempdir_in(prefix: &str, parent: &Path) -> io::Result<TempDir> {
+pub(crate) fn private_tempdir_in(prefix: &str, parent: &Path) -> io::Result<PrivateTempDir> {
     let directory = tempfile::Builder::new()
         .prefix(prefix)
         .permissions(Permissions::from_mode(PRIVATE_DIR_MODE))

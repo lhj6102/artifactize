@@ -22,11 +22,12 @@ use windows as os;
 
 pub(crate) use os::{
     CACHE_VARIABLES, CRLF_LINE_ENDINGS, Child, DEFAULT_EDITOR, ENV_NAMES_IGNORE_CASE,
-    HOME_VARIABLE, HOME_VARIABLES, HiddenInput, STATE_VARIABLES, SYSTEM_VARIABLES, TEMP_VARIABLES,
-    USER_VARIABLES, VISIBLE_INPUT_FALLBACK, create_private_dir, create_private_dir_all, editor,
-    exit_signal, file_identity, home_directory, host_name, ipc, is_owner_only, is_private_dir,
-    is_private_file, path_from_bytes, private_options, private_tempdir_in, process_start_time,
-    resolve_system_aliases, restrict_file, spawn_detached, spawn_gated, stop_requested, sync_dir,
+    HOME_VARIABLE, HOME_VARIABLES, HiddenInput, PrivateTempDir, STATE_VARIABLES, SYSTEM_VARIABLES,
+    TEMP_VARIABLES, USER_VARIABLES, VISIBLE_INPUT_FALLBACK, create_private_dir,
+    create_private_dir_all, editor, exit_signal, file_identity, home_directory, host_name, ipc,
+    is_owner_only, is_private_dir, is_private_file, path_from_bytes, private_options,
+    private_tempdir_in, process_start_time, resolve_system_aliases, restrict_file, spawn_detached,
+    spawn_gated, stop_requested, sync_dir,
 };
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 

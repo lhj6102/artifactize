@@ -841,6 +841,12 @@ pub fn private_file(path: &Path) -> bool {
     }
 }
 
+/// Whether the object received any inherited ACE, rather than its own explicit DACL.
+#[cfg(windows)]
+pub fn has_inherited_aces(path: &Path) -> bool {
+    acl::has_inherited_aces(path)
+}
+
 #[cfg(windows)]
 mod acl {
     use std::{ffi::c_void, os::windows::ffi::OsStrExt, path::Path, ptr};
@@ -854,7 +860,7 @@ mod acl {
                 GetNamedSecurityInfoW, SDDL_REVISION_1, SE_FILE_OBJECT, SetNamedSecurityInfoW,
             },
             DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation,
-            GetSecurityDescriptorDacl, GetTokenInformation, INHERIT_ONLY_ACE,
+            GetSecurityDescriptorDacl, GetTokenInformation, INHERIT_ONLY_ACE, INHERITED_ACE,
             PROTECTED_DACL_SECURITY_INFORMATION, TOKEN_QUERY, TOKEN_USER, TokenUser,
         },
         System::{
@@ -936,6 +942,48 @@ mod acl {
             );
             LocalFree(descriptor);
             assert_eq!(set, ERROR_SUCCESS);
+        }
+    }
+
+    /// Inspect the inheritance bit independently of which principals an ACE grants access.
+    pub(super) fn has_inherited_aces(path: &Path) -> bool {
+        // SAFETY: the OS allocates a descriptor; all ACE reads stay within its DACL and the
+        // descriptor is freed only after the last read.
+        unsafe {
+            let mut dacl: *mut ACL = ptr::null_mut();
+            let mut descriptor = ptr::null_mut();
+            assert_eq!(
+                GetNamedSecurityInfoW(
+                    wide(path).as_ptr(),
+                    SE_FILE_OBJECT,
+                    DACL_SECURITY_INFORMATION,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    &mut dacl,
+                    ptr::null_mut(),
+                    &mut descriptor,
+                ),
+                ERROR_SUCCESS
+            );
+            assert!(!dacl.is_null());
+            let mut size = ACL_SIZE_INFORMATION::default();
+            assert_ne!(
+                GetAclInformation(
+                    dacl,
+                    (&raw mut size).cast(),
+                    std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                    AclSizeInformation,
+                ),
+                0
+            );
+            let inherited = (0..size.AceCount).any(|index| {
+                let mut ace: *mut c_void = ptr::null_mut();
+                assert_ne!(GetAce(dacl, index, &mut ace), 0);
+                let header = ace.cast::<ACE_HEADER>().read_unaligned();
+                u32::from(header.AceFlags) & INHERITED_ACE != 0
+            });
+            LocalFree(descriptor);
+            inherited
         }
     }
 
