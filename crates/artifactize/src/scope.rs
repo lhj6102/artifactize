@@ -200,7 +200,7 @@ pub(crate) fn executable(
             let resolved = if artifact.file_name().is_some() && !mounted {
                 scoped_path(&cwd, &candidate)
             } else {
-                scope.resolve_input(root, owner, candidate.to_str()?)
+                scope.resolve_input(root, owner, &candidate.to_str()?.replace('\\', "/"))
             };
             match resolved {
                 Ok(program) if program.is_file() => Some(program),

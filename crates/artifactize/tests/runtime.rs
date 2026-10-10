@@ -149,7 +149,13 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     let scratch = Scratch::new();
     let cancellation = CancellationToken::new();
     let (registered, child) = oneshot::channel();
-    let command = scratch.command("/bin/sh", &["-c", "touch started; sleep 30"], None);
+    // exec keeps the observed PID stable while the final long-lived command runs.
+    let script = if cfg!(windows) {
+        "touch started; sleep 30"
+    } else {
+        "touch started; exec sleep 30"
+    };
+    let command = scratch.command("/bin/sh", &["-c", script], None);
     let running = tokio::spawn(runtime::execute(
         command,
         cancellation.clone(),
@@ -161,10 +167,14 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     let child = child.await.unwrap();
     wait_for(|| scratch.workspace().join("started").exists()).await;
     cancellation.cancel();
-    assert!(matches!(
-        timeout(TEST_TIMEOUT, running).await.unwrap().unwrap(),
-        Outcome::OperationalError(Error::Process(process::Error::Cancelled))
-    ));
+    let outcome = timeout(TEST_TIMEOUT, running).await.unwrap().unwrap();
+    assert!(
+        matches!(
+            outcome,
+            Outcome::OperationalError(Error::Process(process::Error::Cancelled))
+        ),
+        "{outcome:?}"
+    );
     assert_gone(child.pid).await;
 }
 

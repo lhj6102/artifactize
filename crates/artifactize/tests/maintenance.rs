@@ -555,7 +555,7 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
         repo.join("index.artf"),
         json!({"name":"a","fingerprint":false,"evals":[{
             "id":"check","title":"Check","payload":{"instruction":"Check"},
-            "profile":{"kind":"runtime","command":"/bin/true","args":[]}
+            "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]}
         }]})
         .to_string(),
     )
