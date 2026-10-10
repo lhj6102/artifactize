@@ -433,15 +433,23 @@ fn active_owner(
     )>,
     Error,
 > {
-    let row = db.query_row(
-        "SELECT id,owner_pid,owner_start_time,status,data FROM executions WHERE key=? AND status IN ('RUNNING','WAITING_HUMAN')",
-        [key], |row| Ok((
-            row.get::<_, crate::types::ExecutionId>(0)?,
-            process::ChildIdentity { pid: row.get(1)?, start_time: row.get::<_, i64>(2)? as u64 },
-            row.get::<_, ExecutionStatus>(3)?,
-            row.get::<_, String>(4)?,
-        )),
-    ).optional()?;
+    let row = db
+        .query_row(
+            "SELECT id,owner_pid,owner_start_time,status,data FROM executions WHERE key=? AND status IN ('RUNNING','WAITING_HUMAN')",
+            [key],
+            |row| {
+                Ok((
+                    row.get::<_, crate::types::ExecutionId>(0)?,
+                    process::ChildIdentity {
+                        pid: row.get(1)?,
+                        start_time: row.get::<_, i64>(2)? as u64,
+                    },
+                    row.get::<_, ExecutionStatus>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            },
+        )
+        .optional()?;
     Ok(row.and_then(|(id, owner, status, data)| {
         super::unreadable::evidence::<Execution>("execution", &data).map(|_| (id, owner, status))
     }))
@@ -573,7 +581,8 @@ pub async fn read_latest_cached(
                         .query_row(params![eval_def_hash, eval_id], |row| row.get(0))
                         .optional()?;
                     if let Some(data) = data
-                        && let Some(execution) = super::unreadable::evidence("execution", &data) {
+                        && let Some(execution) = super::unreadable::evidence("execution", &data)
+                    {
                         latest.insert((eval_id, eval_def_hash), execution);
                     }
                 }

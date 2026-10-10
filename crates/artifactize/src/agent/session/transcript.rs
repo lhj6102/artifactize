@@ -156,6 +156,17 @@ impl Correlation {
     }
 }
 
+/// A SHA-256 digest of normalized text, compared only for equality: the identity behind
+/// recognizing an assistant message, a question or an End result as the same content again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct ContentDigest([u8; 32]);
+
+impl ContentDigest {
+    fn of(bytes: &[u8]) -> Self {
+        Self(Sha256::digest(bytes).into())
+    }
+}
+
 #[derive(Default)]
 pub struct Transcript {
     blocks: usize,
@@ -163,10 +174,10 @@ pub struct Transcript {
     calls: BTreeMap<(Option<usize>, Correlation), (BlockId, usize)>,
     active: Option<BlockId>,
     expanded: BTreeSet<BlockId>,
-    assistant: Option<[u8; 32]>,
-    question: Option<(Option<usize>, [u8; 32])>,
+    assistant: Option<ContentDigest>,
+    question: Option<(Option<usize>, ContentDigest)>,
     /// A JSON-looking assistant message is unchanged until an identical authoritative End arrives.
-    result_candidate: Option<(BlockId, [u8; 32])>,
+    result_candidate: Option<(BlockId, ContentDigest)>,
     deliveries: BTreeMap<
         (
             Option<usize>,
@@ -200,13 +211,13 @@ impl Transcript {
                         .and_then(serde_json::Value::as_str)
                         .is_some_and(|verdict| matches!(verdict, "GREEN" | "RED"))
                 })
-                .map(|value| Sha256::digest(value.to_string().as_bytes()).into())
+                .map(|value| ContentDigest::of(value.to_string().as_bytes()))
         } else {
             None
         };
         let text = markdown(text);
         if !user {
-            self.assistant = Some(Sha256::digest(text.trim().as_bytes()).into());
+            self.assistant = Some(ContentDigest::of(text.trim().as_bytes()));
         }
         let id = self.slot();
         self.result_candidate = candidate.map(|digest| (id, digest));
@@ -357,8 +368,8 @@ impl Transcript {
                         .is_some_and(|verdict| matches!(verdict, "GREEN" | "RED"))
                 });
             self.result_candidate =
-                value.map(|value| (id, Sha256::digest(value.to_string().as_bytes()).into()));
-            self.assistant = Some(Sha256::digest(markdown(&text).trim().as_bytes()).into());
+                value.map(|value| (id, ContentDigest::of(value.to_string().as_bytes())));
+            self.assistant = Some(ContentDigest::of(markdown(&text).trim().as_bytes()));
         }
         if delivery.state == DeliveryState::Complete {
             self.deliveries
@@ -400,16 +411,12 @@ impl Transcript {
                 self.assistant = None;
                 if let Some(text) = &send.text {
                     self.prose(text, true, &mut patches);
-                    self.question =
-                        Some((event.send, Sha256::digest(text.trim().as_bytes()).into()));
+                    self.question = Some((event.send, ContentDigest::of(text.trim().as_bytes())));
                 }
             }
             Kind::Message(message) => {
                 if let Some(question) = &message.question {
-                    let identity = (
-                        event.send,
-                        Sha256::digest(question.trim().as_bytes()).into(),
-                    );
+                    let identity = (event.send, ContentDigest::of(question.trim().as_bytes()));
                     if self.question.as_ref() != Some(&identity) {
                         self.prose(question, true, &mut patches);
                     }
@@ -463,7 +470,7 @@ impl Transcript {
                 self.stopped(&mut dirty);
                 if let Some(result) = end.result() {
                     let result = result.to_json();
-                    let digest: [u8; 32] = Sha256::digest(result.to_string().as_bytes()).into();
+                    let digest = ContentDigest::of(result.to_string().as_bytes());
                     let text = result_text(&result);
                     if let Some((id, candidate)) = self.result_candidate.take()
                         && candidate == digest
@@ -490,7 +497,7 @@ impl Transcript {
             }
             Kind::Answer(answer) => {
                 if let Some(text) = answer.text() {
-                    let digest: [u8; 32] = Sha256::digest(markdown(text).trim().as_bytes()).into();
+                    let digest = ContentDigest::of(markdown(text).trim().as_bytes());
                     if self.assistant != Some(digest) {
                         self.prose(text, false, &mut patches);
                     }

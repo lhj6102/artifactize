@@ -59,27 +59,27 @@ impl Fixture {
             declare(
                 &alpha.join("scenarios").join(name),
                 json!({"name":name,
-                    "evals":[eval("review", runtime("true", &[]), "Inspect {input}.")]}),
+                    "evals":[eval("review", runtime(&support::os::true_program(), &[]), "Inspect {input}.")]}),
             );
         }
         declare(
             &alpha.join("cycle-a"),
-            json!({"name":"cycle-a","fingerprint":{"script":{"command":"echo","args":["a-v1"]}},
-                "evals":[eval("check", runtime("true", &[]), "Check {cycle-b}.")]}),
+            json!({"name":"cycle-a","fingerprint":{"script":{"command":support::os::echo_program(),"args":["a-v1"]}},
+                "evals":[eval("check", runtime(&support::os::true_program(), &[]), "Check {cycle-b}.")]}),
         );
         declare(
             &alpha.join("cycle-b"),
             json!({"name":"cycle-b","mounts":{"base":"input"},
-                "fingerprint":{"script":{"command":"echo","args":["b-v1"]}},
-                "evals":[eval("check", runtime("true", &[]), "Check {cycle-a}.")]}),
+                "fingerprint":{"script":{"command":support::os::echo_program(),"args":["b-v1"]}},
+                "evals":[eval("check", runtime(&support::os::true_program(), &[]), "Check {cycle-a}.")]}),
         );
         declare(
             &alpha.join("red"),
             json!({
                 "name":"red",
-                "fingerprint":{"script":{"command":"echo","args":["red-v1"]}},
+                "fingerprint":{"script":{"command":support::os::echo_program(),"args":["red-v1"]}},
                 "evals":[
-                    eval("check", runtime("sh", &["-c", "echo finding; exit 7"]), "Check {input}."),
+                    eval("check", runtime(&support::os::shell(), &["-c", "echo finding; exit 7"]), "Check {input}."),
                 ],
             }),
         );
@@ -93,7 +93,7 @@ impl Fixture {
         );
         declare(
             &beta.join("slow"),
-            json!({"name":"slow","evals":[eval("wait", runtime("sh", &["-c", &wait]), "Wait.")]}),
+            json!({"name":"slow","evals":[eval("wait", runtime(&support::os::shell(), &["-c", &wait]), "Wait.")]}),
         );
         declare(
             &beta.join("human"),
@@ -472,7 +472,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert_eq!(result["stdout"], "finding\n");
     assert_eq!(
         red.field("Profile"),
-        Some("runtime sh -c echo finding; exit 7")
+        Some(format!("runtime {} -c echo finding; exit 7", support::os::shell()).as_str())
     );
     assert!(
         red.field("Usage")
@@ -583,23 +583,22 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     let state = root.path().join("state");
     let flag = root.path().join("fail");
     let check = format!("test ! -e '{}'", flag.display());
-    let fingerprint =
-        |name: &str| json!({"script":{"command":"echo","args":[format!("{name}-v1")]}});
+    let fingerprint = |name: &str| json!({"script":{"command":support::os::echo_program(),"args":[format!("{name}-v1")]}});
     declare(
         &repo.join("a"),
         json!({"name":"a","fingerprint":fingerprint("a"),
-            "evals":[eval("x", runtime("sh", &["-c", &check]), "Check.")]}),
+            "evals":[eval("x", runtime(&support::os::shell(), &["-c", &check]), "Check.")]}),
     );
     declare(
         &repo.join("b"),
         json!({"name":"b","fingerprint":fingerprint("b"),
-            "evals":[eval("x", runtime("true", &[]), "Check {a}.")]}),
+            "evals":[eval("x", runtime(&support::os::true_program(), &[]), "Check {a}.")]}),
     );
     declare(
         &repo.join("c"),
         json!({"name":"c","fingerprint":fingerprint("c"),"evals":[
-            eval("x", runtime("true", &[]), "Check {b}."),
-            eval("y", runtime("true", &[]), "Check {b}.")]}),
+            eval("x", runtime(&support::os::true_program(), &[]), "Check {b}."),
+            eval("y", runtime(&support::os::true_program(), &[]), "Check {b}.")]}),
     );
     let verify = |args: &[&str], code: i32| -> String {
         let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
