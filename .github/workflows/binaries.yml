@@ -32,6 +32,8 @@ on:
       - ".github/workflows/binaries.yml"
       - ".github/workflows/release.yml"
       - ".github/scripts/**"
+      - ".github/packaging/**"
+      - "assets/brand/apple-touch-icon.png"
       - "crates/artifactize/Cargo.toml"
       - "crates/artifactize-tools/Cargo.toml"
       - "website/landing/install.sh"
@@ -45,6 +47,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  channel-policy:
+    name: Channel generation and release dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -I .github/scripts/test-channels.py
+      - run: shellcheck .github/scripts/smoke-homebrew.sh
+
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
@@ -132,6 +142,19 @@ jobs:
           done
       - name: Package
         run: sh .github/scripts/package.sh "$TARGET" "$VERSION"
+      - name: Build winget manifests and Store upload (including prereleases)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: powershell
+        run: |
+          python -I .github/scripts/channels.py generate winget --version $env:VERSION --dist dist --output channel-dist/winget
+          if ($LASTEXITCODE -ne 0) { throw 'winget generation failed' }
+          .github/scripts/build-msix.ps1 -Version $env:VERSION -Dist dist -Output channel-dist/store
+      - uses: actions/upload-artifact@v4
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        with:
+          name: channels-windows
+          path: channel-dist/**
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         with:
           name: binaries-${{ matrix.target }}
@@ -176,3 +199,10 @@ jobs:
         if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
         shell: powershell
         run: .github/scripts/smoke-install.ps1 -Version $env:VERSION -Dist dist -Installer website/landing/install.ps1
+      - name: Install and test the local Homebrew formula
+        if: contains(matrix.target, '-apple-darwin') && github.event_name != 'push'
+        run: sh .github/scripts/smoke-homebrew.sh "$VERSION" "$TARGET" dist
+      - name: Validate and install winget and signed MSIX; check shared state
+        if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
+        shell: powershell
+        run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist

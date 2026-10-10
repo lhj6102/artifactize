@@ -13,8 +13,8 @@ name: Release
 #    ready. Until v1 they are best effort: they never delay or fail the release.
 #
 # A prerelease tag (v0.6.0-alpha.1) creates a GitHub prerelease only: no crates.io.
-# Later distribution channels (a Homebrew tap, winget, the Microsoft Store) are jobs
-# with `needs: publish`, each independent, so one failing channel blocks no other.
+# Homebrew, winget and Store follow stable releases only. Each optional channel has
+# independent credentials and never gates the Linux release or another channel.
 on:
   push:
     tags: ["v*"]
@@ -179,3 +179,105 @@ jobs:
         run: |
           sha256sum -c ./*.sha256
           gh release upload "$GITHUB_REF_NAME" ./*
+
+  attach-channels:
+    name: Attach winget manifests and unsigned Store upload (best effort)
+    needs: [publish, windows]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: channels-windows
+          path: channels
+      - name: Bundle first-submission manifests
+        run: zip -j channels/winget-manifests.zip channels/winget/*.yaml
+      - name: Attach channel packages (including prereleases)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "$GITHUB_REF_NAME" channels/winget-manifests.zip channels/store/*
+
+  homebrew:
+    name: Update Homebrew tap (optional)
+    needs: [plan, publish, attach-macos]
+    runs-on: ubuntu-latest
+    environment: release
+    continue-on-error: true
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check channel policy and credentials
+        id: gate
+        run: python3 -I .github/scripts/channels.py gate homebrew --version "$VERSION"
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          pattern: binaries-*-apple-darwin
+          path: dist
+          merge-multiple: true
+      - name: Generate and update the stable formula
+        if: steps.gate.outputs.enabled == 'true'
+        run: |
+          python3 -I .github/scripts/channels.py generate homebrew --version "$VERSION" --dist dist --output formula
+          python3 -I .github/scripts/channels.py publish homebrew --version "$VERSION" --formula formula/artifactize.rb
+
+  winget:
+    name: Open winget-pkgs PR (optional)
+    needs: [plan, publish, attach-windows, attach-channels]
+    runs-on: windows-latest
+    environment: release
+    continue-on-error: true
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check channel policy and credentials
+        id: gate
+        run: python -I .github/scripts/channels.py gate winget --version $env:VERSION
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          name: channels-windows
+          path: channels
+      - name: Install maintained winget manifest creator
+        if: steps.gate.outputs.enabled == 'true'
+        shell: pwsh
+        run: |
+          # The standalone executable is Microsoft's documented CI distribution.
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/wingetcreate" -Force | Out-Null
+          Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile "$env:RUNNER_TEMP/wingetcreate/wingetcreate.exe"
+          "$env:RUNNER_TEMP/wingetcreate" >> $env:GITHUB_PATH
+      - name: Submit the generated manifest set
+        if: steps.gate.outputs.enabled == 'true'
+        run: python -I .github/scripts/channels.py publish winget --version $env:VERSION --manifests channels/winget
+
+  store:
+    name: Submit Store update unless a submission is pending (optional)
+    needs: [plan, publish, attach-channels]
+    runs-on: ubuntu-latest
+    environment: release
+    continue-on-error: true
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
+      STORE_CLIENT_ID: ${{ secrets.STORE_CLIENT_ID }}
+      STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check channel policy and credentials
+        id: gate
+        run: python3 -I .github/scripts/channels.py gate store --version "$VERSION"
+      - uses: actions/download-artifact@v4
+        if: steps.gate.outputs.enabled == 'true'
+        with:
+          name: channels-windows
+          path: channels
+      - name: Submit through the Microsoft Store submission API
+        if: steps.gate.outputs.enabled == 'true'
+        run: python3 -I .github/scripts/channels.py publish store --version "$VERSION" --package "channels/store/artifactize-v$VERSION-x64.msixupload"

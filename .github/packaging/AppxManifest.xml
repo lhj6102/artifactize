@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:desktop4="http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap5 desktop4 desktop6 rescap">
+  <Identity Name="lhj6102.Artifactize" Publisher="CN=F922229C-8605-4186-87BA-B5FF18595D66" Version="@VERSION@" ProcessorArchitecture="x64" />
+  <Properties>
+    <DisplayName>Artifactize</DisplayName>
+    <PublisherDisplayName>lhj6102</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+  </Properties>
+  <Resources><Resource Language="en-US" /></Resources>
+  <Dependencies><TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.18362.0" MaxVersionTested="10.0.26100.0" /></Dependencies>
+  <Applications>
+    <Application Id="Artifactize" Executable="artifactize.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements DisplayName="Artifactize" Description="Declare and verify artifacts with reusable evidence"
+        BackgroundColor="transparent" Square150x150Logo="Assets\Square150x150Logo.png" Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <uap5:Extension Category="windows.appExecutionAlias" Executable="artifactize.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias desktop4:Subsystem="console"><uap5:ExecutionAlias Alias="artifactize.exe" /></uap5:AppExecutionAlias>
+        </uap5:Extension>
+        <uap5:Extension Category="windows.appExecutionAlias" Executable="artifactize-tools.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:AppExecutionAlias desktop4:Subsystem="console"><uap5:ExecutionAlias Alias="artifactize-tools.exe" /></uap5:AppExecutionAlias>
+        </uap5:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>
