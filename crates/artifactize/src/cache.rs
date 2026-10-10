@@ -110,7 +110,7 @@ pub enum Unkeyed {
     /// The eval's own target.
     Target,
     /// A mount, child or referenced Artifact.
-    Dependency(String),
+    Dependency(ArtifactName),
 }
 
 /// Why the current key differs from an earlier cached result for the same eval and Eval
@@ -133,12 +133,12 @@ pub struct Changes {
 /// The Artifacts an eval depends on: its target, the target's mounts and child Artifacts, and
 /// the Artifacts the eval names in its instruction or runtime args. Connections further away
 /// count only through how the developer defines fingerprints.
-pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a str> {
+pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a ArtifactName> {
     let target = &config.artifacts[&eval.target];
-    std::iter::once(eval.target.as_str())
-        .chain(target.mounts.values().map(ArtifactName::as_str))
-        .chain(target.children.values().map(ArtifactName::as_str))
-        .chain(eval.deps.iter().map(ArtifactName::as_str))
+    std::iter::once(&eval.target)
+        .chain(target.mounts.values())
+        .chain(target.children.values())
+        .chain(&eval.deps)
         .collect()
 }
 
@@ -146,13 +146,13 @@ pub fn dependencies<'a>(config: &'a RepoConfig, eval: &'a Eval) -> BTreeSet<&'a 
 /// script solely for its own request. Restrict preparation to the required key inputs.
 pub(crate) fn fingerprint_targets<'a>(
     config: &'a RepoConfig,
-    required: &BTreeSet<&'a str>,
-) -> BTreeSet<&'a str> {
+    required: &BTreeSet<&'a ArtifactName>,
+) -> BTreeSet<&'a ArtifactName> {
     config
         .evals
         .iter()
         .filter(|eval| {
-            required.contains(eval.target.as_str())
+            required.contains(&eval.target)
                 && !matches!(eval.declaration.profile(), Profile::Dependency { .. })
         })
         .flat_map(|eval| dependencies(config, eval))
@@ -198,23 +198,20 @@ pub fn key_with_kinds(
 pub fn eval_key(
     config: &RepoConfig,
     eval: &Eval,
-    fingerprints: &BTreeMap<&str, PreparedFingerprint>,
+    fingerprints: &BTreeMap<&ArtifactName, PreparedFingerprint>,
 ) -> Result<Key, Unkeyed> {
     if matches!(eval.declaration.profile(), Profile::Dependency { .. }) {
         return Err(Unkeyed::Derived);
     }
-    if !fingerprints.contains_key(eval.target.as_str()) {
+    if !fingerprints.contains_key(&eval.target) {
         return Err(Unkeyed::Target);
     }
     let mut values: BTreeMap<ArtifactName, crate::types::Fingerprint> = BTreeMap::new();
     for id in dependencies(config, eval) {
         let fingerprint = fingerprints
             .get(id)
-            .ok_or_else(|| Unkeyed::Dependency(id.to_owned()))?;
-        values.insert(
-            id.parse().expect("validated Artifact name"),
-            fingerprint.value.clone(),
-        );
+            .ok_or_else(|| Unkeyed::Dependency(id.clone()))?;
+        values.insert(id.clone(), fingerprint.value.clone());
     }
     let eval_def_hash = eval_definition_hash(&eval.declaration);
     let artifact_kinds = values
@@ -232,12 +229,12 @@ pub fn eval_key(
 /// Keys of every eval whose dependency Artifacts were all prepared, by eval id.
 pub fn eval_keys<'a>(
     config: &'a RepoConfig,
-    fingerprints: &BTreeMap<&str, PreparedFingerprint>,
-) -> BTreeMap<&'a str, Key> {
+    fingerprints: &BTreeMap<&ArtifactName, PreparedFingerprint>,
+) -> BTreeMap<&'a crate::types::EvalId, Key> {
     config
         .evals
         .iter()
-        .filter_map(|eval| Some((eval.id.as_str(), eval_key(config, eval, fingerprints).ok()?)))
+        .filter_map(|eval| Some((&eval.id, eval_key(config, eval, fingerprints).ok()?)))
         .collect()
 }
 
@@ -284,18 +281,18 @@ pub(crate) fn validate_file_inputs(config: &RepoConfig, eval: &Eval) -> Result<(
 /// it are cancelled because they cannot change which failure that is.
 pub async fn prepare<'a>(
     config: &RepoConfig,
-    artifacts: impl IntoIterator<Item = &'a str>,
+    artifacts: impl IntoIterator<Item = &'a ArtifactName>,
     output_root: &Path,
     parallelism: &Parallelism,
     cancellation: CancellationToken,
-) -> Result<BTreeMap<&'a str, PreparedFingerprint>, String> {
+) -> Result<BTreeMap<&'a ArtifactName, PreparedFingerprint>, String> {
     let artifacts: Vec<_> = artifacts.into_iter().collect();
     for id in &artifacts {
         scope::validate_file_target(&config.root, &config.artifacts[*id])
             .map_err(|error| error.to_string())?;
     }
     let mut seen = BTreeSet::new();
-    let ids: Vec<&'a str> = artifacts
+    let ids: Vec<&'a ArtifactName> = artifacts
         .into_iter()
         .filter(|id| config.artifacts[*id].fingerprint.is_some() && seen.insert(*id))
         .collect();
@@ -394,7 +391,7 @@ pub async fn recheck(
 
 async fn compute(
     config: &RepoConfig,
-    id: &str,
+    id: &ArtifactName,
     output_root: &Path,
     cancellation: CancellationToken,
 ) -> Result<PreparedFingerprint, String> {
@@ -426,7 +423,7 @@ async fn compute(
 /// The built-in hash of the Artifact's own input files, nothing else.
 async fn content(
     config: &RepoConfig,
-    id: &str,
+    id: &ArtifactName,
     inputs: &[String],
     ignore: &[String],
     cancellation: &CancellationToken,
@@ -468,7 +465,7 @@ async fn content(
 /// which of the target's files changed, and which dependency Artifacts' fingerprints changed.
 pub fn changes(
     previous: &Execution,
-    target: &str,
+    target: &ArtifactName,
     current: &Key,
     manifest: Option<&Manifest>,
 ) -> Changes {
@@ -557,7 +554,7 @@ fn diff<K: Ord + std::fmt::Display, T: PartialEq>(
 
 async fn script(
     config: &RepoConfig,
-    artifact_id: &str,
+    artifact_id: &ArtifactName,
     output_root: &Path,
     cancellation: CancellationToken,
 ) -> Result<crate::types::Fingerprint, String> {
@@ -578,10 +575,11 @@ async fn script(
     for input in files {
         scope::scoped_path(&cwd, Path::new(input)).map_err(|e| e.to_string())?;
     }
-    let scope = scope::argv_scope(config, artifact_id, args).map_err(|e| e.to_string())?;
-    let program = scope::executable(&config.root, &scope, artifact_id, command)
+    let scope = scope::argv_scope(config, artifact_id.as_str(), args).map_err(|e| e.to_string())?;
+    let program = scope::executable(&config.root, &scope, artifact_id.as_str(), command)
         .map_err(|error| format!("Fingerprint executable could not be spawned: {error}"))?;
-    let args = scope::resolve_argv(config, &scope, artifact_id, args).map_err(|e| e.to_string())?;
+    let args = scope::resolve_argv(config, &scope, artifact_id.as_str(), args)
+        .map_err(|e| e.to_string())?;
     let input = json!({"version":FINGERPRINT_INPUT_VERSION,"artifactId":artifact_id});
     let output_root =
         workspace::prepare_directory(output_root, &config.root).map_err(|e| e.to_string())?;

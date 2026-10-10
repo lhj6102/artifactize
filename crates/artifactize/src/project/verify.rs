@@ -98,7 +98,7 @@ pub async fn verify(
     });
     let graph = Graph::new(&config).map_err(|e| e.to_string())?;
     let selected = selection.resolve(&config)?;
-    let selected_ids: BTreeSet<_> = selected.evals.iter().map(|eval| eval.id.as_str()).collect();
+    let selected_ids: BTreeSet<_> = selected.evals.iter().map(|eval| &eval.id).collect();
     let required: BTreeSet<_> = graph
         .dependency_closure(&selected.roots)
         .map_err(|e| e.to_string())?
@@ -115,7 +115,7 @@ pub async fn verify(
         .map_err(|e| e.to_string())?;
     let fingerprints = cache::prepare(
         &config,
-        cache::fingerprint_targets(&config, &required.iter().map(|id| id.as_str()).collect()),
+        cache::fingerprint_targets(&config, &required),
         &runs,
         &parallelism,
         cancellation.clone(),
@@ -215,17 +215,17 @@ pub async fn verify(
             references: eval.references.clone(),
             deps: eval.deps.clone(),
             force: options.force
-                && selected_ids.contains(eval.id.as_str())
+                && selected_ids.contains(&eval.id)
                 && !matches!(
                     eval.declaration.profile(),
                     crate::config::Profile::Dependency { .. }
                 ),
             fingerprint: fingerprints
-                .get(eval.target.as_str())
+                .get(&eval.target)
                 .map(|fingerprint| fingerprint.value.clone()),
-            key: keys.get(eval.id.as_str()).map(|key| key.value.clone()),
+            key: keys.get(&eval.id).map(|key| key.value.clone()),
             fingerprints: keys
-                .get(eval.id.as_str())
+                .get(&eval.id)
                 .map(|key| key.fingerprints.clone())
                 .unwrap_or_default(),
             created_at: run.created_at,
@@ -403,7 +403,7 @@ pub async fn verify(
                     "total":a.total,
                     "satisfied":a.satisfied,
                 });
-                if let Some(fingerprint) = fingerprints.get(id.as_str()) {
+                if let Some(fingerprint) = fingerprints.get(id) {
                     artifact["fingerprintKind"] = json!(if fingerprint.manifest.is_some() {
                         "artifactsum"
                     } else {

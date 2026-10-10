@@ -348,21 +348,19 @@ async fn files_changed(
     }
     let current = cache::prepare(
         config,
-        request
-            .fingerprints
-            .keys()
-            .map(crate::types::ArtifactName::as_str),
+        request.fingerprints.keys(),
         output,
         &cache::Parallelism::new(cache::Parallelism::available()),
         cancellation,
     )
     .await
     .ok()?;
-    Some(request.fingerprints.iter().any(|(id, fingerprint)| {
-        current
-            .get(id.as_str())
-            .is_none_or(|now| &now.value != fingerprint)
-    }))
+    Some(
+        request
+            .fingerprints
+            .iter()
+            .any(|(id, fingerprint)| current.get(id).is_none_or(|now| &now.value != fingerprint)),
+    )
 }
 
 /// Keep text session transcripts readable with bounded tool excerpts;

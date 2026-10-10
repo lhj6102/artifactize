@@ -304,7 +304,7 @@ fn changing_only_builtin_args_preserves_reuse_identity_like_command_views() {
         cache::eval_definition_hash(&second.evals[0].declaration)
     );
     let fingerprints = std::collections::BTreeMap::from([(
-        "a",
+        &first.artifacts["a"].name,
         cache::PreparedFingerprint {
             value: "fixture-fingerprint".parse().unwrap(),
             manifest: None,

@@ -367,14 +367,14 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     let state = root.path().join("state");
     let fingerprints = cache::prepare(
         &config,
-        ["app"],
+        [&config.artifacts["app"].name],
         &state,
         &cache::Parallelism::new(2),
         CancellationToken::new(),
     )
     .await
     .unwrap();
-    let key = cache::eval_keys(&config, &fingerprints)["app/check"].clone();
+    let key = cache::eval_keys(&config, &fingerprints)[&config.evals[0].id].clone();
     let variant: Profile = serde_json::from_value(fast.clone()).unwrap();
     let completed: artifactize::types::Timestamp = "2026-10-04T00:00:01Z".parse().unwrap();
     let produced = Execution {

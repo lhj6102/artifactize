@@ -152,7 +152,7 @@ pub async fn status(
     let included_ids: BTreeSet<_> = included_eval_ids.iter().collect();
     let fingerprints = cache::prepare(
         &config,
-        cache::fingerprint_targets(&config, &required.iter().map(|id| id.as_str()).collect()),
+        cache::fingerprint_targets(&config, &required),
         &state,
         &super::fingerprint_parallelism(options)?,
         cancellation.clone(),
@@ -161,12 +161,7 @@ pub async fn status(
     let all_keys = cache::eval_keys(&config, &fingerprints);
     let keys: BTreeMap<_, _> = all_keys
         .iter()
-        .filter(|(id, _)| {
-            !(options.force
-                && selected_ids
-                    .iter()
-                    .any(|selected| selected.as_str() == **id))
-        })
+        .filter(|(id, _)| !(options.force && selected_ids.contains(*id)))
         .map(|(id, key)| (*id, key))
         .collect();
     let mut cached = store::read_keyed_executions(
@@ -202,17 +197,12 @@ pub async fn status(
             }
         }
     }
-    let claim = |id: &str| keys.get(id).and_then(|key| cached.get(&key.value));
+    let claim = |id: &crate::types::EvalId| keys.get(id).and_then(|key| cached.get(&key.value));
     // Explain changed keys against the newest cached result for the same Eval definition.
     let stale: Vec<_> = keys
         .iter()
         .filter(|(id, _)| !matches!(claim(id), Some(Claim::Reuse(_))))
-        .map(|(id, key)| {
-            (
-                (*id).parse().expect("validated Eval id"),
-                key.eval_def_hash.clone(),
-            )
-        })
+        .map(|(id, key)| ((*id).clone(), key.eval_def_hash.clone()))
         .collect();
     let previous = store::read_latest_cached(&state, &stale).await?;
     for eval in &config.evals {
@@ -444,7 +434,7 @@ pub async fn status(
             obligations: obligations_by_artifact[eval.target.as_str()].clone(),
             eval_def_hash: cache::eval_definition_hash(&eval.declaration),
             fingerprint: fingerprints
-                .get(eval.target.as_str())
+                .get(&eval.target)
                 .map(|fingerprint| fingerprint.value.clone()),
             fingerprints: cache::dependencies(&config, eval)
                 .into_iter()
@@ -457,9 +447,9 @@ pub async fn status(
                     )
                 })
                 .collect(),
-            key: all_keys.get(eval.id.as_str()).map(|key| key.value.clone()),
+            key: all_keys.get(&eval.id).map(|key| key.value.clone()),
             last: latest.remove(eval.id.as_str()),
-            changes: keys.get(eval.id.as_str()).and_then(|key| {
+            changes: keys.get(&eval.id).and_then(|key| {
                 previous
                     .get(&(eval.id.clone(), key.eval_def_hash.clone()))
                     .map(|execution| {
@@ -467,7 +457,7 @@ pub async fn status(
                             execution,
                             &eval.target,
                             key,
-                            fingerprints[eval.target.as_str()].manifest.as_ref(),
+                            fingerprints[&eval.target].manifest.as_ref(),
                         )
                     })
             }),

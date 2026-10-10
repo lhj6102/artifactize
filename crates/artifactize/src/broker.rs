@@ -181,8 +181,8 @@ pub(crate) fn budget_reason(run: &Run) -> String {
 pub(crate) async fn schedule(
     config: Arc<RepoConfig>,
     graph: &Graph<'_>,
-    fingerprints: &BTreeMap<&str, cache::PreparedFingerprint>,
-    keys: &BTreeMap<&str, cache::Key>,
+    fingerprints: &BTreeMap<&crate::types::ArtifactName, cache::PreparedFingerprint>,
+    keys: &BTreeMap<&crate::types::EvalId, cache::Key>,
     parallelism: &cache::Parallelism,
     limits: &Limits,
     run: &mut Run,
@@ -222,8 +222,8 @@ pub(crate) async fn schedule(
 struct Scheduler<'a, 'g> {
     config: Arc<RepoConfig>,
     graph: &'a Graph<'g>,
-    fingerprints: &'a BTreeMap<&'g str, cache::PreparedFingerprint>,
-    keys: &'a BTreeMap<&'g str, cache::Key>,
+    fingerprints: &'a BTreeMap<&'g crate::types::ArtifactName, cache::PreparedFingerprint>,
+    keys: &'a BTreeMap<&'g crate::types::EvalId, cache::Key>,
     parallelism: &'a cache::Parallelism,
     limits: &'a Limits,
     run: &'a mut Run,
@@ -298,17 +298,11 @@ impl Scheduler<'_, '_> {
         let run_dir = self.run.state_dir.join("runs").join(self.run.id.as_str());
         let mut evidence = BTreeMap::new();
         // Saved evals this Run has no request for: their evidence is recorded on the Run.
-        let saved_evals: BTreeSet<String> = self
+        let saved_evals: BTreeSet<crate::types::EvalId> = self
             .run
             .definitions
             .graph()
-            .map(|graph| {
-                graph
-                    .evals()
-                    .iter()
-                    .map(|eval| eval.id.to_string())
-                    .collect()
-            })
+            .map(|graph| graph.evals().iter().map(|eval| eval.id.clone()).collect())
             .unwrap_or_default();
         let mut running = BTreeSet::new();
         let mut waiting = BTreeSet::new();
@@ -387,7 +381,7 @@ impl Scheduler<'_, '_> {
                     }
                     if let Err(error) = cache::validate_file_inputs(&self.config, eval) {
                         evidence.insert(eval.id.clone(), Evidence::OperationalError);
-                        if index.is_none() && saved_evals.contains(eval.id.as_str()) {
+                        if index.is_none() && saved_evals.contains(&eval.id) {
                             self.run
                                 .evidence
                                 .insert(eval.id.clone(), crate::types::RequestStatus::Error);
@@ -403,12 +397,12 @@ impl Scheduler<'_, '_> {
                         }
                         continue;
                     }
-                    if let Some(key) = self.keys.get(eval.id.as_str())
+                    if let Some(key) = self.keys.get(&eval.id)
                         && let Some(execution) = self.receipts.cached_execution(&key.value).await?
                     {
                         let verdict = execution.verdict().expect("completed cache entry");
                         evidence.insert(eval.id.clone(), Evidence::Current(verdict));
-                        if index.is_none() && saved_evals.contains(eval.id.as_str()) {
+                        if index.is_none() && saved_evals.contains(&eval.id) {
                             self.run.evidence.insert(
                                 eval.id.clone(),
                                 match verdict {
@@ -507,7 +501,7 @@ impl Scheduler<'_, '_> {
                         fingerprints: request.fingerprints.clone(),
                         artifact_kinds: self
                             .keys
-                            .get(request.eval_id.as_str())
+                            .get(&request.eval_id)
                             .map(|key| key.artifact_kinds.clone())
                             .unwrap_or_default(),
                         eval_def_hash: request.eval_def_hash.clone(),
@@ -532,8 +526,7 @@ impl Scheduler<'_, '_> {
                         manifest: None,
                     };
                     if execution.key.is_some() {
-                        execution.manifest =
-                            self.fingerprints[request.target.as_str()].manifest.clone();
+                        execution.manifest = self.fingerprints[&request.target].manifest.clone();
                     }
                     let kind = self
                         .config
