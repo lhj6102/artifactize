@@ -268,7 +268,7 @@ impl Receipts {
                 execution.status = request.status.try_into().map_err(Error::Invalid)?;
                 execution.result = request.result.clone();
                 execution.error = request.error.clone();
-                execution.error_code = request.error_code.clone();
+                execution.error_code = request.error_code;
                 execution.reviewer = Some(reviewer.clone());
                 execution.completed_at = request.completed_at;
                 execution.provenance.completed_at = request.completed_at;
@@ -345,5 +345,5 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
 fn receive(request: &mut Request, execution: &Execution) {
     crate::cache::reuse(request, execution, crate::broker::now());
     request.error = execution.error.clone();
-    request.error_code = execution.error_code.clone();
+    request.error_code = execution.error_code;
 }

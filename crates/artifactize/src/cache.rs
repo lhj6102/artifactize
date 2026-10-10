@@ -36,6 +36,8 @@ const FINGERPRINT_INPUT_VERSION: u32 = 1;
 /// Keep per-file change explanations compact with 8 digest bytes (16 hex characters).
 /// This diagnostic prefix is not identity: artifactsum/reuse keys retain full SHA-256.
 const MANIFEST_DIGEST_PREFIX_BYTES: usize = 8;
+/// Domain-separated kind-aware key format; changes invalidate persisted cache keys.
+const KIND_KEY_FORMAT_PREFIX: &[u8] = b"artifactize-kind-key-v1\n";
 /// Domain-separate and version the reuse-key hash input, including its terminating newline.
 /// Changing these bytes invalidates existing reuse keys; this is not a config/session/DB version.
 const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v2\n";
@@ -83,10 +85,10 @@ pub struct PreparedFingerprint {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Manifest {
     /// SHA-256 over every input path and file digest: the fingerprint without its prefix.
-    pub inputs: String,
+    pub inputs: crate::types::Sha256Digest,
     /// Owner-relative path to the first 16 hex digits of its SHA-256.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub files: Option<BTreeMap<String, String>>,
+    pub files: Option<BTreeMap<String, crate::types::DigestPrefix>>,
 }
 
 /// An eval's reuse key: `hash(eval strategy, sorted (name, fingerprint) of the Artifacts it
@@ -96,8 +98,8 @@ pub struct Key {
     pub value: crate::types::ReuseKey,
     pub eval_def_hash: crate::types::DefinitionHash,
     /// Each Artifact the eval depends on, its target included, with its fingerprint.
-    pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
-    pub artifact_kinds: BTreeMap<String, crate::config::ArtifactKind>,
+    pub fingerprints: BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint>,
+    pub artifact_kinds: BTreeMap<crate::types::ArtifactName, crate::config::ArtifactKind>,
 }
 
 /// Why an eval has no reuse key: an Artifact it depends on declares `fingerprint: false`.
@@ -160,7 +162,7 @@ pub(crate) fn fingerprint_targets<'a>(
 /// The reuse key of an Eval definition hash over these fingerprints.
 pub fn key(
     eval_def_hash: &str,
-    fingerprints: &BTreeMap<String, crate::types::Fingerprint>,
+    fingerprints: &BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint>,
 ) -> crate::types::ReuseKey {
     let mut digest = Sha256::new();
     digest.update(format!("{REUSE_KEY_FORMAT_PREFIX}eval {eval_def_hash}\n"));
@@ -176,14 +178,14 @@ pub fn key(
 /// Scope kinds distinguish file/folder observation without coupling reuse to repo paths.
 pub fn key_with_kinds(
     eval_def_hash: &str,
-    fingerprints: &BTreeMap<String, crate::types::Fingerprint>,
-    kinds: &BTreeMap<String, crate::config::ArtifactKind>,
+    fingerprints: &BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint>,
+    kinds: &BTreeMap<crate::types::ArtifactName, crate::config::ArtifactKind>,
 ) -> crate::types::ReuseKey {
     if kinds.is_empty() {
         return key(eval_def_hash, fingerprints);
     }
     let mut digest = Sha256::new();
-    digest.update(b"artifactize-kind-key-v1\n");
+    digest.update(KIND_KEY_FORMAT_PREFIX);
     digest.update(key(eval_def_hash, fingerprints).as_bytes());
     digest.update(serde_json::to_vec(kinds).expect("Artifact kinds are JSON"));
     content::hex(&digest.finalize())
@@ -204,12 +206,15 @@ pub fn eval_key(
     if !fingerprints.contains_key(eval.target.as_str()) {
         return Err(Unkeyed::Target);
     }
-    let mut values = BTreeMap::new();
+    let mut values: BTreeMap<ArtifactName, crate::types::Fingerprint> = BTreeMap::new();
     for id in dependencies(config, eval) {
         let fingerprint = fingerprints
             .get(id)
             .ok_or_else(|| Unkeyed::Dependency(id.to_owned()))?;
-        values.insert(id.to_owned(), fingerprint.value.clone());
+        values.insert(
+            id.parse().expect("validated Artifact name"),
+            fingerprint.value.clone(),
+        );
     }
     let eval_def_hash = eval_definition_hash(&eval.declaration);
     let artifact_kinds = values
@@ -425,7 +430,9 @@ async fn content(
                 .map(|(path, file)| {
                     (
                         path.clone(),
-                        content::hex(&file[..MANIFEST_DIGEST_PREFIX_BYTES]),
+                        content::hex(&file[..MANIFEST_DIGEST_PREFIX_BYTES])
+                            .parse()
+                            .expect("eight-byte SHA-256 prefix"),
                     )
                 })
                 .collect(),
@@ -488,7 +495,7 @@ pub fn changes(
     }
     let dependencies = (!previous.fingerprints.is_empty())
         .then(|| {
-            let others = |map: &BTreeMap<String, crate::types::Fingerprint>| {
+            let others = |map: &BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint>| {
                 map.iter()
                     .filter(|(name, _)| *name != target)
                     .map(|(name, value)| (name.clone(), value.clone()))
@@ -520,13 +527,16 @@ pub fn changes(
     }
 }
 
-fn diff<T: PartialEq>(old: &BTreeMap<String, T>, new: &BTreeMap<String, T>) -> Vec<String> {
+fn diff<K: Ord + std::fmt::Display, T: PartialEq>(
+    old: &BTreeMap<K, T>,
+    new: &BTreeMap<K, T>,
+) -> Vec<String> {
     old.keys()
         .chain(new.keys())
         .collect::<BTreeSet<_>>()
         .into_iter()
         .filter_map(|key| match (old.get(key), new.get(key)) {
-            (Some(old), Some(new)) if old != new => Some(key.clone()),
+            (Some(old), Some(new)) if old != new => Some(key.to_string()),
             (None, Some(_)) => Some(format!("+{key}")),
             (Some(_), None) => Some(format!("-{key}")),
             _ => None,
@@ -604,23 +614,15 @@ async fn script(
 }
 
 fn validate_output(stdout: &[u8]) -> Result<crate::types::Fingerprint, String> {
-    // Where programs end a line with CRLF, the value is the same as from an LF-ending script.
-    let value = match stdout.strip_suffix(b"\r\n") {
-        Some(value) if crate::platform::CRLF_LINE_ENDINGS => value,
-        _ => stdout.strip_suffix(b"\n").unwrap_or(stdout),
-    };
+    let (value, endings) = crate::platform::fingerprint_line_ending(stdout);
     if !(1..=crate::types::MAX_FINGERPRINT_BYTES).contains(&value.len())
         || !value
             .iter()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
     {
-        return Err(if crate::platform::CRLF_LINE_ENDINGS {
-            "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF or CRLF."
-                .into()
-        } else {
-            "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF."
-                .into()
-        });
+        return Err(format!(
+            "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing {endings}."
+        ));
     }
     String::from_utf8(value.to_vec())
         .map_err(|error| error.to_string())?

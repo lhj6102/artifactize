@@ -2,7 +2,7 @@ use std::path::Path;
 
 use rusqlite::params;
 use serde::Serialize;
-use serde_json::{Value, json};
+
 use tokio_rusqlite::Connection;
 
 use super::{
@@ -17,7 +17,13 @@ pub struct RequestView {
     pub request: Request,
     pub claim: Option<HumanClaim>,
     pub execution: Option<Execution>,
-    pub definition: Option<Value>,
+    pub definition: Option<RequestDefinition>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RequestDefinition {
+    pub eval: super::definitions::Eval,
+    pub artifact: super::definitions::Artifact,
 }
 
 #[derive(Default)]
@@ -221,18 +227,18 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                         outside_workspace(Path::new(&repo), &state)
                             .map_err(|e| Error::Invalid(e.to_string()))?;
                         let request: Request = serde_json::from_str(&data)?;
-                        let artifacts: Option<Value> = artifacts
+                        let artifacts: Option<std::collections::BTreeMap<crate::types::ArtifactName, super::definitions::Artifact>> = artifacts
                             .map(|data| serde_json::from_str(&data))
                             .transpose()?;
-                        let eval: Option<Value> =
+                        let eval: Option<super::definitions::Eval> =
                             eval.map(|data| serde_json::from_str(&data)).transpose()?;
                         let definition = eval
                             .zip(
                                 artifacts
                                     .as_ref()
-                                    .and_then(|artifacts| artifacts.get(&request.target)),
+                                    .and_then(|artifacts| artifacts.get(request.target.as_str())),
                             )
-                            .map(|(eval, artifact)| json!({"eval":eval,"artifact":artifact}));
+                            .map(|(eval, artifact)| RequestDefinition { eval, artifact: artifact.clone() });
                         Ok(RequestView {
                             request,
                             definition,

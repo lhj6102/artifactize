@@ -98,7 +98,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     assert_eq!(execution.fingerprint.as_deref(), Some("remote-v1"));
     assert_eq!(
         execution.fingerprints,
-        [("app".to_owned(), "remote-v1".parse().unwrap())].into()
+        [("app".parse().unwrap(), "remote-v1".parse().unwrap())].into()
     );
     let producer = execution.producer.clone().unwrap();
     assert_eq!(producer.version, env!("CARGO_PKG_VERSION"));
@@ -394,7 +394,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
             repo_path: "/elsewhere".into(),
             run_id: "run-elsewhere".parse().unwrap(),
             request_id: "run-elsewhere-1".parse().unwrap(),
-            eval_id: "app/check".into(),
+            eval_id: "app/check".parse().unwrap(),
             eval_def_hash: key.eval_def_hash.clone(),
             completed_at: Some(completed),
             execution_paths: Default::default(),
@@ -438,7 +438,10 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         declared["backend"]
     );
     assert_eq!(request.options.variant.as_deref(), Some("fast"));
-    assert_eq!(request.options.backend.as_deref(), Some("anthropic"));
+    assert_eq!(
+        request.options.backend,
+        Some(artifactize::config::Backend::Anthropic)
+    );
     assert_eq!(request.options.max_tokens, Some(500));
     let shown = cli(&state, &["cache", "show", &key.value]);
     assert_eq!(

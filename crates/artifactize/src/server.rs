@@ -81,7 +81,7 @@ impl IntoResponse for ApiError {
 }
 
 struct Principal {
-    name: String,
+    name: crate::types::TokenName,
     scopes: Vec<Scope>,
 }
 

@@ -108,7 +108,7 @@ pub(super) async fn execute(
             let (send, mut receive) = tokio::sync::oneshot::channel();
             let outcome =
                 runtime::execute(command, cancellation.clone(), move |child| async move {
-                    registered.child = Some(json!({"pid":child.pid,"startTime":child.start_time}));
+                    registered.child = Some(child.into());
                     let _ = send.send(registered.child.clone());
                     receipts
                         .save_request(&registered)
@@ -196,7 +196,7 @@ pub(super) async fn execute(
     execution.status = request.status.try_into()?;
     execution.result = request.result.clone();
     execution.error = request.error.clone();
-    execution.error_code = request.error_code.clone();
+    execution.error_code = request.error_code;
     execution.usage = request.usage.clone();
     execution.completed_at = request.completed_at;
     execution.provenance.completed_at = request.completed_at;
