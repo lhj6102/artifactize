@@ -41,8 +41,8 @@ pub struct Command {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChildIdentity {
     pub pid: u32,
-    /// Linux: field 22 of /proc/PID/stat, in clock ticks since boot. Windows: the creation
-    /// time, in 100 ns intervals since 1601.
+    /// Linux: clock ticks since boot (procfs field 22). macOS: microseconds since the
+    /// epoch (kernel birth timestamp). Windows: 100 ns intervals since 1601.
     pub start_time: u64,
 }
 

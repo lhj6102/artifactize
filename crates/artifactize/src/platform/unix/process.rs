@@ -115,7 +115,14 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
         )
     };
     if read <= 0 {
-        return Err(io::Error::last_os_error());
+        let error = io::Error::last_os_error();
+        // proc_pidinfo reports ESRCH for a departed PID; liveness treats this like
+        // Linux procfs ENOENT, not a supervision error.
+        return Err(if error.raw_os_error() == Some(libc::ESRCH) {
+            io::ErrorKind::NotFound.into()
+        } else {
+            error
+        });
     }
     if read != size {
         return Err(io::Error::other("incomplete child process information"));
