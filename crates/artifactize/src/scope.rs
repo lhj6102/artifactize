@@ -165,7 +165,26 @@ pub(crate) fn executable(
         let mounted = artifact
             .mounts
             .contains_key(relative.split('/').next().unwrap_or(""));
-        let mut failure = "Executable path is unavailable or outside scope.".to_owned();
+        let physical = if artifact.file_name().is_some() && !mounted {
+            artifactize_tools::scope::logical_path(relative).map_err(|error| error.to_string())?;
+            cwd.join(relative)
+        } else {
+            let resolved = scope
+                .resolve_path(owner, relative)
+                .map_err(|error| error.to_string())?;
+            root.join(scope.artifacts[resolved.artifact_id.as_str()].folder())
+                .join(resolved.path)
+        };
+        // Even an extensionless declaration must not hide a link behind PATHEXT.
+        for path in physical.ancestors() {
+            if path
+                .symlink_metadata()
+                .is_ok_and(|metadata| metadata.is_symlink())
+            {
+                return Err("Artifact symlinks are not supported.".into());
+            }
+        }
+        let mut failure = None;
         artifactize_tools::program::candidates(
             Path::new(relative),
             std::env::var_os("PATHEXT").as_deref(),
@@ -181,12 +200,14 @@ pub(crate) fn executable(
                 Ok(program) if program.is_file() => Some(program),
                 Ok(_) => None,
                 Err(error) => {
-                    failure = error.to_string();
+                    failure.get_or_insert_with(|| error.to_string());
                     None
                 }
             }
         })
-        .ok_or(failure)?
+        .ok_or_else(|| {
+            failure.unwrap_or_else(|| "Executable path is unavailable or outside scope.".into())
+        })?
     } else {
         PathBuf::from(command)
     };
