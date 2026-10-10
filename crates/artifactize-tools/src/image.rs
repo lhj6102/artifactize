@@ -52,16 +52,8 @@ pub fn from_base64(data: &str, mime_type: &str) -> Result<Content, String> {
 }
 
 pub fn from_output(root: &Path, path: &str, mime_type: &str) -> Result<Content, String> {
-    let path = Path::new(path);
-    let relative = if path.is_absolute() {
-        let relative = path
-            .strip_prefix(root)
-            .map_err(|_| "Image is outside the tool output directory.")?;
-        scope::logical_from_native(relative)
-            .ok_or("Image path must be a UTF-8 path below the tool output directory.")?
-    } else {
-        path.to_str().ok_or("Image path must be UTF-8.")?.to_owned()
-    };
+    let relative = crate::files::logical_below(root, path)
+        .ok_or("Image path must be a UTF-8 path below the tool output directory.")?;
     let file = scope::open_scoped(root, &relative).map_err(|e| format!("Image {relative}: {e}"))?;
     normalize(&read(file)?, Some(mime_type))
 }

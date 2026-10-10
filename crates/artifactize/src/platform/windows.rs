@@ -29,6 +29,11 @@ pub(crate) use security::{
     private_pipe, private_tempdir_in, restrict_file, user_identity,
 };
 
+/// How a private directory and file are described in messages.
+pub(crate) const PRIVATE_DIRECTORY: &str = "owner-only (a protected DACL granting only this user)";
+pub(crate) const PRIVATE_FILE: &str =
+    "readable by their owner only (a DACL granting only this user)";
+
 /// NTFS persists a rename through its journal, and Windows cannot flush a directory handle
 /// opened for reading, so there is nothing to sync.
 pub(crate) fn sync_dir(_path: &Path) -> io::Result<()> {

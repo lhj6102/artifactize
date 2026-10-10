@@ -4,6 +4,12 @@
 //! opener.
 
 pub mod files;
+
+/// How a finished process ended, for a message: its exit code, or on Unix the signal that
+/// ended it, in the system's own wording.
+pub(crate) fn exit_description(status: &std::process::ExitStatus) -> String {
+    status.to_string()
+}
 pub(crate) mod process;
 pub mod program;
 

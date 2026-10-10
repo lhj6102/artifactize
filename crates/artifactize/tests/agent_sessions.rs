@@ -685,7 +685,8 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
     for (index, (_, session)) in reviews.iter().enumerate() {
         written(
             &project.sessions().join(format!("{session}.jsonl")),
-            1_000 + index as u64,
+            // A day apart, far beyond any filesystem's timestamp resolution.
+            1_000 + index as u64 * 86_400,
         );
     }
     let total: u64 = sizes.iter().sum();

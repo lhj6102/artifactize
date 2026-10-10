@@ -114,12 +114,7 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
     let root = crate::test_os::tempdir();
     let base = crate::test_os::canonical(root.path());
     let repo = base.join("repo");
-    // Windows forbids newline in file names; keep whitespace coverage with a space.
-    let other = base.join(if cfg!(windows) {
-        "other space"
-    } else {
-        "other space\nline"
-    });
+    let other = base.join(crate::test_os::whitespace_name());
     fs::create_dir_all(repo.join("workspace/sub")).unwrap();
     git(&repo, &["init", "-b", "main"]);
     git(

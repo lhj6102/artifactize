@@ -275,7 +275,7 @@ pub enum OpenError {
 /// Open each component relative to its pinned parent, so replacement cannot redirect a read
 /// through a link.
 pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, OpenError> {
-    if !root.is_absolute() || artifact.path.is_absolute() {
+    if !platform::is_absolute(root) || platform::is_absolute(&artifact.path) {
         return Err(
             ScopeError("Artifact roots must be absolute and owner paths relative.".into()).into(),
         );
@@ -341,7 +341,7 @@ fn file_input(artifact: &Artifact, path: &str) -> Result<(), ScopeError> {
 /// Open a relative path below an absolute root without following any symlink components.
 pub fn open_scoped(root: &Path, path: &str) -> Result<File, OpenError> {
     logical_path(path)?;
-    if !root.is_absolute() {
+    if !platform::is_absolute(root) {
         return Err(ScopeError("Scoped roots must be absolute.".into()).into());
     }
     let (filesystem_root, names) = platform::split_root(root)

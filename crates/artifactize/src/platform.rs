@@ -29,6 +29,7 @@ pub(crate) use os::{
     process_start_time, resolve_system_aliases, restrict_file, spawn_detached, spawn_gated,
     stop_requested, sync_dir,
 };
+pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 
 /// A file's identity on its volume. Two open files with equal identities are the same file,
 /// whatever paths reached them; a replaced file gets a new identity.
@@ -36,6 +37,12 @@ pub(crate) use os::{
 pub(crate) struct FileIdentity {
     volume: u64,
     index: u64,
+}
+
+/// How a finished process ended, for a message: its exit code, or on Unix the signal that
+/// ended it, in the system's own wording.
+pub(crate) fn exit_description(status: &std::process::ExitStatus) -> String {
+    status.to_string()
 }
 
 /// Poll contended process-shared file locks without blocking the async runtime;

@@ -407,12 +407,15 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
     }
 }
 
-// Windows opens a name in any case, so a state folder named in another case is still inside
-// the repository. Prune compares canonical paths and refuses it as it refuses the same case.
-#[cfg(windows)]
+// A case-insensitive volume opens a name in any case, so a state folder named in another case
+// is still inside the repository. Prune refuses it as it refuses the same case.
 #[test]
 fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
     let root = support::os::tempdir();
+    // The behavior exists only where the volume ignores case.
+    if !support::os::case_insensitive(root.path()) {
+        return;
+    }
     let repo = support::os::canonical(root.path()).join("Repo");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(repo.join("index.artf"), r#"{"name":"a","basis":true}"#).unwrap();

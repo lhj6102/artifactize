@@ -1,6 +1,6 @@
 use std::{
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     time::Duration,
 };
 
@@ -284,31 +284,15 @@ fn directory(path: &Path) -> Result<bool, String> {
 }
 
 fn real_path(path: &Path) -> Result<PathBuf, String> {
-    let absolute = std::path::absolute(path).map_err(|e| e.to_string())?;
-    let mut current = PathBuf::new();
-    for component in absolute.components() {
-        if component == Component::ParentDir {
-            return Err("Prune paths must not contain parent traversal.".into());
+    platform::paths::absolute_without_links(path).map_err(|refusal| match refusal {
+        platform::paths::LinkedPath::ParentTraversal => {
+            "Prune paths must not contain parent traversal.".to_owned()
         }
-        current.push(component);
-        // A Windows prefix alone, such as `\\?\C:`, names the volume device, not a folder.
-        if matches!(component, Component::Prefix(_) | Component::RootDir) {
-            continue;
+        platform::paths::LinkedPath::Link(path) => {
+            format!("Prune refuses symlinks: {}", platform::path_text(&path))
         }
-        match platform::path_kind(&current) {
-            Ok(platform::FileKind::Symlink | platform::FileKind::Other) => {
-                return Err(format!(
-                    "Prune refuses symlinks: {}",
-                    crate::platform::path_text(&current)
-                ));
-            }
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                return Err(error.to_string());
-            }
-            _ => {}
-        }
-    }
-    Ok(current)
+        platform::paths::LinkedPath::Io(error) => error.to_string(),
+    })
 }
 
 fn reject_repository(path: &Path) -> Result<(), String> {

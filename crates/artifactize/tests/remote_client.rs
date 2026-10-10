@@ -307,7 +307,12 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     support::os::grant_everyone_read(&saved);
     let unsafe_file = doctor(1);
     assert_eq!(unsafe_file["status"], "FAIL");
-    assert!(unsafe_file["message"].as_str().unwrap().contains("0600"));
+    assert!(
+        unsafe_file["message"]
+            .as_str()
+            .unwrap()
+            .contains("readable by their owner only")
+    );
     // Owner-only again: mode 0600, or on Windows a new file with the folder's DACL.
     fs::remove_file(&saved).unwrap();
     support::os::write_private_file(&saved, &contents);
