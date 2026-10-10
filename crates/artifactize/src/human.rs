@@ -110,7 +110,7 @@ pub async fn tool_commands(
     Ok(registry
         .list()
         .filter(|tool| registry.is_command(&tool.name))
-        .map(|tool| (tool.name.clone(), registry.command(&tool.name)))
+        .map(|tool| (tool.name.to_string(), registry.command(&tool.name)))
         .collect())
 }
 

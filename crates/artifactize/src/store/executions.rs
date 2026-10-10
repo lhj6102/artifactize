@@ -132,8 +132,8 @@ impl ExecutionOptions {
                 options.backend = serde_json::to_value(backend)
                     .ok()
                     .and_then(|value| value.as_str().map(str::to_owned));
-                options.model = Some(model.clone());
-                options.reasoning = reasoning.clone();
+                options.model = Some(model.to_string());
+                options.reasoning = reasoning.map(|effort| effort.to_string());
                 options.timeout_ms = *timeout_ms;
                 options.max_tool_calls = *max_tool_calls;
                 options.max_tokens = *max_tokens;

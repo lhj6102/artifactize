@@ -19,8 +19,8 @@ const TEXT_LIMIT: usize = 64 * 1024;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolDefinition {
-    pub name: String,
-    pub artifact_id: String,
+    pub name: crate::config::ToolName,
+    pub artifact_id: crate::config::ArtifactName,
     pub description: String,
     pub kind: HumanToolKind,
 }
@@ -69,7 +69,7 @@ struct RegisteredTool<'a> {
 pub struct Registry<'a> {
     config: &'a RepoConfig,
     scope: Scope<'a>,
-    tools: BTreeMap<String, RegisteredTool<'a>>,
+    tools: BTreeMap<crate::config::ToolName, RegisteredTool<'a>>,
 }
 
 impl<'a> Registry<'a> {
@@ -79,7 +79,7 @@ impl<'a> Registry<'a> {
             .iter()
             .find(|eval| eval.id == eval_id)
             .ok_or_else(|| format!("Unknown eval: {eval_id}"))?;
-        if !matches!(eval.declaration.profile, Profile::Human {}) {
+        if !matches!(eval.declaration.profile(), Profile::Human {}) {
             return Err("Human tools require a Human eval.".into());
         }
         Self::with_scope(
@@ -99,11 +99,13 @@ impl<'a> Registry<'a> {
         let mut tools = BTreeMap::new();
         for (id, artifact) in &scope.artifacts {
             for (operation, declaration) in &artifact.views.human_tools {
-                let name = format!("{operation}_{id}");
+                let name: crate::config::ToolName = format!("{operation}_{id}")
+                    .parse()
+                    .expect("validated tool and Artifact names");
                 let entry = RegisteredTool {
                     definition: ToolDefinition {
                         name: name.clone(),
-                        artifact_id: (*id).into(),
+                        artifact_id: artifact.name.clone(),
                         description: declaration.description().replace("{artifactName}", id),
                         kind: declaration.kind(),
                     },
@@ -270,10 +272,10 @@ impl<'a> Registry<'a> {
         let tool_scope = self.scope.tool_scope();
         if declaration.builtin == crate::config::Builtin::Open {
             let target = if artifactize_tools::builtin::is_url(&args[0]) {
-                args[0].clone()
+                std::ffi::OsString::from(&args[0])
             } else {
                 match tool_scope.resolve_input(&self.config.root, &owner, &args[0]) {
-                    Ok(path) => path.to_string_lossy().into_owned(),
+                    Ok(path) => path.into_os_string(),
                     Err(error) => return ToolResult::error(error.to_string()),
                 }
             };

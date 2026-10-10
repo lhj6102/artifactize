@@ -136,15 +136,9 @@ pub(super) fn script(command: &str, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn path(value: &str) -> Result<(), String> {
-    let windows_absolute = value
-        .as_bytes()
-        .first()
-        .is_some_and(u8::is_ascii_alphabetic)
-        && value.as_bytes().get(1) == Some(&b':')
-        && value.as_bytes().get(2) == Some(&b'/');
+pub(crate) fn path(value: &str) -> Result<(), String> {
     if value.encode_utf16().count() > MAX_PATH_UNITS
-        || windows_absolute
+        || crate::platform::paths::drive_rooted(value)
         || value
             .bytes()
             .any(|byte| byte.is_ascii_control() || byte == b'\\')
@@ -157,7 +151,7 @@ pub(super) fn path(value: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) fn paths(values: &[String], label: &str) -> Result<(), String> {
+pub(super) fn paths(values: &[crate::config::LogicalPath], label: &str) -> Result<(), String> {
     if values.len() > MAX_INPUTS || values.iter().collect::<BTreeSet<_>>().len() != values.len() {
         return Err(format!(
             "{label} must contain at most 64 unique project-relative paths."

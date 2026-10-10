@@ -2,12 +2,11 @@
 mod tests;
 
 use std::{
-    env, fs,
+    fs,
     path::{Path, PathBuf},
 };
 
 use serde::Serialize;
-use serde_json::{Value, json};
 
 use crate::{
     auth,
@@ -19,6 +18,7 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 pub struct DoctorReport {
     pub ok: bool,
+    #[serde(with = "crate::platform::path_serde")]
     pub state_dir: PathBuf,
     pub checks: Vec<Check>,
 }
@@ -53,11 +53,71 @@ pub struct Check {
     pub name: &'static str,
     pub status: CheckStatus,
     pub message: String,
-    pub details: Value,
+    pub details: Details,
+}
+
+/// A readiness check's finite data domains; JSON is produced only by serialization.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum Details {
+    None,
+    Config {
+        artifacts: usize,
+        evals: usize,
+    },
+    State {
+        writable: bool,
+    },
+    Schema {
+        schema: Option<u32>,
+    },
+    UnsupportedSchema {
+        schema: u32,
+        supported: u32,
+    },
+    Limits {
+        backends: std::collections::BTreeMap<Backend, u32>,
+    },
+    ApiKey {
+        present: bool,
+        #[serde(rename = "testEndpoint", skip_serializing_if = "Option::is_none")]
+        test_endpoint: Option<String>,
+    },
+    NoRemote {
+        configured: bool,
+    },
+    Remote {
+        configured: bool,
+        url: url::Url,
+        share: auth::remote::Share,
+        #[serde(rename = "tokenSource")]
+        token_source: auth::remote::TokenSource,
+    },
+    Sessions {
+        enabled: bool,
+        sessions: usize,
+        bytes: u64,
+        #[serde(rename = "maxBytes")]
+        max_bytes: u64,
+        #[serde(rename = "targetBytes")]
+        target_bytes: u64,
+        #[serde(with = "crate::platform::path_serde")]
+        directory: PathBuf,
+        #[serde(rename = "stateId")]
+        state_id: Option<String>,
+    },
+    Codex {
+        #[serde(flatten)]
+        status: auth::codex::Status,
+        #[serde(rename = "testEndpoint", skip_serializing_if = "Option::is_none")]
+        test_endpoint: Option<String>,
+        #[serde(rename = "testAuthEndpoint", skip_serializing_if = "Option::is_none")]
+        test_auth_endpoint: Option<String>,
+    },
 }
 
 impl DoctorReport {
-    fn add(&mut self, name: &'static str, status: CheckStatus, message: &str, details: Value) {
+    fn add(&mut self, name: &'static str, status: CheckStatus, message: &str, details: Details) {
         self.ok &= status.ready();
         self.checks.push(Check {
             name,
@@ -83,9 +143,17 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                 "config",
                 CheckStatus::Pass,
                 "Folder configuration is valid.",
-                json!({"artifacts": config.artifacts.len(), "evals": config.evals.len()}),
+                Details::Config {
+                    artifacts: config.artifacts.len(),
+                    evals: config.evals.len(),
+                },
             ),
-            Err(error) => report.add("config", CheckStatus::Fail, &error.to_string(), Value::Null),
+            Err(error) => report.add(
+                "config",
+                CheckStatus::Fail,
+                &error.to_string(),
+                Details::None,
+            ),
             _ => unreachable!(),
         }
     }
@@ -109,13 +177,13 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             "state",
             CheckStatus::Pass,
             "State directory is writable or can be created.",
-            json!({"writable":true}),
+            Details::State { writable: true },
         ),
         Err(error) => report.add(
             "state",
             CheckStatus::Fail,
             &error.to_string(),
-            json!({"writable":false}),
+            Details::State { writable: false },
         ),
     }
     // Read-only: a state of another schema is refused, never migrated.
@@ -125,34 +193,41 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             "schema",
             CheckStatus::Pass,
             "No state database yet.",
-            json!({"schema":null}),
+            Details::Schema { schema: None },
         ),
         Ok(Some(0)) => report.add(
             "schema",
             CheckStatus::Pass,
             "The state database is not initialized yet.",
-            json!({"schema":0}),
+            Details::Schema { schema: Some(0) },
         ),
         Ok(Some(found)) if found == current => report.add(
             "schema",
             CheckStatus::Pass,
             &format!("State database schema {current}."),
-            json!({"schema":current}),
+            Details::Schema {
+                schema: Some(current),
+            },
         ),
         Ok(Some(found)) => report.add(
             "schema",
             CheckStatus::Fail,
             &store::schema_error(found),
-            json!({"schema":found,"supported":current}),
+            Details::UnsupportedSchema {
+                schema: found,
+                supported: current,
+            },
         ),
-        Err(error) => report.add("schema", CheckStatus::Fail, &error, Value::Null),
+        Err(error) => report.add("schema", CheckStatus::Fail, &error, Details::None),
     }
     match crate::limits::Limits::read(&state) {
         Ok(limits) if limits.backends().is_empty() => report.add(
             "limits",
             CheckStatus::Pass,
             "No backend capacity limits (limits.json).",
-            json!({"backends":{}}),
+            Details::Limits {
+                backends: Default::default(),
+            },
         ),
         Ok(limits) => report.add(
             "limits",
@@ -166,9 +241,11 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
-            json!({"backends":limits.backends()}),
+            Details::Limits {
+                backends: limits.backends().clone(),
+            },
         ),
-        Err(error) => report.add("limits", CheckStatus::Fail, &error, Value::Null),
+        Err(error) => report.add("limits", CheckStatus::Fail, &error, Details::None),
     }
     let (status, message, details) = sessions(&state);
     report.add("sessions", status, &message, details);
@@ -177,7 +254,8 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         ("anthropic", Backend::Anthropic),
     ] {
         let variable = llm::key_variable(backend).expect("an API-key backend");
-        let present = env::var(variable).is_ok_and(|key| !key.trim().is_empty());
+        let present = crate::platform::environment::var_text(variable)
+            .is_some_and(|key| !key.trim().is_empty());
         let key = format!(
             "{variable} is {} (not validated with the provider)",
             if present { "present" } else { "absent" }
@@ -191,7 +269,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                     CheckStatus::Warn
                 },
                 &format!("{key}."),
-                json!({"present":present}),
+                Details::ApiKey { present, test_endpoint: None },
             ),
             // A test endpoint is never a production setup, so it always warns.
             Ok(Some(endpoint)) => report.add(
@@ -201,9 +279,9 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                     "{key}; {} sends this backend's requests to the local test endpoint {endpoint}.",
                     llm::base_url_variable(backend)
                 ),
-                json!({"present":present,"testEndpoint":endpoint}),
+                Details::ApiKey { present, test_endpoint: Some(endpoint) },
             ),
-            Err(error) => report.add(name, CheckStatus::Fail, &error, json!({"present":present})),
+            Err(error) => report.add(name, CheckStatus::Fail, &error, Details::ApiKey { present, test_endpoint: None }),
         }
     }
     let (status, message, details) = codex(&state, repo);
@@ -214,15 +292,15 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
             "remote",
             CheckStatus::Pass,
             "No remote review store is configured.",
-            json!({"configured":false}),
+            Details::NoRemote { configured: false },
         ),
         Ok(Some(remote)) => {
-            let details = json!({
-                "configured":true,
-                "url":remote.url,
-                "share":remote.share,
-                "tokenSource":remote.token_source,
-            });
+            let details = Details::Remote {
+                configured: true,
+                url: remote.url,
+                share: remote.share,
+                token_source: remote.token_source,
+            };
             if remote.token_source == auth::remote::TokenSource::None {
                 report.add(
                     "remote",
@@ -239,27 +317,27 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
                 );
             }
         }
-        Err(error) => report.add("remote", CheckStatus::Fail, &error, Value::Null),
+        Err(error) => report.add("remote", CheckStatus::Fail, &error, Details::None),
     }
     Ok(report)
 }
 
 /// The saved Agent conversations: whether new ones are saved, the store's size against its
 /// bounds, and the state id their references name.
-fn sessions(state: &Path) -> (CheckStatus, String, Value) {
+fn sessions(state: &Path) -> (CheckStatus, String, Details) {
     let bounds = match crate::limits::Limits::read(state) {
         Ok(limits) => limits.agent_sessions(),
         Err(_) => {
             return (
                 CheckStatus::Fail,
                 "limits.json is invalid; see limits.".into(),
-                Value::Null,
+                Details::None,
             );
         }
     };
     let usage = match crate::agent::session::usage(state) {
         Ok(usage) => usage,
-        Err(error) => return (CheckStatus::Fail, error, Value::Null),
+        Err(error) => return (CheckStatus::Fail, error, Details::None),
     };
     // A database the schema check refuses has no id to report here.
     let state_id = store::read_state_id(state).ok().flatten();
@@ -277,17 +355,21 @@ fn sessions(state: &Path) -> (CheckStatus, String, Value) {
             " Saving is off (limits.json agentSessions.enabled)."
         }
     );
-    let details = json!({
-        "enabled": bounds.enabled, "sessions": usage.sessions, "bytes": usage.bytes,
-        "maxBytes": bounds.max_bytes, "targetBytes": bounds.target_bytes,
-        "directory": crate::agent::session::directory(state), "stateId": state_id,
-    });
+    let details = Details::Sessions {
+        enabled: bounds.enabled,
+        sessions: usage.sessions,
+        bytes: usage.bytes,
+        max_bytes: bounds.max_bytes,
+        target_bytes: bounds.target_bytes,
+        directory: crate::agent::session::directory(state),
+        state_id,
+    };
     (CheckStatus::Pass, message, details)
 }
 
 /// The Codex sign-in, read offline: no lock, refresh or network, and an auth file is
 /// only read.
-fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Value) {
+fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Details) {
     let endpoints = llm::test_endpoint(Backend::Codex).and_then(|base| {
         Ok((
             base,
@@ -295,7 +377,7 @@ fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Value) {
         ))
     });
     let ((base, sign_in), status) = match (endpoints, auth::codex::status(Some(state), repo)) {
-        (Err(error), _) | (_, Err(error)) => return (CheckStatus::Fail, error, Value::Null),
+        (Err(error), _) | (_, Err(error)) => return (CheckStatus::Fail, error, Details::None),
         (Ok(endpoints), Ok(status)) => (endpoints, status),
     };
     use auth::codex::{FileExpiry, Status, StoredExpiry};
@@ -313,7 +395,7 @@ fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Value) {
             CheckStatus::Pass,
             format!(
                 "ARTIFACTIZE_CODEX_AUTH_FILE is read, never refreshed: {}.",
-                path.display()
+                crate::platform::path_text(path)
             ),
         ),
         Status::File {
@@ -323,7 +405,7 @@ fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Value) {
             CheckStatus::Warn,
             format!(
                 "The Codex access token in {} has expired; sign in with Codex again.",
-                path.display()
+                crate::platform::path_text(path)
             ),
         ),
         Status::Stored {
@@ -340,20 +422,22 @@ fn codex(state: &Path, repo: Option<&Path>) -> (CheckStatus, String, Value) {
                 .to_owned(),
         ),
     };
-    let mut details = json!(status);
-    for (variable, endpoint, key) in [
-        (llm::base_url_variable(Backend::Codex), base, "testEndpoint"),
-        (auth::codex::AUTH_URL_VARIABLE, sign_in, "testAuthEndpoint"),
+    for (variable, endpoint) in [
+        (llm::base_url_variable(Backend::Codex), &base),
+        (auth::codex::AUTH_URL_VARIABLE, &sign_in),
     ] {
         if let Some(endpoint) = endpoint {
-            // A test endpoint is never a production setup, so it always warns.
             level = CheckStatus::Warn;
             message.push_str(&format!(
                 " {variable} points at the local test endpoint {endpoint}."
             ));
-            details[key] = json!(endpoint);
         }
     }
+    let details = Details::Codex {
+        status,
+        test_endpoint: base,
+        test_auth_endpoint: sign_in,
+    };
     (level, message, details)
 }
 

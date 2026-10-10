@@ -19,9 +19,9 @@ pub(crate) use artifactize_tools::scope::{logical_path, open_child, open_scoped}
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Relation {
     /// Input Artifact.
-    pub source: String,
+    pub source: ArtifactName,
     /// Consumer Artifact.
-    pub target: String,
+    pub target: ArtifactName,
     #[serde(flatten)]
     pub kind: RelationKind,
 }
@@ -30,25 +30,25 @@ pub struct Relation {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum RelationKind {
     Child {
-        path: String,
+        path: crate::config::ChildPrefix,
     },
     Mount {
-        alias: String,
+        alias: crate::config::MountAlias,
     },
     Dependency {
         #[serde(rename = "evalId")]
-        eval_id: String,
+        eval_id: crate::config::EvalId,
         name: String,
     },
     Instruction {
         #[serde(rename = "evalId")]
-        eval_id: String,
+        eval_id: crate::config::EvalId,
         name: String,
     },
     #[serde(rename = "argv")]
     Argument {
         #[serde(rename = "evalId")]
-        eval_id: String,
+        eval_id: crate::config::EvalId,
         index: usize,
         name: String,
         path: String,
@@ -57,7 +57,7 @@ pub enum RelationKind {
 
 #[derive(Debug)]
 pub struct Scope<'a> {
-    pub artifacts: BTreeMap<&'a str, &'a Artifact>,
+    pub artifacts: BTreeMap<ArtifactName, &'a Artifact>,
 }
 
 impl Scope<'_> {
@@ -90,22 +90,23 @@ impl Scope<'_> {
 
 /// The tool-side ID of a configured Artifact. Configuration validates every Artifact name,
 /// mount target and child, so a name that fails here is a bug in that validation.
-pub(crate) fn tool_id(name: &str) -> ArtifactId {
-    ArtifactId::new(name).expect("configuration validates Artifact names")
+pub(crate) fn tool_id(name: &ArtifactName) -> ArtifactId {
+    ArtifactId::new(name.as_str()).expect("configuration validates Artifact names")
 }
 
 /// Revalidate file targets at every preparation/read boundary, without following links.
 pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(), ScopeError> {
     if artifact.file_name().is_some() {
-        let target = artifact
+        artifact
             .path
             .to_str()
             .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-        let file = open_scoped(root, target).map_err(|error| {
+        let target = crate::platform::path_text(&artifact.path);
+        let file = open_scoped(root, &target).map_err(|error| {
             ScopeError(format!(
                 "File Artifact {} target {} is unavailable: {error}",
                 artifact.name,
-                artifact.path.display()
+                crate::platform::path_text(&artifact.path)
             ))
         })?;
         if !file
@@ -116,7 +117,7 @@ pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(
             return Err(ScopeError(format!(
                 "File Artifact {} target {} must remain a regular file.",
                 artifact.name,
-                artifact.path.display()
+                crate::platform::path_text(&artifact.path)
             )));
         }
     }
@@ -141,7 +142,7 @@ pub fn artifact_scope<'a>(config: &'a RepoConfig, roots: &[&str]) -> Result<Scop
             .artifacts
             .get_key_value(id)
             .ok_or_else(|| ScopeError(format!("Unknown Artifact: {id}")))?;
-        if artifacts.insert(id.as_str(), artifact).is_some() {
+        if artifacts.insert(id.clone(), artifact).is_some() {
             continue;
         }
         pending.extend(artifact.children.values().map(ArtifactName::as_str));
@@ -176,16 +177,9 @@ pub(crate) fn executable(
                 .join(resolved.path)
         };
         // Even an extensionless declaration must not hide a link behind PATHEXT.
-        for path in physical.ancestors() {
-            if path
-                .symlink_metadata()
-                .is_ok_and(|metadata| metadata.is_symlink())
-            {
-                return Err("Artifact symlinks are not supported.".into());
-            }
-        }
+        crate::platform::program::reject_link_ancestors(&physical)?;
         let mut failure = None;
-        artifactize_tools::program::candidates(Path::new(relative), |name| std::env::var_os(name))
+        crate::platform::program::candidates(Path::new(relative))
             .into_iter()
             .find_map(|candidate| {
                 // A suffix the lookup added is matched to the entry's actual spelling.
@@ -237,16 +231,7 @@ fn executable_spelling(
     } else {
         scope.resolve_input(root, owner, parent.to_str()?).ok()?
     };
-    let requested = candidate.file_name()?.to_str()?;
-    std::fs::read_dir(directory)
-        .ok()?
-        .filter_map(Result::ok)
-        .find_map(|entry| {
-            let name = entry.file_name();
-            name.to_str()?
-                .eq_ignore_ascii_case(requested)
-                .then(|| candidate.with_file_name(name))
-        })
+    crate::platform::program::suffix_spelling(&directory, candidate)
 }
 
 pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, ScopeError> {
@@ -274,15 +259,11 @@ pub fn argv_scope<'a>(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InstructionPart {
     Text(String),
-    Artifact(String),
+    Artifact(ArtifactName),
 }
 
 /// Presentation tokens only: never expand content or mutate the authored payload.
-/// The name of an Artifact found in the workspace, whose declaration was validated.
-fn declared_name(name: &str) -> ArtifactName {
-    name.parse().expect("declared Artifact names are valid")
-}
-
+/// Artifact tokens carry names already validated by configuration.
 pub fn parse_artifact_instruction(
     source: &str,
     scope: &Scope<'_>,
@@ -300,7 +281,7 @@ pub fn parse_artifact_instruction(
         if start < reference.start {
             parts.push(InstructionPart::Text(source[start..reference.start].into()));
         }
-        parts.push(InstructionPart::Artifact(id.into()));
+        parts.push(InstructionPart::Artifact(scope.artifacts[id].name.clone()));
         start = reference.end;
     }
     if start < source.len() {
@@ -358,7 +339,7 @@ fn reference_target<'a>(
     config: &'a RepoConfig,
     owner: &str,
     name: &str,
-) -> Result<&'a str, ScopeError> {
+) -> Result<&'a ArtifactName, ScopeError> {
     let artifact = config
         .artifacts
         .get(owner)
@@ -367,7 +348,7 @@ fn reference_target<'a>(
     config
         .artifacts
         .get_key_value(target)
-        .map(|(id, _)| id.as_str())
+        .map(|(id, _)| id)
         .ok_or_else(|| {
             ScopeError(format!(
                 "Unknown Artifact reference {{{name}}}. Escape literal braces with a backslash."
@@ -392,9 +373,9 @@ pub fn resolve_argv(
             let id = reference_target(config, owner, reference.name)?;
             reference_path(config, id, reference.path)?;
             let path = scope.resolve_input(&config.root, id, reference.path)?;
-            let path = path
-                .to_str()
+            path.to_str()
                 .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
+            let path = crate::platform::path_text(&path);
             Ok(format!("{}{path}", reference.prefix))
         })
         .collect()
@@ -479,8 +460,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         }
         for (path, source) in &artifact.children {
             relations.push(Relation {
-                source: source.to_string(),
-                target: id.to_string(),
+                source: source.clone(),
+                target: id.clone(),
                 kind: RelationKind::Child { path: path.clone() },
             });
         }
@@ -491,7 +472,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     format!("Unknown mount target {source} in {id}."),
                 ));
             }
-            if config.artifacts.contains_key(alias) && alias != source {
+            if config.artifacts.contains_key(alias.as_str()) && alias.as_str() != source.as_str() {
                 return Err(error(
                     &["mounts", alias],
                     format!("Ambiguous mount alias {alias} in {id}."),
@@ -505,7 +486,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     ));
                 }
             } else {
-                match fs::symlink_metadata(config.root.join(artifact.folder()).join(alias)) {
+                match fs::symlink_metadata(config.root.join(artifact.folder()).join(alias.as_str()))
+                {
                     Ok(_) => {
                         return Err(error(
                             &["mounts", alias],
@@ -517,8 +499,8 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 }
             }
             relations.push(Relation {
-                source: source.to_string(),
-                target: id.to_string(),
+                source: source.clone(),
+                target: id.clone(),
                 kind: RelationKind::Mount {
                     alias: alias.clone(),
                 },
@@ -573,17 +555,17 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         };
         let mut references = BTreeMap::new();
         let mut deps = BTreeSet::new();
-        if let Profile::Dependency { depends_on } = &eval.declaration.profile {
+        if let Profile::Dependency { depends_on } = eval.declaration.profile() {
             for name in depends_on {
                 let source = reference_target(config, &eval.target, name)
                     .map_err(|failure| error(&["profile", "depends_on"], failure))?;
-                if source == eval.target {
+                if source == &eval.target {
                     return Err(error(
                         &["profile", "depends_on"],
                         ScopeError("Dependency Evals cannot depend on their own Artifact.".into()),
                     ));
                 }
-                if !deps.insert(source.to_owned()) {
+                if !deps.insert(source.clone()) {
                     return Err(error(
                         &["profile", "depends_on"],
                         ScopeError(
@@ -593,19 +575,18 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     ));
                 }
                 relations.push(Relation {
-                    source: source.to_owned(),
-                    target: eval.target.to_string(),
+                    source: source.clone(),
+                    target: eval.target.clone(),
                     kind: RelationKind::Dependency {
-                        eval_id: eval.id.to_string(),
-                        name: name.clone(),
+                        eval_id: eval.id.clone(),
+                        name: name.to_string(),
                     },
                 });
             }
         }
         let instruction = eval
             .declaration
-            .payload
-            .as_ref()
+            .payload()
             .map_or("", |payload| payload.instruction.as_str());
         for reference in instruction::references(instruction) {
             let name = reference.name;
@@ -615,25 +596,22 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 reference_path(config, source, "/")
                     .map_err(|failure| error(&["payload", "instruction"], failure))?;
             }
-            if references
-                .insert(name.to_owned(), declared_name(source))
-                .is_some()
-            {
+            if references.insert(name.to_owned(), source.clone()).is_some() {
                 continue;
             }
-            if source != eval.target {
-                deps.insert(source.to_owned());
+            if source != &eval.target {
+                deps.insert(source.clone());
                 relations.push(Relation {
-                    source: source.to_owned(),
-                    target: eval.target.to_string(),
+                    source: source.clone(),
+                    target: eval.target.clone(),
                     kind: RelationKind::Instruction {
-                        eval_id: eval.id.to_string(),
+                        eval_id: eval.id.clone(),
                         name: name.to_owned(),
                     },
                 });
             }
         }
-        if let Profile::Runtime { args, .. } = &eval.declaration.profile {
+        if let Profile::Runtime { args, .. } = eval.declaration.profile() {
             for (index, argument) in args.iter().enumerate() {
                 let Some(reference) = argument_reference(argument)
                     .map_err(|failure| error(&["profile", "args"], failure))?
@@ -644,13 +622,13 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     .map_err(|failure| error(&["profile", "args"], failure))?;
                 reference_path(config, source, reference.path)
                     .map_err(|failure| error(&["profile", "args"], failure))?;
-                if source != eval.target {
-                    deps.insert(source.to_owned());
+                if source != &eval.target {
+                    deps.insert(source.clone());
                     relations.push(Relation {
-                        source: source.to_owned(),
-                        target: eval.target.to_string(),
+                        source: source.clone(),
+                        target: eval.target.clone(),
                         kind: RelationKind::Argument {
-                            eval_id: eval.id.to_string(),
+                            eval_id: eval.id.clone(),
                             index,
                             name: reference.name.to_owned(),
                             path: reference.path.to_owned(),
@@ -659,10 +637,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                 }
             }
         }
-        resolved.push((
-            references,
-            deps.iter().map(|dep| declared_name(dep)).collect(),
-        ));
+        resolved.push((references, deps.into_iter().collect()));
     }
     for (eval, (references, deps)) in config.evals.iter_mut().zip(resolved) {
         eval.references = references;

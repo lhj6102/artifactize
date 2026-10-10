@@ -354,7 +354,7 @@ mod tests {
 
     #[tokio::test]
     async fn parent_disconnect_before_admission_prevents_exec_and_reaps() {
-        let mut command = CommandWrap::with_new("/bin/true", |command| {
+        let mut command = CommandWrap::with_new(crate::test_os::bin("/bin/true"), |command| {
             command.env_clear().stdin(Stdio::null());
         });
         command.wrap(ProcessGroup::leader());

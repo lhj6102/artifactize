@@ -770,7 +770,7 @@ async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
         &fixture.repo,
         Some(&fixture.state),
         &Selection::Artifact {
-            artifact_id: "blocked".into(),
+            artifact_id: "blocked".parse().unwrap(),
         },
         &VerifyOptions {
             ignore_gates: Some(false),

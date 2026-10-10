@@ -283,7 +283,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     assert_eq!(
         config.evals[2]
             .declaration
-            .payload
+            .payload()
             .as_ref()
             .unwrap()
             .instruction,

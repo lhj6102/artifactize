@@ -84,7 +84,7 @@ impl Fixture {
 
     fn selection() -> Selection {
         Selection::Eval {
-            eval_id: "player/ready".into(),
+            eval_id: "player/ready".parse().unwrap(),
         }
     }
 
@@ -117,7 +117,7 @@ impl Fixture {
 fn dependency_declarations_are_strict_and_other_profiles_still_require_payload() {
     let valid = json!({"name":"player","evals":[dependency(&["movement", "art"])]});
     let declaration = parse(&valid).unwrap();
-    assert!(declaration.evals[0].payload.is_none());
+    assert!(declaration.evals[0].payload().is_none());
     for targets in [
         json!([]),
         json!(["art", "art"]),
@@ -224,18 +224,28 @@ fn dependency_verdicts_are_derived_even_when_gates_are_ignored() {
             (Some(Evidence::Current(Verdict::Green)), EvalStatus::Green),
         ] {
             let mut evidence_map = std::collections::BTreeMap::from([
-                ("movement/check".into(), Evidence::Current(Verdict::Green)),
-                ("player/ready".into(), Evidence::Current(Verdict::Green)),
+                (
+                    "movement/check".parse().unwrap(),
+                    Evidence::Current(Verdict::Green),
+                ),
+                (
+                    "player/ready".parse().unwrap(),
+                    Evidence::Current(Verdict::Green),
+                ),
             ]);
             if let Some(evidence) = evidence {
-                evidence_map.insert("art/check".into(), evidence);
+                evidence_map.insert("art/check".parse().unwrap(), evidence);
             }
             let result = graph.evaluate_with_policy(&evidence_map, ignore);
             let derived = &result.evals["player/ready"];
             assert_eq!(derived.status, status);
             assert!(!derived.can_execute());
             assert_eq!(
-                derived.blocked_by,
+                derived
+                    .blocked_by
+                    .iter()
+                    .map(|id| id.as_str())
+                    .collect::<Vec<_>>(),
                 if status == EvalStatus::Green {
                     vec![]
                 } else {
@@ -457,7 +467,7 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
         let detail = monitor::detail(
             &run,
             &requests,
-            &Target::Eval("player/ready".into()),
+            &Target::Eval("player/ready".parse().unwrap()),
             OffsetDateTime::now_utc(),
         );
         assert_eq!(detail.field("Source"), Some("derived (no execution)"));
@@ -647,8 +657,10 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
     assert_eq!(run.requests[1].status.as_str(), "ERROR");
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
-    let cancelled =
-        std::collections::BTreeMap::from([("art/check".into(), Evidence::OperationalError)]);
+    let cancelled = std::collections::BTreeMap::from([(
+        "art/check".parse().unwrap(),
+        Evidence::OperationalError,
+    )]);
     assert_eq!(
         graph.evaluate(&cancelled).evals["player/ready"].status,
         EvalStatus::Wait
@@ -732,8 +744,10 @@ fn dependency_eval_inside_an_ordinary_scc_uses_current_peer_evidence() {
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
     assert_eq!(graph.components().len(), 1);
-    let evidence =
-        std::collections::BTreeMap::from([("art/check".into(), Evidence::Current(Verdict::Green))]);
+    let evidence = std::collections::BTreeMap::from([(
+        "art/check".parse().unwrap(),
+        Evidence::Current(Verdict::Green),
+    )]);
     assert_eq!(
         graph.evaluate(&evidence).evals["player/ready"].status,
         EvalStatus::Green
@@ -877,8 +891,8 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
     }
     let mapping =
         project::selection::ProfileSelection::Evals(std::collections::BTreeMap::from([(
-            "player/ready".into(),
-            "fast".into(),
+            "player/ready".parse().unwrap(),
+            "fast".parse().unwrap(),
         )]));
     let error = project::selection::select_profiles(
         fixture.config(),

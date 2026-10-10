@@ -1741,8 +1741,9 @@ fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() 
         changed["profile"][key] = value;
         assert_eq!(hash, eval_definition_hash(&parse(changed)), "{key}");
     }
-    let mut human = first.clone();
-    human.profile = artifactize::config::Profile::Human {};
+    let mut human_value = first_value.clone();
+    human_value["profile"] = json!({"kind":"human"});
+    let human = parse(human_value);
     assert_ne!(hash, eval_definition_hash(&human));
     let mut nested = first_value;
     nested["payload"]["nested"]["a"] = json!(3);

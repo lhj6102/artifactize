@@ -229,28 +229,38 @@ impl SelectionArgs {
         if let Some(artifact_id) = self.artifact {
             if artifact_id.contains('/') {
                 Ok(Selection::Eval {
-                    eval_id: artifact_id,
+                    eval_id: artifact_id.parse()?,
                 })
             } else {
-                Ok(Selection::Artifact { artifact_id })
+                Ok(Selection::Artifact {
+                    artifact_id: artifact_id.parse()?,
+                })
             }
         } else if let Some(eval_id) = self.eval {
-            Ok(Selection::Eval { eval_id })
+            Ok(Selection::Eval {
+                eval_id: eval_id.parse()?,
+            })
         } else if let Some(ids) = self.evals {
             Ok(Selection::Evals {
-                eval_ids: ids.split(',').map(str::to_owned).collect(),
+                eval_ids: ids.split(',').map(str::parse).collect::<Result<_, _>>()?,
             })
         } else if let Some(ids) = self.artifacts {
             Ok(Selection::Artifacts {
-                artifact_ids: ids.split(',').map(str::to_owned).collect(),
+                artifact_ids: ids.split(',').map(str::parse).collect::<Result<_, _>>()?,
             })
         } else if let Some(path) = self.evals_file {
             Ok(Selection::Evals {
-                eval_ids: read_selection_file(&path)?,
+                eval_ids: read_selection_file(&path)?
+                    .iter()
+                    .map(|id| id.parse())
+                    .collect::<Result<_, _>>()?,
             })
         } else if let Some(path) = self.artifacts_file {
             Ok(Selection::Artifacts {
-                artifact_ids: read_selection_file(&path)?,
+                artifact_ids: read_selection_file(&path)?
+                    .iter()
+                    .map(|id| id.parse())
+                    .collect::<Result<_, _>>()?,
             })
         } else {
             Ok(Selection::All)
@@ -262,7 +272,7 @@ impl SelectionArgs {
 pub struct PolicyArgs {
     /// Use a declared profile variant for every included Eval.
     #[arg(long, value_name = "NAME")]
-    profile: Option<String>,
+    profile: Option<crate::config::ProfileVariantName>,
     /// Include all Evals in the required dependency scope, including cycle peers.
     #[arg(long)]
     recursive: bool,

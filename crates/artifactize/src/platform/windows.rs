@@ -197,7 +197,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_editor_runs_through_cmd_and_gets_the_file_as_one_word() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_os::tempdir();
         let file = directory.path().join("fields file.json");
         std::fs::write(&file, "{}").unwrap();
         let edited = directory.path().join("edited.json");

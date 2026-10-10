@@ -18,9 +18,10 @@ use crate::{
 #[serde(rename_all = "camelCase")]
 pub struct GraphView<'a> {
     pub version: u32,
+    #[serde(serialize_with = "crate::platform::path_serde::serialize")]
     pub repo_path: &'a Path,
     pub selection: &'a Selection,
-    pub artifacts: BTreeMap<&'a str, &'a Artifact>,
+    pub artifacts: BTreeMap<&'a crate::config::ArtifactName, &'a Artifact>,
     pub evals: Vec<&'a Eval>,
     pub relations: Vec<GraphRelation<'a>>,
     pub components: Vec<GraphComponent<'a>>,
@@ -36,9 +37,9 @@ pub struct GraphRelation<'a> {
 #[derive(Debug, Serialize)]
 pub struct GraphComponent<'a> {
     pub id: usize,
-    pub artifacts: Vec<&'a str>,
+    pub artifacts: Vec<&'a crate::config::ArtifactName>,
     pub dependencies: Vec<usize>,
-    pub gates: Vec<&'a str>,
+    pub gates: Vec<&'a crate::config::EvalId>,
     pub cyclic: bool,
 }
 
@@ -59,14 +60,13 @@ pub fn graph<'a>(
     let evals = config
         .evals
         .iter()
-        .filter(|eval| artifacts.contains_key(eval.target.as_str()))
+        .filter(|eval| artifacts.contains_key(&eval.target))
         .collect();
     let relations: Vec<_> = config
         .relations
         .iter()
         .filter(|relation| {
-            artifacts.contains_key(relation.source.as_str())
-                && artifacts.contains_key(relation.target.as_str())
+            artifacts.contains_key(&relation.source) && artifacts.contains_key(&relation.target)
         })
         .map(|relation| GraphRelation {
             relation,
@@ -86,7 +86,7 @@ pub fn graph<'a>(
             gates: component.gates.clone(),
             cyclic: component.artifacts.len() > 1
                 || relations.iter().any(|edge| {
-                    edge.cyclic && component.artifacts.contains(&edge.relation.source.as_str())
+                    edge.cyclic && component.artifacts.contains(&&edge.relation.source)
                 }),
         })
         .collect();

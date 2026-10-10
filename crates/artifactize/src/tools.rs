@@ -39,8 +39,8 @@ const JSON_TOOL_INPUT_VERSION: u32 = 1;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolDefinition {
-    pub name: String,
-    pub artifact_id: String,
+    pub name: crate::config::ToolName,
+    pub artifact_id: crate::config::ArtifactName,
     pub description: String,
     pub input_schema: Value,
 }
@@ -51,11 +51,44 @@ struct RegisteredTool<'a> {
     validator: jsonschema::Validator,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ToolContext {
+    artifact_id: crate::config::ArtifactName,
+    #[serde(with = "crate::platform::path_serde")]
+    artifact_path: PathBuf,
+    scope: BTreeMap<crate::config::ArtifactName, ContextArtifact>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    execution_paths: BTreeMap<crate::config::LogicalPath, ContextPath>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::platform::path_serde::option"
+    )]
+    output_dir: Option<PathBuf>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::platform::path_serde::option"
+    )]
+    tmp_dir: Option<PathBuf>,
+}
+#[derive(Serialize)]
+struct ContextArtifact {
+    #[serde(with = "crate::platform::path_serde")]
+    path: PathBuf,
+    kind: crate::config::ArtifactKind,
+    children: BTreeMap<crate::config::ChildPrefix, crate::config::ArtifactName>,
+    mounts: BTreeMap<crate::config::MountAlias, crate::config::ArtifactName>,
+}
+#[derive(Serialize)]
+struct ContextPath(#[serde(with = "crate::platform::path_serde")] PathBuf);
+
 struct Invocation {
     cwd: PathBuf,
     program: OsString,
     argv: Vec<OsString>,
-    context: Value,
+    context: ToolContext,
     protocol: ToolProtocol,
     timeout_ms: std::time::Duration,
 }
@@ -65,7 +98,7 @@ struct Invocation {
 pub struct Registry<'a> {
     config: &'a RepoConfig,
     scope: Scope<'a>,
-    tools: BTreeMap<String, RegisteredTool<'a>>,
+    tools: BTreeMap<crate::config::ToolName, RegisteredTool<'a>>,
 }
 
 impl<'a> Registry<'a> {
@@ -75,7 +108,7 @@ impl<'a> Registry<'a> {
             .iter()
             .find(|eval| eval.id == eval_id)
             .ok_or_else(|| format!("Unknown eval: {eval_id}"))?;
-        if !matches!(eval.declaration.profile, Profile::Agent { .. }) {
+        if !matches!(eval.declaration.profile(), Profile::Agent { .. }) {
             return Err("Agent tools require an Agent eval.".into());
         }
         Self::with_scope(
@@ -95,7 +128,9 @@ impl<'a> Registry<'a> {
         let mut tools = BTreeMap::new();
         for (id, artifact) in &scope.artifacts {
             for (operation, declaration) in &artifact.views.agent_tools {
-                let name = format!("{operation}_{id}");
+                let name: crate::config::ToolName = format!("{operation}_{id}")
+                    .parse()
+                    .expect("validated tool and Artifact names");
                 let description = match declaration {
                     AgentTool::Command(tool) => tool.description.clone(),
                     AgentTool::Builtin(tool) => {
@@ -113,7 +148,7 @@ impl<'a> Registry<'a> {
                 let entry = RegisteredTool {
                     definition: ToolDefinition {
                         name: name.clone(),
-                        artifact_id: (*id).into(),
+                        artifact_id: artifact.name.clone(),
                         description,
                         input_schema,
                     },
@@ -160,7 +195,7 @@ impl<'a> Registry<'a> {
         if let AgentTool::Builtin(declaration) = tool.declaration
             && let Some(args) = &declaration.args
         {
-            let owner = ArtifactId::new(owner).map_err(|error| error.to_string())?;
+            let owner = ArtifactId::new(owner.as_str()).map_err(|error| error.to_string())?;
             builtin::validate_target(
                 declaration.builtin,
                 args,
@@ -286,28 +321,41 @@ impl<'a> Registry<'a> {
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(|_| ())?,
         };
-        let mut scoped = serde_json::Map::new();
-        for (id, artifact) in &self.scope.artifacts {
-            let path = scope::scoped_path(&self.config.root, &artifact.path).map_err(|_| ())?;
-            let entry = json!({
-                "path":path,
-                "kind":artifact.kind,
-                "children":artifact.children,
-                "mounts":artifact.mounts,
-            });
-            scoped.insert((*id).into(), entry);
-        }
-        let mut context =
-            json!({"artifactId":owner,"artifactPath":scoped[owner]["path"],"scope":scoped});
-        if !tool.execution_paths.is_empty() {
-            let mut paths = serde_json::Map::new();
-            for path in &tool.execution_paths {
+        let scoped = self
+            .scope
+            .artifacts
+            .values()
+            .map(|artifact| {
+                let path = scope::scoped_path(&self.config.root, &artifact.path).map_err(|_| ())?;
+                Ok((
+                    artifact.name.clone(),
+                    ContextArtifact {
+                        path,
+                        kind: artifact.kind,
+                        children: artifact.children.clone(),
+                        mounts: artifact.mounts.clone(),
+                    },
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, ()>>()?;
+        let execution_paths = tool
+            .execution_paths
+            .iter()
+            .map(|path| {
                 let resolved =
                     scope::scoped_path(&self.config.root, Path::new(path)).map_err(|_| ())?;
-                paths.insert(path.clone(), json!(resolved));
-            }
-            context["executionPaths"] = paths.into();
-        }
+                Ok((path.clone(), ContextPath(resolved)))
+            })
+            .collect::<Result<_, ()>>()?;
+        let owner = &self.scope.artifacts[owner].name;
+        let context = ToolContext {
+            artifact_id: owner.clone(),
+            artifact_path: scoped[owner].path.clone(),
+            scope: scoped,
+            execution_paths,
+            output_dir: None,
+            tmp_dir: None,
+        };
         Ok(Invocation {
             cwd,
             program,
@@ -369,8 +417,8 @@ async fn invoke(
                 .map_err(|_| "Agent tool preparation failed.")?;
         command.cwd = cwd;
         let output_dir = command.directory().join("output");
-        context["outputDir"] = json!(output_dir);
-        context["tmpDir"] = json!(command.directory().join("tmp"));
+        context.output_dir = Some(output_dir.clone());
+        context.tmp_dir = Some(command.directory().join("tmp"));
         let input = match protocol {
             ToolProtocol::Json => {
                 json!({"version":JSON_TOOL_INPUT_VERSION,"context":context,"args":args})

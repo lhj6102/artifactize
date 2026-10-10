@@ -2,11 +2,17 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 pub use crate::types::{ArtifactName, EvalId};
+mod identities;
+pub use identities::{
+    ChildPrefix, EndpointId, HubEpoch, LogicalPath, ModelId, MountAlias, ProfileVariantName,
+    ToolName, ToolOperationName,
+};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
@@ -34,7 +40,7 @@ const MAX_DECLARED_ITEMS: usize = 64;
 pub const IGNORE_FILE: &str = ".artfignore";
 
 #[derive(Debug, Error)]
-#[error("{path}: {message}")]
+#[error("{}: {message}", crate::platform::path_text(.path))]
 pub struct ConfigError {
     pub path: PathBuf,
     pub message: String,
@@ -56,7 +62,7 @@ impl ConfigError {
     ) -> Self {
         let path = path.into();
         let message = message.to_string();
-        let message = fs::read_to_string(&path).map_or(message.clone(), |source| {
+        let message = read_regular_text(&path).map_or(message.clone(), |source| {
             location::error_at(&source, keys, &message)
         });
         Self { path, message }
@@ -124,14 +130,45 @@ impl Backend {
     }
 }
 
+/// Declared effort is exact: unsupported backend efforts fail rather than remap.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Reasoning {
+    None,
+    Minimal,
+    Low,
+    Medium,
+    High,
+    Xhigh,
+    Max,
+}
+impl Reasoning {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Minimal => "minimal",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Xhigh => "xhigh",
+            Self::Max => "max",
+        }
+    }
+}
+impl std::fmt::Display for Reasoning {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Profile {
     Agent {
         backend: Backend,
-        model: String,
+        model: ModelId,
         #[serde(default, deserialize_with = "present")]
-        reasoning: Option<String>,
+        reasoning: Option<Reasoning>,
         #[serde(
             rename(serialize = "timeoutMs", deserialize = "timeout_ms"),
             default,
@@ -155,7 +192,7 @@ pub enum Profile {
     Human {},
     Dependency {
         #[serde(rename(serialize = "dependsOn", deserialize = "depends_on"))]
-        depends_on: Vec<String>,
+        depends_on: Vec<ArtifactName>,
     },
     Runtime {
         command: String,
@@ -185,7 +222,7 @@ impl Profile {
                 if let Some(reasoning) = reasoning {
                     location
                         .child("reasoning")
-                        .check(backend.validate_reasoning(reasoning))?;
+                        .check(backend.validate_reasoning(reasoning.as_str()))?;
                 }
                 Ok(())
             }
@@ -300,15 +337,96 @@ impl std::fmt::Display for LocalEvalId {
 pub struct EvalDeclaration {
     pub id: LocalEvalId,
     pub title: String,
-    pub profile: Profile,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub profile_variants: BTreeMap<String, Profile>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub payload: Option<EvalPayload>,
-    #[serde(default, deserialize_with = "present")]
-    pub pass_schema: Option<Map<String, Value>>,
-    #[serde(default, deserialize_with = "present")]
-    pub fail_schema: Option<Map<String, Value>>,
+    #[serde(flatten)]
+    body: EvalBody,
+}
+
+/// Dependency declarations have no payload, schemas or execution variants.
+/// Private construction parses the cross-field invariant once at the configuration edge.
+#[derive(Debug, Clone)]
+enum EvalBody {
+    Dependency {
+        profile: Profile,
+    },
+    Executable {
+        profile: Profile,
+        profile_variants: BTreeMap<ProfileVariantName, Profile>,
+        payload: EvalPayload,
+        pass_schema: Option<Map<String, Value>>,
+        fail_schema: Option<Map<String, Value>>,
+    },
+}
+
+impl EvalDeclaration {
+    pub fn profile(&self) -> &Profile {
+        match &self.body {
+            EvalBody::Dependency { profile } | EvalBody::Executable { profile, .. } => profile,
+        }
+    }
+    pub fn payload(&self) -> Option<&EvalPayload> {
+        match &self.body {
+            EvalBody::Dependency { .. } => None,
+            EvalBody::Executable { payload, .. } => Some(payload),
+        }
+    }
+    pub fn profile_variants(&self) -> &BTreeMap<ProfileVariantName, Profile> {
+        static EMPTY: std::sync::OnceLock<BTreeMap<ProfileVariantName, Profile>> =
+            std::sync::OnceLock::new();
+        match &self.body {
+            EvalBody::Dependency { .. } => EMPTY.get_or_init(BTreeMap::new),
+            EvalBody::Executable {
+                profile_variants, ..
+            } => profile_variants,
+        }
+    }
+    pub fn pass_schema(&self) -> Option<&Map<String, Value>> {
+        match &self.body {
+            EvalBody::Dependency { .. } => None,
+            EvalBody::Executable { pass_schema, .. } => pass_schema.as_ref(),
+        }
+    }
+    pub fn fail_schema(&self) -> Option<&Map<String, Value>> {
+        match &self.body {
+            EvalBody::Dependency { .. } => None,
+            EvalBody::Executable { fail_schema, .. } => fail_schema.as_ref(),
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn profile_mut(&mut self) -> &mut Profile {
+        match &mut self.body {
+            EvalBody::Dependency { profile } | EvalBody::Executable { profile, .. } => profile,
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn pass_schema_mut(&mut self) -> &mut Option<Map<String, Value>> {
+        match &mut self.body {
+            EvalBody::Executable { pass_schema, .. } => pass_schema,
+            _ => panic!("dependency schema is impossible"),
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn fail_schema_mut(&mut self) -> &mut Option<Map<String, Value>> {
+        match &mut self.body {
+            EvalBody::Executable { fail_schema, .. } => fail_schema,
+            _ => panic!("dependency schema is impossible"),
+        }
+    }
+    /// Only a declared, same-kind executable variant can replace the active profile.
+    pub(crate) fn select_profile(&mut self, name: &ProfileVariantName) -> Result<(), String> {
+        let EvalBody::Executable {
+            profile,
+            profile_variants,
+            ..
+        } = &mut self.body
+        else {
+            return Err("Dependency Evals cannot select profile variants.".into());
+        };
+        *profile = profile_variants
+            .get(name)
+            .ok_or_else(|| format!("Unknown profile variant: {name}"))?
+            .clone();
+        Ok(())
+    }
 }
 
 #[derive(Deserialize)]
@@ -317,7 +435,7 @@ struct EvalFields {
     title: String,
     profile: Profile,
     #[serde(default, deserialize_with = "present")]
-    profile_variants: Option<BTreeMap<String, Profile>>,
+    profile_variants: Option<BTreeMap<ProfileVariantName, Profile>>,
     #[serde(default, deserialize_with = "present")]
     payload: Option<EvalPayload>,
     #[serde(default, deserialize_with = "present")]
@@ -343,14 +461,23 @@ impl EvalDeclaration {
         } else if fields.payload.is_none() {
             return Err("Eval payload is required for runtime, agent and human profiles.".into());
         }
+        let body = if matches!(fields.profile, Profile::Dependency { .. }) {
+            EvalBody::Dependency {
+                profile: fields.profile,
+            }
+        } else {
+            EvalBody::Executable {
+                profile: fields.profile,
+                profile_variants: fields.profile_variants.unwrap_or_default(),
+                payload: fields.payload.expect("executable payload checked above"),
+                pass_schema: fields.pass_schema,
+                fail_schema: fields.fail_schema,
+            }
+        };
         Ok(Self {
             id,
             title: fields.title,
-            profile: fields.profile,
-            profile_variants: fields.profile_variants.unwrap_or_default(),
-            payload: fields.payload,
-            pass_schema: fields.pass_schema,
-            fail_schema: fields.fail_schema,
+            body,
         })
     }
 }
@@ -360,16 +487,16 @@ impl EvalDeclaration {
         location
             .child("title")
             .check(text(&self.title, "Eval title"))?;
-        if let Some(payload) = &self.payload {
+        if let Some(payload) = self.payload() {
             location
                 .child("payload")
                 .child("instruction")
                 .check(text(&payload.instruction, "Eval payload.instruction"))?;
         }
-        self.profile.validate(&location.child("profile"))?;
+        self.profile().validate(&location.child("profile"))?;
         for (key, schema) in [
-            ("pass_schema", &self.pass_schema),
-            ("fail_schema", &self.fail_schema),
+            ("pass_schema", self.pass_schema()),
+            ("fail_schema", self.fail_schema()),
         ] {
             if let Some(schema) = schema {
                 location
@@ -377,19 +504,19 @@ impl EvalDeclaration {
                     .check(crate::agent::verdict::validate_schema(schema))?;
             }
         }
-        if self.profile_variants.len() > MAX_DECLARED_ITEMS {
+        if self.profile_variants().len() > MAX_DECLARED_ITEMS {
             return Err(location
                 .child("profile_variants")
                 .error("profile_variants must contain at most 64 named profiles."));
         }
-        for (name, profile) in &self.profile_variants {
+        for (name, profile) in self.profile_variants() {
             let variant = location.child("profile_variants").child(name);
             location
                 .child("profile_variants")
                 .key(name)
                 .check(identifier(name, "Profile variant name"))?;
             profile.validate(&variant)?;
-            if std::mem::discriminant(profile) != std::mem::discriminant(&self.profile) {
+            if std::mem::discriminant(profile) != std::mem::discriminant(self.profile()) {
                 return Err(
                     variant.error("Profile variants must retain the declared reviewer kind.")
                 );
@@ -406,9 +533,9 @@ impl EvalDeclaration {
 )]
 pub struct Views {
     #[serde(default)]
-    pub agent_tools: BTreeMap<String, AgentTool>,
+    pub agent_tools: BTreeMap<ToolOperationName, AgentTool>,
     #[serde(default)]
-    pub human_tools: BTreeMap<String, HumanTool>,
+    pub human_tools: BTreeMap<ToolOperationName, HumanTool>,
 }
 
 impl Views {
@@ -441,11 +568,11 @@ pub enum Fingerprint {
         command: String,
         args: Vec<String>,
         /// Owner-relative paths that must exist on every call; never hashed.
-        files: Vec<String>,
+        files: Vec<LogicalPath>,
         timeout_ms: Option<std::time::Duration>,
     },
     Artifactsum {
-        files: Vec<String>,
+        files: Vec<LogicalPath>,
         ignore: Vec<String>,
     },
 }
@@ -462,7 +589,7 @@ struct ScriptFields {
     command: String,
     args: Vec<String>,
     #[serde(default)]
-    files: Vec<String>,
+    files: Vec<LogicalPath>,
     #[serde(
         default,
         deserialize_with = "timeout",
@@ -475,13 +602,13 @@ struct ScriptFields {
 #[serde(deny_unknown_fields)]
 struct ArtifactsumForm {
     #[serde(default = "owner_root")]
-    files: Vec<String>,
+    files: Vec<LogicalPath>,
     #[serde(default)]
     ignore: Vec<String>,
 }
 
-fn owner_root() -> Vec<String> {
-    vec![".".into()]
+fn owner_root() -> Vec<LogicalPath> {
+    vec![".".parse().expect("owner root logical path")]
 }
 
 impl Default for Fingerprint {
@@ -624,7 +751,7 @@ pub struct ReviewPolicy {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct ArtifactDeclaration {
-    pub name: String,
+    pub name: ArtifactName,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default, deserialize_with = "declared_evals")]
@@ -632,7 +759,7 @@ pub struct ArtifactDeclaration {
     #[serde(default)]
     pub views: Views,
     #[serde(default)]
-    pub mounts: BTreeMap<String, String>,
+    pub mounts: BTreeMap<MountAlias, ArtifactName>,
     #[serde(default, deserialize_with = "present")]
     pub basis: Option<bool>,
     #[serde(
@@ -727,6 +854,9 @@ pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
             }
         }
     }
+    // TOML buffers enum/table-key deserialization. Check lexical fields at their
+    // own source positions before constructing validated identities, not in discovery.
+    validate_identity_locations(&location, &document)?;
     // These sum types use JSON maps internally; pin field errors to their original spans.
     if let Some(fingerprint) = document.get_ref().get("fingerprint")
         && let Some(fields) = fingerprint.get_ref().as_table()
@@ -782,6 +912,76 @@ pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
     Ok(declaration)
 }
 
+fn validate_identity_locations(
+    location: &Location<'_, '_>,
+    document: &toml::Spanned<toml::de::DeValue<'_>>,
+) -> Result<(), String> {
+    use toml::de::DeValue;
+    if let Some(name) = document.get_ref().get("name")
+        && let DeValue::String(name) = name.get_ref()
+    {
+        location
+            .child("name")
+            .check(identifier(name, "Artifact name"))?;
+    }
+    if let Some(mounts) = document
+        .get_ref()
+        .get("mounts")
+        .and_then(|value| value.get_ref().as_table())
+    {
+        for (alias, target) in mounts {
+            location
+                .child("mounts")
+                .key(alias.get_ref())
+                .check(identifier(alias.get_ref(), "Mount alias"))?;
+            if let DeValue::String(target) = target.get_ref() {
+                location
+                    .child("mounts")
+                    .child(alias.get_ref())
+                    .check(identifier(target, "Mount target"))?;
+            }
+        }
+    }
+    if let Some(evals) = document
+        .get_ref()
+        .get("evals")
+        .and_then(|value| value.get_ref().as_table())
+    {
+        for (id, eval) in evals {
+            let eval_location = location.child("evals").key(id.get_ref());
+            eval_location.check(identifier(id.get_ref(), "Eval id"))?;
+            for (field, value) in [("profile", eval.get_ref().get("profile"))] {
+                if let Some(model) = value.and_then(|profile| profile.get_ref().get("model"))
+                    && let DeValue::String(model) = model.get_ref()
+                {
+                    eval_location
+                        .child(field)
+                        .child("model")
+                        .check(text(model, "Agent profile model"))?;
+                }
+            }
+            if let Some(variants) = eval
+                .get_ref()
+                .get("profile_variants")
+                .and_then(|value| value.get_ref().as_table())
+            {
+                for (name, profile) in variants {
+                    let variant = eval_location.child("profile_variants").key(name.get_ref());
+                    variant.check(identifier(name.get_ref(), "Profile variant name"))?;
+                    if let Some(model) = profile.get_ref().get("model")
+                        && let DeValue::String(model) = model.get_ref()
+                    {
+                        variant
+                            .child("model")
+                            .check(text(model, "Agent profile model"))?;
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Reject TOML values that would become lossy or implementation-specific owner JSON.
 fn reject_non_json_values(
     value: &toml::Spanned<toml::de::DeValue<'_>>,
@@ -824,15 +1024,15 @@ pub use artifactize_tools::scope::ArtifactKind;
 
 /// Child paths or mount aliases with their target Artifacts as tool-side IDs. Declarations
 /// validated both, so a failure here is a bug.
-fn tool_ids<K: Ord>(
-    targets: &BTreeMap<String, ArtifactName>,
+fn tool_ids<K: Ord, T: Ord + AsRef<str>>(
+    targets: &BTreeMap<T, ArtifactName>,
     key: impl Fn(&str) -> Result<K, artifactize_tools::scope::ScopeError>,
 ) -> BTreeMap<K, artifactize_tools::scope::ArtifactId> {
     targets
         .iter()
         .map(|(path, name)| {
             (
-                key(path).expect("validated child prefix or mount alias"),
+                key(path.as_ref()).expect("validated child prefix or mount alias"),
                 crate::scope::tool_id(name),
             )
         })
@@ -842,13 +1042,14 @@ fn tool_ids<K: Ord>(
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Artifact {
+    #[serde(with = "crate::platform::path_serde")]
     pub path: PathBuf,
     pub kind: ArtifactKind,
-    pub children: BTreeMap<String, ArtifactName>,
+    pub children: BTreeMap<ChildPrefix, ArtifactName>,
     pub name: ArtifactName,
     pub tags: Vec<String>,
     pub views: Views,
-    pub mounts: BTreeMap<String, ArtifactName>,
+    pub mounts: BTreeMap<MountAlias, ArtifactName>,
     pub basis: Option<bool>,
     pub fingerprint: Option<Fingerprint>,
     pub review_policy: Option<ReviewPolicy>,
@@ -906,7 +1107,7 @@ pub struct Eval {
     /// The `profileVariants` entry selected for this execution, if any: an execution option,
     /// recorded with results but never part of the saved declaration.
     #[serde(skip)]
-    pub variant: Option<String>,
+    pub variant: Option<ProfileVariantName>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -949,7 +1150,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
         relations: Vec::new(),
     };
     let ignored = discovery_ignore(&config.root)?;
-    let mut pending = vec![(PathBuf::new(), None::<String>)];
+    let mut pending = vec![(PathBuf::new(), None::<ArtifactName>)];
     while let Some((relative, mut owner)) = pending.pop() {
         let directory = config.root.join(&relative);
         let entries = fs::read_dir(&directory)
@@ -962,10 +1163,13 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             .find(|entry| entry.file_name() == "artifactize.json")
         {
             let file = legacy.path();
-            let kind = legacy
-                .file_type()
+            let kind = crate::platform::paths::entry_kind(&file)
                 .map_err(|error| ConfigError::new(&file, error))?;
-            if !ignored.matched(&file, kind.is_dir()).is_ignore() && !kind.is_dir() {
+            if !ignored
+                .matched(&file, kind == crate::platform::FileKind::Directory)
+                .is_ignore()
+                && kind != crate::platform::FileKind::Directory
+            {
                 return Err(ConfigError::new(
                     file,
                     "artifactize.json is no longer read; declare this Artifact in index.artf (TOML).",
@@ -977,14 +1181,13 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             .find(|entry| entry.file_name() == CONFIG_FILE)
         {
             let file = marker.path();
-            let kind = marker
-                .file_type()
+            let kind = crate::platform::paths::entry_kind(&file)
                 .map_err(|error| ConfigError::new(&file, error))?;
-            if !kind.is_file() {
+            if kind != crate::platform::FileKind::File {
                 return Err(ConfigError::new(file, "index.artf must be a regular file."));
             }
             let source =
-                fs::read_to_string(&file).map_err(|error| ConfigError::new(&file, error))?;
+                read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
             let declaration =
                 parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
             if !relative.as_os_str().is_empty() && declaration.review_policy.is_some() {
@@ -1001,10 +1204,10 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 let child = child
                     .to_str()
                     .ok_or_else(|| ConfigError::new(&file, "Artifact paths must be UTF-8."))?;
-                let name = name
+                let child = child
                     .parse()
-                    .map_err(|error: String| ConfigError::declaration(&file, &["name"], error))?;
-                parent.children.insert(child.to_owned(), name);
+                    .expect("discovery produces validated child prefixes");
+                parent.children.insert(child, name.clone());
             }
             insert_artifact(
                 &mut config,
@@ -1049,10 +1252,9 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 continue;
             }
             let file = marker.path();
-            if !marker
-                .file_type()
+            if crate::platform::paths::entry_kind(&file)
                 .map_err(|error| ConfigError::new(&file, error))?
-                .is_file()
+                != crate::platform::FileKind::File
             {
                 return Err(ConfigError::new(
                     &file,
@@ -1073,7 +1275,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 ));
             }
             let target_path = directory.join(target);
-            let metadata = fs::symlink_metadata(&target_path).map_err(|error| {
+            let kind = crate::platform::paths::entry_kind(&target_path).map_err(|error| {
                 ConfigError::new(
                     &file,
                     if error.kind() == std::io::ErrorKind::NotFound {
@@ -1083,7 +1285,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     },
                 )
             })?;
-            if !metadata.is_file() || metadata.is_symlink() {
+            if kind != crate::platform::FileKind::File {
                 return Err(ConfigError::new(
                     &file,
                     format!(
@@ -1092,7 +1294,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 ));
             }
             let source =
-                fs::read_to_string(&file).map_err(|error| ConfigError::new(&file, error))?;
+                read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
             let mut declaration =
                 parse_declaration(&source).map_err(|error| ConfigError::new(&file, error))?;
             if declaration.review_policy.is_some() {
@@ -1106,7 +1308,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 .map_err(|error| ConfigError::new(&file, error))?;
             if value.get_ref().get("fingerprint").is_none() {
                 declaration.fingerprint = Some(Fingerprint::Artifactsum {
-                    files: vec![target.into()],
+                    files: vec![target.parse().expect("validated target logical path")],
                     ignore: Vec::new(),
                 });
             }
@@ -1142,10 +1344,9 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             )?;
         }
         for entry in entries.into_iter().rev() {
-            let kind = entry
-                .file_type()
+            let kind = crate::platform::paths::entry_kind(&entry.path())
                 .map_err(|error| ConfigError::new(entry.path(), error))?;
-            if kind.is_dir()
+            if kind == crate::platform::FileKind::Directory
                 && entry.file_name() != ".git"
                 && entry.file_name() != "node_modules"
                 && !ignored.matched(entry.path(), true).is_ignore()
@@ -1181,9 +1382,6 @@ fn insert_artifact(
         fingerprint,
         review_policy,
     } = declaration;
-    let name: ArtifactName = name
-        .parse()
-        .map_err(|error: String| ConfigError::declaration(file, &["name"], error))?;
     if config.artifacts.contains_key(&name) {
         return Err(ConfigError::declaration(
             file,
@@ -1212,15 +1410,7 @@ fn insert_artifact(
             name,
             tags,
             views,
-            mounts: mounts
-                .into_iter()
-                .map(|(alias, target)| {
-                    target
-                        .parse()
-                        .map(|target| (alias, target))
-                        .map_err(|error: String| ConfigError::declaration(file, &["mounts"], error))
-                })
-                .collect::<Result<_, _>>()?,
+            mounts,
             basis,
             fingerprint,
             review_policy,
@@ -1245,10 +1435,15 @@ fn discovery_ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigE
         .case_insensitive(false)
         .expect("case-sensitive discovery");
     // A regular file only: discovery never follows links.
-    if fs::symlink_metadata(&file).is_ok_and(|metadata| metadata.is_file())
-        && let Some(error) = builder.add(&file)
+    if crate::platform::paths::entry_kind(&file)
+        .is_ok_and(|kind| kind == crate::platform::FileKind::File)
     {
-        return Err(ConfigError::new(&file, error));
+        let source = read_regular_text(&file).map_err(|error| ConfigError::new(&file, error))?;
+        for line in source.lines() {
+            builder
+                .add_line(Some(file.clone()), line)
+                .map_err(|error| ConfigError::new(&file, error))?;
+        }
     }
     builder
         .build()
@@ -1269,3 +1464,45 @@ fn logical_join(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
 
 #[cfg(test)]
 mod tests;
+
+fn read_regular_text(path: &Path) -> std::io::Result<String> {
+    let mut source = String::new();
+    crate::platform::open_regular(path)?.read_to_string(&mut source)?;
+    Ok(source)
+}
+
+impl Serialize for EvalBody {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("profile", self.profile())?;
+        match self {
+            Self::Dependency { .. } => {
+                map.serialize_entry("passSchema", &Option::<()>::None)?;
+                map.serialize_entry("failSchema", &Option::<()>::None)?;
+            }
+            Self::Executable {
+                profile_variants,
+                payload,
+                pass_schema,
+                fail_schema,
+                ..
+            } => {
+                if !profile_variants.is_empty() {
+                    map.serialize_entry("profileVariants", profile_variants)?;
+                }
+                map.serialize_entry("payload", payload)?;
+                map.serialize_entry("passSchema", pass_schema)?;
+                map.serialize_entry("failSchema", fail_schema)?;
+            }
+        }
+        map.end()
+    }
+}
+impl EvalBody {
+    fn profile(&self) -> &Profile {
+        match self {
+            Self::Dependency { profile } | Self::Executable { profile, .. } => profile,
+        }
+    }
+}

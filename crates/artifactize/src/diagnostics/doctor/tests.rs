@@ -1,5 +1,6 @@
 //! All finite readiness statuses preserve their exact JSON/text and report severity.
 use super::*;
+use serde_json::json;
 
 #[test]
 fn readiness_check_status_wire_display_and_severity_are_pinned() {
@@ -15,7 +16,12 @@ fn readiness_check_status_wire_display_and_severity_are_pinned() {
             state_dir: "/fixture-state".into(),
             checks: Vec::new(),
         };
-        report.add("fixture", status, "pinned message", json!({"fixture":true}));
+        report.add(
+            "fixture",
+            status,
+            "pinned message",
+            Details::State { writable: true },
+        );
         assert_eq!(report.ok, ready);
         assert_eq!(
             serde_json::to_value(&report.checks).unwrap(),
@@ -24,7 +30,7 @@ fn readiness_check_status_wire_display_and_severity_are_pinned() {
                     "name":"fixture",
                     "status":wire,
                     "message":"pinned message",
-                    "details":{"fixture":true},
+                    "details":{"writable":true},
                 },
             ])
         );
@@ -41,7 +47,7 @@ fn readiness_check_status_wire_display_and_severity_are_pinned() {
         CheckStatus::Pass,
         CheckStatus::Warn,
     ] {
-        report.add("fixture", status, "", Value::Null);
+        report.add("fixture", status, "", Details::None);
     }
     assert!(
         !report.ok,

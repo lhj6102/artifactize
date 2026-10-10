@@ -8,6 +8,8 @@
 
 pub(crate) mod environment;
 pub(crate) mod path_serde;
+pub(crate) mod paths;
+pub(crate) mod program;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]

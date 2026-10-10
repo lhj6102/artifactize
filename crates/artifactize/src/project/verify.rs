@@ -115,7 +115,7 @@ pub async fn verify(
         .map_err(|e| e.to_string())?;
     let fingerprints = cache::prepare(
         &config,
-        cache::fingerprint_targets(&config, &required),
+        cache::fingerprint_targets(&config, &required.iter().map(|id| id.as_str()).collect()),
         &runs,
         &parallelism,
         cancellation.clone(),
@@ -195,10 +195,10 @@ pub async fn verify(
             eval_id: eval.id.to_string(),
             target: eval.target.to_string(),
             title: eval.declaration.title.clone(),
-            profile: (&eval.declaration.profile).into(),
-            requested_profile: (&eval.declaration.profile).into(),
+            profile: (eval.declaration.profile()).into(),
+            requested_profile: (eval.declaration.profile()).into(),
             eval_def_hash: cache::eval_definition_hash(&eval.declaration),
-            options: ExecutionOptions::new(&eval.declaration.profile, eval.variant.as_deref()),
+            options: ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_deref()),
             execution_id: None,
             provenance: None,
             usage: None,
@@ -210,13 +210,13 @@ pub async fn verify(
             session_id: None,
             session: None,
             human_definition: None,
-            payload: (&eval.declaration.payload).into(),
+            payload: eval.declaration.payload().into(),
             references: json!(eval.references),
             deps: eval.deps.iter().map(ToString::to_string).collect(),
             force: options.force
                 && selected_ids.contains(eval.id.as_str())
                 && !matches!(
-                    eval.declaration.profile,
+                    eval.declaration.profile(),
                     crate::config::Profile::Dependency { .. }
                 ),
             fingerprint: fingerprints
@@ -296,7 +296,10 @@ pub async fn verify(
             request.error = Some("Run was cancelled.".into());
             request.error_code = Some("CANCELLED".into());
             request.completed_at = Some(now());
-            evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
+            evidence.insert(
+                request.eval_id.parse().expect("saved Eval id"),
+                Evidence::OperationalError,
+            );
         } else if request.status == crate::types::RequestStatus::BudgetExhausted
             && eval.can_execute()
         {
@@ -310,7 +313,11 @@ pub async fn verify(
                 } else {
                     "Waiting for current GREEN dependency evidence"
                 },
-                eval.unmet_gates.join(", ")
+                eval.unmet_gates
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
     }
@@ -320,7 +327,9 @@ pub async fn verify(
         .iter()
         .filter(|(id, _)| required.contains(&graph.eval_target(id).unwrap()))
         .collect();
-    let satisfied = required.iter().all(|id| evaluation.artifacts[id].satisfied);
+    let satisfied = required
+        .iter()
+        .all(|id| evaluation.artifacts[id.as_str()].satisfied);
     let budget_exhausted = requests
         .iter()
         .any(|request| request.status == crate::types::RequestStatus::BudgetExhausted);
@@ -379,7 +388,7 @@ pub async fn verify(
         "artifacts":required
             .iter()
             .map(|id| {
-                let a = &evaluation.artifacts[id];
+                let a = &evaluation.artifacts[id.as_str()];
                 let mut artifact = json!({
                     "id":id,
                     "status":format!("{:?}", a.status).to_uppercase(),
@@ -387,7 +396,7 @@ pub async fn verify(
                     "total":a.total,
                     "satisfied":a.satisfied,
                 });
-                if let Some(fingerprint) = fingerprints.get(id) {
+                if let Some(fingerprint) = fingerprints.get(id.as_str()) {
                     artifact["fingerprintKind"] = json!(if fingerprint.manifest.is_some() {
                         "artifactsum"
                     } else {

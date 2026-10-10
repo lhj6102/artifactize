@@ -961,3 +961,118 @@ mod acl {
         }
     }
 }
+
+/// Python used by multimodal command-tool fixtures, installed on all CI platforms.
+pub fn python() -> &'static str {
+    "python3"
+}
+
+/// Ensure fixture stdout is Unicode even with Windows' default ANSI pipe encoding.
+pub fn python_script(path: &Path, code: &str) {
+    std::fs::write(
+        path,
+        format!("import sys\nsys.stdout.reconfigure(encoding='utf-8')\n{code}"),
+    )
+    .unwrap();
+}
+
+/// A private runtime environment has only platform launch essentials and private roots.
+pub const PYTHON_PRIVATE_ENVIRONMENT: &str = r#"
+assert os.environ['HOME'] != os.environ['TMPDIR']
+assert context['tmpDir'] == os.environ['TMPDIR'].replace('\\', '/')
+assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR'].replace('\\', '/')
+allowed = {'PATH','LANG','HOME','TMP','TEMP','TMPDIR','XDG_CACHE_HOME','ARTIFACTIZE_WORKSPACE_DIR','ARTIFACTIZE_OUTPUT_DIR','ARTIFACTIZE_TMP_DIR','LC_CTYPE'}
+if sys.platform == 'darwin': allowed.add('__CF_USER_TEXT_ENCODING')
+if os.name == 'nt': allowed |= {'USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','COMSPEC','PATHEXT'}
+assert set(os.environ) <= allowed
+"#;
+
+/// A file/directory redirection in an output fixture: Windows junctions need no privilege.
+pub fn python_output_links() -> (&'static str, &'static str) {
+    if cfg!(windows) {
+        (
+            "import _winapi; path = 'link'; _winapi.CreateJunction(os.getcwd(), os.path.join(root, path))",
+            "import _winapi; path = 'linkdir/source'; _winapi.CreateJunction(os.getcwd(), os.path.join(root, 'linkdir'))",
+        )
+    } else {
+        (
+            "path = 'link'; os.symlink(os.path.abspath('source'), os.path.join(root, path))",
+            "path = 'linkdir/source'; os.symlink(os.getcwd(), os.path.join(root, 'linkdir'))",
+        )
+    }
+}
+
+/// Write an owner-relative program that emits a fixed fixture string.
+pub fn output_script(path: &Path, output: &str) {
+    std::fs::write(path, format!("#!/bin/sh\nprintf '%s' '{output}'\n")).unwrap();
+    make_executable(path);
+}
+
+/// A bare PATH command and literal argv for the program-resolution seam.
+pub fn path_output(output: &str) -> (&'static str, Vec<String>) {
+    if cfg!(windows) {
+        (
+            python(),
+            vec![
+                "-c".into(),
+                format!("import sys; sys.stdout.write({output:?})"),
+            ],
+        )
+    } else {
+        ("printf", vec!["%s".into(), output.into()])
+    }
+}
+
+/// Expected IPC address independently pins the public namespace spelling and hash length.
+pub fn changes_address(user: &str, identity: &str) -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::path::PathBuf::from(format!(r"\\.\pipe\artifactize-changes-{identity}"))
+    } else {
+        Path::new(if cfg!(target_os = "macos") {
+            "/private/tmp"
+        } else {
+            "/tmp"
+        })
+        .join(format!("artifactize-ipc-{user}-{}", &identity[..24]))
+        .join("hub.sock")
+    }
+}
+
+/// Launch one exact test in this binary for multi-process IPC/Job Object fixtures.
+pub fn self_test(name: &str) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", name, "--nocapture"])
+        .kill_on_drop(true);
+    command
+}
+
+/// Windows process fixture that emits a marker when admitted, or exits with a given code.
+#[cfg(windows)]
+pub fn windows_marker(directory: &Path) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new("cmd");
+    command
+        .args(["/d", "/c", "type nul > marker"])
+        .current_dir(directory)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null());
+    command
+}
+
+#[cfg(windows)]
+pub fn windows_exit(code: u32) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new("cmd");
+    command.args(["/d", "/c", &format!("exit /b {code}")]);
+    command
+}
+
+/// An inert child controlled by the parent's stdin; no scheduler/timing assumption.
+pub fn stdin_waiter() -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(python());
+    command
+        .args(["-c", "import sys; sys.stdin.buffer.read()"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    command
+}

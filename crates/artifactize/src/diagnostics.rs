@@ -6,7 +6,7 @@ pub use doctor::{CheckStatus, DoctorReport, doctor};
 use std::path::Path;
 
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -71,7 +71,8 @@ impl ToolCheckOptions {
             );
         }
         if let Some(args) = &self.args {
-            serde_json::from_str::<Value>(args).map_err(|e| format!("Invalid --args JSON: {e}"))?;
+            serde_json::from_str::<serde_json::Value>(args)
+                .map_err(|e| format!("Invalid --args JSON: {e}"))?;
         }
         Ok(())
     }
@@ -81,17 +82,43 @@ impl ToolCheckOptions {
 #[serde(rename_all = "camelCase")]
 pub struct ToolCheckReport {
     pub ok: bool,
-    pub scopes: Vec<Value>,
-    pub checks: Vec<Value>,
+    pub scopes: Vec<ToolCheckScope>,
+    pub checks: Vec<ToolCheck>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub result: Option<Value>,
+    pub result: Option<ToolCheckResult>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCheckScope {
+    pub eval_id: Option<crate::config::EvalId>,
+    pub artifact_id: Option<crate::config::ArtifactName>,
+    pub audience: Audience,
+    pub tools: Vec<tools::ToolDefinition>,
+}
+#[derive(Debug, Serialize)]
+pub struct ToolCheck {
+    pub stage: String,
+    pub tool: Option<String>,
+    pub ok: bool,
+    pub message: Option<String>,
+}
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum ToolCheckResult {
+    Agent(tools::ToolResult),
+    Human(human::ToolResult),
 }
 
 impl ToolCheckReport {
     fn check(&mut self, stage: &str, name: Option<&str>, result: Result<(), String>) {
         self.ok &= result.is_ok();
-        self.checks
-            .push(json!({"stage":stage,"tool":name,"ok":result.is_ok(),"message":result.err()}));
+        self.checks.push(ToolCheck {
+            stage: stage.into(),
+            tool: name.map(str::to_owned),
+            ok: result.is_ok(),
+            message: result.err(),
+        });
     }
 }
 
@@ -152,7 +179,7 @@ pub async fn check_tools(
         && !config.evals.iter().any(|eval| {
             &eval.id == id
                 && matches!(
-                    eval.declaration.profile,
+                    eval.declaration.profile(),
                     Profile::Agent { .. } | Profile::Human {}
                 )
         })
@@ -191,7 +218,7 @@ pub async fn check_tools(
             if selected.is_some_and(|id| id != &eval.id) {
                 continue;
             }
-            let (audience, catalog) = match eval.declaration.profile {
+            let (audience, catalog) = match eval.declaration.profile() {
                 Profile::Agent { .. } => (
                     Audience::Agent,
                     tools::Registry::new(&config, &eval.id).map(Catalog::Agent),
@@ -240,9 +267,12 @@ pub async fn check_tools(
                 catalog.preflight(&definition.name),
             );
         }
-        report.scopes.push(
-            json!({"evalId":eval,"artifactId":artifact,"audience":audience,"tools":definitions}),
-        );
+        report.scopes.push(ToolCheckScope {
+            eval_id: eval.map(|id| id.parse().expect("configured Eval id")),
+            artifact_id: artifact.map(|id| config.artifacts[id].name.clone()),
+            audience,
+            tools: definitions.clone(),
+        });
         if options.execute && report.ok && definitions.len() == 1 {
             let name = &definitions[0].name;
             let result = execute_tool(
@@ -259,7 +289,7 @@ pub async fn check_tools(
                     report.check(
                         "execute",
                         Some(name),
-                        if result["isError"] == true {
+                        if result.is_error() {
                             Err("The tool returned an error; no review result was created.".into())
                         } else {
                             Ok(())
@@ -281,9 +311,11 @@ async fn execute_tool(
     name: &str,
     options: &ToolCheckOptions,
     cancellation: CancellationToken,
-) -> Result<Value, String> {
+) -> Result<ToolCheckResult, String> {
     match catalog {
-        Catalog::Human(registry) => Ok(json!(registry.call(name, cancellation).await)),
+        Catalog::Human(registry) => Ok(ToolCheckResult::Human(
+            registry.call(name, cancellation).await,
+        )),
         Catalog::Agent(registry) => {
             let state = crate::store::state_dir(state)?;
             let root =
@@ -305,7 +337,16 @@ async fn execute_tool(
             directory
                 .close()
                 .map_err(|_| "Tool-check cleanup failed.".to_owned())?;
-            Ok(json!(result))
+            Ok(ToolCheckResult::Agent(result))
+        }
+    }
+}
+
+impl ToolCheckResult {
+    fn is_error(&self) -> bool {
+        match self {
+            Self::Agent(result) => result.is_error,
+            Self::Human(result) => result.is_error,
         }
     }
 }

@@ -247,12 +247,12 @@ pub(super) fn prepare(
     request: &mut Request,
 ) -> Result<Prepared, String> {
     cache::validate_file_inputs(config, eval)?;
-    if matches!(eval.declaration.profile, Profile::Human {}) {
+    if matches!(eval.declaration.profile(), Profile::Human {}) {
         request.human_definition = Some(human::definition(config, eval)?);
         request.run_dir = Some(run_dir.to_path_buf());
         return Ok(Prepared::Human);
     }
-    if matches!(eval.declaration.profile, Profile::Agent { .. }) {
+    if matches!(eval.declaration.profile(), Profile::Agent { .. }) {
         // Saved with the RUNNING request, before the review's first turn.
         let session = agent::session_id()?;
         request.run_dir = Some(run_dir.to_path_buf());
@@ -267,7 +267,7 @@ pub(super) fn prepare(
         command,
         args,
         timeout_ms,
-    } = &eval.declaration.profile
+    } = eval.declaration.profile()
     else {
         return Err("Evals of this kind are not supported yet without cached evidence.".into());
     };

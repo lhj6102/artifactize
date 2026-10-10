@@ -39,7 +39,7 @@ async fn fenced_json_is_repaired_with_same_settings_and_no_tools() {
 #[tokio::test]
 async fn schema_invalid_response_repairs_and_preserves_owner_fields() {
     let mut fixture = Fixture::new("openai");
-    fixture.config.evals[0].declaration.pass_schema = json!({
+    *fixture.config.evals[0].declaration.pass_schema_mut() = json!({
         "type":"object",
         "properties":{"reason":{"type":"string","minLength":1}},
         "required":["reason"],
@@ -69,11 +69,11 @@ async fn schema_invalid_response_repairs_and_preserves_owner_fields() {
 #[tokio::test]
 async fn schemas_are_selected_by_the_final_verdict() {
     let mut fixture = Fixture::new("openai");
-    fixture.config.evals[0].declaration.pass_schema =
+    *fixture.config.evals[0].declaration.pass_schema_mut() =
         json!({"type":"object","properties":{"reason":{"const":"pass"}},"required":["reason"]})
             .as_object()
             .cloned();
-    fixture.config.evals[0].declaration.fail_schema =
+    *fixture.config.evals[0].declaration.fail_schema_mut() =
         json!({"type":"object","properties":{"reason":{"const":"fail"}},"required":["reason"]})
             .as_object()
             .cloned();
@@ -164,7 +164,7 @@ async fn repair_retains_model_and_completion_checks() {
 #[tokio::test]
 async fn anthropic_repair_after_tools_exposes_no_tools() {
     let mut fixture = Fixture::new("anthropic");
-    fixture.config.evals[0].declaration.fail_schema =
+    *fixture.config.evals[0].declaration.fail_schema_mut() =
         json!({"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"]})
             .as_object()
             .cloned();
@@ -214,7 +214,7 @@ async fn repair_shares_original_deadline_and_cancellation_precedes_budget() {
             timeout_ms,
             max_tokens,
             ..
-        } = &mut fixture.config.evals[0].declaration.profile
+        } = fixture.config.evals[0].declaration.profile_mut()
         else {
             unreachable!()
         };

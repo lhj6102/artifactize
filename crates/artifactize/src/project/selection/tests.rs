@@ -28,18 +28,18 @@ fn ordered_union_keeps_first_occurrence_and_rejects_unknown_or_empty_roots() {
     let config = fixture();
     let artifacts = Selection::Artifacts {
         artifact_ids: vec![
-            "green".into(),
-            "cycle-b".into(),
-            "green".into(),
-            "cycle-a".into(),
+            "green".parse().unwrap(),
+            "cycle-b".parse().unwrap(),
+            "green".parse().unwrap(),
+            "cycle-a".parse().unwrap(),
         ],
     };
     let evals = Selection::Evals {
         eval_ids: vec![
-            "green/check".into(),
-            "cycle-b/check".into(),
-            "green/check".into(),
-            "cycle-a/check".into(),
+            "green/check".parse().unwrap(),
+            "cycle-b/check".parse().unwrap(),
+            "green/check".parse().unwrap(),
+            "cycle-a/check".parse().unwrap(),
         ],
     };
     let expected = ["green/check", "cycle-b/check", "cycle-a/check"];
@@ -58,7 +58,7 @@ fn ordered_union_keeps_first_occurrence_and_rejects_unknown_or_empty_roots() {
             .collect::<Vec<_>>()
     );
     let selected = Selection::Eval {
-        eval_id: "cycle-a/check".into(),
+        eval_id: "cycle-a/check".parse().unwrap(),
     }
     .resolve(&config)
     .unwrap();
@@ -73,24 +73,34 @@ fn ordered_union_keeps_first_occurrence_and_rejects_unknown_or_empty_roots() {
     assert!(
         eval_ids(
             &Selection::Artifact {
-                artifact_id: "input".into()
+                artifact_id: "input".parse().unwrap()
             },
             &config
         )
         .is_empty()
     );
+    for value in [
+        json!({"kind":"eval","evalId":"green"}),
+        json!({"kind":"artifacts","artifactIds":["green", ""]}),
+        json!({"kind":"evals","evalIds":["green/check", "missing"]}),
+    ] {
+        assert!(serde_json::from_value::<Selection>(value).is_err());
+    }
     for selection in [
         Selection::Artifact {
-            artifact_id: "missing".into(),
+            artifact_id: "missing".parse().unwrap(),
         },
         Selection::Eval {
-            eval_id: "green".into(),
+            eval_id: "green/missing".parse().unwrap(),
         },
         Selection::Artifacts {
-            artifact_ids: vec!["green".into(), "".into()],
+            artifact_ids: vec!["green".parse().unwrap(), "missing".parse().unwrap()],
         },
         Selection::Evals {
-            eval_ids: vec!["green/check".into(), "missing".into()],
+            eval_ids: vec![
+                "green/check".parse().unwrap(),
+                "missing/check".parse().unwrap(),
+            ],
         },
         Selection::Artifacts {
             artifact_ids: vec![],
@@ -103,7 +113,7 @@ fn ordered_union_keeps_first_occurrence_and_rejects_unknown_or_empty_roots() {
 
 #[test]
 fn json_and_line_files_select_the_same_ordered_evals() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_os::tempdir();
     let json_path = directory.path().join("selection.json");
     let line_path = directory.path().join("selection.txt");
     fs::write(
@@ -122,10 +132,15 @@ fn json_and_line_files_select_the_same_ordered_evals() {
     assert_eq!(json, lines);
     let config = fixture();
     assert_eq!(
-        eval_ids(&Selection::Artifacts { artifact_ids: json }, &config),
         eval_ids(
             &Selection::Artifacts {
-                artifact_ids: lines
+                artifact_ids: json.iter().map(|id| id.parse().unwrap()).collect()
+            },
+            &config
+        ),
+        eval_ids(
+            &Selection::Artifacts {
+                artifact_ids: lines.iter().map(|id| id.parse().unwrap()).collect()
             },
             &config
         )
@@ -212,7 +227,7 @@ fn selection_files_validate_before_deduplication_and_never_fallback_from_json() 
 
 #[test]
 fn file_reads_reject_nonregular_and_oversized_inputs() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_os::tempdir();
     let path = directory.path().join("ids");
     let file = fs::File::create(&path).unwrap();
     file.set_len(MAX_FILE_BYTES as u64 + 1).unwrap();
@@ -222,6 +237,7 @@ fn file_reads_reject_nonregular_and_oversized_inputs() {
     // The null device is no regular file on any system.
     assert!(read_selection_file(crate::test_os::null_device()).is_err());
     // Only Unix has FIFOs.
+    // Unix-only special-file or filesystem permission behavior.
     #[cfg(unix)]
     {
         let fifo = directory.path().join("fifo");
@@ -232,7 +248,7 @@ fn file_reads_reject_nonregular_and_oversized_inputs() {
 }
 
 fn profile_fixture() -> tempfile::TempDir {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_os::tempdir();
     crate::test_declaration::write(
         directory.path().join("index.artf"),
         json!({
@@ -241,11 +257,11 @@ fn profile_fixture() -> tempfile::TempDir {
                 {
                     "id":"z",
                     "title":"Z",
-                    "profile":{"kind":"runtime","command":"/bin/true","args":[]},
+                    "profile":{"kind":"runtime","command":crate::test_os::bin("/bin/true"),"args":[]},
                     "profile_variants":{
                         "careful":{
                             "kind":"runtime",
-                            "command":"/bin/echo",
+                            "command":crate::test_os::bin("/bin/echo"),
                             "args":["{input}"],
                             "timeout_ms":9,
                         },
@@ -255,7 +271,7 @@ fn profile_fixture() -> tempfile::TempDir {
                 {
                     "id":"a",
                     "title":"A",
-                    "profile":{"kind":"runtime","command":"/bin/true","args":[]},
+                    "profile":{"kind":"runtime","command":crate::test_os::bin("/bin/true"),"args":[]},
                     "payload":{"instruction":"Check."},
                 },
             ],
@@ -279,32 +295,32 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
     let before = fs::read(&source).unwrap();
     let load = || read_workspace_config(directory.path()).unwrap();
     let selection = Selection::Eval {
-        eval_id: "target/z".into(),
+        eval_id: "target/z".parse().unwrap(),
     };
     let selected = select_profiles(
         load(),
         &selection,
-        Some(&ProfileSelection::Named("careful".into())),
+        Some(&ProfileSelection::Named("careful".parse().unwrap())),
         false,
     )
     .unwrap();
     assert_eq!(selected.evals[1].deps, ["input"]);
     assert_eq!(
-        serde_json::to_value(&selected.evals[1].declaration.profile).unwrap()["command"],
-        "/bin/echo"
+        serde_json::to_value(selected.evals[1].declaration.profile()).unwrap()["command"],
+        crate::test_os::bin("/bin/echo")
     );
     assert_eq!(
-        serde_json::to_value(&selected.evals[1].declaration.profile).unwrap()["timeoutMs"],
+        serde_json::to_value(selected.evals[1].declaration.profile()).unwrap()["timeoutMs"],
         9
     );
     assert_eq!(
-        serde_json::to_value(&selected.evals[0].declaration.profile).unwrap()["command"],
-        "/bin/true"
+        serde_json::to_value(selected.evals[0].declaration.profile()).unwrap()["command"],
+        crate::test_os::bin("/bin/true")
     );
     assert_eq!(
         eval_ids(
             &Selection::Artifact {
-                artifact_id: "target".into()
+                artifact_id: "target".parse().unwrap()
             },
             &selected
         ),
@@ -316,7 +332,7 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
         select_profiles(
             load(),
             &Selection::All,
-            Some(&ProfileSelection::Named("careful".into())),
+            Some(&ProfileSelection::Named("careful".parse().unwrap())),
             false,
         )
         .unwrap_err()
@@ -326,15 +342,21 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
         select_profiles(
             load(),
             &selection,
-            Some(&ProfileSelection::Named("missing".into())),
+            Some(&ProfileSelection::Named("missing".parse().unwrap())),
             false,
         )
         .unwrap_err()
         .contains("Unknown profile variant for target/z")
     );
-    let mapping = ProfileSelection::Evals(BTreeMap::from([("target/z".into(), "careful".into())]));
+    let mapping = ProfileSelection::Evals(BTreeMap::from([(
+        "target/z".parse().unwrap(),
+        "careful".parse().unwrap(),
+    )]));
     assert!(select_profiles(load(), &Selection::All, Some(&mapping), false).is_ok());
-    let outside = ProfileSelection::Evals(BTreeMap::from([("target/a".into(), "careful".into())]));
+    let outside = ProfileSelection::Evals(BTreeMap::from([(
+        "target/a".parse().unwrap(),
+        "careful".parse().unwrap(),
+    )]));
     assert!(
         select_profiles(load(), &selection, Some(&outside), false)
             .unwrap_err()
@@ -353,7 +375,7 @@ fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
                 {
                     "id":"check",
                     "title":"Check",
-                    "profile":{"kind":"runtime", "command":"/bin/true","args":[]},
+                    "profile":{"kind":"runtime", "command":crate::test_os::bin("/bin/true"),"args":[]},
                     "payload":{"instruction":"Check."},
                     "profile_variants": variants,
                 },
@@ -361,11 +383,11 @@ fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
         }))
         .unwrap()
     };
-    let valid = json!({"kind":"runtime", "command":"/bin/false", "args":[], "timeout_ms":1});
+    let valid = json!({"kind":"runtime", "command":crate::test_os::bin("/bin/false"), "args":[], "timeout_ms":1});
     let variants: BTreeMap<_, _> = (0..64).map(|i| (format!("v{i}"), valid.clone())).collect();
     assert!(parse_declaration(&declaration(json!(variants))).is_ok());
     let mut oversized = variants;
-    oversized.insert("extra".into(), valid.clone());
+    oversized.insert("extra".parse().unwrap(), valid.clone());
     assert!(
         parse_declaration(&declaration(json!(oversized)))
             .unwrap_err()
@@ -375,7 +397,7 @@ fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
         json!({"bad name":valid}),
         json!({"v":{"kind":"human"}}),
         json!({"v":{"timeout_ms":1}}),
-        json!({"v":{"kind":"runtime","command":"/bin/true","args":[],"timeout_ms":0}}),
+        json!({"v":{"kind":"runtime","command":crate::test_os::bin("/bin/true"),"args":[],"timeout_ms":0}}),
     ] {
         assert!(parse_declaration(&declaration(variants)).is_err());
     }

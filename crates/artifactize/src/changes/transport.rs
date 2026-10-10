@@ -16,7 +16,7 @@ const RUNTIME_ID_PREFIX_HEX_CHARS: usize = 24;
 
 #[derive(Clone)]
 pub(super) struct Endpoint {
-    pub identity: String,
+    pub identity: crate::config::EndpointId,
     directory: PathBuf,
     pub(super) address: PathBuf,
 }
@@ -28,11 +28,13 @@ impl Endpoint {
         digest.update(user.as_bytes());
         digest.update([0]);
         digest.update(state.as_os_str().as_encoded_bytes());
-        let identity = digest
+        let identity: crate::config::EndpointId = digest
             .finalize()
             .iter()
             .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
+            .collect::<String>()
+            .parse()
+            .expect("SHA-256 endpoint identity");
         let directory = os::directory(&identity[..RUNTIME_ID_PREFIX_HEX_CHARS], &user)?;
         let address = os::address(&directory, &identity);
         let endpoint = Self {

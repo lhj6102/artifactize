@@ -48,7 +48,7 @@ pub struct CommandTool {
     )]
     pub timeout_ms: Option<std::time::Duration>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub execution_paths: Vec<String>,
+    pub execution_paths: Vec<super::LogicalPath>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,11 +170,10 @@ pub struct HumanCommandTool {
     pub timeout_ms: Option<std::time::Duration>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct HumanBuiltinTool {
     pub builtin: Builtin,
     pub description: String,
-    pub kind: HumanToolKind,
     pub args: Vec<String>,
 }
 
@@ -214,7 +213,6 @@ impl<'de> Deserialize<'de> for HumanBuiltinTool {
                 crate::tools::builtin::fixed_description(declaration.builtin, &declaration.args)
                     .into()
             }),
-            kind,
             args: declaration.args,
         })
     }
@@ -237,7 +235,7 @@ impl HumanTool {
     pub fn kind(&self) -> HumanToolKind {
         match self {
             Self::Command(tool) => tool.kind,
-            Self::Builtin(tool) => tool.kind,
+            Self::Builtin(tool) => tool.kind(),
         }
     }
     pub fn args(&self) -> &[String] {
@@ -300,4 +298,32 @@ pub(super) fn description(value: &str) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+impl HumanBuiltinTool {
+    pub fn kind(&self) -> HumanToolKind {
+        if self.builtin == Builtin::Open {
+            HumanToolKind::Launch
+        } else {
+            HumanToolKind::Output
+        }
+    }
+}
+impl Serialize for HumanBuiltinTool {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Stored<'a> {
+            builtin: Builtin,
+            description: &'a str,
+            kind: HumanToolKind,
+            args: &'a [String],
+        }
+        Stored {
+            builtin: self.builtin,
+            description: &self.description,
+            kind: self.kind(),
+            args: &self.args,
+        }
+        .serialize(serializer)
+    }
 }

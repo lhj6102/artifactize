@@ -85,9 +85,13 @@ pub(super) async fn status(
 pub(super) async fn graph(context: Context, artifact: Option<String>) -> Result<u8, String> {
     let config = read_workspace_config(&context.repo.unwrap_or_else(|| PathBuf::from(".")))
         .map_err(|error| error.to_string())?;
-    let selection = artifact.map_or(Selection::All, |artifact_id| Selection::Artifact {
-        artifact_id,
-    });
+    let selection = artifact
+        .map(|id| {
+            id.parse()
+                .map(|artifact_id| Selection::Artifact { artifact_id })
+        })
+        .transpose()?
+        .unwrap_or(Selection::All);
     let view = crate::query::graph(&config, &selection)?;
     if context.json {
         print_json(&view)?;

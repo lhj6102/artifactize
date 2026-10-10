@@ -55,21 +55,21 @@ fn every_declaration_feature_is_standard_toml_with_owner_data_untouched() {
         ["a-agent", "h-human", "z-runtime"]
     );
     assert!(matches!(
-        declaration.evals[0].profile,
+        declaration.evals[0].profile(),
         Profile::Agent { .. }
     ));
-    assert!(matches!(declaration.evals[1].profile, Profile::Human {}));
+    assert!(matches!(declaration.evals[1].profile(), Profile::Human {}));
     assert!(matches!(
-        declaration.evals[2].profile,
+        declaration.evals[2].profile(),
         Profile::Runtime { .. }
     ));
-    assert_eq!(declaration.evals[0].profile_variants.len(), 1);
+    assert_eq!(declaration.evals[0].profile_variants().len(), 1);
     assert_eq!(
-        declaration.evals[0].payload.as_ref().unwrap().extra["ownerData"]["camelCase"],
+        declaration.evals[0].payload().as_ref().unwrap().extra["ownerData"]["camelCase"],
         true
     );
     assert_eq!(
-        declaration.evals[0].pass_schema.as_ref().unwrap()["properties"]["summary"]["minLength"],
+        declaration.evals[0].pass_schema().as_ref().unwrap()["properties"]["summary"]["minLength"],
         1
     );
     assert!(
@@ -197,7 +197,7 @@ fn datetimes_are_rejected_anywhere_with_the_full_owner_key_path() {
     let quoted = "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }\npayload = { instruction = 'Check.', date = '1979-05-27' }";
     assert_eq!(
         parse_declaration(quoted).unwrap().evals[0]
-            .payload
+            .payload()
             .as_ref()
             .unwrap()
             .extra["date"],
@@ -318,7 +318,7 @@ fn serialized_and_saved_definitions_keep_camel_case_output_names() {
     assert_eq!(eval["profile"]["timeoutMs"], 3000);
     assert_eq!(eval["profile"]["maxToolCalls"], 10);
     assert_eq!(eval["profile"]["maxTokens"], 1000);
-    let stored = artifactize::config::StoredProfile::from(&declaration.evals[0].profile);
+    let stored = artifactize::config::StoredProfile::from(declaration.evals[0].profile());
     let value = serde_json::to_value(stored).unwrap();
     assert_eq!(value["timeoutMs"], 3000);
     assert_eq!(
@@ -362,17 +362,17 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
     let source = "name = 'release'\n[evals.ready]\ntitle = 'Inputs are ready'\nprofile = { kind = 'dependency', depends_on = ['input'] }";
     let declaration = parse_declaration(source).unwrap();
     assert_eq!(declaration.evals[0].id, "ready");
-    assert!(declaration.evals[0].payload.is_none());
+    assert!(declaration.evals[0].payload().is_none());
     assert!(matches!(
-        &declaration.evals[0].profile,
+        &declaration.evals[0].profile(),
         Profile::Dependency { depends_on } if depends_on == &["input"]
     ));
     let expected = json!({"kind":"dependency","dependsOn":["input"]});
     assert_eq!(
-        serde_json::to_value(&declaration.evals[0].profile).unwrap(),
+        serde_json::to_value(declaration.evals[0].profile()).unwrap(),
         expected
     );
-    let stored = artifactize::config::StoredProfile::from(&declaration.evals[0].profile);
+    let stored = artifactize::config::StoredProfile::from(declaration.evals[0].profile());
     let stored_value = serde_json::to_value(&stored).unwrap();
     assert_eq!(stored_value, expected);
     assert_eq!(
@@ -624,7 +624,7 @@ fn null_syntax_is_rejected_by_the_production_toml_parser_at_every_boundary() {
 fn owner_payload_keys_do_not_collide_with_toml_datetime_serde_internals() {
     let source = "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }\n[evals.check.payload]\ninstruction = 'Check.'\n'$__toml_private_datetime' = '1979-05-27'\nowner = { '$__toml_private_datetime' = '07:32:00', other = true }";
     let declaration = parse_declaration(source).unwrap();
-    let extra = &declaration.evals[0].payload.as_ref().unwrap().extra;
+    let extra = &declaration.evals[0].payload().as_ref().unwrap().extra;
     assert_eq!(extra["$__toml_private_datetime"], "1979-05-27");
     assert_eq!(
         extra["owner"],

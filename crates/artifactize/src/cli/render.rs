@@ -263,7 +263,12 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
             "  Component {}{}: {}",
             component.id,
             if component.cyclic { " [cycle]" } else { "" },
-            component.artifacts.join(", ")
+            component
+                .artifacts
+                .iter()
+                .map(|id| id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         )?;
         for id in &component.artifacts {
             let artifact = view.artifacts[id];
@@ -287,7 +292,7 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
                     artifact.path.display().to_string()
                 }
             )?;
-            for eval in view.evals.iter().filter(|eval| eval.target == *id) {
+            for eval in view.evals.iter().filter(|eval| eval.target == **id) {
                 writeln!(
                     out,
                     "      {}: {} -> {}",

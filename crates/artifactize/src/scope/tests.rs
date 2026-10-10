@@ -94,13 +94,16 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     assert_eq!(
         config.artifacts["parent"].children,
         BTreeMap::from([
-            ("unmarked/deep".into(), "child".parse().unwrap()),
-            ("unmarked/deeper".into(), "neighbor".parse().unwrap()),
+            ("unmarked/deep".parse().unwrap(), "child".parse().unwrap()),
+            (
+                "unmarked/deeper".parse().unwrap(),
+                "neighbor".parse().unwrap()
+            ),
         ])
     );
     assert_eq!(
         config.artifacts["child"].children,
-        BTreeMap::from([("leaf".into(), "leaf".parse().unwrap())])
+        BTreeMap::from([("leaf".parse().unwrap(), "leaf".parse().unwrap())])
     );
     assert_eq!(config.artifacts["parent"].views.agent_tools.len(), 1);
     assert!(config.artifacts["child"].views.agent_tools.is_empty());
@@ -140,10 +143,10 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
         "leaf"
     );
     assert!(config.relations.contains(&Relation {
-        source: "child".into(),
-        target: "parent".into(),
+        source: "child".parse().unwrap(),
+        target: "parent".parse().unwrap(),
         kind: RelationKind::Child {
-            path: "unmarked/deep".into()
+            path: "unmarked/deep".parse().unwrap()
         },
     }));
     assert!(
@@ -191,21 +194,21 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
             .unwrap(),
         fixture.0.join("data/file")
     );
-    let source = &eval.declaration.payload.as_ref().unwrap().instruction;
+    let source = &eval.declaration.payload().as_ref().unwrap().instruction;
     assert_eq!(
         parse_artifact_instruction(source, &scope, &eval.references),
         vec![
             InstructionPart::Text("Read ".into()),
-            InstructionPart::Artifact("input".into()),
+            InstructionPart::Artifact("input".parse().unwrap()),
             InstructionPart::Text("/file, ".into()),
-            InstructionPart::Artifact("input".into()),
+            InstructionPart::Artifact("input".parse().unwrap()),
             InstructionPart::Text(", ".into()),
-            InstructionPart::Artifact("review".into()),
+            InstructionPart::Artifact("review".parse().unwrap()),
             InstructionPart::Text("; \\{literal} {{literal}}.".into()),
         ]
     );
     assert_eq!(
-        eval.declaration.payload.as_ref().unwrap().extra["ownerField"]["unchanged"],
+        eval.declaration.payload().as_ref().unwrap().extra["ownerField"]["unchanged"],
         "{unknown}"
     );
     assert!(!source.contains("not instruction text"));
@@ -234,7 +237,11 @@ fn observation_scope_never_follows_other_evals_instructions() {
         .unwrap();
     let scope = eval_scope(&config, eval).unwrap();
     assert_eq!(
-        scope.artifacts.keys().copied().collect::<Vec<_>>(),
+        scope
+            .artifacts
+            .keys()
+            .map(ArtifactName::as_str)
+            .collect::<Vec<_>>(),
         ["child", "input", "review", "support"]
     );
     assert!(
@@ -248,7 +255,7 @@ fn observation_scope_never_follows_other_evals_instructions() {
         parse_artifact_instruction("{hidden} {input}", &scope, &BTreeMap::new()),
         vec![
             InstructionPart::Text("{hidden} ".into()),
-            InstructionPart::Artifact("input".into()),
+            InstructionPart::Artifact("input".parse().unwrap()),
         ]
     );
 }
@@ -300,6 +307,7 @@ fn mount_validation_rejects_unknown_ambiguous_and_physical_aliases() {
                 .contains("physical entry")
         );
     }
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
         let _ = fs::remove_file(fixture.0.join("review/input"));
@@ -376,6 +384,7 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
         }
     }
     // Junctions redirect a path as directory symlinks do, and need no privilege.
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
         crate::test_os::junction(
@@ -420,6 +429,7 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
                 .contains("symlinks")
         );
     }
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
         // A directory symlink is removed as a directory on Windows.
@@ -463,29 +473,29 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
     assert!(eval.references.is_empty());
     assert_eq!(eval.deps, ["input"]);
     assert!(config.relations.contains(&Relation {
-        source: "input".into(),
-        target: "review".into(),
+        source: "input".parse().unwrap(),
+        target: "review".parse().unwrap(),
         kind: RelationKind::Argument {
-            eval_id: "review/check".into(),
+            eval_id: "review/check".parse().unwrap(),
             index: 0,
             name: "input".into(),
             path: "nested/file".into()
         },
     }));
     let scope = eval_scope(&config, eval).unwrap();
-    let Profile::Runtime { args, command, .. } = &eval.declaration.profile else {
+    let Profile::Runtime { args, command, .. } = eval.declaration.profile() else {
         panic!()
     };
     let resolved = resolve_argv(&config, &scope, "review", args).unwrap();
     let file = fixture.0.join("data").join("nested").join("file");
-    let file = file.display().to_string();
+    let file = crate::platform::path_text(&file);
     assert_eq!(
         &resolved[..4],
         [
             file.clone(),
             format!("--data={file}"),
             file,
-            fixture.0.join("data").display().to_string()
+            crate::platform::path_text(&fixture.0.join("data"))
         ]
     );
     assert_eq!(&resolved[4..], &args[4..]);

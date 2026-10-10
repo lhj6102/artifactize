@@ -20,7 +20,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_os::tempdir();
         let root = directory.path().join("repo");
         fs::create_dir(&root).unwrap();
         let fixture = Self { directory, root };
@@ -301,14 +301,17 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
         paths.push("escape");
     }
     // Sockets and FIFOs: entries that are neither files nor directories, which only Unix has.
+    // Unix-only special-file or filesystem permission behavior.
     #[cfg(unix)]
     let _socket = crate::test_os::socket(&a.join("socket"));
+    // Unix-only special-file or filesystem permission behavior.
     #[cfg(unix)]
     {
         crate::test_os::fifo(&a.join("fifo"));
         paths.extend(["socket", "fifo"]);
     }
     // Junctions redirect like directory symlinks and need no privilege.
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
         crate::test_os::junction(&a.join("data"), &a.join("joined"));
@@ -346,6 +349,7 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     if symlink_dir("old-a", fixture.root.join("a")).is_some() {
         assert!(read().await.is_error);
     }
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
         let _ = fs::remove_dir(fixture.root.join("a"));
@@ -398,6 +402,7 @@ async fn missing_paths_and_links_report_their_cause() {
     if symlink_dir("data", a.join("linkdir")).is_some() {
         cases.push(("list_a", "linkdir", symlink));
     }
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
         crate::test_os::junction(&a.join("data"), &a.join("joined"));
@@ -418,6 +423,7 @@ async fn missing_paths_and_links_report_their_cause() {
         );
     }
     // Any other failure names the operating system's error; Unix's is ENOTDIR here.
+    // Unix-only special-file or filesystem permission behavior.
     #[cfg(unix)]
     assert_eq!(
         error(fixture.call("read_a", json!({"path":"data/file/x"})).await),
@@ -618,6 +624,7 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
     fixture.write("a/search/binary.txt", b"alpha\n\0");
     fixture.write("a/search/invalid.txt", b"alpha\n\xff");
     symlink_file("a.txt", fixture.root.join("a/search/link.txt"));
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     crate::test_os::junction(
         &fixture.root.join("a/search/sub"),

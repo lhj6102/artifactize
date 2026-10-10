@@ -2,11 +2,11 @@ use super::*;
 use std::path::PathBuf;
 use tokio::{
     net::{TcpListener, TcpStream},
-    process::{Child, Command},
+    process::Child,
 };
 
 fn temporary_state() -> tempfile::TempDir {
-    tempfile::tempdir().unwrap()
+    crate::test_os::tempdir()
 }
 async fn next(subscription: &mut Subscription) -> Change {
     tokio::time::timeout(Duration::from_secs(4), subscription.next())
@@ -21,7 +21,7 @@ async fn registration(subscription: &Subscription, previous: Option<&str>) -> St
             if let Some(epoch) = registered.borrow_and_update().as_ref()
                 && Some(epoch.as_str()) != previous
             {
-                return epoch.clone();
+                return epoch.to_string();
             }
             registered.changed().await.unwrap();
         }
@@ -38,36 +38,10 @@ async fn registered(subscription: &mut Subscription) {
 fn endpoint_names_keep_the_same_twenty_four_hex_character_directory_prefix() {
     let state = temporary_state();
     let endpoint = Endpoint::new(state.path()).unwrap();
-    // Unix binds a socket below the sticky system temporary root; Windows names a pipe.
-    #[cfg(unix)]
-    {
-        let directory = endpoint.address.parent().unwrap();
-        let user = crate::test_os::current_uid();
-        assert_eq!(
-            directory,
-            Path::new(if cfg!(target_os = "macos") {
-                "/private/tmp"
-            } else {
-                "/tmp"
-            })
-            .join(format!(
-                "artifactize-ipc-{user}-{}",
-                &endpoint.identity[..24]
-            ))
-        );
-        assert_eq!(endpoint.address.file_name().unwrap(), "hub.sock");
-    }
-    #[cfg(windows)]
-    {
-        // Pipe names keep the full identity; only their election directory is shortened.
-        assert_eq!(
-            endpoint.address,
-            PathBuf::from(format!(
-                r"\\.\pipe\artifactize-changes-{}",
-                endpoint.identity
-            ))
-        );
-    }
+    assert_eq!(
+        endpoint.address,
+        crate::test_os::changes_address(&crate::platform::ipc::user().unwrap(), &endpoint.identity)
+    );
 }
 
 #[test]
@@ -317,11 +291,13 @@ async fn probe_refuses_linked_sqlite_sidecars_before_opening_sqlite() {
 // Child processes run this exact fixture test, never a provider, installed binary or default state.
 #[tokio::test]
 async fn multiprocess_fixture() {
-    let Some(role) = std::env::var_os("ARTIFACTIZE_IPC_FIXTURE_ROLE") else {
+    let Some(role) = crate::platform::environment::var("ARTIFACTIZE_IPC_FIXTURE_ROLE") else {
         return;
     };
-    let state = PathBuf::from(std::env::var_os("ARTIFACTIZE_IPC_FIXTURE_STATE").unwrap());
-    let address = std::env::var("ARTIFACTIZE_IPC_FIXTURE_CONTROL").unwrap();
+    let state =
+        PathBuf::from(crate::platform::environment::var("ARTIFACTIZE_IPC_FIXTURE_STATE").unwrap());
+    let address =
+        crate::platform::environment::var_text("ARTIFACTIZE_IPC_FIXTURE_CONTROL").unwrap();
     let mut control = TcpStream::connect(address).await.unwrap();
     if role == "writer" {
         let publisher = Publisher::new(&state);
@@ -363,12 +339,7 @@ async fn child(state: &Path, role: &str) -> (Child, TcpStream) {
     let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
         .await
         .unwrap();
-    let child = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "changes::tests::multiprocess_fixture",
-            "--nocapture",
-        ])
+    let child = crate::test_os::self_test("changes::tests::multiprocess_fixture")
         .env("ARTIFACTIZE_IPC_FIXTURE_STATE", state)
         .env(
             "ARTIFACTIZE_IPC_FIXTURE_CONTROL",

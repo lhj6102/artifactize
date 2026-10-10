@@ -1,7 +1,7 @@
 //! Profiles saved by schema 5. Unlike declarations, their optional fields may be null.
 //! Missing and null remain distinct: profile comparison drives the otherProfile tally.
 
-use super::{Backend, Profile, ProfileKind};
+use super::{ArtifactName, Backend, ModelId, Profile, ProfileKind, Reasoning};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::time::Duration;
 
@@ -87,9 +87,9 @@ impl From<&super::EvalPayload> for StoredPayload {
 pub enum StoredProfile {
     Agent {
         backend: Backend,
-        model: String,
+        model: ModelId,
         #[serde(default, skip_serializing_if = "Field::missing")]
-        reasoning: Field<String>,
+        reasoning: Field<Reasoning>,
         #[serde(
             rename = "timeoutMs",
             default,
@@ -109,7 +109,7 @@ pub enum StoredProfile {
     Human {},
     Dependency {
         #[serde(rename = "dependsOn")]
-        depends_on: Vec<String>,
+        depends_on: Vec<ArtifactName>,
     },
     Runtime {
         command: String,
@@ -146,7 +146,7 @@ impl From<&Profile> for StoredProfile {
             } => Self::Agent {
                 backend: *backend,
                 model: model.clone(),
-                reasoning: reasoning.clone().into(),
+                reasoning: (*reasoning).into(),
                 timeout_ms: (*timeout_ms).into(),
                 max_tool_calls: (*max_tool_calls).into(),
                 max_tokens: (*max_tokens).into(),
@@ -186,6 +186,18 @@ mod milliseconds {
         value.map_or(Ok(Field::Null), |value| {
             super::super::validation::timeout_number::<D::Error>(value).map(Field::Value)
         })
+    }
+}
+
+impl From<Option<&super::EvalPayload>> for StoredPayload {
+    fn from(payload: Option<&super::EvalPayload>) -> Self {
+        payload.map_or_else(
+            || Self {
+                instruction: Field::Missing,
+                extra: Default::default(),
+            },
+            Self::from,
+        )
     }
 }
 

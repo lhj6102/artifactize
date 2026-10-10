@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    env,
     ffi::OsString,
     io,
     path::{Path, PathBuf},
@@ -29,10 +28,13 @@ pub(super) fn prepare(
         platform::create_private_dir(&root.join(name))?;
     }
     let mut environment = BTreeMap::from([
-        ("PATH".into(), env::var_os("PATH").unwrap_or_default()),
+        (
+            "PATH".into(),
+            platform::environment::var("PATH").unwrap_or_default(),
+        ),
         (
             "LANG".into(),
-            env::var_os("LANG").unwrap_or_else(|| "en_US.UTF-8".into()),
+            platform::environment::var("LANG").unwrap_or_else(|| "en_US.UTF-8".into()),
         ),
         ("ARTIFACTIZE_WORKSPACE_DIR".into(), workspace.clone().into()),
     ]);
@@ -51,7 +53,7 @@ pub(super) fn prepare(
     }
     // Some systems' programs cannot start without a few system variables.
     for key in platform::SYSTEM_VARIABLES {
-        if let Some(value) = env::var_os(key) {
+        if let Some(value) = platform::environment::var(key) {
             environment.insert(key.into(), value);
         }
     }
