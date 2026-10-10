@@ -59,6 +59,52 @@ pub const OPENER: &str = if cfg!(target_os = "macos") {
     "xdg-open"
 };
 
+/// Whether a process has ended, waiting for it a generous while: an ended process
+/// disappears asynchronously, so this polls, and only a failing test waits the whole time.
+pub fn ends(pid: u32) -> bool {
+    /// Long enough for a loaded CI runner to reap a killed process.
+    const PATIENCE: std::time::Duration = std::time::Duration::from_secs(20);
+    /// How often to look again.
+    const POLL: std::time::Duration = std::time::Duration::from_millis(20);
+    let deadline = std::time::Instant::now() + PATIENCE;
+    while running(pid) {
+        if std::time::Instant::now() > deadline {
+            return false;
+        }
+        std::thread::sleep(POLL);
+    }
+    true
+}
+
+/// Whether a process still exists and has not exited.
+fn running(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        // SAFETY: signal 0 only asks whether the process exists.
+        unsafe { libc::kill(pid as i32, 0) == 0 }
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, STILL_ACTIVE},
+            System::Threading::{
+                GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+            },
+        };
+        // SAFETY: the handle is checked, queried once, and closed.
+        unsafe {
+            let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+            if process.is_null() {
+                return false;
+            }
+            let mut code = 0;
+            let queried = GetExitCodeProcess(process, &mut code);
+            CloseHandle(process);
+            queried != 0 && code == STILL_ACTIVE as u32
+        }
+    }
+}
+
 /// This test binary, set to run only the test `name`: for a test that runs itself again in
 /// an environment of its own, such as a `PATH` that holds only stand-ins.
 pub fn rerun(name: &str) -> Command {
