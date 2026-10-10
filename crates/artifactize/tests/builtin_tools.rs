@@ -331,10 +331,14 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
             "read":{"builtin":"read","args":["{artifactPath}/notes.md"]},
             "section":{"builtin":"section","args":["{artifactPath}/notes.md","First"]},
             "list":{"builtin":"list","args":["{artifactPath}"]},
-            "large":{"builtin":"read","args":["large.txt"]}
+            "large":{"builtin":"read","args":["large.txt"]},
+            "help":{"builtin":"help","args":["./help-stub","sub"]}
         }),
     );
     fs::write(repo.join("a/large.txt"), "x".repeat(80_000)).unwrap();
+    let stub = repo.join("a/help-stub");
+    fs::write(&stub, "#!/bin/sh\nprintf 'human help: %s\\n' \"$*\"\n").unwrap();
+    support::os::make_executable(&stub);
     let run = parsed(
         command(&repo, &state)
             .args(["verify", "--all", "--timeout-ms", "1", "--json"])
@@ -355,6 +359,7 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
         ("section_a", "## Nested"),
         ("list_a", "notes.md"),
         ("large_a", "[output truncated]"),
+        ("help_a", "human help: sub --help"),
     ] {
         let output = command(&repo, &state)
             .args(["request", "tool", id, name])
