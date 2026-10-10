@@ -47,9 +47,9 @@ impl Child {
             Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
             #[cfg(target_os = "macos")]
             Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
-                // Darwin excludes zombies from killpg's signal targets and reports
-                // EPERM when none remain. Reaping can race the final group kill.
-                // Suppress it only when the kernel confirms no live members.
+                // Darwin can report EPERM while the last members are exiting or
+                // zombies, before the group disappears. Suppress it only when the
+                // kernel confirms no member can still execute user code.
                 if process_group_exited(self.1)? {
                     Ok(())
                 } else {
@@ -60,6 +60,11 @@ impl Child {
         }
     }
 }
+
+/// Darwin proc_info.h: a process committed to exit() can still report SRUN
+/// before becoming SZOMB. It can no longer execute user code or fork descendants.
+#[cfg(target_os = "macos")]
+const PROC_FLAG_INEXIT: u32 = 4;
 
 #[cfg(target_os = "macos")]
 fn process_group_exited(pgid: u32) -> io::Result<bool> {
@@ -99,14 +104,11 @@ fn process_group_exited(pgid: u32) -> io::Result<bool> {
         // Include zombies explicitly. ESRCH means the listed member was reaped
         // during inspection; every other lookup error must remain an error.
         match process_info(pid, 1) {
-            Ok(info) if info.pbi_pgid == pgid as u32 && info.pbi_status != libc::SZOMB => {
-                eprintln!(
-                    "group {pgid} EPERM member {pid}: status={} flags={} uid={} euid={}",
-                    info.pbi_status,
-                    info.pbi_flags,
-                    info.pbi_uid,
-                    unsafe { libc::geteuid() }
-                );
+            Ok(info)
+                if info.pbi_pgid == pgid as u32
+                    && info.pbi_status != libc::SZOMB
+                    && info.pbi_flags & PROC_FLAG_INEXIT == 0 =>
+            {
                 return Ok(false);
             }
             Ok(_) => {}
