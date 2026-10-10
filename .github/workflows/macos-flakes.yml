@@ -1,5 +1,7 @@
 name: macOS flake regression
 on:
+  push:
+    branches: [fix/macos-flakes]
   workflow_dispatch:
 jobs:
   repeat:
