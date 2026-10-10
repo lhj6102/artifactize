@@ -142,6 +142,12 @@ jobs:
           done
       - name: Package
         run: sh .github/scripts/package.sh "$TARGET" "$VERSION"
+      # Retain release archives even if optional channel packaging fails later.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
       - name: Build winget manifests and Store upload (including prereleases)
         if: matrix.target == 'x86_64-pc-windows-msvc'
         shell: powershell
@@ -154,11 +160,6 @@ jobs:
         with:
           name: channels-windows
           path: channel-dist/**
-          if-no-files-found: error
-      - uses: actions/upload-artifact@v4
-        with:
-          name: binaries-${{ matrix.target }}
-          path: dist/*
           if-no-files-found: error
 
       # Only PR/manual builds smoke-test installers, never the release tag path.

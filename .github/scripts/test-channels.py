@@ -41,6 +41,18 @@ class ChannelsTest(unittest.TestCase):
                 env = {name: "fixture-not-a-credential" for name in names}
                 self.assertIn("would publish", self.dry_run(channel, "1.2.3", env))
 
+    def test_workflow_gate_emits_skip_and_enable_outputs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "actions-output"
+            env = {**os.environ, "GITHUB_OUTPUT": str(output), "WINGET_TOKEN": ""}
+            command = [sys.executable, "-I", str(SCRIPT), "gate", "winget", "--version", "1.2.3"]
+            result = subprocess.run(command, env=env, text=True, capture_output=True, check=True)
+            self.assertIn("missing WINGET_TOKEN", result.stdout)
+            self.assertEqual(output.read_text(), "enabled=false\n")
+            env["WINGET_TOKEN"] = "fixture-not-a-credential"
+            subprocess.run(command, env=env, check=True)
+            self.assertEqual(output.read_text(), "enabled=false\nenabled=true\n")
+
     def test_store_certification_and_manual_drafts_are_not_deleted(self):
         env = {name: "fixture-not-a-credential" for name in channels.SECRETS["store"]}
         for status in ("Certification", "CommitStarted", "PreProcessing", "PendingCommit", "CertificationFailed"):
