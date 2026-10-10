@@ -100,6 +100,13 @@ fn process_group_exited(pgid: u32) -> io::Result<bool> {
         // during inspection; every other lookup error must remain an error.
         match process_info(pid, 1) {
             Ok(info) if info.pbi_pgid == pgid as u32 && info.pbi_status != libc::SZOMB => {
+                eprintln!(
+                    "group {pgid} EPERM member {pid}: status={} flags={} uid={} euid={}",
+                    info.pbi_status,
+                    info.pbi_flags,
+                    info.pbi_uid,
+                    unsafe { libc::geteuid() }
+                );
                 return Ok(false);
             }
             Ok(_) => {}
