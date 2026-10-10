@@ -24,8 +24,11 @@ pub const SYSTEM_VARIABLES: &[&str] = &["HOME", "TMPDIR"];
 /// with it.
 pub(crate) struct Tree {
     pub(crate) child: tokio::process::Child,
-    group: Option<libc::pid_t>,
+    group: Option<GroupId>,
 }
+
+/// A process group created by this launcher, never an arbitrary process identifier.
+struct GroupId(libc::pid_t);
 
 /// Start `command` as the leader of a new process group.
 pub(crate) fn spawn_tree(command: &mut tokio::process::Command) -> io::Result<Tree> {
@@ -33,7 +36,7 @@ pub(crate) fn spawn_tree(command: &mut tokio::process::Command) -> io::Result<Tr
     let child = command.spawn()?;
     let group = child
         .id()
-        .map(|pid| libc::pid_t::try_from(pid).expect("Unix process IDs fit pid_t"));
+        .map(|pid| GroupId(libc::pid_t::try_from(pid).expect("Unix process IDs fit pid_t")));
     Ok(Tree { child, group })
 }
 
@@ -42,7 +45,7 @@ impl Tree {
     pub(crate) fn kill(&mut self) {
         if let Some(group) = self.group.take() {
             // SAFETY: a plain signal to the process group this tree started.
-            unsafe { libc::killpg(group, libc::SIGKILL) };
+            unsafe { libc::killpg(group.0, libc::SIGKILL) };
         }
     }
 }
