@@ -141,6 +141,7 @@ dependencies = [
  "libc",
  "pulldown-cmark",
  "regex",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",
