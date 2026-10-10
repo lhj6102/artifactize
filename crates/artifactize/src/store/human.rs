@@ -297,6 +297,7 @@ impl Receipts {
                         ));
                     }
                 };
+                request.queue = None;
                 request.blocked_reason = None;
                 execution.state = request.state.clone().try_into().map_err(Error::Invalid)?;
                 execution.reviewer = Some(reviewer.clone());

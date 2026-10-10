@@ -163,7 +163,7 @@ fn wait_until(mut condition: impl FnMut() -> bool) {
 /// The waiting reason a request shows while its backend has no free slot.
 fn capacity_waiters(db: &Connection) -> u32 {
     db.query_row(
-        "SELECT count(*) FROM requests WHERE status='QUEUED' AND json_extract(data,'$.blockedReason') LIKE 'Waiting for a free openai slot%'",
+        "SELECT count(*) FROM requests WHERE status='QUEUED' AND json_extract(data,'$.blockedReason') LIKE 'Waiting for a free openai slot%' AND json_extract(data,'$.queue.kind')='slot' AND json_extract(data,'$.queue.backend')='openai'",
         [],
         |row| row.get(0),
     )

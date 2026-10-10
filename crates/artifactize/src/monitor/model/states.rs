@@ -611,21 +611,15 @@ impl<'a> States<'a> {
         if !self.running || request.status() != RequestStatus::Queued {
             return EvalView::NotRun(NotRun::Unreviewed);
         }
-        let slot = request
-            .blocked_reason
-            .as_deref()
-            .and_then(|reason| reason.strip_prefix("Waiting for a free "))
-            .and_then(|rest| rest.split_once(" slot"))
-            .and_then(|(backend, _)| {
-                serde_json::from_value(serde_json::Value::String(backend.into())).ok()
-            });
-        EvalView::InProgress(Activity::Queued(if let Some(backend) = slot {
-            Queue::Slot(backend)
-        } else if request.execution_id.is_some() {
-            Queue::Joined
-        } else {
-            Queue::Jobs
-        }))
+        EvalView::InProgress(Activity::Queued(
+            if let Some(crate::store::QueueReason::Slot { backend }) = request.queue {
+                Queue::Slot(backend)
+            } else if request.execution_id.is_some() {
+                Queue::Joined
+            } else {
+                Queue::Jobs
+            },
+        ))
     }
 
     /// Dependency Artifacts whose gates are not met, most actionable first.

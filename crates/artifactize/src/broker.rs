@@ -242,6 +242,7 @@ pub(crate) fn derive(
     at: crate::types::Timestamp,
 ) {
     request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
+    request.queue = None;
     request.blocked_reason = (!request.blocked_by.is_empty()).then(|| {
         format!(
             "Derived dependency verdict: waiting for current GREEN evidence from {}.",
@@ -612,6 +613,8 @@ impl Scheduler<'_, '_> {
                             full.insert(*backend);
                             waiting.remove(&index);
                             if capacity_waiting.insert(index) {
+                                request.queue =
+                                    Some(crate::store::QueueReason::Slot { backend: *backend });
                                 request.blocked_reason = Some(format!(
                                     "Waiting for a free {backend} slot: all {limit} are in use on this machine (limits.json)."
                                 ));
@@ -643,6 +646,7 @@ impl Scheduler<'_, '_> {
                                 request.completed_at(),
                             )
                             .expect("pending request state");
+                            request.queue = None;
                             request.blocked_reason = Some(not_reused_reason(kind));
                             self.receipts.save_request(request).await?;
                             evidence.insert(request.eval_id.clone(), Evidence::Stale);
@@ -655,6 +659,7 @@ impl Scheduler<'_, '_> {
                             waiting.remove(&index);
                             request.execution_id = Some(id);
                             request.state = crate::store::RequestState::WaitingHuman;
+                            request.queue = None;
                             request.blocked_reason = Some(
                                 "Waiting for the active Human execution of this reuse key.".into(),
                             );
@@ -687,6 +692,7 @@ impl Scheduler<'_, '_> {
                                     request.completed_at(),
                                 )
                                 .expect("pending request state");
+                                request.queue = None;
                                 request.blocked_reason = Some(
                                     "Waiting for the active execution of this reuse key.".into(),
                                 );
@@ -697,6 +703,7 @@ impl Scheduler<'_, '_> {
                         Claim::BudgetExhausted if let Some(cause) = backend_stopped => {
                             waiting.remove(&index);
                             // A request waiting for a slot stops waiting.
+                            request.queue = None;
                             request.blocked_reason = None;
                             request.state = crate::store::RequestState::failed(
                                 format!(
@@ -726,6 +733,7 @@ impl Scheduler<'_, '_> {
                                     request.completed_at(),
                                 )
                                 .expect("pending request state");
+                                request.queue = None;
                                 request.blocked_reason = Some(reason);
                                 self.receipts.save_request(request).await?;
                             }
@@ -740,6 +748,7 @@ impl Scheduler<'_, '_> {
                         .as_ref()
                         .filter(|_| !request.force)
                         .map(|_| execution.id.clone());
+                    request.queue = None;
                     request.blocked_reason = None;
                     let eval = self
                         .config

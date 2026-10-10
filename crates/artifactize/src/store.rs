@@ -32,8 +32,8 @@ pub use executions::{
 };
 pub(crate) use receipts::regular_files as check_probe_files;
 pub use receipts::{
-    DATABASE, EARLIER_STATE, LastRequest, Receipts, Request, Run, RunView, StoppedBackend,
-    read_latest_requests, read_run, read_state_id, schema_error, state_schema,
+    DATABASE, EARLIER_STATE, LastRequest, QueueReason, Receipts, Request, Run, RunView,
+    StoppedBackend, read_latest_requests, read_run, read_state_id, schema_error, state_schema,
 };
 pub use requests::{
     RequestView, read_original, read_request, read_requests, read_session_request, read_waiting,

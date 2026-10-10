@@ -194,6 +194,16 @@ pub struct Request {
     pub blocked_reason: Option<String>,
     /// Unfulfilled Artifacts and Evals behind a derived dependency verdict.
     pub blocked_by: Vec<super::Blocker>,
+    /// What a queued request waits for besides a job; `blocked_reason` says it in words.
+    pub queue: Option<QueueReason>,
+}
+
+/// What a queued request waits for besides a job slot of its Run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum QueueReason {
+    /// A free machine-wide slot of this backend (`limits.json`).
+    Slot { backend: crate::config::Backend },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -272,6 +282,9 @@ pub(crate) struct RequestWire {
     /// Unfulfilled Artifacts and Evals behind a derived dependency verdict.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked_by: Vec<super::Blocker>,
+    /// Absent from requests saved before it existed, which read as waiting for a job.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub queue: Option<QueueReason>,
 }
 
 impl TryFrom<RequestWire> for Request {
@@ -321,6 +334,7 @@ impl TryFrom<RequestWire> for Request {
             child: wire.child,
             blocked_reason: wire.blocked_reason,
             blocked_by: wire.blocked_by,
+            queue: wire.queue,
         })
     }
 }
@@ -367,6 +381,7 @@ impl From<Request> for RequestWire {
             child: record.child,
             blocked_reason: record.blocked_reason,
             blocked_by: record.blocked_by,
+            queue: record.queue,
         }
     }
 }

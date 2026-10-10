@@ -237,6 +237,7 @@ pub async fn verify(
             argv: None,
             child: None,
             blocked_reason: None,
+            queue: None,
             blocked_by: Vec::new(),
         })
         .collect();
@@ -304,6 +305,7 @@ pub async fn verify(
             request.state =
                 crate::store::RequestState::pending(status(eval.status), request.completed_at())
                     .expect("non-executed request state");
+            request.queue = None;
             request.blocked_reason = Some(format!(
                 "{}: {}",
                 if eval.status == EvalStatus::Blocked {

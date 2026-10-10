@@ -46,6 +46,7 @@ pub(super) async fn execute(
         request.started_at = Some(now());
         request.execution_id = Some(execution.id.clone());
         request.provenance = Some(execution.provenance.clone());
+        request.queue = None;
         request.blocked_reason = Some("Waiting for a Human claim and submission.".into());
         execution.state = request.state.clone().try_into()?;
         receipts.wait_for_human(&execution, &request).await?;
