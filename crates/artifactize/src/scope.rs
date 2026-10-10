@@ -193,7 +193,7 @@ pub(crate) fn executable(
         .find_map(|candidate| {
             #[cfg(windows)]
             let candidate = if Path::new(relative).extension().is_none() {
-                executable_spelling(root, scope, owner, &cwd, &candidate)?
+                executable_spelling(root, scope, owner, &cwd, &candidate, mounted)?
             } else {
                 candidate
             };
@@ -229,9 +229,10 @@ fn executable_spelling(
     owner: &str,
     cwd: &Path,
     candidate: &Path,
+    mounted: bool,
 ) -> Option<PathBuf> {
     let parent = candidate.parent().unwrap_or(Path::new(""));
-    let directory = if scope.artifacts[owner].file_name().is_some() {
+    let directory = if scope.artifacts[owner].file_name().is_some() && !mounted {
         scoped_path(cwd, parent).ok()?
     } else {
         scope.resolve_input(root, owner, parent.to_str()?).ok()?

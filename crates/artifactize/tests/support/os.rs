@@ -18,6 +18,11 @@ pub fn tempdir() -> tempfile::TempDir {
 /// `ARTIFACTIZE_TEST_STAND_INS` runs the stand-ins on Unix too, to check them there.
 pub fn bin(path: &str) -> String {
     if !stand_ins() {
+        // BSD installs these utilities in /usr/bin, not Linuxs /bin.
+        #[cfg(target_os = "macos")]
+        if matches!(path, "/bin/true" | "/bin/false") {
+            return format!("/usr{path}");
+        }
         return path.to_owned();
     }
     let name = path.rsplit('/').next().unwrap();
