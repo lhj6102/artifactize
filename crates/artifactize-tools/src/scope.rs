@@ -223,20 +223,33 @@ pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, 
     logical_path(path)?;
     file_input(artifact, path)?;
     let owner = open_scoped(&root.join(artifact.folder()), "")?;
-    if let Some(first) = path.split('/').next().filter(|part| !part.is_empty())
-        && artifact
-            .mounts
-            .keys()
-            .any(|alias| alias.eq_ignore_ascii_case(first))
-        && !platform::case_sensitive(&owner).map_err(|error| ScopeError(error.to_string()))?
-    {
-        return Err(
-            ScopeError("Physical input conflicts with a logical mount name.".into()).into(),
-        );
-    }
     // Keep the owner pinned between checking its namespace and opening each component.
+    // Check the parent of each reserved component: a nested APFS mount can have a different
+    // case policy from its owner volume. Exact-name checks additionally reject OS aliases.
+    let components: Vec<_> = path.split('/').filter(|part| !part.is_empty()).collect();
     let mut file = owner;
-    for component in path.split('/').filter(|part| !part.is_empty()) {
+    for (depth, component) in components.iter().enumerate() {
+        let mount = depth == 0
+            && artifact
+                .mounts
+                .keys()
+                .any(|alias| alias.eq_ignore_ascii_case(component));
+        let child = artifact.children.keys().any(|prefix| {
+            let prefix: Vec<_> = prefix.split('/').collect();
+            prefix.len() == depth + 1
+                && prefix
+                    .iter()
+                    .zip(&components)
+                    .all(|(left, right)| left.eq_ignore_ascii_case(right))
+        });
+        if (mount || child)
+            && !platform::case_sensitive(&file).map_err(|error| ScopeError(error.to_string()))?
+        {
+            return Err(ScopeError(
+                "Physical input conflicts with a child or logical mount name.".into(),
+            )
+            .into());
+        }
         file = open_child(&file, std::ffi::OsStr::new(component))?;
     }
     if artifact.file_name().is_some()

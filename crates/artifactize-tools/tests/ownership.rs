@@ -63,6 +63,15 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
         );
     }
 
+    // A stale scope still reserves the excluded child after a case-only rename. Use an
+    // intermediate name because Windows may otherwise leave the old spelling unchanged.
+    if insensitive {
+        fs::rename(root.join("Secret"), root.join("renamed")).unwrap();
+        fs::rename(root.join("renamed"), root.join("secret")).unwrap();
+        let result = call(Builtin::Read, json!({"path":"secret/x"}));
+        assert!(result.is_error, "{result:?}");
+    }
+
     // On a case-sensitive volume an independently created lowercase directory stays usable.
     if !root.join("secret").exists() {
         fs::create_dir(root.join("secret")).unwrap();
