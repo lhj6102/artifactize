@@ -275,9 +275,9 @@ pub fn open_scoped(root: &Path, path: &str) -> Result<File, OpenError> {
 
 /// Open one entry of a pinned directory without following a symlink.
 pub fn open_child(directory: &File, name: &std::ffi::OsStr) -> Result<File, OpenError> {
-    let name = platform::EntryName::new(name)
+    let entry_name = platform::EntryName::new(name)
         .ok_or_else(|| ScopeError("Invalid Artifact path.".into()))?;
-    let file = platform::open_entry(directory, &name).map_err(|error| {
+    let file = platform::open_entry(directory, &entry_name).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             OpenError::NotFound
         } else if platform::is_link_refusal(&error) {
@@ -286,6 +286,11 @@ pub fn open_child(directory: &File, name: &std::ffi::OsStr) -> Result<File, Open
             ScopeError(format!("Cannot open Artifact input: {error}")).into()
         }
     })?;
+    if !platform::exact_name(&file, name).map_err(|error| ScopeError(error.to_string()))? {
+        return Err(
+            ScopeError("Artifact path must use the exact directory entry name.".into()).into(),
+        );
+    }
     let metadata = file.metadata().map_err(|e| ScopeError(e.to_string()))?;
     if !metadata.is_file() && !metadata.is_dir() {
         return Err(
@@ -334,6 +339,10 @@ pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
             return Err(ScopeError("Artifact symlinks are not supported.".into()));
         }
     }
+    // The path-returning interface must enforce the same exact spelling as pinned reads;
+    // otherwise a Human tool or explicit fingerprint input could bypass logical ownership.
+    #[cfg(any(windows, target_os = "macos"))]
+    open_scoped(root, path).map_err(|error| ScopeError(error.to_string()))?;
     let actual = platform::canonicalize(&target)
         .map_err(|error| ScopeError(format!("{}: {error}", target.display())))?;
     if !actual.starts_with(root) {

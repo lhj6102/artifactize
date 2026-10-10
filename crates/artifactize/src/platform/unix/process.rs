@@ -1,4 +1,4 @@
-//! Process groups, the pre-exec admission gate, and `/proc` start times.
+//! Process groups, the pre-exec admission gate, and OS process start times.
 
 use std::{
     io::{self, Read, Write},
@@ -80,14 +80,55 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
 /// The index of `starttime` (field 22 of /proc/PID/stat, see proc(5)) among the fields after
 /// the command name. The name, field 2, is cut off at its closing parenthesis because it may
 /// contain spaces, so the remaining fields start at field 3: 22 - 3 = 19.
+#[cfg(not(target_os = "macos"))]
 const START_TIME_AFTER_NAME: usize = 22 - 3;
 
 /// Field 22 of /proc/PID/stat: the start time in clock ticks since boot.
+#[cfg(not(target_os = "macos"))]
 pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
     stat.rsplit_once(')')
         .and_then(|(_, fields)| fields.split_whitespace().nth(START_TIME_AFTER_NAME))
         .and_then(|value| value.parse().ok())
+        .ok_or_else(|| io::Error::other("invalid child process start time"))
+}
+
+/// macOS exposes the kernel's process birth timestamp, in microseconds since the epoch.
+/// Keep its full precision: seconds alone cannot distinguish rapidly reused PIDs.
+#[cfg(target_os = "macos")]
+pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
+    let pid = i32::try_from(pid).map_err(|_| io::ErrorKind::InvalidInput)?;
+    if pid <= 0 {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+    // SAFETY: a writable buffer of the exact size required by PROC_PIDTBSDINFO. The
+    // initialized fields are read only if the kernel reports the complete struct.
+    let read = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        )
+    };
+    if read <= 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if read != size {
+        return Err(io::Error::other("incomplete child process information"));
+    }
+    // SAFETY: proc_pidinfo wrote the entire struct.
+    let info = unsafe { info.assume_init() };
+    if info.pbi_pid != pid as u32 {
+        return Err(io::Error::other("invalid child process identity"));
+    }
+    const MICROSECONDS_PER_SECOND: u64 = 1_000_000;
+    info.pbi_start_tvsec
+        .checked_mul(MICROSECONDS_PER_SECOND)
+        .and_then(|seconds| seconds.checked_add(info.pbi_start_tvusec))
         .ok_or_else(|| io::Error::other("invalid child process start time"))
 }
 
@@ -186,7 +227,7 @@ mod tests {
         command.wrap(ProcessGroup::leader());
         let (gate, spawning) = spawn(command).unwrap();
         let pid = gate.pid().await.unwrap();
-        assert!(std::fs::exists(format!("/proc/{pid}")).unwrap());
+        assert!(process_start_time(pid).is_ok());
         drop(gate);
         let error = tokio::time::timeout(Duration::from_secs(2), spawning)
             .await
@@ -195,6 +236,6 @@ mod tests {
             .err()
             .expect("the child must not exec");
         assert_eq!(error.raw_os_error(), Some(libc::ECANCELED));
-        assert!(!std::fs::exists(format!("/proc/{pid}")).unwrap());
+        assert!(process_start_time(pid).is_err());
     }
 }

@@ -390,8 +390,7 @@ fn review_rejects_unusable_options_before_taking_the_terminal() {
 
 #[cfg(unix)]
 fn pty(command: &str) -> (Child, mpsc::Receiver<Vec<u8>>) {
-    let mut child = Command::new("script")
-        .args(["-qec", command, "/dev/null"])
+    let mut child = support::os::pty_command(command)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()

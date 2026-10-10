@@ -149,12 +149,7 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     let scratch = Scratch::new();
     let cancellation = CancellationToken::new();
     let (registered, child) = oneshot::channel();
-    // Windows shows no command name for a running process; the child marks its start.
-    let command = if cfg!(windows) {
-        scratch.command("/bin/sh", &["-c", "touch started; sleep 30"], None)
-    } else {
-        scratch.command("/bin/sleep", &["30"], None)
-    };
+    let command = scratch.command("/bin/sh", &["-c", "touch started; sleep 30"], None);
     let running = tokio::spawn(runtime::execute(
         command,
         cancellation.clone(),
@@ -164,13 +159,6 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
         },
     ));
     let child = child.await.unwrap();
-    #[cfg(unix)]
-    wait_for(|| {
-        std::fs::read_to_string(format!("/proc/{}/comm", child.pid))
-            .is_ok_and(|comm| comm.trim() == "sleep")
-    })
-    .await;
-    #[cfg(windows)]
     wait_for(|| scratch.workspace().join("started").exists()).await;
     cancellation.cancel();
     assert!(matches!(
@@ -567,7 +555,7 @@ async fn deadline_is_not_reset_after_registration() {
 async fn assert_gone(pid: u32) {
     assert!(pid > 0, "must have observed a real process");
     #[cfg(unix)]
-    wait_for(|| !PathBuf::from(format!("/proc/{pid}")).exists()).await;
+    wait_for(|| !support::os::exists(pid)).await;
     #[cfg(windows)]
     wait_for(|| !support::os::running(pid)).await;
 }

@@ -30,7 +30,8 @@ use windows_sys::{
             FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
             FILE_ID_BOTH_DIR_INFO, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
             FILE_SHARE_WRITE, FileAttributeTagInfo, FileIdBothDirectoryInfo,
-            FileIdBothDirectoryRestartInfo, GetFileInformationByHandleEx, SYNCHRONIZE,
+            FileIdBothDirectoryRestartInfo, GetFileInformationByHandleEx,
+            GetFinalPathNameByHandleW, SYNCHRONIZE,
         },
         System::IO::IO_STATUS_BLOCK,
     },
@@ -477,4 +478,31 @@ mod tests {
         assert!(reader.next().is_none());
         assert!(reader.next().is_none());
     }
+}
+
+/// Require the opened handle's normalized, long entry name. Case and 8.3 aliases must not
+/// bypass case-sensitive logical ownership; per-directory case-sensitive names still work.
+pub fn exact_name(file: &File, name: &OsStr) -> io::Result<bool> {
+    // Windows' extended path limit includes the NUL. A bounded buffer avoids trusting an
+    // unbounded allocation size returned by a concurrently renamed entry.
+    const MAX_PATH_UNITS: usize = 32_768;
+    let mut path = vec![0; MAX_PATH_UNITS];
+    // SAFETY: a live handle and a writable buffer of the stated size. Flags 0 requests the
+    // normalized path, not the spelling used to open the handle.
+    let length = unsafe {
+        GetFinalPathNameByHandleW(
+            file.as_raw_handle(),
+            path.as_mut_ptr(),
+            path.len() as u32,
+            0,
+        )
+    } as usize;
+    if length == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if length >= path.len() {
+        return Err(io::ErrorKind::InvalidData.into());
+    }
+    let path = PathBuf::from(OsString::from_wide(&path[..length]));
+    Ok(path.file_name() == Some(name))
 }

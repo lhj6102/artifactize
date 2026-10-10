@@ -882,7 +882,7 @@ fn waiter_ctrl_c_leaves_owner_running_and_owner_ctrl_c_releases_the_claim() {
     assert_eq!(fixture.count("executions"), 2);
     let pid = cancelled["requests"][0]["child"]["pid"].as_u64().unwrap();
     #[cfg(unix)]
-    assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    assert!(!support::os::exists(pid as u32));
     #[cfg(windows)]
     assert!(!support::os::running(pid as u32));
 }

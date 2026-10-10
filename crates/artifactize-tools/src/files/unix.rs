@@ -1,7 +1,7 @@
 //! Unix pinned opens and descriptor-based directory listings.
 
 use std::{
-    ffi::{CString, OsStr, OsString},
+    ffi::{CString, OsStr},
     fs::{self, File, OpenOptions},
     io,
     os::{
@@ -11,7 +11,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(not(target_os = "macos"))]
+use std::ffi::OsString;
+
+#[cfg(not(target_os = "macos"))]
 use super::FileKind;
+
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::{entry_kind, exact_name, read_dir};
 
 /// The absolute path of an existing file with every link resolved.
 pub fn canonicalize(path: &Path) -> io::Result<PathBuf> {
@@ -78,6 +87,7 @@ pub fn is_link_refusal(error: &io::Error) -> bool {
 
 /// The entries of a pinned directory, listed through its descriptor rather than a path
 /// that could have been replaced by a link.
+#[cfg(not(target_os = "macos"))]
 pub fn read_dir(directory: &File) -> io::Result<impl Iterator<Item = io::Result<DirEntry>> + '_> {
     Ok(
         fs::read_dir(format!("/proc/self/fd/{}", directory.as_raw_fd()))?
@@ -85,8 +95,10 @@ pub fn read_dir(directory: &File) -> io::Result<impl Iterator<Item = io::Result<
     )
 }
 
+#[cfg(not(target_os = "macos"))]
 pub struct DirEntry(fs::DirEntry);
 
+#[cfg(not(target_os = "macos"))]
 impl DirEntry {
     pub fn file_name(&self) -> OsString {
         self.0.file_name()
@@ -98,11 +110,13 @@ impl DirEntry {
 }
 
 /// The type of one entry of a pinned directory, without following it.
+#[cfg(not(target_os = "macos"))]
 pub fn entry_kind(directory: &File, name: &OsStr) -> io::Result<FileKind> {
     let path = Path::new(&format!("/proc/self/fd/{}", directory.as_raw_fd())).join(name);
     fs::symlink_metadata(path).map(|metadata| kind(metadata.file_type()))
 }
 
+#[cfg(not(target_os = "macos"))]
 fn kind(file_type: fs::FileType) -> FileKind {
     if file_type.is_file() {
         FileKind::File
@@ -113,4 +127,10 @@ fn kind(file_type: fs::FileType) -> FileKind {
     } else {
         FileKind::Other
     }
+}
+
+/// Other Unix platforms keep their existing case-sensitive open behavior.
+#[cfg(not(target_os = "macos"))]
+pub fn exact_name(_file: &File, _name: &OsStr) -> io::Result<bool> {
+    Ok(true)
 }

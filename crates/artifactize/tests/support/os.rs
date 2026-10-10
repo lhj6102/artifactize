@@ -326,10 +326,72 @@ pub fn running(pid: u32) -> bool {
     }
 }
 
+/// A process entry still present, including a zombie waiting for its parent to reap it.
+#[cfg(unix)]
+pub fn exists(pid: u32) -> bool {
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::path::Path::new(&format!("/proc/{pid}")).exists()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        bsd_info(pid).is_some()
+    }
+}
+
+/// Whether a Unix process has not exited; zombies are present but no longer running.
+#[cfg(unix)]
+pub fn running(pid: u32) -> bool {
+    #[cfg(not(target_os = "macos"))]
+    {
+        std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| {
+            !stat
+                .rsplit_once(')')
+                .unwrap()
+                .1
+                .trim_start()
+                .starts_with('Z')
+        })
+    }
+    #[cfg(target_os = "macos")]
+    {
+        bsd_info(pid).is_some_and(|info| info.pbi_status != libc::SZOMB)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
+    let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as i32;
+    // SAFETY: the writable output buffer has the exact size required by PROC_PIDTBSDINFO.
+    let read = unsafe {
+        libc::proc_pidinfo(
+            i32::try_from(pid).ok()?,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        )
+    };
+    // SAFETY: only a complete successful result is read.
+    (read == size).then(|| unsafe { info.assume_init() })
+}
+
+/// script(1)'s equivalent PTY invocation on util-linux and BSD/macOS.
+#[cfg(unix)]
+pub fn pty_command(command: &str) -> Command {
+    let mut pty = Command::new("script");
+    #[cfg(target_os = "macos")]
+    pty.args(["-q", "/dev/null", "/bin/sh", "-c", command]);
+    #[cfg(not(target_os = "macos"))]
+    pty.args(["-qec", command, "/dev/null"]);
+    pty
+}
+
 /// A process's start time as artifactize records it: field 22 of `/proc/PID/stat` on Linux,
-/// the creation time in 100 ns units since 1601 on Windows.
+/// microseconds since the epoch on macOS, and the creation time in 100 ns units since 1601 on Windows.
 pub fn start_time(pid: u32) -> u64 {
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "macos")))]
     {
         let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
         stat.rsplit_once(')')
@@ -340,6 +402,11 @@ pub fn start_time(pid: u32) -> u64 {
             .unwrap()
             .parse()
             .unwrap()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let info = bsd_info(pid).expect("process information");
+        info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
     }
     #[cfg(windows)]
     {
@@ -362,8 +429,8 @@ pub fn start_time(pid: u32) -> u64 {
     }
 }
 
-/// `path` with the ASCII letters of its last component in the other case: on Windows the same
-/// file or folder, on Unix another name.
+/// `path` with the ASCII letters of its last component in the other case: on case-insensitive volumes
+/// the same file or folder, otherwise another name.
 pub fn other_case(path: &Path) -> std::path::PathBuf {
     let name: String = path
         .file_name()

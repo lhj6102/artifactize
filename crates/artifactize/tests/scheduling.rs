@@ -362,14 +362,6 @@ fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
                 .unwrap()
                 .split_whitespace()
             {
-                #[cfg(unix)]
-                if let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) {
-                    assert!(
-                        stat.split_once(") ").unwrap().1.starts_with('Z'),
-                        "process still running: {stat}"
-                    );
-                }
-                #[cfg(windows)]
                 assert!(
                     !support::os::running(pid.parse().unwrap()),
                     "process {pid} still running"

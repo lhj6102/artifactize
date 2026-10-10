@@ -117,8 +117,23 @@ pub(crate) fn exit_signal(status: &ExitStatus) -> Option<i32> {
     status.signal()
 }
 
+#[cfg(not(target_os = "macos"))]
 pub(crate) fn host_name() -> Option<String> {
     fs::read_to_string("/proc/sys/kernel/hostname").ok()
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn host_name() -> Option<String> {
+    // POSIX HOST_NAME_MAX can vary; macOS accepts at most MAXHOSTNAMELEN bytes. Leave
+    // ample room and require a terminator rather than displaying a truncated name.
+    const HOST_NAME_BYTES: usize = 1024;
+    let mut name = [0_u8; HOST_NAME_BYTES];
+    // SAFETY: a writable buffer of the stated size; gethostname retains no pointer.
+    if unsafe { libc::gethostname(name.as_mut_ptr().cast(), name.len()) } != 0 {
+        return None;
+    }
+    let end = name.iter().position(|&byte| byte == 0)?;
+    String::from_utf8(name[..end].to_vec()).ok()
 }
 
 /// Register for SIGINT and SIGTERM now; the future completes at the first of them.

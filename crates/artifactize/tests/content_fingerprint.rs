@@ -533,10 +533,10 @@ fn config_check_rejects_true_and_nonobject_fingerprints_with_a_clear_message() {
     }
 }
 
-/// Windows opens `Secret` and `secret` as one folder, but ignore rules match names as written.
+/// Case-insensitive volumes open `Secret` and `secret` as one folder, but ignore rules
+/// match names as written.
 /// A rule for `secret/` therefore leaves `Secret/` in the fingerprint: a change there still
 /// reviews again, rather than a differently cased name hiding it.
-#[cfg(windows)]
 #[test]
 fn an_ignore_rule_in_another_case_never_hides_a_change() {
     let fixture = Fixture::new();
