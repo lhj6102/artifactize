@@ -257,11 +257,11 @@ fn profile_fixture() -> tempfile::TempDir {
                 {
                     "id":"z",
                     "title":"Z",
-                    "profile":{"kind":"runtime","command":crate::test_os::bin("/bin/true"),"args":[]},
+                    "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
                     "profile_variants":{
                         "careful":{
                             "kind":"runtime",
-                            "command":crate::test_os::bin("/bin/echo"),
+                            "command":crate::test_os::echo_program(),
                             "args":["{input}"],
                             "timeout_ms":9,
                         },
@@ -271,7 +271,7 @@ fn profile_fixture() -> tempfile::TempDir {
                 {
                     "id":"a",
                     "title":"A",
-                    "profile":{"kind":"runtime","command":crate::test_os::bin("/bin/true"),"args":[]},
+                    "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
                     "payload":{"instruction":"Check."},
                 },
             ],
@@ -307,7 +307,7 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
     assert_eq!(selected.evals[1].deps, ["input"]);
     assert_eq!(
         serde_json::to_value(selected.evals[1].declaration.profile()).unwrap()["command"],
-        crate::test_os::bin("/bin/echo")
+        crate::test_os::echo_program()
     );
     assert_eq!(
         serde_json::to_value(selected.evals[1].declaration.profile()).unwrap()["timeoutMs"],
@@ -315,7 +315,7 @@ fn named_profiles_only_apply_to_included_evals_and_rebuild_runtime_dependencies(
     );
     assert_eq!(
         serde_json::to_value(selected.evals[0].declaration.profile()).unwrap()["command"],
-        crate::test_os::bin("/bin/true")
+        crate::test_os::true_program()
     );
     assert_eq!(
         eval_ids(
@@ -375,7 +375,7 @@ fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
                 {
                     "id":"check",
                     "title":"Check",
-                    "profile":{"kind":"runtime", "command":crate::test_os::bin("/bin/true"),"args":[]},
+                    "profile":{"kind":"runtime", "command":crate::test_os::true_program(),"args":[]},
                     "payload":{"instruction":"Check."},
                     "profile_variants": variants,
                 },
@@ -383,7 +383,7 @@ fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
         }))
         .unwrap()
     };
-    let valid = json!({"kind":"runtime", "command":crate::test_os::bin("/bin/false"), "args":[], "timeout_ms":1});
+    let valid = json!({"kind":"runtime", "command":crate::test_os::false_program(), "args":[], "timeout_ms":1});
     let variants: BTreeMap<_, _> = (0..64).map(|i| (format!("v{i}"), valid.clone())).collect();
     assert!(parse_declaration(&declaration(json!(variants))).is_ok());
     let mut oversized = variants;
@@ -397,7 +397,7 @@ fn variant_declarations_are_complete_bounded_and_keep_reviewer_kind() {
         json!({"bad name":valid}),
         json!({"v":{"kind":"human"}}),
         json!({"v":{"timeout_ms":1}}),
-        json!({"v":{"kind":"runtime","command":crate::test_os::bin("/bin/true"),"args":[],"timeout_ms":0}}),
+        json!({"v":{"kind":"runtime","command":crate::test_os::true_program(),"args":[],"timeout_ms":0}}),
     ] {
         assert!(parse_declaration(&declaration(variants)).is_err());
     }

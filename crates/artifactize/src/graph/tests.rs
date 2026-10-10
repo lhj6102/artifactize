@@ -84,6 +84,11 @@ fn evidence(entries: &[(&str, Evidence)]) -> BTreeMap<EvalId, Evidence> {
 const GREEN: Evidence = Evidence::Current(Verdict::Green);
 const RED: Evidence = Evidence::Current(Verdict::Red);
 
+/// Named roots for [`Graph::dependency_closure`], which takes validated identifiers.
+fn roots(ids: &[&str]) -> Vec<ArtifactName> {
+    ids.iter().map(|id| id.parse().unwrap()).collect()
+}
+
 #[test]
 fn cycle_peers_share_external_gates_but_need_individual_final_evidence() {
     let config = reviewed(
@@ -95,14 +100,22 @@ fn cycle_peers_share_external_gates_but_need_individual_final_evidence() {
     assert_eq!(component.artifacts, ["a", "b"]);
     assert_eq!(component.gates, ["external/check"]);
     assert_eq!(
-        graph.dependency_closure(&["a", "a"]).unwrap(),
+        graph
+            .dependency_closure(&roots(&["a", "a"]).iter().collect::<Vec<_>>())
+            .unwrap(),
         ["a", "b", "external"]
     );
     assert_eq!(
-        graph.dependency_closure(&["consumer"]).unwrap(),
+        graph
+            .dependency_closure(&roots(&["consumer"]).iter().collect::<Vec<_>>())
+            .unwrap(),
         ["a", "b", "consumer", "external"]
     );
-    assert!(graph.dependency_closure(&["absent"]).is_err());
+    assert!(
+        graph
+            .dependency_closure(&roots(&["absent"]).iter().collect::<Vec<_>>())
+            .is_err()
+    );
 
     let mut outcomes = BTreeMap::new();
     let waiting = graph.evaluate(&outcomes);
@@ -297,7 +310,9 @@ fn basis_does_not_erase_its_own_dependencies_or_create_transitive_gates() {
     );
     assert_eq!(evaluation.obligations, ["input"]);
     assert_eq!(
-        graph.dependency_closure(&["consumer"]).unwrap(),
+        graph
+            .dependency_closure(&roots(&["consumer"]).iter().collect::<Vec<_>>())
+            .unwrap(),
         ["basis", "consumer", "input"]
     );
 }
@@ -358,7 +373,9 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
     assert_eq!(config.relations.len(), 4);
     let graph = Graph::new(&config).unwrap();
     assert_eq!(
-        graph.dependency_closure(&["owner"]).unwrap(),
+        graph
+            .dependency_closure(&roots(&["owner"]).iter().collect::<Vec<_>>())
+            .unwrap(),
         ["argument", "child", "instruction", "mounted", "owner"]
     );
     assert_eq!(
@@ -421,7 +438,7 @@ fn deep_graphs_keep_sparse_edges_and_iterative_traversal() {
     );
     assert_eq!(
         graph
-            .dependency_closure(&[ids[ids.len() - 1]])
+            .dependency_closure(&roots(&[ids[ids.len() - 1]]).iter().collect::<Vec<_>>())
             .unwrap()
             .len(),
         names.len()

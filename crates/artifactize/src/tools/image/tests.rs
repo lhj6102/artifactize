@@ -252,7 +252,7 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
-        let _ = fs::remove_dir(&output);
+        crate::test_os::remove_link_dir(&output);
         crate::test_os::junction(&directory.path().join("old-output"), &output);
         assert!(from_output(&output, "image", "image/png").is_err());
     }

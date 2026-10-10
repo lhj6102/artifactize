@@ -45,6 +45,9 @@ const SCOPE_INDENT: usize = 2;
 const LAST_LABEL: &str = "last: ";
 /// The help popup stays this wide, so its key column and descriptions read as a table.
 const HELP_WIDTH: u16 = 72;
+/// One more than "Tab / Shift-Tab", the longest key label in [`HELP`], so every label gets
+/// at least one space before its text.
+const HELP_KEY_WIDTH: usize = 16;
 /// Beside the evidence, the sections take this share of the Detail's width, as the evidence
 /// lines (commands, paths, output) are usually the longer ones.
 const SECTIONS_BESIDE: u16 = 45;
@@ -1004,7 +1007,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
                 Line::from(Span::styled(*key, Style::new().bold().cyan()))
             } else {
                 Line::from(vec![
-                    Span::styled(format!("  {key:<16}"), Modifier::BOLD),
+                    Span::styled(format!("  {key:<HELP_KEY_WIDTH$}"), Modifier::BOLD),
                     Span::raw(*text),
                 ])
             }

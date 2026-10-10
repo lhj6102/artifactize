@@ -19,7 +19,7 @@ fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
                     "inspect":{
                         "kind":"output",
                         "description":"Inspect",
-                        "command":crate::test_os::bin("true"),
+                        "command":crate::test_os::true_program(),
                         "args":[],
                     },
                 },
@@ -682,7 +682,7 @@ fn file_signoff() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let brand = repo.join("assets/brand");
     std::fs::create_dir_all(&brand).unwrap();
     std::fs::write(brand.join("artifactize-icon.svg"), "<svg/>\n").unwrap();
-    let command = serde_json::to_string(&crate::test_os::bin("true")).unwrap();
+    let command = serde_json::to_string(&crate::test_os::true_program()).unwrap();
     let declaration = format!(
         r#"name = "brand-icon"
 

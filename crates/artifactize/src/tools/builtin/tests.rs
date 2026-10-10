@@ -352,7 +352,7 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
-        let _ = fs::remove_dir(fixture.root.join("a"));
+        crate::test_os::remove_link_dir(&fixture.root.join("a"));
         crate::test_os::junction(&fixture.root.join("old-a"), &fixture.root.join("a"));
         assert!(read().await.is_error());
     }

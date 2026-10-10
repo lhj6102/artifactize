@@ -426,7 +426,7 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
     #[cfg(windows)]
     {
         // A directory symlink is removed as a directory on Windows.
-        let _ = fs::remove_dir(fixture.0.join("owner"));
+        crate::test_os::remove_link_dir(&fixture.0.join("owner"));
         crate::test_os::junction(&fixture.0.join("old-owner"), &fixture.0.join("owner"));
         assert!(
             scope

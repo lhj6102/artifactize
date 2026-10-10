@@ -321,7 +321,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn killing_a_zombie_only_group_succeeds_without_reaping_it_first() {
-        let mut command = Command::new(crate::test_os::bin("/bin/true"));
+        let mut command = Command::new(crate::test_os::true_program());
         command.env_clear().stdin(Stdio::null());
         let (gate, spawning) = spawn_gated(command).unwrap();
         let pid = gate.pid().await.unwrap();
@@ -359,7 +359,7 @@ mod tests {
 
     #[tokio::test]
     async fn parent_disconnect_before_admission_prevents_exec_and_reaps() {
-        let mut command = CommandWrap::with_new(crate::test_os::bin("/bin/true"), |command| {
+        let mut command = CommandWrap::with_new(crate::test_os::true_program(), |command| {
             command.env_clear().stdin(Stdio::null());
         });
         command.wrap(ProcessGroup::leader());

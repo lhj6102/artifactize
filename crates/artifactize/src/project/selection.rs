@@ -38,7 +38,7 @@ pub enum Selection {
 #[derive(Debug)]
 pub struct ResolvedSelection<'a> {
     pub evals: Vec<&'a Eval>,
-    pub roots: Vec<&'a str>,
+    pub roots: Vec<&'a ArtifactName>,
 }
 
 impl Selection {
@@ -49,7 +49,7 @@ impl Selection {
             .iter()
             .map(|eval| (eval.id.as_str(), eval))
             .collect();
-        let mut evals_by_target: BTreeMap<&str, Vec<&Eval>> = BTreeMap::new();
+        let mut evals_by_target: BTreeMap<&ArtifactName, Vec<&Eval>> = BTreeMap::new();
         for eval in &config.evals {
             evals_by_target.entry(&eval.target).or_default().push(eval);
         }
@@ -60,9 +60,7 @@ impl Selection {
         match self {
             Self::All => {
                 result.evals.extend(&config.evals);
-                result
-                    .roots
-                    .extend(config.artifacts.keys().map(ArtifactName::as_str));
+                result.roots.extend(config.artifacts.keys());
             }
             Self::Artifact { artifact_id } => {
                 result.roots.push(selected_artifact(config, artifact_id)?);
@@ -94,7 +92,7 @@ impl Selection {
         if matches!(self, Self::Eval { .. } | Self::Evals { .. }) {
             result
                 .roots
-                .extend(result.evals.iter().map(|eval| eval.target.as_str()));
+                .extend(result.evals.iter().map(|eval| &eval.target));
         }
         let mut seen = BTreeSet::new();
         result.roots.retain(|id| seen.insert(*id));
@@ -105,8 +103,10 @@ impl Selection {
                 }
             }
         }
-        seen.clear();
-        result.evals.retain(|eval| seen.insert(eval.id.as_str()));
+        let mut seen_evals = BTreeSet::new();
+        result
+            .evals
+            .retain(|eval| seen_evals.insert(eval.id.as_str()));
         Ok(result)
     }
 
@@ -128,7 +128,7 @@ impl Selection {
                     eval.declaration.profile(),
                     crate::config::Profile::Dependency { .. }
                 ) {
-                    let roots: Vec<_> = eval.deps.iter().map(ArtifactName::as_str).collect();
+                    let roots: Vec<_> = eval.deps.iter().collect();
                     let required: BTreeSet<_> = graph
                         .dependency_closure(&roots)
                         .map_err(|error| error.to_string())?
@@ -167,11 +167,11 @@ fn nonempty<T>(ids: &[T]) -> Result<(), String> {
     Ok(())
 }
 
-fn selected_artifact<'a>(config: &'a RepoConfig, id: &str) -> Result<&'a str, String> {
+fn selected_artifact<'a>(config: &'a RepoConfig, id: &str) -> Result<&'a ArtifactName, String> {
     config
         .artifacts
         .get_key_value(id)
-        .map(|(id, _)| id.as_str())
+        .map(|(id, _)| id)
         .ok_or_else(|| format!("Unknown Artifact: {id}"))
 }
 

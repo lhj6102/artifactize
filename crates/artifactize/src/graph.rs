@@ -198,7 +198,10 @@ impl<'a> Graph<'a> {
     }
 
     /// Required material and verification, including roots and all cycle peers.
-    pub fn dependency_closure(&self, roots: &[&str]) -> Result<Vec<&'a ArtifactName>, GraphError> {
+    pub fn dependency_closure(
+        &self,
+        roots: &[&ArtifactName],
+    ) -> Result<Vec<&'a ArtifactName>, GraphError> {
         let mut pending = Vec::new();
         for root in roots {
             let artifact = self

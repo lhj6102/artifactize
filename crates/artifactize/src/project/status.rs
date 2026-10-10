@@ -230,7 +230,7 @@ pub async fn status(
         let status = ArtifactCondition::from(artifact.status);
         let own = &graph.artifacts()[id.as_str()];
         let unmet = graph
-            .dependency_closure(&[id])
+            .dependency_closure(&[*id])
             .map_err(|error| error.to_string())?
             .into_iter()
             .filter(|id| !evaluation.artifacts[id.as_str()].own_satisfied)
