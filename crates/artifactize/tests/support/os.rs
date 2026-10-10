@@ -666,14 +666,16 @@ fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
     (read == size).then(|| unsafe { info.assume_init() })
 }
 
-/// A program running on a pseudo-terminal of its own: script(1) on Unix (util-linux and
-/// BSD/macOS spell it differently), a ConPTY on Windows. What it draws arrives in chunks
+/// A program running on a pseudo-terminal of its own: an openpty(3) pair on Unix, whose
+/// terminal becomes the program's controlling terminal, and a ConPTY on Windows. The program
+/// and its arguments are passed as they are, with no shell. What it draws arrives in chunks
 /// from `start`'s receiver, which ends once `finish` has closed the terminal.
 pub struct PseudoTerminal {
     #[cfg(unix)]
     child: std::process::Child,
+    /// The terminal's controlling side, which what is typed is written to.
     #[cfg(unix)]
-    input: std::process::ChildStdin,
+    input: std::fs::File,
     #[cfg(windows)]
     console: conpty::Console,
 }
@@ -690,28 +692,62 @@ impl PseudoTerminal {
     ) -> (Self, std::sync::mpsc::Receiver<Vec<u8>>) {
         #[cfg(unix)]
         let (terminal, output) = {
-            let quote = |text: &str| format!("'{}'", text.replace('\'', r"'\''"));
-            let command = std::iter::once(quote(program.to_str().unwrap()))
-                .chain(args.iter().map(|arg| quote(arg)))
-                .collect::<Vec<_>>()
-                .join(" ");
-            let command = format!("stty cols {columns} rows {rows}; exec {command}");
-            let mut script = Command::new("script");
-            #[cfg(target_os = "macos")]
-            script.args(["-q", "/dev/null", "/bin/sh", "-c", &command]);
-            #[cfg(not(target_os = "macos"))]
-            script.args(["-qec", &command, "/dev/null"]);
+            use std::os::{
+                fd::{FromRawFd, OwnedFd},
+                unix::process::CommandExt,
+            };
+            let mut size = libc::winsize {
+                ws_row: rows,
+                ws_col: columns,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
+            let (mut master, mut slave) = (0, 0);
+            // SAFETY: openpty writes two new descriptors, owned below, and reads the size.
+            let opened = unsafe {
+                libc::openpty(
+                    &mut master,
+                    &mut slave,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    // Linux takes the size as const, macOS as mut; a raw pointer suits both.
+                    &raw mut size,
+                )
+            };
+            assert_eq!(opened, 0, "{}", std::io::Error::last_os_error());
+            // SAFETY: both descriptors were just opened and are owned exactly once.
+            let (master, slave) = unsafe {
+                (
+                    std::fs::File::from_raw_fd(master),
+                    OwnedFd::from_raw_fd(slave),
+                )
+            };
+            let mut command = Command::new(program);
+            command
+                .args(args)
+                .stdin(slave.try_clone().unwrap())
+                .stdout(slave.try_clone().unwrap())
+                .stderr(slave);
             for name in without {
-                script.env_remove(name);
+                command.env_remove(name);
             }
-            let mut child = script
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .spawn()
-                .unwrap();
-            let input = child.stdin.take().unwrap();
-            let output = child.stdout.take().unwrap();
-            (Self { child, input }, output)
+            // SAFETY: the child calls only setsid and ioctl, which are async-signal-safe.
+            unsafe {
+                command.pre_exec(|| {
+                    // A new session whose controlling terminal is the pseudo-terminal.
+                    if libc::setsid() == -1
+                        || libc::ioctl(0, libc::TIOCSCTTY as libc::c_ulong, 0) == -1
+                    {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            let child = command.spawn().unwrap();
+            // Only the program holds the terminal now, so its exit ends the output.
+            drop(command);
+            let input = master.try_clone().unwrap();
+            (Self { child, input }, master)
         };
         #[cfg(windows)]
         let (terminal, output) = {

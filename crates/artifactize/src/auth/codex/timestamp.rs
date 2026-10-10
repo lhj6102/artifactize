@@ -34,6 +34,11 @@ impl Timestamp {
     pub fn saturating_add(self, duration: Duration) -> Self {
         Self::from_seconds(self.0.saturating_add(duration).as_secs())
     }
+
+    /// How long after `earlier` this is; zero when it is not later.
+    pub fn saturating_since(self, earlier: Self) -> Duration {
+        self.0.saturating_sub(earlier.0)
+    }
 }
 
 impl Serialize for Timestamp {

@@ -576,7 +576,7 @@ fn a_result_check_names_its_removal() {
     for (profile, check) in [
         (
             json!({"kind":"agent","backend":"openai","model":"m"}),
-            json!({"command":"python3","args":["check.py"]}),
+            json!({"command":crate::test_os::python_program(),"args":["check.py"]}),
         ),
         (json!({"kind":"human"}), json!(false)),
     ] {

@@ -11,7 +11,7 @@ pub(super) const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Serialize)]
 pub struct ListedModel {
-    pub slug: String,
+    pub slug: crate::config::ModelId,
     pub display_name: String,
 }
 
@@ -61,11 +61,14 @@ async fn list_at(backend: Backend, key: &str, base: &str) -> Result<Vec<ListedMo
         .await
         .map_err(|_| "Model listing timed out.".to_owned())?
         .map_err(|error| super::diagnostic(&error).replace(key, "[redacted]"))?;
+    // A listed model without a usable id cannot be selected, so it is left out.
     Ok(models
         .into_iter()
-        .map(|model| ListedModel {
-            display_name: model.name.unwrap_or_else(|| model.id.clone()),
-            slug: model.id,
+        .filter_map(|model| {
+            Some(ListedModel {
+                slug: model.id.parse().ok()?,
+                display_name: model.name.unwrap_or(model.id),
+            })
         })
         .collect())
 }

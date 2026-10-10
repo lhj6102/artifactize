@@ -13,8 +13,9 @@ pub(super) struct Fields {
     pub message: Optional<String>,
     #[serde(default)]
     pub plan_type: Optional<String>,
+    /// When the usage limit resets: whole seconds since the Unix epoch on the wire.
     #[serde(default)]
-    pub resets_at: Optional<u64>,
+    pub resets_at: Optional<crate::auth::codex::Timestamp>,
 }
 #[derive(Default, Deserialize)]
 struct Response {

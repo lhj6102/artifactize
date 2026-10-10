@@ -429,7 +429,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
             "name":"api",
             "mounts":mounts,
             "fingerprint":{
-                "script":{"command":"python3","args":["../fingerprint.py",".",reference]},
+                "script":{"command":support::os::python_program(),"args":["../fingerprint.py",".",reference]},
             },
             "evals":[
                 {
@@ -437,7 +437,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
                     "title":"Tests",
                     "profile":{
                         "kind":"runtime",
-                        "command":"python3",
+                        "command":support::os::python_program(),
                         "args":["-B","test_api.py",reference],
                     },
                     "payload":{"instruction":"Run the API tests."},

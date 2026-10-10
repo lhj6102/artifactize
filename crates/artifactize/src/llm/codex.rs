@@ -207,13 +207,13 @@ fn picker_models(data: &[u8]) -> Result<Vec<super::models::ListedModel>, String>
         .filter_map(|model| model.0.map(|crate::json::Object(model)| model))
         .filter(|model| model.visibility.0.as_deref() == Some("list"))
         .map(|model| {
-            let slug = model
+            let slug: crate::config::ModelId = model
                 .slug
                 .0
-                .filter(|slug| !slug.is_empty())
+                .and_then(|slug| slug.parse().ok())
                 .ok_or_else(invalid)?;
             Ok(super::models::ListedModel {
-                display_name: model.display_name.0.unwrap_or_else(|| slug.clone()),
+                display_name: model.display_name.0.unwrap_or_else(|| slug.to_string()),
                 slug,
             })
         })
@@ -249,7 +249,7 @@ pub(super) async fn models(
             Some(status.as_u16()),
             body.as_ref(),
             "Codex model listing failed.",
-            auth::now().ok().map(auth::Timestamp::seconds),
+            auth::now().ok(),
         ));
     }
     picker_models(&data)
@@ -274,9 +274,12 @@ pub(super) fn diagnostic(error: &ProviderError) -> String {
         error.report().http_status,
         body.as_ref(),
         &super::diagnostic(error),
-        auth::now().ok().map(auth::Timestamp::seconds),
+        auth::now().ok(),
     )
 }
+
+/// The wait before a usage limit resets is shown in whole minutes, rounded up.
+const SECONDS_PER_MINUTE: u64 = 60;
 
 /// A bounded message with the provider's code, an HTTP status, and what to do next:
 /// usage limits name the plan and when they reset, as Pi words them, and rejected
@@ -285,7 +288,7 @@ fn describe(
     status: Option<u16>,
     body: Option<&errors::Error>,
     fallback: &str,
-    now: Option<u64>,
+    now: Option<auth::Timestamp>,
 ) -> String {
     let code = body.and_then(errors::Error::code);
     let mut message = if body.is_some_and(|body| body.usage_limit(status)) {
@@ -299,7 +302,9 @@ fn describe(
             .map(|(at, now)| {
                 format!(
                     " Try again in ~{} min.",
-                    at.saturating_sub(now).div_ceil(60)
+                    at.saturating_since(now)
+                        .as_secs()
+                        .div_ceil(SECONDS_PER_MINUTE)
                 )
             })
             .unwrap_or_default();

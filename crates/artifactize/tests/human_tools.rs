@@ -320,7 +320,7 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
         json!({
             "inspect":tool(
                 "output",
-                "python3",
+                support::os::python_program(),
                 &python("import sys; print('界'*100000); print('界'*100000,file=sys.stderr)"),
             ),
         }),
@@ -436,7 +436,7 @@ async fn human_environment_and_launch_probe() {
         json!({
             "inspect":tool(
                 "output",
-                "python3",
+                support::os::python_program(),
                 &python(
                     &support::os::human_environment_probe(),
                 ),
@@ -467,7 +467,7 @@ async fn human_environment_and_launch_probe() {
         "inspect":{
             "description":"Inspect",
             "protocol":"plain",
-            "command":"python3",
+            "command":support::os::python_program(),
             "args":[
                 "-c",
                 support::os::isolated_home_probe(),

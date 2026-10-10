@@ -409,7 +409,7 @@ fn config_check_names_the_removal_of_result_check() {
             "id":"review","title":"Review",
             "profile":{"kind":"agent","backend":"openai","model":"m"},
             "payload":{"instruction":"Review."},
-            "result_check":{"command":"python3","args":["check.py"]}
+            "result_check":{"command":support::os::python_program(),"args":["check.py"]}
         }]})
         .to_string(),
     );

@@ -64,7 +64,7 @@ impl Fixture {
                         "inspect":{
                             "description":"Inspect {artifactName}",
                             "protocol":"json",
-                            "command":"python3",
+                            "command":crate::test_os::python_program(),
                             "args":["tool.py"],
                             "input_schema":{
                                 "type":"object",

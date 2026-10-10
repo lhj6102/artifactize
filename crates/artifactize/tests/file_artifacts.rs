@@ -733,7 +733,7 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
                     "inspect":{
                         "description":"Inspect",
                         "protocol":"json",
-                        "command":"python3",
+                        "command":support::os::python_program(),
                         "args":["tool.py","{file}"],
                     },
                 },
@@ -1197,7 +1197,7 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
                         "inspect":{
                             "description":"Inspect",
                             "protocol":"json",
-                            "command":"python3",
+                            "command":support::os::python_program(),
                             "args":["-c","open('started','w').write('yes');print('{}')"],
                         },
                     },

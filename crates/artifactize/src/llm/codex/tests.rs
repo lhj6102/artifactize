@@ -70,7 +70,12 @@ fn usage_limits_name_the_plan_and_reset_and_never_retry() {
             "resets_at":resets,
         },
     });
-    let message = describe(Some(429), parsed(&body).as_ref(), "fallback", Some(1_800));
+    let message = describe(
+        Some(429),
+        parsed(&body).as_ref(),
+        "fallback",
+        Some(crate::auth::codex::Timestamp::from_seconds(1_800)),
+    );
     assert!(
         message.starts_with(
             "usage_limit_reached: You have hit your ChatGPT usage limit (pro plan). Try again in ~30 min."
@@ -92,7 +97,12 @@ fn usage_limits_name_the_plan_and_reset_and_never_retry() {
     let plain = json!({"error":{"code":"rate_limit_exceeded","message":"Slow down"}});
     assert!(!parsed(&plain).unwrap().usage_limit(Some(429)));
     assert_eq!(
-        describe(Some(429), parsed(&plain).as_ref(), "fallback", Some(1_800)),
+        describe(
+            Some(429),
+            parsed(&plain).as_ref(),
+            "fallback",
+            Some(crate::auth::codex::Timestamp::from_seconds(1_800))
+        ),
         "rate_limit_exceeded: Slow down (HTTP 429)"
     );
     assert!(
@@ -105,7 +115,12 @@ fn usage_limits_name_the_plan_and_reset_and_never_retry() {
 #[test]
 fn rejected_credentials_say_how_to_sign_in_again() {
     let body = json!({"detail":"Unauthorized"});
-    let message = describe(Some(401), parsed(&body).as_ref(), "fallback", Some(1_800));
+    let message = describe(
+        Some(401),
+        parsed(&body).as_ref(),
+        "fallback",
+        Some(crate::auth::codex::Timestamp::from_seconds(1_800)),
+    );
     assert!(
         message.starts_with("Unauthorized (HTTP 401) Sign in again"),
         "{message}"
@@ -116,11 +131,21 @@ fn rejected_credentials_say_how_to_sign_in_again() {
         "response":{"error":{"code":"server_error","message":"Model failed"}},
     });
     assert_eq!(
-        describe(None, parsed(&failed).as_ref(), "fallback", Some(1_800)),
+        describe(
+            None,
+            parsed(&failed).as_ref(),
+            "fallback",
+            Some(crate::auth::codex::Timestamp::from_seconds(1_800))
+        ),
         "server_error: Model failed"
     );
     assert_eq!(
-        describe(Some(502), None, "fallback", Some(1_800)),
+        describe(
+            Some(502),
+            None,
+            "fallback",
+            Some(crate::auth::codex::Timestamp::from_seconds(1_800))
+        ),
         "fallback (HTTP 502)"
     );
 }
