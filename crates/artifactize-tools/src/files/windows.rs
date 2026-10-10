@@ -452,6 +452,12 @@ pub fn exact_name(file: &File, name: &OsStr) -> io::Result<bool> {
     Ok(path.file_name() == Some(name))
 }
 
+/// Windows logical names remain conservative even if per-directory case sensitivity is
+/// enabled: NtCreateFile here explicitly uses OBJ_CASE_INSENSITIVE.
+pub fn case_sensitive(_directory: &File) -> io::Result<bool> {
+    Ok(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

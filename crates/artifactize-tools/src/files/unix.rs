@@ -20,7 +20,7 @@ use super::FileKind;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{entry_kind, exact_name, read_dir};
+pub use macos::{case_sensitive, entry_kind, exact_name, read_dir};
 
 /// The absolute path of an existing file with every link resolved.
 pub fn canonicalize(path: &Path) -> io::Result<PathBuf> {
@@ -135,5 +135,11 @@ fn kind(file_type: fs::FileType) -> FileKind {
 /// Other Unix platforms keep their existing case-sensitive open behavior.
 #[cfg(not(target_os = "macos"))]
 pub fn exact_name(_file: &File, _name: &OsStr) -> io::Result<bool> {
+    Ok(true)
+}
+
+/// Preserve the existing case-sensitive logical namespace on other Unix systems.
+#[cfg(not(target_os = "macos"))]
+pub fn case_sensitive(_directory: &File) -> io::Result<bool> {
     Ok(true)
 }

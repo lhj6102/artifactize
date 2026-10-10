@@ -219,8 +219,25 @@ pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, 
             ScopeError("Artifact roots must be absolute and owner paths relative.".into()).into(),
         );
     }
+    logical_path(path)?;
     file_input(artifact, path)?;
-    let file = open_scoped(&root.join(artifact.folder()), path)?;
+    let owner = open_scoped(&root.join(artifact.folder()), "")?;
+    if let Some(first) = path.split('/').next().filter(|part| !part.is_empty())
+        && artifact
+            .mounts
+            .keys()
+            .any(|alias| alias.eq_ignore_ascii_case(first))
+        && !platform::case_sensitive(&owner).map_err(|error| ScopeError(error.to_string()))?
+    {
+        return Err(
+            ScopeError("Physical input conflicts with a logical mount name.".into()).into(),
+        );
+    }
+    // Keep the owner pinned between checking its namespace and opening each component.
+    let mut file = owner;
+    for component in path.split('/').filter(|part| !part.is_empty()) {
+        file = open_child(&file, std::ffi::OsStr::new(component))?;
+    }
     if artifact.file_name().is_some()
         && !path.is_empty()
         && !file

@@ -9,13 +9,13 @@ mod windows;
 
 #[cfg(unix)]
 pub use unix::{
-    EntryName, canonicalize, entry_kind, exact_name, is_link_refusal, open_directory, open_entry,
-    open_no_follow, open_nonblocking, read_dir,
+    EntryName, canonicalize, case_sensitive, entry_kind, exact_name, is_link_refusal,
+    open_directory, open_entry, open_no_follow, open_nonblocking, read_dir,
 };
 #[cfg(windows)]
 pub use windows::{
-    EntryName, canonicalize, entry_kind, exact_name, is_link_refusal, open_directory, open_entry,
-    open_no_follow, open_nonblocking, read_dir,
+    EntryName, canonicalize, case_sensitive, entry_kind, exact_name, is_link_refusal,
+    open_directory, open_entry, open_no_follow, open_nonblocking, read_dir,
 };
 
 /// The type of a directory entry, read without following it.

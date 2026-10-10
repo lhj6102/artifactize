@@ -137,3 +137,13 @@ pub fn exact_name(file: &File, name: &OsStr) -> io::Result<bool> {
         .ok_or(io::ErrorKind::InvalidData)?;
     Ok(Path::new(OsStr::from_bytes(&path[..end])).file_name() == Some(name))
 }
+
+/// Ask the pinned directorys volume, since APFS supports both case policies.
+pub fn case_sensitive(directory: &File) -> io::Result<bool> {
+    // SAFETY: fpathconf queries a live descriptor and writes no user memory.
+    let sensitive = unsafe { libc::fpathconf(directory.as_raw_fd(), libc::_PC_CASE_SENSITIVE) };
+    if sensitive == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(sensitive != 0)
+}

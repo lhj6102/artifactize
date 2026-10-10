@@ -50,6 +50,19 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
         matches!(&result.content[0], Content::Json { data } if data["lines"][0]["text"] == "visible")
     );
 
+    // A physical entry added after the logical scope was built cannot shadow a mount by
+    // changing its case on an insensitive volume; distinct names remain usable otherwise.
+    fs::create_dir(root.join("remote")).unwrap();
+    fs::write(root.join("remote/x"), "physical").unwrap();
+    let insensitive = root.join("Remote").exists() || cfg!(windows);
+    let result = call(Builtin::Read, json!({"path":"remote/x"}));
+    assert_eq!(result.is_error, insensitive, "{result:?}");
+    if !insensitive {
+        assert!(
+            matches!(&result.content[0], Content::Json { data } if data["lines"][0]["text"] == "physical")
+        );
+    }
+
     // On a case-sensitive volume an independently created lowercase directory stays usable.
     if !root.join("secret").exists() {
         fs::create_dir(root.join("secret")).unwrap();
