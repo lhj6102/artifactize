@@ -333,10 +333,13 @@ fn provider_errors_explain_themselves_and_permanent_ones_are_not_retried() {
     });
     let request = failed(&project, &limited);
     let error = request["error"].as_str().unwrap();
+    // How many minutes remain depends on the clock; the exact wording is checked in the
+    // Codex unit tests at fixed times.
     assert!(
-        error.contains("You have hit your ChatGPT usage limit (plus plan). Try again in ~90 min."),
+        error.contains("You have hit your ChatGPT usage limit (plus plan). Try again in ~"),
         "{error}"
     );
+    assert!(error.contains(" min."), "{error}");
     assert_eq!(limited.requests().len(), 1);
 
     let broken = FakeProvider::start(|_| {

@@ -63,7 +63,9 @@ impl ApiError {
 
     fn internal(error: String) -> Self {
         // Store errors never contain tokens; only their SHA-256 reaches SQLite.
-        eprintln!("Review store error: {error}");
+        // Logging is best effort: a failing stderr must not turn this error into a panic.
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr().lock(), "Review store error: {error}");
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal review store error.",

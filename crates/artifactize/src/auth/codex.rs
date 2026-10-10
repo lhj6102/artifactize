@@ -800,7 +800,7 @@ impl Serialize for Status {
         )?;
         wire.serialize_field("source", source)?;
         if let Some(file) = file {
-            wire.serialize_field("authFile", file)?;
+            wire.serialize_field("authFile", &crate::platform::path_text(file))?;
         }
         wire.serialize_field("expiresAt", &expires_at)?;
         wire.serialize_field("expired", &expired)?;

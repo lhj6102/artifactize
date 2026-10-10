@@ -29,6 +29,13 @@ fn enum_states_preserve_the_existing_status_json_contract() {
                 expires_at: Timestamp::from_seconds(2_000_000_000),
             },
         },
+        // A path of several components, joined natively, is printed with '/' separators.
+        Status::File {
+            path: std::path::Path::new("fixture")
+                .join("codex")
+                .join("auth.json"),
+            expiry: FileExpiry::Usable { expires_at: None },
+        },
         Status::Stored {
             expiry: StoredExpiry::Expired {
                 expires_at: Timestamp::from_seconds(1_000_000_000),
@@ -37,6 +44,7 @@ fn enum_states_preserve_the_existing_status_json_contract() {
     ];
     let expected: Vec<Value> =
         serde_json::from_str(include_str!("fixtures/codex_status.json")).unwrap();
+    assert_eq!(states.len(), expected.len());
     for (state, expected) in states.into_iter().zip(expected) {
         assert_eq!(serde_json::to_value(state).unwrap(), expected);
     }
