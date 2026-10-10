@@ -1,11 +1,12 @@
 #!/bin/sh
-# Package a release binary the way binaries.yml publishes it:
+# Package both release binaries the way binaries.yml publishes them:
 #
 #   .github/scripts/package.sh TARGET VERSION
 #
-# Reads target/TARGET/release/artifactize (artifactize.exe on Windows) and writes to dist/:
+# Reads artifactize and artifactize-tools from target/TARGET/release/ (.exe on
+# Windows) and writes to dist/:
 # - artifactize-vVERSION-TARGET.tar.gz (.zip for Windows targets), holding
-#   artifactize-vVERSION-TARGET/ with the binary, LICENSE and README.md;
+#   artifactize-vVERSION-TARGET/ with both binaries, LICENSE and README.md;
 # - <archive>.sha256, one line "<hex digest>  <archive>", as sha256sum writes it.
 #
 # install.sh, install.ps1, cargo-binstall and every later channel point at these
@@ -16,18 +17,22 @@ target=$1
 version=$2
 name="artifactize-v$version-$target"
 case $target in
-    *-windows-*) exe=artifactize.exe ;;
-    *) exe=artifactize ;;
+    *-windows-*) ext=.exe ;;
+    *) ext= ;;
 esac
 
 mkdir -p dist
 rm -rf "dist/$name"
 mkdir "dist/$name"
-cp "target/$target/release/$exe" LICENSE README.md "dist/$name/"
+for bin in artifactize artifactize-tools; do
+    cp "target/$target/release/$bin$ext" "dist/$name/"
+done
+cp LICENSE README.md "dist/$name/"
 cd dist
 case $target in
     *-windows-*)
         archive="$name.zip"
+        rm -f "$archive"
         7z a -tzip -bso0 -bsp0 "$archive" "$name"
         ;;
     *)

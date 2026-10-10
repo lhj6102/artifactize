@@ -11,6 +11,15 @@ keywords = ["agent", "tools", "review"]
 categories = ["command-line-utilities", "development-tools"]
 exclude = ["index.artf"]
 
+# Both commands ship in the same artifactize release archive.
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/artifactize-v{ version }-{ target }{ archive-suffix }"
+pkg-fmt = "tgz"
+bin-dir = "artifactize-v{ version }-{ target }/{ bin }{ binary-ext }"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-fmt = "zip"
+
 [dependencies]
 base64 = "0.22"
 clap = { version = "4.5", features = ["derive"] }

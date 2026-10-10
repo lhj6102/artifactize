@@ -4,7 +4,7 @@
 #   curl -fsSL https://artifactize.dev/install.sh | sh
 #
 # Downloads the release archive for this OS and CPU over https, checks its SHA-256
-# against the release's .sha256 file, and installs the artifactize binary to
+# against the release's .sha256 file, and installs artifactize and artifactize-tools to
 # ~/.local/bin. It never uses sudo and never edits shell startup files; if the
 # directory is not on PATH, it prints the line to add. Run it again to update.
 #
@@ -50,7 +50,7 @@ detect_target() {
     # One line per OS that has release binaries.
     case $os in
         Linux) printf '%s\n' "$arch-unknown-linux-musl" ;;
-        Darwin) err "macOS is not supported yet: https://github.com/lhj6102/artifactize/issues/111" ;;
+        Darwin) printf '%s\n' "$arch-apple-darwin" ;;
         *) err "no prebuilt binary for $os; install with: cargo install artifactize --locked" ;;
     esac
 }
@@ -114,7 +114,7 @@ main() {
 
     tmp=$(mktemp -d 2>/dev/null || mktemp -d -t artifactize-install)
     staged=
-    trap 'rm -rf "$tmp"; [ -z "$staged" ] || rm -f "$staged"' EXIT
+    trap 'rm -rf "$tmp"; [ -z "$staged" ] || rm -rf "$staged"' EXIT
     trap 'exit 1' HUP INT TERM
 
     version=${ARTIFACTIZE_VERSION:-}
@@ -146,19 +146,26 @@ main() {
     say "checked SHA-256 $actual"
 
     tar -xzf "$tmp/$archive" -C "$tmp"
-    [ -f "$tmp/$name/artifactize" ] || err "$archive does not contain $name/artifactize"
+    for bin in artifactize artifactize-tools; do
+        [ -f "$tmp/$name/$bin" ] || err "$archive does not contain $name/$bin; nothing was installed"
+    done
 
-    # Stage the binary next to its destination and rename it into place, so the
-    # installed file is always complete, even if artifactize is running.
+    # Stage both binaries next to their destinations and check them before replacing
+    # either installed command. Each rename keeps the installed file complete.
     mkdir -p "$install_dir"
-    staged="$install_dir/.artifactize.$$.tmp"
-    cp "$tmp/$name/artifactize" "$staged"
-    chmod 755 "$staged"
-    mv -f "$staged" "$install_dir/artifactize"
+    staged=$(mktemp -d "$install_dir/.artifactize-install.XXXXXXXX")
+    for bin in artifactize artifactize-tools; do
+        cp "$tmp/$name/$bin" "$staged/$bin"
+        chmod 755 "$staged/$bin"
+        installed=$("$staged/$bin" --version) || err "the new $bin does not run; existing binaries were kept"
+        [ "$installed" = "$bin $version" ] || err "the new $bin reports '$installed', not '$bin $version'; existing binaries were kept"
+    done
+    for bin in artifactize artifactize-tools; do
+        mv -f "$staged/$bin" "$install_dir/$bin"
+        say "installed $bin $version to $install_dir/$bin"
+    done
+    rmdir "$staged"
     staged=
-
-    installed=$("$install_dir/artifactize" --version) || err "the installed $install_dir/artifactize does not run"
-    say "installed $installed to $install_dir/artifactize"
 
     case ":${PATH:-}:" in
         *":$install_dir:"* | *":$install_dir/:"*) ;;
@@ -169,28 +176,33 @@ main() {
             say "and add that line to your shell's startup file (such as ~/.profile, ~/.bashrc or ~/.zshrc)."
             ;;
     esac
-    warn_other_copies "$install_dir/artifactize"
+    for bin in artifactize artifactize-tools; do
+        warn_other_copies "$install_dir/$bin" "$bin"
+    done
 }
 
-# Every other artifactize on PATH: one that comes first runs instead, and a shell that ran one
+# Every other copy on PATH: one that comes first runs instead, and a shell that ran one
 # before may keep running it from its command cache. A warning only; the install succeeded.
 warn_other_copies() {
     others=$(
         IFS=:
         set -f
         for dir in ${PATH:-}; do
-            other=${dir%/}/artifactize
+            other=${dir%/}/$2
+            # -ef is supported by the Linux/macOS shells we install on; it also
+            # avoids warnings for symlinks or alternate paths to this same file.
+            # shellcheck disable=SC3013
             if [ -n "$dir" ] && [ -f "$other" ] && [ -x "$other" ] && ! [ "$other" -ef "$1" ]; then
                 printf '%s\n' "$other"
             fi
         done | sort -u
     )
     [ -n "$others" ] || return 0
-    say "another artifactize on your PATH may run instead of this one:"
+    say "another $2 on your PATH may run instead of this one:"
     printf '%s\n' "$others" | while IFS= read -r other; do
         printf '    %s (%s)\n' "$other" "$("$other" --version 2>/dev/null || echo 'version unknown')"
     done
-    say "remove it (a cargo install: cargo uninstall artifactize), or put $(dirname "$1") first on PATH."
+    say "remove it (a cargo install: cargo uninstall $2), or put $(dirname "$1") first on PATH."
     say "in an open shell, run 'hash -r' (zsh: 'rehash'), or open a new terminal."
 }
 

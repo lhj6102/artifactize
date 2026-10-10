@@ -3,7 +3,7 @@
 #   irm https://artifactize.dev/install.ps1 | iex
 #
 # Downloads the release zip for Windows x64 over https, checks its SHA-256 against
-# the release's .sha256 file, installs artifactize.exe to
+# the release's .sha256 file, installs artifactize.exe and artifactize-tools.exe to
 # %LOCALAPPDATA%\Programs\artifactize and adds that directory to the user Path.
 # Needs no administrator rights. Works in Windows PowerShell 5.1 and PowerShell 7.
 # Run it again to update.
@@ -106,27 +106,75 @@
         Say "checked SHA-256 $actual"
 
         Expand-Archive -LiteralPath $zip -DestinationPath $tmp
-        $source = Join-Path $tmp "$name\artifactize.exe"
-        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { Fail "$zipName does not contain $name\artifactize.exe" }
+        $commands = @('artifactize', 'artifactize-tools')
+        foreach ($command in $commands) {
+            $source = Join-Path $tmp "$name\$command.exe"
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+                Fail "$zipName does not contain $name\$command.exe; nothing was installed"
+            }
+        }
 
-        # Stage the binary next to its destination, then rename it into place. A running
-        # artifactize.exe cannot be overwritten but can be renamed, so move it aside first.
+        # Check both new commands before moving either installed binary or changing
+        # Path. Application control may refuse an unsigned release even when the
+        # previous release ran. Do not bypass the policy or discard a working install.
+        foreach ($command in $commands) {
+            $source = Join-Path $tmp "$name\$command.exe"
+            try {
+                $output = (& $source --version) -join ' '
+                if ($LASTEXITCODE -ne 0) { throw "--version exited with code $LASTEXITCODE" }
+                if ($output -ne "$command $version") { throw "--version printed '$output', not '$command $version'" }
+            } catch {
+                Fail "Windows could not run the new ${command}: $($_.Exception.Message). Existing binaries were kept and Path was not changed. Smart App Control or another application control policy may block unsigned downloads. Use the Microsoft Store version instead: https://apps.microsoft.com/detail/9PB6W4LL165D"
+            }
+        }
+
+        # Stage on the destination filesystem, then rename. A running .exe can be
+        # renamed but not overwritten. Keep backups until both replacements succeed,
+        # and restore the previous pair if any move fails.
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        $exe = Join-Path $dir 'artifactize.exe'
-        $staged = "$exe.new"
-        $old = "$exe.old"
-        Copy-Item -LiteralPath $source -Destination $staged -Force
-        Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
-        if (Test-Path -LiteralPath $exe) { Move-Item -LiteralPath $exe -Destination $old -Force }
-        Move-Item -LiteralPath $staged -Destination $exe
-        Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+        $stage = Join-Path $dir ('.artifactize-install-' + [Guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $stage | Out-Null
+        $backedUp = @()
+        $replaced = @()
+        $committed = $false
+        try {
+            foreach ($command in $commands) {
+                Copy-Item -LiteralPath (Join-Path $tmp "$name\$command.exe") -Destination (Join-Path $stage "$command.exe")
+            }
+            foreach ($command in $commands) {
+                $exe = Join-Path $dir "$command.exe"
+                if (Test-Path -LiteralPath $exe) {
+                    Move-Item -LiteralPath $exe -Destination (Join-Path $stage "$command.exe.old")
+                    $backedUp += $command
+                }
+                Move-Item -LiteralPath (Join-Path $stage "$command.exe") -Destination $exe
+                $replaced += $command
+            }
+            $committed = $true
+        } catch {
+            $installError = $_
+            foreach ($command in $replaced) {
+                Remove-Item -LiteralPath (Join-Path $dir "$command.exe") -Force
+            }
+            foreach ($command in $backedUp) {
+                Move-Item -LiteralPath (Join-Path $stage "$command.exe.old") -Destination (Join-Path $dir "$command.exe")
+            }
+            $backedUp = @()
+            throw $installError
+        } finally {
+            if ($committed -or $backedUp.Count -eq 0) {
+                Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+            } else {
+                Say "could not restore every previous binary; backups remain in $stage"
+            }
+        }
     } finally {
         Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    $installed = & $exe --version
-    if ($LASTEXITCODE -ne 0) { Fail "the installed $exe does not run" }
-    Say "installed $installed to $exe"
+    foreach ($command in $commands) {
+        Say "installed $command $version to $(Join-Path $dir "$command.exe")"
+    }
 
     # Add the directory to the user Path in the registry. Reading and writing the raw
     # value keeps entries such as %USERPROFILE%\bin unexpanded; setx would truncate it.
@@ -145,7 +193,7 @@
             # setting a user variable through .NET broadcasts WM_SETTINGCHANGE.
             [Environment]::SetEnvironmentVariable('ARTIFACTIZE_INSTALL_BROADCAST', '1', 'User')
             [Environment]::SetEnvironmentVariable('ARTIFACTIZE_INSTALL_BROADCAST', $null, 'User')
-            Say "added $dir to your user Path; new terminals will find artifactize"
+            Say "added $dir to your user Path; new terminals will find artifactize and artifactize-tools"
         }
     } finally {
         $key.Close()
@@ -155,15 +203,18 @@
     if (-not (@($env:Path -split ';' | ForEach-Object { $_.TrimEnd('\') }) -contains $dir)) {
         $env:Path = "$env:Path;$dir"
     }
-    # Every other artifactize on Path: one that comes first runs instead. A warning only.
-    $others = @(Get-Command artifactize -CommandType Application -All -ErrorAction SilentlyContinue |
-        Where-Object { $_.Path -ne $exe } | Select-Object -ExpandProperty Path -Unique)
-    if ($others) {
-        Say "another artifactize on your Path may run instead of this one:"
-        foreach ($other in $others) {
-            $version = try { (& $other --version 2>$null) -join ' ' } catch { 'version unknown' }
-            Write-Host "    $other ($version)"
+    # Every other copy on Path: one that comes first runs instead. A warning only.
+    foreach ($command in $commands) {
+        $exe = Join-Path $dir "$command.exe"
+        $others = @(Get-Command $command -CommandType Application -All -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -ne $exe } | Select-Object -ExpandProperty Path -Unique)
+        if ($others) {
+            Say "another $command on your Path may run instead of this one:"
+            foreach ($other in $others) {
+                $otherVersion = try { (& $other --version 2>$null) -join ' ' } catch { 'version unknown' }
+                Write-Host "    $other ($otherVersion)"
+            }
+            Say "remove it (a cargo install: cargo uninstall $command), or put $dir first on your Path, then open a new terminal."
         }
-        Say "remove it (a cargo install: cargo uninstall artifactize), or put $dir first on your Path, then open a new terminal."
     }
 }
