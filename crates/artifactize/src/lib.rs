@@ -25,6 +25,7 @@ pub mod runtime;
 pub mod scope;
 pub mod server;
 pub mod store;
+mod task;
 pub mod tools;
 pub mod types;
 pub mod workspace;

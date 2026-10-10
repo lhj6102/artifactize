@@ -1,4 +1,5 @@
 //! Ratatui rendering only; semantic selection and review lifecycle live in their controllers.
+use super::model::Status;
 use super::{
     DetailArea, Monitor, Pane, Scope,
     input::{Button, Hits},
@@ -58,22 +59,22 @@ pub(crate) fn clock(time: OffsetDateTime) -> String {
         time.second()
     )
 }
-fn color(status: Option<&str>) -> Style {
+fn color(status: Status) -> Style {
     Style::new().fg(match status {
-        Some("GREEN") => Color::Green,
-        Some("RED") => Color::Red,
-        Some("ERROR") => Color::Magenta,
-        Some("RUNNING") => Color::Yellow,
-        Some("WAITING_HUMAN") => Color::Cyan,
-        Some("BLOCKED" | "BUDGET_EXHAUSTED" | "INCOMPLETE") => Color::LightRed,
+        Status::Green => Color::Green,
+        Status::Red => Color::Red,
+        Status::Error => Color::Magenta,
+        Status::Running => Color::Yellow,
+        Status::WaitingHuman => Color::Cyan,
+        Status::Blocked | Status::BudgetExhausted | Status::Incomplete => Color::LightRed,
         _ => Color::Gray,
     })
 }
-fn status(status: &str) -> Span<'static> {
-    Span::styled(status.to_owned(), color(Some(status)))
+fn status(status: Status) -> Span<'static> {
+    Span::styled(status.as_str(), color(status))
 }
-fn glyph(status: &str) -> Span<'static> {
-    Span::styled(model::glyph(Some(status)).to_owned(), color(Some(status)))
+fn glyph(status: Status) -> Span<'static> {
+    Span::styled(status.glyph(), color(status))
 }
 fn field_lines(key: &str, value: &str, indent: &str) -> Vec<Line<'static>> {
     let mut values = value.lines();
@@ -202,7 +203,7 @@ fn run_cells(row: &model::RunRow, workspace: bool) -> [String; 7] {
         |name| name.to_string_lossy().into(),
     );
     [
-        model::glyph(Some(row.status.as_str())).to_owned(),
+        Status::from(row.status).glyph().to_owned(),
         row.status.to_string(),
         row.id.to_string(),
         row.age.clone(),
@@ -246,8 +247,10 @@ const RUN_BOUND: usize = 80;
 
 /// Columns of the Run headline and its attention lines.
 fn strip_width(strip: &model::Strip) -> usize {
-    let headline =
-        GLYPH_GAP + width(&strip.status) + width(HEADLINE_SEPARATOR) + width(&strip.headline);
+    let headline = GLYPH_GAP
+        + width(strip.status.as_str())
+        + width(HEADLINE_SEPARATOR)
+        + width(&strip.headline);
     let attention = strip
         .attention
         .iter()
@@ -377,8 +380,8 @@ impl Monitor {
             .unwrap_or_default();
         for (status, count) in badge {
             right.push(Span::styled(
-                format!("{}{count} ", model::glyph(Some(status))),
-                color(Some(status)),
+                format!("{}{count} ", status.glyph()),
+                color(status),
             ));
         }
         if !self.mouse_capture {
@@ -485,10 +488,7 @@ impl Monitor {
             };
             let parts = parts(row).into_iter().flat_map(|(status, count)| {
                 [
-                    Span::styled(
-                        format!("{}{count}", model::glyph(Some(status))),
-                        color(Some(status)),
-                    ),
+                    Span::styled(format!("{}{count}", status.glyph()), color(status)),
                     Span::raw(" "),
                 ]
             });
@@ -535,7 +535,7 @@ impl Monitor {
             let rows = rows.iter().map(|row| {
                 Row::new([
                     Cell::from(Line::from(vec![
-                        glyph(row.status.as_str()),
+                        glyph(row.status.into()),
                         format!(" {}", short_id(&row.id)).into(),
                     ])),
                     Cell::from(row.age.split(' ').next().unwrap_or_default().to_owned()),
@@ -559,8 +559,8 @@ impl Monitor {
                         .enumerate()
                         .filter(|(column, _)| widths[*column] > 0)
                         .map(|(column, cell)| match column {
-                            0 => Cell::from(glyph(row.status.as_str())),
-                            1 => Cell::from(status(row.status.as_str())),
+                            0 => Cell::from(glyph(row.status.into())),
+                            1 => Cell::from(status(row.status.into())),
                             5 | 6 => Cell::from(Span::raw(cell.clone()).dark_gray()),
                             _ => Cell::from(cell.clone()),
                         }),
@@ -607,19 +607,14 @@ impl Monitor {
         frame.render_widget(outer, area);
         // Compact keeps the status and its counts; the rest waits for focus.
         let headline = if density == Density::Compact {
-            model::counts(
-                progress
-                    .counts
-                    .iter()
-                    .map(|(status, n)| (status.as_str(), *n)),
-            )
+            model::counts(progress.counts.iter().copied())
         } else {
             strip.headline.clone()
         };
         let headline = Paragraph::new(Line::from(vec![
-            glyph(&strip.status),
+            glyph(strip.status),
             " ".into(),
-            status(&strip.status),
+            status(strip.status),
             format!("{HEADLINE_SEPARATOR}{headline}").into(),
         ]))
         .wrap(Wrap { trim: false });
@@ -650,7 +645,7 @@ impl Monitor {
             };
             attention.extend(strip.attention.iter().take(shown).map(|(state, text)| {
                 Line::from(vec![
-                    glyph(state),
+                    glyph(*state),
                     format!(
                         " {}",
                         fit(text, usize::from(inner.width).saturating_sub(GLYPH_GAP))

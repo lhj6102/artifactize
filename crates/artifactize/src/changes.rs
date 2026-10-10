@@ -436,7 +436,7 @@ async fn watch(
     }
     if let Some(task) = hub {
         task.abort();
-        let _ = task.await;
+        let _ = crate::task::joined(task.await);
     }
 }
 async fn receive(
@@ -484,7 +484,9 @@ async fn serve(
     loop {
         tokio::select! {
             _ = cancel.cancelled() => break,
-            _ = clients.join_next(), if !clients.is_empty() => {},
+            Some(result) = clients.join_next(), if !clients.is_empty() => {
+                let _ = crate::task::joined(result);
+            },
             result = listener.accept(), if clients.len() < MAX_CLIENTS => {
                 let stream = result?;
                 let (identity, epoch, sender, sequence) = (
@@ -500,7 +502,9 @@ async fn serve(
         }
     }
     clients.abort_all();
-    while clients.join_next().await.is_some() {}
+    while let Some(result) = clients.join_next().await {
+        let _ = crate::task::joined(result);
+    }
     Ok(())
 }
 async fn client(

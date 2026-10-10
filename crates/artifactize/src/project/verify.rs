@@ -421,11 +421,12 @@ pub async fn verify(
     // Saved Agent conversations past their size bound are collected; a failure only warns.
     let state = run.state_dir.clone();
     let bounds = limits.agent_sessions();
-    let collected =
+    let collected = crate::task::joined(
         tokio::task::spawn_blocking(move || crate::agent::session::collect(&state, bounds, false))
-            .await
-            .map_err(|e| e.to_string())
-            .and_then(|collected| collected);
+            .await,
+    )
+    .map_err(|e| e.to_string())
+    .and_then(|collected| collected);
     if let Err(error) = collected {
         use std::io::Write;
         let _ = writeln!(

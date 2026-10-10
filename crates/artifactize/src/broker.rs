@@ -212,7 +212,9 @@ pub(crate) async fn schedule(
     .await;
     if result.is_err() {
         cancellation.cancel();
-        while tasks.join_next().await.is_some() {}
+        while let Some(result) = tasks.join_next().await {
+            let _ = crate::task::joined(result);
+        }
     }
     result
 }
@@ -817,8 +819,7 @@ impl Scheduler<'_, '_> {
             tokio::select! {
                 biased;
                 result = self.tasks.join_next(), if !self.tasks.is_empty() => {
-                    let (index, request) = result
-                        .expect("active tasks")
+                    let (index, request) = crate::task::joined(result.expect("active tasks"))
                         .map_err(|e| e.to_string())??;
                     running.remove(&index);
                     let stopped = stops.all();

@@ -1,6 +1,7 @@
 //! Repository/worktree selection and cached Git discovery; no artifact config is read here.
 #[cfg(test)]
 mod tests;
+use super::model::Status;
 use crate::{
     repository::{self, Identity, Worktree},
     store::{CatalogRun, Signoff},
@@ -38,23 +39,23 @@ impl Badge {
     }
     /// Status glyphs and counts in the urgency order of the header, Runs and the tree:
     /// `!1 ✗2 ◐1 ?1`.
-    pub fn parts(&self) -> Vec<(&'static str, u64)> {
+    pub fn parts(&self) -> Vec<(Status, u64)> {
         let mut parts: Vec<_> = [
-            ("WAITING_HUMAN", self.waiting.len() as u64),
-            ("RED", self.red),
-            ("ERROR", self.error),
-            ("RUNNING", self.running),
+            (Status::WaitingHuman, self.waiting.len() as u64),
+            (Status::Red, self.red),
+            (Status::Error, self.error),
+            (Status::Running, self.running),
         ]
         .into_iter()
         .filter(|(_, count)| *count > 0)
         .collect();
-        parts.sort_by_key(|(status, _)| super::model::urgency(status));
+        parts.sort_by_key(|(status, _)| *status);
         parts
     }
     pub fn text(&self) -> String {
         self.parts()
             .into_iter()
-            .map(|(status, count)| format!("{}{count}", super::model::glyph(Some(status))))
+            .map(|(status, count)| format!("{}{count}", status.glyph()))
             .collect::<Vec<_>>()
             .join(" ")
     }

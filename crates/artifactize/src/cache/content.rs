@@ -90,14 +90,8 @@ pub(super) async fn files(
     }
     let walk = Walk::new(config, id, inputs, ignore)?;
     let token = cancellation.clone();
-    tokio::task::spawn_blocking(move || walk.digest(&token))
-        .await
-        .map_err(|error| {
-            if error.is_panic() {
-                std::panic::resume_unwind(error.into_panic());
-            }
-            error.to_string()
-        })?
+    crate::task::joined(tokio::task::spawn_blocking(move || walk.digest(&token)).await)
+        .map_err(|error| error.to_string())?
 }
 
 struct Walk {

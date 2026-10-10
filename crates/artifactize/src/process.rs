@@ -185,19 +185,16 @@ where
 {
     let cancellation = cancellation.child_token();
     let _cancel_on_drop = cancellation.clone().drop_guard();
-    match tokio::spawn(run_inner(
-        command,
-        input,
-        output_limit,
-        cancellation,
-        register,
-    ))
-    .await
-    {
-        Ok(result) => result,
-        Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
-        Err(error) => Err(Error::Task(error)),
-    }
+    crate::task::joined(
+        tokio::spawn(run_inner(
+            command,
+            input,
+            output_limit,
+            cancellation,
+            register,
+        ))
+        .await,
+    )?
 }
 
 async fn run_inner<F, R>(
@@ -262,7 +259,7 @@ where
         }
     });
     drop(gate);
-    let spawned = (&mut spawning).await?;
+    let spawned = crate::task::joined((&mut spawning).await)?;
     let mut child = match spawned {
         Ok(child) => child,
         Err(error) => {

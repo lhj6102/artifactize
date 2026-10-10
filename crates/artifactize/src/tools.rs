@@ -268,16 +268,13 @@ impl<'a> Registry<'a> {
                 let scope = self.scope.tool_scope();
                 let cancellation = cancellation.child_token();
                 let _cancel_on_drop = cancellation.clone().drop_guard();
-                return tokio::task::spawn_blocking(move || {
-                    builtin::call(input, &root, &scope, &owner, &cancellation)
-                })
-                .await
-                .unwrap_or_else(|error| {
-                    if error.is_panic() {
-                        std::panic::resume_unwind(error.into_panic());
-                    }
-                    ToolResult::error("Built-in Agent tool execution failed.")
-                });
+                return crate::task::joined(
+                    tokio::task::spawn_blocking(move || {
+                        builtin::call(input, &root, &scope, &owner, &cancellation)
+                    })
+                    .await,
+                )
+                .unwrap_or_else(|_| ToolResult::error("Built-in Agent tool execution failed."));
             }
         };
         let invocation = match self.prepare(&tool.definition.artifact_id, command, &args) {
@@ -289,16 +286,13 @@ impl<'a> Registry<'a> {
         let cancellation = cancellation.child_token();
         let _cancel_on_drop = cancellation.clone().drop_guard();
         // Keep cleanup alive if the caller drops its future while a command is running.
-        tokio::spawn(async move {
-            invoke(invocation, args, &workspace, &output_root, cancellation).await
-        })
-        .await
-        .unwrap_or_else(|error| {
-            if error.is_panic() {
-                std::panic::resume_unwind(error.into_panic());
-            }
-            ToolResult::error("Agent tool execution failed.")
-        })
+        crate::task::joined(
+            tokio::spawn(async move {
+                invoke(invocation, args, &workspace, &output_root, cancellation).await
+            })
+            .await,
+        )
+        .unwrap_or_else(|_| ToolResult::error("Agent tool execution failed."))
     }
 
     fn prepare(&self, owner: &str, tool: &CommandTool, args: &Value) -> Result<Invocation, ()> {

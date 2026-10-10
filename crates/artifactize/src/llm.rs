@@ -363,7 +363,7 @@ impl Client {
                         observe(crate::agent::session::Delivery {
                             turn: context.number,
                             attempt,
-                            block: "attempt".into(),
+                            block: crate::types::DeliveryBlock::attempt(),
                             kind: crate::agent::session::DeliveryKind::Text,
                             text: error.message.clone(),
                             state: crate::agent::session::DeliveryState::Interrupted,

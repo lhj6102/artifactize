@@ -474,3 +474,30 @@ mod tests {
 
 // OAuth account claims are opaque provider strings, historically any nonempty text.
 identity!(CodexAccountId, |value: &str| !value.is_empty());
+
+// The block a streamed delivery belongs to: a response text part, a reasoning summary, or
+// the whole attempt, which an interruption ends. Summary blocks carry the provider's item
+// identity, so any non-empty text is valid.
+identity!(DeliveryBlock, |value: &str| !value.is_empty());
+
+/// The block naming a whole attempt.
+const ATTEMPT_BLOCK: &str = "attempt";
+
+impl DeliveryBlock {
+    /// The whole attempt.
+    pub fn attempt() -> Self {
+        Self(ATTEMPT_BLOCK.to_owned())
+    }
+    /// Whether this names the whole attempt.
+    pub fn is_attempt(&self) -> bool {
+        self.0 == ATTEMPT_BLOCK
+    }
+    /// Response text part `part`.
+    pub fn text(part: usize) -> Self {
+        Self(format!("text-{part}"))
+    }
+    /// Summary `index` of the reasoning item `identity` names.
+    pub fn summary(identity: &str, index: usize) -> Self {
+        Self(format!("summary-{identity}-{index}"))
+    }
+}

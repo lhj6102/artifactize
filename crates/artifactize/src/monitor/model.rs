@@ -2,8 +2,10 @@
 mod node_id;
 pub use node_id::NodeId;
 mod states;
+mod status;
 mod tree;
 pub use states::{Activity, Busy, Completion, EvalView, NotRun, Queue, Source, Upstream, Waits};
+pub use status::Status;
 pub use tree::{Kind, Node, Segment, Tone, Weight, completion, tree, upstream_index};
 
 use serde_json::Value;
@@ -92,9 +94,9 @@ pub struct RunRow {
     pub took: String,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Progress {
-    pub status: String,
+    pub status: Status,
     pub repo: String,
     pub validation: String,
     pub timing: String,
@@ -103,7 +105,7 @@ pub struct Progress {
     pub finished: bool,
     /// The saved validation snapshot: `None` until the Run ends.
     pub satisfied: Option<bool>,
-    pub counts: Vec<(String, u64)>,
+    pub counts: Vec<(Status, u64)>,
     /// Executions against their budget, and jobs.
     pub budget: String,
     /// Executed, reused and derived requests.
@@ -122,12 +124,12 @@ pub struct Progress {
 }
 
 /// The Run headline: one status line, then what needs attention.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Strip {
-    pub status: String,
+    pub status: Status,
     pub headline: String,
     /// Status and text: errors, then waiting Human reviews, then running evals.
-    pub attention: Vec<(String, String)>,
+    pub attention: Vec<(Status, String)>,
     /// Attention lines beyond the shown ones.
     pub more: usize,
 }
@@ -168,40 +170,11 @@ impl Detail {
 /// Attention lines shown in the Run headline before `+N more`.
 const ATTENTION_LINES: usize = 3;
 
-/// Most to least urgent, for status counts in the header, Scope, Runs and the headline.
-const URGENCY: &str = "ERROR RED BLOCKED RUNNING WAITING_HUMAN QUEUED BUDGET_EXHAUSTED \
-    WAIT_DEPENDENCY WAIT STALE UNREVIEWED INCOMPLETE GREEN BASIS";
 const ABSENT: &str = "not in Run";
 
-pub fn glyph(status: Option<&str>) -> &'static str {
-    match status {
-        Some("GREEN") => "✓",
-        Some("RED") => "✗",
-        Some("ERROR") => "!",
-        Some("RUNNING") => "◐",
-        Some("WAITING_HUMAN") => "?",
-        Some("QUEUED") => "·",
-        Some("BLOCKED") => "⊘",
-        Some("WAIT_DEPENDENCY" | "WAIT") => "…",
-        Some("BUDGET_EXHAUSTED") => "$",
-        Some("BASIS") => "◇",
-        None => "-",
-        _ => "○",
-    }
-}
-
-fn meaning(status: &str) -> &'static str {
-    match status {
-        "GREEN" => "criteria met",
-        "RED" => "criteria not met",
-        "ERROR" => "operational failure, not a verdict",
-        "RUNNING" => "executing",
-        "WAITING_HUMAN" => "waiting for a Human submission",
-        "BLOCKED" => "blocked by a RED dependency",
-        "WAIT_DEPENDENCY" => "waiting for current GREEN dependency evidence",
-        "BUDGET_EXHAUSTED" => "maxExecutions reached before it started",
-        _ => "not executed",
-    }
+/// The mark for `status`, or `-` for an eval without one.
+pub fn glyph(status: Option<Status>) -> &'static str {
+    status.map_or("-", Status::glyph)
 }
 
 fn join<T: AsRef<str>>(items: impl IntoIterator<Item = T>, separator: &str) -> String {
@@ -212,8 +185,12 @@ fn join<T: AsRef<str>>(items: impl IntoIterator<Item = T>, separator: &str) -> S
     items.join(separator)
 }
 
-fn mark(name: &str, status: Option<&str>) -> String {
-    format!("{} {name} {}", glyph(status), status.unwrap_or(ABSENT))
+fn mark(name: &str, status: Option<Status>) -> String {
+    format!(
+        "{} {name} {}",
+        glyph(status),
+        status.map_or(ABSENT, Status::as_str)
+    )
 }
 
 /// Seconds per minute, hour and day, the units a duration is shown in.
@@ -241,22 +218,14 @@ fn span(
     Some(duration((end - start.time()).whole_seconds()))
 }
 
-/// Position in the urgency order; unknown statuses come last.
-pub fn urgency(status: &str) -> usize {
-    URGENCY
-        .split_whitespace()
-        .position(|known| known == status)
-        .unwrap_or(usize::MAX)
-}
-
 /// Status counts as glyphs, most urgent first and zero counts left out: `!2 ✓1`.
-pub fn counts<'a>(counts: impl IntoIterator<Item = (&'a str, u64)>) -> String {
+pub fn counts(counts: impl IntoIterator<Item = (Status, u64)>) -> String {
     let mut counts: Vec<_> = counts.into_iter().filter(|(_, n)| *n > 0).collect();
-    counts.sort_by_key(|(status, _)| urgency(status));
+    counts.sort_by_key(|(status, _)| *status);
     join(
         counts
             .into_iter()
-            .map(|(status, n)| format!("{}{n}", glyph(Some(status)))),
+            .map(|(status, n)| format!("{}{n}", status.glyph())),
         " ",
     )
 }
@@ -276,7 +245,7 @@ pub fn run_rows(runs: &[RunSummary], now: OffsetDateTime) -> Vec<RunRow> {
             id: run.id.clone(),
             repo: run.repo_path.clone(),
             status: run.status,
-            counts: counts(run.counts.iter().map(|(status, n)| (status.as_str(), *n))),
+            counts: counts(run.counts.iter().map(|(status, n)| ((*status).into(), *n))),
             age: span(run.created_at, None, now).unwrap_or_default(),
             took: run
                 .completed_at
@@ -323,10 +292,10 @@ fn error(view: &RequestView) -> Option<String> {
 pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Progress {
     let run = &view.run;
     let (summary, saved_usage) = query::run_summary(view, now);
-    let with = |status: &'static str| {
+    let with = |status: crate::types::RequestStatus| {
         requests
             .iter()
-            .filter(move |view| view.request.status.as_str() == status)
+            .filter(move |view| view.request.status == status)
     };
     let usage = counter_pairs(&summary.usage.usage);
     let saved = counter_pairs(&saved_usage);
@@ -349,7 +318,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         .unwrap_or_default();
     let wall = span(run.created_at, run.completed_at, now).unwrap_or_default();
     Progress {
-        status: run.status.to_string(),
+        status: run.status.into(),
         repo: crate::platform::path_text(&run.repo_path),
         // The saved snapshot; the tree shows the current state.
         validation: match validation.and_then(|v| v.satisfied.value()) {
@@ -373,7 +342,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         counts: summary
             .counts
             .iter()
-            .map(|(status, count)| (status.to_string(), *count))
+            .map(|(status, count)| ((*status).into(), *count))
             .collect(),
         budget: format!(
             "executions {}/{} · jobs {}",
@@ -389,7 +358,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         usage,
         saved,
         tokens,
-        running: with("RUNNING")
+        running: with(crate::types::RequestStatus::Running)
             .map(|view| {
                 (
                     view.request.eval_id.to_string(),
@@ -397,10 +366,10 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
                 )
             })
             .collect(),
-        waiting: with("WAITING_HUMAN")
+        waiting: with(crate::types::RequestStatus::WaitingHuman)
             .map(|view| (view.request.eval_id.to_string(), claim(view)))
             .collect(),
-        errors: with("ERROR")
+        errors: with(crate::types::RequestStatus::Error)
             .map(|view| {
                 (
                     view.request.eval_id.to_string(),
@@ -419,12 +388,7 @@ pub fn strip(progress: &Progress) -> Strip {
         Some(true) => "SATISFIED at Run end".to_owned(),
         Some(false) => "NOT SATISFIED at Run end".to_owned(),
     };
-    let counts = counts(
-        progress
-            .counts
-            .iter()
-            .map(|(status, n)| (status.as_str(), *n)),
-    );
+    let counts = counts(progress.counts.iter().copied());
     let time = format!(
         "{} {}",
         if progress.finished { "took" } else { "elapsed" },
@@ -440,19 +404,19 @@ pub fn strip(progress: &Progress) -> Strip {
             .filter(|part| !part.is_empty()),
         " · ",
     );
-    let mut attention: Vec<(String, String)> = progress
+    let mut attention: Vec<(Status, String)> = progress
         .errors
         .iter()
-        .map(|(eval, error)| ("ERROR".into(), format!("{eval}  {error}")))
+        .map(|(eval, error)| (Status::Error, format!("{eval}  {error}")))
         .chain(progress.waiting.iter().map(|(eval, claim)| {
             (
-                "WAITING_HUMAN".into(),
+                Status::WaitingHuman,
                 format!("{eval}  waiting Human · {claim}"),
             )
         }))
         .chain(progress.running.iter().map(|(eval, time)| {
             (
-                "RUNNING".into(),
+                Status::Running,
                 format!("{eval}  running {time}").trim_end().to_owned(),
             )
         }))
@@ -460,7 +424,7 @@ pub fn strip(progress: &Progress) -> Strip {
     let more = attention.len().saturating_sub(ATTENTION_LINES);
     attention.truncate(ATTENTION_LINES);
     Strip {
-        status: progress.status.clone(),
+        status: progress.status,
         headline,
         attention,
         more,
@@ -469,7 +433,7 @@ pub fn strip(progress: &Progress) -> Strip {
 
 /// The row above the Artifacts; Enter on it opens the Run detail.
 pub fn run_node(run: &RunView) -> Node {
-    let status = run.run.status.to_string();
+    let status = Status::from(run.run.status);
     Node {
         id: NodeId::run(&run.run.id),
         clock: None,
@@ -477,13 +441,13 @@ pub fn run_node(run: &RunView) -> Node {
             completion: Completion::Complete,
             basis: false,
         },
-        glyph: glyph(Some(&status)),
-        tone: match status.as_str() {
-            "GREEN" => Tone::Green,
-            "RED" => Tone::Red,
-            "ERROR" => Tone::Error,
-            "RUNNING" => Tone::Running,
-            "BLOCKED" | "BUDGET_EXHAUSTED" | "INCOMPLETE" => Tone::Blocked,
+        glyph: status.glyph(),
+        tone: match status {
+            Status::Green => Tone::Green,
+            Status::Red => Tone::Red,
+            Status::Error => Tone::Error,
+            Status::Running => Tone::Running,
+            Status::Blocked | Status::BudgetExhausted | Status::Incomplete => Tone::Blocked,
             _ => Tone::Muted,
         },
         weight: Weight::Normal,
@@ -573,8 +537,8 @@ impl<'a> Saved<'a> {
             .find(|view| view.request.eval_id == eval)
     }
 
-    fn status(&self, eval: &str) -> Option<&'a str> {
-        self.request(eval).map(|view| view.request.status.as_str())
+    fn status(&self, eval: &str) -> Option<Status> {
+        self.request(eval).map(|view| view.request.status.into())
     }
 
     /// Dependency-first component order with cycle peers by name, then any other saved or
@@ -764,7 +728,11 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     };
     detail.push(
         "Status",
-        format!("{} — {}", request.status, meaning(request.status.as_str())),
+        format!(
+            "{} — {}",
+            request.status,
+            Status::from(request.status).meaning()
+        ),
     );
     detail.push("Request", request.id.as_str());
     detail.push("Reason", request.blocked_reason.clone().unwrap_or_default());
@@ -919,7 +887,7 @@ pub fn detail(
                         .counts
                         .iter()
                         .filter(|(_, n)| *n > 0)
-                        .map(|(status, n)| format!("{} {status} {n}", glyph(Some(status)))),
+                        .map(|(status, n)| format!("{} {status} {n}", status.glyph())),
                     " · ",
                 ),
             );

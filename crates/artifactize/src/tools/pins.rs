@@ -43,18 +43,20 @@ pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins,
     if resolved.is_empty() {
         return Ok(Pins::new());
     }
-    tokio::task::spawn_blocking(move || {
-        let mut pins = Pins::new();
-        for (name, path, absolute) in resolved {
-            let digest =
-                pin(&absolute).map_err(|e| format!("Tool {name} executionPaths {path}: {e}"))?;
-            pins.entry(name)
-                .or_default()
-                .insert(path, digest.parse().expect("SHA-256 pin digest"));
-        }
-        Ok(pins)
-    })
-    .await
+    crate::task::joined(
+        tokio::task::spawn_blocking(move || {
+            let mut pins = Pins::new();
+            for (name, path, absolute) in resolved {
+                let digest = pin(&absolute)
+                    .map_err(|e| format!("Tool {name} executionPaths {path}: {e}"))?;
+                pins.entry(name)
+                    .or_default()
+                    .insert(path, digest.parse().expect("SHA-256 pin digest"));
+            }
+            Ok(pins)
+        })
+        .await,
+    )
     .map_err(|e| e.to_string())?
 }
 

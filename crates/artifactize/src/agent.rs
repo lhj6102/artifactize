@@ -46,22 +46,38 @@ pub fn session_id() -> Result<crate::types::SessionId, String> {
     uuid()?.parse()
 }
 
+/// A UUID has 128 bits (RFC 9562, section 4).
+const UUID_BYTES: usize = 16;
+/// The byte whose high nibble holds the version (RFC 9562, section 4.2).
+const UUID_VERSION_BYTE: usize = 6;
+/// Keep the low nibble of the version byte; the high nibble becomes the version.
+const UUID_VERSION_KEEP: u8 = 0x0f;
+/// Version 4: random bits (RFC 9562, section 5.4).
+const UUID_VERSION_4: u8 = 0x40;
+/// The byte whose two high bits hold the variant (RFC 9562, section 4.1).
+const UUID_VARIANT_BYTE: usize = 8;
+/// Keep the low six bits of the variant byte; the high two become the variant.
+const UUID_VARIANT_KEEP: u8 = 0x3f;
+/// The RFC 9562 variant, binary 10.
+const UUID_VARIANT_RFC: u8 = 0x80;
+/// Where the hyphens fall in the 32 hexadecimal digits: the 8-4-4-4-12 groups of the
+/// textual form (RFC 9562, section 4).
+const UUID_GROUP_ENDS: [usize; 4] = [8, 12, 16, 20];
+
 /// A random version 4 UUID in its lowercase hyphenated form.
 pub(crate) fn uuid() -> Result<String, String> {
-    let mut bytes = [0_u8; 16];
+    let mut bytes = [0_u8; UUID_BYTES];
     getrandom::fill(&mut bytes).map_err(|_| "Cannot obtain secure randomness.".to_owned())?;
-    // Version 4, RFC 9562 variant.
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
-    Ok(format!(
-        "{}-{}-{}-{}-{}",
-        &hex[..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..]
-    ))
+    bytes[UUID_VERSION_BYTE] = (bytes[UUID_VERSION_BYTE] & UUID_VERSION_KEEP) | UUID_VERSION_4;
+    bytes[UUID_VARIANT_BYTE] = (bytes[UUID_VARIANT_BYTE] & UUID_VARIANT_KEEP) | UUID_VARIANT_RFC;
+    let mut text = String::with_capacity(UUID_BYTES * 2 + UUID_GROUP_ENDS.len());
+    for (index, byte) in bytes.iter().enumerate() {
+        if UUID_GROUP_ENDS.contains(&(index * 2)) {
+            text.push('-');
+        }
+        text.push_str(&format!("{byte:02x}"));
+    }
+    Ok(text)
 }
 
 /// `state` holds Codex credentials; the API-key backends read only the environment.

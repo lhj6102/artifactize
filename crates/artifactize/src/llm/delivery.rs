@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod framing_tests;
 use crate::agent::session::{Delivery, DeliveryKind, DeliveryState};
+use crate::types::DeliveryBlock;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use rig_core::{
@@ -46,8 +47,8 @@ struct Summary {
 }
 #[derive(Default)]
 struct Buffer {
-    pending: BTreeMap<(DeliveryKind, String), Pending>,
-    summaries: BTreeMap<String, Summary>,
+    pending: BTreeMap<(DeliveryKind, DeliveryBlock), Pending>,
+    summaries: BTreeMap<DeliveryBlock, Summary>,
     ended: BTreeSet<(DeliveryKind, usize)>,
     dropped: bool,
     ordinal: usize,
@@ -59,7 +60,7 @@ impl Sink {
     pub async fn scope<F: std::future::Future>(&self, future: F) -> F::Output {
         ACTIVE.scope(self.clone(), future).await
     }
-    fn push(&self, kind: DeliveryKind, block: String, text: &str) {
+    fn push(&self, kind: DeliveryKind, block: DeliveryBlock, text: &str) {
         if text.is_empty() {
             return;
         }
@@ -90,7 +91,7 @@ impl Sink {
         });
         entry.text.push_str(text);
     }
-    fn complete(&self, kind: DeliveryKind, block: String, text: String) {
+    fn complete(&self, kind: DeliveryKind, block: DeliveryBlock, text: String) {
         let mut buffer = self.0.lock().unwrap();
         let order = buffer
             .pending
@@ -145,7 +146,7 @@ impl Sink {
         else {
             return;
         };
-        let block = format!("summary-{identity}-{index}");
+        let block = DeliveryBlock::summary(&identity, index);
         {
             let mut buffer = self.0.lock().unwrap();
             let observed = buffer
@@ -207,7 +208,7 @@ impl Sink {
             };
             self.complete(
                 DeliveryKind::Summary,
-                block.unwrap_or_else(|| format!("summary-final-{part}-{index}")),
+                block.unwrap_or_else(|| DeliveryBlock::summary(&format!("final-{part}"), index)),
                 text.clone(),
             );
         }
@@ -215,13 +216,13 @@ impl Sink {
     pub fn normalized(&self, item: &Item<StreamEvent>) {
         match item {
             Item::Event(StreamEvent::Text { part, text }) => {
-                self.push(DeliveryKind::Text, format!("text-{}", part.index()), text)
+                self.push(DeliveryKind::Text, DeliveryBlock::text(part.index()), text)
             }
             Item::Event(StreamEvent::End { part, content }) => match content {
                 AssistantContent::Text(text) => {
                     self.complete(
                         DeliveryKind::Text,
-                        format!("text-{}", part.index()),
+                        DeliveryBlock::text(part.index()),
                         text.text.clone(),
                     );
                     self.0
@@ -256,7 +257,7 @@ impl Sink {
                     if !self.ended(DeliveryKind::Text, index) {
                         self.complete(
                             DeliveryKind::Text,
-                            format!("text-{index}"),
+                            DeliveryBlock::text(index),
                             text.text.clone(),
                         );
                     }

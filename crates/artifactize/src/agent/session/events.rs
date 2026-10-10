@@ -56,7 +56,7 @@ pub enum DeliveryState {
 pub struct Delivery {
     pub turn: usize,
     pub attempt: usize,
-    pub block: String,
+    pub block: crate::types::DeliveryBlock,
     #[serde(rename = "contentKind")]
     pub kind: DeliveryKind,
     pub text: String,

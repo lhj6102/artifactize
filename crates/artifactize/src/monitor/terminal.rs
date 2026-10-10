@@ -143,7 +143,7 @@ async fn watch(
                 if session_job.is_some() =>
             {
                 session_job = None;
-                match outcome {
+                match crate::task::joined(outcome) {
                     Ok((job, window)) => {
                         if let Some(live) = monitor.live_mut()
                             && live.serial == job.serial

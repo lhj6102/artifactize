@@ -156,7 +156,16 @@ pub struct Transcript {
     question: Option<(Option<usize>, [u8; 32])>,
     /// A JSON-looking assistant message is unchanged until an identical authoritative End arrives.
     result_candidate: Option<(BlockId, [u8; 32])>,
-    deliveries: BTreeMap<(Option<usize>, usize, usize, DeliveryKind, String), LiveBlock>,
+    deliveries: BTreeMap<
+        (
+            Option<usize>,
+            usize,
+            usize,
+            DeliveryKind,
+            crate::types::DeliveryBlock,
+        ),
+        LiveBlock,
+    >,
     delivered_turns: BTreeSet<(Option<usize>, usize)>,
     thinking: BTreeSet<BlockId>,
 }
@@ -271,7 +280,7 @@ impl Transcript {
     }
     fn delivery(&mut self, send: Option<usize>, delivery: &Delivery) -> Vec<Patch> {
         let mut patches = Vec::new();
-        if delivery.block == "attempt" && delivery.state == DeliveryState::Interrupted {
+        if delivery.block.is_attempt() && delivery.state == DeliveryState::Interrupted {
             for ((follow, turn, attempt, kind, _), block) in &self.deliveries {
                 if (*follow, *turn, *attempt) == (send, delivery.turn, delivery.attempt)
                     && !block.text.is_empty()
