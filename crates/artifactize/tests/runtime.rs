@@ -248,7 +248,9 @@ async fn runtime_has_independent_private_external_directories() {
     assert_eq!(environment.len(), if cfg!(windows) { 16 } else { 10 });
     assert_eq!(
         environment["ARTIFACTIZE_WORKSPACE_DIR"],
-        scratch.workspace().to_str().unwrap()
+        support::os::canonical(&scratch.workspace())
+            .to_str()
+            .unwrap()
     );
     for (variable, name) in [
         ("ARTIFACTIZE_OUTPUT_DIR", "output"),
@@ -347,7 +349,11 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
         None,
     )
     .unwrap();
-    assert!(command.directory().starts_with(external.join("new/nested")));
+    assert!(
+        command
+            .directory()
+            .starts_with(support::os::canonical(&external.join("new/nested")))
+    );
     assert_eq!(completed(execute(command).await).verdict, Verdict::Green);
 }
 

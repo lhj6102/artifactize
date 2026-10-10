@@ -1023,7 +1023,7 @@ fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
     }
 }
 
-/// Edit text in `$EDITOR` (default `vi`, Notepad on Windows) on the restored terminal; bounded
+/// Edit text in `$VISUAL`, then `$EDITOR` (default `vi`, Notepad on Windows); bounded
 /// like `--fields-file`.
 async fn edit(text: String) -> Result<String, String> {
     let file = tempfile::Builder::new()
@@ -1032,9 +1032,13 @@ async fn edit(text: String) -> Result<String, String> {
         .tempfile()
         .map_err(|e| e.to_string())?;
     std::fs::write(file.path(), text).map_err(|e| e.to_string())?;
-    let editor = std::env::var("EDITOR")
-        .ok()
-        .filter(|editor| !editor.trim().is_empty())
+    let editor = ["VISUAL", "EDITOR"]
+        .into_iter()
+        .find_map(|variable| {
+            std::env::var(variable)
+                .ok()
+                .filter(|editor| !editor.trim().is_empty())
+        })
         .unwrap_or_else(|| crate::platform::DEFAULT_EDITOR.into());
     let status = crate::platform::editor(&editor, file.path())
         .status()

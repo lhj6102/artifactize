@@ -194,15 +194,15 @@ pub(crate) fn spawn_gated(
                 let _ = child.start_kill();
                 Err(error)
             }
-        });
+        })?;
     let (outcome, admission) = oneshot::channel();
     let gate = Gate {
-        pid: child.as_ref().ok().and_then(tokio::process::Child::id),
+        pid: child.id(),
         admitted: AtomicBool::new(false),
         outcome: Some(outcome),
     };
     let spawning = tokio::spawn(async move {
-        let mut child = child?;
+        let mut child = child;
         if !matches!(admission.await, Ok(true)) {
             let _ = job.terminate();
             let _ = child.wait().await;

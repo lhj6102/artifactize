@@ -293,9 +293,9 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
             request["argv"],
             json!([
                 "python3",
-                repo.join("house-style/check.py"),
-                repo.join(format!("{name}.md")),
-                repo.join("house-style/banned.txt"),
+                support::os::canonical(&repo.join("house-style/check.py")),
+                support::os::canonical(&repo.join(format!("{name}.md"))),
+                support::os::canonical(&repo.join("house-style/banned.txt")),
                 limit
             ])
         );

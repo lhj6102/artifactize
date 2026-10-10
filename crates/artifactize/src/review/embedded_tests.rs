@@ -707,7 +707,8 @@ additionalProperties = false
 }
 
 fn drawn(review: &mut Review) -> String {
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(140, 40)).unwrap();
+    // The resolved executable and Windows temp paths can exceed a narrow Tools pane.
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(400, 40)).unwrap();
     terminal.draw(|frame| review.draw(frame)).unwrap();
     let buffer = terminal.backend().buffer();
     let rows = buffer.content().chunks(buffer.area.width as usize);
@@ -786,8 +787,8 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     let Some(Ok(command)) = review.command("open_brand-icon").cloned() else {
         panic!("resolved command");
     };
-    let root = std::fs::canonicalize(&repo).unwrap();
-    let file = root.join("assets/brand/artifactize-icon.svg");
+    let root = crate::test_os::canonical(&repo);
+    let file = crate::test_os::canonical(&root.join("assets/brand/artifactize-icon.svg"));
     assert_eq!(command.args, vec![file.to_str().unwrap().to_owned()]);
     assert_eq!(command.cwd, root.join("assets/brand"));
     press(&mut review, KeyEvent::from(KeyCode::Tab));

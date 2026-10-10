@@ -6,6 +6,39 @@ use super::*;
 
 const ID: &str = "run-1-3";
 
+#[tokio::test]
+async fn visual_precedes_editor_and_reads_the_saved_review() {
+    use std::{fs, process::Command};
+    if std::env::var_os("ARTIFACTIZE_EDITOR_SEAM").is_some() {
+        assert_eq!(edit("original".into()).await.unwrap(), "edited by visual");
+        return;
+    }
+    let root = tempfile::tempdir().unwrap();
+    let script = root.path().join("editor.py");
+    fs::write(
+        &script,
+        "import pathlib,sys\npathlib.Path(sys.argv[1]).write_text('edited by visual')\n",
+    )
+    .unwrap();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "review::tests::visual_precedes_editor_and_reads_the_saved_review",
+            "--nocapture",
+        ])
+        .env("ARTIFACTIZE_EDITOR_SEAM", "1")
+        .env("VISUAL", format!("python3 \"{}\"", script.display()))
+        .env("EDITOR", "artifactize-editor-that-must-not-run")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn spinner_frames_keep_the_existing_hundred_millisecond_cadence_and_cast_order() {
     assert_eq!(view::spinner(Duration::from_millis(0)), "⠋");

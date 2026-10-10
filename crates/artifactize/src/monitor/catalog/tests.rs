@@ -69,7 +69,7 @@ fn non_git_initial_selection_uses_nearest_component_ancestor_without_grouping_le
 #[tokio::test]
 async fn starting_inside_saved_non_git_workspace_selects_its_runs() {
     let root = tempfile::tempdir().unwrap();
-    let repo = root.path().join("repo");
+    let repo = crate::test_os::canonical(root.path()).join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(repo.join("sub")).unwrap();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
