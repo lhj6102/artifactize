@@ -33,7 +33,7 @@ impl Session {
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
         let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
         command
-            // The examples name `grep` and `cat` for PATH to find.
+            // Runtime evals name `grep` and declared tools name `python3` for PATH to find.
             .env("PATH", support::os::path())
             .current_dir(repo)
             .args(args)
@@ -434,29 +434,11 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
 #[test]
 fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
     let session = Session::new();
-    // The section tool runs /bin/sh; a copy names the stand-in where it is not at that path.
-    let repo = if support::os::stand_ins() {
-        session.copy("agent-tools")
-    } else {
-        example("agent-tools")
-    };
+    let repo = example("agent-tools");
     let before = files(&repo);
 
-    // A stub keeps the static launch check independent of the host; nothing is launched.
-    let bin = session.0.path().join("bin");
-    fs::create_dir(&bin).unwrap();
-    fs::write(bin.join("xdg-open"), "#!/bin/sh\nexit 0\n").unwrap();
-    support::os::make_executable(&bin.join("xdg-open"));
-    let path = std::env::join_paths(
-        std::iter::once(bin).chain(std::env::split_paths(&support::os::path())),
-    )
-    .unwrap();
-    let output = session
-        .command(&repo, &["tools", "check"])
-        .env("PATH", path)
-        .output()
-        .unwrap();
-    let report = parse(&expect(output, &["tools", "check"], 0));
+    // Built-in launch tools are checked without launching an application on the host.
+    let report = session.json(&repo, &["tools", "check"], 0);
     assert_eq!(report["ok"], true, "{report}");
     let names: Vec<Vec<&str>> = report["scopes"]
         .as_array()
@@ -485,7 +467,7 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         ]
     );
 
-    // The declared json and plain tools run locally through an explicit check.
+    // The declared json tool and built-in section tool run through an explicit check.
     let execute = |tool: &str, args: &str| {
         let args = [
             "tools",
@@ -509,16 +491,13 @@ fn agent_tools_checks_declared_tools_and_completes_a_human_signoff() {
         coverage["data"]["requirements"].as_array().unwrap().len(),
         4
     );
-    // section.sh reads lines and matches patterns as only a POSIX shell does.
-    if !support::os::stand_ins() {
-        let section = execute("section", r#"{"title":"Dry run"}"#);
-        assert!(
-            section["text"]
-                .as_str()
-                .unwrap()
-                .starts_with("## Dry run\n")
-        );
-    }
+    let section = execute("section", r#"{"heading":"Dry run"}"#);
+    assert!(
+        section["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("## Dry run\n")
+    );
     let image = execute("view_image", r#"{"path":"diagram.png"}"#);
     assert_eq!(image["mimeType"], "image/png");
 

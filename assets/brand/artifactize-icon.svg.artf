@@ -1,7 +1,7 @@
 name = "brand-icon"
 
 [views.human_tools]
-open = { description = "Open the original artwork of {artifactName} in the default image viewer.", kind = "launch", command = "xdg-open", args = ["{artifactPath}"] }
+open = { description = "Open the original artwork of {artifactName} in the default image viewer.", builtin = "open", args = ["{artifactPath}"] }
 
 [evals.approved]
 title = "The owner approves this artwork as the Artifactize icon"
