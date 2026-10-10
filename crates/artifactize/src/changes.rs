@@ -371,7 +371,8 @@ async fn watch(
                 let endpoint = endpoint.clone();
                 let token = cancel.child_token();
                 hub = Some(tokio::spawn(async move {
-                    let _ = serve(endpoint, listener, owner, token).await;
+                    let result = serve(endpoint, listener, owner, token).await;
+                    eprintln!("hub ended: {result:?}");
                 }));
             }
             let connection = tokio::time::timeout(DELIVERY_TIMEOUT, connect(endpoint, true));
