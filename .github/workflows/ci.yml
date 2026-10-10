@@ -1,9 +1,9 @@
 name: CI
 
 # Changes that touch only the website (built by website.yml) skip the Rust checks.
-# Before v1, only the Linux check gates changes; pushes to main keep its cache warm for
-# release.yml. Windows runs weekly and by hand, as an informational signal that never
-# fails the workflow.
+# Only the Linux check gates pull requests. Windows and macOS run on main pushes and
+# weekly schedules as failure-reporting checks, so regressions turn main red and notify
+# subscribers; they never run on pull requests. Manual runs remain informational.
 on:
   push:
     branches: [main]
@@ -32,9 +32,9 @@ jobs:
       # Packages the crate and builds the package as crates.io would, without uploading.
       - run: cargo publish --dry-run --locked -p artifactize-tools -p artifactize
   windows:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
-    continue-on-error: true
+    continue-on-error: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -43,11 +43,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --locked --all-targets -- -D warnings
       # Tests build their Windows stand-ins for /bin/sh with this rustc, and run python3.
-      - run: cargo test --locked
+      - run: cargo test --locked --no-fail-fast
   macos:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'push' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
-    continue-on-error: true
+    continue-on-error: ${{ github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -55,4 +55,4 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo test --locked
+      - run: cargo test --locked --no-fail-fast
