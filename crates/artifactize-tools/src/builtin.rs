@@ -161,10 +161,7 @@ pub fn call(
         })
     })();
     match result {
-        Ok(content) => ToolResult {
-            content: vec![content],
-            is_error: false,
-        },
+        Ok(content) => ToolResult::success(content),
         Err(message) => ToolResult::error(message),
     }
 }

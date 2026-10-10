@@ -32,20 +32,96 @@ pub enum Content {
     Launch { launched: bool },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ToolResult {
-    pub content: Vec<Content>,
-    pub is_error: bool,
+/// Human failures retain separate stdout and stderr blocks in saved results,
+/// but cannot carry launch acknowledgements, empty content, or blank text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ErrorText(artifactize_tools::result::ContentBlocks<Content>);
+
+impl ErrorText {
+    fn new(content: Vec<Content>) -> Result<Self, String> {
+        for block in &content {
+            let Content::Text { text } = block else {
+                return Err("Human tool error must contain only text blocks".into());
+            };
+            artifactize_tools::result::ErrorMessage::new(text.clone())
+                .map_err(|error| error.to_string())?;
+        }
+        artifactize_tools::result::ContentBlocks::new(content)
+            .map(Self)
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToolResult {
+    Success(artifactize_tools::result::ContentBlocks<Content>),
+    Error(ErrorText),
 }
 
 impl ToolResult {
-    fn error(message: impl Into<String>) -> Self {
-        Self {
-            content: vec![Content::Text {
-                text: message.into(),
-            }],
-            is_error: true,
+    pub fn success(content: Content) -> Self {
+        Self::success_blocks(vec![content])
+    }
+
+    fn success_blocks(content: Vec<Content>) -> Self {
+        Self::Success(
+            artifactize_tools::result::ContentBlocks::new(content)
+                .expect("Human output always has one or two blocks"),
+        )
+    }
+
+    /// Blank diagnostics become "Tool failed."; nonblank text is unchanged.
+    pub fn error(message: impl Into<String>) -> Self {
+        let message = artifactize_tools::result::ErrorMessage::diagnostic(message);
+        Self::error_blocks(vec![Content::Text {
+            text: message.as_str().to_owned(),
+        }])
+    }
+
+    fn error_blocks(content: Vec<Content>) -> Self {
+        Self::Error(ErrorText::new(content).expect("Human failures contain nonblank text"))
+    }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::Error(_))
+    }
+
+    pub fn content(&self) -> &[Content] {
+        match self {
+            Self::Success(content) => content.as_slice(),
+            Self::Error(content) => content.0.as_slice(),
+        }
+    }
+}
+
+impl Serialize for ToolResult {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        // Human results historically include isError:false, unlike Agent results.
+        let mut result = serializer.serialize_struct("ToolResult", 2)?;
+        result.serialize_field("content", self.content())?;
+        result.serialize_field("isError", &self.is_error())?;
+        result.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ToolResult {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct SavedResult {
+            content: Vec<Content>,
+            is_error: bool,
+        }
+        let saved = SavedResult::deserialize(deserializer)?;
+        if saved.is_error {
+            ErrorText::new(saved.content)
+                .map(Self::Error)
+                .map_err(serde::de::Error::custom)
+        } else {
+            artifactize_tools::result::ContentBlocks::new(saved.content)
+                .map(Self::Success)
+                .map_err(serde::de::Error::custom)
         }
     }
 }
@@ -216,10 +292,7 @@ impl<'a> Registry<'a> {
         }
         match declaration.kind {
             HumanToolKind::Launch => match process::launch_detached(&program, &args, &cwd) {
-                Ok(()) => ToolResult {
-                    content: vec![Content::Launch { launched: true }],
-                    is_error: false,
-                },
+                Ok(()) => ToolResult::success(Content::Launch { launched: true }),
                 Err(error) => ToolResult::error(
                     error
                         .argument_refusal()
@@ -282,7 +355,7 @@ impl<'a> Registry<'a> {
             return tokio::select! {
                 _ = cancellation.cancelled() => ToolResult::error("Human tool call was cancelled."),
                 result = crate::platform::program::open_desktop(std::ffi::OsStr::new(&target)) => match result {
-                    Ok(()) => ToolResult { content: vec![Content::Launch { launched: true }], is_error: false },
+                    Ok(()) => ToolResult::success(Content::Launch { launched: true }),
                     Err(error) => ToolResult::error(error.to_string()),
                 }
             };
@@ -306,8 +379,9 @@ impl<'a> Registry<'a> {
             &cancellation,
         )
         .await;
+        let failed = result.is_error();
         let output = result
-            .content
+            .into_content()
             .into_iter()
             .map(|content| match content {
                 artifactize_tools::Content::Text { text } => text,
@@ -320,11 +394,11 @@ impl<'a> Registry<'a> {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        ToolResult {
-            content: vec![Content::Text {
-                text: text(output.as_bytes(), String::new(), false),
-            }],
-            is_error: result.is_error,
+        let text = text(output.as_bytes(), String::new(), false);
+        if failed {
+            ToolResult::error(text)
+        } else {
+            ToolResult::success(Content::Text { text })
         }
     }
 }
@@ -347,9 +421,10 @@ fn output_result(output: &process::Output) -> ToolResult {
             text: text(&output.stderr, "stderr:\n".into(), output.truncated),
         });
     }
-    ToolResult {
-        content,
-        is_error: failed,
+    if failed {
+        ToolResult::error_blocks(content)
+    } else {
+        ToolResult::success_blocks(content)
     }
 }
 

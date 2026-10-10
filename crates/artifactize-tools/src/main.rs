@@ -148,9 +148,9 @@ async fn run(cli: Cli) -> Result<(), String> {
         )
     };
     let (mut stdout, mut stderr) = (std::io::stdout().lock(), std::io::stderr().lock());
-    for content in result.content {
+    for content in result.content() {
         match content {
-            Content::Text { text } if result.is_error => writeln!(stderr, "{text}"),
+            Content::Text { text } if result.is_error() => writeln!(stderr, "{text}"),
             Content::Text { text } => write!(stdout, "{text}"),
             Content::Json { data } => writeln!(
                 stdout,
@@ -161,7 +161,7 @@ async fn run(cli: Cli) -> Result<(), String> {
         }
         .map_err(|error| error.to_string())?;
     }
-    if result.is_error {
+    if result.is_error() {
         Err("Tool failed.".into())
     } else {
         Ok(())

@@ -54,7 +54,7 @@ async fn call(repo: &Path) -> ToolResult {
 }
 
 fn text(result: &ToolResult) -> &str {
-    let Content::Text { text } = &result.content[0] else {
+    let Content::Text { text } = &result.content()[0] else {
         panic!("{result:?}")
     };
     text
@@ -174,7 +174,7 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
             registry
                 .call(unknown, CancellationToken::new())
                 .await
-                .is_error
+                .is_error()
         );
     }
     write_artifact(
@@ -224,7 +224,7 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     declaration["mounts"] = json!({"source":"b"});
     support::declaration::write(&marker, declaration.to_string()).unwrap();
     let result = call(repo).await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     let input = repo.join("b").join("input");
     assert_eq!(
         text(&result),
@@ -245,12 +245,12 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
         registry
             .call("inspect_a", CancellationToken::new())
             .await
-            .is_error
+            .is_error()
     );
     declaration.as_object_mut().unwrap().remove("mounts");
     declaration["views"]["human_tools"]["inspect"]["args"] = json!(["{b}"]);
     support::declaration::write(marker, declaration.to_string()).unwrap();
-    assert!(call(repo).await.is_error);
+    assert!(call(repo).await.is_error());
 }
 
 #[tokio::test]
@@ -276,7 +276,7 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
             "Review.",
         );
         let result = call(&repo).await;
-        assert_eq!(!result.is_error, success, "{command}: {result:?}");
+        assert_eq!(!result.is_error(), success, "{command}: {result:?}");
         if success {
             assert_eq!(text(&result), owner.to_str().unwrap());
         }
@@ -302,14 +302,14 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
         "Review.",
     );
     let result = call(repo.path()).await;
-    assert!(result.is_error);
+    assert!(result.is_error());
     assert!(
         text(&result).contains(&support::os::exit_status(3)),
         "{result:?}"
     );
     assert!(text(&result).ends_with("hello\t\n"));
     assert_eq!(
-        result.content[1],
+        result.content()[1],
         Content::Text {
             text: "stderr:\nproblem".into()
         }
@@ -327,9 +327,9 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
         "Review.",
     );
     let result = call(repo.path()).await;
-    assert!(!result.is_error);
-    assert_eq!(result.content.len(), 2);
-    for block in result.content {
+    assert!(!result.is_error());
+    assert_eq!(result.content().len(), 2);
+    for block in result.content() {
         let Content::Text { text } = block else {
             panic!()
         };
@@ -359,7 +359,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
             .unwrap()
             .call("inspect_a", cancellation)
             .await
-            .is_error
+            .is_error()
     );
     assert!(!repo.path().join("spawned").exists());
     write_artifact(
@@ -368,7 +368,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         json!({"inspect":tool("launch", "missing-artifactize-human-program", &[])}),
         "Review.",
     );
-    assert!(call(repo.path()).await.is_error);
+    assert!(call(repo.path()).await.is_error());
     write_artifact(
         repo.path(),
         "a",
@@ -376,7 +376,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         "Review.",
     );
     assert_eq!(
-        call(repo.path()).await.content,
+        call(repo.path()).await.content(),
         [Content::Launch { launched: true }]
     );
 }
@@ -445,7 +445,7 @@ async fn human_environment_and_launch_probe() {
         "Review.",
     );
     let result = call(repo).await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     // Python ends its printed lines with CRLF on Windows.
     assert_eq!(
         text(&result).replace("\r\n", "\n"),
@@ -494,15 +494,15 @@ async fn human_environment_and_launch_probe() {
             CancellationToken::new(),
         )
         .await;
-    assert!(!result.is_error, "{result:?}");
-    let tools::Content::Text { text } = &result.content[0] else {
+    assert!(!result.is_error(), "{result:?}");
+    let tools::Content::Text { text } = &result.content()[0] else {
         panic!()
     };
     assert!(text.replace("\r\n", "\n").starts_with("absent\n"));
     assert!(!text.contains("real-home"));
     let result = call(repo).await;
-    assert!(!result.is_error, "{result:?}");
-    assert_eq!(result.content, [Content::Launch { launched: true }]);
+    assert!(!result.is_error(), "{result:?}");
+    assert_eq!(result.content(), [Content::Launch { launched: true }]);
     tokio::time::timeout(support::os::patience(Duration::from_secs(2)), async {
         while !repo.join("marker").exists()
             || fs::read_to_string(repo.join("pid"))
@@ -514,4 +514,29 @@ async fn human_environment_and_launch_probe() {
     })
     .await
     .unwrap();
+}
+
+#[test]
+fn human_results_preserve_saved_stdout_stderr_and_launch_wire_bytes() {
+    for saved in [
+        r#"{"content":[{"type":"text","text":""}],"isError":false}"#,
+        r#"{"content":[{"type":"launch","launched":true}],"isError":false}"#,
+        r#"{"content":[{"type":"text","text":"failed\nstdout"},{"type":"text","text":"stderr:\nproblem"}],"isError":true}"#,
+    ] {
+        let result: ToolResult = serde_json::from_str(saved).unwrap();
+        assert_eq!(serde_json::to_string(&result).unwrap(), saved);
+    }
+    assert_eq!(
+        serde_json::to_string(&ToolResult::error(" \n")).unwrap(),
+        r#"{"content":[{"type":"text","text":"Tool failed."}],"isError":true}"#,
+    );
+    for invalid in [
+        json!({"content":[],"isError":false}),
+        json!({"content":[],"isError":true}),
+        json!({"content":[{"type":"launch","launched":true}],"isError":true}),
+        json!({"content":[{"type":"text","text":" "}],"isError":true}),
+        json!({"content":[{"type":"text","text":"failed"},{"type":"text","text":""}],"isError":true}),
+    ] {
+        assert!(serde_json::from_value::<ToolResult>(invalid).is_err());
+    }
 }

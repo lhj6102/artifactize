@@ -45,13 +45,13 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
     };
     for path in ["Secret/x", "secret/x", "SECRET/x", "Remote/x", "remote/x"] {
         let result = call(Builtin::Read, json!({"path":path}));
-        assert!(result.is_error, "{path}: {result:?}");
+        assert!(result.is_error(), "{path}: {result:?}");
         assert!(!format!("{result:?}").contains("excluded"));
     }
     let result = call(Builtin::Read, json!({"path":"public"}));
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     assert!(
-        matches!(&result.content[0], Content::Json { data } if data["lines"][0]["text"] == "visible")
+        matches!(&result.content()[0], Content::Json { data } if data["lines"][0]["text"] == "visible")
     );
 
     // A physical entry added after the logical scope was built cannot shadow a mount by
@@ -60,10 +60,10 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
     fs::write(root.join("remote/x"), "physical").unwrap();
     let insensitive = os::case_policy(&root) == os::CasePolicy::Insensitive;
     let result = call(Builtin::Read, json!({"path":"remote/x"}));
-    assert_eq!(result.is_error, insensitive, "{result:?}");
+    assert_eq!(result.is_error(), insensitive, "{result:?}");
     if !insensitive {
         assert!(
-            matches!(&result.content[0], Content::Json { data } if data["lines"][0]["text"] == "physical")
+            matches!(&result.content()[0], Content::Json { data } if data["lines"][0]["text"] == "physical")
         );
     }
 
@@ -73,7 +73,7 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
         fs::rename(root.join("Secret"), root.join("renamed")).unwrap();
         fs::rename(root.join("renamed"), root.join("secret")).unwrap();
         let result = call(Builtin::Read, json!({"path":"secret/x"}));
-        assert!(result.is_error, "{result:?}");
+        assert!(result.is_error(), "{result:?}");
     }
 
     // On a case-sensitive volume an independently created lowercase directory stays usable.
@@ -81,9 +81,9 @@ fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
         fs::create_dir(root.join("secret")).unwrap();
         fs::write(root.join("secret/x"), "distinct").unwrap();
         let result = call(Builtin::Read, json!({"path":"secret/x"}));
-        assert!(!result.is_error, "{result:?}");
+        assert!(!result.is_error(), "{result:?}");
         assert!(
-            matches!(&result.content[0], Content::Json { data } if data["lines"][0]["text"] == "distinct")
+            matches!(&result.content()[0], Content::Json { data } if data["lines"][0]["text"] == "distinct")
         );
     }
 }

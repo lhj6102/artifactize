@@ -246,7 +246,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     )
     .await
     .unwrap();
-    assert!(!result.is_error);
+    assert!(!result.is_error());
     let result = human::run_human_tool(
         &receipts,
         id,
@@ -256,7 +256,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     )
     .await
     .unwrap();
-    assert!(result.is_error);
+    assert!(result.is_error());
     for result in [
         json!({"verdict":"GREEN"}),
         json!({"verdict":"RED","reason":3}),
