@@ -2,50 +2,40 @@
 
 Rules that keep code behaving the same on Linux, macOS and Windows.
 
-## Operating-system code
+## One place for what differs
 
-- **P-PLATFORM-MODULE**: operating-system calls (`std::os::unix`, `std::os::windows`, `libc`,
-  `windows-sys`, `/proc`) and `cfg(unix)`, `cfg(windows)` or `cfg(target_os = …)` branches live
-  only in the crate's platform layer. Other code calls that layer's portable interface. A branch
-  elsewhere is a missing platform function.
-- **P-ONE-LOOKUP**: a declared program is found by one shared lookup (`PATH`, and `PATHEXT` on
-  Windows) and started by one process layer. No other code searches `PATH` or appends `.exe`.
-- **P-ONE-OPENER**: a file or URL is opened in a desktop application by one shared opener. No
-  other code names `xdg-open`, `open`, `explorer`, `start` or `wslview`.
-- **P-NO-SHELL**: commands run as an argument vector, never as a `sh -c` or `cmd /c` string. The
-  one exception is launching the user's editor, because `EDITOR` may hold arguments.
+- **P-ONE-LAYER**: everything whose implementation or behavior differs between operating
+  systems lives in the platform layer. Code outside it calls the layer's portable interface
+  and has no operating-system calls (`std::os::unix`, `std::os::windows`, `libc`,
+  `windows-sys`) and no `cfg(unix)`, `cfg(windows)` or `cfg(target_os = …)` branches.
+- **P-NO-OS-VALUES**: code outside the platform layer names no operating-system specific
+  value: no `/tmp`, `/proc`, `/dev/null`, `/bin/…`, drive letters, `.exe`, `sh`, `cmd`,
+  `xdg-open`, `open`, `explorer` or `HOME`.
 
-## Paths
+## What differs
 
-- **P-LOGICAL-PATHS**: a path shown to a person or a model, stored in a record, or compared as
-  text is a logical path: relative to its root, with `/` separators. Native paths stay inside
-  file and process calls.
-- **P-NO-FIXED-ROOTS**: no hard-coded `/tmp`, `/proc`, `/dev/null`, `/bin/…`, `HOME` or drive
-  letters. Use `std::env::temp_dir`, configured directories and platform functions.
-- **P-SCOPE-THROUGH-HANDLES**: access decisions never compare native paths as strings. They go
-  through pinned, no-follow opens, which account for case-insensitive volumes, Windows 8.3 names
-  and system path aliases such as the macOS `/tmp`, `/var` and `/etc` links.
-- **P-TRUSTED-ROOTS**: a root the operator gives is resolved once, where it enters. Everything
-  below it is opened without following links.
+These go through the platform layer:
 
-## Processes
-
-- **P-PROCESS-TREE**: a declared command is spawned through the process layer, so that it is
-  admitted before it runs, kept in one process group or Job Object, and cleaned up with its
-  children. No direct `Command::spawn` for declared commands.
-- **P-EXPLICIT-ENV**: a child's environment is built from an explicit list after clearing the
-  inherited one. Windows variable names are compared without regard to case.
-- **P-EXIT-STATUS**: exit handling covers an exit code and, on Unix, a terminating signal.
-  Windows reports exit codes only.
+- **P-FILES**: links and reparse points, permissions and owner-only access, case sensitivity,
+  and name aliases such as Windows 8.3 names and the macOS `/tmp`, `/var` and `/etc` links.
+- **P-PATHS**: separators, drive letters and roots. A path shown to a person or a model, or
+  stored as text, uses `/`.
+- **P-PROGRAMS**: finding a program (`PATH`, and `PATHEXT` on Windows) and opening a file or
+  URL in a desktop application.
+- **P-COMMANDS**: commands run as an argument vector, never as a shell string, because the
+  shells differ. Launching the user's editor is the one exception.
+- **P-PROCESSES**: starting, stopping and checking processes and their children, and exit
+  status (Unix adds signals; Windows has exit codes only).
+- **P-ENVIRONMENT**: environment variables (Windows names ignore case), the home, temporary
+  and state directories, and the user and host names.
+- **P-TERMINAL**: interrupt and stop signals, hidden input, and the user's editor.
+- **P-IPC**: local endpoints between processes (Unix sockets, Windows named pipes).
 
 ## Tests
 
-- **P-TEST-HELPERS**: tests use shared operating-system helpers for program paths, temporary
-  roots, links, permissions and process control. They do not hard-code `/bin/sh`, `/bin/true`,
-  `/proc`, shell-script fixtures or uncanonicalized temporary paths.
-- **P-TEST-EVERY-OS**: a test runs on every operating system unless the behavior exists on only
-  one. A `cfg` gate on a test carries a comment saying why, and a gated security test (access
-  escape, private files, process cleanup) has a counterpart on the other systems.
-- **P-TEST-NO-TIMING**: tests do not depend on clock resolution, sleep lengths or names made
-  from the time. They use unique temporary directories and explicit synchronization for
-  ordering.
+- **P-TEST-EVERY-OS**: a test runs on every operating system unless the behavior exists on
+  only one; a `cfg` gate on a test carries a comment saying why. Operating-system setup in
+  tests (programs, temporary paths, links, permissions, processes) goes through shared test
+  helpers, never hard-coded values.
+- **P-TEST-NO-TIMING**: clock resolution and scheduling differ between systems, so tests do
+  not depend on timestamps, sleep lengths or names made from the time.
