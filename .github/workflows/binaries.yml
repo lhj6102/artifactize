@@ -206,7 +206,11 @@ jobs:
       - name: Install and test the local Homebrew formula
         if: contains(matrix.target, '-apple-darwin') && github.event_name != 'push'
         run: sh .github/scripts/smoke-homebrew.sh "$VERSION" "$TARGET" dist
-      - name: Validate and install winget and signed MSIX; check shared state
+      - name: Install signed MSIX; run both aliases and check shared state
         if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
         shell: powershell
-        run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist
+        run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist -Channel msix
+      - name: Validate and install the winget portable manifest
+        if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
+        shell: powershell
+        run: .github/scripts/smoke-channels.ps1 -Version $env:VERSION -Dist dist -Channel winget

@@ -138,7 +138,8 @@ clone/update/upload/commit sequence are checked without network submission.
 The two informational macOS builds install from a native PR archive through a
 local tap, run `brew test`, and execute both commands. The informational Windows
 build parses all PowerShell scripts, validates/installs local winget manifests,
-executes both portable aliases, and uninstalls them before the MSIX seam. Hosted
+executes both portable aliases, and uninstalls them. The MSIX seam runs first in a
+separate step so a winget bootstrap limitation cannot hide its outcome. Hosted
 Windows Server images may omit winget: the test uses Microsoft's maintained
 `Microsoft.WinGet.Client` / `Repair-WinGetPackageManager` bootstrap rather than
 silently substituting metadata checks for installation.
