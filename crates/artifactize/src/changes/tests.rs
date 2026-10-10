@@ -120,11 +120,12 @@ async fn disconnected_connections_do_not_stop_registered_subscribers() {
     registered(&mut subscriber).await;
     let endpoint = Endpoint::new(state.path()).unwrap();
     let epoch = registration(&subscriber, None).await;
-    // Close before the hub validates the peer or reads Hello. Darwin may report
-    // ENOTCONN during peer lookup; that must not replace the existing hub.
-    drop(endpoint.connect().await.unwrap());
     let (mut writer, current) = connect(&endpoint, false).await.unwrap();
     assert_eq!(current, epoch);
+    // Close before the hub validates the peer or reads Hello. Darwin may report
+    // ENOTCONN during peer lookup; existing connections must remain usable.
+    // Register the writer first so Windows has installed its next pipe instance.
+    drop(endpoint.connect().await.unwrap());
     write_frame(&mut writer, &Frame::Publish(Change::StateInvalidated))
         .await
         .unwrap();
