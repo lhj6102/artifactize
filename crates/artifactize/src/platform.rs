@@ -120,6 +120,19 @@ pub(crate) fn path_kind(path: &std::path::Path) -> std::io::Result<FileKind> {
     }
 }
 
+/// Render serialized path lists with portable separators, just like single saved paths.
+pub(crate) fn serialize_paths<S: serde::Serializer>(
+    paths: &[std::path::PathBuf],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    use serde::Serialize;
+    paths
+        .iter()
+        .map(|path| path_text(path))
+        .collect::<Vec<_>>()
+        .serialize(serializer)
+}
+
 #[cfg(test)]
 mod state_directory_tests {
     use super::*;
@@ -157,17 +170,4 @@ mod state_directory_tests {
         );
         assert_eq!(resolve_state_directory(None, None, None), None);
     }
-}
-
-/// Render serialized path lists with portable separators, just like single saved paths.
-pub(crate) fn serialize_paths<S: serde::Serializer>(
-    paths: &[std::path::PathBuf],
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    use serde::Serialize;
-    paths
-        .iter()
-        .map(|path| path_text(path))
-        .collect::<Vec<_>>()
-        .serialize(serializer)
 }
