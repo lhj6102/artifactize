@@ -163,7 +163,7 @@ pub(crate) fn builtins() -> Value {
 pub(crate) fn claim(reviewer: &str) -> HumanClaim {
     HumanClaim {
         request_id: ID.parse().unwrap(),
-        reviewer: reviewer.into(),
+        reviewer: reviewer.parse().unwrap(),
         claimed_at: "2026-01-01T00:00:30Z".parse().unwrap(),
     }
 }
@@ -198,7 +198,7 @@ pub(crate) fn opened(reviewer: Option<&str>, definition: Value) -> Review {
     let mut review = Review::new(
         "/state".into(),
         Some("/repo".into()),
-        "alice".into(),
+        "alice".parse().unwrap(),
         Some(ID.parse().unwrap()),
     );
     review.request = Some(view("WAITING_HUMAN", reviewer, definition));
@@ -521,7 +521,7 @@ fn requests_claimed_by_others_or_settled_are_read_only() {
 #[test]
 fn review_keys_need_detail_focus_and_an_owned_request() {
     // On the list, review letters do nothing; c never claims there.
-    let mut review = Review::new("/state".into(), None, "alice".into(), None);
+    let mut review = Review::new("/state".into(), None, "alice".parse().unwrap(), None);
     review.set_waiting(vec![view("WAITING_HUMAN", None, demo())]);
     for key in ['c', 'g', 'u', 'i', 't'] {
         assert_eq!(
@@ -646,7 +646,7 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
     let mut review = Review::new(
         state.path().join("state"),
         None,
-        "alice".into(),
+        "alice".parse().unwrap(),
         Some(ID.parse().unwrap()),
     );
     review.request = Some(view("WAITING_HUMAN", None, demo()));
@@ -1037,7 +1037,7 @@ fn a_running_job_only_scrolls_or_cancels() {
 }
 
 fn listed() -> Review {
-    let mut review = Review::new("/state".into(), None, "alice".into(), None);
+    let mut review = Review::new("/state".into(), None, "alice".parse().unwrap(), None);
     let mut other = view("WAITING_HUMAN", Some("bob"), demo());
     other.request.id = "run-2-1".parse().unwrap();
     other.request.eval_id = "docs/check".parse().unwrap();

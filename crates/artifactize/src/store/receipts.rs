@@ -9,7 +9,7 @@ use std::{
 
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+
 use tokio_rusqlite::Connection;
 
 use super::{ExecutionOptions, Origin, Producer, Provenance, STATE_SCHEMA_VERSION};
@@ -168,7 +168,7 @@ pub struct Request {
     pub producer: Option<Producer>,
     /// The Human claimant who submitted a reused result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reviewer: Option<String>,
+    pub reviewer: Option<crate::types::ReviewerId>,
     /// The remote store, publisher and publication time of a result reused from a mirror.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Origin>,
@@ -207,7 +207,7 @@ pub struct Request {
     pub run_dir: Option<PathBuf>,
     pub argv: Option<Vec<String>>,
     pub child: Option<super::ChildIdentity>,
-    pub result: Option<Value>,
+    pub result: Option<super::ExecutionResult>,
     pub error: Option<String>,
     pub error_code: Option<crate::types::FailureCode>,
     pub blocked_reason: Option<String>,

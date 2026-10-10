@@ -23,7 +23,7 @@ pub(super) async fn review(
     context: Context,
     request: Option<crate::types::RequestId>,
     all: bool,
-    reviewer: Option<String>,
+    reviewer: Option<crate::types::ReviewerId>,
 ) -> Result<u8, String> {
     if context.json {
         return Err("review is an interactive terminal UI; --json is not supported.".into());
@@ -32,7 +32,7 @@ pub(super) async fn review(
         return Err("review accepts --repo or --all, not both.".into());
     }
     let reviewer = match reviewer {
-        Some(reviewer) => crate::human::validate_reviewer(&reviewer).map(|()| reviewer),
+        Some(reviewer) => Ok(reviewer),
         None => crate::human::default_reviewer(),
     }?;
     let state = crate::store::state_dir(context.state_dir.as_deref())?;

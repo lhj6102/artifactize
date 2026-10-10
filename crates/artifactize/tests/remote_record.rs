@@ -104,7 +104,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     assert_eq!(producer.version, env!("CARGO_PKG_VERSION"));
     assert!(producer.name.contains('@'));
     assert_eq!(
-        execution.result.as_ref().unwrap()["stdout"],
+        execution.result.as_ref().unwrap().to_json()["stdout"],
         "stdout-marker\n"
     );
 
@@ -121,7 +121,8 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
         assert!(!text.contains(leaked), "{leaked} in {text}");
     }
     assert!(!text.contains(root.path().to_str().unwrap()), "{text}");
-    let mut keys: Vec<_> = summary.result.as_object().unwrap().keys().collect();
+    let summary_json = summary.result.to_json();
+    let mut keys: Vec<_> = summary_json.as_object().unwrap().keys().collect();
     keys.sort();
     assert_eq!(keys, ["durationMs", "exitCode", "truncated", "verdict"]);
     let full = Record::new(&execution, true).unwrap();
@@ -137,7 +138,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
             .contains("toolCalls")
     );
     assert_eq!(
-        full.execution.unwrap().result.unwrap()["stderr"],
+        full.execution.unwrap().result.unwrap().to_json()["stderr"],
         "stderr-marker\n"
     );
 
@@ -304,11 +305,13 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
     let request = &waiting.requests[0];
     assert_eq!(request.status.as_str(), "WAITING_HUMAN");
     let receipts = Receipts::open(&state, &repo).await.unwrap();
-    human::claim(&receipts, &request.id, "alice").await.unwrap();
+    human::claim(&receipts, &request.id, &"alice".parse().unwrap())
+        .await
+        .unwrap();
     human::submit(
         &receipts,
         &request.id,
-        "alice",
+        &"alice".parse().unwrap(),
         &json!({"verdict":"GREEN","approved":true}),
         CancellationToken::new(),
     )
@@ -322,7 +325,10 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
     assert_eq!(execution.reviewer.as_deref(), Some("alice"));
     let summary = Record::new(&execution, false).unwrap();
     assert_eq!(summary.reviewer.as_deref(), Some("alice"));
-    assert_eq!(summary.result, json!({"verdict":"GREEN","approved":true}));
+    assert_eq!(
+        summary.result.to_json(),
+        json!({"verdict":"GREEN","approved":true})
+    );
 }
 
 /// Agent evals share results across backends, models, reasoning levels and limits: a result
@@ -381,7 +387,11 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         owner_pid: 1,
         owner_start_time: 1,
         status: artifactize::types::ExecutionStatus::Green,
-        result: Some(json!({"verdict":"GREEN","approved":true})),
+        result: Some(
+            json!({"verdict":"GREEN","approved":true})
+                .try_into()
+                .unwrap(),
+        ),
         error: None,
         error_code: None,
         profile: artifactize::config::StoredProfile::from(&variant),

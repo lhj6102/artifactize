@@ -11,7 +11,7 @@ async fn compatibility_constructor_parses_open_id_once_and_invalid_input_never_r
     let valid = Review::new(
         state,
         None,
-        "fixture".into(),
+        "fixture".parse().unwrap(),
         Some("run-legacy_1.3".parse().unwrap()),
     );
     assert_eq!(valid.open.as_ref().unwrap().as_str(), "run-legacy_1.3");

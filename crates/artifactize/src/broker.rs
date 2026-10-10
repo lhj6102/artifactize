@@ -247,8 +247,13 @@ pub(crate) fn derive(request: &mut Request, eval: &EvalEvaluation<'_>) {
                 .join(", ")
         )
     });
-    request.result = (eval.status == EvalStatus::Green)
-        .then(|| serde_json::json!({"verdict":"GREEN", "derived":true}));
+    request.result = (eval.status == EvalStatus::Green).then(|| {
+        crate::agent::verdict::ValidatedResult {
+            verdict: crate::runtime::Verdict::Green,
+            fields: serde_json::Map::from_iter([("derived".into(), serde_json::Value::Bool(true))]),
+        }
+        .into()
+    });
     request.completed_at =
         (eval.status == EvalStatus::Green || eval.status == EvalStatus::Blocked).then(now);
 }

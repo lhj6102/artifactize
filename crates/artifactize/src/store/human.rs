@@ -10,7 +10,7 @@ use super::{
 #[serde(rename_all = "camelCase")]
 pub struct HumanClaim {
     pub request_id: crate::types::RequestId,
-    pub reviewer: String,
+    pub reviewer: crate::types::ReviewerId,
     pub claimed_at: crate::types::Timestamp,
 }
 
@@ -64,8 +64,12 @@ fn unclaim(db: &rusqlite::Connection, request: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn claimant(db: &rusqlite::Connection, request: &str, reviewer: &str) -> Result<(), Error> {
-    let owner: Option<String> = db
+fn claimant(
+    db: &rusqlite::Connection,
+    request: &str,
+    reviewer: &crate::types::ReviewerId,
+) -> Result<(), Error> {
+    let owner: Option<crate::types::ReviewerId> = db
         .query_row(
             "SELECT claimed_by FROM requests WHERE id=?",
             [request],
@@ -73,7 +77,7 @@ fn claimant(db: &rusqlite::Connection, request: &str, reviewer: &str) -> Result<
         )
         .optional()?
         .flatten();
-    if owner.as_deref() != Some(reviewer) {
+    if owner.as_ref() != Some(reviewer) {
         return Err(Error::Invalid(
             "Only the Human claimant may perform this action.".into(),
         ));
@@ -173,7 +177,11 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
-    pub(crate) async fn claim_human(&self, id: &str, reviewer: &str) -> Result<HumanClaim, String> {
+    pub(crate) async fn claim_human(
+        &self,
+        id: &str,
+        reviewer: &crate::types::ReviewerId,
+    ) -> Result<HumanClaim, String> {
         let id: crate::types::RequestId = id.parse()?;
         let reviewer = reviewer.to_owned();
         self.connection
@@ -198,7 +206,7 @@ impl Receipts {
     pub(crate) async fn release_human(
         &self,
         id: &str,
-        reviewer: &str,
+        reviewer: &crate::types::ReviewerId,
     ) -> Result<HumanClaim, String> {
         let id: crate::types::RequestId = id.parse()?;
         let reviewer = reviewer.to_owned();
@@ -234,7 +242,7 @@ impl Receipts {
     pub(crate) async fn human_request(
         &self,
         id: &str,
-        reviewer: &str,
+        reviewer: &crate::types::ReviewerId,
     ) -> Result<(Request, Execution), String> {
         let id: crate::types::RequestId = id.parse()?;
         let reviewer = reviewer.to_owned();
@@ -253,7 +261,7 @@ impl Receipts {
     pub(crate) async fn settle_human(
         &self,
         request: &Request,
-        reviewer: &str,
+        reviewer: &crate::types::ReviewerId,
     ) -> Result<Request, String> {
         let mut request = request.clone();
         let reviewer = reviewer.to_owned();

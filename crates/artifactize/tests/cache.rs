@@ -1416,7 +1416,11 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     signal(owner.id(), "-STOP");
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
     execution.status = artifactize::types::ExecutionStatus::Green;
-    execution.result = Some(json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)}));
+    execution.result = Some(
+        json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)})
+            .try_into()
+            .unwrap(),
+    );
     execution.completed_at = Some("2026-10-04T00:00:00Z".parse().unwrap());
     execution.provenance.completed_at = execution.completed_at;
     request.status = execution.status.into();

@@ -43,7 +43,7 @@ pub enum Queue {
 pub enum Activity {
     Running,
     /// The claimant, when someone has claimed it.
-    Human(Option<String>),
+    Human(Option<crate::types::ReviewerId>),
     Queued(Queue),
 }
 
