@@ -1,7 +1,6 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use artifactize::config::{ReviewRequirement, read_workspace_config};
 use serde_json::{Value, json};
@@ -13,19 +12,25 @@ fn native(path: &str) -> String {
     path.replace('/', std::path::MAIN_SEPARATOR_STR)
 }
 
-struct Fixture(PathBuf);
+struct Fixture(
+    PathBuf,
+    #[expect(
+        dead_code,
+        reason = "keep the fixture directory alive until the test ends"
+    )]
+    tempfile::TempDir,
+);
 
 impl Fixture {
     fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/test-fixtures")
-            .join(format!("config-{}-{nonce}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
-        Self(support::os::canonical(&root))
+        let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/test-fixtures");
+        fs::create_dir_all(&parent).unwrap();
+        // Atomic unique creation, unlike clock-derived names on coarse Windows clocks.
+        let directory = tempfile::Builder::new()
+            .prefix("config-")
+            .tempdir_in(parent)
+            .unwrap();
+        Self(support::os::canonical(directory.path()), directory)
     }
 
     fn write(&self, path: &str, contents: &str) {
@@ -40,12 +45,6 @@ impl Fixture {
             .current_dir(&self.0)
             .env("ARTIFACTIZE_STATE_HOME", self.0.join("state-home"));
         command
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
