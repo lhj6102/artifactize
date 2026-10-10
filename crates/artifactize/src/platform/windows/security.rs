@@ -87,6 +87,9 @@ pub(crate) fn private_tempdir_in(prefix: &str, parent: &Path) -> io::Result<Priv
     if prefix.contains(['/', '\\', '\0']) {
         return Err(io::ErrorKind::InvalidInput.into());
     }
+    // Match TempDir's absolute paths so a later working-directory change cannot redirect
+    // cleanup to a different relative parent.
+    let parent = std::path::absolute(parent)?;
     for _ in 0..CREATE_ATTEMPTS {
         let mut random = [0_u8; RANDOM_BYTES];
         getrandom::fill(&mut random).map_err(io::Error::other)?;
