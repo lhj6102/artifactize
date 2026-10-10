@@ -10,9 +10,7 @@ pub(crate) const MAX_ID_BYTES: usize = 200;
 const REMOTE_EXECUTION_PREFIX: &str = "remote-";
 /// Bound script output and reuse-key components without requiring a cryptographic digest.
 pub(crate) const MAX_FINGERPRINT_BYTES: usize = 128;
-/// JSON clients represent numbers as IEEE-754 doubles; larger integer counters
-/// and offsets cannot round-trip exactly through them.
-pub(crate) const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+pub(crate) use artifactize_tools::MAX_SAFE_JSON_INTEGER;
 /// A SHA-256 digest has 32 bytes, encoded as 64 lowercase hexadecimal ASCII bytes
 /// in reuse keys and remote definition hashes; this wire width is not a storage limit.
 pub(crate) const SHA256_HEX_BYTES: usize = 64;

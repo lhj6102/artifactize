@@ -1,29 +1,22 @@
-//! Unix: file modes, `openat` without following links, listings through `/proc/self/fd`,
-//! signals, and termios.
+//! Unix private file modes, process control, signals, and termios.
+//! Pinned file access lives in artifactize-tools.
 
 mod process;
 
 use std::{
-    ffi::{CString, OsStr, OsString},
     fs::{self, DirBuilder, File, OpenOptions, Permissions},
     future::Future,
     io,
-    os::{
-        fd::{AsRawFd, FromRawFd},
-        unix::{
-            ffi::OsStrExt,
-            fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
-            process::ExitStatusExt,
-        },
+    os::unix::{
+        fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+        process::ExitStatusExt,
     },
-    path::{Path, PathBuf},
+    path::Path,
     process::ExitStatus,
 };
 
 use tempfile::TempDir;
 use tokio::signal::unix::{SignalKind, signal};
-
-use super::FileKind;
 
 pub(crate) use process::{Child, process_start_time, spawn_detached, spawn_gated};
 
@@ -94,113 +87,9 @@ pub(crate) fn restrict_file(file: &File) -> io::Result<()> {
     file.set_permissions(Permissions::from_mode(PRIVATE_FILE_MODE))
 }
 
-/// The absolute path of an existing file with every link resolved.
-pub(crate) fn canonicalize(path: &Path) -> io::Result<PathBuf> {
-    fs::canonicalize(path)
-}
-
 /// Persist a directory's entries, such as a file just renamed into it.
 pub(crate) fn sync_dir(path: &Path) -> io::Result<()> {
     File::open(path).and_then(|directory| directory.sync_all())
-}
-
-/// Open without following a link in the last component or blocking on a FIFO.
-pub(crate) fn open_no_follow(options: &mut OpenOptions, path: &Path) -> io::Result<File> {
-    options
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)
-}
-
-/// Open for reading without blocking on a FIFO, so its type can be checked first.
-pub(crate) fn open_nonblocking(path: &Path) -> io::Result<File> {
-    OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open(path)
-}
-
-/// Open a directory by path, such as the root a scoped walk starts from.
-pub(crate) fn open_directory(path: &Path) -> io::Result<File> {
-    File::open(path)
-}
-
-/// One path component, ready for `openat`.
-pub(crate) struct EntryName(CString);
-
-impl EntryName {
-    pub fn new(name: &OsStr) -> Option<Self> {
-        CString::new(name.as_bytes()).ok().map(Self)
-    }
-}
-
-/// Open one entry of a pinned directory read-only, without following a symlink.
-pub(crate) fn open_entry(directory: &File, name: &EntryName) -> io::Result<File> {
-    // O_NONBLOCK avoids waiting on a FIFO before its type can be rejected.
-    // SAFETY: a valid directory descriptor and a NUL-terminated name; the result is checked.
-    let fd = unsafe {
-        libc::openat(
-            directory.as_raw_fd(),
-            name.0.as_ptr(),
-            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
-        )
-    };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: openat returned a new descriptor that nothing else owns.
-    Ok(unsafe { File::from_raw_fd(fd) })
-}
-
-/// Whether `open_entry` failed because the entry is a symlink: `O_NOFOLLOW` reports `ELOOP`
-/// on Linux and macOS, and `EMLINK` on FreeBSD and DragonFly.
-pub(crate) fn is_link_refusal(error: &io::Error) -> bool {
-    let link = if cfg!(any(target_os = "freebsd", target_os = "dragonfly")) {
-        libc::EMLINK
-    } else {
-        libc::ELOOP
-    };
-    error.raw_os_error() == Some(link)
-}
-
-/// The entries of a pinned directory, listed through its descriptor rather than a path
-/// that could have been replaced by a link.
-pub(crate) fn read_dir(
-    directory: &File,
-) -> io::Result<impl Iterator<Item = io::Result<DirEntry>> + '_> {
-    Ok(
-        fs::read_dir(format!("/proc/self/fd/{}", directory.as_raw_fd()))?
-            .map(|entry| entry.map(DirEntry)),
-    )
-}
-
-pub(crate) struct DirEntry(fs::DirEntry);
-
-impl DirEntry {
-    pub fn file_name(&self) -> OsString {
-        self.0.file_name()
-    }
-
-    pub fn file_type(&self) -> io::Result<FileKind> {
-        self.0.file_type().map(kind)
-    }
-}
-
-/// The type of one entry of a pinned directory, without following it.
-pub(crate) fn entry_kind(directory: &File, name: &OsStr) -> io::Result<FileKind> {
-    let path = Path::new(&format!("/proc/self/fd/{}", directory.as_raw_fd())).join(name);
-    fs::symlink_metadata(path).map(|metadata| kind(metadata.file_type()))
-}
-
-fn kind(file_type: fs::FileType) -> FileKind {
-    if file_type.is_file() {
-        FileKind::File
-    } else if file_type.is_dir() {
-        FileKind::Directory
-    } else if file_type.is_symlink() {
-        FileKind::Symlink
-    } else {
-        FileKind::Other
-    }
 }
 
 /// Whether a path is a regular file with an execute bit.

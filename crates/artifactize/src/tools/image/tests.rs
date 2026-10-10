@@ -1,6 +1,9 @@
 use std::fs;
 
+use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::json;
+
+const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
 
 use super::*;
 use crate::{

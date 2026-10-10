@@ -1,13 +1,14 @@
 //! Scoped audience-specific tools and language-neutral command protocols.
 
-pub mod builtin;
+pub use artifactize_tools::builtin;
 pub mod human;
+#[cfg(test)]
 mod image;
 pub mod pins;
 mod result;
-pub(crate) mod schema;
+pub(crate) use artifactize_tools::schema;
 
-pub use result::{Content, ToolResult};
+pub use artifactize_tools::{Content, ToolResult};
 
 use std::{
     collections::BTreeMap,
@@ -22,7 +23,7 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     config::{AgentTool, CommandTool, Profile, RepoConfig, ToolProtocol},
     runtime,
-    scope::{self, Scope},
+    scope::{self, ArtifactId, Scope},
     workspace,
 };
 
@@ -184,22 +185,14 @@ impl<'a> Registry<'a> {
                     Err(error) => return ToolResult::error(error),
                 };
                 let root = self.config.root.clone();
-                let owner = tool.definition.artifact_id.clone();
-                let artifacts: BTreeMap<_, _> = self
-                    .scope
-                    .artifacts
-                    .iter()
-                    .map(|(id, artifact)| ((*id).to_owned(), (*artifact).clone()))
-                    .collect();
+                let owner = match ArtifactId::new(tool.definition.artifact_id.as_str()) {
+                    Ok(owner) => owner,
+                    Err(error) => return ToolResult::error(error.to_string()),
+                };
+                let scope = self.scope.tool_scope();
                 let cancellation = cancellation.child_token();
                 let _cancel_on_drop = cancellation.clone().drop_guard();
                 return tokio::task::spawn_blocking(move || {
-                    let scope = Scope {
-                        artifacts: artifacts
-                            .iter()
-                            .map(|(id, artifact)| (id.as_str(), artifact))
-                            .collect(),
-                    };
                     builtin::call(input, &root, &scope, &owner, &cancellation)
                 })
                 .await
@@ -439,3 +432,7 @@ pub(crate) fn plain_argument(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "tools/builtin/tests.rs"]
+mod builtin_tests;

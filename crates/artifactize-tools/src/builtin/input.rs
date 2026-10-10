@@ -1,10 +1,10 @@
 //! Parse schema-validated provider arguments once, before builtin execution.
-use crate::config::Builtin;
+use crate::Builtin;
 use serde::{Deserialize, Deserializer, de};
 use serde_json::Value;
 
 #[derive(Debug)]
-pub(crate) enum Input {
+pub enum Input {
     Read(Read),
     List(List),
     Glob(Glob),
@@ -26,7 +26,7 @@ impl Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Read {
+pub struct Read {
     pub path: String,
     #[serde(default = "first_line", deserialize_with = "integer")]
     pub offset: usize,
@@ -35,7 +35,7 @@ pub(crate) struct Read {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct List {
+pub struct List {
     #[serde(default)]
     pub path: String,
     #[serde(default, deserialize_with = "integer")]
@@ -45,14 +45,14 @@ pub(crate) struct List {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Glob {
+pub struct Glob {
     pub pattern: String,
     #[serde(default)]
     pub path: String,
 }
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct Grep {
+pub struct Grep {
     pub pattern: String,
     #[serde(default)]
     pub path: String,
@@ -65,7 +65,7 @@ pub(crate) struct Grep {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ViewImage {
+pub struct ViewImage {
     pub path: String,
 }
 
@@ -98,7 +98,7 @@ fn integer<'de, D: Deserializer<'de>>(deserializer: D) -> Result<usize, D::Error
             if value.is_finite()
                 && value >= 0.0
                 && value.fract() == 0.0
-                && value <= crate::types::MAX_SAFE_JSON_INTEGER as f64
+                && value <= crate::MAX_SAFE_JSON_INTEGER as f64
             {
                 Ok(value as usize)
             } else {

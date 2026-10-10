@@ -170,37 +170,4 @@ where
     }
 }
 
-pub(crate) fn clean_output(bytes: &[u8]) -> Vec<u8> {
-    let text = String::from_utf8_lossy(bytes);
-    let mut bytes = text.as_bytes();
-    let mut clean = Vec::with_capacity(bytes.len());
-    while let Some((&byte, tail)) = bytes.split_first() {
-        if bytes.starts_with(b"\x1b[") {
-            let mut end = 2;
-            while bytes
-                .get(end)
-                .is_some_and(|byte| (0x30..=0x3f).contains(byte))
-            {
-                end += 1;
-            }
-            while bytes
-                .get(end)
-                .is_some_and(|byte| (0x20..=0x2f).contains(byte))
-            {
-                end += 1;
-            }
-            if bytes
-                .get(end)
-                .is_some_and(|byte| (0x40..=0x7e).contains(byte))
-            {
-                bytes = &bytes[end + 1..];
-                continue;
-            }
-        }
-        if !matches!(byte, 0..=8 | 11..=12 | 14..=31) {
-            clean.push(byte);
-        }
-        bytes = tail;
-    }
-    clean
-}
+pub(crate) use artifactize_tools::result::clean_output;

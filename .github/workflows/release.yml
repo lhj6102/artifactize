@@ -121,7 +121,9 @@ jobs:
       # build. --allow-dirty: the version was set in this checkout.
       - name: Publish to crates.io
         if: env.PRERELEASE == 'false'
-        run: cargo publish --locked --allow-dirty --no-verify -p artifactize
+        run: |
+          cargo publish --locked --allow-dirty --no-verify -p artifactize-tools
+          cargo publish --locked --allow-dirty --no-verify -p artifactize
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 

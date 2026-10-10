@@ -13,7 +13,7 @@ const MAX_QUOTED_BYTES: usize = 320;
 /// Reserve the rest of MAX_QUOTED_BYTES for the explicit truncated-value marker.
 const QUOTED_PREFIX_BYTES: usize = 300;
 
-pub(crate) fn compile(schema: &Value) -> Result<Validator, String> {
+pub fn compile(schema: &Value) -> Result<Validator, String> {
     if !schema.is_object() || schema["type"] != "object" {
         return Err("Tool inputSchema must declare type object.".into());
     }
@@ -28,7 +28,7 @@ pub(crate) fn compile(schema: &Value) -> Result<Validator, String> {
     })
 }
 
-pub(super) fn validate(validator: &Validator, args: &Value) -> Result<(), String> {
+pub fn validate(validator: &Validator, args: &Value) -> Result<(), String> {
     if !args.is_object()
         || serde_json::to_vec(args).map_err(|e| e.to_string())?.len() > ARGUMENT_LIMIT
     {
@@ -49,7 +49,7 @@ pub(super) fn validate(validator: &Validator, args: &Value) -> Result<(), String
     Err(message)
 }
 
-pub(crate) fn quoted(value: &str) -> String {
+pub fn quoted(value: &str) -> String {
     let mut value = serde_json::to_string(value).expect("string is JSON");
     if value.len() > MAX_QUOTED_BYTES {
         let mut end = QUOTED_PREFIX_BYTES;

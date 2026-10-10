@@ -6,8 +6,6 @@
 //! protected owner-only DACLs, handle-relative opens that refuse every reparse point, and
 //! kill-on-close Job Objects.
 
-#[cfg(any(windows, test))]
-mod directory_scan;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
@@ -19,11 +17,10 @@ use unix as os;
 use windows as os;
 
 pub(crate) use os::{
-    Child, DEFAULT_EDITOR, EntryName, HiddenInput, canonicalize, create_private_dir,
-    create_private_dir_all, editor, entry_kind, exit_signal, host_name, is_executable,
-    is_link_refusal, is_private_dir, is_private_file, open_directory, open_entry, open_no_follow,
-    open_nonblocking, private_options, private_tempdir_in, process_start_time, read_dir,
-    restrict_file, spawn_detached, spawn_gated, stop_requested, sync_dir,
+    Child, DEFAULT_EDITOR, HiddenInput, create_private_dir, create_private_dir_all, editor,
+    exit_signal, host_name, is_executable, is_private_dir, is_private_file, private_options,
+    private_tempdir_in, process_start_time, restrict_file, spawn_detached, spawn_gated,
+    stop_requested, sync_dir,
 };
 
 #[cfg(unix)]
@@ -36,12 +33,7 @@ pub(crate) use windows::{is_owner_only, private_pipe, user_identity};
 pub(crate) const FILE_LOCK_RETRY_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(25);
 
-/// The type of a directory entry, read without following it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum FileKind {
-    File,
-    Directory,
-    Symlink,
-    /// FIFOs, sockets, devices, and on Windows reparse points that are not links.
-    Other,
-}
+pub(crate) use artifactize_tools::files::{
+    EntryName, FileKind, canonicalize, entry_kind, open_directory, open_entry, open_no_follow,
+    open_nonblocking, read_dir,
+};
