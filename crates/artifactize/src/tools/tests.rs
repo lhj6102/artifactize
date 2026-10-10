@@ -199,6 +199,10 @@ async fn json_context_has_private_paths_declared_material_and_owner_cwd() {
     fixture.script(r#"import json, os, sys
 request = json.load(sys.stdin)
 context = request['context']
+# Record fixture-only, filtered context when an assertion fails; registry diagnostics must
+# stay opaque, but platform probes need to show which runtime convention differs.
+with open('probe-diagnostics', 'w') as diagnostics:
+    diagnostics.write(json.dumps({'context':context,'cwd':os.getcwd(),'env':dict(os.environ)}))
 assert request['version'] == 1 and request['args'] == {}
 assert type(request['version']) is int
 assert os.getcwd() == context['artifactPath']
@@ -215,7 +219,11 @@ assert set(os.environ) <= allowed
 print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':context}]}))
 "#);
     let result = fixture.call(json!({})).await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(
+        !result.is_error,
+        "{result:?}; probe diagnostics: {}",
+        fs::read_to_string(fixture.repo.join("probe-diagnostics")).unwrap_or_default()
+    );
     let Content::Json { data } = &result.content[1] else {
         panic!()
     };
