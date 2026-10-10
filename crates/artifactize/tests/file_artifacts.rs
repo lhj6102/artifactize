@@ -488,10 +488,9 @@ fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
         &["{file}".into(), "--input={file}".into()],
     )
     .unwrap();
-    let file = support::os::canonical(&config.root.join("files/input.txt"))
-        .to_str()
-        .unwrap()
-        .to_owned();
+    let file = support::os::path_text(&support::os::canonical(
+        &config.root.join("files/input.txt"),
+    ));
     assert_eq!(args, [file.clone(), format!("--input={file}")]);
     for args in [["{file}/sub"], ["{file}/input.txt"]] {
         fixture.declare("files/input.txt.artf", runtime("file", &args));
@@ -546,9 +545,9 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
     assert_eq!(
         command.args,
         vec![
-            support::os::canonical(&config.root.join("files/input.txt"))
-                .to_str()
-                .unwrap();
+            support::os::path_text(&support::os::canonical(
+                &config.root.join("files/input.txt")
+            ));
             2
         ]
     );
@@ -745,7 +744,10 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
     let registry = Registry::for_artifact(&config, "file").unwrap();
     registry.preflight("inspect_file").unwrap();
     let data = call(&registry, "inspect_file", json!({}), &fixture.state).await;
-    assert_eq!(data["cwd"], config.root.join("files").to_str().unwrap());
+    assert_eq!(
+        data["cwd"],
+        support::os::path_text(&config.root.join("files"))
+    );
     assert_eq!(
         data["argv"][0],
         support::os::canonical(&config.root.join("files/input.txt"))

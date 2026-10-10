@@ -1392,7 +1392,11 @@ pub fn python_script(path: &Path, source: &str) -> (String, Vec<Value>) {
     if cfg!(windows) {
         (
             "python3".into(),
-            vec![json!("-X"), json!("utf8"), json!(path.file_name().unwrap())],
+            vec![
+                json!("-X"),
+                json!("utf8"),
+                json!(path.file_name().unwrap().to_str().unwrap()),
+            ],
         )
     } else {
         let python = Command::new("python3")

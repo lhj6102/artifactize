@@ -626,7 +626,7 @@ fn sign_in_storage_inside_a_git_work_tree_is_refused_and_doctor_only_warns() {
         message.starts_with("Codex sign-in storage ")
             && message.contains(&format!(
                 "{} is inside the git work tree ",
-                Path::new("state").join("auth").display()
+                "state/auth"
             ))
             && message.ends_with(
                 "; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE."

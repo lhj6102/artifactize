@@ -150,7 +150,7 @@ impl Fixture {
 
     async fn claim(&self, id: &str) -> Option<String> {
         let view = store::read_request(&self.state, id).await.unwrap();
-        view.claim.map(|claim| claim.reviewer)
+        view.claim.map(|claim| claim.reviewer.to_string())
     }
 }
 
@@ -217,7 +217,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     let mut review = Review::new(
         fixture.state.clone(),
         Some(fixture.repo.clone()),
-        "alice".into(),
+        "alice".parse().unwrap(),
         None,
     );
     review.refresh().await;
@@ -256,8 +256,9 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
             .filter(|c| !c.is_whitespace() && !"│┌┐└┘─".contains(*c))
             .collect()
     };
-    let notes = release.join("notes.md").display().to_string();
-    let command = artifactize::review::shell([bin("cat").as_str(), notes.as_str()]);
+    let notes = support::os::path_text(&release.join("notes.md"));
+    let cat = support::os::path_text(std::path::Path::new(&bin("cat")));
+    let command = artifactize::review::shell([cat.as_str(), notes.as_str()]);
     let shown = format!("$ {command}");
     let prefix: String = unwrapped(&shown).chars().take(20).collect();
     assert!(unwrapped(&selected).contains(&prefix), "{selected}");
@@ -331,7 +332,10 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
             .all(|r| r["status"] == "GREEN")
     );
     let view = store::read_request(&fixture.state, &id).await.unwrap();
-    assert_eq!(view.request.result.unwrap()["approved"], true);
+    assert_eq!(
+        view.request.result.unwrap().owner_fields()["approved"],
+        true
+    );
     assert!(view.claim.is_none());
 }
 
@@ -347,11 +351,13 @@ async fn review_respects_other_claims_and_releases_its_own() {
     assert_eq!(output.status.code(), Some(3));
     let id = fixture.waiting().await;
     let receipts = fixture.receipts().await;
-    human::claim(&receipts, &id, "bob").await.unwrap();
+    human::claim(&receipts, &id, &"bob".parse().unwrap())
+        .await
+        .unwrap();
     let mut review = Review::new(
         fixture.state.clone(),
         Some(fixture.repo.clone()),
-        "alice".into(),
+        "alice".parse().unwrap(),
         Some(id.parse().unwrap()),
     );
     review.refresh().await;
@@ -367,7 +373,9 @@ async fn review_respects_other_claims_and_releases_its_own() {
         assert!(screen(&mut review).contains("Claim this request before reviewing it."));
     }
     assert_eq!(fixture.claim(&id).await.as_deref(), Some("bob"));
-    human::unclaim(&receipts, &id, "bob").await.unwrap();
+    human::unclaim(&receipts, &id, &"bob".parse().unwrap())
+        .await
+        .unwrap();
     review.refresh().await;
 
     // c claims, u releases, and another reviewer can then claim.
@@ -376,8 +384,12 @@ async fn review_respects_other_claims_and_releases_its_own() {
     press(&mut review, KeyCode::Char('u')).await;
     assert!(screen(&mut review).contains("Claim released."));
     assert_eq!(fixture.claim(&id).await, None);
-    human::claim(&receipts, &id, "bob").await.unwrap();
-    human::unclaim(&receipts, &id, "bob").await.unwrap();
+    human::claim(&receipts, &id, &"bob".parse().unwrap())
+        .await
+        .unwrap();
+    human::unclaim(&receipts, &id, &"bob".parse().unwrap())
+        .await
+        .unwrap();
 
     // Quitting after a claim this session took asks; releasing frees it for others.
     press(&mut review, KeyCode::Char('c')).await;
@@ -386,7 +398,9 @@ async fn review_respects_other_claims_and_releases_its_own() {
     assert!(screen(&mut review).contains("This session claimed 1 request(s)"));
     assert_eq!(press(&mut review, KeyCode::Char('u')).await, Action::Quit);
     assert_eq!(fixture.claim(&id).await, None);
-    human::claim(&receipts, &id, "bob").await.unwrap();
+    human::claim(&receipts, &id, &"bob".parse().unwrap())
+        .await
+        .unwrap();
 }
 
 #[test]

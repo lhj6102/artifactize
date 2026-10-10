@@ -211,8 +211,14 @@ print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':c
         panic!()
     };
     assert_eq!(data["artifactId"], "a");
-    assert_eq!(data["artifactPath"], json!(fixture.repo));
-    assert_eq!(data["scope"]["a"]["path"], json!(fixture.repo));
+    assert_eq!(
+        data["artifactPath"],
+        json!(crate::test_os::path_text(&fixture.repo))
+    );
+    assert_eq!(
+        data["scope"]["a"]["path"],
+        json!(crate::test_os::path_text(&fixture.repo))
+    );
     assert_eq!(data["scope"]["a"]["children"], json!({}));
     assert_eq!(
         data["executionPaths"]["shared.txt"],

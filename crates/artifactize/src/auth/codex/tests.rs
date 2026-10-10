@@ -42,8 +42,8 @@ fn stored(storage: &Storage, access: &str, expires_at: u64) {
                 access_token: access.into(),
                 refresh_token: "old-refresh".into(),
                 account_id: "account-1".parse().unwrap(),
-                expires_at,
-                saved_at: 1,
+                expires_at: Timestamp::from_seconds(expires_at),
+                saved_at: Timestamp::from_seconds(1),
             },
         )
         .unwrap();
@@ -232,7 +232,13 @@ async fn login_exchanges_the_callback_code_and_saves_private_tokens() {
     assert_eq!(saved.access_token, access);
     assert_eq!(saved.refresh_token, "refresh-1");
     assert_eq!(saved.account_id, "account-1");
-    assert_eq!(saved.expires_at, saved.saved_at + 3600);
+    assert_eq!(
+        saved.expires_at,
+        saved
+            .saved_at
+            .checked_add(Duration::from_secs(3600))
+            .unwrap()
+    );
     // The ID token is not kept.
     assert!(!fs::read_to_string(path).unwrap().contains("\"id\""));
 }
@@ -305,9 +311,11 @@ async fn expiring_tokens_refresh_once_under_the_lock_and_rotate() {
             let storage = storage.clone();
             let server = server.clone();
             tokio::spawn(async move {
-                stored_token_at(&storage, &root(&server), || Ok(10_000))
-                    .await
-                    .unwrap()
+                stored_token_at(&storage, &root(&server), || {
+                    Ok(Timestamp::from_seconds(10_000))
+                })
+                .await
+                .unwrap()
             })
         })
         .collect();
@@ -347,37 +355,45 @@ async fn refresh_failures_keep_or_drop_the_sign_in() {
     .await;
     stored(&storage, "old-access", 1);
     // A failing token endpoint is transient, so a review may retry it.
-    let transient = stored_token_at(&storage, &root(&server), || Ok(10_000))
-        .await
-        .err()
-        .unwrap();
+    let transient = stored_token_at(&storage, &root(&server), || {
+        Ok(Timestamp::from_seconds(10_000))
+    })
+    .await
+    .err()
+    .unwrap();
     assert!(transient.transient);
     let transient = transient.message;
     assert!(
         transient.contains("HTTP 500") && transient.contains("kept"),
         "{transient}"
     );
-    let mismatch = stored_token_at(&storage, &root(&server), || Ok(10_000))
-        .await
-        .err()
-        .unwrap();
+    let mismatch = stored_token_at(&storage, &root(&server), || {
+        Ok(Timestamp::from_seconds(10_000))
+    })
+    .await
+    .err()
+    .unwrap();
     assert!(!mismatch.transient);
     let mismatch = mismatch.message;
     assert!(mismatch.contains("another ChatGPT account"), "{mismatch}");
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_some());
-    let terminal = stored_token_at(&storage, &root(&server), || Ok(10_000))
-        .await
-        .err()
-        .unwrap();
+    let terminal = stored_token_at(&storage, &root(&server), || {
+        Ok(Timestamp::from_seconds(10_000))
+    })
+    .await
+    .err()
+    .unwrap();
     assert!(!terminal.transient);
     let terminal = terminal.message;
     assert!(terminal.contains("refresh_token_reused"), "{terminal}");
     assert!(terminal.contains("artifactize login codex"), "{terminal}");
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
-    let missing = stored_token_at(&storage, &root(&server), || Ok(10_000))
-        .await
-        .err()
-        .unwrap();
+    let missing = stored_token_at(&storage, &root(&server), || {
+        Ok(Timestamp::from_seconds(10_000))
+    })
+    .await
+    .err()
+    .unwrap();
     assert_eq!(missing.message, LOGIN_REQUIRED);
 }
 
@@ -402,7 +418,7 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
         fs::read(&path).unwrap(),
         path.metadata().unwrap().modified().unwrap(),
     );
-    let token = read_auth_file_at(&path, 10_000).unwrap();
+    let token = read_auth_file_at(&path, Timestamp::from_seconds(10_000)).unwrap();
     assert_eq!(token.access_token, access);
     assert_eq!(token.account_id, "file-account");
     assert_eq!(
@@ -415,16 +431,25 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
 
     write(json!({"tokens":{"access_token":access}}));
     assert_eq!(
-        read_auth_file_at(&path, 10_000).unwrap().account_id,
+        read_auth_file_at(&path, Timestamp::from_seconds(10_000))
+            .unwrap()
+            .account_id,
         "claim-account"
     );
 
     // The fake-provider docs' dummy file: an opaque token has no expiry to check.
     write(json!({"tokens":{"access_token":"dummy","account_id":"test"}}));
-    assert_eq!(read_auth_file_at(&path, 10_000).unwrap().account_id, "test");
+    assert_eq!(
+        read_auth_file_at(&path, Timestamp::from_seconds(10_000))
+            .unwrap()
+            .account_id,
+        "test"
+    );
 
     write(json!({"tokens":{"access_token":jwt("a", 10_000 + 30),"refresh_token":"r"}}));
-    let expired = read_auth_file_at(&path, 10_000).err().unwrap();
+    let expired = read_auth_file_at(&path, Timestamp::from_seconds(10_000))
+        .err()
+        .unwrap();
     assert!(expired.contains("has expired"), "{expired}");
     assert!(expired.contains("sign in with Codex again"), "{expired}");
     assert!(expired.contains("never refreshes"), "{expired}");
@@ -441,13 +466,18 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
         ),
     ] {
         fs::write(&path, contents).unwrap();
-        let error = read_auth_file_at(&path, 10_000).err().unwrap();
+        let error = read_auth_file_at(&path, Timestamp::from_seconds(10_000))
+            .err()
+            .unwrap();
         assert!(error.contains(expected), "{error}");
         assert!(!error.contains("sk-secret"), "{error}");
     }
-    let error = read_auth_file_at(&temp.path().join("missing.json"), 10_000)
-        .err()
-        .unwrap();
+    let error = read_auth_file_at(
+        &temp.path().join("missing.json"),
+        Timestamp::from_seconds(10_000),
+    )
+    .err()
+    .unwrap();
     assert!(
         error.starts_with("ARTIFACTIZE_CODEX_AUTH_FILE: cannot read"),
         "{error}"
@@ -470,7 +500,9 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
         )
         .unwrap();
         assert_eq!(
-            read_auth_file_at(&path, 10_000).unwrap().account_id,
+            read_auth_file_at(&path, Timestamp::from_seconds(10_000))
+                .unwrap()
+                .account_id,
             "claim-account"
         );
     }
@@ -487,7 +519,7 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
     ] {
         fs::write(&path, contents).unwrap();
         assert!(
-            read_auth_file_at(&path, 10_000)
+            read_auth_file_at(&path, Timestamp::from_seconds(10_000))
                 .err()
                 .unwrap()
                 .contains("no ChatGPT sign-in tokens"),
@@ -499,7 +531,7 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
         r#"{"tokens":{"access_token":"first","access_token":"last","account_id":"first","account_id":"last"}}"#,
     )
     .unwrap();
-    let token = read_auth_file_at(&path, 10_000).unwrap();
+    let token = read_auth_file_at(&path, Timestamp::from_seconds(10_000)).unwrap();
     assert_eq!(
         (token.access_token.as_str(), token.account_id.as_str()),
         ("last", "last")
@@ -510,7 +542,9 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
     )
     .unwrap();
     assert_eq!(
-        read_auth_file_at(&path, 10_000).unwrap().account_id,
+        read_auth_file_at(&path, Timestamp::from_seconds(10_000))
+            .unwrap()
+            .account_id,
         "final"
     );
     fs::write(
@@ -519,7 +553,7 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
     )
     .unwrap();
     assert!(
-        read_auth_file_at(&path, 10_000)
+        read_auth_file_at(&path, Timestamp::from_seconds(10_000))
             .err()
             .unwrap()
             .contains("no ChatGPT sign-in tokens")
@@ -583,4 +617,30 @@ async fn sign_in_browser_uses_the_shared_literal_opener() {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn credential_file_keeps_its_integer_second_envelope_byte_for_byte() {
+    let wire = r#"{"access_token":"access","refresh_token":"refresh","account_id":"account","expires_at":18446744073709551615,"saved_at":10000}"#;
+    let saved: Credentials = serde_json::from_str(wire).unwrap();
+    assert_eq!(saved.saved_at, Timestamp::from_seconds(10_000));
+    assert_eq!(saved.expires_at, Timestamp::from_seconds(u64::MAX));
+    assert_eq!(serde_json::to_string(&saved).unwrap(), wire);
+}
+
+#[test]
+fn token_expiry_seconds_are_converted_once_and_overflow_is_rejected() {
+    let access = jwt("account", 13_600);
+    let parse = |expires_in: Value| {
+        serde_json::from_value::<TokenResponse>(
+            json!({"access_token":access,"refresh_token":"refresh","expires_in":expires_in}),
+        )
+    };
+    let saved = credentials(parse(json!(3600)).unwrap(), Timestamp::from_seconds(10_000)).unwrap();
+    assert_eq!(saved.expires_at, Timestamp::from_seconds(13_600));
+    assert!(credentials(parse(json!(0)).unwrap(), Timestamp::from_seconds(10_000)).is_err());
+    assert!(credentials(parse(json!(1)).unwrap(), Timestamp::from_seconds(u64::MAX)).is_err());
+    assert!(parse(json!(-1)).is_err());
+    assert!(parse(json!("3600")).is_err());
+    assert_eq!(expiry(&access), Some(Timestamp::from_seconds(13_600)));
 }

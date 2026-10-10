@@ -28,14 +28,14 @@ pub enum RequestCommand {
         id: RequestId,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<String>,
+        reviewer: Option<crate::types::ReviewerId>,
     },
     /// Release your Human reviewer lock while the request still waits.
     Unclaim {
         id: RequestId,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<String>,
+        reviewer: Option<crate::types::ReviewerId>,
     },
     /// Run a predefined Human tool as the claimant.
     Tool {
@@ -43,7 +43,7 @@ pub enum RequestCommand {
         tool: String,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<String>,
+        reviewer: Option<crate::types::ReviewerId>,
     },
     /// Submit a schema-valid Human verdict and owner fields.
     Submit {
@@ -58,7 +58,7 @@ pub enum RequestCommand {
         fields_file: Option<PathBuf>,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<String>,
+        reviewer: Option<crate::types::ReviewerId>,
     },
 }
 

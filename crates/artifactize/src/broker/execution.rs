@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use super::{Stops, now};
@@ -88,7 +87,7 @@ pub(super) async fn execute(
             match review.result {
                 Ok(result) => {
                     let verdict = result.verdict;
-                    request.result = Some(result.into_json());
+                    request.result = Some(result.into());
                     Some(verdict)
                 }
                 Err(failure) => {
@@ -207,14 +206,21 @@ pub(super) async fn execute(
 fn runtime_result(outcome: Outcome, request: &mut Request) -> Option<Verdict> {
     match outcome {
         Outcome::Completed(result) => {
-            request.result = Some(json!({
-                "verdict":if result.verdict == Verdict::Green { "GREEN" } else { "RED" },
-                "exitCode":result.exit_code,
-                "stdout":String::from_utf8_lossy(&result.output.stdout),
-                "stderr":String::from_utf8_lossy(&result.output.stderr),
-                "durationMs":result.output.duration.as_millis() as u64,
-                "truncated":result.output.truncated,
-            }));
+            request.result = Some(crate::store::ExecutionResult::Runtime(
+                crate::store::RuntimeResult {
+                    verdict: result.verdict,
+                    exit_code: crate::store::ResultField::Value(result.exit_code),
+                    stdout: crate::store::ResultField::Value(
+                        String::from_utf8_lossy(&result.output.stdout).into_owned(),
+                    ),
+                    stderr: crate::store::ResultField::Value(
+                        String::from_utf8_lossy(&result.output.stderr).into_owned(),
+                    ),
+                    duration: crate::store::ResultField::Value(result.output.duration),
+                    truncated: crate::store::ResultField::Value(result.output.truncated),
+                    fields: serde_json::Map::new(),
+                },
+            ));
             Some(result.verdict)
         }
         Outcome::OperationalError(error) => {

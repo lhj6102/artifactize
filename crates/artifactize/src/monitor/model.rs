@@ -503,7 +503,8 @@ pub fn run_node(run: &RunView) -> Node {
 
 /// Top-level entries of a result, one line each, such as `verdict GREEN`. Saved runtime
 /// logs are left to the evidence view.
-fn result_summary(result: &Value) -> String {
+fn result_summary(result: &crate::store::ExecutionResult) -> String {
+    let result = result.to_json();
     let Some(object) = result.as_object() else {
         return result
             .to_string()

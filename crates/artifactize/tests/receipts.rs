@@ -446,7 +446,7 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
     bad.status = RequestStatus::Green;
     bad.completed_at = Some("2026-01-01T00:00:01Z".parse().unwrap());
     assert!(receipts.save_request(&bad).await.is_err());
-    bad.result = Some(json!({"verdict":"GREEN"}));
+    bad.result = Some(json!({"verdict":"GREEN"}).try_into().unwrap());
     bad.error = Some("contradiction".into());
     assert!(receipts.save_request(&bad).await.is_err());
     bad.status = RequestStatus::Error;

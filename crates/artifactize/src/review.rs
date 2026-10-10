@@ -174,7 +174,7 @@ type Commands = std::collections::BTreeMap<String, Result<CommandLine, String>>;
 pub struct Review {
     state: PathBuf,
     repo: Option<PathBuf>,
-    reviewer: String,
+    reviewer: crate::types::ReviewerId,
     mode: Mode,
     /// The standalone level with focus; monitor keeps its own panes.
     focus: Focus,
@@ -219,7 +219,7 @@ impl Review {
     pub fn new(
         state: PathBuf,
         repo: Option<PathBuf>,
-        reviewer: String,
+        reviewer: crate::types::ReviewerId,
         open: Option<RequestId>,
     ) -> Self {
         Self {
@@ -849,7 +849,12 @@ impl Review {
 }
 
 impl Job {
-    async fn run(self, state: PathBuf, reviewer: String, cancel: CancellationToken) -> Outcome {
+    async fn run(
+        self,
+        state: PathBuf,
+        reviewer: crate::types::ReviewerId,
+        cancel: CancellationToken,
+    ) -> Outcome {
         let mut claimed = None;
         match self {
             Job::Claim { id } => {
@@ -1047,7 +1052,7 @@ async fn edit(text: String) -> Result<String, String> {
 pub async fn run(
     state: PathBuf,
     repo: Option<PathBuf>,
-    reviewer: String,
+    reviewer: crate::types::ReviewerId,
     open: Option<RequestId>,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
