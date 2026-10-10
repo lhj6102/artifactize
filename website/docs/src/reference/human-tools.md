@@ -1,6 +1,9 @@
 # Human tools
 
 [Human reviews](../guides/human-reviews.md#human-tools) shows a Human tool declaration.
+A Human tool is a command or a [built-in tool](builtin-tools.md) (`read`, `list`,
+`section`, `help` or `open`). Built-ins use the same placeholders and scope checks
+for their target and run inside artifactize; the rest of this page is about commands.
 
 Arguments are fixed literal argv, with scope placeholders only: `{artifactPath}`
 is the declaring Artifact's canonical target path (a folder or file); `{name}`
@@ -16,7 +19,8 @@ metadata is checked at each call. File-target regularity/existence and no-symlin
 checks happen at discovery and on every tool call too, even with
 `fingerprint = false`; a failed check runs no command.
 
-Executable resolution is identical to Agent tools: bare names use PATH, relative
+Executable resolution is identical to Agent tools: bare names use PATH (with
+PATHEXT on Windows), relative
 names containing `/` are owner-relative scoped paths (`./tool` is accepted), and
 absolute executables run as given. No shell is added; the cwd is the declaring
 Artifact's working directory (the containing folder for a file Artifact).

@@ -29,5 +29,7 @@
 - [Declarations (.artf)](reference/declarations.md)
 - [Agent tools](reference/agent-tools.md)
 - [Human tools](reference/human-tools.md)
+- [Built-in tools](reference/builtin-tools.md)
 - [State, cache and limits](reference/state-cache-limits.md)
 - [Review store server and client](reference/review-store.md)
+- [Operating systems](reference/platforms.md)
