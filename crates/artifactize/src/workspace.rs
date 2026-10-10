@@ -60,7 +60,7 @@ pub(crate) fn canonical_target(path: &Path) -> io::Result<PathBuf> {
 }
 
 pub(crate) fn outside_workspace(workspace: &Path, output: &Path) -> io::Result<()> {
-    if output.starts_with(workspace) {
+    if crate::platform::is_within(output, workspace) {
         return Err(io::Error::other(
             "State and output directories must be outside the reviewed repository.",
         ));

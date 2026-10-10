@@ -200,7 +200,7 @@ assert type(context['version']) is int
 assert pathlib.Path.cwd().name == 'owner'
 assert 'FINGERPRINT_SECRET' not in os.environ
 assert sys.argv[2] == '$HOME; ../literal $(touch executed)'
-assert sys.argv[3] == str(pathlib.Path.cwd() / 'key')
+assert pathlib.Path(sys.argv[3]) == pathlib.Path.cwd() / 'key'
 PRIVATE_DIRECTORY_CHECK
 with open(sys.argv[1], 'a') as log:
     log.write(os.environ['ARTIFACTIZE_OUTPUT_DIR'] + '\n')

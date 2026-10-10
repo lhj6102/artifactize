@@ -8,6 +8,9 @@ use tokio_rusqlite::Connection;
 
 use crate::broker::now;
 
+/// Random bytes in a bearer token: 256 bits, beyond guessing for the token's whole life.
+const TOKEN_SECRET_BYTES: usize = 32;
+
 pub const DATABASE: &str = "review-store.sqlite";
 const SCHEMA_VERSION: u32 = 3;
 /// Bound retained shared-review history, including small records that would not
@@ -163,7 +166,7 @@ impl Store {
         if scopes.is_empty() {
             return Err("A token needs at least one scope.".into());
         }
-        let mut secret = [0; 32];
+        let mut secret = [0; TOKEN_SECRET_BYTES];
         getrandom::fill(&mut secret).map_err(|_| "Cannot obtain secure randomness.".to_owned())?;
         let token = format!(
             "azt_{}",

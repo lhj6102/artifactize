@@ -20,6 +20,22 @@ pub use windows::{
 
 /// The filesystem root of an absolute path (`/`, or a Windows volume or share) and the names
 /// below it, in order. `None` when a component is `.` or `..`.
+/// Whether a native path is absolute on this system.
+pub fn is_absolute(path: &std::path::Path) -> bool {
+    path.is_absolute()
+}
+
+/// The logical form of `path` below `root`: an absolute native path is taken relative to
+/// `root` (`None` outside it), a relative one is already logical.
+pub fn logical_below(root: &std::path::Path, path: &str) -> Option<String> {
+    let path = std::path::Path::new(path);
+    if path.is_absolute() {
+        logical_from_native(path.strip_prefix(root).ok()?)
+    } else {
+        path.to_str().map(str::to_owned)
+    }
+}
+
 pub fn split_root(path: &std::path::Path) -> Option<(&std::path::Path, Vec<&std::ffi::OsStr>)> {
     use std::path::Component;
     let root = path.ancestors().last()?;

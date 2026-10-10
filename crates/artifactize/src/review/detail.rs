@@ -675,10 +675,11 @@ impl Review {
                     // a builtin's action on its logical target.
                     match (&tool.declared, self.command(&tool.name)) {
                         (Runs::Command(_), Some(Ok(command))) => {
-                            let words =
-                                std::iter::once(command.program.to_string_lossy().into_owned())
-                                    .chain(command.args.iter().cloned())
-                                    .collect::<Vec<_>>();
+                            let words = std::iter::once(crate::platform::path_text(
+                                std::path::Path::new(&command.program),
+                            ))
+                            .chain(command.args.iter().cloned())
+                            .collect::<Vec<_>>();
                             let command = super::shell(words.iter().map(String::as_str));
                             rows.push((Line::from(format!("  $ {}", plain(&command))), index));
                         }

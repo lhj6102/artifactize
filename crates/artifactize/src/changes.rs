@@ -48,43 +48,55 @@ pub enum Change {
     Resync,
 }
 
-#[derive(Default)]
-struct Dirty {
-    resync: bool,
-    state: bool,
-    sessions: BTreeSet<SessionId>,
+/// Changes not yet delivered: a resync replaces everything else pending.
+enum Dirty {
+    Pending {
+        state: bool,
+        sessions: BTreeSet<SessionId>,
+    },
+    Resync,
+}
+impl Default for Dirty {
+    fn default() -> Self {
+        Self::Pending {
+            state: false,
+            sessions: BTreeSet::new(),
+        }
+    }
 }
 impl Dirty {
     fn add(&mut self, change: Change) {
-        if self.resync {
+        let Self::Pending { state, sessions } = self else {
             return;
-        }
+        };
         match change {
-            Change::Resync => {
-                self.resync = true;
-                self.state = false;
-                self.sessions.clear();
-            }
-            Change::StateInvalidated => self.state = true,
+            Change::Resync => *self = Self::Resync,
+            Change::StateInvalidated => *state = true,
             Change::SessionInvalidated(id) => {
-                self.sessions.insert(id);
-                if self.sessions.len() > MAX_DIRTY_SESSIONS {
-                    self.add(Change::Resync);
+                sessions.insert(id);
+                if sessions.len() > MAX_DIRTY_SESSIONS {
+                    *self = Self::Resync;
                 }
             }
         }
     }
     fn pop(&mut self) -> Option<Change> {
-        if std::mem::take(&mut self.resync) {
-            return Some(Change::Resync);
+        match self {
+            Self::Resync => {
+                *self = Self::default();
+                Some(Change::Resync)
+            }
+            Self::Pending { state, sessions } => {
+                if std::mem::take(state) {
+                    Some(Change::StateInvalidated)
+                } else {
+                    sessions.pop_first().map(Change::SessionInvalidated)
+                }
+            }
         }
-        if std::mem::take(&mut self.state) {
-            return Some(Change::StateInvalidated);
-        }
-        self.sessions.pop_first().map(Change::SessionInvalidated)
     }
     fn is_empty(&self) -> bool {
-        !self.resync && !self.state && self.sessions.is_empty()
+        matches!(self, Self::Pending { state: false, sessions } if sessions.is_empty())
     }
 }
 struct Inbox {

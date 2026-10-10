@@ -332,7 +332,10 @@ impl<'a> Registry<'a> {
 fn output_result(output: &process::Output) -> ToolResult {
     let failed = !output.status.success();
     let stdout = if failed {
-        format!("Human tool exited unsuccessfully ({}).\n", output.status)
+        format!(
+            "Human tool exited unsuccessfully ({}).\n",
+            crate::platform::exit_description(&output.status)
+        )
     } else {
         String::new()
     };

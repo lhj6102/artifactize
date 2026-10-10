@@ -52,7 +52,7 @@ fn dirty_sessions_are_bounded_and_overflow_coalesces_to_resync() {
             format!("session-{index}").parse().unwrap(),
         ));
     }
-    assert!(dirty.sessions.is_empty());
+    assert!(matches!(dirty, Dirty::Resync));
     assert_eq!(dirty.pop(), Some(Change::Resync));
     assert_eq!(dirty.pop(), None);
     for _ in 0..1000 {

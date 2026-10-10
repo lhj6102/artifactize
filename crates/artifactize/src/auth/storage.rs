@@ -123,7 +123,10 @@ impl Storage {
         };
         // This is an application-owned directory, not the user's state root.
         if !private {
-            return Err("Auth directory must have owner-only permissions (0700).".into());
+            return Err(format!(
+                "Auth directory must be {}.",
+                platform::PRIVATE_DIRECTORY
+            ));
         }
         Ok(Self { directory })
     }
@@ -208,7 +211,10 @@ impl Storage {
 
 fn check_private_file(file: &File) -> Result<(), String> {
     if !platform::is_private_file(file).map_err(|e| e.to_string())? {
-        return Err("Auth files must be regular, single-link, owner-only files (0600).".into());
+        return Err(format!(
+            "Auth files must be regular, single-link files {}.",
+            platform::PRIVATE_FILE
+        ));
     }
     Ok(())
 }

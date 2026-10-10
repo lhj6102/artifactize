@@ -388,7 +388,7 @@ async fn help(
     if !finished.status.success() {
         return Err(format!(
             "Help exited unsuccessfully ({}).\n{}",
-            finished.status,
+            crate::platform::exit_description(&finished.status),
             String::from_utf8_lossy(&finished.stderr)
         ));
     }

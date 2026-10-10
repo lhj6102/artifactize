@@ -29,6 +29,10 @@ const PRIVATE_DIR_MODE: u32 = 0o700;
 /// evidence, so no other local user may read them.
 const PRIVATE_FILE_MODE: u32 = 0o600;
 
+/// How a private directory and file are described in messages.
+pub(crate) const PRIVATE_DIRECTORY: &str = "owner-only (mode 0700)";
+pub(crate) const PRIVATE_FILE: &str = "readable by their owner only (mode 0600)";
+
 /// The group and other permission bits; a private path has none of them set.
 pub(crate) const GROUP_OTHER_BITS: u32 = 0o077;
 

@@ -186,6 +186,26 @@ pub fn tempdir_below_tmp_alias() -> tempfile::TempDir {
     tempfile::tempdir_in("/tmp").unwrap()
 }
 
+/// A file name with whitespace in it: with a line break where the system allows one in a
+/// name, only a space on Windows, which forbids line breaks in names.
+pub fn whitespace_name() -> &'static str {
+    if cfg!(windows) {
+        "other space"
+    } else {
+        "other space\nline"
+    }
+}
+
+/// Whether the volume holding `directory` opens a name in any case, as Windows and default
+/// macOS volumes do.
+pub fn case_insensitive(directory: &Path) -> bool {
+    let probe = directory.join("case-probe");
+    std::fs::write(&probe, "").unwrap();
+    let insensitive = other_case(&probe).exists();
+    std::fs::remove_file(probe).unwrap();
+    insensitive
+}
+
 /// The null device: `/dev/null` on Unix, `NUL` on Windows.
 pub fn null_device() -> &'static Path {
     Path::new(if cfg!(windows) { "NUL" } else { "/dev/null" })

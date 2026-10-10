@@ -161,7 +161,7 @@ pub(crate) fn fingerprint_targets<'a>(
 
 /// The reuse key of an Eval definition hash over these fingerprints.
 pub fn key(
-    eval_def_hash: &str,
+    eval_def_hash: &crate::types::DefinitionHash,
     fingerprints: &BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint>,
 ) -> crate::types::ReuseKey {
     let mut digest = Sha256::new();
@@ -177,7 +177,7 @@ pub fn key(
 
 /// Scope kinds distinguish file/folder observation without coupling reuse to repo paths.
 pub fn key_with_kinds(
-    eval_def_hash: &str,
+    eval_def_hash: &crate::types::DefinitionHash,
     fingerprints: &BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint>,
     kinds: &BTreeMap<crate::types::ArtifactName, crate::config::ArtifactKind>,
 ) -> crate::types::ReuseKey {
@@ -599,7 +599,7 @@ async fn script(
         if !output.status.success() {
             return Err(format!(
                 "Fingerprint command exited with {}.",
-                output.status
+                crate::platform::exit_description(&output.status)
             ));
         }
         if output.truncated {

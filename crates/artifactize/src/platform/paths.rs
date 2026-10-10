@@ -28,6 +28,44 @@ pub(crate) fn canonical_target(path: &Path) -> io::Result<PathBuf> {
     Ok(resolved)
 }
 
+/// Why `absolute_without_links` refused a path.
+#[derive(Debug)]
+pub(crate) enum LinkedPath {
+    /// The path climbs with `..`.
+    ParentTraversal,
+    /// This existing component is a link or another special entry.
+    Link(PathBuf),
+    Io(io::Error),
+}
+
+/// The absolute form of `path`, checked component by component below the system's root
+/// (and on Windows the volume prefix): no `..`, and no existing component that is a link,
+/// a reparse point or another special entry. Missing components are allowed.
+pub(crate) fn absolute_without_links(path: &Path) -> Result<PathBuf, LinkedPath> {
+    let absolute = std::path::absolute(path).map_err(LinkedPath::Io)?;
+    let mut current = PathBuf::new();
+    for component in absolute.components() {
+        if component == Component::ParentDir {
+            return Err(LinkedPath::ParentTraversal);
+        }
+        current.push(component);
+        // A Windows prefix alone, such as `\\?\C:`, names the volume device, not a folder.
+        if matches!(component, Component::Prefix(_) | Component::RootDir) {
+            continue;
+        }
+        match super::path_kind(&current) {
+            Ok(super::FileKind::Symlink | super::FileKind::Other) => {
+                return Err(LinkedPath::Link(current));
+            }
+            Err(error) if error.kind() != io::ErrorKind::NotFound => {
+                return Err(LinkedPath::Io(error));
+            }
+            _ => {}
+        }
+    }
+    Ok(current)
+}
+
 /// Reject drive-rooted logical paths even when declarations are read on another OS.
 pub(crate) fn drive_rooted(value: &str) -> bool {
     value

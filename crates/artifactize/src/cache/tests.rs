@@ -567,6 +567,6 @@ fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
         ),
     ] {
         assert_eq!(eval_definition_hash(eval), hash);
-        assert_ne!(key(hash, &fingerprints).as_str(), pinned);
+        assert_ne!(key(&hash.parse().unwrap(), &fingerprints).as_str(), pinned);
     }
 }
