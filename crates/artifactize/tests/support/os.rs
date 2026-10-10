@@ -1506,6 +1506,11 @@ pub const LINGERING: &str = "sleep 3600";
 /// then runs until it is killed: an hour outlasts any test.
 pub const LINGERING_GRANDCHILD: &str = "trap '' TERM; sh -c 'sleep 3600 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait";
 
+/// Give the file at `original` a second name, `link`: a hard link on every system.
+pub fn hard_link(original: &Path, link: &Path) {
+    std::fs::hard_link(original, link).unwrap();
+}
+
 /// The identity of the file at `path` on its volume: the device and inode on Unix, the
 /// volume serial number and file index on Windows. A file replaced by a rename has a new one.
 pub fn file_identity(path: &Path) -> (u64, u64) {

@@ -550,8 +550,10 @@ async fn token_request(
             .or_else(|| body["error"]["code"].as_str())
             .or_else(|| body["code"].as_str())
             .unwrap_or_default();
+        // Rate limiting and server failures pass; a client error does not.
+        let transient =
+            status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
         let status = status.as_u16();
-        let transient = status == 429 || status >= 500;
         let message = match refreshing {
             Some(storage) if terminal(code) => {
                 storage.remove(CREDENTIALS)?;

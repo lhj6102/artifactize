@@ -7,18 +7,16 @@ use super::*;
 use crate::config::read_workspace_config;
 use crate::test_os::{symlink_dir, symlink_file};
 
-struct Fixture(PathBuf);
+/// A repository in a temporary directory, at its physical path; removed on drop.
+struct Fixture(
+    PathBuf,
+    #[expect(dead_code, reason = "owns the directory")] tempfile::TempDir,
+);
 
 impl Fixture {
     fn new() -> Self {
-        let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/test-fixtures");
-        fs::create_dir_all(&parent).unwrap();
-        let root = tempfile::Builder::new()
-            .prefix("scope-")
-            .tempdir_in(&parent)
-            .unwrap()
-            .keep();
-        Self(crate::platform::canonicalize(&root).unwrap())
+        let directory = crate::test_os::tempdir();
+        Self(directory.path().to_owned(), directory)
     }
 
     fn write(&self, path: &str, contents: &str) {
@@ -33,12 +31,6 @@ impl Fixture {
 
     fn config(&self) -> RepoConfig {
         read_workspace_config(&self.0).unwrap()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 

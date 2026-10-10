@@ -66,7 +66,7 @@ fn storage_is_atomic_private_and_refuses_links() {
     fs::remove_file(&path).unwrap();
     // Another name for the file could outlive a rotation of this one.
     storage.save("secret.json", &secret("linked")).unwrap();
-    fs::hard_link(&path, temp.path().join("second-link.json")).unwrap();
+    crate::test_os::hard_link(&path, &temp.path().join("second-link.json"));
     assert!(storage.read::<Secret>("secret.json").is_err());
 }
 

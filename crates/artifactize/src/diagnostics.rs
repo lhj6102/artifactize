@@ -43,8 +43,8 @@ pub struct ToolCheckOptions {
     #[arg(long)]
     pub execute: bool,
     /// JSON arguments for an executed Agent tool.
-    #[arg(long, value_name = "JSON")]
-    pub args: Option<String>,
+    #[arg(long, value_name = "JSON", value_parser = json_arguments)]
+    pub args: Option<serde_json::Value>,
 }
 
 impl ToolCheckOptions {
@@ -70,12 +70,13 @@ impl ToolCheckOptions {
                 "--args requires Agent tool execution; Human tools take no free arguments.".into(),
             );
         }
-        if let Some(args) = &self.args {
-            serde_json::from_str::<serde_json::Value>(args)
-                .map_err(|e| format!("Invalid --args JSON: {e}"))?;
-        }
         Ok(())
     }
+}
+
+/// `--args`, parsed once where it is given.
+fn json_arguments(text: &str) -> Result<serde_json::Value, String> {
+    serde_json::from_str(text).map_err(|e| format!("Invalid --args JSON: {e}"))
 }
 
 #[derive(Debug, Serialize)]
@@ -324,13 +325,7 @@ async fn execute_tool(
                 .prefix("tools-check-")
                 .tempdir_in(root)
                 .map_err(|e| e.to_string())?;
-            let args = options
-                .args
-                .as_deref()
-                .map(serde_json::from_str)
-                .transpose()
-                .map_err(|e| e.to_string())?
-                .unwrap_or(json!({}));
+            let args = options.args.clone().unwrap_or(json!({}));
             let result = registry
                 .call(name, args, directory.path(), cancellation)
                 .await;
