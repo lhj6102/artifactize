@@ -3,6 +3,20 @@
 use super::*;
 use std::{fs, io::Read};
 
+struct DiscoveryEntry {
+    path: PathBuf,
+    name: std::ffi::OsString,
+    kind: crate::platform::FileKind,
+}
+impl DiscoveryEntry {
+    fn path(&self) -> PathBuf {
+        self.path.clone()
+    }
+    fn file_name(&self) -> std::ffi::OsString {
+        self.name.clone()
+    }
+}
+
 /// Discover regular markers in deterministic path order, without following directory links.
 pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
     let root =
@@ -17,8 +31,23 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
     let mut pending = vec![(PathBuf::new(), None::<ArtifactName>)];
     while let Some((relative, mut owner)) = pending.pop() {
         let directory = config.root.join(&relative);
-        let entries = fs::read_dir(&directory)
-            .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
+        let opened = crate::platform::open_directory(&directory)
+            .map_err(|error| ConfigError::new(&directory, error))?;
+        let entries = crate::platform::read_dir(&opened)
+            .and_then(|entries| {
+                entries
+                    .map(|entry| {
+                        let entry = entry?;
+                        let name = entry.file_name();
+                        let kind = entry.file_type()?;
+                        Ok(DiscoveryEntry {
+                            path: directory.join(&name),
+                            name,
+                            kind,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, std::io::Error>>()
+            })
             .map_err(|error| ConfigError::new(&directory, error))?;
         let mut entries = entries;
         entries.sort_by_key(|entry| entry.file_name());
@@ -27,8 +56,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             .find(|entry| entry.file_name() == "artifactize.json")
         {
             let file = legacy.path();
-            let kind = crate::platform::path_kind(&file)
-                .map_err(|error| ConfigError::new(&file, error))?;
+            let kind = legacy.kind;
             if !ignored
                 .matched(&file, kind == crate::platform::FileKind::Directory)
                 .is_ignore()
@@ -45,8 +73,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             .find(|entry| entry.file_name() == CONFIG_FILE)
         {
             let file = marker.path();
-            let kind = crate::platform::path_kind(&file)
-                .map_err(|error| ConfigError::new(&file, error))?;
+            let kind = marker.kind;
             if kind != crate::platform::FileKind::File {
                 return Err(ConfigError::new(file, "index.artf must be a regular file."));
             }
@@ -70,7 +97,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     .ok_or_else(|| ConfigError::new(&file, "Artifact paths must be UTF-8."))?;
                 let child = child
                     .parse()
-                    .expect("discovery produces validated child prefixes");
+                    .map_err(|error: String| ConfigError::new(&file, error))?;
                 parent.children.insert(child, name.clone());
             }
             insert_artifact(
@@ -116,9 +143,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                 continue;
             }
             let file = marker.path();
-            if crate::platform::path_kind(&file).map_err(|error| ConfigError::new(&file, error))?
-                != crate::platform::FileKind::File
-            {
+            if marker.kind != crate::platform::FileKind::File {
                 return Err(ConfigError::new(
                     &file,
                     "File Artifact declaration must be a regular file.",
@@ -137,17 +162,18 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
                     "File Artifact target name must not contain ':'; scoped tool paths do not support colons.",
                 ));
             }
-            let target_path = directory.join(target);
-            let kind = crate::platform::path_kind(&target_path).map_err(|error| {
-                ConfigError::new(
-                    &file,
-                    if error.kind() == std::io::ErrorKind::NotFound {
-                        format!("File Artifact target {target} is missing.")
-                    } else {
-                        format!("Cannot inspect File Artifact target {target}: {error}.")
-                    },
-                )
-            })?;
+            let kind = crate::platform::entry_kind(&opened, std::ffi::OsStr::new(target)).map_err(
+                |error| {
+                    ConfigError::new(
+                        &file,
+                        if error.kind() == std::io::ErrorKind::NotFound {
+                            format!("File Artifact target {target} is missing.")
+                        } else {
+                            format!("Cannot inspect File Artifact target {target}: {error}.")
+                        },
+                    )
+                },
+            )?;
             if kind != crate::platform::FileKind::File {
                 return Err(ConfigError::new(
                     &file,
@@ -207,8 +233,7 @@ pub fn read_workspace_config(repo: &Path) -> Result<RepoConfig, ConfigError> {
             )?;
         }
         for entry in entries.into_iter().rev() {
-            let kind = crate::platform::path_kind(&entry.path())
-                .map_err(|error| ConfigError::new(entry.path(), error))?;
+            let kind = entry.kind;
             if kind == crate::platform::FileKind::Directory
                 && entry.file_name() != ".git"
                 && entry.file_name() != "node_modules"
