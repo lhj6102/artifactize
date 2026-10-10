@@ -1534,6 +1534,20 @@ pub fn port_fixture(path: &Path, deadlines: bool) {
     }
 }
 
+/// A shell loop that runs until a file named `release` exists in its working directory, for
+/// a process that must outlive a test's checks and end with the test.
+pub const UNTIL_RELEASED: &str = "while [ ! -e release ]; do sleep 0.01; done";
+
+/// Ends the processes waiting in `directory` with [`UNTIL_RELEASED`] when dropped, however
+/// the test ends.
+pub struct Release(pub std::path::PathBuf);
+
+impl Drop for Release {
+    fn drop(&mut self) {
+        let _ = std::fs::write(self.0.join("release"), "");
+    }
+}
+
 /// A shell command that runs until it is killed: an hour outlasts any test.
 pub const LINGERING: &str = "sleep 3600";
 

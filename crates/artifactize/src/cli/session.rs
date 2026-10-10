@@ -67,7 +67,7 @@ pub(super) async fn execute(
             } else if json {
                 print_json(&json!({
                     "reference": located.reference.as_ref().map(ToString::to_string),
-                    "file": conversation.path,
+                    "file": crate::platform::path_text(&conversation.path),
                     "events": conversation.wire_events,
                 }))?;
             } else {

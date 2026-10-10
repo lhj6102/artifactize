@@ -479,9 +479,14 @@ async fn human_environment_and_launch_probe() {
         "sh",
         &[
             "-c",
-            "printf '%s' $$ > pid; printf '%s' \"$ARTIFACTIZE_HUMAN_MARKER\" > marker; exec sleep 10",
+            &format!(
+                "printf '%s' $$ > pid; printf '%s' \"$ARTIFACTIZE_HUMAN_MARKER\" > marker; {}",
+                support::os::UNTIL_RELEASED
+            ),
         ],
     );
+    // The launched program stays up until the test ends.
+    let _release = support::os::Release(repo.to_path_buf());
     support::declaration::write(repo.join("index.artf"), declaration.to_string()).unwrap();
     let config = read_workspace_config(repo).unwrap();
     assert!(Registry::new(&config, "a/agent").is_err());
