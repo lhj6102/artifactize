@@ -27,7 +27,7 @@ pub(crate) const FIELDS_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
 pub fn default_reviewer() -> Result<String, String> {
     let reviewer = crate::platform::USER_VARIABLES
         .iter()
-        .find_map(|name| std::env::var(name).ok())
+        .find_map(|name| crate::platform::environment::var_text(name))
         .ok_or("Set USER or provide a reviewer id.")?;
     validate_reviewer(&reviewer)?;
     Ok(reviewer)

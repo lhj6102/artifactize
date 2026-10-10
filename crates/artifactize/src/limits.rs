@@ -7,7 +7,7 @@
 //!  "agentSessions": {"enabled": true, "maxBytes": 1073741824, "targetBytes": 805306368}}
 //! ```
 
-use std::{collections::BTreeMap, fs, path::Path};
+use std::{collections::BTreeMap, path::Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -128,20 +128,25 @@ impl Limits {
     /// `agentSessions` bounds out of order is an error.
     pub fn read(state: &Path) -> Result<Self, String> {
         let path = state.join(FILE);
-        let invalid = |message: String| format!("{}: {message}", path.display());
-        let metadata = match fs::symlink_metadata(&path) {
-            Ok(metadata) => metadata,
+        let invalid = |message: String| format!("{}: {message}", crate::platform::path_text(&path));
+        let too_large =
+            || invalid("limits.json must be a regular file no larger than 64 KiB.".into());
+        let file = match crate::platform::open_regular(&path) {
+            Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Self::default());
             }
+            Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {
+                return Err(too_large());
+            }
             Err(error) => return Err(invalid(error.to_string())),
         };
-        if !metadata.is_file() || metadata.len() > MAX_BYTES {
-            return Err(invalid(
-                "limits.json must be a regular file no larger than 64 KiB.".into(),
-            ));
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut std::io::Read::take(&file, MAX_BYTES + 1), &mut text)
+            .map_err(|e| invalid(e.to_string()))?;
+        if text.len() as u64 > MAX_BYTES {
+            return Err(too_large());
         }
-        let text = fs::read_to_string(&path).map_err(|e| invalid(e.to_string()))?;
         let declared: Declared = serde_json::from_str(&text).map_err(|error| {
             let message = error.to_string();
             // Backend validation previously followed decoding, so its diagnostics had no
@@ -188,6 +193,7 @@ impl Limits {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     fn read(text: &str) -> Result<Limits, String> {
         let directory = tempfile::tempdir().unwrap();

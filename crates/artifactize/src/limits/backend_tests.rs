@@ -1,5 +1,6 @@
 //! Pin accepted backend names, previous diagnostics and lexicographic JSON/display order.
 use super::*;
+use std::fs;
 
 #[test]
 fn limits_keep_typed_backend_keys_and_existing_wire_order() {

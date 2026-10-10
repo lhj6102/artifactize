@@ -344,22 +344,11 @@ where
     })
 }
 
-/// Windows environment names are case-insensitive even though the typed map is not.
 fn environment_value<'a>(
     environment: &'a BTreeMap<OsString, OsString>,
     name: &str,
 ) -> Option<&'a std::ffi::OsStr> {
-    if crate::platform::ENV_NAMES_IGNORE_CASE {
-        environment.iter().find_map(|(key, value)| {
-            key.to_str()
-                .is_some_and(|key| key.eq_ignore_ascii_case(name))
-                .then_some(value.as_os_str())
-        })
-    } else {
-        environment
-            .get(std::ffi::OsStr::new(name))
-            .map(OsString::as_os_str)
-    }
+    crate::platform::environment::lookup(environment, name)
 }
 
 /// Intentional desktop handoff: no owned process group, pipes, or kill-on-drop policy.

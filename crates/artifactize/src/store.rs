@@ -1,9 +1,6 @@
 //! The state database and storage maintenance.
 
-use std::{
-    env,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use crate::{platform, workspace::canonical_target};
 
@@ -71,9 +68,9 @@ fn state_home_variables() -> String {
 pub fn state_home() -> Result<PathBuf, StateHomeError> {
     let state = platform::STATE_VARIABLES
         .iter()
-        .find_map(|name| env::var_os(name).filter(|path| !path.is_empty()));
+        .find_map(|name| platform::environment::var(name).filter(|path| !path.is_empty()));
     resolve_state_home(
-        env::var_os("ARTIFACTIZE_STATE_HOME").map(PathBuf::from),
+        platform::environment::var("ARTIFACTIZE_STATE_HOME").map(PathBuf::from),
         state.map(PathBuf::from),
         platform::home_directory(),
     )

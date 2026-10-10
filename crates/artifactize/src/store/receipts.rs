@@ -74,10 +74,12 @@ pub enum Error {
 #[serde(rename_all = "camelCase")]
 pub struct Run {
     pub id: RunId,
+    #[serde(with = "crate::platform::path_serde")]
     pub repo_path: PathBuf,
     /// Optional display metadata; schema 5 Runs written before this remain readable.
     #[serde(flatten)]
     pub repository: crate::repository::Identity,
+    #[serde(with = "crate::platform::path_serde")]
     pub state_dir: PathBuf,
     pub status: RunStatus,
     pub created_at: Timestamp,
@@ -199,7 +201,9 @@ pub struct Request {
     pub created_at: Timestamp,
     pub started_at: Option<Timestamp>,
     pub completed_at: Option<Timestamp>,
+    #[serde(with = "crate::platform::path_serde")]
     pub cwd: PathBuf,
+    #[serde(default, with = "crate::platform::path_serde::option")]
     pub run_dir: Option<PathBuf>,
     pub argv: Option<Vec<String>>,
     pub child: Option<Value>,

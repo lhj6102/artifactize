@@ -229,7 +229,7 @@ impl<'a> Registry<'a> {
                     program,
                     args: args.into_iter().map(Into::into).collect(),
                     cwd,
-                    env: std::env::vars_os().collect(),
+                    env: crate::platform::environment::snapshot(),
                     timeout: declaration.timeout_ms.unwrap_or(DEFAULT_TIMEOUT),
                 };
                 match process::run(command, cancellation, |_| async { Ok(()) }).await {
@@ -288,7 +288,7 @@ impl<'a> Registry<'a> {
         // A Human tool runs as the reviewer, with the reviewer's environment, as output
         // tools do.
         let launcher = process::Launcher {
-            env: std::env::vars_os().collect(),
+            env: crate::platform::environment::snapshot(),
         };
         let context = artifactize_tools::builtin::Context {
             root: &self.config.root,

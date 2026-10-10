@@ -33,6 +33,7 @@ pub struct Capacity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Provenance {
+    #[serde(with = "crate::platform::path_serde")]
     pub repo_path: PathBuf,
     pub run_id: RunId,
     pub request_id: RequestId,
@@ -162,9 +163,9 @@ const MAX_PRODUCER_CHARS: usize = 200;
 
 impl Producer {
     pub fn current() -> Self {
-        let user = crate::platform::USER_VARIABLES
-            .iter()
-            .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()));
+        let user = crate::platform::USER_VARIABLES.iter().find_map(|name| {
+            crate::platform::environment::var_text(name).filter(|value| !value.is_empty())
+        });
         let host = crate::platform::host_name();
         let name = format!(
             "{}@{}",

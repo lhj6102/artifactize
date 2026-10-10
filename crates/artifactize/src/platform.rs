@@ -6,6 +6,8 @@
 //! protected owner-only DACLs, handle-relative opens that refuse every reparse point, and
 //! kill-on-close Job Objects.
 
+pub(crate) mod environment;
+pub(crate) mod path_serde;
 #[cfg(unix)]
 mod unix;
 #[cfg(windows)]
@@ -43,3 +45,17 @@ pub(crate) use artifactize_tools::files::{
     EntryName, FileKind, canonicalize, entry_kind, link_target, open_directory, open_entry,
     open_no_follow, open_nonblocking, read_dir,
 };
+
+/// Open an existing regular file for reading without following a link in its last
+/// component (on Windows, any reparse point), and check what was opened.
+pub(crate) fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    let file = open_no_follow(std::fs::OpenOptions::new().read(true), path)?;
+    if file.metadata()?.is_file() {
+        Ok(file)
+    } else {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "not a regular file",
+        ))
+    }
+}

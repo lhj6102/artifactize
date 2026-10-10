@@ -17,6 +17,7 @@ use crate::workspace::{canonical_target, outside_workspace};
 #[serde(rename_all = "camelCase")]
 pub struct RunSummary {
     pub id: crate::types::RunId,
+    #[serde(serialize_with = "crate::platform::path_serde::serialize")]
     pub repo_path: PathBuf,
     pub created_at: crate::types::Timestamp,
     pub completed_at: Option<crate::types::Timestamp>,
