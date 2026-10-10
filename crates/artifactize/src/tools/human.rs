@@ -104,8 +104,8 @@ impl<'a> Registry<'a> {
                     definition: ToolDefinition {
                         name: name.clone(),
                         artifact_id: (*id).into(),
-                        description: declaration.description.replace("{artifactName}", id),
-                        kind: declaration.kind,
+                        description: declaration.description().replace("{artifactName}", id),
+                        kind: declaration.kind(),
                     },
                     declaration,
                 };
@@ -125,6 +125,12 @@ impl<'a> Registry<'a> {
         self.tools.values().map(|tool| &tool.definition)
     }
 
+    pub fn is_command(&self, name: &str) -> bool {
+        self.tools
+            .get(name)
+            .is_some_and(|tool| matches!(tool.declaration, HumanTool::Command(_)))
+    }
+
     pub fn preflight(&self, name: &str) -> Result<(), String> {
         let tool = self
             .tools
@@ -134,14 +140,22 @@ impl<'a> Registry<'a> {
         self.scope
             .resolve_input(&self.config.root, owner, "")
             .map_err(|e| e.to_string())?;
-        super::preflight_executable(
-            &self.config.root,
-            &self.scope,
-            owner,
-            &tool.declaration.command,
-        )?;
-        scope::resolve_human_argv(self.config, &self.scope, owner, &tool.declaration.args)
-            .map_err(|e| e.to_string())?;
+        match tool.declaration {
+            HumanTool::Command(declaration) => {
+                super::preflight_executable(
+                    &self.config.root,
+                    &self.scope,
+                    owner,
+                    &declaration.command,
+                )?;
+                scope::resolve_human_argv(self.config, &self.scope, owner, &declaration.args)
+                    .map_err(|error| error.to_string())?;
+            }
+            HumanTool::Builtin(declaration) => {
+                scope::builtin_args(self.config, &self.scope, owner, declaration)
+                    .map_err(|error| error.to_string())?;
+            }
+        }
         Ok(())
     }
 
@@ -152,7 +166,9 @@ impl<'a> Registry<'a> {
             .get(name)
             .ok_or("Unknown registered Human tool.")?;
         let owner = &tool.definition.artifact_id;
-        let declaration = tool.declaration;
+        let HumanTool::Command(declaration) = tool.declaration else {
+            return Err("Builtin Human tools have no executable command line.".into());
+        };
         for artifact in self.scope.artifacts.values() {
             scope::validate_file_target(&self.config.root, artifact)
                 .map_err(|error| error.to_string())?;
@@ -179,7 +195,14 @@ impl<'a> Registry<'a> {
         if cancellation.is_cancelled() {
             return ToolResult::error("Human tool call was cancelled.");
         }
-        let declaration = tool.declaration;
+        if let HumanTool::Builtin(declaration) = tool.declaration {
+            return self
+                .call_builtin(&tool.definition.artifact_id, declaration, cancellation)
+                .await;
+        }
+        let HumanTool::Command(declaration) = tool.declaration else {
+            unreachable!()
+        };
         let Ok(CommandLine {
             program, args, cwd, ..
         }) = self.command(name)
@@ -222,6 +245,75 @@ impl<'a> Registry<'a> {
                     ),
                 }
             }
+        }
+    }
+    async fn call_builtin(
+        &self,
+        owner: &str,
+        declaration: &crate::config::HumanBuiltinTool,
+        cancellation: CancellationToken,
+    ) -> ToolResult {
+        for artifact in self.scope.artifacts.values() {
+            if let Err(error) = scope::validate_file_target(&self.config.root, artifact) {
+                return ToolResult::error(error.to_string());
+            }
+        }
+        let (owner, args) = match scope::builtin_args(self.config, &self.scope, owner, declaration)
+        {
+            Ok(args) => args,
+            Err(error) => return ToolResult::error(error.to_string()),
+        };
+        let owner = match scope::ArtifactId::new(owner) {
+            Ok(owner) => owner,
+            Err(error) => return ToolResult::error(error.to_string()),
+        };
+        let tool_scope = self.scope.tool_scope();
+        if declaration.builtin == crate::config::Builtin::Open {
+            let target = if artifactize_tools::builtin::is_url(&args[0]) {
+                args[0].clone()
+            } else {
+                match tool_scope.resolve_input(&self.config.root, &owner, &args[0]) {
+                    Ok(path) => path.to_string_lossy().into_owned(),
+                    Err(error) => return ToolResult::error(error.to_string()),
+                }
+            };
+            return tokio::select! {
+                _ = cancellation.cancelled() => ToolResult::error("Human tool call was cancelled."),
+                result = artifactize_tools::opener::open(std::ffi::OsStr::new(&target)) => match result {
+                    Ok(()) => ToolResult { content: vec![Content::Launch { launched: true }], is_error: false },
+                    Err(error) => ToolResult::error(error.to_string()),
+                }
+            };
+        }
+        let result = artifactize_tools::builtin::call_fixed(
+            declaration.builtin,
+            &args,
+            serde_json::json!({}),
+            &self.config.root,
+            &tool_scope,
+            &owner,
+            &cancellation,
+        )
+        .await;
+        let output = result
+            .content
+            .into_iter()
+            .map(|content| match content {
+                artifactize_tools::Content::Text { text } => text,
+                artifactize_tools::Content::Json { data } => {
+                    serde_json::to_string_pretty(&data).expect("builtin JSON")
+                }
+                artifactize_tools::Content::Image { .. } => {
+                    unreachable!("Human builtins never produce images")
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        ToolResult {
+            content: vec![Content::Text {
+                text: text(output.as_bytes(), String::new(), false),
+            }],
+            is_error: result.is_error,
         }
     }
 }

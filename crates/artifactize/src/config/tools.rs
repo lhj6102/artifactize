@@ -67,6 +67,12 @@ pub struct BuiltinTool {
         deserialize_with = "present",
         skip_serializing_if = "Option::is_none"
     )]
+    pub args: Option<Vec<String>>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub description: Option<String>,
 }
 
@@ -102,16 +108,46 @@ impl AgentTool {
                 if let Some(value) = &tool.description {
                     description(value)?;
                 }
+                artifactize_tools::builtin::validate_args(
+                    tool.builtin,
+                    tool.args.as_deref(),
+                    false,
+                )?;
+                if let Some(args) = &tool.args {
+                    validate_agent_target(tool.builtin, args)?;
+                }
                 Ok(())
             }
         }
     }
-
     pub fn input_schema(&self) -> Value {
         match self {
             Self::Command(tool) => tool.input_schema.clone(),
-            Self::Builtin(tool) => crate::tools::builtin::input_schema(tool.builtin),
+            Self::Builtin(tool) => match &tool.args {
+                Some(args) => crate::tools::builtin::fixed_schema(tool.builtin, args),
+                None => crate::tools::builtin::input_schema(tool.builtin),
+            },
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum HumanTool {
+    Command(HumanCommandTool),
+    Builtin(HumanBuiltinTool),
+}
+
+impl<'de> Deserialize<'de> for HumanTool {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let value = Value::deserialize(deserializer)?;
+        if value.get("builtin").is_some() {
+            serde_json::from_value(value).map(Self::Builtin)
+        } else {
+            serde_json::from_value(value).map(Self::Command)
+        }
+        .map_err(D::Error::custom)
     }
 }
 
@@ -120,7 +156,7 @@ impl AgentTool {
     rename_all(serialize = "camelCase", deserialize = "snake_case"),
     deny_unknown_fields
 )]
-pub struct HumanTool {
+pub struct HumanCommandTool {
     pub description: String,
     pub kind: HumanToolKind,
     pub command: String,
@@ -134,6 +170,56 @@ pub struct HumanTool {
     pub timeout_ms: Option<std::time::Duration>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct HumanBuiltinTool {
+    pub builtin: Builtin,
+    pub description: String,
+    pub kind: HumanToolKind,
+    pub args: Vec<String>,
+}
+
+impl<'de> Deserialize<'de> for HumanBuiltinTool {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Declaration {
+            builtin: Builtin,
+            #[serde(default, deserialize_with = "present")]
+            description: Option<String>,
+            #[serde(default, deserialize_with = "present")]
+            kind: Option<HumanToolKind>,
+            args: Vec<String>,
+        }
+        let declaration = Declaration::deserialize(deserializer)?;
+        artifactize_tools::builtin::validate_args(
+            declaration.builtin,
+            Some(&declaration.args),
+            true,
+        )
+        .map_err(D::Error::custom)?;
+        let kind = if declaration.builtin == Builtin::Open {
+            HumanToolKind::Launch
+        } else {
+            HumanToolKind::Output
+        };
+        if declaration.kind.is_some_and(|declared| declared != kind) {
+            return Err(D::Error::custom(
+                "Human builtin kind disagrees with its tool.",
+            ));
+        }
+        Ok(Self {
+            builtin: declaration.builtin,
+            description: declaration.description.unwrap_or_else(|| {
+                crate::tools::builtin::fixed_description(declaration.builtin, &declaration.args)
+                    .into()
+            }),
+            kind,
+            args: declaration.args,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HumanToolKind {
@@ -142,14 +228,61 @@ pub enum HumanToolKind {
 }
 
 impl HumanTool {
-    pub(super) fn validate(&self) -> Result<(), String> {
-        description(&self.description)?;
-        script(&self.command, &self.args)?;
-        if self.command.contains(['{', '}']) {
-            return Err("Tool command must not contain placeholders.".into());
+    pub fn description(&self) -> &str {
+        match self {
+            Self::Command(tool) => &tool.description,
+            Self::Builtin(tool) => &tool.description,
         }
-        crate::scope::validate_human_args(&self.args).map_err(|e| e.to_string())
     }
+    pub fn kind(&self) -> HumanToolKind {
+        match self {
+            Self::Command(tool) => tool.kind,
+            Self::Builtin(tool) => tool.kind,
+        }
+    }
+    pub fn args(&self) -> &[String] {
+        match self {
+            Self::Command(tool) => &tool.args,
+            Self::Builtin(tool) => &tool.args,
+        }
+    }
+    pub(super) fn validate(&self) -> Result<(), String> {
+        description(self.description())?;
+        if let Self::Command(tool) = self {
+            script(&tool.command, &tool.args)?;
+            if tool.command.contains(['{', '}']) {
+                return Err("Tool command must not contain placeholders.".into());
+            }
+        }
+        crate::scope::validate_human_args(self.args()).map_err(|error| error.to_string())?;
+        if let Self::Builtin(tool) = self {
+            if tool.builtin != Builtin::Help
+                && !(tool.builtin == Builtin::Open
+                    && artifactize_tools::builtin::is_url(&tool.args[0]))
+                && !tool.args[0].starts_with('{')
+            {
+                artifactize_tools::scope::logical_path(&tool.args[0])
+                    .map_err(|error| error.to_string())?;
+            }
+            if tool.builtin == Builtin::Help && tool.args.iter().any(|arg| arg.contains(['{', '}']))
+            {
+                return Err(
+                    "Help args are literal program/subcommand names, not path placeholders.".into(),
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+fn validate_agent_target(builtin: Builtin, args: &[String]) -> Result<(), String> {
+    if builtin == Builtin::Help {
+        if args.iter().any(|arg| arg.contains(['{', '}'])) {
+            return Err("Help args are literal program/subcommand names.".into());
+        }
+        return Ok(());
+    }
+    artifactize_tools::scope::logical_path(&args[0]).map_err(|error| error.to_string())
 }
 
 fn empty_schema() -> Value {

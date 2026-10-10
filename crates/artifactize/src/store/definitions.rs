@@ -150,15 +150,33 @@ pub struct CommandTool {
 pub struct BuiltinTool {
     pub builtin: config::Builtin,
     #[serde(default, skip_serializing_if = "missing")]
+    pub args: Field<Vec<String>>,
+    #[serde(default, skip_serializing_if = "missing")]
     pub description: Field<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HumanTool {
+#[serde(untagged)]
+pub enum HumanTool {
+    Command(HumanCommandTool),
+    Builtin(HumanBuiltinTool),
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HumanCommandTool {
     pub description: String,
     pub kind: config::HumanToolKind,
     pub command: String,
+    pub args: Vec<String>,
+    #[serde(flatten)]
+    pub extra: Map<String, Value>,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HumanBuiltinTool {
+    pub builtin: config::Builtin,
+    pub description: String,
+    pub kind: config::HumanToolKind,
     pub args: Vec<String>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,

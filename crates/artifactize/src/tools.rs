@@ -98,10 +98,14 @@ impl<'a> Registry<'a> {
                 let name = format!("{operation}_{id}");
                 let description = match declaration {
                     AgentTool::Command(tool) => tool.description.clone(),
-                    AgentTool::Builtin(tool) => tool
-                        .description
-                        .clone()
-                        .unwrap_or_else(|| builtin::description(tool.builtin).into()),
+                    AgentTool::Builtin(tool) => {
+                        tool.description
+                            .clone()
+                            .unwrap_or_else(|| match &tool.args {
+                                Some(args) => builtin::fixed_description(tool.builtin, args).into(),
+                                None => builtin::description(tool.builtin).into(),
+                            })
+                    }
                 }
                 .replace("{artifactName}", id);
                 let input_schema = declaration.input_schema();
@@ -153,6 +157,18 @@ impl<'a> Registry<'a> {
                     .map_err(|e| e.to_string())?;
             }
         }
+        if let AgentTool::Builtin(declaration) = tool.declaration
+            && let Some(args) = &declaration.args
+        {
+            let owner = ArtifactId::new(owner).map_err(|error| error.to_string())?;
+            builtin::validate_target(
+                declaration.builtin,
+                args,
+                &self.config.root,
+                &self.scope.tool_scope(),
+                &owner,
+            )?;
+        }
         Ok(())
     }
 
@@ -180,6 +196,22 @@ impl<'a> Registry<'a> {
         let command = match tool.declaration {
             AgentTool::Command(command) => command,
             AgentTool::Builtin(tool_declaration) => {
+                if let Some(fixed_args) = &tool_declaration.args {
+                    let owner = match ArtifactId::new(tool.definition.artifact_id.as_str()) {
+                        Ok(owner) => owner,
+                        Err(error) => return ToolResult::error(error.to_string()),
+                    };
+                    return builtin::call_fixed(
+                        tool_declaration.builtin,
+                        fixed_args,
+                        args,
+                        &self.config.root,
+                        &self.scope.tool_scope(),
+                        &owner,
+                        &cancellation,
+                    )
+                    .await;
+                }
                 let input = match builtin::Input::parse(tool_declaration.builtin, args) {
                     Ok(input) => input,
                     Err(error) => return ToolResult::error(error),

@@ -1,5 +1,9 @@
 //! Scoped read-only Agent tools.
+mod fixed;
 mod input;
+pub use fixed::{
+    call_fixed, fixed_description, fixed_schema, is_url, validate_args, validate_target,
+};
 pub use input::Input;
 
 /// Bound the compiled regex automaton to limit search memory.
@@ -49,6 +53,9 @@ const MAX_READ_LINES: usize = 500;
 
 pub fn description(builtin: Builtin) -> &'static str {
     match builtin {
+        Builtin::Section => "Read a Markdown section in {artifactName} by its exact heading.",
+        Builtin::Help => "Read a program's --help output.",
+        Builtin::Open => "Open a scoped file or URL in its default application.",
         Builtin::Read => {
             "Read UTF-8 complete lines in {artifactName}. path is a relative logical file path, including child/mount paths. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". offset is 1-based (default 1); limit defaults to 80, maximum 500. Returns numbered lines preserving LF/CRLF/BOM, up to 64 KiB, startLine/endLine/lineCount, totalLines when known, truncated and nextOffset. No symlinks or binary text."
         }
@@ -105,6 +112,8 @@ pub fn input_schema(builtin: Builtin) -> Value {
             vec!["pattern"],
         ),
         Builtin::ViewImage => (json!({"path":path}), vec!["path"]),
+        Builtin::Section => (json!({"heading":pattern}), vec!["heading"]),
+        Builtin::Help | Builtin::Open => (json!({}), vec![]),
     };
     json!({
         "type":"object",

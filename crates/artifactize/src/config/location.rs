@@ -52,7 +52,7 @@ impl<'a, 'i> Location<'a, 'i> {
         T::deserialize(toml::de::ValueDeserializer::from(self.value.clone())).map_err(
             |mut error| {
                 error.set_input(Some(self.source));
-                format!("{}: {error}", self.path)
+                self.error(error)
             },
         )
     }

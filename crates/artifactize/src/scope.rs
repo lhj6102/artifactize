@@ -10,7 +10,7 @@ use crate::config::{Artifact, ConfigError, Eval, Fingerprint, Profile, RepoConfi
 
 mod human;
 mod instruction;
-pub(crate) use human::{resolve_human_argv, validate_human_args};
+pub(crate) use human::{builtin_args, resolve_human_argv, validate_human_args};
 pub use instruction::instruction_references;
 
 pub use artifactize_tools::scope::{ArtifactId, ScopeError, ScopedPath, scoped_path};
@@ -403,6 +403,24 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             ConfigError::declaration(config.root.join(artifact.declaration_path()), keys, message)
         };
         for (name, tool) in &artifact.views.agent_tools {
+            if let crate::config::AgentTool::Builtin(tool) = tool
+                && let Some(args) = &tool.args
+            {
+                let scope = artifact_scope(config, &[id.as_str()]).map_err(|failure| {
+                    error(&["views", "agent_tools", name, "args"], failure.to_string())
+                })?;
+                let owner = ArtifactId::new(id.as_str()).map_err(|failure| {
+                    error(&["views", "agent_tools", name, "args"], failure.to_string())
+                })?;
+                artifactize_tools::builtin::validate_target(
+                    tool.builtin,
+                    args,
+                    &config.root,
+                    &scope.tool_scope(),
+                    &owner,
+                )
+                .map_err(|failure| error(&["views", "agent_tools", name, "args"], failure))?;
+            }
             if let crate::config::AgentTool::Command(tool) = tool
                 && tool.protocol == crate::config::ToolProtocol::Json
             {

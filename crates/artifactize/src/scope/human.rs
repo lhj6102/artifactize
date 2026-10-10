@@ -28,7 +28,7 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
     for (owner, artifact) in &config.artifacts {
         for (name, tool) in &artifact.views.human_tools {
             let validate = || {
-                for argument in &tool.args {
+                for argument in tool.args() {
                     if let Some(reference) = reference(argument)? {
                         let target = if reference.name == "artifactPath" {
                             owner
@@ -37,6 +37,16 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
                         };
                         super::reference_path(config, target, reference.path)?;
                     }
+                }
+                if let crate::config::HumanTool::Builtin(tool) = tool {
+                    let scope = Scope {
+                        artifacts: config
+                            .artifacts
+                            .iter()
+                            .map(|(id, artifact)| (id.as_str(), artifact))
+                            .collect(),
+                    };
+                    builtin_args(config, &scope, owner, tool)?;
                 }
                 Ok::<_, ScopeError>(())
             };
@@ -76,4 +86,46 @@ pub(crate) fn resolve_human_argv(
             Ok(format!("{}{path}", reference.prefix))
         })
         .collect()
+}
+
+/// Resolve builtin paths back to logical scope paths so reads keep no-follow access.
+pub(crate) fn builtin_args(
+    config: &RepoConfig,
+    scope: &Scope<'_>,
+    owner: &str,
+    tool: &crate::config::HumanBuiltinTool,
+) -> Result<(String, Vec<String>), ScopeError> {
+    if tool.builtin == crate::config::Builtin::Help
+        || tool.builtin == crate::config::Builtin::Open
+            && artifactize_tools::builtin::is_url(&tool.args[0])
+    {
+        return Ok((owner.into(), tool.args.clone()));
+    }
+    let mut args = tool.args.clone();
+    let id = if let Some(reference) = reference(&args[0])? {
+        if !reference.prefix.is_empty() {
+            return Err(ScopeError(
+                "Builtin targets cannot have a flag prefix.".into(),
+            ));
+        }
+        let target = if reference.name == "artifactPath" {
+            owner
+        } else {
+            reference_target(config, owner, reference.name)?
+        };
+        super::reference_path(config, target, reference.path)?;
+        args[0] = reference.path.to_owned();
+        target
+    } else {
+        owner
+    };
+    artifactize_tools::builtin::validate_target(
+        tool.builtin,
+        &args,
+        &config.root,
+        &scope.tool_scope(),
+        &super::ArtifactId::new(id)?,
+    )
+    .map_err(ScopeError)?;
+    Ok((id.into(), args))
 }

@@ -523,7 +523,7 @@ impl Receipts {
                         return Ok(claim);
                     }
                 }
-                if !allow_start {
+                if !allow_start && key.is_none() {
                     return Ok(Claim::BudgetExhausted);
                 }
                 let capacity = capacity.zip(execution.backend());
@@ -537,6 +537,12 @@ impl Receipts {
                         available_to_waiter(&transaction, key, waiting_for.as_ref())?
                 {
                     return Ok(claim);
+                }
+                // The read fast path may have observed RUNNING before publication and
+                // then a dead publisher. Confirm availability in a fresh write snapshot
+                // even when this waiter has no budget to start another execution.
+                if !allow_start {
+                    return Ok(Claim::BudgetExhausted);
                 }
                 if let Some((capacity, backend)) = capacity {
                     if (capacity.stopped)() {

@@ -115,6 +115,7 @@ pub async fn tool_commands(
     let registry = Registry::new(&config, &request.eval_id)?;
     Ok(registry
         .list()
+        .filter(|tool| registry.is_command(&tool.name))
         .map(|tool| (tool.name.clone(), registry.command(&tool.name)))
         .collect())
 }
