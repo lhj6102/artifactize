@@ -81,7 +81,7 @@ fn matcher(patterns: &[String]) -> Result<Gitignore, String> {
 pub(super) async fn files(
     config: &RepoConfig,
     id: &crate::types::ArtifactName,
-    inputs: &[String],
+    inputs: &[crate::config::LogicalPath],
     ignore: &[String],
     cancellation: &CancellationToken,
 ) -> Result<Files, String> {
@@ -117,7 +117,7 @@ impl Walk {
     fn new(
         config: &RepoConfig,
         id: &crate::types::ArtifactName,
-        inputs: &[String],
+        inputs: &[crate::config::LogicalPath],
         ignore: &[String],
     ) -> Result<Self, String> {
         let artifact = &config.artifacts[id];
@@ -133,10 +133,10 @@ impl Walk {
         let inputs: Vec<_> = inputs
             .iter()
             .map(|input| {
-                if input == "." {
+                if input.as_str() == "." {
                     String::new()
                 } else {
-                    input.clone()
+                    input.to_string()
                 }
             })
             .collect();

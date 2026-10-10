@@ -10,6 +10,9 @@ pub use timestamp::Timestamp;
 
 /// Bound external identities and saved session path segments, including pre-UUID sessions.
 pub(crate) const MAX_ID_BYTES: usize = 200;
+/// Bound provider-controlled SSE item identifiers retained by the delivery tap;
+/// 1 KiB accommodates opaque IDs without allowing unbounded per-block memory.
+pub(crate) const ITEM_ID_BYTES: usize = 1024;
 /// Mirrors retain the remote wire identity verbatim under this local-only namespace.
 const REMOTE_EXECUTION_PREFIX: &str = "remote-";
 /// Bound script output and reuse-key components without requiring a cryptographic digest.
@@ -185,6 +188,9 @@ fn sha256_hex(value: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
+// A provider's own opaque identifier for one SSE reasoning-summary item, validated once
+// where it is decoded (`llm::delivery`) rather than carried as an unchecked String.
+identity!(ItemId, |value: &str| value.len() <= ITEM_ID_BYTES);
 identity!(ReuseKey, sha256_hex);
 // The SHA-256 of an eval's review strategy (`cache::eval_definition_hash`).
 identity!(DefinitionHash, sha256_hex);

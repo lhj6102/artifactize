@@ -398,15 +398,11 @@ async fn compute(
     scope::validate_file_target(&config.root, &config.artifacts[id])
         .map_err(|error| error.to_string())?;
     let result = match &config.artifacts[id].fingerprint {
-        Some(Fingerprint::Artifactsum { files, ignore }) => content(
-            config,
-            id,
-            &files.iter().map(ToString::to_string).collect::<Vec<_>>(),
-            ignore,
-            &cancellation,
-        )
-        .await
-        .map_err(|error| format!("Artifactsum for Artifact {id} failed: {error}")),
+        Some(Fingerprint::Artifactsum { files, ignore }) => {
+            content(config, id, files, ignore, &cancellation)
+                .await
+                .map_err(|error| format!("Artifactsum for Artifact {id} failed: {error}"))
+        }
         Some(Fingerprint::Script { .. }) => Ok(PreparedFingerprint {
             value: script(config, id, output_root, cancellation)
                 .await
@@ -424,7 +420,7 @@ async fn compute(
 async fn content(
     config: &RepoConfig,
     id: &ArtifactName,
-    inputs: &[String],
+    inputs: &[crate::config::LogicalPath],
     ignore: &[String],
     cancellation: &CancellationToken,
 ) -> Result<PreparedFingerprint, String> {

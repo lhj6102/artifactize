@@ -34,17 +34,13 @@ const READY_BYTES: usize = PENDING_BYTES / 2;
 const FRAME_SLICE: usize = 4096;
 /// Bound pathological empty summary parts and provider item identities independently.
 const SUMMARY_PARTS: usize = 256;
-/// Bound provider-controlled SSE item identifiers retained by the delivery tap;
-/// 1 KiB accommodates opaque IDs without allowing unbounded per-block memory.
-const ITEM_ID_BYTES: usize = 1024;
-
 struct Pending {
     text: String,
     state: DeliveryState,
     order: usize,
 }
 struct Summary {
-    item: Option<String>,
+    item: Option<crate::types::ItemId>,
     index: usize,
     text: String,
 }
@@ -138,10 +134,13 @@ impl Sink {
             })
             .collect()
     }
-    fn summary(&self, item: Option<String>, output: Option<usize>, index: usize, text: String) {
-        if item.as_ref().is_some_and(|id| id.len() > ITEM_ID_BYTES) {
-            return;
-        }
+    fn summary(
+        &self,
+        item: Option<crate::types::ItemId>,
+        output: Option<usize>,
+        index: usize,
+        text: String,
+    ) {
         let Some(identity) = item
             .as_ref()
             .map(|id| format!("item-{id}"))
@@ -201,11 +200,9 @@ impl Sink {
                     .iter()
                     .find(|(_, entry)| {
                         entry.index == index
-                            && (reasoning
-                                .id
-                                .as_ref()
-                                .is_some_and(|id| entry.item.as_ref() == Some(id))
-                                || entry.text == *text)
+                            && (reasoning.id.as_ref().is_some_and(|id| {
+                                entry.item.as_ref().is_some_and(|item| item == id)
+                            }) || entry.text == *text)
                     })
                     .map(|(block, _)| block.clone())
             };
@@ -331,7 +328,7 @@ enum SummaryFrame {
     #[serde(rename = "response.reasoning_summary_text.delta")]
     Delta {
         output_index: Option<usize>,
-        item_id: Option<String>,
+        item_id: Option<crate::types::ItemId>,
         summary_index: Option<usize>,
         delta: String,
     },
