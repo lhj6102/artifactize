@@ -966,15 +966,16 @@ fn validate_identity_locations(
         for (id, eval) in evals {
             let eval_location = location.child("evals").key(id.get_ref());
             eval_location.check(identifier(id.get_ref(), "Eval id"))?;
-            for (field, value) in [("profile", eval.get_ref().get("profile"))] {
-                if let Some(model) = value.and_then(|profile| profile.get_ref().get("model"))
-                    && let DeValue::String(model) = model.get_ref()
-                {
-                    eval_location
-                        .child(field)
-                        .child("model")
-                        .check(text(model, "Agent profile model"))?;
-                }
+            if let Some(model) = eval
+                .get_ref()
+                .get("profile")
+                .and_then(|profile| profile.get_ref().get("model"))
+                && let DeValue::String(model) = model.get_ref()
+            {
+                eval_location
+                    .child("profile")
+                    .child("model")
+                    .check(text(model, "Agent profile model"))?;
             }
             if let Some(variants) = eval
                 .get_ref()
