@@ -84,7 +84,8 @@ def generate(args):
         }
         for suffix, manifest in manifests.items():
             manifest["ManifestVersion"] = SCHEMA
-            (output / f"{PACKAGE}{suffix}.yaml").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+            header = f"# yaml-language-server: $schema=https://aka.ms/winget-manifest.{manifest['ManifestType']}.{SCHEMA}.schema.json\n"
+            (output / f"{PACKAGE}{suffix}.yaml").write_text(header + json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
 def channel_enabled(channel, version, env):

@@ -76,7 +76,9 @@ class ChannelsTest(unittest.TestCase):
             self.assertIn("test do", formula)
             for target in channels.MAC_TARGETS:
                 self.assertIn(channels.archive_name("1.2.3", target), formula)
-            manifest = json.loads((root / f"winget/{channels.PACKAGE}.installer.yaml").read_text())
+            text = (root / f"winget/{channels.PACKAGE}.installer.yaml").read_text()
+            self.assertTrue(text.startswith('# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.'))
+            manifest = json.loads(text.split('\n', 1)[1])
             nested = manifest["NestedInstallerFiles"]
             self.assertEqual([item["PortableCommandAlias"] for item in nested], ["artifactize", "artifactize-tools"])
             self.assertTrue(all(item["RelativeFilePath"].startswith("artifactize-v1.2.3-") for item in nested))
