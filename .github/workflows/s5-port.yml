@@ -1,6 +1,8 @@
 name: S5 portability diagnostics
 on:
   workflow_dispatch:
+  push:
+    branches: [platform/macos]
 jobs:
   suites:
     strategy:
