@@ -16,18 +16,18 @@ the tokens reuse saved: review cost follows the size of a change. `status`
 predicts what a change will re-review. A team review store (`artifactize server`) shares
 verdicts across teammates' checkouts and CI. The CLI drives reviews, `artifactize monitor`
 shows their progress and `artifactize review` works through waiting Human sign-offs. It runs
-on Linux and WSL.
+on Linux, macOS and Windows.
 
 Start with [Install](getting-started/install.md): prerequisites, backend setup, a 5-minute
 [quick start](getting-started/quick-start.md), the monitor and cleanup.
 
 ## Get started
 
-On Linux or WSL 2, install the binary and review the runtime-only example. No model
-or API key is needed:
+Install artifactize and review the runtime-only example. No model or API key is
+needed. On Linux or macOS:
 
 ```sh
-curl -fsSL https://artifactize.dev/install.sh | sh   # or: cargo install artifactize --locked
+curl -fsSL https://artifactize.dev/install.sh | sh   # or: brew install lhj6102/tap/artifactize
 git clone https://github.com/lhj6102/artifactize   # the example projects
 cd artifactize/examples/runtime-relations
 export ARTIFACTIZE_STATE_HOME=$(mktemp -d)   # keep the tour's state apart
@@ -35,8 +35,9 @@ artifactize verify --all    # three GREEN results, exit 0
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused
 ```
 
-[Install](getting-started/install.md) has the prerequisites, backend setup and the full
-[quick start](getting-started/quick-start.md).
+On Windows, `winget install lhj6102.Artifactize` installs it; [Install](getting-started/install.md)
+has every channel, the prerequisites and backend setup, and the
+[quick start](getting-started/quick-start.md) continues the tour.
 
 ## Where to go next
 

@@ -14,10 +14,12 @@ instance/schema paths (under 4 KiB), never argument values.
 
 Descriptions must be nonblank, at most 4000 UTF-16 code units, and support only
 `{artifactName}` interpolation (the canonical Artifact ID). Built-in references
-accept `builtin: "read" | "list" | "glob" | "grep" | "view_image"` and optional
-`description`. Only explicitly declared tools are listed. `read`, `list`, `glob`
-and `grep` execute in-process without subprocesses or output directories;
-`view_image` applies the same image checks as `json` image results.
+take `builtin`, optional `args` and optional `description`. Without `args`, `read`,
+`list`, `glob`, `grep` and `view_image` take the model's input below; with `args`,
+`read`, `list`, `section` and `help` work on a fixed target, as described in
+[Built-in tools](builtin-tools.md). Only explicitly declared tools are listed.
+Built-ins execute in-process without output directories (only `help` starts its
+program); `view_image` applies the same image checks as `json` image results.
 
 | Built-in | Arguments | Result |
 |---|---|---|
@@ -126,8 +128,9 @@ with an explicit truncation marker; nonzero exit marks that bounded stdout as a
 tool error. Stderr is not included. Commands such as `rg` that exit nonzero for
 no matches need an owner wrapper if that should count as successful empty output.
 
-Bare executables use PATH only, never implicit owner or `node_modules/.bin`
-lookup. Commands containing `/` resolve from the owner through the scope resolver
+Bare executables use PATH only (with PATHEXT on Windows; see
+[Program lookup](platforms.md#program-lookup)), never implicit owner or
+`node_modules/.bin` lookup. Commands containing `/` resolve from the owner through the scope resolver
 (`./tool` is accepted; traversal and symlinks are rejected). Absolute commands run
 as given. JSON-protocol argv may use existing scoped Artifact references, but
 cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
