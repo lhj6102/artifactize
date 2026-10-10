@@ -19,7 +19,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(name: &str) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         support::copy_fixture(name, &repo);
         Self {
@@ -325,14 +325,10 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let fixture = Fixture::new("declarations");
     let marker = fixture.root.path().join("hook-executed");
     let hook = fixture.repo.join("review/hook.sh");
-    fs::write(
+    support::os::write_script(
         &hook,
-        format!(
-            "#!/bin/sh\nprintf called > '{}'\nexit 91\n",
-            marker.display()
-        ),
-    )
-    .unwrap();
+        &format!("printf called > '{}'\nexit 91\n", marker.display()),
+    );
     support::os::allow_execution(&hook);
     fixture.json(&["config", "check"], 0);
     fixture.json(&["config", "graph"], 0);

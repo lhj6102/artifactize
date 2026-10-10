@@ -25,7 +25,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(fingerprint: bool) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
         write_human(&repo, fingerprint);

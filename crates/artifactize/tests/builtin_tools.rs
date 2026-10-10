@@ -41,7 +41,7 @@ fn parsed(output: Output, code: i32) -> Value {
 
 #[test]
 fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     declaration(
@@ -113,10 +113,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
             .unwrap();
         let report = parsed(output, 2);
         let error = report["error"].as_str().unwrap();
-        assert!(
-            error.contains("a/index.artf") || error.contains("a\\index.artf"),
-            "{error}"
-        );
+        assert!(error.contains("a/index.artf"), "{error}");
         assert!(error.contains(&format!("views.{audience}.bad")), "{error}");
         assert!(error.contains(" --> ") || error.contains("line"), "{error}");
     }
@@ -124,7 +121,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
 
 #[tokio::test]
 async fn fixed_agent_reads_sections_mounts_and_schemas() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     declaration(
         &repo,
@@ -217,7 +214,7 @@ async fn fixed_agent_reads_sections_mounts_and_schemas() {
 
 #[test]
 fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     declaration(&repo, json!({}), json!({}));
@@ -249,7 +246,7 @@ fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
 
 #[tokio::test]
 async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     declaration(
         &repo,
@@ -288,7 +285,7 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
 
 #[test]
 fn changing_only_builtin_args_preserves_reuse_identity_like_command_views() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     declaration(
         &repo,
@@ -321,7 +318,7 @@ fn changing_only_builtin_args_preserves_reuse_identity_like_command_views() {
 
 #[test]
 fn request_tools_execute_builtins_in_process_with_bounded_text() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     declaration(
@@ -337,7 +334,7 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
     );
     fs::write(repo.join("a/large.txt"), "x".repeat(80_000)).unwrap();
     let stub = repo.join("a/help-stub");
-    fs::write(&stub, "#!/bin/sh\nprintf 'human help: %s\\n' \"$*\"\n").unwrap();
+    support::os::write_script(&stub, "printf 'human help: %s\\n' \"$*\"\n");
     support::os::make_executable(&stub);
     let run = parsed(
         command(&repo, &state)
@@ -425,7 +422,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
 
 #[tokio::test]
 async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     fs::write(
         root.path().join("notes.md"),
         "# First\nfile body\n# Next\nlast\n",

@@ -962,6 +962,21 @@ impl Shell {
         let mut current = String::new();
         let mut started = false;
         for part in word {
+            // Quoted "$@" expands to one field per argument, preserving empty fields and
+            // attaching surrounding word fragments to the first/last argument respectively.
+            if let Part::Param { name, operator: None, quoted: true } = part
+                && name == "@"
+            {
+                let mut arguments = self.args.iter().skip(1).peekable();
+                while let Some(argument) = arguments.next() {
+                    current.push_str(argument);
+                    started = true;
+                    if arguments.peek().is_some() {
+                        fields.push(std::mem::take(&mut current));
+                    }
+                }
+                continue;
+            }
             let (value, quoted) = match part {
                 Part::Text(text, quoted) => {
                     current.push_str(text);
@@ -1550,22 +1565,6 @@ fn cksum(bytes: &[u8]) -> u32 {
     !crc
 }
 
-/// `trap '' TERM`: Windows has no SIGTERM; artifactize asks with Ctrl-Break instead.
-#[cfg(windows)]
-fn ignore_interrupts() {
-    unsafe extern "system" fn ignore(_event: u32) -> i32 {
-        1
-    }
-    #[link(name = "kernel32")]
-    unsafe extern "system" {
-        fn SetConsoleCtrlHandler(
-            handler: Option<unsafe extern "system" fn(u32) -> i32>,
-            add: i32,
-        ) -> i32;
-    }
-    // SAFETY: registers a handler that only returns TRUE.
-    unsafe { SetConsoleCtrlHandler(Some(ignore), 1) };
-}
-
-#[cfg(not(windows))]
-fn ignore_interrupts() {}
+#[path = "os/stand_in.rs"]
+mod os;
+use os::ignore_interrupts;

@@ -50,7 +50,7 @@ fn counts(run: &Value) -> Value {
 
 #[test]
 fn saved_definitions_and_paged_runs_survive_repository_removal() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let first = root.path().join("first");
     let second = root.path().join("second");
     let state = root.path().join("state");
@@ -309,7 +309,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
 
 #[test]
 fn listing_missing_state_is_inert_and_flags_are_validated() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("missing-repo");
     let state = root.path().join("missing-state");
     assert_eq!(query(&repo, &state, &["run", "list"], 0), json!([]));

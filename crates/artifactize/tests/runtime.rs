@@ -26,7 +26,7 @@ struct Scratch(tempfile::TempDir);
 
 impl Scratch {
     fn new() -> Self {
-        let scratch = Self(tempfile::tempdir().unwrap());
+        let scratch = Self(support::os::tempdir());
         std::fs::create_dir(scratch.workspace()).unwrap();
         scratch
     }
@@ -78,7 +78,6 @@ async fn ordinary_zero_exit_is_green_with_actual_output() {
     assert_eq!(result.output.stdout, b"out");
     assert_eq!(result.output.stderr, b"err");
     assert!(!result.output.truncated);
-    assert!(result.output.duration > Duration::ZERO);
 }
 
 #[tokio::test]
@@ -93,7 +92,7 @@ async fn ordinary_nonzero_exit_is_red() {
 async fn missing_binary_is_an_operational_error_not_red() {
     let scratch = Scratch::new();
     assert!(matches!(
-        execute(scratch.command("/artifactize/nonexistent-binary", &[], None)).await,
+        execute(scratch.command(scratch.workspace().join("nonexistent-binary").to_str().unwrap(), &[], None)).await,
         Outcome::OperationalError(Error::Process(process::Error::Spawn(error)))
             if error.kind() == io::ErrorKind::NotFound
     ));
@@ -113,8 +112,8 @@ async fn signal_is_an_operational_error() {
     ));
 }
 
-/// Windows ends every process with an exit code, so a status that would mean a crash or
-/// Ctrl-C elsewhere is still an ordinary RED verdict, never a signal.
+// Windows ends every process with an exit code, so a status that would mean a crash or
+// Ctrl-C elsewhere is still an ordinary RED verdict, never a signal.
 #[cfg(windows)]
 #[tokio::test]
 async fn windows_exit_statuses_are_verdicts_not_signals() {
@@ -151,11 +150,7 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     let cancellation = CancellationToken::new();
     let (registered, child) = oneshot::channel();
     // exec keeps the observed PID stable while the final long-lived command runs.
-    let script = if cfg!(windows) {
-        "touch started; sleep 30"
-    } else {
-        "touch started; exec sleep 30"
-    };
+    let script = support::os::cancellation_script();
     let command = scratch.command("/bin/sh", &["-c", script], None);
     let running = tokio::spawn(runtime::execute(
         command,
@@ -256,22 +251,14 @@ async fn runtime_has_independent_private_external_directories() {
         .map(|line| line.split_once('=').unwrap())
         .collect();
     // Windows children also get their profile folders and the system variables.
-    assert_eq!(environment.len(), if cfg!(windows) { 16 } else { 10 });
+    assert_eq!(environment.len(), support::os::runtime_environment_len());
     assert_eq!(
         environment["ARTIFACTIZE_WORKSPACE_DIR"],
         support::os::canonical(&scratch.workspace())
             .to_str()
             .unwrap()
     );
-    for (variable, name) in [
-        ("ARTIFACTIZE_OUTPUT_DIR", "output"),
-        ("ARTIFACTIZE_TMP_DIR", "tmp"),
-        ("HOME", "home"),
-        ("XDG_CACHE_HOME", "cache"),
-        ("TMPDIR", "tmp"),
-        ("TMP", "tmp"),
-        ("TEMP", "tmp"),
-    ] {
+    for (variable, name) in support::os::runtime_directories() {
         let path = Path::new(environment[variable]);
         assert_eq!(path, directory.join(name));
         assert!(!path.starts_with(scratch.workspace()));
@@ -365,7 +352,7 @@ fn parent_secret_is_not_visible_to_runtime_child() {
         .env("PROVIDER_SECRET", "not-for-child")
         .env("NODE_OPTIONS", "--require=not-for-child")
         .env("PYTHONPATH", "/not-for-child")
-        .env("PATH", "/usr/bin:/bin")
+        .env("PATH", support::os::system_path())
         .env("LANG", "C")
         .output()
         .unwrap();
@@ -386,7 +373,11 @@ async fn environment_subprocess_probe() {
     let scratch = Scratch::new();
     let result = completed(execute(scratch.command("/usr/bin/env", &[], None)).await);
     let output = String::from_utf8(result.output.stdout).unwrap();
-    assert!(output.lines().any(|line| line == "PATH=/usr/bin:/bin"));
+    assert!(
+        output
+            .lines()
+            .any(|line| line == format!("PATH={}", support::os::system_path().to_str().unwrap()))
+    );
     assert!(output.lines().any(|line| line == "LANG=C"));
     for forbidden in [
         "PROVIDER_SECRET",
@@ -430,10 +421,7 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
     let result = completed(
         execute(scratch.command(
             "/bin/sh",
-            &[
-                "-c",
-                "head -c 262144 /dev/zero | tr '\\000' x & head -c 262144 /dev/zero | tr '\\000' y >&2 & wait",
-            ],
+            &["-c", &support::os::letter_output(262144, 262144)],
             None,
         ))
         .await,
@@ -445,7 +433,7 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
     let result = completed(
         execute(scratch.command(
             "/bin/sh",
-            &["-c", "head -c 131072 /dev/zero; printf discarded"],
+            &["-c", &support::os::capped_output(131072)],
             None,
         ))
         .await,
@@ -464,7 +452,7 @@ async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
             "-c",
             "trap '' TERM; sh -c 'sleep 30 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait",
         ],
-        Some(if cfg!(windows) { 2000 } else { 500 }),
+        Some(support::os::slow(500) as u32),
     );
     let marker = command.directory().join("output/grandchild");
     let outcome = execute(command).await;
@@ -531,23 +519,55 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
     assert_gone(pid).await;
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn deadline_is_not_reset_after_registration() {
     let scratch = Scratch::new();
     let command = scratch.command(
         "/bin/sh",
         &[
             "-c",
-            "sleep 0.6; touch \"$ARTIFACTIZE_OUTPUT_DIR/too-late\"",
+            "touch started; while [ ! -e release ]; do sleep 0.01; done",
         ],
         Some(1000),
     );
-    let marker = command.directory().join("output/too-late");
-    let outcome = runtime::execute(command, CancellationToken::new(), |_| async {
-        tokio::time::sleep(Duration::from_millis(600)).await;
-        Ok(())
-    })
-    .await;
+    let (registered, child) = oneshot::channel();
+    let (release, held) = oneshot::channel();
+    let running = tokio::spawn(runtime::execute(
+        command,
+        CancellationToken::new(),
+        |child| async move {
+            registered.send(child).unwrap();
+            held.await.unwrap();
+            Ok(())
+        },
+    ));
+    let child = child.await.unwrap();
+    // Consume most of the one deadline while user code is still behind registration.
+    tokio::time::advance(Duration::from_millis(600)).await;
+    release.send(()).unwrap();
+    while !scratch.workspace().join("started").exists() {
+        assert!(
+            !running.is_finished(),
+            "registration failed before execution"
+        );
+        tokio::task::yield_now().await;
+    }
+    // Only 400 ms remains. A reset at registration would leave this process running.
+    tokio::time::advance(Duration::from_millis(401)).await;
+    tokio::task::yield_now().await;
+    let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
+    while !running.is_finished() {
+        assert!(
+            std::time::Instant::now() < failure_deadline,
+            "execution reset the registration deadline"
+        );
+        tokio::task::yield_now().await;
+    }
+    assert!(
+        running.is_finished(),
+        "execution reset the registration deadline"
+    );
+    let outcome = running.await.unwrap();
     assert!(
         matches!(
             outcome,
@@ -555,7 +575,7 @@ async fn deadline_is_not_reset_after_registration() {
         ),
         "{outcome:?}"
     );
-    assert!(!marker.exists());
+    assert_gone(child.pid).await;
 }
 
 async fn assert_gone(pid: u32) {

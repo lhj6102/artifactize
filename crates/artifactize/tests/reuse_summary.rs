@@ -19,7 +19,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         fs::create_dir(root.path().join("home")).unwrap();
         let provider = FakeProvider::start(|request| {
             assert_eq!(request.path, "/v1/responses");
@@ -97,7 +97,7 @@ impl Fixture {
             .arg("--state-dir")
             .arg(root.join("state"))
             .args(args)
-            .env("HOME", root.join("home"))
+            .env(support::os::home_env(), root.join("home"))
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off")

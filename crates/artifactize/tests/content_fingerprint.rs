@@ -18,7 +18,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
         Self {

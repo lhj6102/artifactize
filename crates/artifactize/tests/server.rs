@@ -1,3 +1,5 @@
+mod support;
+
 use std::{
     fs,
     io::{BufRead, BufReader},
@@ -45,7 +47,7 @@ impl Server {
 
     /// Start on a state directory that `prepare` may populate first.
     fn start_with(prepare: impl FnOnce(&Path)) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let state = root.path().join("server");
         prepare(&state);
         let mut child = Command::new(env!("CARGO_BIN_EXE_artifactize"))
