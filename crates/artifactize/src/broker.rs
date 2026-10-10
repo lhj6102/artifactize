@@ -262,7 +262,7 @@ impl Scheduler<'_, '_> {
         let saving = if self.limits.agent_sessions().enabled {
             Some(crate::agent::session::Saving {
                 state: self.run.state_dir.clone(),
-                state_id: self.receipts.state_id().await?,
+                state_id: self.receipts.state_id().await?.parse()?,
                 producer: producer.name.clone(),
             })
         } else {

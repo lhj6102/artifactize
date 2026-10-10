@@ -1,6 +1,7 @@
 use serde_json::json;
 
 use super::*;
+use serde_json::Value;
 
 #[test]
 fn typed_picker_catalog_preserves_skips_defaults_and_malformed_listed_entry_errors() {
@@ -60,7 +61,7 @@ fn typed_picker_catalog_preserves_skips_defaults_and_malformed_listed_entry_erro
 
 #[test]
 fn usage_limits_name_the_plan_and_reset_and_never_retry() {
-    let resets = crate::auth::codex::now().unwrap() + 30 * 60;
+    let resets = 1_800 + 30 * 60;
     let body = json!({
         "error":{
             "type":"usage_limit_reached",
@@ -69,7 +70,7 @@ fn usage_limits_name_the_plan_and_reset_and_never_retry() {
             "resets_at":resets,
         },
     });
-    let message = describe(Some(429), &body, "fallback");
+    let message = describe(Some(429), parsed(&body).as_ref(), "fallback", Some(1_800));
     assert!(
         message.starts_with(
             "usage_limit_reached: You have hit your ChatGPT usage limit (pro plan). Try again in ~30 min."
@@ -77,28 +78,34 @@ fn usage_limits_name_the_plan_and_reset_and_never_retry() {
         "{message}"
     );
     assert!(message.ends_with("(HTTP 429)"), "{message}");
-    assert!(usage_limit(
-        None,
-        &json!({"error":{"code":"usage_not_included"}})
-    ));
-    assert!(usage_limit(Some(429), &json!({"error":{"resets_at":1}})));
+    assert!(
+        parsed(&json!({"error":{"code":"usage_not_included"}}))
+            .unwrap()
+            .usage_limit(None)
+    );
+    assert!(
+        parsed(&json!({"error":{"resets_at":1}}))
+            .unwrap()
+            .usage_limit(Some(429))
+    );
     // A plain 429 is a rate limit, worded by the provider.
     let plain = json!({"error":{"code":"rate_limit_exceeded","message":"Slow down"}});
-    assert!(!usage_limit(Some(429), &plain));
+    assert!(!parsed(&plain).unwrap().usage_limit(Some(429)));
     assert_eq!(
-        describe(Some(429), &plain, "fallback"),
+        describe(Some(429), parsed(&plain).as_ref(), "fallback", Some(1_800)),
         "rate_limit_exceeded: Slow down (HTTP 429)"
     );
-    assert!(!usage_limit(
-        Some(500),
-        &json!({"error":{"code":"server_error"}})
-    ));
+    assert!(
+        !parsed(&json!({"error":{"code":"server_error"}}))
+            .unwrap()
+            .usage_limit(Some(500))
+    );
 }
 
 #[test]
 fn rejected_credentials_say_how_to_sign_in_again() {
     let body = json!({"detail":"Unauthorized"});
-    let message = describe(Some(401), &body, "fallback");
+    let message = describe(Some(401), parsed(&body).as_ref(), "fallback", Some(1_800));
     assert!(
         message.starts_with("Unauthorized (HTTP 401) Sign in again"),
         "{message}"
@@ -109,11 +116,11 @@ fn rejected_credentials_say_how_to_sign_in_again() {
         "response":{"error":{"code":"server_error","message":"Model failed"}},
     });
     assert_eq!(
-        describe(None, &failed, "fallback"),
+        describe(None, parsed(&failed).as_ref(), "fallback", Some(1_800)),
         "server_error: Model failed"
     );
     assert_eq!(
-        describe(Some(502), &json!("bad gateway"), "fallback"),
+        describe(Some(502), None, "fallback", Some(1_800)),
         "fallback (HTTP 502)"
     );
 }
@@ -123,4 +130,8 @@ fn requests_name_artifactize_as_the_caller() {
     let agent = user_agent();
     assert!(agent.starts_with(&format!("artifactize/{} (", env!("CARGO_PKG_VERSION"))));
     assert!(agent.ends_with("; artifactize)"));
+}
+
+fn parsed(value: &serde_json::Value) -> Option<super::errors::Error> {
+    super::errors::Error::parse(&serde_json::to_vec(value).unwrap())
 }

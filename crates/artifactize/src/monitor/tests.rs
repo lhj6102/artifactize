@@ -220,7 +220,12 @@ fn live_progress_tree_and_details_are_pure_projections() {
         ]
     );
 
-    let absent = detail(&view, &requests, &Target::Eval("dep/check".into()), now());
+    let absent = detail(
+        &view,
+        &requests,
+        &Target::Eval("dep/check".parse().unwrap()),
+        now(),
+    );
     assert!(
         absent
             .field("Status")
@@ -231,7 +236,12 @@ fn live_progress_tree_and_details_are_pure_projections() {
         absent.field("Profile"),
         Some("agent openai gpt-x reasoning high")
     );
-    let human = detail(&view, &requests, &Target::Eval("app/review".into()), now());
+    let human = detail(
+        &view,
+        &requests,
+        &Target::Eval("app/review".parse().unwrap()),
+        now(),
+    );
     assert_eq!(
         human.field("Status"),
         Some("WAITING_HUMAN — waiting for a Human submission")
@@ -244,9 +254,19 @@ fn live_progress_tree_and_details_are_pure_projections() {
     );
     assert_eq!(human.field("Fingerprint"), Some("none"));
     assert_eq!(human.field("Key"), Some("none (no reuse)"));
-    let failed = detail(&view, &requests, &Target::Eval("p2/check".into()), now());
+    let failed = detail(
+        &view,
+        &requests,
+        &Target::Eval("p2/check".parse().unwrap()),
+        now(),
+    );
     assert_eq!(failed.field("Error"), Some("[SPAWN] spawn failed"));
-    let app = detail(&view, &requests, &Target::Artifact("app".into()), now());
+    let app = detail(
+        &view,
+        &requests,
+        &Target::Artifact("app".parse().unwrap()),
+        now(),
+    );
     assert_eq!(app.field("Gates"), Some("- dep/check not in Run"));
     assert_eq!(
         app.field("Inputs"),
@@ -307,7 +327,7 @@ pub(super) fn sized(monitor: &mut Monitor, width: u16, height: u16) -> String {
 
 #[tokio::test]
 async fn refresh_errors_keep_last_known_data() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let mut monitor = Monitor::new(root.path().join("missing"), None);
     monitor.refresh().await;
     assert!(screen(&mut monitor).contains("No saved Runs."));
@@ -366,18 +386,20 @@ async fn artifact_details_display_saved_tags_and_tolerate_untagged_snapshots() {
         "old":{"path":"old"},
         "empty":{"path":"empty","tags":[]}
     }}));
-    let app = detail(&view, &[], &Target::Artifact("app".into()), now());
+    let app = detail(&view, &[], &Target::Artifact("app".parse().unwrap()), now());
     assert_eq!(app.field("Tags"), Some("type:image, scope:combat"));
     for id in ["old", "empty"] {
         assert_eq!(
-            detail(&view, &[], &Target::Artifact(id.into()), now()).field("Tags"),
+            detail(&view, &[], &Target::Artifact(id.parse().unwrap()), now()).field("Tags"),
             None
         );
     }
     let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, Vec::new());
-    monitor.tree.select(vec!["a:app".into()]);
+    monitor.tree.select(vec![
+        "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     monitor.open_detail().await;
     assert_eq!(monitor.focus, Pane::Detail);
     // Tags are Technical: folded, but named, until `t` shows them.
@@ -414,7 +436,10 @@ fn run_screen_renders_progress_tree_and_detail() {
     }
     // All-done Artifacts start folded; the cursor starts on the first failed or running eval.
     assert!(!text.contains("GREEN  3s"), "{text}");
-    assert_eq!(monitor.target(), Some(Target::Eval("p2/check".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Eval("p2/check".parse().unwrap()))
+    );
 }
 
 /// Usage, budgets and errors that used to push the Run summary's last lines off.
@@ -549,9 +574,12 @@ async fn tree_peek_follows_selection_and_detail_orders_sections_verdict_first() 
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     monitor.focus = Pane::Artifacts;
-    monitor
-        .tree
-        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    monitor.tree.select(vec![
+        "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:p2/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     let text = sized(&mut monitor, 160, 40);
     assert!(text.contains("Error: [SPAWN] spawn failed"), "{text}");
     // The peek is the outcome only; provenance and hashes wait for Enter.
@@ -559,9 +587,12 @@ async fn tree_peek_follows_selection_and_detail_orders_sections_verdict_first() 
         !text.contains("Fingerprint") && !text.contains("Timing"),
         "{text}"
     );
-    monitor
-        .tree
-        .select(vec!["a:p1".into(), "e:p1/review".into()]);
+    monitor.tree.select(vec![
+        "a:p1".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:p1/review"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     let text = sized(&mut monitor, 160, 40);
     assert!(text.contains("Result: verdict RED"), "{text}");
     assert!(text.contains("reason two mismatches …"), "{text}");
@@ -696,7 +727,7 @@ fn review_key_hands_off_only_waiting_human_requests() {
     ] {
         monitor
             .tree
-            .select(path.iter().map(|id| (*id).to_owned()).collect());
+            .select(path.iter().map(|id| id.parse().unwrap()).collect());
         assert_eq!(monitor.key(review), action, "{path:?}");
     }
     assert!(screen(&mut monitor).contains("Enter open"));
@@ -746,9 +777,12 @@ fn saved_texts_of_any_length_never_overflow_natural_widths() {
         }
     }
     monitor.focus = Pane::Artifacts;
-    monitor
-        .tree
-        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    monitor.tree.select(vec![
+        "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:p2/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     let text = sized(&mut monitor, 160, 30);
     assert!(text.contains("! p2/check  [SPAWN] XXX"), "{text}");
 }
@@ -794,9 +828,12 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
     monitor.set_runs(vec![row]);
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
-    monitor
-        .tree
-        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    monitor.tree.select(vec![
+        "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:p2/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     for (focus, expected) in [
         (Pane::Repositories, "line break name (non-Git)"),
         (Pane::Runs, "line break name"),

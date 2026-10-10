@@ -33,7 +33,7 @@ type Call = (String, Option<(String, bool)>);
 
 impl Fixture {
     fn new(backend: &str) -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_os::tempdir();
         let repo = directory.path().join("repo");
         let output = directory.path().join("output");
         fs::create_dir_all(&repo).unwrap();
@@ -325,15 +325,18 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
             final_openai(),
         ])
         .await;
-    assert_eq!(review.result.unwrap(), json!({"verdict":"GREEN"}));
+    assert_eq!(
+        review.result.unwrap().into_json(),
+        json!({"verdict":"GREEN"})
+    );
     let calls = fixture.calls();
     assert_eq!(calls.len(), 2);
     let (result, failed) = calls[0].1.clone().unwrap();
     assert!(!failed);
     assert!(result.contains("tool evidence"));
-    assert_eq!(review.attempts[0].usage, serde_json::Map::new());
+    assert!(review.attempts[0].usage.is_empty());
     assert_eq!(
-        review.attempts[1].usage,
+        serde_json::to_value(&review.attempts[1].usage).unwrap(),
         json!({
             "inputTokens":10,
             "outputTokens":4,
@@ -341,9 +344,6 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
             "cacheReadTokens":0,
             "reasoningTokens":2,
         })
-        .as_object()
-        .unwrap()
-        .clone()
     );
     let requests = http.requests();
     assert_eq!(requests.len(), 2);
@@ -404,7 +404,7 @@ async fn anthropic_exact_effort_multiblock_results_and_reported_cache_usage() {
             anthropic_response(false, "end_turn"),
         ])
         .await;
-    assert_eq!(review.result.unwrap()["verdict"], "RED");
+    assert_eq!(review.result.unwrap().verdict.as_str(), "RED");
     let requests = http.requests();
     assert_eq!(requests[0].uri, "https://api.anthropic.com/v1/messages");
     assert_eq!(requests[0].headers["x-api-key"], "fake-anthropic-key");
@@ -482,7 +482,10 @@ async fn retries_are_bounded_and_auth_quota_are_permanent() {
         .await;
     assert_eq!(review.result.unwrap_err().code, Code::Transient);
     assert_eq!(http.requests().len(), 3);
-    assert_eq!(review.attempts[2].error_code.as_deref(), Some("TRANSIENT"));
+    assert_eq!(
+        review.attempts[2].error_code.map(Code::as_str),
+        Some("TRANSIENT")
+    );
     for status in [StatusCode::UNAUTHORIZED, StatusCode::TOO_MANY_REQUESTS] {
         let error = json!({
             "error":{"code":"insufficient_quota","message":"Your account quota is exhausted."},
@@ -540,13 +543,22 @@ async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
         ])
         .await;
     // A failed turn after tool calls replays the whole conversation, so it retries too.
-    assert_eq!(review.result.unwrap(), json!({"verdict":"GREEN"}));
+    assert_eq!(
+        review.result.unwrap().into_json(),
+        json!({"verdict":"GREEN"})
+    );
     assert_eq!(fixture.calls().len(), 1);
     assert_eq!(http.requests().len(), 3);
     let turns: Vec<_> = review
         .attempts
         .iter()
-        .map(|attempt| (attempt.turn, attempt.attempt, attempt.error_code.as_deref()))
+        .map(|attempt| {
+            (
+                attempt.turn,
+                attempt.attempt,
+                attempt.error_code.map(Code::as_str),
+            )
+        })
         .collect();
     assert_eq!(
         turns,
@@ -579,7 +591,8 @@ async fn partial_text_or_usage_prevent_replay_but_any_turn_may_retry() {
 
 #[test]
 fn profiles_reject_remapped_effort() {
-    let parameters = |backend, reasoning| Client::parameters(backend, reasoning, SESSION);
+    let parameters =
+        |backend, reasoning| Client::parameters(backend, reasoning, &SESSION.parse().unwrap());
     assert!(parameters(Backend::Openai, Some("xhigh")).is_ok());
     assert!(parameters(Backend::Openai, Some("max")).is_ok());
     assert!(parameters(Backend::Anthropic, Some("xhigh")).is_err());
@@ -735,7 +748,10 @@ async fn file_artifact_instruction_prompt_uses_target_path_and_file_kind() {
     crate::test_declaration::write(repo.join("input.txt.artf"), declaration.to_string()).unwrap();
     fixture.config = read_workspace_config(&repo).unwrap();
     let (review, http) = fixture.run(vec![final_openai()]).await;
-    assert_eq!(review.result.unwrap(), json!({"verdict":"GREEN"}));
+    assert_eq!(
+        review.result.unwrap().into_json(),
+        json!({"verdict":"GREEN"})
+    );
     let body: Value = serde_json::from_slice(&http.requests()[0].body).unwrap();
     assert!(
         body.to_string()

@@ -351,7 +351,7 @@ async fn review_respects_other_claims_and_releases_its_own() {
         fixture.state.clone(),
         Some(fixture.repo.clone()),
         "alice".into(),
-        Some(id.clone()),
+        Some(id.parse().unwrap()),
     );
     review.refresh().await;
     assert!(screen(&mut review).contains("claimed by bob · read-only"));

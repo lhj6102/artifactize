@@ -23,6 +23,7 @@ pub mod document;
 mod events;
 mod gc;
 pub mod live;
+mod outcome;
 mod pages;
 #[cfg(test)]
 mod pages_tests;
@@ -67,7 +68,7 @@ const VERSION: u32 = 1;
 #[serde(rename_all = "camelCase")]
 pub struct SessionRef {
     pub producer: String,
-    pub state: String,
+    pub state: crate::types::StateId,
     pub run_id: crate::types::RunId,
     pub request_id: crate::types::RequestId,
     pub session_id: crate::types::SessionId,
@@ -96,7 +97,7 @@ impl SessionRef {
         );
         let reference = Self {
             producer: producer.into(),
-            state: state.into(),
+            state: state.parse().ok()?,
             run_id: run_id.parse().ok()?,
             request_id: request_id.parse().ok()?,
             session_id: session_id.parse().ok()?,
@@ -144,7 +145,7 @@ pub fn path(state: &Path, id: &str) -> Result<PathBuf, String> {
 #[derive(Debug, Clone)]
 pub struct Saving {
     pub state: PathBuf,
-    pub state_id: String,
+    pub state_id: crate::types::StateId,
     pub producer: String,
 }
 
@@ -226,7 +227,7 @@ impl Recorder {
                 path: path(state, &id).unwrap(),
                 reference: SessionRef {
                     producer: "tester@host".into(),
-                    state: "state".into(),
+                    state: "state".parse().unwrap(),
                     run_id: "run".parse().unwrap(),
                     request_id: "request".parse().unwrap(),
                     session_id: id.clone(),
@@ -254,7 +255,7 @@ impl Recorder {
         })
     }
 
-    pub fn id(&self) -> &str {
+    pub fn id(&self) -> &crate::types::SessionId {
         &self.id
     }
 
@@ -400,7 +401,7 @@ fn create(path: &Path) -> Result<File, String> {
     if !platform::is_private_dir(directory).map_err(|e| e.to_string())? {
         return Err(format!(
             "{} must have owner-only permissions.",
-            directory.display()
+            crate::platform::path_text(directory)
         ));
     }
     let file = platform::open_no_follow(
@@ -428,15 +429,23 @@ impl Conversation {
         let file = match platform::open_no_follow(File::options().read(true), path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(error) => return Err(format!("Cannot read {}: {error}", path.display())),
+            Err(error) => {
+                return Err(format!(
+                    "Cannot read {}: {error}",
+                    crate::platform::path_text(path)
+                ));
+            }
         };
         if !file.metadata().map_err(|e| e.to_string())?.is_file() {
-            return Err(format!("{} is not a regular file.", path.display()));
+            return Err(format!(
+                "{} is not a regular file.",
+                crate::platform::path_text(path)
+            ));
         }
         let lines: Vec<String> = BufReader::new(file)
             .lines()
             .collect::<Result<_, _>>()
-            .map_err(|e| format!("Cannot read {}: {e}", path.display()))?;
+            .map_err(|e| format!("Cannot read {}: {e}", crate::platform::path_text(path)))?;
         let count = lines.len();
         let mut events = Vec::new();
         let mut wire_events = Vec::new();
@@ -446,7 +455,7 @@ impl Conversation {
                     let event: Event = serde_json::from_value(value.clone()).map_err(|error| {
                         format!(
                             "{} line {} is not a session event: {error}",
-                            path.display(),
+                            crate::platform::path_text(path),
                             index + 1
                         )
                     })?;
@@ -457,7 +466,7 @@ impl Conversation {
                 Err(_) => {
                     return Err(format!(
                         "{} line {} is not a session event.",
-                        path.display(),
+                        crate::platform::path_text(path),
                         index + 1
                     ));
                 }
@@ -467,7 +476,10 @@ impl Conversation {
             .first()
             .is_none_or(|event| !matches!(event.kind, Kind::Review(_)))
         {
-            return Err(format!("{} has no review event.", path.display()));
+            return Err(format!(
+                "{} has no review event.",
+                crate::platform::path_text(path)
+            ));
         }
         Ok(Some(Self {
             path: path.into(),
@@ -584,7 +596,7 @@ mod tests {
     fn reference() -> SessionRef {
         SessionRef {
             producer: "alice@laptop".into(),
-            state: "6f1c0a52-8d1e-4c43-9a55-31f6a7f2d0e4".into(),
+            state: "6f1c0a52-8d1e-4c43-9a55-31f6a7f2d0e4".parse().unwrap(),
             run_id: "run-Hq2b9X".parse().unwrap(),
             request_id: "run-Hq2b9X-3".parse().unwrap(),
             session_id: "0e8c7c2e-2a49-4b8e-9f7a-5d7a0c3b1f20".parse().unwrap(),
@@ -697,7 +709,7 @@ mod tests {
 
     #[test]
     fn a_session_that_cannot_be_written_is_skipped() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::test_os::tempdir();
         // The store's place is taken by a file, so the session cannot be created.
         let state = root.path().join("state");
         std::fs::create_dir(&state).unwrap();
@@ -723,7 +735,7 @@ mod tests {
     }
     #[test]
     fn jsonl_edges_keep_wire_events_and_reject_invalid_complete_records() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::test_os::tempdir();
         let file = root.path().join("legacy.jsonl");
         let header = r#"{"kind":"review","version":1,"sessionId":"legacy.session","runId":"run-old","requestId":"run-old-1","backend":"openai","model":"fixture","reasoning":null,"parameters":{"vendor":true},"budgets":{"timeoutMs":1000,"maxToolCalls":null,"maxTokens":null},"tools":[],"unknownSavedField":7,"at":"2026-01-01T00:00:00Z"}"#;
         let message = r#"{"kind":"message","turn":1,"message":{"role":"user","content":[{"type":"text","text":"hello"}]},"at":"2026-01-01T00:00:01Z"}"#;

@@ -1,4 +1,6 @@
 //! Pure projections of saved state for the monitor screens.
+mod node_id;
+pub use node_id::NodeId;
 mod states;
 mod tree;
 pub use states::{Activity, Busy, Completion, EvalView, NotRun, Queue, Source, Upstream, Waits};
@@ -17,18 +19,17 @@ use crate::{
 pub enum Target {
     /// The open Run itself, from the node above its Artifacts.
     Run,
-    Artifact(String),
-    Eval(String),
+    Artifact(crate::types::ArtifactName),
+    Eval(crate::types::EvalId),
 }
 
 impl Target {
     pub fn parse(id: &str) -> Option<Self> {
         let (kind, name) = id.split_once(':')?;
-        let name = name.to_owned();
         match kind {
             "run" => Some(Self::Run),
-            "a" => Some(Self::Artifact(name)),
-            "e" => Some(Self::Eval(name)),
+            "a" => name.parse().ok().map(Self::Artifact),
+            "e" => name.parse().ok().map(Self::Eval),
             _ => None,
         }
     }
@@ -81,9 +82,9 @@ impl Section {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunRow {
-    pub id: String,
-    pub repo: String,
-    pub status: String,
+    pub id: crate::types::RunId,
+    pub repo: std::path::PathBuf,
+    pub status: crate::types::RunStatus,
     /// Request status glyphs with their counts, most urgent first, such as `✗1 ✓2`.
     pub counts: String,
     pub age: String,
@@ -219,11 +220,6 @@ fn join<T: AsRef<str>>(items: impl IntoIterator<Item = T>, separator: &str) -> S
     items.join(separator)
 }
 
-fn pairs(value: &Value) -> String {
-    let pairs = value.as_object().into_iter().flatten();
-    join(pairs.map(|(key, value)| format!("{key} {value}")), ", ")
-}
-
 fn mark(name: &str, status: Option<&str>) -> String {
     format!("{} {name} {}", glyph(status), status.unwrap_or(ABSENT))
 }
@@ -285,9 +281,9 @@ pub fn tokens(total: u64) -> String {
 pub fn run_rows(runs: &[RunSummary], now: OffsetDateTime) -> Vec<RunRow> {
     runs.iter()
         .map(|run| RunRow {
-            id: run.id.to_string(),
-            repo: run.repo_path.display().to_string(),
-            status: run.status.to_string(),
+            id: run.id.clone(),
+            repo: run.repo_path.clone(),
+            status: run.status,
             counts: counts(run.counts.iter().map(|(status, n)| (status.as_str(), *n))),
             age: span(run.created_at, None, now).unwrap_or_default(),
             took: run
@@ -334,19 +330,18 @@ fn error(view: &RequestView) -> Option<String> {
 
 pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Progress {
     let run = &view.run;
-    let output = query::run_output(view, now);
-    let summary = &output["summary"];
+    let (summary, saved_usage) = query::run_summary(view, now);
     let with = |status: &'static str| {
         requests
             .iter()
             .filter(move |view| view.request.status.as_str() == status)
     };
-    let usage = pairs(&summary["usage"]);
-    let saved = pairs(&output["usage"]["saved"]);
-    let spent = &summary["usage"];
-    let tokens = spent["totalTokens"].as_u64().or_else(|| {
-        let input = spent["inputTokens"].as_u64();
-        let output = spent["outputTokens"].as_u64();
+    let usage = counter_pairs(&summary.usage.usage);
+    let saved = counter_pairs(&saved_usage);
+    let spent = &summary.usage.usage;
+    let tokens = spent.get("totalTokens").copied().or_else(|| {
+        let input = spent.get("inputTokens").copied();
+        let output = spent.get("outputTokens").copied();
         (input.is_some() || output.is_some())
             .then(|| input.unwrap_or(0).saturating_add(output.unwrap_or(0)))
     });
@@ -354,7 +349,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
     let wall = span(run.created_at, run.completed_at, now).unwrap_or_default();
     Progress {
         status: run.status.to_string(),
-        repo: run.repo_path.display().to_string(),
+        repo: crate::platform::path_text(&run.repo_path),
         // The saved snapshot; the tree shows the current state.
         validation: match run.validation.get("satisfied") {
             None => "pending".into(),
@@ -374,11 +369,10 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         elapsed: wall,
         finished: run.completed_at.is_some(),
         satisfied: run.validation.get("satisfied").map(|value| value == true),
-        counts: summary["counts"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .map(|(status, count)| (status.clone(), count.as_u64().unwrap_or(0)))
+        counts: summary
+            .counts
+            .iter()
+            .map(|(status, count)| (status.to_string(), *count))
             .collect(),
         budget: format!(
             "executions {}/{} · jobs {}",
@@ -389,9 +383,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         ),
         work: format!(
             "executed {} · reused {} · derived {}",
-            summary["executed"]["total"],
-            summary["reused"]["total"],
-            summary["derived"].as_u64().unwrap_or(0),
+            summary.executed.total, summary.reused.kinds.total, summary.derived,
         ),
         usage,
         saved,
@@ -478,7 +470,7 @@ pub fn strip(progress: &Progress) -> Strip {
 pub fn run_node(run: &RunView) -> Node {
     let status = run.run.status.to_string();
     Node {
-        id: format!("run:{}", run.run.id),
+        id: NodeId::run(&run.run.id),
         clock: None,
         kind: Kind::Artifact {
             completion: Completion::Complete,
@@ -734,7 +726,7 @@ fn options(options: &crate::store::ExecutionOptions) -> String {
 
 fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     let request = &view.request;
-    let summary = &query::request_output(view, now)["summary"];
+    let summary = query::request_summary(view, now);
     let deps = join(&request.deps, ", ");
     let mut detail = Detail {
         title: format!("{} · {}", request.eval_id, request.title),
@@ -799,7 +791,7 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
                     source.run_id,
                     source.request_id,
                     source.eval_id,
-                    source.repo_path.display(),
+                    crate::platform::path_text(&source.repo_path),
                     source
                         .completed_at
                         .map_or_else(|| "?".to_owned(), |time| time.to_string()),
@@ -852,7 +844,7 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             serde_json::to_string_pretty(result).unwrap_or_default(),
         );
     }
-    let total = pairs(&summary["usage"]);
+    let total = counter_pairs(&summary.usage.usage);
     let attempts = request.usage.as_ref().or(request.reused_usage.as_ref());
     let attempts = attempts.map_or(&[][..], Vec::as_slice);
     let original = attempts.len();
@@ -863,7 +855,7 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             "turn {} attempt {}: {}{error}",
             attempt.turn,
             attempt.attempt,
-            pairs(&serde_json::to_value(&attempt.usage).expect("usage is JSON"))
+            counter_pairs(&attempt.usage)
         )
     });
     let state = if reused(view) {
@@ -871,8 +863,8 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     } else {
         format!(
             "{} · attempts {}{}",
-            summary["usageState"].as_str().unwrap_or("unreported"),
-            summary["attempts"],
+            summary.usage.usage_state,
+            summary.usage.attempts,
             if total.is_empty() {
                 total
             } else {
@@ -1006,7 +998,7 @@ pub fn detail(
                             if path.as_os_str().is_empty() {
                                 ".".into()
                             } else {
-                                path.display().to_string()
+                                crate::platform::path_text(path)
                             }
                         },
                     ),
@@ -1062,4 +1054,20 @@ pub fn detail(
         }
     }
     detail
+}
+
+fn counter_pairs(counters: &std::collections::BTreeMap<String, u64>) -> String {
+    join(
+        counters
+            .iter()
+            .map(|(name, value)| format!("{name} {value}")),
+        ", ",
+    )
+}
+
+#[cfg(test)]
+pub(super) fn derivation_count(run: &RunView, requests: &[RequestView]) -> usize {
+    states::States::new(&Saved { run, requests })
+        .derivations
+        .get()
 }

@@ -197,13 +197,14 @@ fn tree_width(nodes: &[model::Node], depth: usize) -> usize {
 }
 /// Runs columns: glyph, status, id, age, counts, took and workspace.
 fn run_cells(row: &model::RunRow, workspace: bool) -> [String; 7] {
-    let name = std::path::Path::new(&row.repo)
-        .file_name()
-        .map_or_else(|| row.repo.clone(), |name| name.to_string_lossy().into());
+    let name = row.repo.file_name().map_or_else(
+        || crate::platform::path_text(&row.repo),
+        |name| name.to_string_lossy().into(),
+    );
     [
-        model::glyph(Some(&row.status)).to_owned(),
-        row.status.clone(),
-        row.id.clone(),
+        model::glyph(Some(row.status.as_str())).to_owned(),
+        row.status.to_string(),
+        row.id.to_string(),
         row.age.clone(),
         row.counts.clone(),
         if row.took.is_empty() {
@@ -334,7 +335,7 @@ impl Monitor {
             .map_or_else(
                 || match &self.scope {
                     Scope::Worktree(_, path) => path.file_name().map_or_else(
-                        || path.display().to_string(),
+                        || crate::platform::path_text(path),
                         |name| name.to_string_lossy().into(),
                     ),
                     _ => "repository".into(),
@@ -354,7 +355,8 @@ impl Monitor {
         if level >= 2 {
             match self.target() {
                 Some(model::Target::Run) => segments.push("Run".into()),
-                Some(model::Target::Artifact(id) | model::Target::Eval(id)) => segments.push(id),
+                Some(model::Target::Artifact(id)) => segments.push(id.to_string()),
+                Some(model::Target::Eval(id)) => segments.push(id.to_string()),
                 None => {}
             }
         }
@@ -529,7 +531,7 @@ impl Monitor {
             let rows = rows.iter().map(|row| {
                 Row::new([
                     Cell::from(Line::from(vec![
-                        glyph(&row.status),
+                        glyph(row.status.as_str()),
                         format!(" {}", short_id(&row.id)).into(),
                     ])),
                     Cell::from(row.age.split(' ').next().unwrap_or_default().to_owned()),
@@ -553,8 +555,8 @@ impl Monitor {
                         .enumerate()
                         .filter(|(column, _)| widths[*column] > 0)
                         .map(|(column, cell)| match column {
-                            0 => Cell::from(glyph(&row.status)),
-                            1 => Cell::from(status(&row.status)),
+                            0 => Cell::from(glyph(row.status.as_str())),
+                            1 => Cell::from(status(row.status.as_str())),
                             5 | 6 => Cell::from(Span::raw(cell.clone()).dark_gray()),
                             _ => Cell::from(cell.clone()),
                         }),

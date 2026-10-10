@@ -22,7 +22,6 @@ impl Review {
     pub(crate) fn load_single(&mut self, view: RequestView) {
         self.standalone = false;
         self.open = Some(view.request.id.clone());
-        self.invalid_open = None;
         self.show(view);
     }
 
@@ -121,9 +120,9 @@ impl Review {
         match control {
             Control::Green | Control::Red => {
                 let verdict = if control == Control::Green {
-                    "GREEN"
+                    crate::runtime::Verdict::Green
                 } else {
-                    "RED"
+                    crate::runtime::Verdict::Red
                 };
                 // Typing goes to the form, so the fields take focus.
                 self.area = Area::Fields;
@@ -150,7 +149,7 @@ impl Review {
                 let schema = definition["eval"]["declaration"].get(key);
                 let form = self
                     .drafts
-                    .remove(verdict)
+                    .remove(&verdict)
                     .unwrap_or_else(|| Form::new(verdict, schema));
                 if let Mode::Form(previous) = &self.mode {
                     self.drafts.insert(previous.verdict, previous.clone());

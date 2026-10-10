@@ -3,10 +3,10 @@ use super::*;
 use std::{fs, time::Duration};
 
 fn fixture() -> (tempfile::TempDir, Saving, Request, crate::types::SessionId) {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let saving = Saving {
         state: root.path().into(),
-        state_id: "fixture-state".into(),
+        state_id: "fixture-state".parse().unwrap(),
         producer: "fixture@host".into(),
     };
     let request = crate::monitor::tests::request(
@@ -29,10 +29,7 @@ fn disabled_and_pending_recorders_do_not_create_files_or_references_before_start
     assert!(off.reference().is_none());
     assert!(!directory(&saving.state).exists());
     let mut pending = Recorder::new(Some(&saving), &request, &id);
-    pending.event(Kind::Answer(Answer {
-        text: Some("before header".into()),
-        ..Answer::default()
-    }));
+    pending.event(Kind::Answer(Answer::Completed("before header".into())));
     assert!(matches!(pending.state, Recording::Pending(_)));
     assert!(pending.reference().is_none());
     assert!(!directory(&saving.state).exists());
@@ -61,14 +58,8 @@ fn initial_header_is_lazy_authoritative_and_end_preserves_saved_reference() {
         ..Header::default()
     });
     recorder.message(1, &Message::user("recorded"), false);
-    recorder.event(Kind::End(End {
-        result: Some(json!({"verdict":"GREEN"})),
-        ..End::default()
-    }));
-    recorder.event(Kind::Answer(Answer {
-        text: Some("after end".into()),
-        ..Answer::default()
-    }));
+    recorder.event(Kind::End(End::Completed(json!({"verdict":"GREEN"}))));
+    recorder.event(Kind::Answer(Answer::Completed("after end".into())));
     assert_eq!(recorder.reference(), Some(&reference));
     let conversation = Conversation::load(&path(&saving.state, &id).unwrap())
         .unwrap()
@@ -88,7 +79,7 @@ fn initial_header_is_lazy_authoritative_and_end_preserves_saved_reference() {
     );
     assert!(matches!(
         &conversation.events[3].kind,
-        Kind::Answer(answer) if answer.text.as_deref() == Some("after end")
+        Kind::Answer(answer) if answer.text() == Some("after end")
     ));
 }
 
@@ -125,10 +116,7 @@ fn followup_has_send_number_no_new_header_and_no_new_saved_review_reference() {
         ..Send::default()
     }));
     follow.message(2, &Message::user("follow-up message"), false);
-    follow.event(Kind::Answer(Answer {
-        text: Some("answer".into()),
-        ..Answer::default()
-    }));
+    follow.event(Kind::Answer(Answer::Completed("answer".into())));
     assert!(follow.reference().is_none());
     let conversation = Conversation::load(&path).unwrap().unwrap();
     assert_eq!(conversation.events.len(), 5);
@@ -149,7 +137,7 @@ fn followup_has_send_number_no_new_header_and_no_new_saved_review_reference() {
 }
 
 fn fail_file() -> (tempfile::TempDir, File) {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let path = root.path().join("read-only-writer");
     fs::write(&path, "unchanged").unwrap();
     let file = File::open(path).unwrap();
@@ -212,10 +200,7 @@ async fn only_successful_flushed_events_notify_ipc_and_failed_writes_never_notif
     );
     let path = path(&saving.state, &id).unwrap();
     assert!(Conversation::load(&path).unwrap().unwrap().events.len() == 1);
-    recorder.event(Kind::Answer(Answer {
-        text: Some("flushed".into()),
-        ..Answer::default()
-    }));
+    recorder.event(Kind::Answer(Answer::Completed("flushed".into())));
     crate::changes::drain().await;
     assert_eq!(
         tokio::time::timeout(Duration::from_secs(4), subscription.next())
@@ -225,7 +210,7 @@ async fn only_successful_flushed_events_notify_ipc_and_failed_writes_never_notif
     );
     assert!(matches!(
         &Conversation::load(&path).unwrap().unwrap().events[1].kind,
-        Kind::Answer(answer) if answer.text.as_deref() == Some("flushed")
+        Kind::Answer(answer) if answer.text() == Some("flushed")
     ));
     let reference = recorder.reference().unwrap().clone();
     let (_bad_root, file) = fail_file();
@@ -233,9 +218,14 @@ async fn only_successful_flushed_events_notify_ipc_and_failed_writes_never_notif
     recorder.event(Kind::End(End::default()));
     recorder.event(Kind::End(End::default()));
     crate::changes::drain().await;
-    assert!(
-        tokio::time::timeout(Duration::from_millis(100), subscription.next())
-            .await
-            .is_err()
+    // Queue an independent sentinel after drain: an erroneous recorder notification
+    // would arrive ahead of it. No absence timeout or scheduler assumption is needed.
+    let sentinel: crate::types::SessionId = "after-failed-writes".parse().unwrap();
+    crate::changes::Publisher::new(&saving.state)
+        .notify(Change::SessionInvalidated(sentinel.clone()));
+    crate::changes::drain().await;
+    assert_eq!(
+        subscription.next().await,
+        Change::SessionInvalidated(sentinel)
     );
 }

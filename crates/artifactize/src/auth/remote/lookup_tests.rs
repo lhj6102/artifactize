@@ -45,7 +45,10 @@ async fn malformed_lookup_entries_are_typed_errors_next_to_valid_records() {
         token: Some("fixture-only-token".into()),
         client: OnceLock::new(),
     };
-    let entries = remote.lookup(&["a".repeat(64)]).await.unwrap();
+    let entries = remote
+        .lookup(&["a".repeat(64).parse().unwrap()])
+        .await
+        .unwrap();
     assert_eq!(entries.len(), 3);
     assert!(entries[0].is_err());
     assert_eq!(entries[1].as_ref().unwrap().request_id.as_str(), "run-1-1");

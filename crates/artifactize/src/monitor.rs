@@ -129,7 +129,7 @@ pub struct Monitor {
     list: TableState,
     open: Option<RunId>,
     run: Option<(RunView, Vec<RequestView>)>,
-    tree: TreeState<String>,
+    tree: TreeState<model::NodeId>,
     folds: fold::Folds,
     /// The cached tree it was built from, and that tree with the Run row above it.
     framed: Option<(Rows, Rows)>,
@@ -410,7 +410,7 @@ impl Monitor {
                                         self.state.clone(),
                                         None,
                                         reviewer,
-                                        Some(view.request.id.to_string()),
+                                        Some(view.request.id.clone()),
                                     )
                                 });
                             pane.request = Some(view.request.id.clone());
@@ -556,7 +556,11 @@ impl Monitor {
     }
     /// Select the next ERROR, RED or waiting Human eval after the selection, wrapping around.
     fn next_attention(&mut self) -> bool {
-        fn walk(nodes: &[Node], parent: &[String], order: &mut Vec<(Vec<String>, bool)>) {
+        fn walk(
+            nodes: &[Node],
+            parent: &[model::NodeId],
+            order: &mut Vec<(Vec<model::NodeId>, bool)>,
+        ) {
             for node in nodes {
                 let mut path = parent.to_vec();
                 path.push(node.id.clone());

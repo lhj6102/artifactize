@@ -5,7 +5,7 @@ use rig_core::test_utils::MockHttpResponse;
 
 #[tokio::test]
 async fn shared_port_redirect_matches_authorize_callback_and_token_exchange() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_os::tempdir();
     let storage = Storage::new(Some(directory.path()), None, Tokens::Codex).unwrap();
     let server = Server::new(vec![MockHttpResponse::success(
         json!({

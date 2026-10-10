@@ -169,7 +169,7 @@ impl Located {
 fn here(state: &Path, reference: &SessionRef) -> Result<(), String> {
     let producer = Producer::current().name;
     let state_id = store::read_state_id(state)?;
-    if reference.producer == producer && Some(&reference.state) == state_id.as_ref() {
+    if reference.producer == producer && Some(reference.state.as_str()) == state_id.as_deref() {
         return Ok(());
     }
     Err(format!(
@@ -203,7 +203,7 @@ async fn locate(state: &Path, text: &str) -> Result<Located, String> {
                 .ok_or_else(|| {
                     format!(
                         "No Agent request or session {text} in this state ({}).",
-                        state.display()
+                        crate::platform::path_text(state)
                     )
                 })?,
         }
@@ -268,7 +268,7 @@ async fn send(
     let config = read_workspace_config(&repo).map_err(|error| {
         format!(
             "Cannot resolve the review's tools in {}: {error}",
-            repo.display()
+            crate::platform::path_text(&repo)
         )
     })?;
     let eval = config
@@ -279,7 +279,7 @@ async fn send(
             format!(
                 "Eval {} is no longer declared in {}; its tools cannot be resolved.",
                 request.eval_id,
-                repo.display()
+                crate::platform::path_text(&repo)
             )
         })?;
     let output = workspace::prepare_directory(
@@ -497,13 +497,18 @@ fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
                     writeln!(out, "{line}")?;
                 }
             }
-            session::Kind::End(end) => match &end.result {
+            session::Kind::End(end) => match end.result() {
                 Some(result) => writeln!(out, "\n── Result: {result}")?,
                 None => writeln!(
                     out,
                     "\n── Review failed: {} {}",
-                    end.error_code.as_deref().unwrap_or_default(),
-                    end.error.as_deref().unwrap_or_default()
+                    end.failure()
+                        .and_then(|(code, _)| code)
+                        .map(crate::agent::error::Code::as_str)
+                        .unwrap_or_default(),
+                    end.failure()
+                        .map(|(_, message)| message)
+                        .unwrap_or_default()
                 )?,
             },
             session::Kind::Send(sent) => writeln!(
@@ -517,12 +522,19 @@ fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
                     ""
                 }
             )?,
-            session::Kind::Answer(answer) if answer.error.is_some() => writeln!(
+            session::Kind::Answer(answer) if answer.failure().is_some() => writeln!(
                 out,
                 "\n── Follow-up {} failed: {} {}",
                 event.send.unwrap_or_default(),
-                answer.error_code.as_deref().unwrap_or_default(),
-                answer.error.as_deref().unwrap_or_default()
+                answer
+                    .failure()
+                    .and_then(|(code, _)| code)
+                    .map(crate::agent::error::Code::as_str)
+                    .unwrap_or_default(),
+                answer
+                    .failure()
+                    .map(|(_, message)| message)
+                    .unwrap_or_default()
             )?,
             _ => {}
         }

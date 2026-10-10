@@ -3,7 +3,8 @@
 use std::fmt;
 
 /// The `errorCode` of a request whose Agent review failed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Code {
     /// Credentials are missing, expired or rejected (HTTP 401 or 403).
     Authentication,

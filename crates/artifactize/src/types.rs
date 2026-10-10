@@ -161,6 +161,7 @@ impl ExecutionId {
     }
 }
 identity!(SessionId, segment);
+identity!(StateId, segment);
 identity!(Fingerprint, |value: &str| (1..=MAX_FINGERPRINT_BYTES)
     .contains(&value.len())
     && value.bytes().all(
@@ -317,3 +318,6 @@ mod tests {
         assert!("INCOMPLETE".parse::<RequestStatus>().is_err());
     }
 }
+
+// OAuth account claims are opaque provider strings, historically any nonempty text.
+identity!(CodexAccountId, |value: &str| !value.is_empty());

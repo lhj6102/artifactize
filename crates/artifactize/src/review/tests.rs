@@ -8,29 +8,20 @@ const ID: &str = "run-1-3";
 
 #[tokio::test]
 async fn visual_precedes_editor_and_reads_the_saved_review() {
-    use std::{fs, process::Command};
-    if std::env::var_os("ARTIFACTIZE_EDITOR_SEAM").is_some() {
+    if crate::platform::environment::var("ARTIFACTIZE_EDITOR_SEAM").is_some() {
         assert_eq!(edit("original".into()).await.unwrap(), "edited by visual");
         return;
     }
-    let root = tempfile::tempdir().unwrap();
-    let script = root.path().join("editor.py");
-    fs::write(
-        &script,
-        "import pathlib,sys\npathlib.Path(sys.argv[1]).write_text('edited by visual')\n",
-    )
-    .unwrap();
-    let output = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "review::tests::visual_precedes_editor_and_reads_the_saved_review",
-            "--nocapture",
-        ])
-        .env("ARTIFACTIZE_EDITOR_SEAM", "1")
-        .env("VISUAL", format!("python3 \"{}\"", script.display()))
-        .env("EDITOR", "artifactize-editor-that-must-not-run")
-        .output()
-        .unwrap();
+    let root = crate::test_os::tempdir();
+    let editor = crate::test_os::editor_command(root.path(), "edited by visual");
+    let output = crate::test_os::run_test(
+        "review::tests::visual_precedes_editor_and_reads_the_saved_review",
+        &[
+            ("ARTIFACTIZE_EDITOR_SEAM", "1".into()),
+            ("VISUAL", editor.into()),
+            ("EDITOR", "artifactize-editor-that-must-not-run".into()),
+        ],
+    );
     assert!(
         output.status.success(),
         "{}{}",
@@ -46,12 +37,9 @@ fn spinner_frames_keep_the_existing_hundred_millisecond_cadence_and_cast_order()
     assert_eq!(view::spinner(Duration::from_millis(100)), "⠙");
     assert_eq!(view::spinner(Duration::from_millis(999)), "⠏");
     assert_eq!(view::spinner(Duration::from_millis(1000)), "⠋");
-    let previous_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let large = Duration::MAX;
-    assert_eq!(
-        view::spinner(large),
-        previous_frames[(large.as_millis() / 100) as usize % previous_frames.len()]
-    );
+    // The cast truncates to the pointer width before indexing; pin both contracts.
+    let expected = "⠴";
+    assert_eq!(view::spinner(Duration::MAX), expected);
 }
 
 fn definition(pass: Value, fail: Value) -> Value {
@@ -211,7 +199,7 @@ pub(crate) fn opened(reviewer: Option<&str>, definition: Value) -> Review {
         "/state".into(),
         Some("/repo".into()),
         "alice".into(),
-        Some(ID.into()),
+        Some(ID.parse().unwrap()),
     );
     review.request = Some(view("WAITING_HUMAN", reviewer, definition));
     review
@@ -654,12 +642,12 @@ fn i_expands_the_instruction_and_tools_focus_widens_the_tools() {
 
 #[tokio::test]
 async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
-    let state = tempfile::tempdir().unwrap();
+    let state = crate::test_os::tempdir();
     let mut review = Review::new(
         state.path().join("state"),
         None,
         "alice".into(),
-        Some(ID.into()),
+        Some(ID.parse().unwrap()),
     );
     review.request = Some(view("WAITING_HUMAN", None, demo()));
     claimed(&mut review);
@@ -834,7 +822,7 @@ fn flat_forms_cover_booleans_choices_numbers_and_optional_fields() {
             "seen":{"type":"boolean"},
         },
     });
-    let mut form = Form::new("GREEN", Some(&schema));
+    let mut form = Form::new(crate::runtime::Verdict::Green, Some(&schema));
     assert!(form.json.is_none());
     let names: Vec<_> = form
         .fields
@@ -914,12 +902,14 @@ fn flat_forms_cover_booleans_choices_numbers_and_optional_fields() {
         (json!({}), true),
     ] {
         assert_eq!(
-            Form::new("RED", Some(&schema)).json.is_none(),
+            Form::new(crate::runtime::Verdict::Red, Some(&schema))
+                .json
+                .is_none(),
             flat,
             "{schema}"
         );
     }
-    let empty = Form::new("GREEN", None);
+    let empty = Form::new(crate::runtime::Verdict::Green, None);
     assert_eq!(empty.result().unwrap(), json!({"verdict":"GREEN"}));
     assert_eq!(
         template(&json!({
@@ -1169,7 +1159,7 @@ fn a_bracketed_paste_reaches_only_the_focused_field() {
     assert_eq!(review.focus(), Focus::List);
     review.paste("ignored");
     assert_eq!(
-        review.drafts["RED"].fields[0].display(),
+        review.drafts[&crate::runtime::Verdict::Red].fields[0].display(),
         "needs 한글\nwork q\u{1b}"
     );
 }

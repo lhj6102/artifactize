@@ -36,7 +36,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(240);
 pub const FOLLOW_UP: &str = "Follow-up question from a person about the review above. This is not a new review: the verdict stays as recorded, and the instruction to return one JSON object applied only to the review. Answer in plain text, not JSON. You may use the tools again.";
 
 pub struct Review {
-    pub result: Result<Value, Failure>,
+    pub result: Result<verdict::ValidatedResult, Failure>,
     pub attempts: Vec<Attempt>,
 }
 
@@ -112,14 +112,12 @@ async fn review(
     )
     .await;
     recorder.event(match &review.result {
-        Ok(result) => session::Kind::End(session::End {
-            result: Some(result.clone()),
-            ..session::End::default()
-        }),
-        Err(failure) => session::Kind::End(session::End {
-            error_code: Some(failure.code.as_str().into()),
-            error: Some(failure.message.clone()),
-            ..session::End::default()
+        Ok(result) => session::Kind::End(session::End::Completed(
+            serde_json::to_value(result).expect("validated result is JSON"),
+        )),
+        Err(failure) => session::Kind::End(session::End::Failed {
+            code: Some(failure.code),
+            message: Some(failure.message.clone()),
         }),
     });
     review
@@ -139,7 +137,7 @@ struct Turns<'a> {
     turn: usize,
     tokens_used: u64,
     calls_issued: u64,
-    call_ids: HashSet<String>,
+    call_ids: HashSet<rig_core::message::CallId>,
     recorder: &'a mut Recorder,
 }
 
@@ -253,7 +251,16 @@ impl Turns<'_> {
                 "PROVIDER_BUDGET_EXCEEDED: review exceeded its maxToolCalls budget.",
             ));
         }
-        if !self.call_ids.insert(call.id.wire().into_owned()) {
+        // Responses has an output-item ID as well as its correlation ID. Uniqueness
+        // concerns the correlation ID across turns, not the changing output item.
+        let identity = match &call.id {
+            rig_core::message::CallId::Provider(provider) => rig_core::message::CallId::from(
+                rig_core::message::ProviderCallId::new(provider.call_id.clone())
+                    .expect("validated call ID"),
+            ),
+            rig_core::message::CallId::Local(local) => rig_core::message::CallId::from(*local),
+        };
+        if !self.call_ids.insert(identity) {
             return Err(Failure::new(
                 Code::ProviderError,
                 "Provider repeated a tool-call ID; no further tools were executed.",
@@ -305,7 +312,7 @@ async fn run(
     recorder: &mut Recorder,
     cancellation: &CancellationToken,
     attempts: &mut Vec<Attempt>,
-) -> Result<Value, Failure> {
+) -> Result<verdict::ValidatedResult, Failure> {
     let Profile::Agent {
         backend,
         model,
@@ -479,14 +486,10 @@ fn complete_follow_up(
         Err(failure) => return FollowUp::NotStarted(failure),
     };
     recorder.event(match &started.answer {
-        Ok(text) => session::Kind::Answer(session::Answer {
-            text: Some(text.clone()),
-            ..session::Answer::default()
-        }),
-        Err(failure) => session::Kind::Answer(session::Answer {
-            error_code: Some(failure.code.as_str().into()),
-            error: Some(failure.message.clone()),
-            ..session::Answer::default()
+        Ok(text) => session::Kind::Answer(session::Answer::Completed(text.clone())),
+        Err(failure) => session::Kind::Answer(session::Answer::Failed {
+            code: Some(failure.code),
+            message: Some(failure.message.clone()),
         }),
     });
     FollowUp::Started {
@@ -662,7 +665,7 @@ fn prompt(
                     if config.artifacts[&id].file_name().is_some() {
                         format!(
                             "Artifact {id} (path: {}; tools: {})",
-                            config.artifacts[&id].path.display(),
+                            crate::platform::path_text(&config.artifacts[&id].path),
                             tools.join(", ")
                         )
                     } else {

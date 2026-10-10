@@ -136,11 +136,11 @@ pub async fn submit(
     }
     let result = validate_result(&eval.declaration, result)?;
     recheck(receipts, &mut request, reviewer, &config, cancellation).await?;
-    request.status = result["verdict"]
-        .as_str()
-        .ok_or("Validated result has no verdict.")?
-        .parse()?;
-    request.result = Some(result);
+    request.status = match result.verdict {
+        crate::runtime::Verdict::Green => crate::types::RequestStatus::Green,
+        crate::runtime::Verdict::Red => crate::types::RequestStatus::Red,
+    };
+    request.result = Some(result.into_json());
     receipts.settle_human(&request, reviewer).await
 }
 

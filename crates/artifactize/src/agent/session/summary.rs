@@ -134,12 +134,10 @@ impl Summary {
         }
         let current = self.turns.last_mut().expect("the attempt's turn");
         current.attempts += 1;
-        for (name, value) in &attempt.usage {
-            if let Some(value) = value.as_u64() {
-                for tokens in [&mut current.tokens, &mut self.tokens] {
-                    let total = tokens.entry(name.clone()).or_default();
-                    *total = total.saturating_add(value);
-                }
+        for (name, value) in attempt.usage.iter() {
+            for tokens in [&mut current.tokens, &mut self.tokens] {
+                let total = tokens.entry(name.clone()).or_default();
+                *total = total.saturating_add(*value);
             }
         }
     }

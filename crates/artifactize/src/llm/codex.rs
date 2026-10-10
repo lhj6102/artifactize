@@ -29,7 +29,7 @@ use rig_core::{
         },
     },
 };
-use serde_json::Value;
+mod errors;
 
 use crate::auth::codex::{self as auth, ORIGINATOR};
 
@@ -71,10 +71,9 @@ fn session(request: &CompletionRequest) -> Option<&str> {
 /// `artifactize/<version> (<os> <arch>; artifactize)`, the shape rig gives gateways.
 pub fn user_agent() -> String {
     format!(
-        "artifactize/{} ({} {}; {ORIGINATOR})",
+        "artifactize/{} ({}; {ORIGINATOR})",
         env!("CARGO_PKG_VERSION"),
-        std::env::consts::OS,
-        std::env::consts::ARCH,
+        crate::platform::label(),
     )
 }
 
@@ -117,7 +116,7 @@ impl Codex {
         }
         let mut config = openai::OpenAIConfig::with_key(&dialect, token.access_token)
             .with_base_url(&self.base)
-            .with_account_id(token.account_id);
+            .with_account_id(token.account_id.to_string());
         config.instructions = None;
         config.identity = Some(CallerIdentity {
             originator: ORIGINATOR.into(),
@@ -234,7 +233,7 @@ pub(super) async fn models(
     let response = super::http_client()?
         .get(format!("{base}/models?client_version={CLIENT_VERSION}"))
         .bearer_auth(&token.access_token)
-        .header("ChatGPT-Account-Id", &token.account_id)
+        .header("ChatGPT-Account-Id", token.account_id.as_str())
         .header("originator", ORIGINATOR)
         .header(reqwest::header::USER_AGENT, user_agent())
         .timeout(super::models::LIST_TIMEOUT)
@@ -245,74 +244,58 @@ pub(super) async fn models(
     let data = response.bytes().await.unwrap_or_default();
     if !status.is_success() {
         // Provider error payloads vary by endpoint; the success catalog has a known shape.
-        let body: Value = serde_json::from_slice(&data).unwrap_or(Value::Null);
+        let body = errors::Error::parse(&data);
         return Err(describe(
             Some(status.as_u16()),
-            &body,
+            body.as_ref(),
             "Codex model listing failed.",
+            auth::now().ok(),
         ));
     }
     picker_models(&data)
 }
 
-/// The error object of an HTTP error body or a `response.failed` event.
-fn error_object(body: &Value) -> &Value {
-    body.pointer("/response/error")
-        .filter(|error| error.is_object())
-        .or_else(|| body.get("error").filter(|error| error.is_object()))
-        .unwrap_or(body)
-}
-
-fn error_code(body: &Value) -> Option<&str> {
-    let error = error_object(body);
-    error["code"]
-        .as_str()
-        .or_else(|| error["type"].as_str())
-        .filter(|code| !code.is_empty())
-}
-
-/// A plan usage limit: a usage code, or a 429 that says when the limit resets. A plain
-/// 429 is a rate limit.
-fn usage_limit(status: Option<u16>, body: &Value) -> bool {
-    error_code(body)
-        .is_some_and(|code| matches!(code, "usage_limit_reached" | "usage_not_included"))
-        || (status == Some(429) && error_object(body)["resets_at"].is_u64())
-}
-
 /// A plan usage limit, which no retry within a review outlasts.
 pub(super) fn usage_limited(error: &ProviderError) -> bool {
-    usage_limit(error.report().http_status, &body(error))
+    body(error).is_some_and(|body| body.usage_limit(error.report().http_status))
 }
-
-fn body(error: &ProviderError) -> Value {
+fn body(error: &ProviderError) -> Option<errors::Error> {
     error
         .provider_response()
-        .and_then(|response| serde_json::from_str(&response.body).ok())
-        .unwrap_or(Value::Null)
+        .and_then(|response| errors::Error::parse(response.body.as_bytes()))
 }
 
 pub(super) fn diagnostic(error: &ProviderError) -> String {
     let body = body(error);
-    if body.is_null() {
+    if body.is_none() {
         return super::diagnostic(error);
     }
-    describe(error.report().http_status, &body, &super::diagnostic(error))
+    describe(
+        error.report().http_status,
+        body.as_ref(),
+        &super::diagnostic(error),
+        auth::now().ok(),
+    )
 }
 
 /// A bounded message with the provider's code, an HTTP status, and what to do next:
 /// usage limits name the plan and when they reset, as Pi words them, and rejected
 /// credentials say how to sign in again.
-pub(super) fn describe(status: Option<u16>, body: &Value, fallback: &str) -> String {
-    let error = error_object(body);
-    let code = error_code(body);
-    let mut message = if usage_limit(status, body) {
-        let plan = error["plan_type"]
-            .as_str()
+fn describe(
+    status: Option<u16>,
+    body: Option<&errors::Error>,
+    fallback: &str,
+    now: Option<u64>,
+) -> String {
+    let code = body.and_then(errors::Error::code);
+    let mut message = if body.is_some_and(|body| body.usage_limit(status)) {
+        let plan = body
+            .and_then(|body| body.fields.plan_type.0.as_deref())
             .map(|plan| format!(" ({} plan)", plan.to_lowercase()))
             .unwrap_or_default();
-        let reset = error["resets_at"]
-            .as_u64()
-            .zip(auth::now().ok())
+        let reset = body
+            .and_then(|body| body.fields.resets_at.0)
+            .zip(now)
             .map(|(at, now)| {
                 format!(
                     " Try again in ~{} min.",
@@ -322,9 +305,7 @@ pub(super) fn describe(status: Option<u16>, body: &Value, fallback: &str) -> Str
             .unwrap_or_default();
         format!("You have hit your ChatGPT usage limit{plan}.{reset}")
     } else {
-        error["message"]
-            .as_str()
-            .or_else(|| body["detail"].as_str())
+        body.and_then(|body| body.fields.message.0.as_deref().or(body.detail.as_deref()))
             .unwrap_or(fallback)
             .to_owned()
     };

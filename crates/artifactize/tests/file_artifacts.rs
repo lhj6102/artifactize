@@ -660,7 +660,7 @@ async fn runtime_verify_reuses_after_sibling_changes_but_not_target_changes_and_
     let detail = monitor::detail(
         &saved,
         &[],
-        &Target::Artifact("file".into()),
+        &Target::Artifact("file".parse().unwrap()),
         time::OffsetDateTime::now_utc(),
     );
     let nodes = monitor::tree(&saved, &[], time::OffsetDateTime::now_utc());
