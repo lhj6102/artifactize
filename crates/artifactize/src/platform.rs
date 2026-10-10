@@ -25,9 +25,8 @@ pub(crate) use os::{
     HOME_VARIABLE, HOME_VARIABLES, HiddenInput, STATE_VARIABLES, SYSTEM_VARIABLES, TEMP_VARIABLES,
     USER_VARIABLES, VISIBLE_INPUT_FALLBACK, create_private_dir, create_private_dir_all, editor,
     exit_signal, file_identity, home_directory, host_name, ipc, is_owner_only, is_private_dir,
-    is_private_file, path_from_bytes, path_text, private_options, private_tempdir_in,
-    process_start_time, resolve_system_aliases, restrict_file, spawn_detached, spawn_gated,
-    stop_requested, sync_dir,
+    is_private_file, path_from_bytes, private_options, private_tempdir_in, process_start_time,
+    resolve_system_aliases, restrict_file, spawn_detached, spawn_gated, stop_requested, sync_dir,
 };
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 
@@ -52,7 +51,7 @@ pub(crate) const FILE_LOCK_RETRY_INTERVAL: std::time::Duration =
 
 pub(crate) use artifactize_tools::files::{
     EntryName, FileKind, canonicalize, entry_kind, link_target, open_directory, open_entry,
-    open_no_follow, open_nonblocking, read_dir,
+    open_no_follow, open_nonblocking, path_text, read_dir,
 };
 
 /// Open an existing regular file for reading without following a link in its last

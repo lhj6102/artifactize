@@ -84,11 +84,6 @@ pub(crate) const STATE_VARIABLES: &[&str] = &["XDG_STATE_HOME", "LOCALAPPDATA"];
 /// The variables naming the signed-in user, in order; Windows sets `USERNAME`, not `USER`.
 pub(crate) const USER_VARIABLES: &[&str] = &["USER", "USERNAME"];
 
-/// The text a path is stored as, with `/` separators: Windows reads `C:/x/y` as `C:\x\y`.
-pub(crate) fn path_text(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
 /// The user's home directory: `HOME` when set, as Unix-style tools set it, else the
 /// profile folder.
 pub(crate) fn home_directory() -> Option<std::path::PathBuf> {

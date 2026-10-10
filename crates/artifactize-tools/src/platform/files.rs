@@ -76,7 +76,15 @@ pub fn current_directory() -> std::io::Result<std::path::PathBuf> {
 
 /// Render a native path for people and JSON clients with portable `/` separators.
 pub fn path_text(path: &std::path::Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    let text = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        text.replace('\\', "/")
+    }
+    #[cfg(unix)]
+    {
+        text.into_owned()
+    }
 }
 
 /// Convert a native relative path into logical components; roots, traversal and non-UTF-8
@@ -115,4 +123,32 @@ pub fn scoped_relative(path: &std::path::Path) -> std::io::Result<String> {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_text;
+
+    // reason: only Unix allows '\' in file names.
+    #[cfg(unix)]
+    #[test]
+    fn literal_backslash_in_a_file_name_is_not_a_separator() {
+        let root = crate::test_os::tempdir();
+        let path = root.path().join(r"input\name");
+        std::fs::write(&path, "data").unwrap();
+        assert_eq!(
+            path_text(std::path::Path::new(path.file_name().unwrap())),
+            r"input\name"
+        );
+    }
+
+    // reason: Windows native paths use backslash separators.
+    #[cfg(windows)]
+    #[test]
+    fn native_separators_are_rendered_as_slashes() {
+        assert_eq!(
+            path_text(std::path::Path::new(r"C:\input\name")),
+            "C:/input/name"
+        );
+    }
 }
