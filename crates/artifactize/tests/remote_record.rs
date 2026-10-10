@@ -384,8 +384,10 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         fingerprints: key.fingerprints.clone(),
         artifact_kinds: key.artifact_kinds.clone(),
         eval_def_hash: key.eval_def_hash.clone(),
-        owner_pid: 1,
-        owner_start_time: 1,
+        owner: Some(artifactize::process::ChildIdentity {
+            pid: 1,
+            start_time: 1,
+        }),
         state: artifactize::store::ExecutionState::Completed {
             result: json!({"verdict":"GREEN","approved":true})
                 .try_into()

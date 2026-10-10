@@ -130,8 +130,8 @@ impl Receipts {
                         params![
                             data,
                             execution.id,
-                            execution.owner_pid,
-                            execution.owner_start_time as i64
+                            execution.owner_pid(),
+                            execution.owner_start_time() as i64
                         ],
                     )? != 1
                     {
@@ -144,8 +144,8 @@ impl Receipts {
                         params![
                             execution.id,
                             execution.eval_def_hash,
-                            execution.owner_pid,
-                            execution.owner_start_time as i64,
+                            execution.owner_pid(),
+                            execution.owner_start_time() as i64,
                             data
                         ],
                     )?;

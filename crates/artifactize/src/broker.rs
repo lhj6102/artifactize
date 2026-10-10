@@ -505,8 +505,7 @@ impl Scheduler<'_, '_> {
                             .map(|key| key.artifact_kinds.clone())
                             .unwrap_or_default(),
                         eval_def_hash: request.eval_def_hash.clone(),
-                        owner_pid: owner.pid,
-                        owner_start_time: owner.start_time,
+                        owner: Some(owner),
                         profile: request.profile.clone(),
                         options: request.options.clone(),
                         usage: None,

@@ -61,8 +61,9 @@ pub struct Execution {
     /// Kinds of exactly the Artifacts covered by a new-format reuse key.
     pub artifact_kinds: BTreeMap<crate::types::ArtifactName, crate::config::ArtifactKind>,
     pub eval_def_hash: crate::types::DefinitionHash,
-    pub owner_pid: u32,
-    pub owner_start_time: u64,
+    /// The local process running this execution; absent for one mirrored from a remote
+    /// review store, which no local process owns.
+    pub owner: Option<process::ChildIdentity>,
     pub profile: crate::config::StoredProfile,
     /// How this result was produced; never part of the key.
     pub options: ExecutionOptions,
@@ -137,8 +138,10 @@ impl TryFrom<ExecutionWire> for Execution {
             fingerprints: wire.fingerprints,
             artifact_kinds: wire.artifact_kinds,
             eval_def_hash: wire.eval_def_hash,
-            owner_pid: wire.owner_pid,
-            owner_start_time: wire.owner_start_time,
+            owner: (wire.owner_pid != 0).then_some(process::ChildIdentity {
+                pid: wire.owner_pid,
+                start_time: wire.owner_start_time,
+            }),
             profile: wire.profile,
             options: wire.options,
             usage: wire.usage,
@@ -153,6 +156,8 @@ impl TryFrom<ExecutionWire> for Execution {
 }
 impl From<Execution> for ExecutionWire {
     fn from(record: Execution) -> Self {
+        let owner_pid = record.owner_pid();
+        let owner_start_time = record.owner_start_time();
         Self {
             status: record.status(),
             result: record.result().cloned(),
@@ -165,8 +170,8 @@ impl From<Execution> for ExecutionWire {
             fingerprints: record.fingerprints,
             artifact_kinds: record.artifact_kinds,
             eval_def_hash: record.eval_def_hash,
-            owner_pid: record.owner_pid,
-            owner_start_time: record.owner_start_time,
+            owner_pid,
+            owner_start_time,
             profile: record.profile,
             options: record.options,
             usage: record.usage,
@@ -194,6 +199,16 @@ impl Execution {
     }
     pub fn completed_at(&self) -> Option<crate::types::Timestamp> {
         self.state.completed_at()
+    }
+    /// The owning process's pid, or 0 for a remote-mirrored execution with no local owner:
+    /// the `owner_pid` SQL column and wire field's sentinel for "no owner", confined to
+    /// this persistence boundary.
+    pub fn owner_pid(&self) -> u32 {
+        self.owner.map_or(0, |owner| owner.pid)
+    }
+    /// The owning process's start time, or 0 alongside [`Self::owner_pid`]'s sentinel.
+    pub fn owner_start_time(&self) -> u64 {
+        self.owner.map_or(0, |owner| owner.start_time)
     }
 }
 
@@ -706,8 +721,8 @@ impl Receipts {
                         key,
                         execution.eval_def_hash,
                         execution.status(),
-                        execution.owner_pid,
-                        execution.owner_start_time as i64,
+                        execution.owner_pid(),
+                        execution.owner_start_time() as i64,
                         execution.backend(),
                         serde_json::to_string(&execution)?
                     ],
@@ -806,8 +821,8 @@ impl Receipts {
                         key,
                         execution.eval_def_hash,
                         execution.status(),
-                        execution.owner_pid,
-                        execution.owner_start_time as i64,
+                        execution.owner_pid(),
+                        execution.owner_start_time() as i64,
                         data
                     ],
                 )?;
@@ -877,8 +892,8 @@ pub(super) fn settle(
                 last_used,
                 data,
                 execution.id,
-                execution.owner_pid,
-                execution.owner_start_time as i64
+                execution.owner_pid(),
+                execution.owner_start_time() as i64
             ],
         )? != 1
         {
@@ -893,8 +908,8 @@ pub(super) fn settle(
                 execution.key,
                 execution.eval_def_hash,
                 execution.status(),
-                execution.owner_pid,
-                execution.owner_start_time as i64,
+                execution.owner_pid(),
+                execution.owner_start_time() as i64,
                 execution.backend(),
                 completed_at,
                 bytes,

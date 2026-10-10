@@ -801,14 +801,12 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
         );
     }
     if let Some(execution) = &view.execution {
-        let owner = execution.owner_pid;
+        let owner = execution
+            .owner
+            .map_or(String::new(), |owner| format!(" · owner pid {}", owner.pid));
         detail.push(
             "Execution",
-            format!(
-                "{} {} · owner pid {owner}",
-                execution.id,
-                execution.status()
-            ),
+            format!("{} {}{owner}", execution.id, execution.status()),
         );
     }
     if request.profile.kind() == crate::config::ProfileKind::Human || view.claim.is_some() {

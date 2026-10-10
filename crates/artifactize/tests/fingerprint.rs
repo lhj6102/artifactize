@@ -354,9 +354,10 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         let fixture = Fixture::new();
         let marker = fixture.root.path().join("started");
         let source = format!(
-            "if {}; then printf '%s\\n%s\\n' \"$$\" \"$ARTIFACTIZE_OUTPUT_DIR\" > '{}'; sleep 30 & wait; fi; printf stable",
+            "if {}; then printf '%s\\n%s\\n' \"$$\" \"$ARTIFACTIZE_OUTPUT_DIR\" > '{}'; {} & wait; fi; printf stable",
             if recheck { "test -e executed" } else { "true" },
-            marker.display()
+            marker.display(),
+            support::os::LINGERING
         );
         fixture.write(
             "index.artf",

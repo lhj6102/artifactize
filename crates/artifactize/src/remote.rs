@@ -182,8 +182,7 @@ impl Record {
                 fingerprints: self.fingerprints,
                 artifact_kinds: self.artifact_kinds,
                 eval_def_hash: self.eval_def_hash.clone(),
-                owner_pid: 0,
-                owner_start_time: 0,
+                owner: None,
                 state: crate::store::ExecutionState::Completed {
                     result: self.result,
                     at: self.completed_at,
