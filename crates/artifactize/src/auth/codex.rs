@@ -190,17 +190,18 @@ fn random(bytes: usize) -> Result<Vec<u8>, String> {
 /// One sign-in attempt: PKCE verifier, its S256 challenge and the `state` it expects.
 struct Pending {
     verifier: String,
-    state: String,
+    state: crate::types::OAuthState,
 }
 
 impl Pending {
     fn new() -> Result<Self, String> {
+        let state: String = random(OAUTH_STATE_BYTES)?
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
         Ok(Self {
             verifier: URL_SAFE_NO_PAD.encode(random(PKCE_VERIFIER_BYTES)?),
-            state: random(OAUTH_STATE_BYTES)?
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect(),
+            state: state.parse().expect("generated OAuth state is valid"),
         })
     }
 
@@ -267,7 +268,7 @@ impl Pending {
                 return ("400 Bad Request", "Duplicate callback parameter.", None);
             }
         }
-        if parameters.get("state") != Some(&self.state) {
+        if parameters.get("state").map(String::as_str) != Some(self.state.as_str()) {
             return ("400 Bad Request", "State mismatch.", None);
         }
         if let Some(error) = parameters.get("error") {
@@ -698,13 +699,47 @@ impl<'de> Deserialize<'de> for AuthFileTokens {
 
 /// The access token of a Codex auth file (`{"tokens":{"access_token",...}}`), read
 /// once per use and never written. An expiring token is an error, never a refresh.
-fn read_auth_file(path: &Path) -> Result<Token, String> {
+/// Why a Codex auth file could not be read as a usable token: the expired case is a state
+/// callers may want to report on its own, so it is a variant rather than a message prefix.
+#[derive(Debug)]
+enum AuthFileError {
+    /// The token in the file has expired; the message explains how to fix it.
+    Expired(String),
+    /// The file itself, or what it holds, could not be used; the message explains why.
+    Unreadable(String),
+}
+
+impl std::fmt::Display for AuthFileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Expired(message) | Self::Unreadable(message) => write!(f, "{message}"),
+        }
+    }
+}
+
+impl From<AuthFileError> for String {
+    fn from(error: AuthFileError) -> Self {
+        error.to_string()
+    }
+}
+
+impl From<AuthFileError> for TokenError {
+    fn from(error: AuthFileError) -> Self {
+        error.to_string().into()
+    }
+}
+
+fn read_auth_file(path: &Path) -> Result<Token, AuthFileError> {
     read_auth_file_at(path, now().unwrap_or(Timestamp::from_seconds(u64::MAX)))
 }
 
-fn read_auth_file_at(path: &Path, now: Timestamp) -> Result<Token, String> {
+fn read_auth_file_at(path: &Path, now: Timestamp) -> Result<Token, AuthFileError> {
     let name = crate::platform::path_text(path);
-    let unreadable = |reason: &str| format!("{AUTH_FILE_VARIABLE}: cannot read {name}: {reason}.");
+    let unreadable = |reason: &str| {
+        AuthFileError::Unreadable(format!(
+            "{AUTH_FILE_VARIABLE}: cannot read {name}: {reason}."
+        ))
+    };
     let file =
         crate::platform::open_regular(path).map_err(|error| unreadable(&error.to_string()))?;
     if !file.metadata().is_ok_and(|metadata| metadata.is_file()) {
@@ -730,9 +765,9 @@ fn read_auth_file_at(path: &Path, now: Timestamp) -> Result<Token, String> {
         .filter(|token| !token.is_empty())
         .ok_or_else(|| unreadable("it holds no ChatGPT sign-in tokens"))?;
     if expiry(access_token).is_some_and(|exp| exp <= now.saturating_add(FILE_MARGIN)) {
-        return Err(format!(
+        return Err(AuthFileError::Expired(format!(
             "The Codex access token in {name} has expired; sign in with Codex again (for example `codex login`). artifactize never refreshes that file."
-        ));
+        )));
     }
     let account_id = tokens
         .as_ref()
@@ -820,8 +855,8 @@ pub fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Status, Strin
             Ok(token) => FileExpiry::Usable {
                 expires_at: expiry(&token.access_token),
             },
-            Err(error) if error.starts_with("The Codex access token") => FileExpiry::Expired,
-            Err(error) => return Err(error),
+            Err(AuthFileError::Expired(_)) => FileExpiry::Expired,
+            Err(error) => return Err(error.into()),
         };
         return Ok(Status::File { path, expiry });
     }

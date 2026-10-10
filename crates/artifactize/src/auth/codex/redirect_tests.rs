@@ -33,7 +33,7 @@ async fn shared_port_redirect_matches_authorize_callback_and_token_exchange() {
             let target = format!("{CALLBACK_PATH}?code=fixture-code&state={}", pairs["state"]);
             let pending = Pending {
                 verifier: String::new(),
-                state: pairs["state"].clone(),
+                state: pairs["state"].parse().unwrap(),
             };
             assert!(
                 matches!(pending.callback(&target).2, Some(Ok(code)) if code == "fixture-code")

@@ -133,9 +133,10 @@ impl Fixture {
         repo
     }
 
-    /// The owner's review in `repo` ends with `ERROR_SCRIPT` after the release. On Windows its
-    /// deadline has to fall after the waiter starts waiting, and early enough that the owner
-    /// has stopped within `finish`'s five seconds of the release.
+    /// The owner's review in `repo` ends with `ERROR_SCRIPT` after the release. On Windows
+    /// `erroring` scales its deadline the same way `patience` does, so it reliably outlasts
+    /// the waiter's attachment (started and checked before `release`) without racing a slow
+    /// CI host, while `finish`'s own, equally scaled deadline still catches it.
     fn erroring_owner(&self, repo: &Path) {
         let path = repo.join("index.artf");
         let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();

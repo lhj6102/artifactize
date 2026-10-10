@@ -447,7 +447,8 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
     write(json!({"tokens":{"access_token":jwt("a", 10_000 + 30),"refresh_token":"r"}}));
     let expired = read_auth_file_at(&path, Timestamp::from_seconds(10_000))
         .err()
-        .unwrap();
+        .unwrap()
+        .to_string();
     assert!(expired.contains("has expired"), "{expired}");
     assert!(expired.contains("sign in with Codex again"), "{expired}");
     assert!(expired.contains("never refreshes"), "{expired}");
@@ -466,7 +467,8 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
         fs::write(&path, contents).unwrap();
         let error = read_auth_file_at(&path, Timestamp::from_seconds(10_000))
             .err()
-            .unwrap();
+            .unwrap()
+            .to_string();
         assert!(error.contains(expected), "{error}");
         assert!(!error.contains("sk-secret"), "{error}");
     }
@@ -475,7 +477,8 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
         Timestamp::from_seconds(10_000),
     )
     .err()
-    .unwrap();
+    .unwrap()
+    .to_string();
     assert!(
         error.starts_with("ARTIFACTIZE_CODEX_AUTH_FILE: cannot read"),
         "{error}"
@@ -520,6 +523,7 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
             read_auth_file_at(&path, Timestamp::from_seconds(10_000))
                 .err()
                 .unwrap()
+                .to_string()
                 .contains("no ChatGPT sign-in tokens"),
             "{contents}"
         );
@@ -554,6 +558,7 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
         read_auth_file_at(&path, Timestamp::from_seconds(10_000))
             .err()
             .unwrap()
+            .to_string()
             .contains("no ChatGPT sign-in tokens")
     );
 }

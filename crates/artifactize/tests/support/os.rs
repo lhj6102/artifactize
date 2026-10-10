@@ -1736,10 +1736,13 @@ pub const ERROR_CODE: &str = if cfg!(windows) {
     "ABNORMAL_EXIT"
 };
 
-/// Configure the deadline required by the Windows operational-error fixture.
+/// Configure the deadline required by the Windows operational-error fixture, scaled like
+/// other test patience so a caller coordinating it with a waiter's attachment does not
+/// race slower process startup under load.
 pub fn erroring(mut eval: Value, timeout_ms: u64) -> Value {
     if cfg!(windows) {
-        eval["profile"]["timeout_ms"] = json!(timeout_ms);
+        eval["profile"]["timeout_ms"] =
+            json!(patience(std::time::Duration::from_millis(timeout_ms)).as_millis());
     }
     eval
 }
