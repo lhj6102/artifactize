@@ -334,36 +334,45 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     assert!(doctor(1)["message"].as_str().unwrap().contains("https://"));
 }
 
-// Needs a pseudo-terminal from openpty(3); the Windows console has no such pair to drive.
-#[cfg(unix)]
 #[test]
 fn login_on_a_terminal_does_not_echo_the_token() {
     let root = support::os::tempdir();
     let token = test_token();
     let server = Whoami::start(&token);
-    let (mut master, slave) = support::os::pty();
-    let mut child = artifactize(&root.path().join("state"))
-        .args(["remote", "login", &server.url])
-        .stdin(slave.try_clone().unwrap())
-        .stdout(slave.try_clone().unwrap())
-        .stderr(slave)
-        .spawn()
-        .unwrap();
-    // Reading the master fails with EIO once the child closed the terminal.
-    fn read(master: &mut fs::File, output: &mut Vec<u8>, until: &str) {
-        let mut buffer = [0; 1024];
-        while !String::from_utf8_lossy(output).contains(until) {
-            match master.read(&mut buffer) {
-                Ok(0) | Err(_) => break,
-                Ok(count) => output.extend_from_slice(&buffer[..count]),
-            }
-        }
-    }
+    let state = root.path().join("state");
+    let (mut terminal, receiver) = support::os::PseudoTerminal::start(
+        Path::new(env!("CARGO_BIN_EXE_artifactize")),
+        &[
+            "--state-dir",
+            state.to_str().unwrap(),
+            "remote",
+            "login",
+            &server.url,
+        ],
+        &[
+            "ARTIFACTIZE_REMOTE",
+            "ARTIFACTIZE_REMOTE_TOKEN",
+            "ARTIFACTIZE_REMOTE_SHARE",
+        ],
+        100,
+        30,
+    );
+    let wait = support::os::patience(Duration::from_secs(10));
     let mut output = Vec::new();
-    read(&mut master, &mut output, "Paste the remote token");
-    master.write_all(format!("{token}\n").as_bytes()).unwrap();
-    read(&mut master, &mut output, "Signed in");
-    assert!(child.wait().unwrap().success());
+    while !String::from_utf8_lossy(&output).contains("Paste the remote token") {
+        output.extend(
+            receiver
+                .recv_timeout(wait)
+                .expect("login did not ask for the token"),
+        );
+    }
+    // A terminal's Enter key sends a carriage return.
+    terminal.type_text(format!("{token}\r").as_bytes());
+    assert!(terminal.finish());
+    // The output ends once the terminal has closed.
+    while let Ok(chunk) = receiver.recv_timeout(wait) {
+        output.extend(chunk);
+    }
     let output = String::from_utf8_lossy(&output);
     assert!(!output.contains(&token));
     assert!(output.contains("as alice-laptop"), "{output}");

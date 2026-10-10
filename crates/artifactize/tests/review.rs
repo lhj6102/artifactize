@@ -428,6 +428,7 @@ fn pty_review_restores_the_terminal_on_quit() {
             "--reviewer",
             "tester",
         ],
+        &[],
         100,
         30,
     );

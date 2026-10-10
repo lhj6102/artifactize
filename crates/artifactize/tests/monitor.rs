@@ -723,6 +723,7 @@ fn pty_session_restores_the_terminal_on_quit() {
     let (mut terminal, receiver) = support::os::PseudoTerminal::start(
         Path::new(env!("CARGO_BIN_EXE_artifactize")),
         &["--state-dir", state.to_str().unwrap(), "monitor", "--all"],
+        &[],
         100,
         30,
     );

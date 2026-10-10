@@ -263,31 +263,6 @@ pub fn leads_session(pid: u32) -> bool {
     unsafe { libc::getsid(pid as i32) == pid as i32 }
 }
 
-/// A pseudo-terminal pair from openpty(3): the master to drive and the slave to hand a child.
-#[cfg(unix)]
-pub fn pty() -> (std::fs::File, std::os::fd::OwnedFd) {
-    use std::os::fd::{FromRawFd, OwnedFd};
-    let (mut master, mut slave) = (0, 0);
-    // SAFETY: openpty writes two new descriptors, owned below.
-    let opened = unsafe {
-        libc::openpty(
-            &mut master,
-            &mut slave,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
-    assert_eq!(opened, 0);
-    // SAFETY: both descriptors were just opened and are owned exactly once.
-    unsafe {
-        (
-            std::fs::File::from_raw_fd(master),
-            OwnedFd::from_raw_fd(slave),
-        )
-    }
-}
-
 /// A pipe named like the one Git Bash's mintty hands a program: the writer and the reader,
 /// which `is_terminal` takes for a terminal although it has no console.
 #[cfg(windows)]
@@ -704,10 +679,12 @@ pub struct PseudoTerminal {
 }
 
 impl PseudoTerminal {
-    /// Start `program` with `args` on a terminal `columns` wide and `rows` high.
+    /// Start `program` with `args` on a terminal `columns` wide and `rows` high, with the
+    /// test's environment except the variables named in `without`.
     pub fn start(
         program: &Path,
         args: &[&str],
+        without: &[&str],
         columns: u16,
         rows: u16,
     ) -> (Self, std::sync::mpsc::Receiver<Vec<u8>>) {
@@ -724,6 +701,9 @@ impl PseudoTerminal {
             script.args(["-q", "/dev/null", "/bin/sh", "-c", &command]);
             #[cfg(not(target_os = "macos"))]
             script.args(["-qec", &command, "/dev/null"]);
+            for name in without {
+                script.env_remove(name);
+            }
             let mut child = script
                 .stdin(std::process::Stdio::piped())
                 .stdout(std::process::Stdio::piped())
@@ -735,7 +715,7 @@ impl PseudoTerminal {
         };
         #[cfg(windows)]
         let (terminal, output) = {
-            let (console, output) = conpty::Console::start(program, args, columns, rows);
+            let (console, output) = conpty::Console::start(program, args, without, columns, rows);
             (Self { console }, output)
         };
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -832,10 +812,11 @@ mod conpty {
         System::{
             Console::{COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON},
             Threading::{
-                CreateProcessW, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT,
-                GetExitCodeProcess, InitializeProcThreadAttributeList,
-                PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, PROCESS_INFORMATION, STARTF_USESTDHANDLES,
-                STARTUPINFOEXW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+                CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
+                EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
+                InitializeProcThreadAttributeList, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+                PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
+                UpdateProcThreadAttribute, WaitForSingleObject,
             },
         },
     };
@@ -847,7 +828,13 @@ mod conpty {
     }
 
     impl Console {
-        pub fn start(program: &Path, args: &[&str], columns: u16, rows: u16) -> (Self, PipeReader) {
+        pub fn start(
+            program: &Path,
+            args: &[&str],
+            without: &[&str],
+            columns: u16,
+            rows: u16,
+        ) -> (Self, PipeReader) {
             let (console_input, input) = std::io::pipe().unwrap();
             let (output, console_output) = std::io::pipe().unwrap();
             let size = COORD {
@@ -913,10 +900,27 @@ mod conpty {
                 .encode_utf16()
                 .chain([0])
                 .collect();
+            // The environment block: `name=value` entries, each ended by a NUL, then a NUL.
+            let mut variables: Vec<_> = std::env::vars_os()
+                .filter(|(name, _)| !without.iter().any(|left| name.eq_ignore_ascii_case(left)))
+                .collect();
+            variables.sort_by_key(|(name, _)| name.to_ascii_uppercase());
+            let mut environment: Vec<u16> = Vec::new();
+            for (name, value) in variables {
+                let mut entry = name;
+                entry.push("=");
+                entry.push(value);
+                environment.extend(std::os::windows::ffi::OsStrExt::encode_wide(
+                    entry.as_os_str(),
+                ));
+                environment.push(0);
+            }
+            environment.push(0);
             // SAFETY: PROCESS_INFORMATION is plain data that CreateProcessW fills.
             let mut process: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
-            // SAFETY: the command line is a writable NUL-terminated buffer and the startup
-            // information holds the initialized attribute list, which outlives the call.
+            // SAFETY: the command line is a writable NUL-terminated buffer, the environment a
+            // double-NUL-terminated UTF-16 block, and the startup information holds the
+            // initialized attribute list; all outlive the call.
             let created = unsafe {
                 CreateProcessW(
                     std::ptr::null(),
@@ -924,8 +928,8 @@ mod conpty {
                     std::ptr::null(),
                     std::ptr::null(),
                     0,
-                    EXTENDED_STARTUPINFO_PRESENT,
-                    std::ptr::null(),
+                    EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                    environment.as_ptr().cast(),
                     std::ptr::null(),
                     &startup.StartupInfo,
                     &mut process,
