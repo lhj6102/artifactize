@@ -36,6 +36,8 @@ pub struct StatusView {
     pub artifacts: Vec<ArtifactState>,
     pub evals: Vec<EvalState>,
     pub counts: Counts,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unreadable: Vec<store::Unreadable>,
 }
 
 #[derive(Debug, Serialize)]
@@ -471,7 +473,9 @@ pub async fn status(
             }),
         });
     }
+    let unreadable = store::read_unreadable(&state, Some(&config.root)).await?;
     Ok(StatusView {
+        unreadable,
         selection: selection.clone(),
         recursive: options.recursive,
         force: options.force,

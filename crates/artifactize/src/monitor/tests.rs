@@ -26,6 +26,9 @@ pub(crate) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
         "references":{},
         "deps":[],
         "status":status,
+        "result": if matches!(status, "GREEN" | "RED") { json!({"verdict":status}) } else { Value::Null },
+        "error": if status == "ERROR" { json!("fixture error") } else { Value::Null },
+        "completedAt": if matches!(status, "GREEN" | "RED" | "ERROR") { json!("2026-01-01T00:00:01Z") } else { Value::Null },
         "createdAt":"2026-01-01T00:00:00Z",
         "cwd":"/repo",
     });
@@ -63,6 +66,7 @@ fn run(definitions: Value) -> RunView {
         }))
         .unwrap(),
         requests: Vec::new(),
+        unreadable: Vec::new(),
     }
 }
 
@@ -300,6 +304,7 @@ fn run_rows_and_durations() {
 
 pub(super) fn summary(id: &str, green: u64) -> RunSummary {
     RunSummary {
+        unreadable: Vec::new(),
         id: id.parse().unwrap(),
         repo_path: "/repo".into(),
         created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
@@ -747,7 +752,11 @@ fn saved_texts_of_any_length_never_overflow_natural_widths() {
     let (view, mut requests) = live();
     for view in &mut requests {
         if view.request.eval_id == "p2/check" {
-            view.request.error = Some(long.clone());
+            view.request.state = crate::store::RequestState::failed(
+                long.clone(),
+                view.request.error_code(),
+                crate::broker::now(),
+            );
         }
         if view.request.eval_id == "app/check" {
             view.request.profile = serde_json::from_value(
@@ -805,7 +814,11 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
     let (view, mut requests) = live();
     for view in &mut requests {
         if view.request.eval_id == "p2/check" {
-            view.request.error = Some(messy.into());
+            view.request.state = crate::store::RequestState::failed(
+                messy.into(),
+                view.request.error_code(),
+                crate::broker::now(),
+            );
         }
         if view.request.eval_id == "app/check" {
             view.request.profile = serde_json::from_value(

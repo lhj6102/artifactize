@@ -77,7 +77,7 @@ pub(super) async fn execute(
         SessionCommand::Send { reference, message } => {
             let located = locate(state, &reference).await?;
             if matches!(
-                located.request.request.status.as_str(),
+                located.request.request.status().as_str(),
                 "QUEUED" | "RUNNING"
             ) {
                 return Err(format!(
@@ -402,7 +402,10 @@ fn heading(out: &mut impl Write, located: &Located, header: &serde_json::Value) 
     writeln!(
         out,
         "Request {} (Run {}), eval {}: {}",
-        request.id, request.run_id, request.eval_id, request.status
+        request.id,
+        request.run_id,
+        request.eval_id,
+        request.status()
     )?;
     if let Some(reused_by) = &located.reused_by {
         writeln!(out, "Request {reused_by} reused this review's result.")?;

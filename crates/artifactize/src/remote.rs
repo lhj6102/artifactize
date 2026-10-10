@@ -68,8 +68,8 @@ impl Record {
         let (Some(key), Some(_), Some(completed_at), Some(result)) = (
             &execution.key,
             execution.verdict(),
-            &execution.completed_at,
-            &execution.result,
+            &execution.completed_at(),
+            execution.result(),
         ) else {
             return Err("Only completed GREEN/RED results with a reuse key are shared.".into());
         };
@@ -90,7 +90,7 @@ impl Record {
             eval_def_hash: execution.eval_def_hash.clone(),
             fingerprints: execution.fingerprints.clone(),
             artifact_kinds: execution.artifact_kinds.clone(),
-            verdict: execution.status,
+            verdict: execution.status(),
             eval_id: execution.provenance.eval_id.clone(),
             run_id: execution.provenance.run_id.clone(),
             request_id: execution.provenance.request_id.clone(),
@@ -143,7 +143,7 @@ impl Record {
                     && execution.eval_def_hash == self.eval_def_hash
                     && execution.fingerprints == self.fingerprints
                     && execution.artifact_kinds == self.artifact_kinds
-                    && execution.status == self.verdict
+                    && execution.status() == self.verdict
                     && execution.profile == self.profile
                     && execution.origin.is_none()
             });
@@ -184,10 +184,10 @@ impl Record {
                 eval_def_hash: self.eval_def_hash.clone(),
                 owner_pid: 0,
                 owner_start_time: 0,
-                status: self.verdict,
-                result: Some(self.result),
-                error: None,
-                error_code: None,
+                state: crate::store::ExecutionState::Completed {
+                    result: self.result,
+                    at: self.completed_at,
+                },
                 profile: self.profile,
                 options: self.options,
                 usage: self.usage,
@@ -201,7 +201,6 @@ impl Record {
                     execution_paths: self.execution_paths,
                 },
                 started_at: self.started_at,
-                completed_at: Some(self.completed_at),
                 producer: self.producer,
                 reviewer: self.reviewer,
                 origin: None,

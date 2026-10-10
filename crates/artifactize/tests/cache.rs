@@ -1415,17 +1415,14 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     // would make that snapshot legitimately exhaust its zero execution budget.
     signal(owner.id(), "-STOP");
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
-    execution.status = artifactize::types::ExecutionStatus::Green;
-    execution.result = Some(
-        json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)})
+    execution.state = artifactize::store::ExecutionState::Completed {
+        result: json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)})
             .try_into()
             .unwrap(),
-    );
-    execution.completed_at = Some("2026-10-04T00:00:00Z".parse().unwrap());
-    execution.provenance.completed_at = execution.completed_at;
-    request.status = execution.status.into();
-    request.result = execution.result.clone();
-    request.completed_at = execution.completed_at;
+        at: "2026-10-04T00:00:00Z".parse().unwrap(),
+    };
+    execution.provenance.completed_at = execution.completed_at();
+    request.state = execution.state.clone().into();
     request.provenance = Some(execution.provenance.clone());
     receipts
         .complete_execution(&execution, &request)
@@ -1437,15 +1434,15 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
             .await
             .unwrap()
             .requests[0]
-            .result,
-        request.result
+            .result(),
+        request.result()
     );
     signal(waiter.id(), "-CONT");
     // Drain stdout while the large result is written, rather than waiting on a full pipe.
     let joined = output(waiter.wait_with_output().unwrap(), 0);
     assert_eq!(
         joined["requests"][0]["result"],
-        serde_json::to_value(execution.result).unwrap()
+        serde_json::to_value(execution.result()).unwrap()
     );
     assert_eq!(joined["requests"][0]["executionId"], execution.id.as_str());
     assert_eq!(joined["executionsStarted"], 0);

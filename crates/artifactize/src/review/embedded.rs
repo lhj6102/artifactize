@@ -48,7 +48,7 @@ impl Review {
     pub(crate) fn settled(&self) -> bool {
         self.request
             .as_ref()
-            .is_some_and(|view| view.request.status != RequestStatus::WaitingHuman)
+            .is_some_and(|view| view.request.status() != RequestStatus::WaitingHuman)
     }
     /// A form takes the keys only while the request can still be reviewed.
     pub(crate) fn editing(&self) -> bool {

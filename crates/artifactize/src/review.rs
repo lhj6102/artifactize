@@ -287,7 +287,7 @@ impl Review {
         }
         if let (Ok(()), Some(id)) = (&result, self.open.clone()) {
             result = match store::read_request(&self.state, &id).await {
-                Ok(view) if view.request.status == crate::types::RequestStatus::WaitingHuman => {
+                Ok(view) if view.request.status() == crate::types::RequestStatus::WaitingHuman => {
                     store::read_original(&self.state, &view).await
                 }
                 other => other,
@@ -329,7 +329,7 @@ impl Review {
             return;
         };
         let id = view.request.id.clone();
-        if view.request.status != crate::types::RequestStatus::WaitingHuman
+        if view.request.status() != crate::types::RequestStatus::WaitingHuman
             || view.request.human_definition.is_none()
             || self.commands.as_ref().is_some_and(|(seen, _)| seen == &id)
         {
@@ -389,10 +389,10 @@ impl Review {
             .request
             .as_ref()
             .ok_or("The request is still loading.")?;
-        if view.request.status != crate::types::RequestStatus::WaitingHuman {
+        if view.request.status() != crate::types::RequestStatus::WaitingHuman {
             return Err(format!(
                 "The request is {}; there is nothing to review.",
-                view.request.status
+                view.request.status()
             ));
         }
         match &view.claim {
@@ -782,7 +782,9 @@ impl Review {
                         self.notice = Some((
                             format!(
                                 "Submitted {} for {} ({}).",
-                                request.status, request.eval_id, request.id
+                                request.status(),
+                                request.eval_id,
+                                request.id
                             ),
                             false,
                         ));
@@ -903,7 +905,7 @@ impl Job {
                 if let Err(error) = &result
                     && let Ok(view) = store::read_request(&state, &id).await
                     && matches!(
-                        view.request.status,
+                        view.request.status(),
                         crate::types::RequestStatus::Green | crate::types::RequestStatus::Red
                     )
                     && view.execution.as_ref().is_some_and(|execution| {

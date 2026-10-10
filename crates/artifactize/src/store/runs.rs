@@ -23,6 +23,8 @@ pub struct RunSummary {
     pub completed_at: Option<crate::types::Timestamp>,
     pub status: crate::types::RunStatus,
     pub counts: BTreeMap<crate::types::RequestStatus, u64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unreadable: Vec<super::Unreadable>,
 }
 
 /// Saved request-state counts in one read-only snapshot; no repository discovery.
@@ -96,19 +98,22 @@ pub async fn read_scoped_runs(
                             completed_at: row.get(3)?,
                             status: row.get(4)?,
                             counts: BTreeMap::new(),
+                            unreadable: Vec::new(),
                         })
                     })?
                     .collect::<Result<Vec<_>, _>>()?
             };
             {
                 let mut statement = transaction.prepare(
-                    "SELECT status,count(*) FROM requests WHERE run_id=? GROUP BY status",
+                    "SELECT status,count(*) FROM requests WHERE run_id=?1 AND id NOT IN (SELECT value FROM json_each(?2)) GROUP BY status",
                 )?;
                 for run in &mut runs {
                     outside_workspace(&run.repo_path, &state)
                         .map_err(|e| Error::Invalid(e.to_string()))?;
+                    run.unreadable = super::unreadable::in_run(&transaction, &run.id)?;
+                    let invalid: Vec<_> = run.unreadable.iter().filter(|record| record.kind == "request").map(|record| &record.id).collect();
                     run.counts = statement
-                        .query_map([&run.id], |row| {
+                        .query_map(params![run.id, serde_json::to_string(&invalid)?], |row| {
                             Ok((row.get(0)?, row.get::<_, i64>(1)? as u64))
                         })?
                         .collect::<Result<_, _>>()?;

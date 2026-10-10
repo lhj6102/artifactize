@@ -169,7 +169,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
             ..returning()
         })
         .await;
-    assert_eq!(follower.requests[0].status.as_str(), "WAITING_HUMAN");
+    assert_eq!(follower.requests[0].status().as_str(), "WAITING_HUMAN");
     assert_eq!(
         follower.requests[0].execution_id.as_deref(),
         run["requests"][0]["executionId"].as_str()
@@ -180,7 +180,7 @@ async fn waiting_survives_verifier_exit_and_zero_budget_with_idempotent_claims()
             ..returning()
         })
         .await;
-    assert_eq!(default.requests[0].status.as_str(), "WAITING_HUMAN");
+    assert_eq!(default.requests[0].status().as_str(), "WAITING_HUMAN");
     assert_eq!(default.run.executions_started, 0);
 }
 
@@ -280,7 +280,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
                 .await
                 .unwrap()
                 .requests[0]
-                .status
+                .status()
                 .as_str(),
             "WAITING_HUMAN"
         );
@@ -294,7 +294,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
     )
     .await
     .unwrap();
-    assert_eq!(result.status.as_str(), "GREEN");
+    assert_eq!(result.status().as_str(), "GREEN");
     assert!(
         human::submit(
             &receipts,
@@ -383,12 +383,12 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
             "{error}"
         );
         let saved = store::read_run(&fixture.state, &run.run.id).await.unwrap();
-        assert_eq!(saved.requests[0].status.as_str(), "ERROR");
+        assert_eq!(saved.requests[0].status().as_str(), "ERROR");
         assert_eq!(
-            saved.requests[0].error_code.as_deref(),
+            saved.requests[0].error_code().as_deref(),
             Some("INPUT_CHANGED")
         );
-        assert!(saved.requests[0].result.is_none());
+        assert!(saved.requests[0].result().is_none());
         assert_eq!(
             fixture
                 .database()
@@ -485,14 +485,14 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     let waiting = run
         .requests
         .iter()
-        .find(|r| r.status == artifactize::types::RequestStatus::WaitingHuman)
+        .find(|r| r.status() == artifactize::types::RequestStatus::WaitingHuman)
         .unwrap();
     assert_eq!(
         run.requests
             .iter()
             .find(|r| r.target == "parent")
             .unwrap()
-            .status
+            .status()
             .as_str(),
         "WAIT_DEPENDENCY"
     );
@@ -516,7 +516,7 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
         complete
             .requests
             .iter()
-            .all(|r| r.status == artifactize::types::RequestStatus::Green)
+            .all(|r| r.status() == artifactize::types::RequestStatus::Green)
     );
 }
 
@@ -534,7 +534,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     )
     .await
     .unwrap();
-    assert_eq!(run.requests[0].status.as_str(), "WAITING_HUMAN");
+    assert_eq!(run.requests[0].status().as_str(), "WAITING_HUMAN");
     let receipts = fixture.receipts().await;
     let follower = &run.requests[0].id;
     let owner = original["requests"][0]["id"].as_str().unwrap();
@@ -586,14 +586,14 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         .is_err()
     );
     let settled = store::read_run(&fixture.state, &run.run.id).await.unwrap();
-    assert_eq!(settled.requests[0].status.as_str(), "RED");
+    assert_eq!(settled.requests[0].status().as_str(), "RED");
     receipts.finish(&run.run, &run.requests).await.unwrap();
     assert_eq!(
         store::read_run(&fixture.state, &run.run.id)
             .await
             .unwrap()
             .requests[0]
-            .status
+            .status()
             .as_str(),
         "RED"
     );
@@ -610,7 +610,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     assert_eq!(completed.run.status.as_str(), "RED");
     assert_eq!(
         completed.requests[0]
-            .result
+            .result()
             .as_ref()
             .unwrap()
             .owner_fields()["reason"],
@@ -766,7 +766,7 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
             ..returning()
         })
         .await;
-    assert_eq!(forced.requests[0].status.as_str(), "WAITING_HUMAN");
+    assert_eq!(forced.requests[0].status().as_str(), "WAITING_HUMAN");
     human::claim(&receipts, &forced.requests[0].id, &"alice".parse().unwrap())
         .await
         .unwrap();
@@ -788,7 +788,7 @@ async fn forced_human_checks_fingerprint_without_replacing_cache() {
         .unwrap()
         .unwrap();
     assert_eq!(cached.provenance.request_id, run.requests[0].id);
-    assert_eq!(cached.status.as_str(), "GREEN");
+    assert_eq!(cached.status().as_str(), "GREEN");
 }
 
 #[tokio::test]
@@ -820,11 +820,11 @@ async fn omitted_fingerprint_reuses_human_signoff_and_rechecks_changed_inputs() 
     .await
     .unwrap();
     let next = fixture.verify(returning()).await;
-    assert_eq!(next.requests[0].status.as_str(), "GREEN");
+    assert_eq!(next.requests[0].status().as_str(), "GREEN");
     assert_eq!(next.requests[0].execution_id, run.requests[0].execution_id);
     fs::write(fixture.repo.join("fingerprint"), "human-v2\n").unwrap();
     let changed = fixture.verify(returning()).await;
-    assert_eq!(changed.requests[0].status.as_str(), "WAITING_HUMAN");
+    assert_eq!(changed.requests[0].status().as_str(), "WAITING_HUMAN");
     assert_ne!(changed.requests[0].key, run.requests[0].key);
     human::claim(
         &receipts,
@@ -867,7 +867,7 @@ async fn fingerprint_false_results_are_not_reused_by_a_new_verify() {
     .await
     .unwrap();
     let next = fixture.verify(returning()).await;
-    assert_eq!(next.requests[0].status.as_str(), "WAITING_HUMAN");
+    assert_eq!(next.requests[0].status().as_str(), "WAITING_HUMAN");
     assert_ne!(next.requests[0].execution_id, run.requests[0].execution_id);
 }
 
@@ -907,9 +907,9 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     .await
     .unwrap();
     let saved = store::read_run(&fixture.state, &run.run.id).await.unwrap();
-    assert_eq!(saved.requests[0].status.as_str(), "GREEN");
-    assert_eq!(saved.requests[1].status.as_str(), "GREEN");
-    assert_eq!(saved.requests[2].status.as_str(), "WAITING_HUMAN");
+    assert_eq!(saved.requests[0].status().as_str(), "GREEN");
+    assert_eq!(saved.requests[1].status().as_str(), "GREEN");
+    assert_eq!(saved.requests[2].status().as_str(), "WAITING_HUMAN");
     let status = project::status(
         &fixture.repo,
         Some(&fixture.state),
@@ -940,9 +940,9 @@ async fn human_forwarding_settlement_and_status_are_scoped_to_the_definition() {
     .await
     .unwrap();
     let reused = fixture.verify(returning()).await;
-    assert_eq!(reused.requests[0].status.as_str(), "GREEN");
-    assert_eq!(reused.requests[1].status.as_str(), "GREEN");
-    assert_eq!(reused.requests[2].status.as_str(), "RED");
+    assert_eq!(reused.requests[0].status().as_str(), "GREEN");
+    assert_eq!(reused.requests[1].status().as_str(), "GREEN");
+    assert_eq!(reused.requests[2].status().as_str(), "RED");
     for (new, original) in reused.requests.iter().zip(&run.requests) {
         assert_eq!(new.execution_id, original.execution_id);
         assert_eq!(
@@ -990,7 +990,7 @@ async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
         })
         .await;
     let request = &run.requests[0];
-    assert_eq!(request.status.as_str(), "WAITING_HUMAN");
+    assert_eq!(request.status().as_str(), "WAITING_HUMAN");
     assert_eq!(request.options.variant.as_deref(), Some("lead"));
     let receipts = fixture.receipts().await;
     human::claim(&receipts, &request.id, &"alice".parse().unwrap())
@@ -1005,10 +1005,10 @@ async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
     )
     .await
     .unwrap();
-    assert_eq!(settled.status.as_str(), "GREEN");
+    assert_eq!(settled.status().as_str(), "GREEN");
     // The declared profile reuses the sign-off the variant produced.
     let reused = fixture.verify(returning()).await;
-    assert_eq!(reused.requests[0].status.as_str(), "GREEN");
+    assert_eq!(reused.requests[0].status().as_str(), "GREEN");
     assert_eq!(reused.requests[0].execution_id, request.execution_id);
     assert_eq!(reused.requests[0].options.variant.as_deref(), Some("lead"));
     assert_eq!(reused.requests[0].reviewer.as_deref(), Some("alice"));

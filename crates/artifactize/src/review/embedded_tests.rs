@@ -152,7 +152,7 @@ async fn explicit_claim_race_follower_dedup_and_release_use_original_request() {
             .await
             .unwrap()
             .request
-            .status,
+            .status(),
         crate::types::RequestStatus::Green
     );
     assert_eq!(
@@ -160,7 +160,7 @@ async fn explicit_claim_race_follower_dedup_and_release_use_original_request() {
             .await
             .unwrap()
             .request
-            .status,
+            .status(),
         crate::types::RequestStatus::Green
     );
 }
@@ -851,9 +851,9 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     review.finish(outcome);
     for view in std::iter::once(&original).chain(&followers) {
         let view = store::read_request(&state, &view.request.id).await.unwrap();
-        assert_eq!(view.request.status, crate::types::RequestStatus::Green);
+        assert_eq!(view.request.status(), crate::types::RequestStatus::Green);
         assert_eq!(
-            view.request.result.unwrap().owner_fields()["approved"],
+            view.request.result().unwrap().owner_fields()["approved"],
             json!(true)
         );
     }

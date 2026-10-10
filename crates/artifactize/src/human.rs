@@ -119,11 +119,7 @@ pub async fn submit(
     }
     let result = validate_result(&eval.declaration, result)?;
     recheck(receipts, &mut request, reviewer, &config, cancellation).await?;
-    request.status = match result.verdict {
-        crate::runtime::Verdict::Green => crate::types::RequestStatus::Green,
-        crate::runtime::Verdict::Red => crate::types::RequestStatus::Red,
-    };
-    request.result = Some(result.into());
+    request.state = crate::store::RequestState::completed(result.into(), crate::broker::now());
     receipts.settle_human(&request, reviewer).await
 }
 
@@ -208,10 +204,8 @@ async fn recheck(
             Err(error) if cancellation.is_cancelled() => return Err(error),
             Err(error) => ("FINGERPRINT_RECHECK_FAILED", error),
         };
-    request.status = crate::types::RequestStatus::Error;
-    request.error = Some(error.clone());
-    request.error_code = Some(code.into());
-    request.result = None;
+    request.state =
+        crate::store::RequestState::failed(error.clone(), Some(code.into()), crate::broker::now());
     receipts.settle_human(request, reviewer).await?;
     Err(error)
 }

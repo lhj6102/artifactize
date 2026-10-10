@@ -139,8 +139,66 @@ fn default_jobs() -> usize {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(try_from = "RequestWire", into = "RequestWire")]
 pub struct Request {
+    pub state: super::RequestState,
+    pub id: RequestId,
+    pub run_id: RunId,
+    pub eval_id: crate::types::EvalId,
+    pub target: crate::types::ArtifactName,
+    pub title: String,
+    pub profile: crate::config::StoredProfile,
+    pub requested_profile: crate::config::StoredProfile,
+    pub eval_def_hash: crate::types::DefinitionHash,
+    /// The requested execution options, or a reused result's.
+    pub options: ExecutionOptions,
+    pub execution_id: Option<crate::types::ExecutionId>,
+    pub provenance: Option<Provenance>,
+    /// Usage spent by this request; a reused request spent none.
+    pub usage: Option<Vec<crate::llm::Attempt>>,
+    /// The reused execution's original usage, never counted as spent.
+    pub reused_usage: Option<Vec<crate::llm::Attempt>>,
+    /// The reused result came from the live execution this request waited for, not a
+    /// completed record. Saved only; output reports it as `source.kind` ([`crate::query::source`]).
+    pub joined: bool,
+    /// Who produced a reused result.
+    pub producer: Option<Producer>,
+    /// The Human claimant who submitted a reused result.
+    pub reviewer: Option<crate::types::ReviewerId>,
+    /// The remote store, publisher and publication time of a result reused from a mirror.
+    pub origin: Option<Origin>,
+    /// The Agent review's session id ([`crate::agent::session_id`]), which every request of
+    /// the review sends as its prompt-cache identity. Absent when no Agent review ran, as on
+    /// reuse, and on requests saved before it existed.
+    pub session_id: Option<SessionId>,
+    /// Where the saved conversation behind this request's result lives: its own review's,
+    /// or for a reused result the producing review's. Absent when none was saved.
+    pub session: Option<crate::agent::session::SessionRef>,
+    pub human_definition: Option<super::HumanDefinition>,
+    pub payload: crate::config::StoredPayload,
+    pub references: BTreeMap<String, crate::types::ArtifactName>,
+    pub deps: Vec<crate::types::ArtifactName>,
+    pub force: bool,
+    /// The target Artifact's fingerprint.
+    pub fingerprint: Option<Fingerprint>,
+    /// The reuse key; absent without a fingerprint on every Artifact the eval depends on.
+    pub key: Option<ReuseKey>,
+    /// Each Artifact the key covers, with its fingerprint.
+    pub fingerprints: std::collections::BTreeMap<crate::types::ArtifactName, Fingerprint>,
+    pub created_at: Timestamp,
+    pub started_at: Option<Timestamp>,
+    pub cwd: PathBuf,
+    pub run_dir: Option<PathBuf>,
+    pub argv: Option<Vec<String>>,
+    pub child: Option<super::ChildIdentity>,
+    pub blocked_reason: Option<String>,
+    /// Unfulfilled Artifacts and Evals behind a derived dependency verdict.
+    pub blocked_by: Vec<super::Blocker>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RequestWire {
     pub id: RequestId,
     pub run_id: RunId,
     pub eval_id: crate::types::EvalId,
@@ -216,11 +274,127 @@ pub struct Request {
     pub blocked_by: Vec<super::Blocker>,
 }
 
+impl TryFrom<RequestWire> for Request {
+    type Error = String;
+    fn try_from(wire: RequestWire) -> Result<Self, Self::Error> {
+        let state = super::RequestState::from_parts(
+            wire.status,
+            wire.result,
+            wire.error,
+            wire.error_code,
+            wire.completed_at,
+        )?;
+        Ok(Self {
+            state,
+            id: wire.id,
+            run_id: wire.run_id,
+            eval_id: wire.eval_id,
+            target: wire.target,
+            title: wire.title,
+            profile: wire.profile,
+            requested_profile: wire.requested_profile,
+            eval_def_hash: wire.eval_def_hash,
+            options: wire.options,
+            execution_id: wire.execution_id,
+            provenance: wire.provenance,
+            usage: wire.usage,
+            reused_usage: wire.reused_usage,
+            joined: wire.joined,
+            producer: wire.producer,
+            reviewer: wire.reviewer,
+            origin: wire.origin,
+            session_id: wire.session_id,
+            session: wire.session,
+            human_definition: wire.human_definition,
+            payload: wire.payload,
+            references: wire.references,
+            deps: wire.deps,
+            force: wire.force,
+            fingerprint: wire.fingerprint,
+            key: wire.key,
+            fingerprints: wire.fingerprints,
+            created_at: wire.created_at,
+            started_at: wire.started_at,
+            cwd: wire.cwd,
+            run_dir: wire.run_dir,
+            argv: wire.argv,
+            child: wire.child,
+            blocked_reason: wire.blocked_reason,
+            blocked_by: wire.blocked_by,
+        })
+    }
+}
+impl From<Request> for RequestWire {
+    fn from(record: Request) -> Self {
+        Self {
+            status: record.status(),
+            result: record.result().cloned(),
+            error: record.error().map(str::to_owned),
+            error_code: record.error_code(),
+            completed_at: record.completed_at(),
+            id: record.id,
+            run_id: record.run_id,
+            eval_id: record.eval_id,
+            target: record.target,
+            title: record.title,
+            profile: record.profile,
+            requested_profile: record.requested_profile,
+            eval_def_hash: record.eval_def_hash,
+            options: record.options,
+            execution_id: record.execution_id,
+            provenance: record.provenance,
+            usage: record.usage,
+            reused_usage: record.reused_usage,
+            joined: record.joined,
+            producer: record.producer,
+            reviewer: record.reviewer,
+            origin: record.origin,
+            session_id: record.session_id,
+            session: record.session,
+            human_definition: record.human_definition,
+            payload: record.payload,
+            references: record.references,
+            deps: record.deps,
+            force: record.force,
+            fingerprint: record.fingerprint,
+            key: record.key,
+            fingerprints: record.fingerprints,
+            created_at: record.created_at,
+            started_at: record.started_at,
+            cwd: record.cwd,
+            run_dir: record.run_dir,
+            argv: record.argv,
+            child: record.child,
+            blocked_reason: record.blocked_reason,
+            blocked_by: record.blocked_by,
+        }
+    }
+}
+impl Request {
+    pub fn status(&self) -> crate::types::RequestStatus {
+        self.state.status()
+    }
+    pub fn result(&self) -> Option<&super::ExecutionResult> {
+        self.state.result()
+    }
+    pub fn error(&self) -> Option<&str> {
+        self.state.error()
+    }
+    pub fn error_code(&self) -> Option<crate::types::FailureCode> {
+        self.state.error_code()
+    }
+    pub fn completed_at(&self) -> Option<crate::types::Timestamp> {
+        self.state.completed_at()
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RunView {
     #[serde(flatten)]
     pub run: Run,
     pub requests: Vec<Request>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unreadable: Vec<super::Unreadable>,
 }
 
 #[derive(Clone)]
@@ -336,7 +510,6 @@ impl Receipts {
     pub async fn create_run(&self, run: &Run, requests: &[Request]) -> Result<(), String> {
         run.validate()?;
         for request in requests {
-            request.validate()?;
             if request.run_id != run.id {
                 return Err("Request belongs to another Run.".into());
             }
@@ -363,7 +536,7 @@ impl Receipts {
                             run.id,
                             request.eval_id,
                             ordinal as i64,
-                            request.status,
+                            request.status(),
                             serde_json::to_string(request)?
                         ],
                     )?;
@@ -407,7 +580,7 @@ impl Receipts {
                 let transaction = db.transaction()?;
                 for request in requests {
                     // A concurrent submission may already have settled this saved request.
-                    if request.status == crate::types::RequestStatus::WaitingHuman {
+                    if request.status() == crate::types::RequestStatus::WaitingHuman {
                         continue;
                     }
                     update_request(&transaction, &request)?;
@@ -425,11 +598,10 @@ impl Receipts {
 }
 
 pub(super) fn update_request(db: &rusqlite::Connection, request: &Request) -> Result<(), Error> {
-    request.validate().map_err(Error::Invalid)?;
     if db.execute(
         "UPDATE requests SET status=?,data=?,execution_id=? WHERE id=?",
         params![
-            request.status,
+            request.status(),
             serde_json::to_string(request)?,
             request.execution_id,
             request.id
@@ -574,8 +746,8 @@ pub async fn read_latest_requests(
             }
             let latest = {
                 let mut statement = transaction.prepare(
-                    "SELECT eval_id,run_id,status,fingerprint FROM (
-                SELECT q.eval_id,q.run_id,q.status,json_extract(q.data, '$.fingerprint') AS fingerprint,
+                    "SELECT data FROM (
+                SELECT q.eval_id,q.data,
                     row_number() OVER (PARTITION BY q.eval_id ORDER BY r.rowid DESC) AS rank
                 FROM requests q JOIN runs r ON r.id=q.run_id
                 WHERE r.repo=?
@@ -583,15 +755,23 @@ pub async fn read_latest_requests(
                 )?;
                 statement
                     .query_map([crate::platform::path_text(&repo)], |row| {
-                        Ok((
-                            row.get(0)?,
-                            LastRequest {
-                                run_id: row.get(1)?,
-                                verdict: row.get(2)?,
-                                fingerprint: row.get(3)?,
-                            },
-                        ))
+                        row.get::<_, String>(0)
                     })?
+                    .filter_map(|row| match row {
+                        Err(error) => Some(Err(error)),
+                        Ok(data) => super::unreadable::evidence::<Request>("request", &data).map(
+                            |request| {
+                                Ok((
+                                    request.eval_id.clone(),
+                                    LastRequest {
+                                        run_id: request.run_id.clone(),
+                                        verdict: request.status(),
+                                        fingerprint: request.fingerprint,
+                                    },
+                                ))
+                            },
+                        ),
+                    })
                     .collect::<Result<_, _>>()?
             };
             transaction.commit()?;
@@ -633,11 +813,19 @@ pub async fn read_run(state: &Path, id: &str) -> Result<RunView, String> {
                     .prepare("SELECT data FROM requests WHERE run_id=? ORDER BY ordinal")?;
                 statement
                     .query_map([&id], |row| row.get::<_, String>(0))?
-                    .map(|row| Ok(serde_json::from_str(&row?)?))
+                    .filter_map(|row| match row {
+                        Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
+                        Err(error) => Some(Err(Error::Sql(error))),
+                    })
                     .collect::<Result<Vec<Request>, Error>>()?
             };
+            let unreadable = super::unreadable::in_run(&transaction, &id)?;
             transaction.commit()?;
-            Ok(RunView { run, requests })
+            Ok(RunView {
+                run,
+                requests,
+                unreadable,
+            })
         })
         .await
         .map_err(|e| e.to_string())

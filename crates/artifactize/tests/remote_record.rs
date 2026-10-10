@@ -104,7 +104,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     assert_eq!(producer.version, env!("CARGO_PKG_VERSION"));
     assert!(producer.name.contains('@'));
     assert_eq!(
-        execution.result.as_ref().unwrap().to_json()["stdout"],
+        execution.result().unwrap().to_json()["stdout"],
         "stdout-marker\n"
     );
 
@@ -138,7 +138,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
             .contains("toolCalls")
     );
     assert_eq!(
-        full.execution.unwrap().result.unwrap().to_json()["stderr"],
+        full.execution.unwrap().result().unwrap().to_json()["stderr"],
         "stderr-marker\n"
     );
 
@@ -271,7 +271,7 @@ async fn legacy_207_byte_mirrors_remain_readable_in_json_sql_and_cache() {
             execution.id,
             execution.key,
             execution.eval_def_hash,
-            execution.completed_at,
+            execution.completed_at(),
             text.len() as i64,
             text
         ],
@@ -303,7 +303,7 @@ async fn human_summary_keeps_owner_fields_and_the_reviewer() {
     let state = root.path().join("state");
     let waiting = verify(&repo, &state).await;
     let request = &waiting.requests[0];
-    assert_eq!(request.status.as_str(), "WAITING_HUMAN");
+    assert_eq!(request.status().as_str(), "WAITING_HUMAN");
     let receipts = Receipts::open(&state, &repo).await.unwrap();
     human::claim(&receipts, &request.id, &"alice".parse().unwrap())
         .await
@@ -386,14 +386,12 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         eval_def_hash: key.eval_def_hash.clone(),
         owner_pid: 1,
         owner_start_time: 1,
-        status: artifactize::types::ExecutionStatus::Green,
-        result: Some(
-            json!({"verdict":"GREEN","approved":true})
+        state: artifactize::store::ExecutionState::Completed {
+            result: json!({"verdict":"GREEN","approved":true})
                 .try_into()
                 .unwrap(),
-        ),
-        error: None,
-        error_code: None,
+            at: completed,
+        },
         profile: artifactize::config::StoredProfile::from(&variant),
         options: ExecutionOptions::new(&variant, Some(&"fast".parse().unwrap())),
         usage: Some(
@@ -410,7 +408,6 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
             execution_paths: Default::default(),
         },
         started_at: "2026-10-04T00:00:00Z".parse().unwrap(),
-        completed_at: Some(completed),
         producer: Some(Producer {
             name: "bob@laptop".into(),
             version: "0.5.0".into(),
