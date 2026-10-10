@@ -295,7 +295,7 @@ impl Producer {
 #[serde(rename_all = "camelCase")]
 pub struct Origin {
     pub store: crate::types::StoreUrl,
-    pub publisher: String,
+    pub publisher: crate::types::TokenName,
     pub published_at: crate::types::Timestamp,
 }
 

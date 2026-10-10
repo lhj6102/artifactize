@@ -57,7 +57,7 @@ pub struct Record {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution: Option<Box<Execution>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub publisher: Option<String>,
+    pub publisher: Option<crate::types::TokenName>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub published_at: Option<crate::types::Timestamp>,
 }

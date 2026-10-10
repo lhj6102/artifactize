@@ -81,7 +81,7 @@ pub struct Remote {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Principal {
-    pub principal: String,
+    pub principal: crate::types::TokenName,
     pub scopes: Vec<Scope>,
 }
 

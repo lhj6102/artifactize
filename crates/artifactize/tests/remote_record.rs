@@ -143,7 +143,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     );
 
     let mut stored = summary;
-    stored.publisher = Some("alice-laptop".into());
+    stored.publisher = Some("alice-laptop".parse().unwrap());
     stored.published_at = Some("2026-10-04T00:00:00Z".parse().unwrap());
     let consumer_state = root.path().join("consumer");
     let receipts = Receipts::open(&consumer_state, &repo).await.unwrap();
@@ -222,7 +222,7 @@ async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
             let mut source = original.clone();
             source.id = "x".repeat(bytes).parse().unwrap();
             let mut wire = Record::new(&source, full).unwrap();
-            wire.publisher = Some("alice-laptop".into());
+            wire.publisher = Some("alice-laptop".parse().unwrap());
             wire.published_at = Some("2026-10-04T00:00:02Z".parse().unwrap());
             let wire: Record = serde_json::from_value(serde_json::to_value(wire).unwrap()).unwrap();
             wire.validate().unwrap();
@@ -419,7 +419,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     };
     let mut record = Record::new(&produced, false).unwrap();
     assert_eq!(record.options.model.as_deref(), Some("model-b"));
-    record.publisher = Some("bob-laptop".into());
+    record.publisher = Some("bob-laptop".parse().unwrap());
     record.published_at = Some("2026-10-04T00:00:02Z".parse().unwrap());
     let receipts = Receipts::open(&state, &repo).await.unwrap();
     receipts

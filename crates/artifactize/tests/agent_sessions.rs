@@ -860,7 +860,7 @@ async fn a_reference_elsewhere_names_where_its_session_lives() {
         .as_mut()
         .unwrap()
         .producer = "alice@laptop".into();
-    record.publisher = Some("alice".into());
+    record.publisher = Some("alice".parse().unwrap());
     record.published_at = Some("2026-10-06T00:00:00Z".parse().unwrap());
     let receipts = Receipts::open(&other, &project.repo).await.unwrap();
     receipts
