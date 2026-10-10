@@ -52,7 +52,10 @@ pub struct EntryName(CString);
 
 impl EntryName {
     pub fn new(name: &OsStr) -> Option<Self> {
-        CString::new(name.as_bytes()).ok().map(Self)
+        let bytes = name.as_bytes();
+        (!bytes.is_empty() && !matches!(bytes, b"." | b"..") && !bytes.contains(&b'/'))
+            .then(|| CString::new(bytes).ok().map(Self))
+            .flatten()
     }
 }
 
