@@ -6,7 +6,7 @@ use std::{
     fmt,
     fs::File,
     io,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
@@ -421,33 +421,13 @@ pub fn logical_path(path: &str) -> Result<(), ScopeError> {
 /// The logical form of a native relative path: its components joined with `/`, whatever
 /// separator the platform uses. `None` when a component is not UTF-8 or not a plain name.
 pub fn logical_from_native(path: &Path) -> Option<String> {
-    path.components()
-        .map(|component| match component {
-            Component::Normal(name) => name.to_str(),
-            _ => None,
-        })
-        .collect::<Option<Vec<_>>>()
-        .map(|names| names.join("/"))
+    platform::logical_from_native(path)
 }
 
 /// Resolve a physical input below a canonical root. No component may be a symlink.
 pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
-    let path = path
-        .to_str()
-        .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-    if path.contains(['\0', '\\'])
-        || Path::new(path).is_absolute()
-        || path.split('/').any(|part| part == "." || part == "..")
-    {
-        return Err(ScopeError(
-            "Artifact path must be relative to its declared root.".into(),
-        ));
-    }
-    let relative = path
-        .split('/')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("/");
+    let relative =
+        platform::scoped_relative(path).map_err(|error| ScopeError(error.to_string()))?;
     // The pinned, no-follow walk decides: it refuses links, special files and spellings
     // other than the directory entry's own, so the returned path names what it opened.
     match open_scoped(root, &relative) {

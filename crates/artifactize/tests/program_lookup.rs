@@ -21,40 +21,17 @@ struct Project {
 
 impl Project {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         let programs = root.path().join("programs with spaces");
         fs::create_dir(&repo).unwrap();
         fs::create_dir(&programs).unwrap();
         fs::write(programs.join("argv.py"), "import json,pathlib,sys\nif sys.argv[1:] == ['fingerprint']:\n print('lookup-key')\nelif sys.argv[1:] == ['launch']:\n pathlib.Path('launched').write_text('launched')\nelse:\n print(json.dumps(sys.argv[1:]))\n").unwrap();
-        // Windows finds a `.cmd` shim through PATHEXT; Unix runs a script by its execute bit.
-        #[cfg(windows)]
-        fs::write(
-            programs.join("artifactize-lookup-shim.cmd"),
-            "@echo off\r\npython3 \"%~dp0argv.py\" %*\r\n",
-        )
-        .unwrap();
-        #[cfg(unix)]
-        {
-            let shim = programs.join("artifactize-lookup-shim");
-            fs::write(
-                &shim,
-                format!(
-                    "#!{}\nexec python3 \"$(dirname \"$0\")/argv.py\" \"$@\"\n",
-                    support::os::bin("/bin/sh")
-                ),
-            )
-            .unwrap();
-            support::os::make_executable(&shim);
-        }
-        let mut paths = vec![programs];
-        paths.extend(std::env::split_paths(
-            &std::env::var_os("PATH").unwrap_or_default(),
-        ));
+        support::os::lookup_shim(&programs);
         Self {
             state: root.path().join("state"),
             repo,
-            path: std::env::join_paths(paths).unwrap(),
+            path: support::os::prepend_path(&programs),
             _root: root,
         }
     }
@@ -83,7 +60,7 @@ impl Project {
             .args(args)
             .arg("--json")
             .env("PATH", &self.path)
-            .env("PATHEXT", ".CMD;.EXE;.BAT;.COM")
+            .env(support::os::PATHEXT.0, support::os::PATHEXT.1)
             .env("ARTIFACTIZE_REMOTE", "off")
             .output()
             .unwrap();
@@ -213,4 +190,32 @@ fn batch_argument_refusal_is_clear_for_runtime_agent_human_output_and_launch() {
             .contains("arguments could not be passed safely"),
         "{report}"
     );
+}
+
+#[test]
+fn standalone_shell_preserves_quoted_argument_fields_including_empty_arguments() {
+    let output = Command::new(support::os::stand_in_bin("sh"))
+        .args([
+            "-c",
+            "printf '<%s>\\n' \"$@\"",
+            "fixture",
+            "a b",
+            "say \"hello\"",
+            "a&b",
+            "",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(output.stdout, b"<a b>\n<say \"hello\">\n<a&b>\n<>\n");
+    let output = Command::new(support::os::stand_in_bin("sh"))
+        .args([
+            "-c",
+            "python3 -c 'import sys; print(len(sys.argv)-1)' \"$@\"",
+            "fixture",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), "0");
 }

@@ -18,13 +18,13 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         let runtime = |command: &str| json!({"kind": "runtime", "command": command, "args": []});
         for (name, profile) in [
             ("green", runtime("true")),
             ("red", runtime("false")),
-            ("broken", runtime("/artifactize/missing")),
+            ("broken", runtime("artifactize-missing-program")),
             ("human", json!({"kind": "human"})),
         ] {
             let mut declaration = json!({

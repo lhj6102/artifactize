@@ -20,7 +20,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         Self {
             state: root.path().join("state"),
             root,
@@ -234,27 +234,10 @@ impl Fixture {
     }
 }
 
-/// A review that ends in an operational error rather than a verdict: killed by a signal on
-/// Unix. Windows has no signals, so there it outlives the deadline `erroring` sets.
-#[cfg(unix)]
-const ERROR_SCRIPT: &str = "kill -TERM $$";
-#[cfg(windows)]
-const ERROR_SCRIPT: &str = "sleep 30";
-#[cfg(unix)]
-const ERROR_CODE: &str = "ABNORMAL_EXIT";
-#[cfg(windows)]
-const ERROR_CODE: &str = "TIMEOUT";
+use support::os::{ERROR_CODE, ERROR_SCRIPT, erroring};
 
-/// Give an eval the deadline its `ERROR_SCRIPT` needs on Windows; a deadline is an execution
-/// option, so the eval keeps its key.
-fn erroring(mut eval: Value, timeout_ms: u64) -> Value {
-    if cfg!(windows) {
-        eval["profile"]["timeout_ms"] = json!(timeout_ms);
-    }
-    eval
-}
-
-const WAIT_SCRIPT: &str = "echo $$ >> \"$1\"; i=0; while [ ! -e \"$2\" ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i+1)); done; printf original";
+const WAIT_SCRIPT: &str =
+    "echo $$ >> \"$1\"; while [ ! -e \"$2\" ]; do sleep 0.05; done; printf original";
 
 fn wait_until(mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
@@ -393,7 +376,7 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     assert_eq!(hit["requestedProfile"], hit["profile"]);
     assert_eq!(
         hit["provenance"]["repoPath"],
-        source_path.to_string_lossy().as_ref()
+        support::os::path_text(&source_path)
     );
     assert_eq!(hit["provenance"]["evalId"], "dependency/first");
     assert_eq!(
@@ -919,16 +902,16 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     let repo = fixture.repo(
         "repo",
         json!({"name":"test","fingerprint":fingerprint("one-start"),"evals":[
-            eval("first", "echo first >> starts; sleep 0.1"),
-            eval("second", "echo first >> starts; sleep 0.1"),
-            eval("third", "echo first >> starts; sleep 0.1")
+            eval("first", "echo first >> starts; while [ ! -e release ]; do sleep 0.01; done"),
+            eval("second", "echo first >> starts; while [ ! -e release ]; do sleep 0.01; done"),
+            eval("third", "echo first >> starts; while [ ! -e release ]; do sleep 0.01; done")
         ]}),
     );
-    let run = fixture.command(
-        &repo,
-        &["verify", "--all", "--jobs", "3", "--max-executions", "1"],
-        0,
-    );
+    let child = fixture.spawn(&repo, &["--jobs", "3", "--max-executions", "1"]);
+    wait_until(|| repo.join("starts").exists());
+    wait_until(|| fixture.count("requests WHERE execution_id IS NOT NULL") == 3);
+    fs::write(repo.join("release"), "").unwrap();
+    let run = finish(child, 0);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(fixture.count("executions"), 1);
     for request in run["requests"].as_array().unwrap() {
@@ -952,12 +935,16 @@ fn source_names_the_execution_a_result_came_from_and_how() {
     let repo = fixture.repo(
         "repo",
         json!({"name":"test","fingerprint":fingerprint("sources"),"evals":[
-            eval("first", "sleep 0.2"),
-            eval("second", "sleep 0.2")
+            eval("first", "touch started; while [ ! -e release ]; do sleep 0.01; done"),
+            eval("second", "touch started; while [ ! -e release ]; do sleep 0.01; done")
         ]}),
     );
     // Siblings share a reuse key: the second joins the first's live execution.
-    let run = fixture.command(&repo, &["verify", "--all", "--jobs", "2"], 0);
+    let child = fixture.spawn(&repo, &["--jobs", "2"]);
+    wait_until(|| repo.join("started").exists());
+    fixture.waiting_request();
+    fs::write(repo.join("release"), "").unwrap();
+    let run = finish(child, 0);
     let (owner, joined) = (&run["requests"][0], &run["requests"][1]);
     assert!(owner["source"].is_null(), "{run}");
     let source = |kind| json!({"runId":run["id"],"requestId":owner["id"],"kind":kind});
@@ -1034,7 +1021,6 @@ fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget()
         &["--jobs", "1", "--max-executions", "1", "--ignore-gates"],
     );
     fixture.waiting_request();
-    thread::sleep(Duration::from_millis(250));
     assert!(!target.join("independent/ran").exists());
     fixture.release();
     finish(owner, 0);

@@ -111,21 +111,28 @@ pub fn read_dir(directory: &File) -> io::Result<impl Iterator<Item = io::Result<
     Ok(ReadDir {
         stream,
         directory,
-        finished: false,
+        state: Scan::Reading,
     })
+}
+
+/// A failed or exhausted stream never calls readdir again.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Scan {
+    Reading,
+    Done,
 }
 
 struct ReadDir<'a> {
     stream: NonNull<libc::DIR>,
     directory: &'a File,
-    finished: bool,
+    state: Scan,
 }
 
 impl<'a> Iterator for ReadDir<'a> {
     type Item = io::Result<DirEntry<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while !self.finished {
+        while self.state == Scan::Reading {
             // SAFETY: this iterator exclusively owns the stream. errno distinguishes EOF
             // from failure; the name is copied before the next readdir can overwrite it.
             let entry = unsafe {
@@ -133,7 +140,7 @@ impl<'a> Iterator for ReadDir<'a> {
                 libc::readdir(self.stream.as_ptr())
             };
             if entry.is_null() {
-                self.finished = true;
+                self.state = Scan::Done;
                 let error = io::Error::last_os_error();
                 return (error.raw_os_error() != Some(0)).then_some(Err(error));
             }

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ffi::OsStr, io::Write, path::PathBuf};
+use std::{collections::BTreeMap, io::Write, path::PathBuf};
 
 use artifactize_tools::{
     Builtin, Content, builtin,
@@ -72,10 +72,7 @@ fn logical(path: String) -> String {
 }
 
 async fn run(cli: Cli) -> Result<(), String> {
-    let root = artifactize_tools::files::canonicalize(
-        &std::env::current_dir().map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
+    let root = artifactize_tools::files::current_directory().map_err(|error| error.to_string())?;
     let owner = ArtifactId::new("cwd").expect("static identifier");
     let scope = Scope {
         artifacts: BTreeMap::from([(
@@ -119,16 +116,14 @@ async fn run(cli: Cli) -> Result<(), String> {
         }
         Tool::Open { target } => {
             let target = if builtin::is_url(&target) {
-                target
+                target.into()
             } else {
                 scope
                     .resolve_input(&root, &owner, &logical(target))
                     .map_err(|error| error.to_string())?
-                    .to_str()
-                    .ok_or("Paths must be UTF-8.")?
-                    .to_owned()
+                    .into_os_string()
             };
-            return artifactize_tools::opener::open(OsStr::new(&target))
+            return artifactize_tools::opener::open(&target)
                 .await
                 .map_err(|error| error.to_string());
         }

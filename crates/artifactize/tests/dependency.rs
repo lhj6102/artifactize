@@ -48,7 +48,7 @@ fn runtime(command: &str) -> Value {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         Self {
             repo: root.path().join("repo"),
             state: root.path().join("state"),
@@ -441,7 +441,14 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
         let run = fixture.verify(&options).await;
         let request = &run.requests[0];
         assert_eq!(request.status.as_str(), expected);
-        assert_eq!(request.blocked_by, vec!["art", "art/check"]);
+        assert_eq!(
+            request
+                .blocked_by
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["art", "art/check"]
+        );
         assert!(request.execution_id.is_none());
         let output = artifactize::query::run_output(&run, OffsetDateTime::now_utc());
         assert_eq!(
@@ -505,7 +512,14 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     let run = fixture.verify(&options).await;
     assert_eq!(run.run.status.as_str(), "INCOMPLETE");
     assert_eq!(run.requests[0].status.as_str(), "WAIT_DEPENDENCY");
-    assert_eq!(run.requests[0].blocked_by, vec!["art", "art/approve"]);
+    assert_eq!(
+        run.requests[0]
+            .blocked_by
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec!["art", "art/approve"]
+    );
     assert_eq!(run.requests[1].status.as_str(), "WAITING_HUMAN");
     let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
     assert_eq!(waiting.len(), 1);
@@ -653,7 +667,14 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
     let run = fixture.verify(&VerifyOptions::default()).await;
     assert_eq!(run.run.status.as_str(), "ERROR");
     assert_eq!(run.requests[0].status.as_str(), "WAIT_DEPENDENCY");
-    assert_eq!(run.requests[0].blocked_by, vec!["art", "art/check"]);
+    assert_eq!(
+        run.requests[0]
+            .blocked_by
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec!["art", "art/check"]
+    );
     assert_eq!(run.requests[1].status.as_str(), "ERROR");
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
@@ -699,7 +720,14 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
     let run = run.unwrap();
     assert_eq!(run.requests[1].error_code.as_deref(), Some("CANCELLED"));
     assert_eq!(run.requests[0].status.as_str(), "WAIT_DEPENDENCY");
-    assert_eq!(run.requests[0].blocked_by, vec!["art", "art/check"]);
+    assert_eq!(
+        run.requests[0]
+            .blocked_by
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec!["art", "art/check"]
+    );
 }
 
 #[tokio::test]
@@ -717,9 +745,12 @@ async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations()
     let run = fixture.verify(&VerifyOptions::default()).await;
     assert!(run.run.ignore_gates);
     assert_eq!(run.requests[0].status.as_str(), "BLOCKED");
-    assert_eq!(run.run.validation["satisfied"], false);
+    assert_eq!(
+        serde_json::to_value(&run.run.validation).unwrap()["satisfied"],
+        false
+    );
     assert!(
-        run.run.validation["obligations"]
+        serde_json::to_value(&run.run.validation).unwrap()["obligations"]
             .as_array()
             .unwrap()
             .contains(&json!("player"))

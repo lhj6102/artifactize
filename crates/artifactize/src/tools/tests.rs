@@ -33,7 +33,7 @@ impl Fixture {
     }
 
     fn script(&self, code: &str) {
-        crate::test_os::python_script(&self.repo.join("tool.py"), code);
+        crate::test_os::write_python_script(&self.repo.join("tool.py"), code);
     }
 
     async fn call(&self, args: Value) -> ToolResult {
@@ -72,7 +72,7 @@ fn command() -> Value {
     json!({
         "description":"Inspect {artifactName}",
         "protocol":"json",
-        "command":crate::test_os::python(),
+        "command":crate::test_os::python_program(),
         "args":["tool.py"],
     })
 }

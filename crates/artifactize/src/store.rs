@@ -13,7 +13,9 @@ mod catalog;
 pub mod prune;
 pub(crate) mod receipts;
 mod runs;
+mod snapshots;
 mod validation;
+pub use snapshots::{ArtifactValidation, Blocker, ChildIdentity, HumanDefinition, Validation};
 mod wait_timeout;
 pub use catalog::{CatalogRun, Signoff, read_catalog};
 pub use runs::{RunSummary, read_runs, read_scoped_runs};
@@ -66,71 +68,9 @@ fn state_home_variables() -> String {
 /// Resolve the default state home without creating directories; empty variables are ignored.
 /// The platform's state variables come after `ARTIFACTIZE_STATE_HOME` and before the home.
 pub fn state_home() -> Result<PathBuf, StateHomeError> {
-    let state = platform::STATE_VARIABLES
-        .iter()
-        .find_map(|name| platform::environment::var(name).filter(|path| !path.is_empty()));
-    resolve_state_home(
-        platform::environment::var("ARTIFACTIZE_STATE_HOME").map(PathBuf::from),
-        state.map(PathBuf::from),
-        platform::home_directory(),
-    )
-}
-
-fn resolve_state_home(
-    artifactize: Option<PathBuf>,
-    xdg: Option<PathBuf>,
-    home: Option<PathBuf>,
-) -> Result<PathBuf, StateHomeError> {
-    if let Some(path) = artifactize.filter(|path| !path.as_os_str().is_empty()) {
-        return Ok(path);
-    }
-    if let Some(path) = xdg.filter(|path| !path.as_os_str().is_empty()) {
-        return Ok(path.join("artifactize"));
-    }
-    home.filter(|path| !path.as_os_str().is_empty())
-        .map(|path| path.join(".local/state/artifactize"))
-        .ok_or(StateHomeError)
+    platform::state_directory().ok_or(StateHomeError)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn state_home_precedence() {
-        let artifactize = PathBuf::from("/custom/state");
-        let xdg = PathBuf::from("/xdg/state");
-        let home = PathBuf::from("/home/reviewer");
-
-        assert_eq!(
-            resolve_state_home(
-                Some(artifactize.clone()),
-                Some(xdg.clone()),
-                Some(home.clone())
-            )
-            .unwrap(),
-            artifactize
-        );
-        assert_eq!(
-            resolve_state_home(None, Some(xdg.clone()), Some(home.clone())).unwrap(),
-            xdg.join("artifactize")
-        );
-        assert_eq!(
-            resolve_state_home(None, None, Some(home.clone())).unwrap(),
-            home.join(".local/state/artifactize")
-        );
-    }
-
-    #[test]
-    fn empty_state_home_variables_are_ignored() {
-        let empty = Some(PathBuf::new());
-        let home = PathBuf::from("/home/reviewer");
-
-        assert_eq!(
-            resolve_state_home(empty.clone(), empty.clone(), Some(home.clone())).unwrap(),
-            home.join(".local/state/artifactize")
-        );
-        assert!(resolve_state_home(empty.clone(), empty.clone(), empty).is_err());
-        assert!(resolve_state_home(None, None, None).is_err());
-    }
-}
+#[path = "store/file_tests.rs"]
+mod file_tests;

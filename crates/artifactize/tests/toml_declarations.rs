@@ -213,7 +213,7 @@ fn write(root: &Path, path: &str, source: &str) {
 
 #[test]
 fn errors_name_the_declaration_and_parser_or_serde_positions() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     for (source, detail, position) in [
         ("name = 'a'\nbroken = [", "unclosed", "line 2"),
         (
@@ -242,7 +242,7 @@ fn errors_name_the_declaration_and_parser_or_serde_positions() {
 
 #[test]
 fn legacy_files_fail_but_ignored_files_and_non_declarations_are_not_read() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     write(root.path(), "index.artf", "name = 'a'");
     write(root.path(), "nested/artifactize.json", "not JSON");
     let error = read_workspace_config(root.path()).unwrap_err().to_string();
@@ -270,7 +270,7 @@ fn legacy_files_fail_but_ignored_files_and_non_declarations_are_not_read() {
 #[test]
 fn serialized_and_saved_definitions_keep_camel_case_output_names() {
     let declaration = parse_declaration(FEATURES).unwrap();
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     write(root.path(), "index.artf", FEATURES);
     write(
         root.path(),
@@ -346,7 +346,7 @@ fn non_finite_numbers_are_not_silently_converted_to_json_null() {
 
 #[test]
 fn individually_ignored_legacy_markers_do_not_fail_discovery() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     write(root.path(), "index.artf", "name = 'a'");
     write(root.path(), "nested/index.artf", "name = 'b'");
     write(root.path(), "nested/artifactize.json", "not JSON");
@@ -393,7 +393,7 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
         let error = parse_declaration(&format!("{source}\n{extra}")).unwrap_err();
         assert!(error.contains("Dependency Evals cannot declare"), "{error}");
     }
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     write(root.path(), "index.artf", source);
     write(
         root.path(),
@@ -423,7 +423,7 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
 
 #[test]
 fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     write(root.path(), "index.artf", "name = 'root'");
     write(
         root.path(),
@@ -456,7 +456,7 @@ fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
 
 #[test]
 fn unsupported_toml_values_report_the_value_position_and_full_key_path() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     for (source, path, line, column) in [
         ("name = 'a'\n# Comment\nstamp = 1979-05-27\n", "stamp", 3, 9),
         (
@@ -502,7 +502,7 @@ fn unsupported_toml_values_report_the_value_position_and_full_key_path() {
 
 #[test]
 fn semantic_errors_include_the_typed_key_path_and_source_position() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     for (source, path, line) in [
         ("name = '_bad'", "name", 1),
         ("name = 'a'\ntags = ['same', 'same']", "tags", 2),
@@ -634,7 +634,7 @@ fn owner_payload_keys_do_not_collide_with_toml_datetime_serde_internals() {
 
 #[test]
 fn cross_artifact_validation_errors_keep_the_referencing_field_position() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     for (source, path, line) in [
         (
             "name = 'a'\nmounts = { input = 'missing' }",
@@ -729,7 +729,7 @@ fn json_backed_tool_and_fingerprint_fields_report_the_offending_field_span() {
 
 #[test]
 fn explicitly_listed_artf_files_are_rejected_before_opening_for_artifactsum() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     for input in ["index.artf", "missing.png.artf", "existing.png.artf"] {
         write(root.path(), "existing.png", "pixels");
         write(root.path(), "existing.png.artf", "name = 'image'");

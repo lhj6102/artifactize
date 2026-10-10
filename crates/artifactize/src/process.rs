@@ -98,8 +98,7 @@ impl artifactize_tools::launch::Launcher for Launcher {
             .await
             {
                 Ok(output) => Ok(Finished {
-                    success: output.status.success(),
-                    status: output.status.to_string(),
+                    status: output.status,
                     stdout: output.stdout,
                     stderr: output.stderr,
                     truncated: output.truncated,

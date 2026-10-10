@@ -8,7 +8,7 @@ use std::{
     process::{Command, Output, Stdio},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -192,7 +192,7 @@ fn flaky(
 }
 
 #[test]
-fn a_later_turn_retries_transient_failures_and_honours_retry_after() {
+fn a_later_turn_retries_transient_failures_and_replays_the_same_conversation() {
     let project = Project::new(&[("notes", agent("openai"))]);
     let provider = flaky(
         replayed,
@@ -229,10 +229,8 @@ fn a_later_turn_retries_transient_failures_and_honours_retry_after() {
     );
     let calls = provider.requests();
     assert_eq!(calls.len(), 4);
-    // Each retry replays the same conversation; the last waited as Retry-After asked.
+    // Each retry replays the same conversation; virtual-clock coverage below checks the wait.
     assert_eq!(calls[1].body, calls[3].body);
-    let waited = calls[3].received - calls[2].received;
-    assert!(waited >= Duration::from_millis(700), "{waited:?}");
 }
 
 #[test]
@@ -303,9 +301,7 @@ fn a_retry_after_past_the_deadline_fails_at_once() {
             json!({"error":{"message":"Rate limit reached","code":"rate_limit_exceeded"}}),
         )
     });
-    let started = Instant::now();
     let run = project.run(&provider, &["--all"], 2);
-    assert!(started.elapsed() < Duration::from_secs(5));
     let review = request(&run, "notes/review");
     assert_eq!(review["errorCode"], "RATE_LIMIT");
     assert!(
@@ -504,7 +500,7 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
         json!({"backends":{"openai":1}}).to_string(),
     )
     .unwrap();
-    let release = Arc::new(AtomicBool::new(false));
+    let release = support::Gate::default();
     let models = Arc::new(AtomicUsize::new(0));
     let provider = FakeProvider::start({
         let (release, models) = (release.clone(), models.clone());
@@ -514,10 +510,7 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
             }
             models.fetch_add(1, Ordering::SeqCst);
             // Hold the only slot until the test has seen b wait for it.
-            let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
-            while !release.load(Ordering::SeqCst) && Instant::now() < deadline {
-                thread::sleep(Duration::from_millis(10));
-            }
+            release.wait();
             error(
                 401,
                 vec![],
@@ -559,7 +552,7 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
         );
         thread::sleep(Duration::from_millis(20));
     }
-    release.store(true, Ordering::SeqCst);
+    release.open();
     let output = child.wait_with_output().unwrap();
     assert_eq!(
         output.status.code(),
@@ -586,4 +579,122 @@ fn a_slot_waiter_on_a_stopped_backend_is_not_started_and_takes_no_slot() {
         )
         .unwrap();
     assert_eq!(slots, 0);
+}
+
+/// Yield to runnable futures without letting a paused runtime auto-advance its timers.
+async fn poll_ready() {
+    for _ in 0..32 {
+        tokio::task::yield_now().await;
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_after_waits_for_the_declared_virtual_deadline_before_replaying() {
+    use artifactize::llm::{Client, Turn};
+    use rig_core::{
+        completion::CompletionRequest,
+        message::Message,
+        providers::openai::OpenAIConfig,
+        test_utils::{MockHttpResponse, SequencedHttpClient},
+    };
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("retry-after-ms", "700".parse().unwrap());
+    let transport = SequencedHttpClient::new([
+        MockHttpResponse::error_with_headers(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            r#"{"error":{"message":"Rate limit reached","code":"rate_limit_exceeded"}}"#,
+            headers,
+        ),
+        MockHttpResponse::error(
+            reqwest::StatusCode::UNAUTHORIZED,
+            r#"{"error":{"message":"Invalid key","code":"invalid_api_key"}}"#,
+        ),
+    ]);
+    let captured = transport.clone();
+    let client = Client::Openai(Box::new(
+        OpenAIConfig::new("fixture")
+            .connect(transport)
+            .responses("fixture-model"),
+    ));
+    let running = tokio::spawn(async move {
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let mut attempts = Vec::new();
+        let result = client
+            .turn(
+                &CompletionRequest::new(Message::user("literal replay")),
+                Turn {
+                    number: 1,
+                    deadline: tokio::time::Instant::now() + Duration::from_secs(5),
+                    cancellation: &cancellation,
+                },
+                &mut attempts,
+            )
+            .await;
+        (result, attempts)
+    });
+    poll_ready().await;
+    assert_eq!(captured.requests().len(), 1);
+    tokio::time::advance(Duration::from_millis(699)).await;
+    poll_ready().await;
+    assert_eq!(captured.requests().len(), 1, "retry ran before Retry-After");
+    tokio::time::advance(Duration::from_millis(1)).await;
+    poll_ready().await;
+    assert!(
+        running.is_finished(),
+        "retry did not run when Retry-After elapsed"
+    );
+    let (_, attempts) = running.await.unwrap();
+    assert_eq!(attempts.len(), 2);
+    let calls = captured.requests();
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0].body, calls[1].body);
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_after_past_deadline_finishes_without_advancing_the_clock() {
+    use artifactize::llm::{Client, Turn};
+    use rig_core::{
+        completion::CompletionRequest,
+        message::Message,
+        providers::openai::OpenAIConfig,
+        test_utils::{MockHttpResponse, SequencedHttpClient},
+    };
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert("retry-after", "120".parse().unwrap());
+    let transport = SequencedHttpClient::new([MockHttpResponse::error_with_headers(
+        reqwest::StatusCode::TOO_MANY_REQUESTS,
+        r#"{"error":{"message":"Rate limit reached","code":"rate_limit_exceeded"}}"#,
+        headers,
+    )]);
+    let captured = transport.clone();
+    let client = Client::Openai(Box::new(
+        OpenAIConfig::new("fixture")
+            .connect(transport)
+            .responses("fixture-model"),
+    ));
+    let running = tokio::spawn(async move {
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        client
+            .turn(
+                &CompletionRequest::new(Message::user("fixture")),
+                Turn {
+                    number: 1,
+                    deadline: tokio::time::Instant::now() + Duration::from_secs(5),
+                    cancellation: &cancellation,
+                },
+                &mut Vec::new(),
+            )
+            .await
+    });
+    poll_ready().await;
+    assert!(
+        running.is_finished(),
+        "an impossible retry waited instead of failing immediately"
+    );
+    let error = running.await.unwrap().unwrap_err();
+    assert!(
+        error.message.contains("past the review deadline"),
+        "{error:?}"
+    );
+    assert_eq!(captured.requests().len(), 1);
 }

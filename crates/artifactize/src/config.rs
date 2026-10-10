@@ -111,6 +111,13 @@ impl std::fmt::Display for Backend {
 }
 
 impl Backend {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::Codex => "codex",
+            Self::Openai => "openai",
+        }
+    }
     pub fn validate_reasoning(self, reasoning: &str) -> Result<(), String> {
         let supported = match self {
             // Codex takes the Responses efforts as they are, as Pi's openai-codex does.
@@ -298,6 +305,14 @@ pub struct EvalPayload {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct LocalEvalId(String);
+
+impl<'de> Deserialize<'de> for LocalEvalId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        String::deserialize(deserializer)?
+            .parse()
+            .map_err(serde::de::Error::custom)
+    }
+}
 
 impl std::str::FromStr for LocalEvalId {
     type Err = String;

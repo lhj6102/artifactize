@@ -37,7 +37,7 @@ pub struct Provenance {
     pub repo_path: PathBuf,
     pub run_id: RunId,
     pub request_id: RequestId,
-    pub eval_id: String,
+    pub eval_id: crate::types::EvalId,
     pub eval_def_hash: crate::types::DefinitionHash,
     pub completed_at: Option<crate::types::Timestamp>,
     /// For Agent results: the SHA-256 of each tool's `executionPaths` when the review started,
@@ -59,17 +59,17 @@ pub struct Execution {
     pub fingerprint: Option<Fingerprint>,
     /// Each Artifact the key covers, the target included, with its fingerprint.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub fingerprints: BTreeMap<String, Fingerprint>,
+    pub fingerprints: BTreeMap<crate::types::ArtifactName, Fingerprint>,
     /// Kinds of exactly the Artifacts covered by a new-format reuse key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub artifact_kinds: BTreeMap<String, crate::config::ArtifactKind>,
+    pub artifact_kinds: BTreeMap<crate::types::ArtifactName, crate::config::ArtifactKind>,
     pub eval_def_hash: crate::types::DefinitionHash,
     pub owner_pid: u32,
     pub owner_start_time: u64,
     pub status: ExecutionStatus,
     pub result: Option<Value>,
     pub error: Option<String>,
-    pub error_code: Option<String>,
+    pub error_code: Option<crate::types::FailureCode>,
     pub profile: crate::config::StoredProfile,
     /// How this result was produced; never part of the key.
     #[serde(default)]
@@ -96,11 +96,11 @@ pub struct Execution {
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backend: Option<String>,
+    pub backend: Option<crate::config::Backend>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
+    pub model: Option<crate::config::ModelId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reasoning: Option<String>,
+    pub reasoning: Option<crate::config::Reasoning>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(with = "crate::config::validation::milliseconds")]
     pub timeout_ms: Option<std::time::Duration>,
@@ -110,14 +110,14 @@ pub struct ExecutionOptions {
     pub max_tokens: Option<u64>,
     /// The selected `profileVariants` entry; absent for the declared profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub variant: Option<String>,
+    pub variant: Option<crate::config::ProfileVariantName>,
 }
 
 impl ExecutionOptions {
     /// The declared options of an effective profile, as declared (absent means the default).
     pub fn new(profile: &Profile, variant: Option<&str>) -> Self {
         let mut options = Self {
-            variant: variant.map(str::to_owned),
+            variant: variant.map(|name| name.parse().expect("declared profile variant")),
             ..Self::default()
         };
         match profile {
@@ -129,11 +129,9 @@ impl ExecutionOptions {
                 max_tool_calls,
                 max_tokens,
             } => {
-                options.backend = serde_json::to_value(backend)
-                    .ok()
-                    .and_then(|value| value.as_str().map(str::to_owned));
-                options.model = Some(model.to_string());
-                options.reasoning = reasoning.map(|effort| effort.to_string());
+                options.backend = Some(*backend);
+                options.model = Some(model.clone());
+                options.reasoning = *reasoning;
                 options.timeout_ms = *timeout_ms;
                 options.max_tool_calls = *max_tool_calls;
                 options.max_tokens = *max_tokens;
@@ -163,9 +161,7 @@ const MAX_PRODUCER_CHARS: usize = 200;
 
 impl Producer {
     pub fn current() -> Self {
-        let user = crate::platform::USER_VARIABLES.iter().find_map(|name| {
-            crate::platform::environment::var_text(name).filter(|value| !value.is_empty())
-        });
+        let user = crate::platform::user_name();
         let host = crate::platform::host_name();
         let name = format!(
             "{}@{}",
@@ -191,7 +187,7 @@ impl Producer {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Origin {
-    pub store: String,
+    pub store: crate::types::StoreUrl,
     pub publisher: String,
     pub published_at: crate::types::Timestamp,
 }
@@ -202,7 +198,8 @@ impl Execution {
     fn backend(&self) -> Option<&str> {
         self.options
             .backend
-            .as_deref()
+            .as_ref()
+            .map(|backend| backend.as_str())
             .filter(|_| self.origin.is_none())
     }
 
@@ -410,8 +407,11 @@ pub async fn read_keyed_executions(
 /// changed key is explained against.
 pub async fn read_latest_cached(
     state: &std::path::Path,
-    keys: &[(String, crate::types::DefinitionHash)],
-) -> Result<std::collections::BTreeMap<(String, crate::types::DefinitionHash), Execution>, String> {
+    keys: &[(crate::types::EvalId, crate::types::DefinitionHash)],
+) -> Result<
+    std::collections::BTreeMap<(crate::types::EvalId, crate::types::DefinitionHash), Execution>,
+    String,
+> {
     if keys.is_empty() {
         return Ok(Default::default());
     }

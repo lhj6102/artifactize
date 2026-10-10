@@ -33,11 +33,11 @@ pub struct Record {
     pub key: crate::types::ReuseKey,
     pub eval_def_hash: crate::types::DefinitionHash,
     /// Each Artifact the key covers, with its fingerprint.
-    pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
+    pub fingerprints: BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub artifact_kinds: BTreeMap<String, crate::config::ArtifactKind>,
+    pub artifact_kinds: BTreeMap<crate::types::ArtifactName, crate::config::ArtifactKind>,
     pub verdict: crate::types::ExecutionStatus,
-    pub eval_id: String,
+    pub eval_id: crate::types::EvalId,
     pub run_id: crate::types::RunId,
     pub request_id: crate::types::RequestId,
     pub execution_id: crate::types::ExecutionId,
@@ -208,7 +208,7 @@ impl Record {
         };
         execution.id = id;
         execution.origin = Some(Origin {
-            store: store.into(),
+            store: store.parse()?,
             publisher,
             published_at,
         });

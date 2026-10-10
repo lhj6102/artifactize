@@ -88,7 +88,7 @@ fn doctor(state: &Path, path: &Path) -> Command {
 
 #[test]
 fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     let bin = root.path().join("bin");
@@ -218,7 +218,7 @@ fn doctor_is_local_and_preserves_credentials_and_all_database_rows() {
 
 #[test]
 fn doctor_reports_hard_local_errors_and_models_cli_needs_no_run() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
@@ -257,7 +257,7 @@ fn doctor_reports_hard_local_errors_and_models_cli_needs_no_run() {
 
 #[test]
 fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     let finished = runtime_run(&state, &repo);
@@ -342,7 +342,7 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
 
 #[test]
 fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     let finished = runtime_run(&state, &repo);
@@ -407,12 +407,12 @@ fn prune_refuses_symlinks_and_repository_targets_before_deleting() {
     }
 }
 
-/// Windows opens a name in any case, so a state folder named in another case is still inside
-/// the repository. Prune compares canonical paths and refuses it as it refuses the same case.
+// Windows opens a name in any case, so a state folder named in another case is still inside
+// the repository. Prune compares canonical paths and refuses it as it refuses the same case.
 #[cfg(windows)]
 #[test]
 fn prune_refuses_a_state_inside_the_repository_named_in_another_case() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = support::os::canonical(root.path()).join("Repo");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(repo.join("index.artf"), r#"{"name":"a","basis":true}"#).unwrap();
@@ -439,7 +439,7 @@ fn prune_preserves_gitless_workspace_copies_with_current_or_legacy_markers() {
         ".artifactizeignore",
         "file.txt.artf",
     ] {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let state = root.path().join("state");
         let repo = root.path().join("reviewed");
         let finished = runtime_run(&state, &repo);
@@ -474,7 +474,7 @@ fn remote_logout_refuses_credential_state_inside_current_and_legacy_workspaces()
         ".artifactizeignore",
         "file.txt.artf",
     ] {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let workspace = root.path().join("workspace");
         fs::create_dir(&workspace).unwrap();
         fs::write(workspace.join(marker), "workspace marker").unwrap();
@@ -506,7 +506,7 @@ fn doctor_never_probes_or_creates_state_inside_current_or_legacy_workspaces() {
         ".artifactizeignore",
         "file.txt.artf",
     ] {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let workspace = root.path().join("workspace");
         fs::create_dir(&workspace).unwrap();
         fs::write(workspace.join(marker), "workspace marker").unwrap();
@@ -528,7 +528,7 @@ fn doctor_never_probes_or_creates_state_inside_current_or_legacy_workspaces() {
     }
 }
 
-/// The operator's standard macOS temp prefix is usable, but a symlink below it is not.
+// The operator's standard macOS temp prefix is usable, but a symlink below it is not.
 #[cfg(target_os = "macos")]
 #[test]
 fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links() {

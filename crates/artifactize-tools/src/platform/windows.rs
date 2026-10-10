@@ -104,6 +104,9 @@ pub(crate) fn spawn_tree(command: &mut tokio::process::Command) -> io::Result<Tr
 }
 
 /// Resume every thread of a process created suspended: its primary thread.
+/// ResumeThread uses DWORD_MAX as its error sentinel, not as a suspend count.
+const RESUME_THREAD_FAILED: u32 = u32::MAX;
+
 fn resume(pid: u32) -> io::Result<()> {
     // SAFETY: a snapshot of all threads; the result is checked and then owned.
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
@@ -129,7 +132,7 @@ fn resume(pid: u32) -> io::Result<()> {
             // SAFETY: OpenThread returned a new handle that nothing else owns.
             let thread = unsafe { OwnedHandle::from_raw_handle(thread) };
             // SAFETY: an open thread handle with THREAD_SUSPEND_RESUME.
-            if unsafe { ResumeThread(thread.as_raw_handle()) } == u32::MAX {
+            if unsafe { ResumeThread(thread.as_raw_handle()) } == RESUME_THREAD_FAILED {
                 return Err(io::Error::last_os_error());
             }
             resumed = true;
@@ -169,6 +172,10 @@ pub(crate) async fn open_desktop(target: &OsStr) -> io::Result<()> {
     }
 }
 
+/// ShellExecuteW returns an error code at or below 32; greater values mean a successful
+/// desktop handoff, not a handle that this process owns.
+const SHELL_EXECUTE_ERROR_MAX: isize = 32;
+
 fn shell_execute(target: &OsStr) -> io::Result<()> {
     let mut target: Vec<_> = target.encode_wide().collect();
     if target.contains(&0) {
@@ -191,7 +198,7 @@ fn shell_execute(target: &OsStr) -> io::Result<()> {
         )
     } as isize;
     // ShellExecute returns a value greater than 32 on success, not an owned handle.
-    if result <= 32 {
+    if result <= SHELL_EXECUTE_ERROR_MAX {
         return Err(io::Error::other(format!(
             "ShellExecute could not open the target (code {result})."
         )));

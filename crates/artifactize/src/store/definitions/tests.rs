@@ -133,7 +133,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
 
 #[test]
 fn current_graph_capture_serializes_identically_to_pinned_query_view() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     crate::test_declaration::write(
         root.path().join("index.artf"),
         json!({
@@ -216,7 +216,7 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
         eval_hash,
         "bc7083ad4c1041de824b8080a6bd576c8cc39caedd1db4b63d073ae973e6790b"
     );
-    let fingerprints = BTreeMap::from([("app".into(), "v1".parse().unwrap())]);
+    let fingerprints = BTreeMap::from([("app".parse().unwrap(), "v1".parse().unwrap())]);
     assert_eq!(
         crate::cache::key(&eval_hash, &fingerprints).as_str(),
         "4056b8c4b08cc6c34167297a0c9fbb6ca8c0ca28f996c1470805b690c7329350"
@@ -225,7 +225,7 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
 
 #[tokio::test]
 async fn saved_definition_timeouts_reject_unrepresentable_writes() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
@@ -272,7 +272,7 @@ async fn saved_definition_timeouts_reject_unrepresentable_writes() {
         fingerprint.script = Field::Value(script);
         artifact.fingerprint = Field::Value(fingerprint);
         snapshot.0.as_mut().unwrap().artifacts =
-            Field::Value(BTreeMap::from([("app".into(), artifact)]));
+            Field::Value(BTreeMap::from([("app".parse().unwrap(), artifact)]));
         assert!(serde_json::to_value(&snapshot).is_err());
         run.definitions = snapshot;
         assert!(receipts.save_run(&run).await.is_err());

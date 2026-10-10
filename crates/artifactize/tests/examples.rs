@@ -27,7 +27,7 @@ struct Session(TempDir);
 
 impl Session {
     fn new() -> Self {
-        Self(tempfile::tempdir().unwrap())
+        Self(support::os::tempdir())
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {

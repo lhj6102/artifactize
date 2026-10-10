@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -179,7 +179,7 @@ pub async fn verify(
         recursive: options.recursive,
         force: options.force,
         ignore_gates,
-        validation: Value::Null,
+        validation: Default::default(),
         error: None,
         stopped_backends: Vec::new(),
         evidence: BTreeMap::new(),
@@ -192,8 +192,8 @@ pub async fn verify(
                 .parse()
                 .expect("generated request id is a safe segment"),
             run_id: run.id.clone(),
-            eval_id: eval.id.to_string(),
-            target: eval.target.to_string(),
+            eval_id: eval.id.clone(),
+            target: eval.target.clone(),
             title: eval.declaration.title.clone(),
             profile: (eval.declaration.profile()).into(),
             requested_profile: (eval.declaration.profile()).into(),
@@ -211,8 +211,8 @@ pub async fn verify(
             session: None,
             human_definition: None,
             payload: eval.declaration.payload().into(),
-            references: json!(eval.references),
-            deps: eval.deps.iter().map(ToString::to_string).collect(),
+            references: eval.references.clone(),
+            deps: eval.deps.clone(),
             force: options.force
                 && selected_ids.contains(eval.id.as_str())
                 && !matches!(
@@ -285,7 +285,7 @@ pub async fn verify(
             broker::derive(request, &evaluation.evals[request.eval_id.as_str()]);
             continue;
         }
-        if evidence.contains_key(&request.eval_id)
+        if evidence.contains_key(request.eval_id.as_str())
             || request.status == crate::types::RequestStatus::WaitingHuman
         {
             continue;
@@ -296,10 +296,7 @@ pub async fn verify(
             request.error = Some("Run was cancelled.".into());
             request.error_code = Some("CANCELLED".into());
             request.completed_at = Some(now());
-            evidence.insert(
-                request.eval_id.parse().expect("saved Eval id"),
-                Evidence::OperationalError,
-            );
+            evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
         } else if request.status == crate::types::RequestStatus::BudgetExhausted
             && eval.can_execute()
         {
@@ -372,7 +369,7 @@ pub async fn verify(
         ));
     }
     run.completed_at = Some(now());
-    run.validation = json!({
+    run.validation = serde_json::from_value(json!({
         "selection":run.selection,
         "recursive":run.recursive,
         "force":run.force,
@@ -417,7 +414,8 @@ pub async fn verify(
                 })
             })
             .collect::<Vec<_>>(),
-    });
+    }))
+    .expect("generated validation snapshot");
     receipts.finish(&run, &requests).await?;
     // Saved Agent conversations past their size bound are collected; a failure only warns.
     let state = run.state_dir.clone();

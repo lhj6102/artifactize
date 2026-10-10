@@ -35,8 +35,9 @@ pub struct Entry {
     pub eval_def_hash: crate::types::DefinitionHash,
     pub execution_id: crate::types::ExecutionId,
     pub verdict: crate::types::ExecutionStatus,
-    pub repo_path: String,
-    pub eval_id: String,
+    #[serde(with = "crate::platform::path_serde")]
+    pub repo_path: std::path::PathBuf,
+    pub eval_id: crate::types::EvalId,
     /// The target Artifact's fingerprint.
     pub fingerprint: Option<crate::types::Fingerprint>,
     pub completed_at: Option<crate::types::Timestamp>,
@@ -45,7 +46,7 @@ pub struct Entry {
     /// The selected profile variant, when the result came from one.
     pub variant: Option<String>,
     /// The remote store URL of a mirrored record.
-    pub origin: Option<String>,
+    pub origin: Option<crate::types::StoreUrl>,
     /// How many records the key holds.
     pub records: i64,
     pub bytes: i64,
@@ -98,7 +99,7 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
                         eval_def_hash: row.get(1)?,
                         execution_id: row.get(2)?,
                         verdict: row.get(3)?,
-                        repo_path: row.get(4)?,
+                        repo_path: row.get::<_, String>(4)?.into(),
                         eval_id: row.get(5)?,
                         fingerprint: row.get(6)?,
                         completed_at: row.get(7)?,
@@ -254,7 +255,7 @@ fn collect(db: &mut rusqlite::Connection) -> Result<(), Error> {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
         let over_capacity = entries > MAX_ENTRIES || bytes > MAX_BYTES;
-        let candidate: Option<String> = transaction
+        let candidate: Option<crate::types::ExecutionId> = transaction
             .query_row(
                 "SELECT e.id FROM executions e WHERE e.completed_at IS NOT NULL AND (? OR e.bytes>?)
              AND NOT EXISTS(SELECT 1 FROM executions a WHERE a.key=e.key AND a.status IN ('RUNNING','WAITING_HUMAN'))

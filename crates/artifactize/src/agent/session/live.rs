@@ -143,7 +143,7 @@ pub async fn resolve(state: &Path, view: &RequestView) -> Result<Resolution, Str
             state: state.into(),
             reference: SessionRef {
                 producer,
-                state: state_id,
+                state: state_id.to_string(),
                 run_id: request.run_id.clone(),
                 request_id: request.id.clone(),
                 session_id: id.clone(),

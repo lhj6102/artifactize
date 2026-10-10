@@ -196,7 +196,7 @@ mod tests {
     use std::fs;
 
     fn read(text: &str) -> Result<Limits, String> {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_os::tempdir();
         fs::write(directory.path().join(FILE), text).unwrap();
         Limits::read(directory.path())
     }

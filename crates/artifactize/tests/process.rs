@@ -23,7 +23,7 @@ fn command(program: &str, args: &[&str]) -> Command {
     Command {
         program: bin(program).into(),
         args: args.iter().map(OsString::from).collect(),
-        cwd: std::env::temp_dir(),
+        cwd: support::os::temp_root(),
         env: BTreeMap::from([("PATH".into(), support::os::path())]),
         timeout: TEST_TIMEOUT,
     }
@@ -59,23 +59,29 @@ async fn registration_observes_inert_group_leader_before_exec() {
     let mut command = command("/bin/sh", &["-c", "printf started > started; pwd"]);
     command.cwd = scratch.0.clone();
     let expected_cwd = scratch.0.clone();
-    let output = process::run(command, CancellationToken::new(), move |child| async move {
-        assert!(!marker.exists());
-        // A Unix child leads its own process group; Windows holds it in a Job Object instead.
-        #[cfg(unix)]
-        assert!(support::os::leads_group(child.pid));
-        assert_eq!(support::os::start_time(child.pid), child.start_time);
-        // Windows holds the child suspended in its job; its identity is already final.
-
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        assert!(
-            !marker.exists(),
-            "user code ran before registration finished"
-        );
-        Ok(())
-    })
-    .await
-    .unwrap();
+    let (registered, identity) = oneshot::channel();
+    let (release, held) = oneshot::channel();
+    let running = tokio::spawn(process::run(
+        command,
+        CancellationToken::new(),
+        move |child| async move {
+            assert!(!marker.exists());
+            support::os::assert_group(child.pid);
+            assert_eq!(support::os::start_time(child.pid), child.start_time);
+            registered.send(child).unwrap();
+            held.await.unwrap();
+            assert!(
+                !marker.exists(),
+                "user code ran before registration finished"
+            );
+            Ok(())
+        },
+    ));
+    let child = identity.await.unwrap();
+    assert!(support::os::running(child.pid));
+    assert!(!scratch.0.join("started").exists());
+    release.send(()).unwrap();
+    let output = running.await.unwrap().unwrap();
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap().trim(),
@@ -146,7 +152,8 @@ async fn registration_is_covered_by_the_deadline() {
 #[tokio::test]
 async fn invalid_cwd_is_a_spawn_error_before_registration() {
     let mut command = command("/bin/true", &[]);
-    command.cwd = PathBuf::from("/artifactize/nonexistent-directory");
+    let scratch = Scratch::new();
+    command.cwd = scratch.0.join("nonexistent-directory");
     let result = timeout(
         Duration::from_secs(2),
         process::run(command, CancellationToken::new(), |_| async {
@@ -158,8 +165,7 @@ async fn invalid_cwd_is_a_spawn_error_before_registration() {
     // Windows reports a missing working directory as ERROR_DIRECTORY.
     assert!(matches!(
         result,
-        Err(process::Error::Spawn(error)) if error.kind() == io::ErrorKind::NotFound
-            || (cfg!(windows) && error.kind() == io::ErrorKind::NotADirectory)
+        Err(process::Error::Spawn(error)) if support::os::missing_program(&error)
     ));
 }
 
@@ -167,10 +173,7 @@ async fn invalid_cwd_is_a_spawn_error_before_registration() {
 async fn stdout_and_stderr_are_drained_concurrently_after_capture_limit() {
     let result = execute(command(
         "/bin/sh",
-        &[
-            "-c",
-            "head -c 262144 /dev/zero & head -c 262144 /dev/zero >&2 & wait",
-        ],
+        &["-c", &support::os::zero_output(262144, 262144)],
     ))
     .await;
     assert!(result.status.success());
@@ -194,25 +197,18 @@ async fn wait_for(condition: impl Fn() -> bool) {
     .expect("process did not reach the expected state");
 }
 
-struct Scratch(PathBuf);
+struct Scratch(
+    PathBuf,
+    #[expect(
+        dead_code,
+        reason = "owns the temporary fixture for the duration of the test"
+    )]
+    tempfile::TempDir,
+);
 
 impl Scratch {
     fn new() -> Self {
-        static NEXT: AtomicU32 = AtomicU32::new(0);
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
-            .join(format!(
-                "runtime-test-{}-{}",
-                std::process::id(),
-                NEXT.fetch_add(1, Ordering::SeqCst)
-            ));
-        std::fs::create_dir_all(&path).unwrap();
-        Self(support::os::canonical(&path))
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).unwrap();
+        let root = support::os::tempdir();
+        Self(root.path().to_owned(), root)
     }
 }

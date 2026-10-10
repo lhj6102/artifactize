@@ -104,7 +104,7 @@ pub enum Details {
         #[serde(with = "crate::platform::path_serde")]
         directory: PathBuf,
         #[serde(rename = "stateId")]
-        state_id: Option<String>,
+        state_id: Option<crate::types::StateId>,
     },
     Codex {
         #[serde(flatten)]

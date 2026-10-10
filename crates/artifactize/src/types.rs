@@ -17,6 +17,10 @@ pub(crate) use artifactize_tools::MAX_SAFE_JSON_INTEGER;
 /// A SHA-256 digest has 32 bytes, encoded as 64 lowercase hexadecimal ASCII bytes
 /// in reuse keys and remote definition hashes; this wire width is not a storage limit.
 pub(crate) const SHA256_HEX_BYTES: usize = 64;
+/// Eight digest bytes retain compact diagnostic manifests without changing wire width.
+const DIGEST_PREFIX_HEX_BYTES: usize = 16;
+/// Principal labels are bounded ASCII display identities, never bearer secrets.
+const MAX_TOKEN_NAME_BYTES: usize = 64;
 
 fn segment(value: &str) -> bool {
     (1..=MAX_ID_BYTES).contains(&value.len())
@@ -177,6 +181,25 @@ fn sha256_hex(value: &str) -> bool {
 identity!(ReuseKey, sha256_hex);
 // The SHA-256 of an eval's review strategy (`cache::eval_definition_hash`).
 identity!(DefinitionHash, sha256_hex);
+// State UUIDs and legacy session state identifiers share the saved segment domain.
+identity!(StateId, segment);
+identity!(Sha256Digest, sha256_hex);
+// Compact diagnostic digests are the unchanged first eight bytes of a SHA-256.
+identity!(DigestPrefix, |value: &str| value.len()
+    == DIGEST_PREFIX_HEX_BYTES
+    && value
+        .bytes()
+        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
+identity!(StoreUrl, |value: &str| reqwest::Url::parse(value)
+    .is_ok_and(|url| matches!(url.scheme(), "http" | "https")
+        && url.host_str().is_some()
+        && url.username().is_empty()
+        && url.password().is_none()));
+identity!(TokenName, |value: &str| (1..=MAX_TOKEN_NAME_BYTES)
+    .contains(&value.len())
+    && value.bytes().all(
+        |b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.')
+    ));
 
 macro_rules! status {
     ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
@@ -220,6 +243,48 @@ macro_rules! status {
         }
     };
 }
+status!(FailureCode {
+   Authentication => "AUTHENTICATION",
+   Quota => "QUOTA",
+   RateLimit => "RATE_LIMIT",
+   Transient => "TRANSIENT",
+   Timeout => "TIMEOUT",
+   Cancelled => "CANCELLED",
+   ProviderBudgetExceeded => "PROVIDER_BUDGET_EXCEEDED",
+   InvalidResult => "INVALID_RESULT",
+   ProviderError => "PROVIDER_ERROR",
+   AgentError => "AGENT_ERROR",
+   BackendStopped => "BACKEND_STOPPED",
+   PreparationFailed => "PREPARATION_FAILED",
+   InputChanged => "INPUT_CHANGED",
+   FingerprintRecheckFailed => "FINGERPRINT_RECHECK_FAILED",
+   SpawnFailed => "SPAWN_FAILED",
+   AbnormalExit => "ABNORMAL_EXIT",
+   RuntimeError => "RUNTIME_ERROR",
+   Superseded => "SUPERSEDED",
+   OwnerDied => "OWNER_DIED",
+   Spawn => "SPAWN",
+});
+impl std::ops::Deref for FailureCode {
+    type Target = str;
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+impl From<&str> for FailureCode {
+    fn from(value: &str) -> Self {
+        value.parse().expect("a program-defined failure code")
+    }
+}
+status!(BackendStopCode { Authentication => "AUTHENTICATION", Quota => "QUOTA" });
+impl TryFrom<FailureCode> for BackendStopCode {
+    type Error = String;
+    fn try_from(code: FailureCode) -> Result<Self, String> {
+        code.as_str().parse()
+    }
+}
+status!(FingerprintKind { Artifactsum => "artifactsum", Script => "script" });
+status!(ArtifactValidationStatus { Basis => "BASIS", Green => "GREEN", Incomplete => "INCOMPLETE", Error => "ERROR", Red => "RED", Blocked => "BLOCKED", Wait => "WAIT", Stale => "STALE", Unreviewed => "UNREVIEWED" });
 status!(RunStatus {
     Running => "RUNNING",
     Green => "GREEN",
@@ -299,6 +364,49 @@ mod tests {
         let db = rusqlite::Connection::open_in_memory().unwrap();
         assert!(
             db.query_row("SELECT '../escape'", [], |row| row.get::<_, RunId>(0))
+                .is_err()
+        );
+    }
+    #[test]
+    fn store_identity_boundaries_preserve_text_and_reject_invalid_inputs() {
+        assert_eq!(
+            serde_json::to_string(&"state".parse::<StateId>().unwrap()).unwrap(),
+            "\"state\""
+        );
+        let store: StoreUrl = "https://reviews.example/path".parse().unwrap();
+        assert_eq!(
+            serde_json::to_string(&store).unwrap(),
+            "\"https://reviews.example/path\""
+        );
+        for invalid in [
+            "fixture",
+            "file:///path",
+            "https://user:secret@reviews.example/",
+        ] {
+            assert!(invalid.parse::<StoreUrl>().is_err());
+        }
+        for invalid in ["", "bad name", "../escape"] {
+            assert!(invalid.parse::<TokenName>().is_err());
+        }
+        for invalid in ["F".repeat(64), "f".repeat(63)] {
+            assert!(invalid.parse::<Sha256Digest>().is_err());
+        }
+        assert!("f".repeat(64).parse::<Sha256Digest>().is_ok());
+        assert!("f".repeat(16).parse::<DigestPrefix>().is_ok());
+        assert!("f".repeat(64).parse::<DigestPrefix>().is_err());
+        assert_eq!(
+            serde_json::to_string(&FailureCode::OwnerDied).unwrap(),
+            "\"OWNER_DIED\""
+        );
+        assert!(BackendStopCode::try_from(FailureCode::Timeout).is_err());
+        assert_eq!(
+            BackendStopCode::try_from(FailureCode::Quota).unwrap(),
+            BackendStopCode::Quota
+        );
+        assert!("UNKNOWN".parse::<FailureCode>().is_err());
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        assert!(
+            db.query_row("SELECT 'bad name'", [], |row| row.get::<_, TokenName>(0))
                 .is_err()
         );
     }

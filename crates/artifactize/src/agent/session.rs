@@ -210,8 +210,8 @@ impl Recorder {
                     request_id: request.id.clone(),
                     session_id: id.clone(),
                 },
-                eval_id: Some(request.eval_id.clone()),
-                target: Some(request.target.clone()),
+                eval_id: Some(request.eval_id.to_string()),
+                target: Some(request.target.to_string()),
             })),
             publisher: crate::changes::Publisher::new(&saving.state),
         }

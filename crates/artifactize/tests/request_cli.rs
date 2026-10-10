@@ -18,7 +18,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(fingerprint: bool) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         let child = repo.join("child");
         fs::create_dir_all(&child).unwrap();

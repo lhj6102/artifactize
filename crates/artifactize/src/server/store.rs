@@ -45,17 +45,17 @@ impl Scope {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
-    pub name: String,
+    pub name: crate::types::TokenName,
     pub scopes: Vec<Scope>,
-    pub created_at: String,
-    pub revoked_at: Option<String>,
+    pub created_at: crate::types::Timestamp,
+    pub revoked_at: Option<crate::types::Timestamp>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Revocation {
-    pub name: String,
-    pub revoked_at: String,
+    pub name: crate::types::TokenName,
+    pub revoked_at: crate::types::Timestamp,
     pub purged_entries: usize,
 }
 
@@ -74,11 +74,13 @@ pub struct Store {
     connection: Connection,
 }
 
-fn digest(token: &str) -> String {
+fn digest(token: &str) -> crate::types::Sha256Digest {
     Sha256::digest(token.as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
-        .collect()
+        .collect::<String>()
+        .parse()
+        .expect("SHA-256 token digest")
 }
 
 /// Version 3 keeps every record of a 0.5 reuse key. Records of versions 1 and 2, keyed by
@@ -96,14 +98,16 @@ impl Store {
         crate::platform::create_private_dir_all(&state).map_err(|e| e.to_string())?;
         for suffix in ["", "-wal", "-shm"] {
             let path = state.join(format!("{DATABASE}{suffix}"));
-            if path
-                .symlink_metadata()
-                .is_ok_and(|metadata| !metadata.is_file())
-            {
-                return Err(format!(
-                    "Review store files must be regular files: {}",
-                    path.display()
-                ));
+            match crate::platform::path_kind(&path) {
+                Ok(crate::platform::FileKind::File) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Ok(_) => {
+                    return Err(format!(
+                        "Review store files must be regular files: {}",
+                        crate::platform::path_text(&path)
+                    ));
+                }
+                Err(error) => return Err(error.to_string()),
             }
         }
         let connection = Connection::open(state.join(DATABASE))
@@ -166,7 +170,7 @@ impl Store {
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret)
         );
         let (name, hash, scopes) = (
-            name.to_owned(),
+            name.parse::<crate::types::TokenName>()?,
             digest(&token),
             serde_json::to_string(&scopes).map_err(|e| e.to_string())?,
         );
@@ -197,7 +201,7 @@ impl Store {
                 let rows = statement
                     .query_map([], |row| {
                         Ok((
-                            row.get::<_, String>(0)?,
+                            row.get::<_, crate::types::TokenName>(0)?,
                             row.get::<_, String>(1)?,
                             row.get(2)?,
                             row.get(3)?,
@@ -221,7 +225,7 @@ impl Store {
 
     /// Revoke immediately; `purge` also deletes every entry that token published.
     pub async fn revoke(&self, name: &str, purge: bool) -> Result<Revocation, String> {
-        let name = name.to_owned();
+        let name: crate::types::TokenName = name.parse()?;
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -229,7 +233,7 @@ impl Store {
                     "UPDATE tokens SET revoked_at=? WHERE name=? AND revoked_at IS NULL",
                     params![now(), name],
                 )?;
-                let revoked_at: String = transaction
+                let revoked_at: crate::types::Timestamp = transaction
                     .query_row(
                         "SELECT revoked_at FROM tokens WHERE name=?",
                         [&name],
@@ -255,7 +259,7 @@ impl Store {
 
     /// Remove every record of a key.
     pub async fn remove(&self, key: &str) -> Result<bool, String> {
-        let key = key.to_owned();
+        let key: crate::types::ReuseKey = key.parse()?;
         self.connection
             .call(move |db| -> Result<_, Error> {
                 Ok(db.execute("DELETE FROM entries WHERE key=?", [key])? != 0)
@@ -268,11 +272,11 @@ impl Store {
     pub(super) async fn authenticate(
         &self,
         token: &str,
-    ) -> Result<Option<(String, Vec<Scope>)>, String> {
+    ) -> Result<Option<(crate::types::TokenName, Vec<Scope>)>, String> {
         let hash = digest(token);
         self.connection
             .call(move |db| -> Result<_, Error> {
-                let row: Option<(String, String)> = db
+                let row: Option<(crate::types::TokenName, String)> = db
                     .query_row(
                         "SELECT name,scopes FROM tokens WHERE hash=? AND revoked_at IS NULL",
                         [hash],
@@ -323,10 +327,10 @@ impl Store {
         data: String,
     ) -> Result<bool, String> {
         let record = (
-            key.to_owned(),
-            execution_id.to_owned(),
-            publisher.to_owned(),
-            completed_at.to_owned(),
+            key.parse::<crate::types::ReuseKey>()?,
+            execution_id.parse::<crate::types::ExecutionId>()?,
+            publisher.parse::<crate::types::TokenName>()?,
+            completed_at.parse::<crate::types::Timestamp>()?,
         );
         self.connection
             .call(move |db| -> Result<_, Error> {

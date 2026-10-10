@@ -14,13 +14,15 @@ use crate::{platform, process, workspace};
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PruneReport {
+    #[serde(serialize_with = "crate::platform::serialize_paths")]
     pub removed: Vec<PathBuf>,
+    #[serde(serialize_with = "crate::platform::serialize_paths")]
     pub would_remove: Vec<PathBuf>,
-    pub skipped_runs: Vec<String>,
+    pub skipped_runs: Vec<crate::types::RunId>,
     /// Agent sessions the size-bound collection deleted, oldest first.
-    pub removed_sessions: Vec<String>,
+    pub removed_sessions: Vec<crate::types::SessionId>,
     /// With `--dry-run`, the Agent sessions it would delete.
-    pub would_remove_sessions: Vec<String>,
+    pub would_remove_sessions: Vec<crate::types::SessionId>,
 }
 
 // `--older-than` units in seconds, each built from the one below it. A day is a fixed
@@ -82,9 +84,17 @@ pub fn prune(
     let bounds = crate::limits::Limits::read(&state)?.agent_sessions();
     let sessions = crate::agent::session::collect(&state, bounds, dry_run)?;
     if dry_run {
-        report.would_remove_sessions = sessions.removed;
+        report.would_remove_sessions = sessions
+            .removed
+            .into_iter()
+            .map(|id| id.parse().expect("validated session filename"))
+            .collect();
     } else {
-        report.removed_sessions = sessions.removed;
+        report.removed_sessions = sessions
+            .removed
+            .into_iter()
+            .map(|id| id.parse().expect("validated session filename"))
+            .collect();
     }
     if !state
         .join(DATABASE)
@@ -124,9 +134,9 @@ pub fn prune(
         statement
             .query_map([], |row| {
                 Ok((
-                    row.get::<_, String>(0)?,
+                    row.get::<_, crate::types::RunId>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
+                    row.get::<_, crate::types::RunStatus>(2)?,
                     row.get::<_, Option<String>>(3)?,
                 ))
             })
@@ -162,7 +172,7 @@ pub fn prune(
                             pid: row.get(0)?,
                             start_time: row.get::<_, i64>(1)? as u64,
                         },
-                        row.get::<_, String>(2)?,
+                        row.get::<_, crate::types::ExecutionStatus>(2)?,
                     ))
                 })
                 .map_err(|e| e.to_string())?
@@ -174,8 +184,7 @@ pub fn prune(
             owned |= !matches!(status.as_str(), "GREEN" | "RED" | "ERROR")
                 || process::is_alive(owner).map_err(|e| e.to_string())?;
         }
-        if !segment(&id)
-            || !matches!(status.as_str(), "GREEN" | "RED" | "ERROR" | "INCOMPLETE")
+        if !matches!(status.as_str(), "GREEN" | "RED" | "ERROR" | "INCOMPLETE")
             || finished.is_none()
             || cutoff.is_some_and(|cutoff| finished.is_some_and(|date| date > cutoff))
             || !requests_terminal
@@ -195,7 +204,7 @@ pub fn prune(
     }
     let mut targets = Vec::new();
     for id in eligible {
-        let path = runs.join(id);
+        let path = runs.join(id.as_str());
         if directory(&path)? {
             collect(&path, &mut targets)?;
         }
@@ -211,7 +220,7 @@ pub fn prune(
             real_path(&path)?;
             validate_tree(&path, &runs, &repositories)?;
             fs::remove_dir_all(&path)
-                .map_err(|e| format!("Cannot prune {}: {e}", path.display()))?;
+                .map_err(|e| format!("Cannot prune {}: {e}", crate::platform::path_text(&path)))?;
             report.removed.push(path);
         }
     }
@@ -230,7 +239,8 @@ fn prefixed(name: &str, prefix: &str) -> bool {
 }
 
 fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
-    let mut entries = fs::read_dir(parent)
+    let parent_handle = platform::open_directory(parent).map_err(|e| e.to_string())?;
+    let mut entries = platform::read_dir(&parent_handle)
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -238,7 +248,7 @@ fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
     for entry in entries {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        let path = entry.path();
+        let path = parent.join(entry.file_name());
         if matches!(name, "output" | "tmp" | "home" | "cache" | "human-tools")
             || ["tool-output-", "tool-"]
                 .iter()
@@ -259,14 +269,14 @@ fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
 }
 
 fn directory(path: &Path) -> Result<bool, String> {
-    match path.symlink_metadata() {
-        Ok(metadata) if metadata.is_dir() => {
+    match platform::path_kind(path) {
+        Ok(platform::FileKind::Directory) => {
             reject_repository(path)?;
             Ok(true)
         }
         Ok(_) => Err(format!(
             "Prune requires a real directory, not a symlink or file: {}",
-            path.display()
+            crate::platform::path_text(path)
         )),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.to_string()),
@@ -285,9 +295,12 @@ fn real_path(path: &Path) -> Result<PathBuf, String> {
         if matches!(component, Component::Prefix(_) | Component::RootDir) {
             continue;
         }
-        match current.symlink_metadata() {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(format!("Prune refuses symlinks: {}", current.display()));
+        match platform::path_kind(&current) {
+            Ok(platform::FileKind::Symlink | platform::FileKind::Other) => {
+                return Err(format!(
+                    "Prune refuses symlinks: {}",
+                    crate::platform::path_text(&current)
+                ));
             }
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
                 return Err(error.to_string());
@@ -302,13 +315,13 @@ fn reject_repository(path: &Path) -> Result<(), String> {
     if workspace::has_artifact_marker(path).map_err(|error| error.to_string())? {
         return Err(format!(
             "Prune refuses repository content: {}",
-            path.display()
+            crate::platform::path_text(path)
         ));
     }
-    match path.join(".git").symlink_metadata() {
+    match platform::path_kind(&path.join(".git")) {
         Ok(_) => Err(format!(
             "Prune refuses repository content: {}",
-            path.display()
+            crate::platform::path_text(path)
         )),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.to_string()),
@@ -324,18 +337,25 @@ fn validate_tree(path: &Path, runs: &Path, repositories: &[PathBuf]) -> Result<(
     {
         return Err(format!(
             "Prune target is outside Run output or overlaps a repository: {}",
-            path.display()
+            crate::platform::path_text(path)
         ));
     }
-    let metadata = path.symlink_metadata().map_err(|e| e.to_string())?;
-    if metadata.file_type().is_symlink() {
-        return Err(format!("Prune refuses symlinks: {}", path.display()));
+    let kind = platform::path_kind(path).map_err(|e| e.to_string())?;
+    if matches!(
+        kind,
+        platform::FileKind::Symlink | platform::FileKind::Other
+    ) {
+        return Err(format!(
+            "Prune refuses symlinks: {}",
+            crate::platform::path_text(path)
+        ));
     }
-    if metadata.is_dir() {
+    if kind == platform::FileKind::Directory {
         reject_repository(path)?;
-        for entry in fs::read_dir(path).map_err(|e| e.to_string())? {
+        let directory = platform::open_directory(path).map_err(|e| e.to_string())?;
+        for entry in platform::read_dir(&directory).map_err(|e| e.to_string())? {
             validate_tree(
-                &entry.map_err(|e| e.to_string())?.path(),
+                &path.join(entry.map_err(|e| e.to_string())?.file_name()),
                 runs,
                 repositories,
             )?;

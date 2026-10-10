@@ -2,14 +2,16 @@
 //! the tests name, executable scripts, links and junctions, extra file permissions, and
 //! process control. Unix keeps the real utilities and signals; Windows gets the stand-ins
 //! described with each helper.
-#![allow(dead_code, reason = "each test binary uses a different part")]
+#![expect(dead_code, reason = "each test binary uses a different part")]
 
+use serde_json::{Value, json};
+use std::fs;
 use std::{path::Path, process::Command};
 
 /// A temporary fixture below the physical OS temp root, not macOS /var or Windows 8.3
 /// aliases. Scoped file reads intentionally refuse symlink traversal.
 pub fn tempdir() -> tempfile::TempDir {
-    tempfile::tempdir_in(std::fs::canonicalize(std::env::temp_dir()).unwrap()).unwrap()
+    tempfile::tempdir_in(temp_root()).unwrap()
 }
 
 /// The program a test names a Unix utility by, such as `/bin/sh` or `cat`: unchanged on
@@ -333,7 +335,8 @@ mod fixture {
         static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
         DIRECTORY.get_or_init(|| {
             let source = include_str!("fixture.rs");
-            let digest = Sha256::digest(source.as_bytes());
+            let digest =
+                Sha256::digest([source.as_bytes(), include_bytes!("os/stand_in.rs")].concat());
             let tag: String = digest[..8]
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
@@ -962,13 +965,430 @@ mod acl {
     }
 }
 
+/// Point a copied declaration's Unix commands at the stand-ins, and with `deadlines` give
+/// its deadlines of a second or more `os::slow` room. The runtime fixture's `check.sh`
+/// compares its working folder as a file rather than as text: Windows spells that folder
+/// with `\`, where the script appends `/review`.
+pub fn port_fixture(path: &Path, deadlines: bool) {
+    if !stand_ins() && !cfg!(target_os = "macos") {
+        return;
+    }
+    /// Whether anything changed.
+    fn commands(value: &mut Value, deadlines: bool) -> bool {
+        match value {
+            Value::Object(object) => {
+                let mut changed = false;
+                for (key, value) in object.iter_mut() {
+                    changed |= match value {
+                        Value::String(command)
+                            if key == "command"
+                                && (command.starts_with("/bin/")
+                                    || command.starts_with("/usr/bin/")
+                                    || command == "sh") =>
+                        {
+                            let resolved = bin(command);
+                            let changed = *command != resolved;
+                            *command = resolved;
+                            changed
+                        }
+                        Value::Number(deadline)
+                            if deadlines
+                                && key == "timeout_ms"
+                                && deadline.as_u64().is_some_and(|ms| ms >= 1000) =>
+                        {
+                            *value = json!(slow(deadline.as_u64().unwrap()));
+                            true
+                        }
+                        other => commands(other, deadlines),
+                    };
+                }
+                changed
+            }
+            Value::Array(items) => {
+                let mut changed = false;
+                for item in items {
+                    changed |= commands(item, deadlines);
+                }
+                changed
+            }
+            _ => false,
+        }
+    }
+    match path.file_name().and_then(|name| name.to_str()) {
+        // Rewritten only when needed: a declaration's bytes can be part of a fingerprint.
+        Some(name) if name.ends_with(".artf") => {
+            let mut declaration: Value =
+                toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+            if commands(&mut declaration, deadlines) {
+                fs::write(path, toml::to_string_pretty(&declaration).unwrap()).unwrap();
+            }
+        }
+        Some("check.sh") => {
+            let script = fs::read_to_string(path).unwrap();
+            let script = script.replace(r#"test "$PWD" = "#, r#"test "$PWD" -ef "#);
+            fs::write(path, script).unwrap();
+        }
+        _ => {}
+    }
+}
+
+/// Physical temporary root, without aliases that scoped reads intentionally reject.
+pub fn temp_root() -> std::path::PathBuf {
+    std::fs::canonicalize(std::env::temp_dir()).unwrap()
+}
+
+/// Atomically reserve a named fixture under an explicitly chosen physical parent.
+pub fn tempdir_in(parent: &Path, prefix: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir_in(canonical(parent))
+        .unwrap()
+}
+
+/// Write a directly runnable shell fixture with the platform's interpreter.
+pub fn write_script(path: &Path, body: &str) {
+    std::fs::write(path, format!("#!{}\n{body}", bin("/bin/sh"))).unwrap();
+    make_executable(path);
+}
+
+/// Native separators for assertions about OS error messages (not persisted path text).
+pub fn native(path: &str) -> String {
+    path.replace('/', std::path::MAIN_SEPARATOR_STR)
+}
+
+/// Set a spawned program's actual home rather than merely a Unix-only variable.
+pub fn home_env() -> &'static str {
+    "HOME"
+}
+
+/// A shell fixture reads this variable to observe its platform home.
+pub fn home_expression() -> &'static str {
+    "$HOME"
+}
+
+/// Error-producing review: Unix signal, Windows deadline expiration.
+pub const ERROR_SCRIPT: &str = if cfg!(windows) {
+    "sleep 30"
+} else {
+    "kill -TERM $$"
+};
+pub const ERROR_CODE: &str = if cfg!(windows) {
+    "TIMEOUT"
+} else {
+    "ABNORMAL_EXIT"
+};
+
+/// Configure the deadline required by the Windows operational-error fixture.
+pub fn erroring(mut eval: Value, timeout_ms: u64) -> Value {
+    if cfg!(windows) {
+        eval["profile"]["timeout_ms"] = json!(timeout_ms);
+    }
+    eval
+}
+
+/// A cancellation fixture keeps the registration PID as the long-lived process.
+pub fn cancellation_script() -> &'static str {
+    if cfg!(windows) {
+        "touch started; sleep 30"
+    } else {
+        "touch started; exec sleep 30"
+    }
+}
+
+/// Platform-independent assertion of the group containment established at registration.
+pub fn assert_group(pid: u32) {
+    #[cfg(unix)]
+    assert!(leads_group(pid), "separate process group");
+    #[cfg(windows)]
+    assert!(running(pid), "registered job member is alive");
+}
+
+/// Detached launches also leave the caller's terminal session on Unix.
+pub fn assert_detached(pid: u32) {
+    assert_group(pid);
+    #[cfg(unix)]
+    assert!(leads_session(pid), "separate session");
+}
+
+/// Missing executables may be reported as a missing component on Windows.
+pub fn missing_program(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::NotFound
+        || (cfg!(windows) && error.kind() == std::io::ErrorKind::NotADirectory)
+}
+
+/// Python's UTF-8 pipe mode is explicit on every platform.
+pub fn python(source: &str) -> Vec<&str> {
+    vec!["-X", "utf8", "-c", source]
+}
+
+/// A process status includes the platform's native description.
+pub fn exit_status(code: i32) -> String {
+    if cfg!(windows) {
+        format!("exit code: {code}")
+    } else {
+        format!("exit status: {code}")
+    }
+}
+
+/// Rejected states including system-specific name aliases and link traversal.
+pub fn reviewed_state_paths(root: &Path, repo: &Path) -> Vec<std::path::PathBuf> {
+    let mut paths = vec![repo.join("state"), root.join("alias/state")];
+    #[cfg(windows)]
+    paths.push(other_case(repo).join("state"));
+    #[cfg(unix)]
+    paths.push(root.join("nested-alias/../state"));
+    paths
+}
+
+/// Execute permissions can only be revoked on Unix.
+pub fn revoke_execution(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        deny_execution(path);
+        true
+    }
+    #[cfg(windows)]
+    {
+        let _ = path;
+        false
+    }
+}
+
+/// Baseline runtime variables include system/profile entries on Windows.
+pub fn runtime_environment_len() -> usize {
+    if cfg!(windows) { 16 } else { 10 }
+}
+
+/// Every disposable environment folder, including platform home aliases.
+pub fn runtime_directories() -> Vec<(&'static str, &'static str)> {
+    let mut entries = vec![
+        ("ARTIFACTIZE_OUTPUT_DIR", "output"),
+        ("ARTIFACTIZE_TMP_DIR", "tmp"),
+        ("HOME", "home"),
+        ("XDG_CACHE_HOME", "cache"),
+        ("TMPDIR", "tmp"),
+        ("TMP", "tmp"),
+        ("TEMP", "tmp"),
+    ];
+    if cfg!(windows) {
+        entries.extend([
+            ("USERPROFILE", "home"),
+            ("LOCALAPPDATA", "cache"),
+            ("APPDATA", "home"),
+        ]);
+    }
+    entries
+}
+
+/// Portable executable fixture name; Windows uses its adjacent executable stand-in.
+pub const TOOL: &str = "env-tool";
+
+/// A search path for the explicit-environment probe, without its build tools.
+pub fn system_path() -> std::ffi::OsString {
+    if cfg!(windows) {
+        std::env::var_os("SystemRoot")
+            .map(|root| {
+                std::path::PathBuf::from(root)
+                    .join("System32")
+                    .into_os_string()
+            })
+            .unwrap()
+    } else {
+        "/usr/bin:/bin".into()
+    }
+}
+
+/// Zero streams used to test concurrent pipe drainage and truncation.
+pub fn zero_output(stdout: usize, stderr: usize) -> String {
+    format!("head -c {stdout} /dev/zero & head -c {stderr} /dev/zero >&2 & wait")
+}
+pub fn letter_output(stdout: usize, stderr: usize) -> String {
+    format!(
+        "head -c {stdout} /dev/zero | tr '\\000' x & head -c {stderr} /dev/zero | tr '\\000' y >&2 & wait"
+    )
+}
+pub fn capped_output(bytes: usize) -> String {
+    format!("head -c {bytes} /dev/zero; printf discarded")
+}
+
+/// HOME and desktop variables inherited by a human-facing child.
+pub fn human_environment<'a>(command: &'a mut Command, root: &Path) -> &'a mut Command {
+    command
+        .env(home_env(), root.join("real-home"))
+        .env("DISPLAY", ":77")
+        .env("WAYLAND_DISPLAY", "wayland-test")
+        .env("XDG_CONFIG_HOME", root.join("real-config"))
+}
+
+pub fn human_environment_probe() -> String {
+    format!(
+        "import os; print(os.environ['ARTIFACTIZE_HUMAN_MARKER']); print(os.environ['{}']); print(os.environ['DISPLAY']); print(os.environ['WAYLAND_DISPLAY']); print(os.environ['XDG_CONFIG_HOME'])",
+        home_env()
+    )
+}
+pub fn isolated_home_probe() -> String {
+    format!(
+        "import os; print(os.environ.get('ARTIFACTIZE_HUMAN_MARKER','absent')); print(os.environ['{}'])",
+        home_env()
+    )
+}
+
+/// A directly runnable Python script uses #! only where the OS supports it.
+pub fn python_script(path: &Path, source: &str) -> (String, Vec<Value>) {
+    std::fs::write(path, source).unwrap();
+    if cfg!(windows) {
+        (
+            "python3".into(),
+            vec![json!("-X"), json!("utf8"), json!(path.file_name().unwrap())],
+        )
+    } else {
+        let python = Command::new("python3")
+            .args(["-c", "import sys; print(sys.executable)"])
+            .output()
+            .unwrap();
+        assert!(python.status.success());
+        std::fs::write(
+            path,
+            format!(
+                "#!{}\n{source}",
+                String::from_utf8(python.stdout).unwrap().trim()
+            ),
+        )
+        .unwrap();
+        allow_execution(path);
+        (
+            format!("./{}", path.file_name().unwrap().to_str().unwrap()),
+            vec![],
+        )
+    }
+}
+
+/// CRLF is accepted only on Windows; every other invalid fingerprint is common.
+pub fn invalid_fingerprints() -> Vec<Vec<u8>> {
+    let mut values: Vec<Vec<u8>> = [
+        b"".as_slice(),
+        b" value",
+        b"value ",
+        b"value\t",
+        b"value\r\r\n",
+        b"value\n\n",
+        b"one\ntwo",
+        b"value/key",
+        b"\xff",
+        b"ok\0",
+        b"\x1b[31mok\x1b[0m",
+        &[b'x'; 129],
+    ]
+    .into_iter()
+    .map(<[u8]>::to_vec)
+    .collect();
+    if !cfg!(windows) {
+        values.push(b"value\r\n".to_vec());
+    }
+    values
+}
+pub fn valid_fingerprints() -> Vec<Vec<u8>> {
+    let mut values = vec![b"Aa0._:-".to_vec(), b"Aa0._:-\n".to_vec(), vec![b'x'; 128]];
+    if cfg!(windows) {
+        values.push(b"Aa0._:-\r\n".to_vec());
+    }
+    values
+}
+
+/// Only Unix offers an independently observable signal termination status.
+pub fn signal_fingerprint() -> Option<Value> {
+    if cfg!(windows) {
+        None
+    } else {
+        Some(json!({"script":{"command":bin("/bin/sh"),"args":["-c","kill -TERM $$"]}}))
+    }
+}
+
+/// A PATH shim exercises native lookup: batch/PATHEXT on Windows, #! on Unix.
+pub fn lookup_shim(directory: &Path) {
+    #[cfg(windows)]
+    std::fs::write(
+        directory.join("artifactize-lookup-shim.cmd"),
+        "@echo off\r\npython3 \"%~dp0argv.py\" %*\r\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    write_script(
+        &directory.join("artifactize-lookup-shim"),
+        "exec python3 \"$(dirname \"$0\")/argv.py\" \"$@\"\n",
+    );
+}
+
+/// Human/model and persisted path spelling, independent of native separators.
+pub fn path_text(path: &Path) -> String {
+    let text = path.to_str().expect("fixture paths are Unicode");
+    #[cfg(windows)]
+    {
+        text.replace('\\', "/")
+    }
+    #[cfg(not(windows))]
+    {
+        text.to_owned()
+    }
+}
+
+/// Native executable suffix lookup used by the batch shim fixture.
+pub const PATHEXT: (&str, &str) = ("PATHEXT", ".CMD;.EXE;.BAT;.COM");
+
+/// Runtime operational failures supported by this platform.
+pub fn runtime_failures() -> Vec<(&'static str, Vec<&'static str>, &'static str)> {
+    let cases = vec![
+        ("artifactize-missing-command", vec![], "SPAWN_FAILED"),
+        ("/bin/cat", vec!["{test}/missing"], "PREPARATION_FAILED"),
+    ];
+    cases.into_iter().chain(signal_failure()).collect()
+}
+
+fn signal_failure() -> Option<(&'static str, Vec<&'static str>, &'static str)> {
+    if cfg!(unix) {
+        Some(("/bin/sh", vec!["-c", "kill -TERM $$"], "ABNORMAL_EXIT"))
+    } else {
+        None
+    }
+}
+
+/// Fingerprint probe's private environment and permission checks differ by OS.
+pub fn fingerprint_probe(source: &str) -> String {
+    source.replace("PRIVATE_DIRECTORY_CHECK", "for key in ['HOME', 'TMPDIR', 'XDG_CACHE_HOME', 'ARTIFACTIZE_OUTPUT_DIR']:\n    path = pathlib.Path(os.environ[key])\n    assert not path.is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_WORKSPACE_DIR']))\n    assert os.name == 'nt' or stat.S_IMODE(path.stat().st_mode) == 0o700\n    (path / 'discard').write_text('scratch')")
+}
+
+// The stand-in executable also includes this dependency-free part of the OS layer.
+#[path = "os/stand_in.rs"]
+pub mod stand_in;
+
+/// Always select the portable stand-in, even on a Unix test runner.
+pub fn stand_in_bin(name: &str) -> std::path::PathBuf {
+    fixture::directory().join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+}
+
+/// Prepend test programs to the native search path without reimplementing its separator.
+pub fn prepend_path(directory: &Path) -> std::ffi::OsString {
+    std::env::join_paths(
+        std::iter::once(directory.to_owned()).chain(std::env::split_paths(&path())),
+    )
+    .unwrap()
+}
+
+/// Expected inherited human tool home and environment prefix.
+pub fn human_tool_home() -> &'static str {
+    "/reviewer-home"
+}
+pub fn human_tool_prefix() -> &'static str {
+    "/reviewer-home|real-environment|"
+}
+
 /// Python used by multimodal command-tool fixtures, installed on all CI platforms.
-pub fn python() -> &'static str {
+pub fn python_program() -> &'static str {
     "python3"
 }
 
 /// Ensure fixture stdout is Unicode even with Windows' default ANSI pipe encoding.
-pub fn python_script(path: &Path, code: &str) {
+pub fn write_python_script(path: &Path, code: &str) {
     std::fs::write(
         path,
         format!("import sys\nsys.stdout.reconfigure(encoding='utf-8')\n{code}"),
@@ -1012,7 +1432,7 @@ pub fn output_script(path: &Path, output: &str) {
 pub fn path_output(output: &str) -> (&'static str, Vec<String>) {
     if cfg!(windows) {
         (
-            python(),
+            python_program(),
             vec![
                 "-c".into(),
                 format!("import sys; sys.stdout.write({output:?})"),
@@ -1068,7 +1488,7 @@ pub fn windows_exit(code: u32) -> tokio::process::Command {
 
 /// An inert child controlled by the parent's stdin; no scheduler/timing assumption.
 pub fn stdin_waiter() -> tokio::process::Command {
-    let mut command = tokio::process::Command::new(python());
+    let mut command = tokio::process::Command::new(python_program());
     command
         .args(["-c", "import sys; sys.stdin.buffer.read()"])
         .stdin(std::process::Stdio::piped())

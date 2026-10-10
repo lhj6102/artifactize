@@ -126,14 +126,14 @@ impl Stops {
 
     /// The stop of the backend the request's Agent review uses, if any.
     fn of(&self, request: &Request) -> Option<StoppedBackend> {
-        let backend = request.options.backend.as_deref()?;
+        let backend = request.options.backend?;
         let stopped = self.0.lock().unwrap();
         stopped.iter().find(|stop| stop.backend == backend).cloned()
     }
 
     /// Whether `backend` stopped, asked later.
-    fn check(&self, backend: &str) -> Box<dyn FnOnce() -> bool + Send> {
-        let (stops, backend) = (self.clone(), backend.to_owned());
+    fn check(&self, backend: &crate::config::Backend) -> Box<dyn FnOnce() -> bool + Send> {
+        let (stops, backend) = (self.clone(), *backend);
         Box::new(move || {
             let stopped = stops.0.lock().unwrap();
             stopped.iter().any(|stop| stop.backend == backend)
@@ -148,9 +148,9 @@ impl Stops {
         let mut stopped = self.0.lock().unwrap();
         if Code::stops_backend(code) && !stopped.iter().any(|stop| &stop.backend == backend) {
             stopped.push(StoppedBackend {
-                backend: backend.clone(),
-                error_code: code.clone(),
-                eval_id: request.eval_id.parse().expect("saved Eval id"),
+                backend: *backend,
+                error_code: (*code).try_into().expect("backend stopping failure"),
+                eval_id: request.eval_id.clone(),
                 request_id: request.id.clone(),
                 error: request.error.clone().unwrap_or_default(),
             });
@@ -235,11 +235,25 @@ struct Scheduler<'a, 'g> {
 /// A dependency request is audit-only: no execution, claim, capacity or cache evidence.
 pub(crate) fn derive(request: &mut Request, eval: &EvalEvaluation<'_>) {
     request.status = crate::project::verify::status(eval.status);
-    request.blocked_by = eval.blocked_by.iter().map(ToString::to_string).collect();
+    request.blocked_by = eval
+        .blocked_by
+        .iter()
+        .map(|id| {
+            id.as_str()
+                .to_owned()
+                .try_into()
+                .expect("validated dependency blocker")
+        })
+        .collect();
     request.blocked_reason = (!request.blocked_by.is_empty()).then(|| {
         format!(
             "Derived dependency verdict: waiting for current GREEN evidence from {}.",
-            request.blocked_by.join(", ")
+            request
+                .blocked_by
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
         )
     });
     request.result = (eval.status == EvalStatus::Green)
@@ -262,7 +276,7 @@ impl Scheduler<'_, '_> {
         let saving = if self.limits.agent_sessions().enabled {
             Some(crate::agent::session::Saving {
                 state: self.run.state_dir.clone(),
-                state_id: self.receipts.state_id().await?,
+                state_id: self.receipts.state_id().await?.to_string(),
                 producer: producer.name.clone(),
             })
         } else {
@@ -275,7 +289,13 @@ impl Scheduler<'_, '_> {
             .run
             .definitions
             .graph()
-            .map(|graph| graph.evals().iter().map(|eval| eval.id.clone()).collect())
+            .map(|graph| {
+                graph
+                    .evals()
+                    .iter()
+                    .map(|eval| eval.id.to_string())
+                    .collect()
+            })
             .unwrap_or_default();
         let mut running = BTreeSet::new();
         let mut waiting = BTreeSet::new();
@@ -320,7 +340,7 @@ impl Scheduler<'_, '_> {
                             && saved.status == crate::types::RequestStatus::WaitingHuman
                     }) {
                         evidence.insert(
-                            request.eval_id.parse().expect("saved Eval id"),
+                            request.eval_id.clone(),
                             match request.status {
                                 crate::types::RequestStatus::Green => {
                                     Evidence::Current(Verdict::Green)
@@ -357,7 +377,7 @@ impl Scheduler<'_, '_> {
                         if index.is_none() && saved_evals.contains(eval.id.as_str()) {
                             self.run
                                 .evidence
-                                .insert(eval.id.to_string(), crate::types::RequestStatus::Error);
+                                .insert(eval.id.clone(), crate::types::RequestStatus::Error);
                         }
                         if let Some(index) = index {
                             let request = &mut self.requests[index];
@@ -377,7 +397,7 @@ impl Scheduler<'_, '_> {
                         evidence.insert(eval.id.clone(), Evidence::Current(verdict));
                         if index.is_none() && saved_evals.contains(eval.id.as_str()) {
                             self.run.evidence.insert(
-                                eval.id.to_string(),
+                                eval.id.clone(),
                                 match verdict {
                                     Verdict::Green => crate::types::RequestStatus::Green,
                                     Verdict::Red => crate::types::RequestStatus::Red,
@@ -408,7 +428,7 @@ impl Scheduler<'_, '_> {
                     let request = &mut self.requests[index];
                     if running.contains(&index)
                         || request.status == crate::types::RequestStatus::WaitingHuman
-                        || evidence.contains_key(&request.eval_id)
+                        || evidence.contains_key(request.eval_id.as_str())
                     {
                         continue;
                     }
@@ -426,16 +446,21 @@ impl Scheduler<'_, '_> {
                             request.result = None;
                             request.completed_at = Some(now());
                             self.receipts.save_request(request).await?;
-                            evidence.insert(
-                                request.eval_id.parse().expect("saved Eval id"),
-                                Evidence::OperationalError,
-                            );
+                            evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
                             continue;
                         }
                         let eval = &evaluation.evals[request.eval_id.as_str()];
                         let status = crate::project::verify::status(eval.status);
-                        let blocked_by: Vec<_> =
-                            eval.blocked_by.iter().map(ToString::to_string).collect();
+                        let blocked_by: Vec<_> = eval
+                            .blocked_by
+                            .iter()
+                            .map(|id| {
+                                id.as_str()
+                                    .to_owned()
+                                    .try_into()
+                                    .expect("validated dependency blocker")
+                            })
+                            .collect();
                         if request.status != status || request.blocked_by != blocked_by {
                             derive(request, eval);
                             self.receipts.save_request(request).await?;
@@ -463,10 +488,7 @@ impl Scheduler<'_, '_> {
                         request.result = None;
                         request.completed_at = Some(now());
                         self.receipts.save_request(request).await?;
-                        evidence.insert(
-                            request.eval_id.parse().expect("saved Eval id"),
-                            Evidence::OperationalError,
-                        );
+                        evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
                         evaluation = self
                             .graph
                             .evaluate_with_policy(&evidence, self.run.ignore_gates);
@@ -496,7 +518,7 @@ impl Scheduler<'_, '_> {
                             repo_path: self.config.root.clone(),
                             run_id: self.run.id.clone(),
                             request_id: request.id.clone(),
-                            eval_id: request.eval_id.parse().expect("saved Eval id"),
+                            eval_id: request.eval_id.clone(),
                             eval_def_hash: request.eval_def_hash.clone(),
                             completed_at: None,
                             execution_paths: Default::default(),
@@ -544,7 +566,7 @@ impl Scheduler<'_, '_> {
                             .options
                             .backend
                             .as_ref()
-                            .and_then(|name| Some((name.clone(), self.limits.limit(*backend)?))),
+                            .and_then(|name| Some((*name, self.limits.limit(*backend)?))),
                         _ => None,
                     };
                     let mut claim = claim(
@@ -587,7 +609,7 @@ impl Scheduler<'_, '_> {
                     match claim {
                         Claim::Full => {
                             let (backend, limit) = limited.as_ref().expect("a limited backend");
-                            full.insert(backend.clone());
+                            full.insert(*backend);
                             waiting.remove(&index);
                             if capacity_waiting.insert(index) {
                                 request.blocked_reason = Some(format!(
@@ -600,7 +622,7 @@ impl Scheduler<'_, '_> {
                         Claim::Reuse(execution) => {
                             waiting.remove(&index);
                             evidence.insert(
-                                request.eval_id.parse().expect("saved Eval id"),
+                                request.eval_id.clone(),
                                 Evidence::Current(
                                     execution.verdict().expect("completed cache entry"),
                                 ),
@@ -619,10 +641,7 @@ impl Scheduler<'_, '_> {
                             request.status = crate::types::RequestStatus::Stale;
                             request.blocked_reason = Some(not_reused_reason(kind));
                             self.receipts.save_request(request).await?;
-                            evidence.insert(
-                                request.eval_id.parse().expect("saved Eval id"),
-                                Evidence::Stale,
-                            );
+                            evidence.insert(request.eval_id.clone(), Evidence::Stale);
                             evaluation = self
                                 .graph
                                 .evaluate_with_policy(&evidence, self.run.ignore_gates);
@@ -638,7 +657,7 @@ impl Scheduler<'_, '_> {
                             *request = self.receipts.follow_human(request).await?;
                             if request.status != crate::types::RequestStatus::WaitingHuman {
                                 evidence.insert(
-                                    request.eval_id.parse().expect("saved Eval id"),
+                                    request.eval_id.clone(),
                                     match request.status {
                                         crate::types::RequestStatus::Green => {
                                             Evidence::Current(Verdict::Green)
@@ -679,10 +698,7 @@ impl Scheduler<'_, '_> {
                             ));
                             request.completed_at = Some(now());
                             self.receipts.save_request(request).await?;
-                            evidence.insert(
-                                request.eval_id.parse().expect("saved Eval id"),
-                                Evidence::OperationalError,
-                            );
+                            evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
                             evaluation = self
                                 .graph
                                 .evaluate_with_policy(&evidence, self.run.ignore_gates);
@@ -818,7 +834,7 @@ impl Scheduler<'_, '_> {
                         self.receipts.save_run(self.run).await?;
                     }
                     if request.status != crate::types::RequestStatus::WaitingHuman {
-                        evidence.insert(request.eval_id.parse().expect("saved Eval id"), match request.status {
+                        evidence.insert(request.eval_id.clone(), match request.status {
                             crate::types::RequestStatus::Green => Evidence::Current(Verdict::Green),
                             crate::types::RequestStatus::Red => Evidence::Current(Verdict::Red),
                             _ => Evidence::OperationalError,

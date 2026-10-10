@@ -217,13 +217,13 @@ pub fn run_output(view: &RunView, now: OffsetDateTime) -> Value {
 /// with the Agent backend, model and reasoning.
 pub fn profile_name(profile: &crate::config::StoredProfile, options: &ExecutionOptions) -> String {
     if let Some(variant) = &options.variant {
-        return variant.clone();
+        return variant.to_string();
     }
     match profile.kind() {
         crate::config::ProfileKind::Agent => [
-            options.backend.as_deref(),
+            options.backend.as_ref().map(|backend| backend.as_str()),
             options.model.as_deref(),
-            options.reasoning.as_deref(),
+            options.reasoning.map(crate::config::Reasoning::as_str),
         ]
         .into_iter()
         .flatten()

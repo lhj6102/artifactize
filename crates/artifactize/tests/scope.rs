@@ -20,7 +20,7 @@ impl Drop for Fixture {
 
 #[tokio::test]
 async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
-    let scratch = tempfile::tempdir().unwrap();
+    let scratch = support::os::tempdir();
     let root = scratch.path().join("repo");
     fs::create_dir_all(root.join("review/nested")).unwrap();
     fs::create_dir_all(root.join("data")).unwrap();

@@ -951,8 +951,10 @@ impl Job {
 /// Declared Human tools in the eval scope, named like the registry.
 pub fn tools(request: &Request) -> Vec<Tool> {
     let definition = request.human_definition.as_ref();
-    let Some(artifacts) = definition.and_then(|definition| definition["artifacts"].as_object())
-    else {
+    let artifacts = definition
+        .and_then(|definition| definition.artifacts.value())
+        .map(|artifacts| serde_json::to_value(artifacts).expect("saved Human artifacts are JSON"));
+    let Some(artifacts) = artifacts.as_ref().and_then(Value::as_object) else {
         return Vec::new();
     };
     let mut tools: Vec<_> = artifacts

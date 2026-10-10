@@ -169,7 +169,9 @@ impl Located {
 fn here(state: &Path, reference: &SessionRef) -> Result<(), String> {
     let producer = Producer::current().name;
     let state_id = store::read_state_id(state)?;
-    if reference.producer == producer && Some(&reference.state) == state_id.as_ref() {
+    if reference.producer == producer
+        && Some(reference.state.as_str()) == state_id.as_ref().map(crate::types::StateId::as_str)
+    {
         return Ok(());
     }
     Err(format!(
@@ -349,7 +351,10 @@ async fn files_changed(
     }
     let current = cache::prepare(
         config,
-        request.fingerprints.keys().map(String::as_str),
+        request
+            .fingerprints
+            .keys()
+            .map(crate::types::ArtifactName::as_str),
         output,
         &cache::Parallelism::new(cache::Parallelism::available()),
         cancellation,

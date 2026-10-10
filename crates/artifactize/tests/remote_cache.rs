@@ -248,7 +248,7 @@ const OFFLINE: &str = "continuing without the remote review store";
 
 #[test]
 fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let server = Server::start(root.path());
     let alice = Machine::new(
         root.path(),
@@ -345,7 +345,7 @@ fn another_machine_reuses_a_published_verdict_and_status_predicts_it() {
 
 #[test]
 fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let mut server = Server::start(root.path());
     let bob = Machine::new(
         root.path(),
@@ -375,7 +375,7 @@ fn an_unreachable_store_falls_back_to_the_local_latest_with_one_warning() {
 }
 #[test]
 fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let url = format!("http://{}/", listener.local_addr().unwrap());
@@ -398,7 +398,7 @@ fn status_force_makes_no_remote_call_and_a_rejected_token_fails_closed() {
 }
 #[test]
 fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let server = Server::start(root.path());
     let laptop = Machine::new(
         root.path(),
@@ -477,7 +477,7 @@ fn human_signoffs_publish_only_with_the_human_scope_and_settle_a_waiting_verify(
 
 #[test]
 fn remote_push_publishes_results_produced_offline_once() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let server = Server::start(root.path());
     let token = server.token("alice-laptop", "read,publish");
     let offline = Machine::new(root.path(), "alice", "off", &token);
@@ -535,7 +535,7 @@ fn remote_push_publishes_results_produced_offline_once() {
 
 #[test]
 fn the_newer_record_wins_across_local_history_and_the_store() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let server = Server::start(root.path());
     let alice_token = server.token("alice-laptop", "read,publish");
     let alice = Machine::new(root.path(), "alice", &server.url, &alice_token);
