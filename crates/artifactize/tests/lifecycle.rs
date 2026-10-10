@@ -123,7 +123,7 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
         assert!(status_text.contains(id), "{status_text}");
     }
     let second = verify(&repo, &state).await;
-    assert_eq!(second.run.status.as_str(), "GREEN");
+    assert_eq!(second.run.status().as_str(), "GREEN");
     assert_ne!(second.requests[0].execution_id.as_ref(), Some(execution));
     assert_eq!(
         second.requests[1].execution_id,
@@ -223,4 +223,147 @@ async fn valid_lifecycle_json_is_byte_identical_and_legacy_completion_rules_surv
             }
         }
     }
+}
+
+#[test]
+fn run_lifecycle_keeps_legacy_bytes_and_rejects_every_illegal_combination() {
+    // Independent schema-5 fixture: field order, nulls and omission rules are historical.
+    let wire = r#"{"id":"legacy-run","repoPath":"repo","stateDir":"state","status":"RUNNING","createdAt":"2026-01-01T00:00:00.000000000Z","completedAt":null,"selection":{"kind":"all"},"profile":null,"definitions":null,"recursive":false,"force":false,"ignoreGates":false,"jobs":2,"maxExecutions":null,"executionsStarted":0,"waitTimeoutMs":null,"waitTimedOut":false,"validation":null,"error":null}"#;
+    for status in ["RUNNING", "GREEN", "RED", "ERROR", "INCOMPLETE"] {
+        for at in ["null", "\"2026-01-01T00:00:01.000000000Z\""] {
+            for error in ["null", "\"failure\""] {
+                let text = wire
+                    .replace(
+                        "\"status\":\"RUNNING\"",
+                        &format!("\"status\":\"{status}\""),
+                    )
+                    .replace("\"completedAt\":null", &format!("\"completedAt\":{at}"))
+                    .replace("\"error\":null", &format!("\"error\":{error}"));
+                let expected = match status {
+                    "RUNNING" => at == "null" && error == "null",
+                    "GREEN" | "RED" => at != "null" && error == "null",
+                    _ => at != "null",
+                };
+                let run = serde_json::from_str::<store::Run>(&text);
+                assert_eq!(run.is_ok(), expected, "{status}, {at}, {error}");
+                if let Ok(run) = run {
+                    assert_eq!(serde_json::to_string(&run).unwrap(), text);
+                }
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn contradictory_runs_are_reported_without_aborting_list_status_monitor_or_prune() {
+    let root = support::os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fs::create_dir(&repo).unwrap();
+    support::declaration::write(repo.join("index.artf"), json!({
+        "name":"app", "evals":[{"id":"check","title":"Check","payload":{"instruction":"Check."},"profile":{"kind":"runtime","command":support::os::bin("echo"),"args":["ok"]}}]
+    }).to_string()).unwrap();
+    let healthy = verify(&repo, &state).await;
+    // Corrupt the newest Run: monitor initially selects it and must still refresh.
+    let bad = verify(&repo, &state).await;
+    let db = Connection::open(state.join(DATABASE)).unwrap();
+    db.execute(
+        "UPDATE runs SET status='RUNNING',data=json_set(data,'$.status','RUNNING') WHERE id=?",
+        [&bad.run.id],
+    )
+    .unwrap();
+    let listed: Value = serde_json::from_str(&cli(&repo, &state, &["run", "list"], true)).unwrap();
+    assert_eq!(listed.as_array().unwrap().len(), 2);
+    let corrupted = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|run| run["id"] == bad.run.id.as_str())
+        .unwrap();
+    assert_eq!(corrupted["unreadable"][0]["kind"], "run");
+    assert_eq!(corrupted["unreadable"][0]["id"], bad.run.id.as_str());
+    assert!(
+        corrupted["unreadable"][0]["reason"]
+            .as_str()
+            .unwrap()
+            .contains("A running Run cannot be completed")
+    );
+    for args in [["run", "list"].as_slice(), ["status"].as_slice()] {
+        let text = cli(&repo, &state, args, false);
+        assert!(text.contains(bad.run.id.as_str()), "{text}");
+        assert!(text.contains("A running Run cannot be completed"), "{text}");
+    }
+    let status: Value = serde_json::from_str(&cli(&repo, &state, &["status"], true)).unwrap();
+    assert_eq!(status["unreadable"][0]["id"], bad.run.id.as_str());
+    assert_eq!(
+        store::read_run(&state, &healthy.run.id)
+            .await
+            .unwrap()
+            .run
+            .status()
+            .as_str(),
+        "GREEN"
+    );
+    let shown = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        .arg("--repo")
+        .arg(&repo)
+        .arg("--state-dir")
+        .arg(&state)
+        .args(["run", "show", bad.run.id.as_str(), "--json"])
+        .output()
+        .unwrap();
+    assert!(!shown.status.success());
+    let error = format!(
+        "{}{}",
+        String::from_utf8_lossy(&shown.stdout),
+        String::from_utf8_lossy(&shown.stderr)
+    );
+    assert!(error.contains(bad.run.id.as_str()), "{error}");
+    assert!(
+        error.contains("A running Run cannot be completed"),
+        "{error}"
+    );
+    let pruned = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        .arg("--repo")
+        .arg(&repo)
+        .arg("--state-dir")
+        .arg(&state)
+        .args(["prune", "--dry-run", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        pruned.status.success(),
+        "{}",
+        String::from_utf8_lossy(&pruned.stderr)
+    );
+    assert!(String::from_utf8_lossy(&pruned.stderr).contains(bad.run.id.as_str()));
+    let report: Value = serde_json::from_slice(&pruned.stdout).unwrap();
+    assert!(
+        report["skippedRuns"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(bad.run.id))
+    );
+    assert_eq!(store::read_catalog(&state).await.unwrap().len(), 1);
+    assert_eq!(
+        store::read_requests(&state, Some(&bad.run.id))
+            .await
+            .unwrap()
+            .len(),
+        0
+    );
+    let mut monitor = artifactize::monitor::Monitor::new(state.clone(), Some(repo.clone()));
+    monitor.refresh().await;
+    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 40)).unwrap();
+    let frame = terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    let text: String = frame
+        .buffer
+        .content
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    assert!(text.contains(bad.run.id.as_str()), "{text}");
+    assert!(text.contains("A running Run cannot be completed"), "{text}");
+    assert!(!text.contains("read failed"), "{text}");
+    assert_eq!(verify(&repo, &state).await.run.status().as_str(), "GREEN");
 }

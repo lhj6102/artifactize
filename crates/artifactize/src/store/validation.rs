@@ -1,10 +1,9 @@
-//! Validate Run writes and parse request/execution lifecycle data at the saved-record edge.
+//! Parse Run, request and execution lifecycle data at the saved-record edge.
 //! Earlier versions validated every write; contradictory rows indicate corruption. They
 //! fail individually as unreadable records, never as reusable evidence or a whole listing.
 
 use super::ExecutionResult;
-use super::Run;
-use crate::types::{RequestStatus, RunStatus};
+use crate::types::RequestStatus;
 
 pub(super) fn result(
     status: RequestStatus,
@@ -30,27 +29,6 @@ pub(super) fn result(
         _ if result.is_none() && error.is_none() && error_code.is_none() => Ok(()),
         _ => {
             Err("A pending request or execution cannot carry a result or operational error.".into())
-        }
-    }
-}
-impl Run {
-    pub(crate) fn validate(&self) -> Result<(), String> {
-        match self.status {
-            RunStatus::Running if self.completed_at.is_none() && self.error.is_none() => Ok(()),
-            RunStatus::Running => {
-                Err("A running Run cannot be completed or carry an error.".into())
-            }
-            RunStatus::Green | RunStatus::Red
-                if self.completed_at.is_some() && self.error.is_none() =>
-            {
-                Ok(())
-            }
-            RunStatus::Green | RunStatus::Red => Err(
-                "A completed verdict Run needs a completion time and cannot carry an error.".into(),
-            ),
-            RunStatus::Error if self.completed_at.is_some() => Ok(()),
-            RunStatus::Incomplete if self.completed_at.is_some() => Ok(()),
-            _ => Err("A finished Run needs its completion time.".into()),
         }
     }
 }

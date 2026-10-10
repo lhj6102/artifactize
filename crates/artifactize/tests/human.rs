@@ -481,7 +481,7 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     )
     .unwrap();
     let run = fixture.verify(returning()).await;
-    assert_eq!(run.run.status.as_str(), "INCOMPLETE");
+    assert_eq!(run.run.status().as_str(), "INCOMPLETE");
     let waiting = run
         .requests
         .iter()
@@ -510,7 +510,7 @@ async fn submitted_fingerprint_unblocks_dependents_on_next_verify() {
     .await
     .unwrap();
     let complete = fixture.verify(returning()).await;
-    assert_eq!(complete.run.status.as_str(), "GREEN");
+    assert_eq!(complete.run.status().as_str(), "GREEN");
     assert_eq!(complete.run.executions_started, 1);
     assert!(
         complete
@@ -607,7 +607,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
     )
     .await
     .unwrap();
-    assert_eq!(completed.run.status.as_str(), "RED");
+    assert_eq!(completed.run.status().as_str(), "RED");
     assert_eq!(
         completed.requests[0]
             .result()

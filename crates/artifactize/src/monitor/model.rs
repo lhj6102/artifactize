@@ -320,9 +320,9 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
                 .join(", ")
         })
         .unwrap_or_default();
-    let wall = span(run.created_at, run.completed_at, now).unwrap_or_default();
+    let wall = span(run.created_at, run.completed_at(), now).unwrap_or_default();
     Progress {
-        status: run.status.into(),
+        status: run.status().into(),
         repo: crate::platform::path_text(&run.repo_path),
         // The saved snapshot; the tree shows the current state.
         validation: match validation.and_then(|v| v.satisfied.value()) {
@@ -334,14 +334,14 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         timing: format!(
             "started {} · {} {wall}",
             run.created_at,
-            if run.completed_at.is_some() {
+            if run.completed_at().is_some() {
                 "took"
             } else {
                 "elapsed"
             },
         ),
         elapsed: wall,
-        finished: run.completed_at.is_some(),
+        finished: run.completed_at().is_some(),
         satisfied: validation.and_then(|v| v.satisfied.value()).copied(),
         counts: summary
             .counts
@@ -380,7 +380,11 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
                     error(view).unwrap_or_default(),
                 )
             })
-            .chain(run.error.clone().map(|error| ("Run".into(), error)))
+            .chain(
+                run.error()
+                    .map(str::to_owned)
+                    .map(|error| ("Run".into(), error)),
+            )
             .chain(
                 view.unreadable
                     .iter()
@@ -442,7 +446,7 @@ pub fn strip(progress: &Progress) -> Strip {
 
 /// The row above the Artifacts; Enter on it opens the Run detail.
 pub fn run_node(run: &RunView) -> Node {
-    let status = Status::from(run.run.status);
+    let status = Status::from(run.run.status());
     Node {
         id: NodeId::run(&run.run.id),
         clock: None,

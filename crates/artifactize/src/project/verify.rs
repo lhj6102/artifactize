@@ -164,9 +164,8 @@ pub async fn verify(
         repo_path: config.root.clone(),
         repository: crate::repository::identify(&config.root),
         state_dir: state,
-        status: crate::types::RunStatus::Running,
+        state: crate::store::RunState::Running,
         created_at: now(),
-        completed_at: None,
         selection: selection.clone(),
         profile: options.profile.clone(),
         definitions,
@@ -181,7 +180,6 @@ pub async fn verify(
         force: options.force,
         ignore_gates,
         validation: Default::default(),
-        error: None,
         stopped_backends: Vec::new(),
         evidence: BTreeMap::new(),
     };
@@ -268,9 +266,10 @@ pub async fn verify(
         Ok(evidence) => evidence,
         Err(error) => {
             // A failing Run, for example on a rejected remote token, does not stay RUNNING.
-            run.status = crate::types::RunStatus::Error;
-            run.error = Some(error.clone());
-            run.completed_at = Some(now());
+            run.state = crate::store::RunState::Error {
+                at: now(),
+                error: Some(error.clone()),
+            };
             let _ = receipts.save_run(&run).await;
             return Err(error);
         }
@@ -338,40 +337,48 @@ pub async fn verify(
         .values()
         .filter(|evidence| matches!(evidence, Evidence::Stale))
         .count();
-    run.status = if cancellation.is_cancelled() {
-        crate::types::RunStatus::Error
-    } else if run.wait_timed_out || budget_exhausted || not_reused > 0 {
-        crate::types::RunStatus::Incomplete
+    let at = now();
+    run.state = if cancellation.is_cancelled() {
+        crate::store::RunState::Error {
+            at,
+            error: Some("Run was cancelled.".into()),
+        }
+    } else if run.wait_timed_out {
+        crate::store::RunState::Incomplete {
+            at,
+            error: Some(
+                "Human wait timed out; pending requests remain available for submission.".into(),
+            ),
+        }
+    } else if budget_exhausted {
+        crate::store::RunState::Incomplete {
+            at,
+            error: Some(broker::budget_reason(&run)),
+        }
+    } else if not_reused > 0 {
+        crate::store::RunState::Incomplete {
+            at,
+            error: Some(format!(
+                "{not_reused} eval{} had no result to reuse and {} not executed (--reuse-only).",
+                if not_reused == 1 { "" } else { "s" },
+                if not_reused == 1 { "was" } else { "were" }
+            )),
+        }
     } else if required_evals
         .iter()
         .any(|(_, c)| c.status == EvalStatus::Error)
     {
-        crate::types::RunStatus::Error
+        crate::store::RunState::Error { at, error: None }
     } else if required_evals
         .iter()
         .any(|(_, c)| c.status == EvalStatus::Red)
     {
-        crate::types::RunStatus::Red
+        crate::store::RunState::Red { at }
     } else if satisfied {
-        crate::types::RunStatus::Green
+        crate::store::RunState::Green { at }
     } else {
-        crate::types::RunStatus::Incomplete
+        crate::store::RunState::Incomplete { at, error: None }
     };
-    if cancellation.is_cancelled() {
-        run.error = Some("Run was cancelled.".into());
-    } else if run.wait_timed_out {
-        run.error =
-            Some("Human wait timed out; pending requests remain available for submission.".into());
-    } else if budget_exhausted {
-        run.error = Some(broker::budget_reason(&run));
-    } else if not_reused > 0 {
-        run.error = Some(format!(
-            "{not_reused} eval{} had no result to reuse and {} not executed (--reuse-only).",
-            if not_reused == 1 { "" } else { "s" },
-            if not_reused == 1 { "was" } else { "were" }
-        ));
-    }
-    run.completed_at = Some(now());
     run.validation = serde_json::from_value(json!({
         "selection":run.selection,
         "recursive":run.recursive,

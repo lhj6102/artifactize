@@ -62,7 +62,7 @@ pub(super) fn in_run(
     db: &rusqlite::Connection,
     run: &crate::types::RunId,
 ) -> Result<Vec<Unreadable>, Error> {
-    let mut statement = db.prepare("SELECT 'request',q.id,q.data FROM requests q WHERE q.run_id=?1 UNION SELECT 'execution',e.id,e.data FROM executions e JOIN requests q ON q.execution_id=e.id WHERE q.run_id=?1 UNION SELECT 'execution',e.id,e.data FROM executions e WHERE json_extract(e.data,'$.provenance.runId')=?1")?;
+    let mut statement = db.prepare("SELECT 'run',r.id,r.data FROM runs r WHERE r.id=?1 UNION SELECT 'request',q.id,q.data FROM requests q WHERE q.run_id=?1 UNION SELECT 'execution',e.id,e.data FROM executions e JOIN requests q ON q.execution_id=e.id WHERE q.run_id=?1 UNION SELECT 'execution',e.id,e.data FROM executions e WHERE json_extract(e.data,'$.provenance.runId')=?1")?;
     let records = statement.query_map([run], |row| {
         Ok((
             row.get::<_, String>(0)?,
@@ -74,7 +74,9 @@ pub(super) fn in_run(
         .filter_map(|row| match row {
             Err(error) => Some(Err(error.into())),
             Ok((kind, id, data)) => {
-                let error = if kind == "request" {
+                let error = if kind == "run" {
+                    decode::<super::Run>("run", &id, &data).err()
+                } else if kind == "request" {
                     decode::<super::Request>("request", &id, &data).err()
                 } else {
                     decode::<super::Execution>("execution", &id, &data).err()

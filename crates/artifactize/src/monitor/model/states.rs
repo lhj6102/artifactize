@@ -344,7 +344,7 @@ impl<'a> States<'a> {
             #[cfg(test)]
             derivations: std::cell::Cell::new(0),
             index: Index::new(saved),
-            running: run.status == RunStatus::Running,
+            running: run.status() == RunStatus::Running,
             ignore_gates: run.ignore_gates,
             views: RefCell::new(HashMap::new()),
             effective: RefCell::new(HashMap::new()),

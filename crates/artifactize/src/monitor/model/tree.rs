@@ -618,7 +618,7 @@ fn build(run: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Vec<No
 /// (or the Run has not ended). A request that completed later goes back to waiting for its
 /// Human (or running), and a later claim is dropped; the Run's recorded evidence is fixed.
 fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
-    let end = run.run.completed_at?;
+    let end = run.run.completed_at()?;
     let late = |time: Option<crate::types::Timestamp>| time.is_some_and(|time| time > end);
     let changed = requests.iter().any(|view| {
         late(view.request.completed_at()) || late(view.claim.as_ref().map(|claim| claim.claimed_at))

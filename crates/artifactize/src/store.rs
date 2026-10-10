@@ -19,7 +19,7 @@ mod unreadable;
 mod validation;
 pub use unreadable::{Unreadable, read_unreadable};
 mod lifecycle;
-pub use lifecycle::{ExecutionState, PendingRequest, RequestState};
+pub use lifecycle::{ExecutionState, PendingRequest, RequestState, RunState};
 pub use result::{ExecutionResult, Field as ResultField, RuntimeResult};
 pub use snapshots::{ArtifactValidation, Blocker, ChildIdentity, HumanDefinition, Validation};
 mod wait_timeout;

@@ -6,7 +6,7 @@ use std::{
 
 use rusqlite::OpenFlags;
 use serde::Serialize;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 use super::{DATABASE, STATE_SCHEMA_VERSION, receipts::check_files};
 use crate::{platform, process, workspace};
@@ -127,17 +127,15 @@ pub fn prune(
         .transpose()?;
     let runs = {
         let mut statement = transaction
-            .prepare(
-                "SELECT id,repo,status,json_extract(data,'$.completedAt') FROM runs ORDER BY id",
-            )
+            .prepare("SELECT id,repo,data,status FROM runs ORDER BY id")
             .map_err(|e| e.to_string())?;
         statement
             .query_map([], |row| {
                 Ok((
                     row.get::<_, crate::types::RunId>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, crate::types::RunStatus>(2)?,
-                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, crate::types::RunStatus>(3)?,
                 ))
             })
             .map_err(|e| e.to_string())?
@@ -145,13 +143,15 @@ pub fn prune(
             .map_err(|e| e.to_string())?
     };
     let mut eligible = Vec::new();
-    for (id, repo, status, completed) in runs {
+    for (id, repo, data, status) in runs {
         let repo = workspace::canonical_target(Path::new(&repo)).map_err(|e| e.to_string())?;
         workspace::outside_workspace(&repo, &state).map_err(|e| e.to_string())?;
         repositories.push(repo);
-        let finished = completed
-            .as_deref()
-            .and_then(|date| OffsetDateTime::parse(date, &Rfc3339).ok());
+        let Some(run) = super::unreadable::evidence::<super::Run>("run", &data) else {
+            report.skipped_runs.push(id);
+            continue;
+        };
+        let finished = run.completed_at().map(crate::types::Timestamp::time);
         let requests_terminal: bool = transaction
             .query_row(
                 "SELECT NOT EXISTS(SELECT 1 FROM requests WHERE run_id=? AND status NOT IN ('GREEN','RED','ERROR','INCOMPLETE','BLOCKED','BUDGET_EXHAUSTED'))",

@@ -355,7 +355,7 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
 
 #[tokio::test]
 async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_writes_are_atomic() {
-    use artifactize::{store::RunView, types::RunStatus};
+    use artifactize::store::RunView;
     use serde_json::json;
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
@@ -452,9 +452,9 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
         bad["completedAt"] = json!("2026-01-01T00:00:01Z");
         assert!(serde_json::from_value::<artifactize::store::Request>(bad).is_err());
     }
-    let mut run = view.run.clone();
-    run.status = RunStatus::Green;
-    assert!(receipts.save_run(&run).await.is_err());
+    let mut wire = serde_json::to_value(&view.run).unwrap();
+    wire["status"] = json!("GREEN");
+    assert!(serde_json::from_value::<artifactize::store::Run>(wire).is_err());
     assert_eq!(
         serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap(),
         before

@@ -515,8 +515,7 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
     fs::create_dir_all(&repo).unwrap();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
     let mut run = saved_run("run-1", &repo, &state, Default::default());
-    run.status = crate::types::RunStatus::Running;
-    run.completed_at = None;
+    run.state = store::RunState::Running;
     let mut request = super::tests::request(
         "app/check",
         "RUNNING",

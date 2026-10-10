@@ -357,7 +357,7 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
     );
     assert!(ready.key.is_none());
     let first = fixture.verify(&options).await;
-    assert_eq!(first.run.status.as_str(), "GREEN");
+    assert_eq!(first.run.status().as_str(), "GREEN");
     assert_eq!(first.run.executions_started, 1);
     let derived = first
         .requests
@@ -408,7 +408,7 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
         ..options
     };
     let second = fixture.verify(&reuse).await;
-    assert_eq!(second.run.status.as_str(), "GREEN");
+    assert_eq!(second.run.status().as_str(), "GREEN");
     assert_eq!(second.run.executions_started, 0);
     assert!(!second.requests[0].force);
     assert_eq!(second.requests[0].status().as_str(), "GREEN");
@@ -517,7 +517,7 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
         ..Default::default()
     };
     let run = fixture.verify(&options).await;
-    assert_eq!(run.run.status.as_str(), "INCOMPLETE");
+    assert_eq!(run.run.status().as_str(), "INCOMPLETE");
     assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
     assert_eq!(
         run.requests[0]
@@ -602,7 +602,7 @@ async fn dependency_chains_derive_without_job_or_execution_budget() {
         ..Default::default()
     };
     let run = fixture.verify(&options).await;
-    assert_eq!(run.run.status.as_str(), "GREEN");
+    assert_eq!(run.run.status().as_str(), "GREEN");
     assert_eq!(run.run.executions_started, 0);
     assert_eq!(run.requests.len(), 2);
     assert!(
@@ -680,7 +680,7 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
     fixture.declare("art", vec![runtime("missing-runtime-command")]);
     fixture.declare("player", vec![dependency(&["art"])]);
     let run = fixture.verify(&VerifyOptions::default()).await;
-    assert_eq!(run.run.status.as_str(), "ERROR");
+    assert_eq!(run.run.status().as_str(), "ERROR");
     assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
     assert_eq!(
         run.requests[0]
