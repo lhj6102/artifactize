@@ -85,6 +85,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: packaging-${{ matrix.target }}
       # C dependencies (bundled SQLite, aws-lc, ring) need musl and kernel headers.
       - name: Install the musl C toolchain
         if: contains(matrix.target, '-linux-musl')

@@ -113,7 +113,11 @@ the same files. Do not upload the throwaway CI-signed package; it is test-only.
 No Store credentials or Partner Center changes are needed for build/test.
 The package declares `desktop6:FileSystemWriteVirtualization` as `disabled` plus
 `rescap:Capability Name="unvirtualizedResources"`; it does not change registry
-virtualization. Required PNG logos are resized from the existing brand raster.
+virtualization. Each executable has its own Application/alias extension because
+MakeAppx permits only one appExecutionAlias extension per Application. The tools
+Application uses `AppListEntry="none"` (the main entry stays visible), as documented
+by [VisualElements](https://learn.microsoft.com/en-us/uwp/schemas/appxpackage/uapmanifestschema/element-uap-visualelements).
+Required PNG logos are resized from the existing brand raster.
 S8 may replace these placeholder package visuals.
 
 Microsoft references used for the package and API:
