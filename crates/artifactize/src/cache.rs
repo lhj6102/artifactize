@@ -342,9 +342,16 @@ pub async fn prepare<'a>(
 /// found a completed record.
 pub fn reuse(request: &mut Request, execution: &Execution, completed_at: crate::types::Timestamp) {
     request.joined = request.execution_id.as_ref() == Some(&execution.id);
-    request.status = execution.status.into();
+    request.state = match execution.state.clone() {
+        crate::store::ExecutionState::Completed { result, .. } => {
+            crate::store::RequestState::completed(result, completed_at)
+        }
+        crate::store::ExecutionState::Failed { error, code, .. } => {
+            crate::store::RequestState::failed(error, code, completed_at)
+        }
+        state => state.into(),
+    };
     request.execution_id = Some(execution.id.clone());
-    request.result = execution.result.clone();
     request.profile = execution.profile.clone();
     request.options = execution.options.clone();
     request.provenance = Some(execution.provenance.clone());
@@ -357,7 +364,6 @@ pub fn reuse(request: &mut Request, execution: &Execution, completed_at: crate::
         .and_then(|producer| producer.session.clone());
     request.reviewer = execution.reviewer.clone();
     request.origin = execution.origin.clone();
-    request.completed_at = Some(completed_at);
     request.blocked_reason = None;
 }
 

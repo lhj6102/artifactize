@@ -529,9 +529,7 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
             .contains("while running")
     );
     monitor.detail.as_mut().unwrap().scroll[1] = 7;
-    request.status = crate::types::RequestStatus::Green;
-    request.completed_at = Some("2026-01-01T00:00:01Z".parse().unwrap());
-    request.result = Some(
+    request.state = crate::store::RequestState::completed(
         json!({
             "verdict":"GREEN",
             "stdout":"final output",
@@ -541,6 +539,7 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
         })
         .try_into()
         .unwrap(),
+        "2026-01-01T00:00:01Z".parse().unwrap(),
     );
     receipts.save_request(&request).await.unwrap();
     monitor.refresh().await;

@@ -364,7 +364,7 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
         .iter()
         .find(|request| request.eval_id == "player/ready")
         .unwrap();
-    assert_eq!(derived.status.as_str(), "GREEN");
+    assert_eq!(derived.status().as_str(), "GREEN");
     assert!(derived.execution_id.is_none());
     assert!(derived.key.is_none());
     assert!(derived.started_at.is_none());
@@ -411,7 +411,7 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
     assert_eq!(second.run.status.as_str(), "GREEN");
     assert_eq!(second.run.executions_started, 0);
     assert!(!second.requests[0].force);
-    assert_eq!(second.requests[0].status.as_str(), "GREEN");
+    assert_eq!(second.requests[0].status().as_str(), "GREEN");
     assert_eq!(
         db.query_row("SELECT COUNT(*) FROM executions", [], |row| row
             .get::<_, i64>(0))
@@ -447,7 +447,7 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
         };
         let run = fixture.verify(&options).await;
         let request = &run.requests[0];
-        assert_eq!(request.status.as_str(), expected);
+        assert_eq!(request.status().as_str(), expected);
         assert_eq!(
             request
                 .blocked_by
@@ -518,7 +518,7 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     };
     let run = fixture.verify(&options).await;
     assert_eq!(run.run.status.as_str(), "INCOMPLETE");
-    assert_eq!(run.requests[0].status.as_str(), "WAIT_DEPENDENCY");
+    assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
     assert_eq!(
         run.requests[0]
             .blocked_by
@@ -527,7 +527,7 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
             .collect::<Vec<_>>(),
         vec!["art", "art/approve"]
     );
-    assert_eq!(run.requests[1].status.as_str(), "WAITING_HUMAN");
+    assert_eq!(run.requests[1].status().as_str(), "WAITING_HUMAN");
     let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
     assert_eq!(waiting.len(), 1);
     assert_eq!(waiting[0].request.eval_id, "art/approve");
@@ -576,14 +576,14 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
         project::EvalCondition::Pass
     );
     let next = fixture.verify(&VerifyOptions::default()).await;
-    assert_eq!(next.requests[0].status.as_str(), "GREEN");
+    assert_eq!(next.requests[0].status().as_str(), "GREEN");
     // The original Run is historical; it is not rewritten by the later derivation.
     assert_eq!(
         store::read_run(&fixture.state, &run.run.id)
             .await
             .unwrap()
             .requests[0]
-            .status
+            .status()
             .as_str(),
         "WAIT_DEPENDENCY"
     );
@@ -608,7 +608,7 @@ async fn dependency_chains_derive_without_job_or_execution_budget() {
     assert!(
         run.requests
             .iter()
-            .all(|request| request.execution_id.is_none() && request.status.as_str() == "GREEN")
+            .all(|request| request.execution_id.is_none() && request.status().as_str() == "GREEN")
     );
 }
 
@@ -681,7 +681,7 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
     fixture.declare("player", vec![dependency(&["art"])]);
     let run = fixture.verify(&VerifyOptions::default()).await;
     assert_eq!(run.run.status.as_str(), "ERROR");
-    assert_eq!(run.requests[0].status.as_str(), "WAIT_DEPENDENCY");
+    assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
     assert_eq!(
         run.requests[0]
             .blocked_by
@@ -690,7 +690,7 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
             .collect::<Vec<_>>(),
         vec!["art", "art/check"]
     );
-    assert_eq!(run.requests[1].status.as_str(), "ERROR");
+    assert_eq!(run.requests[1].status().as_str(), "ERROR");
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
     let cancelled = std::collections::BTreeMap::from([(
@@ -733,8 +733,8 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
         cancellation
     );
     let run = run.unwrap();
-    assert_eq!(run.requests[1].error_code.as_deref(), Some("CANCELLED"));
-    assert_eq!(run.requests[0].status.as_str(), "WAIT_DEPENDENCY");
+    assert_eq!(run.requests[1].error_code().as_deref(), Some("CANCELLED"));
+    assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
     assert_eq!(
         run.requests[0]
             .blocked_by
@@ -759,7 +759,7 @@ async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations()
     fixture.declare("player", vec![dependency(&["art"])]);
     let run = fixture.verify(&VerifyOptions::default()).await;
     assert!(run.run.ignore_gates);
-    assert_eq!(run.requests[0].status.as_str(), "BLOCKED");
+    assert_eq!(run.requests[0].status().as_str(), "BLOCKED");
     assert_eq!(
         serde_json::to_value(&run.run.validation).unwrap()["satisfied"],
         false

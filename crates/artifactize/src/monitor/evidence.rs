@@ -20,8 +20,8 @@ pub(super) struct EvidenceStamp {
 impl EvidenceStamp {
     pub fn new(view: &RequestView) -> Self {
         Self {
-            status: view.request.status,
-            completed_at: view.request.completed_at,
+            status: view.request.status(),
+            completed_at: view.request.completed_at(),
             session: view.request.session.clone(),
             session_id: view.request.session_id.clone(),
             producer: view.request.producer.clone(),
@@ -62,14 +62,18 @@ pub fn evidence(_state: &Path, view: &RequestView) -> Evidence {
             text: "Loading session…".into(),
         },
         ProfileKind::Runtime => {
-            let logs = view.request.result.clone().and_then(|result| match result {
-                store::ExecutionResult::Runtime(logs)
-                    if logs.stdout.value().is_some() && logs.stderr.value().is_some() =>
-                {
-                    Some(logs)
-                }
-                _ => None,
-            });
+            let logs = view
+                .request
+                .result()
+                .cloned()
+                .and_then(|result| match result {
+                    store::ExecutionResult::Runtime(logs)
+                        if logs.stdout.value().is_some() && logs.stderr.value().is_some() =>
+                    {
+                        Some(logs)
+                    }
+                    _ => None,
+                });
             let text = match logs {
                 Some(logs) => format!(
                     "exit code: {}\ncapture truncated: {}\n\nstdout\n{}\n\nstderr\n{}",
@@ -83,7 +87,7 @@ pub fn evidence(_state: &Path, view: &RequestView) -> Evidence {
                     "Logs unavailable: this remote result contains only a summary; stdout/stderr were not saved here."
                         .into()
                 }
-                None if view.request.status == RequestStatus::Running => {
+                None if view.request.status() == RequestStatus::Running => {
                     "Logs unavailable while running: only completed runtime output is saved; this view does not stream live pipes."
                         .into()
                 }

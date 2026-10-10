@@ -10,7 +10,7 @@ use crate::{
     agent, cache,
     config::{Eval, Profile, RepoConfig},
     human, process,
-    runtime::{self, Outcome, Verdict},
+    runtime::{self, Outcome},
     scope,
     store::{Execution, Receipts, Request},
 };
@@ -42,19 +42,19 @@ pub(super) async fn execute(
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
     if matches!(prepared, Ok(Prepared::Human)) && !cancellation.is_cancelled() {
-        request.status = crate::types::RequestStatus::WaitingHuman;
+        request.state = crate::store::RequestState::WaitingHuman;
         request.started_at = Some(now());
         request.execution_id = Some(execution.id.clone());
         request.provenance = Some(execution.provenance.clone());
         request.blocked_reason = Some("Waiting for a Human claim and submission.".into());
-        execution.status = request.status.try_into()?;
+        execution.state = request.state.clone().try_into()?;
         receipts.wait_for_human(&execution, &request).await?;
         return Ok(request);
     }
     let outcome = match prepared {
         Ok(Prepared::Human) => {
             request.human_definition = None;
-            None
+            Err((process::Error::Cancelled.to_string(), "CANCELLED".into()))
         }
         Ok(Prepared::Agent {
             state,
@@ -84,18 +84,10 @@ pub(super) async fn execute(
                 }
             }
             request.usage = Some(review.attempts);
-            match review.result {
-                Ok(result) => {
-                    let verdict = result.verdict;
-                    request.result = Some(result.into());
-                    Some(verdict)
-                }
-                Err(failure) => {
-                    request.error = Some(failure.message);
-                    request.error_code = Some(failure.code.as_str().into());
-                    None
-                }
-            }
+            review
+                .result
+                .map(Into::into)
+                .map_err(|failure| (failure.message, failure.code.as_str().into()))
         }
         Ok(Prepared::Runtime(command)) => {
             let receipts = receipts.clone();
@@ -115,16 +107,14 @@ pub(super) async fn execute(
             if let Ok(child) = receive.try_recv() {
                 request.child = child;
             }
-            runtime_result(outcome, &mut request)
+            runtime_result(outcome)
         }
         Err(error) => {
             request.human_definition = None;
-            request.error = Some(error);
-            request.error_code = Some("PREPARATION_FAILED".into());
-            None
+            Err((error, "PREPARATION_FAILED".into()))
         }
     };
-    let outcome = if outcome.is_some() {
+    let outcome = if outcome.is_ok() {
         let eval = config
             .evals
             .iter()
@@ -132,16 +122,12 @@ pub(super) async fn execute(
             .expect("included eval");
         match cache::validate_file_inputs(&config, eval) {
             Ok(()) => outcome,
-            Err(error) => {
-                request.error = Some(error);
-                request.error_code = Some("INPUT_CHANGED".into());
-                None
-            }
+            Err(error) => Err((error, "INPUT_CHANGED".into())),
         }
     } else {
         outcome
     };
-    let outcome = if outcome.is_some()
+    let outcome = if outcome.is_ok()
         && let Some(expected) = &request.key
     {
         let eval = config
@@ -151,50 +137,35 @@ pub(super) async fn execute(
             .expect("included eval");
         match cache::recheck(&config, eval, &run_dir, parallelism, cancellation.clone()).await {
             Ok(Some(value)) if &value == expected => outcome,
-            Ok(_) => {
-                request.error = Some("Fingerprint changed during review.".into());
-                request.error_code = Some("INPUT_CHANGED".into());
-                None
-            }
-            Err(error) => {
-                request.error = Some(error);
-                request.error_code = Some(
-                    if cancellation.is_cancelled() {
-                        "CANCELLED"
-                    } else {
-                        "FINGERPRINT_RECHECK_FAILED"
-                    }
-                    .into(),
-                );
-                None
-            }
+            Ok(_) => Err((
+                "Fingerprint changed during review.".into(),
+                "INPUT_CHANGED".into(),
+            )),
+            Err(error) => Err((
+                error,
+                if cancellation.is_cancelled() {
+                    "CANCELLED"
+                } else {
+                    "FINGERPRINT_RECHECK_FAILED"
+                }
+                .into(),
+            )),
         }
     } else {
         outcome
     };
     let outcome = if cancellation.is_cancelled() {
-        request.error = Some(process::Error::Cancelled.to_string());
-        request.error_code = Some("CANCELLED".into());
-        None
+        Err((process::Error::Cancelled.to_string(), "CANCELLED".into()))
     } else {
         outcome
     };
-    request.status = match outcome {
-        Some(Verdict::Green) => crate::types::RequestStatus::Green,
-        Some(Verdict::Red) => crate::types::RequestStatus::Red,
-        None => {
-            request.result = None;
-            crate::types::RequestStatus::Error
-        }
+    request.state = match outcome {
+        Ok(result) => crate::store::RequestState::completed(result, now()),
+        Err((error, code)) => crate::store::RequestState::failed(error, Some(code), now()),
     };
-    request.completed_at = Some(now());
-    execution.status = request.status.try_into()?;
-    execution.result = request.result.clone();
-    execution.error = request.error.clone();
-    execution.error_code = request.error_code;
+    execution.state = request.state.clone().try_into()?;
     execution.usage = request.usage.clone();
-    execution.completed_at = request.completed_at;
-    execution.provenance.completed_at = request.completed_at;
+    execution.provenance.completed_at = request.completed_at();
     request.execution_id = Some(execution.id.clone());
     request.provenance = Some(execution.provenance.clone());
     // Admission sees a backend stop before completing frees this review's slot.
@@ -203,39 +174,34 @@ pub(super) async fn execute(
     Ok(request)
 }
 
-fn runtime_result(outcome: Outcome, request: &mut Request) -> Option<Verdict> {
+fn runtime_result(
+    outcome: Outcome,
+) -> Result<crate::store::ExecutionResult, (String, crate::types::FailureCode)> {
     match outcome {
-        Outcome::Completed(result) => {
-            request.result = Some(crate::store::ExecutionResult::Runtime(
-                crate::store::RuntimeResult {
-                    verdict: result.verdict,
-                    exit_code: crate::store::ResultField::Value(result.exit_code),
-                    stdout: crate::store::ResultField::Value(
-                        String::from_utf8_lossy(&result.output.stdout).into_owned(),
-                    ),
-                    stderr: crate::store::ResultField::Value(
-                        String::from_utf8_lossy(&result.output.stderr).into_owned(),
-                    ),
-                    duration: crate::store::ResultField::Value(result.output.duration),
-                    truncated: crate::store::ResultField::Value(result.output.truncated),
-                    fields: serde_json::Map::new(),
-                },
-            ));
-            Some(result.verdict)
-        }
+        Outcome::Completed(result) => Ok(crate::store::ExecutionResult::Runtime(
+            crate::store::RuntimeResult {
+                verdict: result.verdict,
+                exit_code: crate::store::ResultField::Value(result.exit_code),
+                stdout: crate::store::ResultField::Value(
+                    String::from_utf8_lossy(&result.output.stdout).into_owned(),
+                ),
+                stderr: crate::store::ResultField::Value(
+                    String::from_utf8_lossy(&result.output.stderr).into_owned(),
+                ),
+                duration: crate::store::ResultField::Value(result.output.duration),
+                truncated: crate::store::ResultField::Value(result.output.truncated),
+                fields: serde_json::Map::new(),
+            },
+        )),
         Outcome::OperationalError(error) => {
-            request.error_code = Some(
-                match &error {
-                    runtime::Error::Process(process::Error::Cancelled) => "CANCELLED",
-                    runtime::Error::Process(process::Error::Timeout) => "TIMEOUT",
-                    runtime::Error::Process(process::Error::Spawn(_)) => "SPAWN_FAILED",
-                    runtime::Error::AbnormalExit { .. } => "ABNORMAL_EXIT",
-                    _ => "RUNTIME_ERROR",
-                }
-                .into(),
-            );
-            request.error = Some(error.to_string());
-            None
+            let code = match &error {
+                runtime::Error::Process(process::Error::Cancelled) => "CANCELLED",
+                runtime::Error::Process(process::Error::Timeout) => "TIMEOUT",
+                runtime::Error::Process(process::Error::Spawn(_)) => "SPAWN_FAILED",
+                runtime::Error::AbnormalExit { .. } => "ABNORMAL_EXIT",
+                _ => "RUNTIME_ERROR",
+            };
+            Err((error.to_string(), code.into()))
         }
     }
 }

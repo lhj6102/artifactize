@@ -121,11 +121,11 @@ fn title(view: &RequestView) -> String {
 /// Status, claim and waiting time in one row; errors keep their first line.
 pub(super) fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> String {
     let request = &view.request;
-    let waiting = request.status == RequestStatus::WaitingHuman;
-    let mut parts = vec![request.status.to_string()];
-    if let Some(error) = &request.error {
+    let waiting = request.status() == RequestStatus::WaitingHuman;
+    let mut parts = vec![request.status().to_string()];
+    if let Some(error) = &request.error() {
         let first = error.lines().next().unwrap_or_default();
-        parts.push(match &request.error_code {
+        parts.push(match &request.error_code() {
             Some(code) => format!("[{code}] {first}"),
             None => first.to_owned(),
         });
@@ -176,13 +176,13 @@ pub(super) fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str
     let declaration = definition
         .and_then(|definition| definition.eval.declaration.value())
         .map(|declaration| serde_json::to_value(declaration).expect("saved declaration is JSON"));
-    let status = match (&request.error, &request.error_code) {
-        (Some(error), Some(code)) => format!("{} [{code}] {error}", request.status),
-        (Some(error), None) => format!("{} {error}", request.status),
-        _ => request.status.to_string(),
+    let status = match (&request.error(), &request.error_code()) {
+        (Some(error), Some(code)) => format!("{} [{code}] {error}", request.status()),
+        (Some(error), None) => format!("{} {error}", request.status()),
+        _ => request.status().to_string(),
     };
     let claim = match &view.claim {
-        None if request.status == RequestStatus::WaitingHuman => {
+        None if request.status() == RequestStatus::WaitingHuman => {
             format!("unclaimed; c claims it for {reviewer}")
         }
         None => "none".into(),
@@ -776,12 +776,12 @@ impl Review {
         };
         if self.settled() {
             let request = &view.request;
-            let result = request.result.as_ref().map_or_else(
-                || request.error.clone().unwrap_or_default(),
+            let result = request.result().map_or_else(
+                || request.error().map(str::to_owned).unwrap_or_default(),
                 |result| serde_json::to_string_pretty(result).unwrap_or_default(),
             );
             frame.render_widget(
-                Paragraph::new(format!("{}\n{result}", request.status))
+                Paragraph::new(format!("{}\n{result}", request.status()))
                     .wrap(Wrap { trim: false })
                     .scroll((self.field_scroll, 0))
                     .block(block("Completed result")),

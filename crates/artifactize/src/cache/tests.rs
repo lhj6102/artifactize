@@ -425,7 +425,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
             "ownerPid":1,
             "ownerStartTime":1,
             "status":"GREEN",
-            "result":null,
+            "result":{"verdict":"GREEN"},
             "error":null,
             "errorCode":null,
             "profile":{"kind":"human"},

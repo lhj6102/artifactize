@@ -142,7 +142,7 @@ impl Stops {
 
     /// Stop admitting a backend after a failure every later review on it would repeat.
     fn record(&self, request: &Request) {
-        let (Some(backend), Some(code)) = (&request.options.backend, &request.error_code) else {
+        let (Some(backend), Some(code)) = (&request.options.backend, &request.error_code()) else {
             return;
         };
         let mut stopped = self.0.lock().unwrap();
@@ -152,7 +152,7 @@ impl Stops {
                 error_code: (*code).try_into().expect("backend stopping failure"),
                 eval_id: request.eval_id.clone(),
                 request_id: request.id.clone(),
-                error: request.error.clone().unwrap_or_default(),
+                error: request.error().map(str::to_owned).unwrap_or_default(),
             });
         }
     }
@@ -241,7 +241,6 @@ pub(crate) fn derive(
     eval: &EvalEvaluation<'_>,
     at: crate::types::Timestamp,
 ) {
-    request.status = crate::project::verify::status(eval.status);
     request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
     request.blocked_reason = (!request.blocked_by.is_empty()).then(|| {
         format!(
@@ -254,15 +253,25 @@ pub(crate) fn derive(
                 .join(", ")
         )
     });
-    request.result = (eval.status == EvalStatus::Green).then(|| {
-        crate::agent::verdict::ValidatedResult {
-            verdict: crate::runtime::Verdict::Green,
-            fields: serde_json::Map::from_iter([("derived".into(), serde_json::Value::Bool(true))]),
-        }
-        .into()
-    });
-    request.completed_at =
-        (eval.status == EvalStatus::Green || eval.status == EvalStatus::Blocked).then_some(at);
+    request.state = if eval.status == EvalStatus::Green {
+        crate::store::RequestState::completed(
+            crate::agent::verdict::ValidatedResult {
+                verdict: crate::runtime::Verdict::Green,
+                fields: serde_json::Map::from_iter([(
+                    "derived".into(),
+                    serde_json::Value::Bool(true),
+                )]),
+            }
+            .into(),
+            at,
+        )
+    } else {
+        crate::store::RequestState::pending(
+            crate::project::verify::status(eval.status),
+            (eval.status == EvalStatus::Blocked).then_some(at),
+        )
+        .expect("derived pending state")
+    };
 }
 
 impl Scheduler<'_, '_> {
@@ -322,7 +331,7 @@ impl Scheduler<'_, '_> {
                     .requests
                     .iter()
                     .filter(|request| {
-                        request.status == crate::types::RequestStatus::WaitingHuman
+                        request.status() == crate::types::RequestStatus::WaitingHuman
                             && !request.force
                     })
                     .filter_map(|request| request.key.clone())
@@ -333,18 +342,18 @@ impl Scheduler<'_, '_> {
             let human_ids: Vec<_> = self
                 .requests
                 .iter()
-                .filter(|request| request.status == crate::types::RequestStatus::WaitingHuman)
+                .filter(|request| request.status() == crate::types::RequestStatus::WaitingHuman)
                 .map(|request| request.id.clone())
                 .collect();
             if !human_ids.is_empty() {
                 for request in self.receipts.settled_human_requests(human_ids).await? {
                     if let Some(saved) = self.requests.iter_mut().find(|saved| {
                         saved.id == request.id
-                            && saved.status == crate::types::RequestStatus::WaitingHuman
+                            && saved.status() == crate::types::RequestStatus::WaitingHuman
                     }) {
                         evidence.insert(
                             request.eval_id.clone(),
-                            match request.status {
+                            match request.status() {
                                 crate::types::RequestStatus::Green => {
                                     Evidence::Current(Verdict::Green)
                                 }
@@ -369,7 +378,7 @@ impl Scheduler<'_, '_> {
                     if index.is_some_and(|index| {
                         running.contains(&index)
                             || waiting.contains(&index)
-                            || self.requests[index].status
+                            || self.requests[index].status()
                                 == crate::types::RequestStatus::WaitingHuman
                             || self.requests[index].force
                     }) {
@@ -384,11 +393,11 @@ impl Scheduler<'_, '_> {
                         }
                         if let Some(index) = index {
                             let request = &mut self.requests[index];
-                            request.status = crate::types::RequestStatus::Error;
-                            request.error = Some(error);
-                            request.error_code = Some("PREPARATION_FAILED".into());
-                            request.result = None;
-                            request.completed_at = Some(now());
+                            request.state = crate::store::RequestState::failed(
+                                error,
+                                Some("PREPARATION_FAILED".into()),
+                                now(),
+                            );
                             self.receipts.save_request(request).await?;
                         }
                         continue;
@@ -430,7 +439,7 @@ impl Scheduler<'_, '_> {
                     }
                     let request = &mut self.requests[index];
                     if running.contains(&index)
-                        || request.status == crate::types::RequestStatus::WaitingHuman
+                        || request.status() == crate::types::RequestStatus::WaitingHuman
                         || evidence.contains_key(request.eval_id.as_str())
                     {
                         continue;
@@ -443,11 +452,11 @@ impl Scheduler<'_, '_> {
                             .find(|eval| eval.id == request.eval_id)
                             .expect("included Eval");
                         if let Err(error) = cache::validate_file_inputs(&self.config, declared) {
-                            request.status = crate::types::RequestStatus::Error;
-                            request.error = Some(error);
-                            request.error_code = Some("PREPARATION_FAILED".into());
-                            request.result = None;
-                            request.completed_at = Some(now());
+                            request.state = crate::store::RequestState::failed(
+                                error,
+                                Some("PREPARATION_FAILED".into()),
+                                now(),
+                            );
                             self.receipts.save_request(request).await?;
                             evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
                             continue;
@@ -456,7 +465,7 @@ impl Scheduler<'_, '_> {
                         let status = crate::project::verify::status(eval.status);
                         let blocked_by: Vec<_> =
                             eval.blocked_by.iter().copied().map(Into::into).collect();
-                        if request.status != status || request.blocked_by != blocked_by {
+                        if request.status() != status || request.blocked_by != blocked_by {
                             derive(request, eval, now());
                             self.receipts.save_request(request).await?;
                         }
@@ -477,11 +486,11 @@ impl Scheduler<'_, '_> {
                         .expect("included Eval");
                     if let Err(error) = cache::validate_file_inputs(&self.config, declared) {
                         waiting.remove(&index);
-                        request.status = crate::types::RequestStatus::Error;
-                        request.error = Some(error);
-                        request.error_code = Some("PREPARATION_FAILED".into());
-                        request.result = None;
-                        request.completed_at = Some(now());
+                        request.state = crate::store::RequestState::failed(
+                            error,
+                            Some("PREPARATION_FAILED".into()),
+                            now(),
+                        );
                         self.receipts.save_request(request).await?;
                         evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
                         evaluation = self
@@ -490,6 +499,7 @@ impl Scheduler<'_, '_> {
                         continue;
                     }
                     let mut execution = Execution {
+                        state: crate::store::ExecutionState::Running,
                         id: format!("execution-{}", request.id).parse()?,
                         key: request.key.clone(),
                         fingerprint: request.fingerprint.clone(),
@@ -502,10 +512,6 @@ impl Scheduler<'_, '_> {
                         eval_def_hash: request.eval_def_hash.clone(),
                         owner_pid: owner.pid,
                         owner_start_time: owner.start_time,
-                        status: crate::types::ExecutionStatus::Running,
-                        result: None,
-                        error: None,
-                        error_code: None,
                         profile: request.profile.clone(),
                         options: request.options.clone(),
                         usage: None,
@@ -519,7 +525,6 @@ impl Scheduler<'_, '_> {
                             execution_paths: Default::default(),
                         },
                         started_at: now(),
-                        completed_at: None,
                         producer: Some(producer.clone()),
                         reviewer: None,
                         origin: None,
@@ -633,7 +638,11 @@ impl Scheduler<'_, '_> {
                         // behind any missing evidence, and the Run ends INCOMPLETE.
                         _ if reuse_only => {
                             waiting.remove(&index);
-                            request.status = crate::types::RequestStatus::Stale;
+                            request.state = crate::store::RequestState::pending(
+                                crate::types::RequestStatus::Stale,
+                                request.completed_at(),
+                            )
+                            .expect("pending request state");
                             request.blocked_reason = Some(not_reused_reason(kind));
                             self.receipts.save_request(request).await?;
                             evidence.insert(request.eval_id.clone(), Evidence::Stale);
@@ -645,15 +654,15 @@ impl Scheduler<'_, '_> {
                         Claim::WaitHuman(id) => {
                             waiting.remove(&index);
                             request.execution_id = Some(id);
-                            request.status = crate::types::RequestStatus::WaitingHuman;
+                            request.state = crate::store::RequestState::WaitingHuman;
                             request.blocked_reason = Some(
                                 "Waiting for the active Human execution of this reuse key.".into(),
                             );
                             *request = self.receipts.follow_human(request).await?;
-                            if request.status != crate::types::RequestStatus::WaitingHuman {
+                            if request.status() != crate::types::RequestStatus::WaitingHuman {
                                 evidence.insert(
                                     request.eval_id.clone(),
-                                    match request.status {
+                                    match request.status() {
                                         crate::types::RequestStatus::Green => {
                                             Evidence::Current(Verdict::Green)
                                         }
@@ -673,7 +682,11 @@ impl Scheduler<'_, '_> {
                             waiting.insert(index);
                             if request.execution_id.as_ref() != Some(&id) {
                                 request.execution_id = Some(id);
-                                request.status = crate::types::RequestStatus::Queued;
+                                request.state = crate::store::RequestState::pending(
+                                    crate::types::RequestStatus::Queued,
+                                    request.completed_at(),
+                                )
+                                .expect("pending request state");
                                 request.blocked_reason = Some(
                                     "Waiting for the active execution of this reuse key.".into(),
                                 );
@@ -683,15 +696,16 @@ impl Scheduler<'_, '_> {
                         }
                         Claim::BudgetExhausted if let Some(cause) = backend_stopped => {
                             waiting.remove(&index);
-                            request.status = crate::types::RequestStatus::Error;
                             // A request waiting for a slot stops waiting.
                             request.blocked_reason = None;
-                            request.error_code = Some(agent_error::BACKEND_STOPPED.into());
-                            request.error = Some(format!(
-                                "Not started: this Run stopped admitting {} reviews after {} in {}: {}",
-                                cause.backend, cause.error_code, cause.eval_id, cause.error
-                            ));
-                            request.completed_at = Some(now());
+                            request.state = crate::store::RequestState::failed(
+                                format!(
+                                    "Not started: this Run stopped admitting {} reviews after {} in {}: {}",
+                                    cause.backend, cause.error_code, cause.eval_id, cause.error
+                                ),
+                                Some(agent_error::BACKEND_STOPPED.into()),
+                                now(),
+                            );
                             self.receipts.save_request(request).await?;
                             evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
                             evaluation = self
@@ -704,10 +718,14 @@ impl Scheduler<'_, '_> {
                             let reason = budget_reason(self.run);
                             // Keep looking for reuse, but an unchanged budget decision cannot
                             // create a self-notification → write → notification hot loop.
-                            if request.status != crate::types::RequestStatus::BudgetExhausted
+                            if request.status() != crate::types::RequestStatus::BudgetExhausted
                                 || request.blocked_reason.as_deref() != Some(reason.as_str())
                             {
-                                request.status = crate::types::RequestStatus::BudgetExhausted;
+                                request.state = crate::store::RequestState::pending(
+                                    crate::types::RequestStatus::BudgetExhausted,
+                                    request.completed_at(),
+                                )
+                                .expect("pending request state");
                                 request.blocked_reason = Some(reason);
                                 self.receipts.save_request(request).await?;
                             }
@@ -742,7 +760,7 @@ impl Scheduler<'_, '_> {
                         execution.started_at = now();
                         request.started_at = Some(execution.started_at);
                     }
-                    request.status = crate::types::RequestStatus::Running;
+                    request.state = crate::store::RequestState::Running;
                     self.receipts.save_run(self.run).await?;
                     self.receipts.save_request(request).await?;
                     let config = self.config.clone();
@@ -800,7 +818,7 @@ impl Scheduler<'_, '_> {
                 && self
                     .requests
                     .iter()
-                    .any(|request| request.status == crate::types::RequestStatus::WaitingHuman);
+                    .any(|request| request.status() == crate::types::RequestStatus::WaitingHuman);
             if self.tasks.is_empty()
                 && ((waiting.is_empty() && capacity_waiting.is_empty()) || cancelled)
             {
@@ -827,8 +845,8 @@ impl Scheduler<'_, '_> {
                         self.run.stopped_backends = stopped;
                         self.receipts.save_run(self.run).await?;
                     }
-                    if request.status != crate::types::RequestStatus::WaitingHuman {
-                        evidence.insert(request.eval_id.clone(), match request.status {
+                    if request.status() != crate::types::RequestStatus::WaitingHuman {
+                        evidence.insert(request.eval_id.clone(), match request.status() {
                             crate::types::RequestStatus::Green => Evidence::Current(Verdict::Green),
                             crate::types::RequestStatus::Red => Evidence::Current(Verdict::Red),
                             _ => Evidence::OperationalError,

@@ -1,10 +1,12 @@
-//! Validate state-appropriate data before writes, without migrating or rejecting old reads.
+//! Validate Run writes and parse request/execution lifecycle data at the saved-record edge.
+//! Earlier versions validated every write; contradictory rows indicate corruption. They
+//! fail individually as unreadable records, never as reusable evidence or a whole listing.
 
 use super::ExecutionResult;
-use super::{Execution, Request, Run};
-use crate::types::{ExecutionStatus, RequestStatus, RunStatus};
+use super::Run;
+use crate::types::{RequestStatus, RunStatus};
 
-fn result(
+pub(super) fn result(
     status: RequestStatus,
     result: Option<&ExecutionResult>,
     error: Option<&str>,
@@ -52,55 +54,6 @@ impl Run {
         }
     }
 }
-impl Request {
-    pub(crate) fn validate(&self) -> Result<(), String> {
-        result(
-            self.status,
-            self.result.as_ref(),
-            self.error.as_deref(),
-            self.error_code.as_deref(),
-        )?;
-        if matches!(
-            self.status,
-            RequestStatus::Green | RequestStatus::Red | RequestStatus::Error
-        ) && self.completed_at.is_none()
-        {
-            return Err("A finished request needs its completion time.".into());
-        }
-        if matches!(
-            self.status,
-            RequestStatus::Running | RequestStatus::WaitingHuman
-        ) && self.completed_at.is_some()
-        {
-            return Err("An active request cannot have a completion time.".into());
-        }
-        Ok(())
-    }
-}
-impl Execution {
-    pub(crate) fn validate(&self) -> Result<(), String> {
-        result(
-            self.status.into(),
-            self.result.as_ref(),
-            self.error.as_deref(),
-            self.error_code.as_deref(),
-        )?;
-        match self.status {
-            ExecutionStatus::Running | ExecutionStatus::WaitingHuman
-                if self.completed_at.is_none() =>
-            {
-                Ok(())
-            }
-            ExecutionStatus::Green | ExecutionStatus::Red | ExecutionStatus::Error
-                if self.completed_at.is_some() =>
-            {
-                Ok(())
-            }
-            _ => Err("Execution state and completion time disagree.".into()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

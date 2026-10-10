@@ -268,13 +268,13 @@ fn elapsed(view: &RequestView, now: OffsetDateTime) -> Option<String> {
         return Some("reused".into());
     }
     let active = matches!(
-        request.status,
+        request.status(),
         crate::types::RequestStatus::Running | crate::types::RequestStatus::WaitingHuman
     );
     let start = request
         .started_at
         .or(active.then_some(request.created_at))?;
-    span(start, request.completed_at, now)
+    span(start, request.completed_at(), now)
 }
 
 fn claim(view: &RequestView) -> String {
@@ -285,8 +285,8 @@ fn claim(view: &RequestView) -> String {
 
 fn error(view: &RequestView) -> Option<String> {
     let request = &view.request;
-    let error = request.error.clone()?;
-    Some(match &request.error_code {
+    let error = request.error().map(str::to_owned)?;
+    Some(match &request.error_code() {
         Some(code) => format!("[{code}] {error}"),
         None => error,
     })
@@ -298,7 +298,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
     let with = |status: crate::types::RequestStatus| {
         requests
             .iter()
-            .filter(move |view| view.request.status == status)
+            .filter(move |view| view.request.status() == status)
     };
     let usage = counter_pairs(&summary.usage.usage);
     let saved = counter_pairs(&saved_usage);
@@ -380,6 +380,11 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
                 )
             })
             .chain(run.error.clone().map(|error| ("Run".into(), error)))
+            .chain(
+                view.unreadable
+                    .iter()
+                    .map(|record| (record.id.clone(), record.to_string())),
+            )
             .collect(),
     }
 }
@@ -541,7 +546,7 @@ impl<'a> Saved<'a> {
     }
 
     fn status(&self, eval: &str) -> Option<Status> {
-        self.request(eval).map(|view| view.request.status.into())
+        self.request(eval).map(|view| view.request.status().into())
     }
 
     /// Dependency-first component order with cycle peers by name, then any other saved or
@@ -713,7 +718,7 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             [
                 format!(
                     "{}{}",
-                    request.status,
+                    request.status(),
                     elapsed(view, now).map_or(String::new(), |time| format!(" {time}"))
                 ),
                 profile(&request.profile),
@@ -733,8 +738,8 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
         "Status",
         format!(
             "{} — {}",
-            request.status,
-            Status::from(request.status).meaning()
+            request.status(),
+            Status::from(request.status()).meaning()
         ),
     );
     detail.push("Request", request.id.as_str());
@@ -800,7 +805,11 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
         let owner = execution.owner_pid;
         detail.push(
             "Execution",
-            format!("{} {} · owner pid {owner}", execution.id, execution.status),
+            format!(
+                "{} {} · owner pid {owner}",
+                execution.id,
+                execution.status()
+            ),
         );
     }
     if request.profile.kind() == crate::config::ProfileKind::Human || view.claim.is_some() {
@@ -815,7 +824,7 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
                 .started_at
                 .map_or_else(|| "-".to_owned(), |time| time.to_string()),
             request
-                .completed_at
+                .completed_at()
                 .map_or_else(|| "-".to_owned(), |time| time.to_string()),
             elapsed(view, now).map_or(String::new(), |time| format!(" · {time}"))
         ),
@@ -828,7 +837,7 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             .as_ref()
             .map_or(String::new(), |argv| argv.join(" ")),
     );
-    if let Some(result) = &request.result {
+    if let Some(result) = &request.result() {
         detail.push("Result", result_summary(result));
         detail.push(
             "Raw result",

@@ -58,6 +58,7 @@ fn saved(
     let mut view = RunView {
         run: serde_json::from_value(run).unwrap(),
         requests: Vec::new(),
+        unreadable: Vec::new(),
     };
     view.requests = requests.iter().map(|view| view.request.clone()).collect();
     (view, requests)
@@ -935,7 +936,10 @@ fn refreshes_fold_done_artifacts_unless_the_user_toggled_them() {
     let (_, requests) = monitor.run.as_mut().unwrap();
     for view in requests {
         if matches!(view.request.eval_id.as_str(), "up-a/x" | "m2/x") {
-            view.request.status = crate::types::RequestStatus::Green;
+            view.request.state = crate::store::RequestState::completed(
+                serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
+                crate::broker::now(),
+            );
         }
     }
     monitor.sync_tree(false);
@@ -1151,7 +1155,10 @@ fn backspace_lands_on_a_visible_row_after_the_origin_folded() {
     let (_, requests) = monitor.run.as_mut().unwrap();
     for view in requests {
         if matches!(view.request.eval_id.as_str(), "up-a/x" | "m6/x") {
-            view.request.status = crate::types::RequestStatus::Green;
+            view.request.state = crate::store::RequestState::completed(
+                serde_json::json!({"verdict":"GREEN"}).try_into().unwrap(),
+                crate::broker::now(),
+            );
         }
     }
     monitor.sync_tree(false);

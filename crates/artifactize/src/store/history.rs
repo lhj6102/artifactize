@@ -90,14 +90,17 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
     connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
-                "SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.producer.name'),json_extract(e.data,'$.options.variant'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"
+                "SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.producer.name'),json_extract(e.data,'$.options.variant'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank,e.data FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"
             ))?;
             Ok(statement
                 .query_map([history], |row| {
-                    Ok(Entry {
+                    let id: crate::types::ExecutionId = row.get(2)?;
+                    let data: String = row.get(15)?;
+                    if super::unreadable::evidence::<Execution>("execution", &data).is_none() { return Ok(None); }
+                    Ok(Some(Entry {
                         key: row.get(0)?,
                         eval_def_hash: row.get(1)?,
-                        execution_id: row.get(2)?,
+                        execution_id: id,
                         verdict: row.get(3)?,
                         repo_path: row.get::<_, String>(4)?.into(),
                         eval_id: row.get(5)?,
@@ -109,8 +112,9 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
                         records: row.get(11)?,
                         bytes: row.get(12)?,
                         last_used: row.get(13)?,
-                    })
+                    }))
                 })?
+                .filter_map(|row| row.transpose())
                 .collect::<Result<_, _>>()?)
         })
         .await
@@ -134,7 +138,10 @@ pub async fn show(state: &Path, key: &str, history: bool) -> Result<Vec<Executio
                 .query_map(params![key, if history { -1 } else { 1 }], |row| {
                     row.get::<_, String>(0)
                 })?
-                .map(|row| Ok(serde_json::from_str(&row?)?))
+                .filter_map(|row| match row {
+                    Ok(data) => super::unreadable::evidence("execution", &data).map(Ok),
+                    Err(error) => Some(Err(Error::Sql(error))),
+                })
                 .collect()
         })
         .await
@@ -163,7 +170,10 @@ pub async fn local(
                     ],
                     |row| row.get::<_, String>(0),
                 )?
-                .map(|row| Ok(serde_json::from_str(&row?)?))
+                .filter_map(|row| match row {
+                    Ok(data) => super::unreadable::evidence("execution", &data).map(Ok),
+                    Err(error) => Some(Err(Error::Sql(error))),
+                })
                 .collect()
         })
         .await
@@ -210,9 +220,11 @@ pub(super) fn columns(
     execution: &Execution,
     bytes: usize,
 ) -> Result<Option<(crate::types::Timestamp, i64)>, Error> {
-    let (Some(_), Some(_), Some(completed_at)) =
-        (&execution.key, execution.verdict(), &execution.completed_at)
-    else {
+    let (Some(_), Some(_), Some(completed_at)) = (
+        &execution.key,
+        execution.verdict(),
+        &execution.completed_at(),
+    ) else {
         return Ok(None);
     };
     if bytes > MAX_ENTRY_BYTES {

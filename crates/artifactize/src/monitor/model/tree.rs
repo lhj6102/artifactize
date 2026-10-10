@@ -287,7 +287,7 @@ fn text(states: &States, view: &EvalView, request: Option<&RequestView>) -> Vec<
         EvalView::Done(Source::Derived) => plain("GREEN · derived"),
         EvalView::Done(Source::Saved) => plain("GREEN · saved result, not in this Run"),
         EvalView::Failed { verdict: true } => {
-            let findings = findings(request.and_then(|view| view.request.result.as_ref()));
+            let findings = findings(request.and_then(|view| view.request.result()));
             if request.is_none() {
                 plain("RED · saved result, not in this Run")
             } else if findings.is_empty() {
@@ -347,7 +347,7 @@ fn clock(view: &EvalView, request: Option<&RequestView>) -> Option<Clock> {
     );
     let request = &request.filter(|_| timed)?.request;
     let start = request.started_at.unwrap_or(request.created_at).time();
-    let end = request.completed_at.map(crate::types::Timestamp::time);
+    let end = request.completed_at().map(crate::types::Timestamp::time);
     Some(Clock { start, end })
 }
 
@@ -616,7 +616,7 @@ fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
     let end = run.run.completed_at?;
     let late = |time: Option<crate::types::Timestamp>| time.is_some_and(|time| time > end);
     let changed = requests.iter().any(|view| {
-        late(view.request.completed_at) || late(view.claim.as_ref().map(|claim| claim.claimed_at))
+        late(view.request.completed_at()) || late(view.claim.as_ref().map(|claim| claim.claimed_at))
     });
     if !changed {
         return None;
@@ -627,16 +627,12 @@ fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
             view.claim = None;
         }
         let request = &mut view.request;
-        if late(request.completed_at) {
-            request.status = if request.profile.kind() == crate::config::ProfileKind::Human {
-                crate::types::RequestStatus::WaitingHuman
+        if late(request.completed_at()) {
+            request.state = if request.profile.kind() == crate::config::ProfileKind::Human {
+                crate::store::RequestState::WaitingHuman
             } else {
-                crate::types::RequestStatus::Running
+                crate::store::RequestState::Running
             };
-            request.completed_at = None;
-            request.result = None;
-            request.error = None;
-            request.error_code = None;
         }
     }
     Some(ended)

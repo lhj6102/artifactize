@@ -49,6 +49,9 @@ pub(super) async fn list(
                 counts
             )
             .map_err(|e| e.to_string())?;
+            for unreadable in &run.unreadable {
+                writeln!(out, "  {unreadable}").map_err(|error| error.to_string())?;
+            }
         }
     }
     Ok(0)

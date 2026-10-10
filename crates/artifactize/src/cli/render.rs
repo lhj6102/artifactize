@@ -27,22 +27,24 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
                 "  {} [{}]: {}{}{}",
                 request.eval_id,
                 request.id,
-                request.status,
+                request.status(),
                 reuse_marker(request),
                 request
-                    .error
-                    .as_ref()
-                    .or(request.blocked_reason.as_ref())
+                    .error()
+                    .or(request.blocked_reason.as_deref())
                     .map_or(String::new(), |reason| format!(" — {reason}"))
             )
             .map_err(|e| e.to_string())?;
+        }
+        for unreadable in &view.unreadable {
+            writeln!(stdout, "  {unreadable}").map_err(|error| error.to_string())?;
         }
         for stopped in &view.run.stopped_backends {
             let skipped = view
                 .requests
                 .iter()
                 .filter(|request| {
-                    request.error_code.as_deref() == Some(crate::agent::error::BACKEND_STOPPED)
+                    request.error_code().as_deref() == Some(crate::agent::error::BACKEND_STOPPED)
                         && request.options.backend.as_ref() == Some(&stopped.backend)
                 })
                 .count();
@@ -188,6 +190,9 @@ pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
             "NOT SATISFIED"
         }
     )?;
+    for unreadable in &view.unreadable {
+        writeln!(out, "  {unreadable}")?;
+    }
     for artifact in &view.artifacts {
         writeln!(
             out,

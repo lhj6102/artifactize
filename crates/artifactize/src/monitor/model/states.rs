@@ -495,7 +495,7 @@ impl<'a> States<'a> {
     fn evaluate(&self, eval: &'a str) -> EvalStatus {
         let request = self.request(eval).map(|view| &view.request);
         let status = request
-            .map(|request| request.status)
+            .map(|request| request.status())
             .or_else(|| self.outside(eval));
         let derived = self.index.dependency.contains(eval);
         if derived && status == Some(RequestStatus::Error) {
@@ -553,7 +553,7 @@ impl<'a> States<'a> {
         };
         let request = &view.request;
         let dependency = request.profile.kind() == ProfileKind::Dependency;
-        match request.status {
+        match request.status() {
             RequestStatus::Green => EvalView::Done(if dependency {
                 Source::Derived
             } else if crate::query::reused(request) {
@@ -608,7 +608,7 @@ impl<'a> States<'a> {
     /// Nothing upstream holds the eval.
     fn ready(&self, view: &RequestView) -> EvalView {
         let request = &view.request;
-        if !self.running || request.status != RequestStatus::Queued {
+        if !self.running || request.status() != RequestStatus::Queued {
             return EvalView::NotRun(NotRun::Unreviewed);
         }
         let slot = request

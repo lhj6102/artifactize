@@ -189,6 +189,8 @@ pub async fn verify(
         .iter()
         .enumerate()
         .map(|(ordinal, eval)| Request {
+            state: crate::store::RequestState::pending(crate::types::RequestStatus::Queued, None)
+                .expect("queued state"),
             id: format!("{}-{}", run.id, ordinal + 1)
                 .parse()
                 .expect("generated request id is a safe segment"),
@@ -228,17 +230,12 @@ pub async fn verify(
                 .get(eval.id.as_str())
                 .map(|key| key.fingerprints.clone())
                 .unwrap_or_default(),
-            status: crate::types::RequestStatus::Queued,
             created_at: run.created_at,
             started_at: None,
-            completed_at: None,
             cwd: config.root.join(config.artifacts[&eval.target].folder()),
             run_dir: None,
             argv: None,
             child: None,
-            result: None,
-            error: None,
-            error_code: None,
             blocked_reason: None,
             blocked_by: Vec::new(),
         })
@@ -280,30 +277,33 @@ pub async fn verify(
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
         if request.profile.kind() == ProfileKind::Dependency {
-            if request.status == crate::types::RequestStatus::Error {
+            if request.status() == crate::types::RequestStatus::Error {
                 continue;
             }
             broker::derive(request, &evaluation.evals[request.eval_id.as_str()], now());
             continue;
         }
         if evidence.contains_key(request.eval_id.as_str())
-            || request.status == crate::types::RequestStatus::WaitingHuman
+            || request.status() == crate::types::RequestStatus::WaitingHuman
         {
             continue;
         }
         let eval = &evaluation.evals[request.eval_id.as_str()];
         if cancellation.is_cancelled() {
-            request.status = crate::types::RequestStatus::Error;
-            request.error = Some("Run was cancelled.".into());
-            request.error_code = Some("CANCELLED".into());
-            request.completed_at = Some(now());
+            request.state = crate::store::RequestState::failed(
+                "Run was cancelled.".into(),
+                Some("CANCELLED".into()),
+                now(),
+            );
             evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
-        } else if request.status == crate::types::RequestStatus::BudgetExhausted
+        } else if request.status() == crate::types::RequestStatus::BudgetExhausted
             && eval.can_execute()
         {
             continue;
         } else {
-            request.status = status(eval.status);
+            request.state =
+                crate::store::RequestState::pending(status(eval.status), request.completed_at())
+                    .expect("non-executed request state");
             request.blocked_reason = Some(format!(
                 "{}: {}",
                 if eval.status == EvalStatus::Blocked {
@@ -330,7 +330,7 @@ pub async fn verify(
         .all(|id| evaluation.artifacts[id.as_str()].satisfied);
     let budget_exhausted = requests
         .iter()
-        .any(|request| request.status == crate::types::RequestStatus::BudgetExhausted);
+        .any(|request| request.status() == crate::types::RequestStatus::BudgetExhausted);
     // Only a --reuse-only eval that had nothing to reuse leaves stale evidence in a Run.
     let not_reused = evidence
         .values()

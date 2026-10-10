@@ -22,15 +22,18 @@ fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), 
             |row| row.get(0),
         )
         .optional()?;
-    let execution: Execution = serde_json::from_str(
-        &data.ok_or_else(|| Error::Invalid("Request is not waiting for a Human review.".into()))?,
-    )?;
+    let data =
+        data.ok_or_else(|| Error::Invalid("Request is not waiting for a Human review.".into()))?;
+    let execution: Execution = super::unreadable::evidence("execution", &data)
+        .ok_or_else(|| Error::Invalid(format!("Request {id} has an unreadable execution.")))?;
     let data: String = db.query_row(
         "SELECT data FROM requests WHERE id=? AND status='WAITING_HUMAN'",
         [&execution.provenance.request_id],
         |row| row.get(0),
     )?;
-    let request: Request = serde_json::from_str(&data)?;
+    let request: Request =
+        super::unreadable::decode("request", execution.provenance.request_id.as_str(), &data)
+            .map_err(|error| Error::Invalid(error.to_string()))?;
     if request.profile.kind() != crate::config::ProfileKind::Human
         || request.human_definition.is_none()
     {
@@ -99,7 +102,10 @@ impl Receipts {
                     .query_map([serde_json::to_string(&ids)?], |row| {
                         row.get::<_, String>(0)
                     })?
-                    .map(|row| Ok(serde_json::from_str(&row?)?))
+                    .filter_map(|row| match row {
+                    Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
+                    Err(error) => Some(Err(Error::Sql(error))),
+                })
                     .collect()
             })
             .await
@@ -111,8 +117,6 @@ impl Receipts {
         execution: &Execution,
         request: &Request,
     ) -> Result<(), String> {
-        execution.validate()?;
-        request.validate()?;
         let execution = execution.clone();
         let request = request.clone();
         self.connection
@@ -165,8 +169,17 @@ impl Receipts {
                     params![request.execution_id, request.key],
                     |row| row.get(0),
                 )?;
-                let execution: Execution = serde_json::from_str(&data)?;
-                if execution.status != crate::types::ExecutionStatus::WaitingHuman {
+                let Some(execution) = super::unreadable::evidence::<Execution>("execution", &data)
+                else {
+                    request.execution_id = None;
+                    request.state =
+                        super::RequestState::pending(crate::types::RequestStatus::Queued, None)
+                            .expect("queued state");
+                    update_request(&transaction, &request)?;
+                    transaction.commit()?;
+                    return Ok(request);
+                };
+                if execution.status() != crate::types::ExecutionStatus::WaitingHuman {
                     receive(&mut request, &execution);
                 }
                 update_request(&transaction, &request)?;
@@ -271,15 +284,23 @@ impl Receipts {
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 let (current, mut execution) = waiting(&transaction, &request.id)?;
                 claimant(&transaction, &current.id, &reviewer)?;
-                request.completed_at = Some(crate::broker::now());
+                request.state = match request.state {
+                    super::RequestState::Completed { result, .. } => {
+                        super::RequestState::completed(result, crate::broker::now())
+                    }
+                    super::RequestState::Failed { error, code, .. } => {
+                        super::RequestState::failed(error, code, crate::broker::now())
+                    }
+                    _ => {
+                        return Err(Error::Invalid(
+                            "A Human submission needs a result or error.".into(),
+                        ));
+                    }
+                };
                 request.blocked_reason = None;
-                execution.status = request.status.try_into().map_err(Error::Invalid)?;
-                execution.result = request.result.clone();
-                execution.error = request.error.clone();
-                execution.error_code = request.error_code;
+                execution.state = request.state.clone().try_into().map_err(Error::Invalid)?;
                 execution.reviewer = Some(reviewer.clone());
-                execution.completed_at = request.completed_at;
-                execution.provenance.completed_at = request.completed_at;
+                execution.provenance.completed_at = request.completed_at();
                 request.provenance = Some(execution.provenance.clone());
                 let published = executions::settle(&transaction, &execution, &request)?;
                 let followers = {
@@ -288,7 +309,10 @@ impl Receipts {
                     )?;
                     statement
                         .query_map([&execution.id], |row| row.get::<_, String>(0))?
-                        .map(|row| Ok(serde_json::from_str(&row?)?))
+                        .filter_map(|row| match row {
+                            Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
+                            Err(error) => Some(Err(Error::Sql(error))),
+                        })
                         .collect::<Result<Vec<Request>, Error>>()?
                 };
                 for mut follower in followers {
@@ -320,15 +344,19 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
     let Some(waiting) = waiting else {
         return Ok(());
     };
-    let mut execution: Execution = serde_json::from_str(&waiting)?;
+    let Some(mut execution) = super::unreadable::evidence::<Execution>("execution", &waiting)
+    else {
+        return Ok(());
+    };
     let now = crate::broker::now();
-    execution.status = crate::types::ExecutionStatus::Error;
-    execution.error = Some(format!(
-        "Superseded by the completed result {} for this key.",
-        entry.id
-    ));
-    execution.error_code = Some("SUPERSEDED".into());
-    execution.completed_at = Some(now);
+    execution.state = super::ExecutionState::Failed {
+        error: format!(
+            "Superseded by the completed result {} for this key.",
+            entry.id
+        ),
+        code: Some("SUPERSEDED".into()),
+        at: now,
+    };
     execution.provenance.completed_at = Some(now);
     db.execute(
         "UPDATE executions SET status='ERROR',data=? WHERE id=? AND status='WAITING_HUMAN'",
@@ -339,7 +367,10 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
             .prepare("SELECT data FROM requests WHERE execution_id=? AND status='WAITING_HUMAN'")?;
         statement
             .query_map([&execution.id], |row| row.get::<_, String>(0))?
-            .map(|row| Ok(serde_json::from_str(&row?)?))
+            .filter_map(|row| match row {
+                Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
+                Err(error) => Some(Err(Error::Sql(error))),
+            })
             .collect::<Result<Vec<Request>, Error>>()?
     };
     for mut follower in followers {
@@ -352,6 +383,4 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
 
 fn receive(request: &mut Request, execution: &Execution) {
     crate::cache::reuse(request, execution, crate::broker::now());
-    request.error = execution.error.clone();
-    request.error_code = execution.error_code;
 }

@@ -257,8 +257,8 @@ fn usage_state(reported: u64, unreported: u64) -> UsageState {
 pub fn request_summary(view: &RequestView, now: OffsetDateTime) -> RequestSummary<'_> {
     let request = &view.request;
     RequestSummary {
-        status: request.status,
-        wall_ms: wall_ms(request.created_at, request.completed_at, now),
+        status: request.status(),
+        wall_ms: wall_ms(request.created_at, request.completed_at(), now),
         executor_starts: u64::from(
             local_execution(request)
                 && request.started_at.is_some()
@@ -283,7 +283,7 @@ pub fn run_summary(view: &RunView, now: OffsetDateTime) -> (RunSummary, BTreeMap
     let (mut executed, mut reuses, mut saved) =
         (Kinds::default(), Reuses::default(), BTreeMap::new());
     for request in &view.requests {
-        *counts.entry(request.status).or_default() += 1;
+        *counts.entry(request.status()).or_default() += 1;
         if reused(request) {
             for attempt in request.reused_usage.iter().flatten() {
                 add_usage(&mut saved, attempt);

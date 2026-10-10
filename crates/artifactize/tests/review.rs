@@ -308,7 +308,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     );
     assert!(matches!(review.mode(), Mode::Form(_)));
     let view = store::read_request(&fixture.state, &id).await.unwrap();
-    assert_eq!(view.request.status.as_str(), "WAITING_HUMAN");
+    assert_eq!(view.request.status().as_str(), "WAITING_HUMAN");
     press(&mut review, KeyCode::Esc).await;
     press(&mut review, KeyCode::Char('g')).await;
     assert!(screen(&mut review).contains("approved*: true (fixed)"));
@@ -326,7 +326,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     );
     let view = store::read_request(&fixture.state, &id).await.unwrap();
     assert_eq!(
-        view.request.result.unwrap().owner_fields()["approved"],
+        view.request.result().unwrap().owner_fields()["approved"],
         true
     );
     assert!(view.claim.is_none());

@@ -116,7 +116,9 @@ pub async fn read_waiting_originals(
         };
         // A follower whose original is gone or no longer waits stays listed as itself.
         let original = original
-            .filter(|original| original.request.status == crate::types::RequestStatus::WaitingHuman)
+            .filter(|original| {
+                original.request.status() == crate::types::RequestStatus::WaitingHuman
+            })
             .unwrap_or_else(|| view.clone());
         if !originals
             .iter()
@@ -226,7 +228,9 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                         ) = row?;
                         outside_workspace(Path::new(&repo), &state)
                             .map_err(|e| Error::Invalid(e.to_string()))?;
-                        let request: Request = serde_json::from_str(&data)?;
+                        let Some(request) = super::unreadable::evidence::<Request>("request", &data) else {
+                            return Ok(None);
+                        };
                         let artifacts: Option<std::collections::BTreeMap<crate::types::ArtifactName, super::definitions::Artifact>> = artifacts
                             .map(|data| serde_json::from_str(&data))
                             .transpose()?;
@@ -239,7 +243,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                                     .and_then(|artifacts| artifacts.get(request.target.as_str())),
                             )
                             .map(|(eval, artifact)| RequestDefinition { eval, artifact: artifact.clone() });
-                        Ok(RequestView {
+                        Ok(Some(RequestView {
                             request,
                             definition,
                             claim: request_id.zip(reviewer).zip(claimed_at).map(
@@ -249,11 +253,10 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                                     claimed_at,
                                 },
                             ),
-                            execution: execution
-                                .map(|data| serde_json::from_str(&data))
-                                .transpose()?,
-                        })
+                            execution: execution.and_then(|data| super::unreadable::evidence("execution", &data)),
+                        }))
                     })
+                    .filter_map(|result| result.transpose())
                     .collect::<Result<Vec<_>, Error>>()?
             };
             transaction.commit()?;

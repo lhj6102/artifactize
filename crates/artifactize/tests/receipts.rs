@@ -355,10 +355,7 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
 
 #[tokio::test]
 async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_writes_are_atomic() {
-    use artifactize::{
-        store::RunView,
-        types::{RequestStatus, RunStatus},
-    };
+    use artifactize::{store::RunView, types::RunStatus};
     use serde_json::json;
     let root = support::os::tempdir();
     let repo = root.path().join("repo");
@@ -442,15 +439,19 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
             "maxTokens":null,
         })
     );
-    let mut bad = view.requests[0].clone();
-    bad.status = RequestStatus::Green;
-    bad.completed_at = Some("2026-01-01T00:00:01Z".parse().unwrap());
-    assert!(receipts.save_request(&bad).await.is_err());
-    bad.result = Some(json!({"verdict":"GREEN"}).try_into().unwrap());
-    bad.error = Some("contradiction".into());
-    assert!(receipts.save_request(&bad).await.is_err());
-    bad.status = RequestStatus::Error;
-    assert!(receipts.save_request(&bad).await.is_err());
+    let good = serde_json::to_value(&view.requests[0]).unwrap();
+    for (status, result, error) in [
+        ("GREEN", serde_json::Value::Null, serde_json::Value::Null),
+        ("GREEN", json!({"verdict":"GREEN"}), json!("contradiction")),
+        ("ERROR", json!({"verdict":"GREEN"}), json!("contradiction")),
+    ] {
+        let mut bad = good.clone();
+        bad["status"] = json!(status);
+        bad["result"] = result;
+        bad["error"] = error;
+        bad["completedAt"] = json!("2026-01-01T00:00:01Z");
+        assert!(serde_json::from_value::<artifactize::store::Request>(bad).is_err());
+    }
     let mut run = view.run.clone();
     run.status = RunStatus::Green;
     assert!(receipts.save_run(&run).await.is_err());
@@ -464,15 +465,15 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
             .unwrap(),
         STATE_SCHEMA_VERSION
     );
-    // Earlier schema-5 writes remain readable, even if their lifecycle fields contradict:
-    // validation gates new writes, not a migration of saved data.
+    // Valid older writes still read unchanged; contradictory lifecycle fields are
+    // corruption and fail only that record at the parse boundary.
     db.execute(
         "UPDATE requests SET status='GREEN',data=json_set(data,'$.status','GREEN')",
         [],
     )
     .unwrap();
-    assert_eq!(
-        read_run(&state, "run-old").await.unwrap().requests[0].status,
-        RequestStatus::Green
-    );
+    let saved = read_run(&state, "run-old").await.unwrap();
+    assert!(saved.requests.is_empty());
+    assert_eq!(saved.unreadable[0].id, "run-old-1");
+    assert!(saved.unreadable[0].reason.contains("matching result"));
 }

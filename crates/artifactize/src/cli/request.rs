@@ -87,7 +87,7 @@ pub(super) async fn execute(
                         view.request.id,
                         view.request.run_id,
                         view.request.eval_id,
-                        view.request.status,
+                        view.request.status(),
                         view.claim
                             .as_ref()
                             .map_or("-", |claim| claim.reviewer.as_str())

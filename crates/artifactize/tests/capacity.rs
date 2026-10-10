@@ -129,7 +129,7 @@ impl Fixture {
     /// Hold an openai slot with an execution of this live process (the test).
     fn hold(&self) {
         self.database().execute(
-            "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) VALUES ('held',NULL,'held','RUNNING',?,?,'openai','{}')",
+            "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) SELECT 'held',NULL,eval_def_hash,'RUNNING',?1,?2,'openai',json_set(data,'$.id','held','$.key',NULL,'$.status','RUNNING','$.result',NULL,'$.error',NULL,'$.errorCode',NULL,'$.completedAt',NULL,'$.ownerPid',?1,'$.ownerStartTime',?2) FROM executions LIMIT 1",
             rusqlite::params![std::process::id(), own_start_time() as i64],
         )
         .unwrap();
