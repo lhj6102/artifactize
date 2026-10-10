@@ -291,7 +291,7 @@ impl Turns<'_> {
                 cancellation.clone(),
             ) => result,
         };
-        let failed = result.is_error;
+        let failed = result.is_error();
         Ok((call.result(tool_content(result)?), failed))
     }
 }
@@ -631,7 +631,7 @@ fn definitions(registry: &Registry<'_>) -> Vec<ToolDefinition> {
 
 fn tool_content(result: ToolResult) -> Result<Vec<ToolResultContent>, String> {
     result
-        .content
+        .into_content()
         .into_iter()
         .map(|block| match block {
             Content::Text { text } => Ok(ToolResultContent::text(text)),

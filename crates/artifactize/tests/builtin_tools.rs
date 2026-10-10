@@ -159,22 +159,22 @@ async fn fixed_agent_reads_sections_mounts_and_schemas() {
         |name: &'static str, args| registry.call(name, args, root.path(), CancellationToken::new());
     let fixed = call("fixed_a", json!({})).await;
     assert_eq!(
-        fixed.content,
+        fixed.content(),
         vec![tools::Content::Text {
             text: "# First\nbody\n## Nested\nchild\n# Next\nlast\n".into()
         }]
     );
-    assert!(call("fixed_a", json!({"path":"other.md"})).await.is_error);
+    assert!(call("fixed_a", json!({"path":"other.md"})).await.is_error());
     let section = call("section_a", json!({"heading":"First"})).await;
     assert_eq!(
-        section.content,
+        section.content(),
         vec![tools::Content::Text {
             text: "# First\nbody\n## Nested\nchild\n".into()
         }]
     );
     assert_eq!(call("fixed_section_a", json!({})).await, section);
     let missing = call("section_a", json!({"heading":"missing"})).await;
-    assert!(missing.is_error);
+    assert!(missing.is_error());
     assert!(
         serde_json::to_string(&missing)
             .unwrap()
@@ -204,7 +204,7 @@ async fn fixed_agent_reads_sections_mounts_and_schemas() {
             CancellationToken::new(),
         )
         .await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     assert!(
         serde_json::to_string(&result)
             .unwrap()
@@ -269,9 +269,9 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
         .unwrap()
         .call("reference_a", CancellationToken::new())
         .await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     assert_eq!(
-        result.content,
+        result.content(),
         vec![tools::human::Content::Text {
             text: "reference text\n".into()
         }]
@@ -280,7 +280,7 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
         .unwrap()
         .call("reference_a", CancellationToken::new())
         .await;
-    assert!(outside.is_error, "{outside:?}");
+    assert!(outside.is_error(), "{outside:?}");
 }
 
 #[test]
@@ -439,9 +439,9 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
     let config = read_workspace_config(root.path()).unwrap();
     let registry = tools::human::Registry::new(&config, "notes/review").unwrap();
     let read = registry.call("read_notes", CancellationToken::new()).await;
-    assert!(!read.is_error, "{read:?}");
+    assert!(!read.is_error(), "{read:?}");
     assert_eq!(
-        read.content,
+        read.content(),
         vec![tools::human::Content::Text {
             text: "# First\nfile body\n# Next\nlast\n".into()
         }]
@@ -449,9 +449,9 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
     let section = registry
         .call("section_notes", CancellationToken::new())
         .await;
-    assert!(!section.is_error, "{section:?}");
+    assert!(!section.is_error(), "{section:?}");
     assert_eq!(
-        section.content,
+        section.content(),
         vec![tools::human::Content::Text {
             text: "# First\nfile body\n".into()
         }]

@@ -47,8 +47,8 @@ fn typed_results_preserve_read_pagination_listing_and_search_json() {
             &owner,
             &CancellationToken::new(),
         );
-        assert!(!result.is_error, "{result:?}");
-        let [Content::Json { data }] = result.content.as_slice() else {
+        assert!(!result.is_error(), "{result:?}");
+        let [Content::Json { data }] = result.content() else {
             panic!("expected one JSON result")
         };
         data.clone()

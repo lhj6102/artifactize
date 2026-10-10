@@ -80,9 +80,9 @@ impl Fixture {
 
     async fn data(&self, tool: &str, args: Value) -> Value {
         let result = self.call(tool, args).await;
-        assert!(!result.is_error, "{result:?}");
+        assert!(!result.is_error(), "{result:?}");
         assert!(serde_json::to_vec(&result).unwrap().len() < RESULT_BYTES + 100);
-        let [Content::Json { data }] = result.content.as_slice() else {
+        let [Content::Json { data }] = result.content() else {
             panic!("{result:?}")
         };
         data.clone()
@@ -103,9 +103,9 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
         let result = fixture
             .call("view_image_a", json!({"path":"source/image.txt"}))
             .await;
-        assert!(!result.is_error, "{result:?}");
+        assert!(!result.is_error(), "{result:?}");
         assert_eq!(
-            result.content,
+            result.content(),
             vec![Content::Image {
                 data: STANDARD.encode(&bytes),
                 mime_type: mime.into()
@@ -123,7 +123,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
             fixture
                 .call("view_image_a", json!({"path":path}))
                 .await
-                .is_error,
+                .is_error(),
             "{path}"
         );
     }
@@ -131,7 +131,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
         fixture
             .call("view_image_hidden", json!({"path":"secret"}))
             .await
-            .is_error
+            .is_error()
     );
     for bytes in image::tests::unsupported() {
         fixture.write("a/invalid.png", bytes);
@@ -139,7 +139,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
             fixture
                 .call("view_image_a", json!({"path":"invalid.png"}))
                 .await
-                .is_error
+                .is_error()
         );
     }
     let mut bytes = image::tests::fixtures()[1].1.clone();
@@ -149,7 +149,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
         !fixture
             .call("view_image_a", json!({"path":"large"}))
             .await
-            .is_error
+            .is_error()
     );
     bytes.push(0);
     fixture.write("a/large", bytes);
@@ -157,7 +157,7 @@ async fn view_image_detects_bytes_and_obeys_size_format_and_scope_limits() {
         fixture
             .call("view_image_a", json!({"path":"large"}))
             .await
-            .is_error
+            .is_error()
     );
 }
 
@@ -235,7 +235,7 @@ async fn read_bounds_complete_lines_and_decodes_only_requested_lines() {
         fixture
             .call("read_a", json!({"path":"text","offset":2}))
             .await
-            .is_error
+            .is_error()
     );
     fixture.write("a/text", format!("{}\né\n", "a".repeat(READ_BYTES + 1)));
     let data = fixture
@@ -252,7 +252,7 @@ async fn read_bounds_complete_lines_and_decodes_only_requested_lines() {
             fixture
                 .call("read_a", json!({"path":"text"}))
                 .await
-                .is_error
+                .is_error()
         );
         let data = fixture
             .data("read_a", json!({"path":"text","offset":2}))
@@ -264,7 +264,7 @@ async fn read_bounds_complete_lines_and_decodes_only_requested_lines() {
         !fixture
             .call("read_a", json!({"path":"text","limit":1}))
             .await
-            .is_error
+            .is_error()
     );
     fixture.write("a/text", format!("{}é\r\n", "a".repeat(8191)));
     let data = fixture.data("read_a", json!({"path":"text"})).await;
@@ -324,14 +324,14 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
             if tool == "glob_a" || tool == "grep_a" {
                 args["pattern"] = json!(".*");
             }
-            assert!(fixture.call(tool, args).await.is_error, "{tool} {path}");
+            assert!(fixture.call(tool, args).await.is_error(), "{tool} {path}");
         }
     }
     assert!(
         fixture
             .call("read_a", json!({"path":"data"}))
             .await
-            .is_error
+            .is_error()
     );
     let data = fixture.data("glob_a", json!({"pattern":"**/*"})).await;
     assert_eq!(data["files"], json!(["data/file", "index.artf"]));
@@ -347,14 +347,14 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
         )
     };
     if symlink_dir("old-a", fixture.root.join("a")).is_some() {
-        assert!(read().await.is_error);
+        assert!(read().await.is_error());
     }
     // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
         let _ = fs::remove_dir(fixture.root.join("a"));
         crate::test_os::junction(&fixture.root.join("old-a"), &fixture.root.join("a"));
-        assert!(read().await.is_error);
+        assert!(read().await.is_error());
     }
 }
 
@@ -363,8 +363,8 @@ async fn missing_paths_and_links_report_their_cause() {
     let fixture = Fixture::new();
     fixture.write("a/data/file", "visible");
     let error = |result: ToolResult| {
-        assert!(result.is_error, "{result:?}");
-        let [Content::Text { text }] = result.content.as_slice() else {
+        assert!(result.is_error(), "{result:?}");
+        let [Content::Text { text }] = result.content() else {
             panic!("{result:?}")
         };
         text.clone()
@@ -498,9 +498,9 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
         ("view_image_a", json!({"path":null})),
     ] {
         let result = fixture.call(tool, args).await;
-        assert!(result.is_error);
+        assert!(result.is_error());
         assert!(
-            matches!(&result.content[0], Content::Text { text } if text.contains("Tool arguments"))
+            matches!(&result.content()[0], Content::Text { text } if text.contains("Tool arguments"))
         );
     }
     fixture.write("bare/index.artf", r#"{"name":"bare"}"#);
@@ -523,7 +523,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
         fixture
             .call("read_bare", json!({"path":"index.artf"}))
             .await
-            .is_error
+            .is_error()
     );
     let cancelled = CancellationToken::new();
     cancelled.cancel();
@@ -531,7 +531,7 @@ async fn schemas_reject_unknown_or_out_of_range_arguments_and_listing_is_opt_in(
         registry
             .call("list_a", json!({}), &fixture.root, cancelled)
             .await
-            .is_error
+            .is_error()
     );
 }
 
@@ -678,13 +678,13 @@ async fn glob_and_grep_are_bounded_sorted_and_skip_binary_and_symlinks() {
         fixture
             .call("grep_a", json!({"pattern":"["}))
             .await
-            .is_error
+            .is_error()
     );
     assert!(
         fixture
             .call("glob_a", json!({"pattern":"../*"}))
             .await
-            .is_error
+            .is_error()
     );
     for i in 0..201 {
         fixture.write(&format!("a/many/{i:03}.txt"), "match\n");
@@ -767,8 +767,8 @@ async fn file_artifact_image_view_is_limited_to_the_target() {
             CancellationToken::new(),
         )
         .await;
-    assert!(!result.is_error, "{result:?}");
-    assert!(matches!(result.content.as_slice(), [Content::Image { .. }]));
+    assert!(!result.is_error(), "{result:?}");
+    assert!(matches!(result.content(), [Content::Image { .. }]));
     let result = registry
         .call(
             "view_image_hero",
@@ -777,5 +777,5 @@ async fn file_artifact_image_view_is_limited_to_the_target() {
             CancellationToken::new(),
         )
         .await;
-    assert!(result.is_error);
+    assert!(result.is_error());
 }

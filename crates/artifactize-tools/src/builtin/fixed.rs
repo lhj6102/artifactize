@@ -249,10 +249,7 @@ fn call_text(
 }
 
 fn text_result(text: String) -> ToolResult {
-    ToolResult {
-        content: vec![Content::Text { text }],
-        is_error: false,
-    }
+    ToolResult::success(Content::Text { text })
 }
 
 fn read_text(

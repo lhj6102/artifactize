@@ -327,8 +327,8 @@ async fn call(registry: &Registry<'_>, name: &str, args: Value, state: &Path) ->
     let result = registry
         .call(name, args, state, CancellationToken::new())
         .await;
-    assert!(!result.is_error, "{result:?}");
-    let [Content::Json { data }] = result.content.as_slice() else {
+    assert!(!result.is_error(), "{result:?}");
+    let [Content::Json { data }] = result.content() else {
         panic!("{result:?}")
     };
     data.clone()
@@ -454,7 +454,7 @@ async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
             registry
                 .call(tool, args, &fixture.state, CancellationToken::new())
                 .await
-                .is_error
+                .is_error()
         );
     }
 }
@@ -790,7 +790,7 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
             registry
                 .call(tool, args, &fixture.state, CancellationToken::new())
                 .await
-                .is_error
+                .is_error()
         );
     }
     fs::remove_dir_all(fixture.repo.join("input.txt")).unwrap();
@@ -812,7 +812,7 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
                 CancellationToken::new()
             )
             .await
-            .is_error
+            .is_error()
     );
 }
 
@@ -885,9 +885,9 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
             CancellationToken::new(),
         )
         .await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     assert_eq!(
-        result.content,
+        result.content(),
         vec![Content::Text {
             text: "files".into()
         }]
@@ -924,9 +924,9 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
             CancellationToken::new(),
         )
         .await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     assert_eq!(
-        result.content,
+        result.content(),
         vec![Content::Text {
             text: "mounted".into()
         }]
@@ -1239,13 +1239,13 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
                     CancellationToken::new()
                 )
                 .await
-                .is_error
+                .is_error()
         );
         assert!(
             human
                 .call("inspect_file", CancellationToken::new())
                 .await
-                .is_error
+                .is_error()
         );
         assert!(!fixture.repo.join("started").exists());
     }

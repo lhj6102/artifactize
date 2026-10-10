@@ -340,8 +340,8 @@ async fn execute_tool(
 impl ToolCheckResult {
     fn is_error(&self) -> bool {
         match self {
-            Self::Agent(result) => result.is_error,
-            Self::Human(result) => result.is_error,
+            Self::Agent(result) => result.is_error(),
+            Self::Human(result) => result.is_error(),
         }
     }
 }

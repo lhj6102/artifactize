@@ -124,7 +124,7 @@ pub(super) async fn execute(
                 print_json(&result)?;
             } else {
                 let mut out = io::stdout().lock();
-                for content in &result.content {
+                for content in result.content() {
                     match content {
                         Content::Text { text } => writeln!(out, "{text}"),
                         Content::Launch { launched } => writeln!(
@@ -140,7 +140,7 @@ pub(super) async fn execute(
                     .map_err(|e| e.to_string())?;
                 }
             }
-            return Ok(if result.is_error { 2 } else { 0 });
+            return Ok(if result.is_error() { 2 } else { 0 });
         }
         RequestCommand::Submit {
             id,

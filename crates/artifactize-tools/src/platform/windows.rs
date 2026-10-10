@@ -83,31 +83,36 @@ pub(crate) fn spawn_tree(command: &mut tokio::process::Command) -> io::Result<Tr
         return Err(io::Error::last_os_error());
     }
     command.creation_flags(CREATE_SUSPENDED);
-    let mut child = command.spawn()?;
+    let mut suspended = SuspendedChild(command.spawn()?);
     let admitted = (|| {
-        let process = child.raw_handle().ok_or(io::ErrorKind::NotFound)?;
+        let process = suspended.0.raw_handle().ok_or(io::ErrorKind::NotFound)?;
         // SAFETY: a live job handle and the handle of the suspended child just started.
         if unsafe { AssignProcessToJobObject(job.as_raw_handle(), process) } == 0 {
             return Err(io::Error::last_os_error());
         }
-        resume(child.id().ok_or(io::ErrorKind::NotFound)?)
+        resume(&suspended)
     })();
     if let Err(error) = admitted {
         // A child that never joined the job is killed directly; it never ran.
-        let _ = child.start_kill();
+        let _ = suspended.0.start_kill();
         return Err(error);
     }
     Ok(Tree {
-        child,
+        child: suspended.0,
         job: Some(job),
     })
 }
 
-/// Resume every thread of a process created suspended: its primary thread.
+/// A child created with CREATE_SUSPENDED by this launcher. Owning the child
+/// keeps its process identity live until job admission and resumption finish.
+struct SuspendedChild(tokio::process::Child);
+
 /// ResumeThread uses DWORD_MAX as its error sentinel, not as a suspend count.
 const RESUME_THREAD_FAILED: u32 = u32::MAX;
 
-fn resume(pid: u32) -> io::Result<()> {
+/// Resume the primary thread of the child this launcher created suspended.
+fn resume(child: &SuspendedChild) -> io::Result<()> {
+    let pid = child.0.id().ok_or(io::ErrorKind::NotFound)?;
     // SAFETY: a snapshot of all threads; the result is checked and then owned.
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
     if snapshot == INVALID_HANDLE_VALUE {

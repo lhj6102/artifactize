@@ -756,11 +756,11 @@ impl Review {
                 self.commands = None;
                 let launched = Content::Launch { launched: true };
                 self.notice = Some(match &result {
-                    Ok(result) if result.is_error => (
+                    Ok(result) if result.is_error() => (
                         format!("{tool} failed; a tool error is not a verdict."),
                         true,
                     ),
-                    Ok(result) if result.content.contains(&launched) => {
+                    Ok(result) if result.content().contains(&launched) => {
                         (format!("{tool} launched."), false)
                     }
                     Ok(_) => (format!("{tool} finished."), false),
@@ -1003,13 +1003,13 @@ pub fn shell<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
 fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
     match result {
         Ok(result) => Output {
-            title: if result.is_error {
+            title: if result.is_error() {
                 format!("{tool} · tool error")
             } else {
                 tool.to_owned()
             },
             text: result
-                .content
+                .content()
                 .iter()
                 .map(|content| match content {
                     Content::Text { text } => text.trim_end().to_owned(),
@@ -1018,7 +1018,7 @@ fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
-            error: result.is_error,
+            error: result.is_error(),
         },
         Err(error) => Output {
             title: format!("{tool} · failed"),

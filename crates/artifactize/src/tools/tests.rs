@@ -78,7 +78,7 @@ fn command() -> Value {
 }
 
 fn text(result: &ToolResult) -> &str {
-    let [Content::Text { text }] = result.content.as_slice() else {
+    let [Content::Text { text }] = result.content() else {
         panic!("expected text: {result:?}")
     };
     text
@@ -173,14 +173,14 @@ async fn argument_validation_precedes_spawn_and_output_creation() {
                 CancellationToken::new(),
             )
             .await;
-        assert!(result.is_error);
+        assert!(result.is_error());
         assert!(text(&result).contains("Tool arguments"));
         assert!(!text(&result).contains("secret-input"));
         assert!(text(&result).len() < 4096);
         assert!(!fixture.repo.join("spawned").exists());
         assert!(!fixture.repo.join("must-not-create").exists());
     }
-    assert!(!fixture.call(json!({"n":1})).await.is_error);
+    assert!(!fixture.call(json!({"n":1})).await.is_error());
     assert!(fixture.repo.join("spawned").exists());
 }
 
@@ -206,8 +206,8 @@ print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':c
         ),
     );
     let result = fixture.call(json!({})).await;
-    assert!(!result.is_error, "{result:?}");
-    let Content::Json { data } = &result.content[1] else {
+    assert!(!result.is_error(), "{result:?}");
+    let Content::Json { data } = &result.content()[1] else {
         panic!()
     };
     assert_eq!(data["artifactId"], "a");
@@ -234,7 +234,7 @@ async fn json_success_authored_error_and_credential_safe_failures() {
         "print('{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"Choose a smaller range.\"}]}')",
     );
     let result = fixture.call(json!({})).await;
-    assert!(result.is_error);
+    assert!(result.is_error());
     assert_eq!(text(&result), "Choose a smaller range.");
     fixture.script(
         "import sys\nprint('secret-output')\nprint('secret-stderr',file=sys.stderr)\nsys.exit(2)",
@@ -299,7 +299,7 @@ async fn json_capture_supports_large_blocks_but_rejects_truncation() {
     let fixture = Fixture::new(command());
     fixture
         .script("import json\nprint(json.dumps({'content':[{'type':'json','data':'x'*524286}]}))");
-    assert!(!fixture.call(json!({})).await.is_error);
+    assert!(!fixture.call(json!({})).await.is_error());
     fixture.script("print('x'*(16*1024*1024+1))");
     assert_eq!(
         text(&fixture.call(json!({})).await),
@@ -327,9 +327,9 @@ print(json.dumps({{'content':[
 "#
         ));
         let result = fixture.call(json!({})).await;
-        assert!(!result.is_error, "{result:?}");
+        assert!(!result.is_error(), "{result:?}");
         assert_eq!(
-            result.content,
+            result.content(),
             vec![
                 Content::Image {
                     data: encoded,
@@ -353,7 +353,7 @@ print(json.dumps({{'content':[
             "import json, os, shutil, sys\nrequest = json.load(sys.stdin)\nroot = request['context']['outputDir']\n{setup}\nprint(json.dumps({{'content':[{{'type':'image','path':path,'mimeType':'image/png'}}]}}))"
         ));
         let result = fixture.call(json!({})).await;
-        assert!(result.is_error, "{setup}");
+        assert!(result.is_error(), "{setup}");
         assert_eq!(text(&result), "Agent tool returned invalid output.");
     }
 }
@@ -383,7 +383,7 @@ async fn plain_substitution_is_literal_single_pass_and_handles_escaping() {
     let result = fixture
         .call(json!({"query":query,"n":42,"items":[1,true]}))
         .await;
-    assert!(!result.is_error);
+    assert!(!result.is_error());
     let argv: Value = serde_json::from_str(text(&result)).unwrap();
     assert_eq!(
         argv,
@@ -401,7 +401,7 @@ async fn plain_substitution_is_literal_single_pass_and_handles_escaping() {
         fixture
             .call(json!({"query":"\u{0}","n":42,"items":[]}))
             .await
-            .is_error
+            .is_error()
     );
 }
 
@@ -418,12 +418,12 @@ async fn plain_output_is_clean_bounded_and_nonzero_is_error() {
         "import sys\nprint('domain detail')\nprint('stderr-secret',file=sys.stderr)\nsys.exit(3)",
     );
     let result = fixture.call(json!({})).await;
-    assert!(result.is_error);
+    assert!(result.is_error());
     assert!(text(&result).contains("domain detail"));
     assert!(!text(&result).contains("stderr-secret"));
     fixture.script("print('界'*100000)");
     let result = fixture.call(json!({})).await;
-    assert!(!result.is_error);
+    assert!(!result.is_error());
     assert!(text(&result).len() <= 65536);
     assert!(text(&result).ends_with("[output truncated]"));
 }
@@ -437,7 +437,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
     let fixture = Fixture::new(tool.clone());
     let script = fixture.repo.join("unique-artifactize-tool-not-on-path");
     crate::test_os::output_script(&script, "owner executable");
-    assert!(fixture.call(json!({})).await.is_error);
+    assert!(fixture.call(json!({})).await.is_error());
     tool["command"] = json!("./unique-artifactize-tool-not-on-path");
     write_artifact(
         &fixture.repo,
@@ -490,7 +490,7 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
                         CancellationToken::new()
                     )
                     .await
-                    .is_error
+                    .is_error()
             );
         }
         assert!(!fixture.repo.join("spawned").exists());
@@ -506,7 +506,7 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
             CancellationToken::new(),
         )
         .await;
-    assert!(result.is_error);
+    assert!(result.is_error());
     assert!(!fixture.repo.join("output").exists());
 }
 
@@ -557,7 +557,7 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
                 CancellationToken::new()
             )
             .await
-            .is_error
+            .is_error()
     );
     assert!(
         text(
@@ -658,7 +658,7 @@ async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
             CancellationToken::new(),
         )
         .await;
-    let [Content::Json { data }] = result.content.as_slice() else {
+    let [Content::Json { data }] = result.content() else {
         panic!("{result:?}")
     };
     assert_eq!(data["a"]["mounts"], json!({"alias":"leaf"}));

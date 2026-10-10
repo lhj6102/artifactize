@@ -331,7 +331,7 @@ async fn a_tool_runs_at_once_and_keeps_the_open_draft() {
     // No confirmation step: the run job starts at once, and the form stays open meanwhile.
     let outcome = perform(&mut review, Control::RunTool).await;
     assert!(
-        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error),
+        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error()),
         "{outcome:?}"
     );
     review.finish_single(outcome);
@@ -813,7 +813,7 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     let action = press(&mut review, KeyEvent::from(KeyCode::Enter));
     let outcome = job(&mut review, action).await;
     assert!(
-        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error),
+        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error()),
         "{outcome:?}"
     );
     review.finish(outcome);

@@ -252,9 +252,10 @@ fn command(args: &[&str]) -> CommandLine {
 }
 
 fn printed(text: &str, is_error: bool) -> Result<ToolResult, String> {
-    Ok(ToolResult {
-        content: vec![Content::Text { text: text.into() }],
-        is_error,
+    Ok(if is_error {
+        ToolResult::error(text)
+    } else {
+        ToolResult::success(Content::Text { text: text.into() })
     })
 }
 
@@ -476,10 +477,7 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     review.finish(Outcome::Ran {
         tool: "open_release".parse().unwrap(),
         claimed: None,
-        result: Ok(ToolResult {
-            content: vec![Content::Launch { launched: true }],
-            is_error: false,
-        }),
+        result: Ok(ToolResult::success(Content::Launch { launched: true })),
     });
     assert!(screen(&mut review).contains("open_release launched."));
     review.finish(Outcome::Ran {
