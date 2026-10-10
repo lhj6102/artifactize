@@ -7,6 +7,7 @@ mod embedded_tests;
 mod form;
 #[cfg(test)]
 mod identity_tests;
+mod runs;
 #[cfg(test)]
 pub(crate) mod tests;
 mod view;
@@ -14,6 +15,7 @@ mod view;
 pub(crate) use detail::{Handled, Hits};
 pub(crate) use embedded::Control;
 pub use form::{Field, Form, Input, template};
+pub use runs::Runs;
 
 use std::{
     future::Future,
@@ -141,8 +143,7 @@ pub struct Tool {
     pub name: String,
     pub kind: HumanToolKind,
     pub description: String,
-    /// Declared command and args, placeholders unresolved.
-    pub declared: String,
+    pub declared: Runs,
 }
 
 /// The last tool result or failure, shown in the output pane.
@@ -950,19 +951,18 @@ impl Job {
 /// Declared Human tools in the eval scope, named like the registry.
 pub fn tools(request: &Request) -> Vec<Tool> {
     let definition = request.human_definition.as_ref();
-    let artifacts = definition.and_then(|definition| definition["artifacts"].as_object());
+    let Some(artifacts) = definition.and_then(|definition| definition["artifacts"].as_object())
+    else {
+        return Vec::new();
+    };
     let mut tools: Vec<_> = artifacts
-        .into_iter()
-        .flatten()
+        .iter()
         .flat_map(|(id, artifact)| {
             let declared = artifact["views"]["humanTools"]
                 .as_object()
                 .into_iter()
                 .flatten();
             declared.filter_map(move |(operation, tool)| {
-                let words = std::iter::once(tool.get("builtin").unwrap_or(&tool["command"]))
-                    .chain(tool["args"].as_array().into_iter().flatten())
-                    .filter_map(Value::as_str);
                 Some(Tool {
                     name: format!("{operation}_{id}"),
                     kind: serde_json::from_value(tool["kind"].clone()).ok()?,
@@ -970,7 +970,7 @@ pub fn tools(request: &Request) -> Vec<Tool> {
                         .as_str()
                         .unwrap_or_default()
                         .replace("{artifactName}", id),
-                    declared: shell(words),
+                    declared: Runs::parse(artifacts, id, tool),
                 })
             })
         })

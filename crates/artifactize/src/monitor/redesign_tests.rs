@@ -810,6 +810,22 @@ async fn human_detail_keys_follow_the_shared_protocol() {
 }
 
 #[tokio::test]
+async fn human_detail_names_builtin_actions_at_80_and_120_columns() {
+    use crate::review::tests::{builtin_rows, builtins, drawn_row, embedded};
+    for width in [80, 120] {
+        let mut monitor = human_detail(embedded(Some("alice"), builtins())).await;
+        monitor.key(KeyEvent::from(KeyCode::Tab));
+        for rows in builtin_rows(width) {
+            let text = render_text(&mut monitor, width, 30);
+            for row in rows {
+                assert!(drawn_row(&text, row), "{width}: {row}\n{text}");
+            }
+            monitor.key(KeyEvent::from(KeyCode::Down));
+        }
+    }
+}
+
+#[tokio::test]
 async fn human_detail_names_the_tools_and_a_click_on_the_selected_tool_runs_it() {
     use crate::review::tests::{demo, embedded};
     let mut monitor = human_detail(embedded(Some("alice"), demo())).await;

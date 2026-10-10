@@ -114,6 +114,64 @@ pub(crate) fn demo() -> Value {
     )
 }
 
+/// The demo request with builtin Human tools beside the `notes` command tool: `release` at
+/// `release` mounts `guide`, a folder at `docs/guide`.
+pub(crate) fn builtins() -> Value {
+    let mut definition = demo();
+    let artifacts = &mut definition["artifacts"];
+    artifacts["release"]["mounts"] = json!({"guide":"guide"});
+    artifacts["release"]["views"]["humanTools"] = json!({
+        "notes":{
+            "description":"Print the notes of {artifactName}.",
+            "kind":"output",
+            "command":"cat",
+            "args":["{artifactPath}/notes.md"],
+        },
+        "open":{
+            "builtin":"open",
+            "description":"Open the notes of {artifactName}.",
+            "kind":"launch",
+            "args":["{artifactPath}/notes.md"],
+        },
+        "changes":{
+            "builtin":"read",
+            "description":"Read the changelog.",
+            "kind":"output",
+            "args":["CHANGELOG.md"],
+        },
+        "install":{
+            "builtin":"section",
+            "description":"Read the install steps.",
+            "kind":"output",
+            "args":["{guide}/README.md","Install"],
+        },
+        "cargo":{
+            "builtin":"help",
+            "description":"Show the build options.",
+            "kind":"output",
+            "args":["cargo","build"],
+        },
+        "assets":{
+            "builtin":"list",
+            "description":"List the guide.",
+            "kind":"output",
+            "args":["{guide}"],
+        },
+        "site":{
+            "builtin":"open",
+            "description":"Open the release page.",
+            "kind":"launch",
+            "args":["https://example.com/release"],
+        },
+    });
+    artifacts["guide"] = json!({
+        "path":"docs/guide",
+        "kind":"folder",
+        "views":{"agentTools":{},"humanTools":{}},
+    });
+    definition
+}
+
 pub(crate) fn claim(reviewer: &str) -> HumanClaim {
     HumanClaim {
         request_id: ID.parse().unwrap(),
@@ -253,18 +311,18 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
     assert_eq!(
         tools
             .iter()
-            .map(|tool| (tool.name.as_str(), tool.kind, tool.declared.as_str()))
+            .map(|tool| (tool.name.as_str(), tool.kind, &tool.declared))
             .collect::<Vec<_>>(),
         [
             (
                 "notes_release",
                 HumanToolKind::Output,
-                "cat {artifactPath}/notes.md"
+                &Runs::Command("cat {artifactPath}/notes.md".into())
             ),
             (
                 "open_release",
                 HumanToolKind::Launch,
-                "xdg-open {artifactPath}"
+                &Runs::Command("xdg-open {artifactPath}".into())
             ),
         ]
     );
@@ -1388,4 +1446,105 @@ fn clicks_focus_select_and_run_tools_and_f2_turns_the_mouse_off() {
     assert_eq!(review.list.selected(), Some(0));
     assert_eq!(press(&mut review, KeyCode::F(2)), Action::Capture(true));
     assert!(!screen(&mut review).contains("mouse off"));
+}
+
+/// The focused Tools pane rows of each `builtins()` tool, selected in name order: the tool and
+/// its kind, what Enter does on which logical target, and the description.
+pub(crate) fn builtin_rows(width: u16) -> Vec<Vec<&'static str>> {
+    let narrow = width < 120;
+    vec![
+        vec![
+            "assets_release  output",
+            "  lists docs/guide/",
+            "  List the guide.",
+        ],
+        vec![
+            "cargo_release  output",
+            "  prints cargo build --help",
+            "  Show the build options.",
+        ],
+        vec![
+            "changes_release  output",
+            "  prints release/CHANGELOG.md",
+            "  Read the changelog.",
+        ],
+        if narrow {
+            vec![
+                "install_release  output",
+                r#"  prints section "Install" of"#,
+                "    docs/guide/README.md",
+                "  Read the install steps.",
+            ]
+        } else {
+            vec![
+                "install_release  output",
+                r#"  prints section "Install" of docs/guide/README.md"#,
+                "  Read the install steps.",
+            ]
+        },
+        // A command tool keeps its declared command line.
+        vec![
+            "notes_release  output",
+            "  $ cat {artifactPath}/notes.md",
+            "  Print the notes of release.",
+        ],
+        vec![
+            "open_release  launch",
+            "  opens release/notes.md in its default app",
+            "  Open the notes of release.",
+        ],
+        if narrow {
+            vec![
+                "site_release  launch",
+                "  opens https://example.com/release in the",
+                "    browser",
+                "  Open the release page.",
+            ]
+        } else {
+            vec![
+                "site_release  launch",
+                "  opens https://example.com/release in the browser",
+                "  Open the release page.",
+            ]
+        },
+    ]
+}
+
+/// Whether one pane row of `text` reads exactly `row`, up to its padding.
+pub(crate) fn drawn_row(text: &str, row: &str) -> bool {
+    text.lines()
+        .any(|line| line.split('│').any(|cell| cell.trim_end() == row))
+}
+
+#[test]
+fn builtin_tools_name_their_action_on_a_logical_target_at_80_and_120_columns() {
+    for width in [80, 120] {
+        let mut review = opened(None, builtins());
+        press(&mut review, KeyCode::Tab);
+        for rows in builtin_rows(width) {
+            let text = sized(&mut review, width, 30);
+            for row in rows {
+                assert!(drawn_row(&text, row), "{width}: {row}\n{text}");
+            }
+            // Builtins never read as shell command lines or unresolved placeholders.
+            for declared in [
+                "$ open",
+                "$ read",
+                "$ list",
+                "$ section",
+                "$ help",
+                "{guide}",
+            ] {
+                assert!(!text.contains(declared), "{declared}\n{text}");
+            }
+            press(&mut review, KeyCode::Down);
+        }
+        // The command tool reads as it did beside command tools only.
+        let mut demo = opened(None, demo());
+        press(&mut demo, KeyCode::Tab);
+        let text = sized(&mut demo, width, 30);
+        for row in &builtin_rows(width)[4] {
+            assert!(drawn_row(&text, row), "{width}: {row}\n{text}");
+        }
+    }
 }

@@ -62,6 +62,10 @@ impl Fixture {
                             "command":bin("true"),
                             "args":["{artifactPath}"],
                         },
+                        "summary":{
+                            "builtin":"section",
+                            "args":["{artifactPath}/notes.md", "Release notes"],
+                        },
                     },
                 },
                 "evals":[
@@ -284,6 +288,20 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     press(&mut review, KeyCode::Char('k')).await;
     press(&mut review, KeyCode::Enter).await;
     assert!(screen(&mut review).contains("notes_release finished."));
+    // A builtin names its action on a logical path, and Enter runs it in-process.
+    press(&mut review, KeyCode::Char('j')).await;
+    press(&mut review, KeyCode::Char('j')).await;
+    let selected = screen(&mut review);
+    assert!(
+        selected.contains(r#"  prints section "Release notes" of release/notes.md"#),
+        "{selected}"
+    );
+    press(&mut review, KeyCode::Enter).await;
+    let section = screen(&mut review);
+    assert!(
+        section.contains("Output · summary_release") && section.contains("- Ready."),
+        "{section}"
+    );
 
     // RED with an empty reason fails validation and keeps the form.
     press(&mut review, KeyCode::Char('r')).await;
