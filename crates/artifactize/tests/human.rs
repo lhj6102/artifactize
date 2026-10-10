@@ -590,8 +590,8 @@ async fn only_the_claimant_unclaims_a_waiting_request_including_through_follower
     // A follower forwards the release to its original request, like a claim.
     let released = human::unclaim(&receipts, follower, "alice").await.unwrap();
     assert_eq!(
-        (released.request_id.as_str(), released.claimed_at.as_str()),
-        (owner, claim.claimed_at.as_str())
+        (released.request_id.as_str(), released.claimed_at),
+        (owner, claim.claimed_at)
     );
     assert!(human::unclaim(&receipts, owner, "alice").await.is_err());
     assert!(

@@ -5,7 +5,7 @@ pub use states::{Activity, Busy, Completion, EvalView, NotRun, Queue, Source, Up
 pub use tree::{Kind, Node, Segment, Tone, Weight, completion, tree, upstream_index};
 
 use serde_json::Value;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 use crate::{
     query,
@@ -244,10 +244,13 @@ pub fn duration(seconds: i64) -> String {
 }
 
 /// Saved RFC 3339 times; an open end is measured to `now`.
-fn span(start: &str, end: Option<&str>, now: OffsetDateTime) -> Option<String> {
-    let parse = |time| OffsetDateTime::parse(time, &Rfc3339).ok();
-    let end = end.map_or(Some(now), parse)?;
-    Some(duration((end - parse(start)?).whole_seconds()))
+fn span(
+    start: crate::types::Timestamp,
+    end: Option<crate::types::Timestamp>,
+    now: OffsetDateTime,
+) -> Option<String> {
+    let end = end.map_or(now, crate::types::Timestamp::time);
+    Some(duration((end - start.time()).whole_seconds()))
 }
 
 /// Position in the urgency order; unknown statuses come last.
@@ -286,11 +289,10 @@ pub fn run_rows(runs: &[RunSummary], now: OffsetDateTime) -> Vec<RunRow> {
             repo: run.repo_path.display().to_string(),
             status: run.status.to_string(),
             counts: counts(run.counts.iter().map(|(status, n)| (status.as_str(), *n))),
-            age: span(&run.created_at, None, now).unwrap_or_default(),
+            age: span(run.created_at, None, now).unwrap_or_default(),
             took: run
                 .completed_at
-                .as_deref()
-                .and_then(|end| span(&run.created_at, Some(end), now))
+                .and_then(|end| span(run.created_at, Some(end), now))
                 .unwrap_or_default(),
         })
         .collect()
@@ -309,9 +311,10 @@ fn elapsed(view: &RequestView, now: OffsetDateTime) -> Option<String> {
         return Some("reused".into());
     }
     let active = matches!(request.status.as_str(), "RUNNING" | "WAITING_HUMAN");
-    let start = request.started_at.as_deref();
-    let start = start.or(active.then_some(request.created_at.as_str()))?;
-    span(start, request.completed_at.as_deref(), now)
+    let start = request
+        .started_at
+        .or(active.then_some(request.created_at))?;
+    span(start, request.completed_at, now)
 }
 
 fn claim(view: &RequestView) -> String {
@@ -348,7 +351,7 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
             .then(|| input.unwrap_or(0).saturating_add(output.unwrap_or(0)))
     });
     let unmet = join(strs(&run.validation["obligations"]), ", ");
-    let wall = span(&run.created_at, run.completed_at.as_deref(), now).unwrap_or_default();
+    let wall = span(run.created_at, run.completed_at, now).unwrap_or_default();
     Progress {
         status: run.status.to_string(),
         repo: run.repo_path.display().to_string(),
@@ -797,7 +800,9 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
                     source.request_id,
                     source.eval_id,
                     source.repo_path.display(),
-                    source.completed_at.as_deref().unwrap_or("?"),
+                    source
+                        .completed_at
+                        .map_or_else(|| "?".to_owned(), |time| time.to_string()),
                     request
                         .producer
                         .as_ref()
@@ -823,8 +828,12 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
         format!(
             "created {} · started {} · completed {}{}",
             request.created_at,
-            request.started_at.as_deref().unwrap_or("-"),
-            request.completed_at.as_deref().unwrap_or("-"),
+            request
+                .started_at
+                .map_or_else(|| "-".to_owned(), |time| time.to_string()),
+            request
+                .completed_at
+                .map_or_else(|| "-".to_owned(), |time| time.to_string()),
             elapsed(view, now).map_or(String::new(), |time| format!(" · {time}"))
         ),
     );

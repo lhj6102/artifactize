@@ -43,7 +43,8 @@ pub(super) async fn list(
                 run.id,
                 run.repo_path.display(),
                 run.created_at,
-                run.completed_at.as_deref().unwrap_or("-"),
+                run.completed_at
+                    .map_or_else(|| "-".to_owned(), |time| time.to_string()),
                 run.status,
                 counts
             )

@@ -20,7 +20,7 @@ use ratatui::{
     widgets::{Block, Paragraph, Wrap},
 };
 use serde_json::Value;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 /// The expanded instruction (or Technical section) takes this share of the body height.
 const EXPANDED: u16 = 70;
@@ -136,10 +136,10 @@ pub(super) fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> S
         }
         Some(claim) => parts.push(format!("claimed by {} · read-only", claim.reviewer)),
     }
-    if waiting && let Ok(created) = OffsetDateTime::parse(&request.created_at, &Rfc3339) {
+    if waiting {
         parts.push(format!(
             "waiting {}",
-            duration((now - created).whole_seconds())
+            duration((now - request.created_at.time()).whole_seconds())
         ));
     }
     plain(&parts.join(" · ")).into_owned()
@@ -206,7 +206,7 @@ pub(super) fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str
     if let Some(shared) = shared(view) {
         fields.push(("Shared", shared));
     }
-    fields.push(("Created", request.created_at.clone()));
+    fields.push(("Created", request.created_at.to_string()));
     let owner = |key| schema(declaration.and_then(|declaration| declaration.get(key)));
     fields.push(("GREEN fields", owner("passSchema")));
     fields.push(("RED fields", owner("failSchema")));

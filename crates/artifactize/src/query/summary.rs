@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 use crate::store::{ExecutionOptions, Request, RequestView, RunView};
 
@@ -151,7 +151,7 @@ pub fn request_output(view: &RequestView, now: OffsetDateTime) -> Value {
     with_source(&mut value, request);
     let summary = RequestSummary {
         status: request.status,
-        wall_ms: wall_ms(&request.created_at, request.completed_at.as_deref(), now),
+        wall_ms: wall_ms(request.created_at, request.completed_at, now),
         executor_starts: u64::from(
             local_execution(request)
                 && request.started_at.is_some()
@@ -206,7 +206,7 @@ pub fn run_output(view: &RunView, now: OffsetDateTime) -> Value {
         counts,
         executed,
         reused: reuses,
-        wall_ms: wall_ms(&view.run.created_at, view.run.completed_at.as_deref(), now),
+        wall_ms: wall_ms(view.run.created_at, view.run.completed_at, now),
         executor_starts: view.run.executions_started,
         usage,
     });
@@ -240,14 +240,13 @@ fn local_execution(request: &Request) -> bool {
         .is_some_and(|source| source.request_id == request.id)
 }
 
-fn wall_ms(start: &str, end: Option<&str>, now: OffsetDateTime) -> Option<u64> {
-    let start = OffsetDateTime::parse(start, &Rfc3339).ok()?;
-    let end = end
-        .map(|end| OffsetDateTime::parse(end, &Rfc3339))
-        .transpose()
-        .ok()?
-        .unwrap_or(now);
-    Some((end - start).whole_milliseconds().max(0) as u64)
+fn wall_ms(
+    start: crate::types::Timestamp,
+    end: Option<crate::types::Timestamp>,
+    now: OffsetDateTime,
+) -> Option<u64> {
+    let end = end.map_or(now, crate::types::Timestamp::time);
+    Some((end - start.time()).whole_milliseconds().max(0) as u64)
 }
 
 fn usage_totals<'a>(requests: impl IntoIterator<Item = &'a Request>) -> UsageTotals {
@@ -373,7 +372,10 @@ mod tests {
     }
     #[test]
     fn supplied_time_is_deterministic_and_profile_omission_is_not_null() {
-        let now = OffsetDateTime::parse("2026-01-01T00:00:05Z", &Rfc3339).unwrap();
+        let now = "2026-01-01T00:00:05Z"
+            .parse::<crate::types::Timestamp>()
+            .unwrap()
+            .time();
         let view = view();
         let output = run_output(&view, now);
         assert_eq!(output["summary"]["wallMs"], 5000);
@@ -382,8 +384,10 @@ mod tests {
         assert_eq!(output["summary"]["attempts"], 0);
         assert_eq!(output["usage"]["saved"], json!({"inputTokens":17}));
         assert_eq!(run_output(&view, now), output);
-        assert_eq!(wall_ms("2026-01-01T00:00:06Z", None, now), Some(0));
-        assert_eq!(wall_ms("bad timestamp", None, now), None);
+        assert_eq!(
+            wall_ms("2026-01-01T00:00:06Z".parse().unwrap(), None, now),
+            Some(0)
+        );
         let request = RequestView {
             request: view.requests[0].clone(),
             claim: None,

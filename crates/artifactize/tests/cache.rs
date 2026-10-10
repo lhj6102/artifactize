@@ -1383,7 +1383,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     )
     .unwrap();
     db.execute(
-        "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT 'replacement',key,eval_def_hash,status,owner_pid,owner_start_time,'2999-01-01T00:00:00.000000000Z',1,'2000-01-01T00:00:00Z',json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?",
+        "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT 'replacement',key,eval_def_hash,status,owner_pid,owner_start_time,'2999-01-01T00:00:00.000000000Z',1,'2000-01-01T00:00:00.000000000Z',json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?",
         [waiting["executionId"].as_str().unwrap()],
     )
     .unwrap();
@@ -1397,7 +1397,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     assert_eq!(fixture.starts(), 1);
     assert_eq!(
         fixture.command(&target, &["cache", "list"], 0)[0]["lastUsed"],
-        "2000-01-01T00:00:00Z"
+        "2000-01-01T00:00:00.000000000Z"
     );
 }
 
@@ -1431,11 +1431,11 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
     execution.status = artifactize::types::ExecutionStatus::Green;
     execution.result = Some(json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)}));
-    execution.completed_at = Some("2026-10-04T00:00:00Z".into());
-    execution.provenance.completed_at = execution.completed_at.clone();
+    execution.completed_at = Some("2026-10-04T00:00:00Z".parse().unwrap());
+    execution.provenance.completed_at = execution.completed_at;
     request.status = execution.status.into();
     request.result = execution.result.clone();
-    request.completed_at = execution.completed_at.clone();
+    request.completed_at = execution.completed_at;
     request.provenance = Some(execution.provenance.clone());
     receipts
         .complete_execution(&execution, &request)

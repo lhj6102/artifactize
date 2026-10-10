@@ -8,7 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Cell, Clear, Paragraph, Row, Table, Wrap},
 };
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 use super::{Focus, Form, Input, Mode, Review, detail};
 use crate::monitor::{
@@ -244,9 +244,7 @@ impl Review {
                         claim.reviewer.clone()
                     }
                 });
-                let age = OffsetDateTime::parse(&request.created_at, &Rfc3339)
-                    .map(|created| duration((now - created).whole_seconds()))
-                    .unwrap_or_default();
+                let age = duration((now - request.created_at.time()).whole_seconds());
                 let repo = request.human_definition.as_ref();
                 let repo = repo.and_then(|definition| definition["repo"].as_str());
                 [

@@ -109,7 +109,7 @@ pub(super) fn live() -> (RunView, Vec<RequestView>) {
     waiting.claim = Some(HumanClaim {
         request_id: waiting.request.id.clone(),
         reviewer: "alice".into(),
-        claimed_at: "2026-01-01T00:00:30Z".into(),
+        claimed_at: "2026-01-01T00:00:30Z".parse().unwrap(),
     });
     let requests = vec![
         request(
@@ -162,7 +162,7 @@ fn live_progress_tree_and_details_are_pure_projections() {
         progress.waiting,
         [(
             "app/review".into(),
-            "claimed by alice at 2026-01-01T00:00:30Z".into()
+            "claimed by alice at 2026-01-01T00:00:30.000000000Z".into()
         )]
     );
     assert_eq!(
@@ -269,7 +269,7 @@ fn run_rows_and_durations() {
         ["5s", "1m 05s", "1h 01m", "1d 1h", "0s"]
     );
     let mut finished = summary("run-b", 0);
-    finished.completed_at = Some("2026-01-01T00:00:42Z".into());
+    finished.completed_at = Some("2026-01-01T00:00:42Z".parse().unwrap());
     let rows = run_rows(&[summary("run-a", 2), finished], now());
     assert_eq!(rows[0].age, "1m 05s");
     // Runs show the same glyphs as the tree, most urgent first and without zero counts.
@@ -282,7 +282,7 @@ pub(super) fn summary(id: &str, green: u64) -> RunSummary {
     RunSummary {
         id: id.parse().unwrap(),
         repo_path: "/repo".into(),
-        created_at: "2026-01-01T00:00:00Z".into(),
+        created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
         completed_at: None,
         status: crate::types::RunStatus::Red,
         counts: BTreeMap::from([
@@ -664,7 +664,7 @@ fn breadcrumb_shortens_earlier_segments_then_drops_the_program_name() {
 fn runs_pane_draws_counts_age_and_took_and_keeps_age_when_narrow() {
     let mut monitor = Monitor::new("/state".into(), None);
     let mut finished = summary("run-done", 3);
-    finished.completed_at = Some("2026-01-01T00:00:42Z".into());
+    finished.completed_at = Some("2026-01-01T00:00:42Z".parse().unwrap());
     monitor.set_runs(vec![summary("run-a", 2), finished]);
     let text = sized(&mut monitor, 160, 20);
     assert!(text.contains("✗ RED run-a "), "{text}");

@@ -510,7 +510,7 @@ fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
                 out,
                 "\n══ Follow-up {} ({}){}",
                 event.send.unwrap_or_default(),
-                event.at.as_deref().unwrap_or_default(),
+                event.at.map(|at| at.to_string()).unwrap_or_default(),
                 if sent.files_changed == Some(true) {
                     " · files changed since this review"
                 } else {

@@ -11,7 +11,7 @@ use super::{
 pub struct HumanClaim {
     pub request_id: crate::types::RequestId,
     pub reviewer: String,
-    pub claimed_at: String,
+    pub claimed_at: crate::types::Timestamp,
 }
 
 fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), Error> {
@@ -270,8 +270,8 @@ impl Receipts {
                 execution.error = request.error.clone();
                 execution.error_code = request.error_code.clone();
                 execution.reviewer = Some(reviewer.clone());
-                execution.completed_at = request.completed_at.clone();
-                execution.provenance.completed_at = request.completed_at.clone();
+                execution.completed_at = request.completed_at;
+                execution.provenance.completed_at = request.completed_at;
                 request.provenance = Some(execution.provenance.clone());
                 let published = executions::settle(&transaction, &execution, &request)?;
                 let followers = {
@@ -320,7 +320,7 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
         entry.id
     ));
     execution.error_code = Some("SUPERSEDED".into());
-    execution.completed_at = Some(now.clone());
+    execution.completed_at = Some(now);
     execution.provenance.completed_at = Some(now);
     db.execute(
         "UPDATE executions SET status='ERROR',data=? WHERE id=? AND status='WAITING_HUMAN'",

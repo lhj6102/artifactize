@@ -1,6 +1,6 @@
 //! The Artifacts and evals tree: one row per eval, Artifact rows rolled up from them.
 use serde_json::Value;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 use super::{
     Saved,
@@ -341,12 +341,8 @@ fn clock(view: &EvalView, request: Option<&RequestView>) -> Option<Clock> {
             | EvalView::InProgress(Activity::Running | Activity::Human(_))
     );
     let request = &request.filter(|_| timed)?.request;
-    let parse = |time: &str| OffsetDateTime::parse(time, &Rfc3339).ok();
-    let start = parse(request.started_at.as_deref().unwrap_or(&request.created_at))?;
-    let end = match request.completed_at.as_deref() {
-        Some(end) => Some(parse(end)?),
-        None => None,
-    };
+    let start = request.started_at.unwrap_or(request.created_at).time();
+    let end = request.completed_at.map(crate::types::Timestamp::time);
     Some(Clock { start, end })
 }
 
@@ -612,23 +608,21 @@ fn build(run: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Vec<No
 /// (or the Run has not ended). A request that completed later goes back to waiting for its
 /// Human (or running), and a later claim is dropped; the Run's recorded evidence is fixed.
 fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
-    let parse = |time: &str| OffsetDateTime::parse(time, &Rfc3339).ok();
-    let end = parse(run.run.completed_at.as_deref()?)?;
-    let late = |time: Option<&str>| time.and_then(parse).is_some_and(|time| time > end);
+    let end = run.run.completed_at?;
+    let late = |time: Option<crate::types::Timestamp>| time.is_some_and(|time| time > end);
     let changed = requests.iter().any(|view| {
-        late(view.request.completed_at.as_deref())
-            || late(view.claim.as_ref().map(|claim| claim.claimed_at.as_str()))
+        late(view.request.completed_at) || late(view.claim.as_ref().map(|claim| claim.claimed_at))
     });
     if !changed {
         return None;
     }
     let mut ended = requests.to_vec();
     for view in &mut ended {
-        if late(view.claim.as_ref().map(|claim| claim.claimed_at.as_str())) {
+        if late(view.claim.as_ref().map(|claim| claim.claimed_at)) {
             view.claim = None;
         }
         let request = &mut view.request;
-        if late(request.completed_at.as_deref()) {
+        if late(request.completed_at) {
             request.status = if request.profile.kind() == crate::config::ProfileKind::Human {
                 crate::types::RequestStatus::WaitingHuman
             } else {

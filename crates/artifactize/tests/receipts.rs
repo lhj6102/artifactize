@@ -458,7 +458,7 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
     );
     let mut bad = view.requests[0].clone();
     bad.status = RequestStatus::Green;
-    bad.completed_at = Some("2026-01-01T00:00:01Z".into());
+    bad.completed_at = Some("2026-01-01T00:00:01Z".parse().unwrap());
     assert!(receipts.save_request(&bad).await.is_err());
     bad.result = Some(json!({"verdict":"GREEN"}));
     bad.error = Some("contradiction".into());

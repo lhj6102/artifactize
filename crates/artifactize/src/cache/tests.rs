@@ -434,8 +434,8 @@ fn changes_name_target_files_and_dependency_fingerprints() {
                 "evalDefHash":"hash",
                 "completedAt":null,
             },
-            "startedAt":"now",
-            "completedAt":"now",
+            "startedAt":"2026-01-01T00:00:00Z",
+            "completedAt":"2026-01-01T00:00:01Z",
             "manifest":manifest,
         }))
         .unwrap()

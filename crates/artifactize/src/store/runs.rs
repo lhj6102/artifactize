@@ -18,8 +18,8 @@ use crate::workspace::{canonical_target, outside_workspace};
 pub struct RunSummary {
     pub id: crate::types::RunId,
     pub repo_path: PathBuf,
-    pub created_at: String,
-    pub completed_at: Option<String>,
+    pub created_at: crate::types::Timestamp,
+    pub completed_at: Option<crate::types::Timestamp>,
     pub status: crate::types::RunStatus,
     pub counts: BTreeMap<crate::types::RequestStatus, u64>,
 }

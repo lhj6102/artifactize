@@ -1404,7 +1404,7 @@ fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
     waiting.claim = Some(crate::store::HumanClaim {
         request_id: waiting.request.id.clone(),
         reviewer: "hj".into(),
-        claimed_at: "2026-01-01T00:07:00Z".into(),
+        claimed_at: "2026-01-01T00:07:00Z".parse().unwrap(),
     });
     let requests = vec![
         waiting,

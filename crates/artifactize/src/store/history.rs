@@ -39,7 +39,7 @@ pub struct Entry {
     pub eval_id: String,
     /// The target Artifact's fingerprint.
     pub fingerprint: Option<crate::types::Fingerprint>,
-    pub completed_at: Option<String>,
+    pub completed_at: Option<crate::types::Timestamp>,
     /// `user@host` of the machine that produced the result.
     pub producer: Option<String>,
     /// The selected profile variant, when the result came from one.
@@ -49,7 +49,7 @@ pub struct Entry {
     /// How many records the key holds.
     pub records: i64,
     pub bytes: i64,
-    pub last_used: String,
+    pub last_used: crate::types::Timestamp,
 }
 
 async fn open(state: &Path, writable: bool) -> Result<Option<NotifyingConnection>, String> {
@@ -205,7 +205,10 @@ pub async fn remove(state: &Path, key: &str) -> Result<bool, String> {
 /// The history columns of a completed record: its sortable completion time and size, or
 /// `None` when it does not join its key's history (no key, no verdict, or over the entry
 /// limit).
-pub(super) fn columns(execution: &Execution, bytes: usize) -> Result<Option<(String, i64)>, Error> {
+pub(super) fn columns(
+    execution: &Execution,
+    bytes: usize,
+) -> Result<Option<(crate::types::Timestamp, i64)>, Error> {
     let (Some(_), Some(_), Some(completed_at)) =
         (&execution.key, execution.verdict(), &execution.completed_at)
     else {
@@ -214,16 +217,14 @@ pub(super) fn columns(execution: &Execution, bytes: usize) -> Result<Option<(Str
     if bytes > MAX_ENTRY_BYTES {
         return Ok(None);
     }
-    let completed_at = crate::broker::sortable(completed_at)
-        .ok_or_else(|| Error::Invalid(format!("Invalid completion time {completed_at}.")))?;
-    Ok(Some((completed_at, bytes as i64)))
+    Ok(Some((*completed_at, bytes as i64)))
 }
 
 /// Mark a reused record as used now.
 pub(super) fn touch(
     db: &rusqlite::Connection,
     execution_id: &crate::types::ExecutionId,
-    at: &str,
+    at: crate::types::Timestamp,
 ) -> Result<(), Error> {
     db.execute(
         "UPDATE executions SET last_used=? WHERE id=? AND completed_at IS NOT NULL",

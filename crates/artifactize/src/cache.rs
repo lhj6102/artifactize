@@ -333,7 +333,7 @@ pub async fn prepare<'a>(
 /// Give a request another execution's result. A request that waited for this very
 /// execution (a live owner it joined, or the Human wait it followed) joined it; any other
 /// found a completed record.
-pub fn reuse(request: &mut Request, execution: &Execution, completed_at: String) {
+pub fn reuse(request: &mut Request, execution: &Execution, completed_at: crate::types::Timestamp) {
     request.joined = request.execution_id.as_ref() == Some(&execution.id);
     request.status = execution.status.into();
     request.execution_id = Some(execution.id.clone());

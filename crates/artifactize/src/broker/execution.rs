@@ -198,8 +198,8 @@ pub(super) async fn execute(
     execution.error = request.error.clone();
     execution.error_code = request.error_code.clone();
     execution.usage = request.usage.clone();
-    execution.completed_at = request.completed_at.clone();
-    execution.provenance.completed_at = request.completed_at.clone();
+    execution.completed_at = request.completed_at;
+    execution.provenance.completed_at = request.completed_at;
     request.execution_id = Some(execution.id.clone());
     request.provenance = Some(execution.provenance.clone());
     // Admission sees a backend stop before completing frees this review's slot.

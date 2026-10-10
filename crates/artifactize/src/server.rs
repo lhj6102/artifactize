@@ -290,7 +290,11 @@ async fn publish(
     } else {
         MAX_SUMMARY_BYTES
     };
-    let completed_at = crate::broker::sortable(&record.completed_at);
+    let completed_at = record
+        .completed_at
+        .parse::<crate::types::Timestamp>()
+        .ok()
+        .map(|time| time.to_string());
     let (true, Some(completed_at)) = (
         record.schema == SCHEMA
             && record.key.as_str() == key

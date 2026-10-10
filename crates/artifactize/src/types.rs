@@ -4,6 +4,9 @@ use rusqlite::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, 
 use serde::{Deserialize, Serialize};
 use std::{borrow::Borrow, fmt, ops::Deref, str::FromStr};
 
+mod timestamp;
+pub use timestamp::Timestamp;
+
 /// Bound external identities and saved session path segments, including pre-UUID sessions.
 pub(crate) const MAX_ID_BYTES: usize = 200;
 /// Mirrors retain the remote wire identity verbatim under this local-only namespace.

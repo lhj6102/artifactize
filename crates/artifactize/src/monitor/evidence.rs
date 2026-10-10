@@ -11,7 +11,7 @@ use std::path::Path;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct EvidenceStamp {
     status: RequestStatus,
-    completed_at: Option<String>,
+    completed_at: Option<crate::types::Timestamp>,
     session: Option<session::SessionRef>,
     session_id: Option<crate::types::SessionId>,
     producer: Option<store::Producer>,
@@ -21,7 +21,7 @@ impl EvidenceStamp {
     pub fn new(view: &RequestView) -> Self {
         Self {
             status: view.request.status,
-            completed_at: view.request.completed_at.clone(),
+            completed_at: view.request.completed_at,
             session: view.request.session.clone(),
             session_id: view.request.session_id.clone(),
             producer: view.request.producer.clone(),

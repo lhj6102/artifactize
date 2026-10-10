@@ -143,7 +143,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
 
     let mut stored = summary;
     stored.publisher = Some("alice-laptop".into());
-    stored.published_at = Some("2026-10-04T00:00:00Z".into());
+    stored.published_at = Some("2026-10-04T00:00:00Z".parse().unwrap());
     let consumer_state = root.path().join("consumer");
     let receipts = Receipts::open(&consumer_state, &repo).await.unwrap();
     let mirror = stored.mirror("https://reviews.example/").unwrap();
@@ -166,7 +166,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
         json!({
             "store":"https://reviews.example/",
             "publisher":"alice-laptop",
-            "publishedAt":"2026-10-04T00:00:00Z",
+            "publishedAt":"2026-10-04T00:00:00.000000000Z",
         })
     );
     assert_eq!(shown["producer"], json!(producer));
@@ -222,7 +222,7 @@ async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
             source.id = "x".repeat(bytes).parse().unwrap();
             let mut wire = Record::new(&source, full).unwrap();
             wire.publisher = Some("alice-laptop".into());
-            wire.published_at = Some("2026-10-04T00:00:02Z".into());
+            wire.published_at = Some("2026-10-04T00:00:02Z".parse().unwrap());
             let wire: Record = serde_json::from_value(serde_json::to_value(wire).unwrap()).unwrap();
             wire.validate().unwrap();
             let mirror = wire.mirror("https://reviews.example/").unwrap();
@@ -370,7 +370,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     .unwrap();
     let key = cache::eval_keys(&config, &fingerprints)["app/check"].clone();
     let variant: Profile = serde_json::from_value(fast.clone()).unwrap();
-    let completed = "2026-10-04T00:00:01Z".to_owned();
+    let completed: artifactize::types::Timestamp = "2026-10-04T00:00:01Z".parse().unwrap();
     let produced = Execution {
         id: "execution-run-elsewhere-1".parse().unwrap(),
         key: Some(key.value.clone()),
@@ -396,10 +396,10 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
             request_id: "run-elsewhere-1".parse().unwrap(),
             eval_id: "app/check".into(),
             eval_def_hash: key.eval_def_hash.clone(),
-            completed_at: Some(completed.clone()),
+            completed_at: Some(completed),
             execution_paths: Default::default(),
         },
-        started_at: "2026-10-04T00:00:00Z".into(),
+        started_at: "2026-10-04T00:00:00Z".parse().unwrap(),
         completed_at: Some(completed),
         producer: Some(Producer {
             name: "bob@laptop".into(),
@@ -413,7 +413,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
     let mut record = Record::new(&produced, false).unwrap();
     assert_eq!(record.options.model.as_deref(), Some("model-b"));
     record.publisher = Some("bob-laptop".into());
-    record.published_at = Some("2026-10-04T00:00:02Z".into());
+    record.published_at = Some("2026-10-04T00:00:02Z".parse().unwrap());
     let receipts = Receipts::open(&state, &repo).await.unwrap();
     receipts
         .mirror_execution(&record.mirror("https://reviews.example/").unwrap())

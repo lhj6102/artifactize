@@ -53,14 +53,14 @@ pub struct Record {
     pub reviewer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub producer: Option<Producer>,
-    pub started_at: String,
-    pub completed_at: String,
+    pub started_at: crate::types::Timestamp,
+    pub completed_at: crate::types::Timestamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution: Option<Box<Execution>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publisher: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub published_at: Option<String>,
+    pub published_at: Option<crate::types::Timestamp>,
 }
 
 impl Record {
@@ -103,8 +103,8 @@ impl Record {
             usage,
             reviewer: execution.reviewer.clone(),
             producer: execution.producer.clone(),
-            started_at: execution.started_at.clone(),
-            completed_at: completed_at.clone(),
+            started_at: execution.started_at,
+            completed_at: *completed_at,
             execution: full.then(|| Box::new(execution.clone())),
             publisher: None,
             published_at: None,
@@ -134,7 +134,6 @@ impl Record {
             && matches!(self.verdict.as_str(), "GREEN" | "RED")
             && self.result["verdict"] == self.verdict.as_str()
             && self.execution_id.valid_wire()
-            && crate::broker::sortable(&self.completed_at).is_some()
             && valid_session(self.producer.as_ref())
             && self.execution.as_ref().is_none_or(|execution| {
                 valid_session(execution.producer.as_ref())
@@ -196,7 +195,7 @@ impl Record {
                     request_id: self.request_id,
                     eval_id: self.eval_id,
                     eval_def_hash: self.eval_def_hash,
-                    completed_at: Some(self.completed_at.clone()),
+                    completed_at: Some(self.completed_at),
                     execution_paths: self.execution_paths,
                 },
                 started_at: self.started_at,

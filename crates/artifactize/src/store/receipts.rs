@@ -1,4 +1,6 @@
-use crate::types::{Fingerprint, RequestId, RequestStatus, ReuseKey, RunId, RunStatus, SessionId};
+use crate::types::{
+    Fingerprint, RequestId, RequestStatus, ReuseKey, RunId, RunStatus, SessionId, Timestamp,
+};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
@@ -78,8 +80,8 @@ pub struct Run {
     pub repository: crate::repository::Identity,
     pub state_dir: PathBuf,
     pub status: RunStatus,
-    pub created_at: String,
-    pub completed_at: Option<String>,
+    pub created_at: Timestamp,
+    pub completed_at: Option<Timestamp>,
     pub selection: crate::project::selection::Selection,
     #[serde(default)]
     pub profile: Option<crate::project::selection::ProfileSelection>,
@@ -194,9 +196,9 @@ pub struct Request {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub fingerprints: std::collections::BTreeMap<String, Fingerprint>,
     pub status: RequestStatus,
-    pub created_at: String,
-    pub started_at: Option<String>,
-    pub completed_at: Option<String>,
+    pub created_at: Timestamp,
+    pub started_at: Option<Timestamp>,
+    pub completed_at: Option<Timestamp>,
     pub cwd: PathBuf,
     pub run_dir: Option<PathBuf>,
     pub argv: Option<Vec<String>>,

@@ -176,7 +176,7 @@ pub(crate) fn claim(reviewer: &str) -> HumanClaim {
     HumanClaim {
         request_id: ID.parse().unwrap(),
         reviewer: reviewer.into(),
-        claimed_at: "2026-01-01T00:00:30Z".into(),
+        claimed_at: "2026-01-01T00:00:30Z".parse().unwrap(),
     }
 }
 

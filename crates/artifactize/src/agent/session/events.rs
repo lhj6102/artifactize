@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub at: Option<String>,
+    pub at: Option<crate::types::Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub send: Option<usize>,
     #[serde(flatten)]

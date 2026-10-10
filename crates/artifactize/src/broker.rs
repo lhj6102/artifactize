@@ -8,7 +8,6 @@ use std::{
     time::Duration,
 };
 
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
@@ -43,6 +42,13 @@ fn future_deadline(
 #[cfg(test)]
 mod wake_tests {
     use super::*;
+    /// A timestamp's saved text, or `None` when it is not a sortable time.
+    fn sortable(value: &str) -> Option<String> {
+        value
+            .parse::<crate::types::Timestamp>()
+            .ok()
+            .map(|time| time.to_string())
+    }
     #[test]
     fn sortable_rfc3339_year_bounds_keep_fixed_width_utc_text() {
         assert_eq!(
@@ -98,38 +104,8 @@ mod wake_tests {
     }
 }
 
-pub(crate) fn now() -> String {
-    timestamp(OffsetDateTime::now_utc())
-}
-
-/// RFC 3339 in UTC with nine fractional digits, so that timestamps also sort as text.
-fn timestamp(time: OffsetDateTime) -> String {
-    let time = time.to_offset(time::UtcOffset::UTC);
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}.{:09}Z",
-        time.year(),
-        u8::from(time.month()),
-        time.day(),
-        time.hour(),
-        time.minute(),
-        time.second(),
-        time.nanosecond()
-    )
-}
-
-/// RFC 3339 uses a four-digit year. Keep UTC years within that width so normalized
-/// timestamps retain the fixed-width representation required by SQLite text ordering.
-const MAX_SORTABLE_YEAR: i32 = 9999;
-
-/// Any RFC 3339 time in the sortable form of [`now`]; `None` when it does not parse.
-pub(crate) fn sortable(value: &str) -> Option<String> {
-    OffsetDateTime::parse(value, &Rfc3339)
-        .ok()
-        // An otherwise valid offset can normalize beyond time's representable UTC range.
-        // External record validation must reject it, not panic before the year-width check.
-        .and_then(|time| time.checked_to_offset(time::UtcOffset::UTC))
-        .filter(|time| (0..=MAX_SORTABLE_YEAR).contains(&time.year()))
-        .map(timestamp)
+pub(crate) fn now() -> crate::types::Timestamp {
+    crate::types::Timestamp::now()
 }
 
 /// The backends a Run stopped admitting reviews on, shared with its review tasks. A review
@@ -741,7 +717,7 @@ impl Scheduler<'_, '_> {
                     if prepared.is_ok() && !human && !self.cancellation.is_cancelled() {
                         self.run.executions_started += 1;
                         execution.started_at = now();
-                        request.started_at = Some(execution.started_at.clone());
+                        request.started_at = Some(execution.started_at);
                     }
                     request.status = crate::types::RequestStatus::Running;
                     self.receipts.save_run(self.run).await?;

@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 
 use rig_core::message::{AssistantContent, Message, UserContent};
 use serde::Serialize;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use super::Conversation;
 
@@ -17,8 +16,8 @@ pub struct Summary {
     pub model: Option<String>,
     pub reasoning: Option<String>,
     /// The first and last event's time.
-    pub started_at: Option<String>,
-    pub ended_at: Option<String>,
+    pub started_at: Option<crate::types::Timestamp>,
+    pub ended_at: Option<crate::types::Timestamp>,
     pub duration_ms: Option<u64>,
     pub follow_ups: usize,
     /// Every provider turn in order: the review's, then each follow-up's.
@@ -55,20 +54,12 @@ impl Summary {
         let header = conversation.header();
 
         let (started_at, ended_at) = (
-            conversation
-                .events
-                .first()
-                .and_then(|event| event.at.as_deref()),
-            conversation
-                .events
-                .last()
-                .and_then(|event| event.at.as_deref()),
+            conversation.events.first().and_then(|event| event.at),
+            conversation.events.last().and_then(|event| event.at),
         );
-        let instant = |text: &str| OffsetDateTime::parse(text, &Rfc3339).ok();
         let duration_ms = started_at
-            .and_then(instant)
-            .zip(ended_at.and_then(instant))
-            .map(|(start, end)| (end - start).whole_milliseconds().max(0) as u64);
+            .zip(ended_at)
+            .map(|(start, end)| end.since(start).as_millis() as u64);
         let mut summary = Self {
             backend: header.backend.map(|backend| {
                 serde_json::to_value(backend)
@@ -79,8 +70,8 @@ impl Summary {
             }),
             model: header.model.clone(),
             reasoning: header.reasoning.clone(),
-            started_at: started_at.map(str::to_owned),
-            ended_at: ended_at.map(str::to_owned),
+            started_at,
+            ended_at,
             duration_ms,
             follow_ups: conversation.sends(),
             turns: Vec::new(),

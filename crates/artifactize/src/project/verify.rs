@@ -228,7 +228,7 @@ pub async fn verify(
                 .map(|key| key.fingerprints.clone())
                 .unwrap_or_default(),
             status: crate::types::RequestStatus::Queued,
-            created_at: run.created_at.clone(),
+            created_at: run.created_at,
             started_at: None,
             completed_at: None,
             cwd: config.root.join(config.artifacts[&eval.target].folder()),

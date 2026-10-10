@@ -38,7 +38,7 @@ pub struct Provenance {
     pub request_id: RequestId,
     pub eval_id: String,
     pub eval_def_hash: String,
-    pub completed_at: Option<String>,
+    pub completed_at: Option<crate::types::Timestamp>,
     /// For Agent results: the SHA-256 of each tool's `executionPaths` when the review started,
     /// by tool name and declared path.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -75,8 +75,8 @@ pub struct Execution {
     pub options: ExecutionOptions,
     pub usage: Option<Vec<crate::llm::Attempt>>,
     pub provenance: Provenance,
-    pub started_at: String,
-    pub completed_at: Option<String>,
+    pub started_at: crate::types::Timestamp,
+    pub completed_at: Option<crate::types::Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub producer: Option<Producer>,
     /// The Human claimant who submitted this result.
@@ -192,7 +192,7 @@ impl Producer {
 pub struct Origin {
     pub store: String,
     pub publisher: String,
-    pub published_at: String,
+    pub published_at: crate::types::Timestamp,
 }
 
 impl Execution {
@@ -207,13 +207,7 @@ impl Execution {
 
     /// Whether this record completed after `other`, comparing `completedAt` as instants.
     pub fn completed_after(&self, other: &Execution) -> bool {
-        let at = |execution: &Execution| {
-            execution
-                .completed_at
-                .as_deref()
-                .and_then(crate::broker::sortable)
-        };
-        at(self) > at(other)
+        self.completed_at > other.completed_at
     }
 
     pub fn verdict(&self) -> Option<Verdict> {
@@ -250,7 +244,7 @@ pub(super) fn lookup(
 fn owner_died(
     db: &rusqlite::Connection,
     id: &crate::types::ExecutionId,
-    at: &str,
+    at: crate::types::Timestamp,
 ) -> Result<(), Error> {
     db.execute(
         "UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Execution owner died.','$.errorCode','OWNER_DIED','$.completedAt',?1,'$.provenance.completedAt',?1) WHERE id=?2 AND status='RUNNING'",
@@ -261,7 +255,11 @@ fn owner_died(
 
 /// How many slots of `backend` the RUNNING executions of live owners hold; the executions of
 /// dead owners end, freeing theirs.
-fn held_slots(db: &rusqlite::Connection, backend: &str, at: &str) -> Result<u32, Error> {
+fn held_slots(
+    db: &rusqlite::Connection,
+    backend: &str,
+    at: crate::types::Timestamp,
+) -> Result<u32, Error> {
     let owners = {
         let mut statement = db.prepare(
             "SELECT id,owner_pid,owner_start_time FROM executions WHERE backend=? AND status='RUNNING'",
@@ -458,7 +456,7 @@ impl Receipts {
             .call(move |db| -> Result<_, Error> {
                 let execution = lookup(db, &key)?;
                 if let Some(execution) = &execution {
-                    history::touch(db, &execution.id, &crate::broker::now())?;
+                    history::touch(db, &execution.id, crate::broker::now())?;
                 }
                 Ok(execution)
             })
@@ -546,7 +544,7 @@ impl Receipts {
                     if (capacity.stopped)() {
                         return Ok(Claim::BudgetExhausted);
                     }
-                    if held_slots(&transaction, backend, &execution.started_at)? >= capacity.limit {
+                    if held_slots(&transaction, backend, execution.started_at)? >= capacity.limit {
                         transaction.commit()?;
                         return Ok(Claim::Full);
                     }
@@ -554,7 +552,7 @@ impl Receipts {
                 if let Some(key) = key
                     && let Some((id, _, _)) = active_owner(&transaction, key)?
                 {
-                    owner_died(&transaction, &id, &execution.started_at)?;
+                    owner_died(&transaction, &id, execution.started_at)?;
                 }
                 let inserted = transaction.execute(
                     "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN') DO NOTHING",
@@ -590,8 +588,7 @@ impl Receipts {
             .call(move |db| -> Result<(), Error> {
                 let transaction = db.transaction()?;
                 update_request(&transaction, &request)?;
-                if let (Some(execution), Some(at)) = (&request.execution_id, &request.completed_at)
-                {
+                if let (Some(execution), Some(at)) = (&request.execution_id, request.completed_at) {
                     history::touch(&transaction, execution, at)?;
                 }
                 transaction.commit()?;
@@ -720,8 +717,8 @@ pub(super) fn settle(
     }
     let data = serde_json::to_string(execution)?;
     let record = history::columns(execution, data.len())?;
-    let last_used = record.as_ref().and(execution.completed_at.as_deref());
-    let (completed_at, bytes) = record.clone().unzip();
+    let last_used = record.as_ref().and(execution.completed_at);
+    let (completed_at, bytes) = record.unzip();
     let claimed = execution.key.is_some() && !request.force;
     if claimed || request.human_definition.is_some() {
         if db.execute(

@@ -1356,7 +1356,7 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
         );
         let mut record = artifactize::remote::Record::new(&execution, full).unwrap();
         record.publisher = Some("fixture".into());
-        record.published_at = Some("2026-10-09T00:00:00Z".into());
+        record.published_at = Some("2026-10-09T00:00:00Z".parse().unwrap());
         let mirrored = record.mirror("fixture").unwrap();
         assert_eq!(mirrored.artifact_kinds, execution.artifact_kinds);
         assert_eq!(mirrored.key, execution.key);
