@@ -17,9 +17,9 @@ exclude = ["tests/support/fixture.rs", "index.artf"]
 # `cargo binstall artifactize` installs the archive that release.yml attaches to the
 # GitHub release (.github/workflows/binaries.yml builds it) instead of compiling.
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-v{ version }-{ target }{ archive-suffix }"
+pkg-url = "{ repo }/releases/download/v{ version }/artifactize-v{ version }-{ target }{ archive-suffix }"
 pkg-fmt = "tgz"
-bin-dir = "{ name }-v{ version }-{ target }/{ bin }{ binary-ext }"
+bin-dir = "artifactize-v{ version }-{ target }/{ bin }{ binary-ext }"
 
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
 pkg-fmt = "zip"

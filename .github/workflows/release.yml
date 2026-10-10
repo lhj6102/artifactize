@@ -9,8 +9,8 @@ name: Release
 # 2. Once both pass, publish creates the GitHub release with the Linux archives and
 #    their .sha256 checksums, so install.sh serves the new version, then publishes the
 #    crate to crates.io. A failed test or Linux build publishes nothing.
-# 3. The Windows zip builds alongside and is attached when it is ready. Until v1 it is
-#    best effort: it never delays or fails the release.
+# 3. The Windows zip and both macOS tarballs build alongside and are attached when
+#    ready. Until v1 they are best effort: they never delay or fail the release.
 #
 # A prerelease tag (v0.6.0-alpha.1) creates a GitHub prerelease only: no crates.io.
 # Later distribution channels (a Homebrew tap, winget, the Microsoft Store) are jobs
@@ -75,6 +75,13 @@ jobs:
     with:
       version: ${{ needs.plan.outputs.version }}
       platform: windows
+
+  macos:
+    needs: plan
+    uses: ./.github/workflows/binaries.yml
+    with:
+      version: ${{ needs.plan.outputs.version }}
+      platform: macos
 
   publish:
     needs: [plan, test, linux]
@@ -145,5 +152,30 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           cd dist
+          sha256sum -c ./*.sha256
+          gh release upload "$GITHUB_REF_NAME" ./*
+
+  attach-macos:
+    name: Attach the macOS tarballs (best effort)
+    needs: [publish, macos]
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    permissions:
+      contents: write # the GitHub release
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries-${{ matrix.target }}
+          path: dist
+      - name: Attach this macOS archive and its checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        working-directory: dist
+        run: |
           sha256sum -c ./*.sha256
           gh release upload "$GITHUB_REF_NAME" ./*

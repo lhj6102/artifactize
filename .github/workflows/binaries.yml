@@ -1,17 +1,10 @@
 name: Binaries
 
-# Builds the release binaries. release.yml calls it twice: once for Linux, which gates
-# the release, and once for Windows, which runs alongside and never delays it. Pull
-# requests that touch the release workflows, the packaging scripts or the install
-# scripts build every target, keep the archives as workflow artifacts and try each
-# install script once.
-#
-# Each build uploads binaries-<target>: artifactize-v<version>-<target>.tar.gz (.zip on
-# Windows) and its .sha256, written by .github/scripts/package.sh. The Linux builds gate
-# a release; the Windows build is best effort until v1 and never fails the workflow.
-# To extend: a new target is one matrix entry with its runner; a platform packager
-# (signed macOS .pkg, MSIX) is its own job that downloads binaries-<target>; a
-# distribution channel is a job in release.yml after the GitHub release.
+# release.yml calls each platform separately: Linux gates the release; Windows and
+# macOS run alongside and never delay it before v1. Packaging/installer PRs and
+# manual rehearsals build every target, retain archives and exercise the installers.
+# Each binaries-<target> artifact holds a tarball (Windows: zip) with BOTH commands
+# and its SHA-256. Distribution channels consume the same archive names.
 on:
   workflow_call:
     inputs:
@@ -20,15 +13,27 @@ on:
         type: string
         default: ""
       platform:
-        description: Which targets to build, linux, windows or all.
+        description: Which targets to build, linux, windows, macos or all.
         type: string
         default: all
   workflow_dispatch:
+    inputs:
+      version:
+        description: Rehearsal version, without v (no tag or release is published).
+        type: string
+        default: ""
+      platform:
+        description: Targets to build and smoke-test.
+        type: choice
+        options: [all, linux, windows, macos]
+        default: all
   pull_request:
     paths:
       - ".github/workflows/binaries.yml"
       - ".github/workflows/release.yml"
       - ".github/scripts/**"
+      - "crates/artifactize/Cargo.toml"
+      - "crates/artifactize-tools/Cargo.toml"
       - "website/landing/install.sh"
       - "website/landing/install.ps1"
 
@@ -36,7 +41,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: binaries-${{ github.event_name }}-${{ github.ref }}
+  group: binaries-${{ github.event_name }}-${{ github.ref }}-${{ inputs.platform || 'all' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -47,19 +52,20 @@ jobs:
     continue-on-error: ${{ matrix.best-effort || false }}
     strategy:
       fail-fast: false
-      # One entry per target; best-effort targets never fail the workflow.
+      # Native runners let every target execute both binaries and its installer.
       matrix:
         include: >-
           ${{ fromJSON(
             inputs.platform == 'linux' && '[{"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest"},{"target":"aarch64-unknown-linux-musl","os":"ubuntu-24.04-arm"}]'
             || inputs.platform == 'windows' && '[{"target":"x86_64-pc-windows-msvc","os":"windows-latest","best-effort":true}]'
-            || '[{"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest"},{"target":"aarch64-unknown-linux-musl","os":"ubuntu-24.04-arm"},{"target":"x86_64-pc-windows-msvc","os":"windows-latest","best-effort":true}]'
+            || inputs.platform == 'macos' && '[{"target":"aarch64-apple-darwin","os":"macos-15","best-effort":true},{"target":"x86_64-apple-darwin","os":"macos-15-intel","best-effort":true}]'
+            || '[{"target":"x86_64-unknown-linux-musl","os":"ubuntu-latest"},{"target":"aarch64-unknown-linux-musl","os":"ubuntu-24.04-arm"},{"target":"x86_64-pc-windows-msvc","os":"windows-latest","best-effort":true},{"target":"aarch64-apple-darwin","os":"macos-15","best-effort":true},{"target":"x86_64-apple-darwin","os":"macos-15-intel","best-effort":true}]'
           ) }}
     env:
       TARGET: ${{ matrix.target }}
       TAG_VERSION: ${{ inputs.version }}
-      # The static CRT, so the .exe needs no Visual C++ runtime DLLs. musl targets link
-      # statically by default.
+      # The static CRT: neither .exe needs Visual C++ runtime DLLs. musl targets link
+      # statically by default; macOS uses its system libraries.
       CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
     defaults:
       run:
@@ -69,9 +75,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      # The C dependencies (bundled SQLite, aws-lc, ring) build with musl-gcc. It sees
-      # only musl's headers, and aws-lc also includes Linux kernel headers
-      # (linux/random.h), so link those into musl's include directory.
+      # C dependencies (bundled SQLite, aws-lc, ring) need musl and kernel headers.
       - name: Install the musl C toolchain
         if: contains(matrix.target, '-linux-musl')
         run: |
@@ -83,45 +87,49 @@ jobs:
           sudo ln -sfn /usr/include/asm-generic "$include/asm-generic"
           sudo ln -sfn "/usr/include/$arch-linux-gnu/asm" "$include/asm"
           echo "CC_${TARGET//-/_}=musl-gcc" >>"$GITHUB_ENV"
-      # A release builds as its tag's version; main keeps a placeholder version.
       - name: Set the version
         run: |
           if [ -n "$TAG_VERSION" ]; then sh .github/scripts/set-version.sh "$TAG_VERSION"; fi
           echo "VERSION=$(cargo metadata --no-deps --format-version 1 \
             | jq -r '.packages[] | select(.name == "artifactize") | .version')" >>"$GITHUB_ENV"
-      - name: Build
-        run: cargo build --release --locked -p artifactize --target "$TARGET"
-      - name: Check that the binary is static and runs
+      - name: Build both commands
+        run: cargo build --release --locked -p artifactize -p artifactize-tools --target "$TARGET"
+      - name: Check linking, architecture and versions of both binaries
         run: |
-          bin=target/$TARGET/release/artifactize
-          case $TARGET in
-            *-windows-msvc)
-              bin=$bin.exe
-              # dumpbin from the runner's Visual Studio lists the DLLs the .exe imports.
-              vs=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" \
-                -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
-                -property installationPath)
-              dumpbin=$(ls "$(cygpath -u "$vs")"/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe | tail -n 1)
-              "$dumpbin" -nologo -dependents "$bin" | tee dependents.txt
-              if grep -Ei 'vcruntime|msvcp|ucrtbase|api-ms-win-crt' dependents.txt; then
-                echo "::error::$bin needs the Visual C++ runtime; build it with +crt-static" >&2
-                exit 1
-              fi
-              ;;
-            *-linux-musl)
-              file "$bin"
-              if ! file "$bin" | grep -Eq 'static(-pie)? linked|statically linked'; then
-                echo "::error::$bin is not statically linked" >&2
-                exit 1
-              fi
-              ;;
-          esac
-          out=$("$bin" --version)
-          echo "$out"
-          if [ "$out" != "artifactize $VERSION" ]; then
-            echo "::error::$bin --version printed '$out', not 'artifactize $VERSION'" >&2
-            exit 1
+          if [[ $TARGET == *-windows-msvc ]]; then
+            vs=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" \
+              -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
+              -property installationPath)
+            dumpbin=$(ls "$(cygpath -u "$vs")"/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe | tail -n 1)
           fi
+          for command in artifactize artifactize-tools; do
+            bin=target/$TARGET/release/$command
+            case $TARGET in
+              *-windows-msvc)
+                bin=$bin.exe
+                "$dumpbin" -nologo -dependents "$bin" | tee dependents.txt
+                if grep -Ei 'vcruntime|msvcp|ucrtbase|api-ms-win-crt' dependents.txt; then
+                  echo "::error::$bin needs the Visual C++ runtime; build it with +crt-static" >&2
+                  exit 1
+                fi
+                ;;
+              *-linux-musl)
+                file "$bin"
+                if ! file "$bin" | grep -Eq 'static(-pie)? linked|statically linked'; then
+                  echo "::error::$bin is not statically linked" >&2
+                  exit 1
+                fi
+                ;;
+              aarch64-apple-darwin) lipo -verify_arch arm64 "$bin" ;;
+              x86_64-apple-darwin) lipo -verify_arch x86_64 "$bin" ;;
+            esac
+            out=$("$bin" --version)
+            echo "$out"
+            if [ "$out" != "$command $VERSION" ]; then
+              echo "::error::$bin --version printed '$out', not '$command $VERSION'" >&2
+              exit 1
+            fi
+          done
       - name: Package
         run: sh .github/scripts/package.sh "$TARGET" "$VERSION"
       - uses: actions/upload-artifact@v4
@@ -130,44 +138,41 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
-      # One happy-path install per script, on pull requests only. The scripts reach the
-      # archive through their internal ARTIFACTIZE_DOWNLOAD_URL.
-      - name: Install with install.sh in debian:stable-slim
-        if: matrix.target == 'x86_64-unknown-linux-musl' && github.event_name == 'pull_request'
+      # Only PR/manual builds smoke-test installers, never the release tag path.
+      # The test URL reaches the archives built above, not a published release.
+      - name: Install with install.sh in Debian and Alpine
+        if: contains(matrix.target, '-linux-musl') && github.event_name != 'push'
         run: |
-          sh -n website/landing/install.sh
-          docker run --rm \
-            -v "$PWD/website/landing/install.sh:/src/install.sh:ro" \
-            -v "$PWD/dist:/serve/v$VERSION:ro" \
-            -e ARTIFACTIZE_DOWNLOAD_URL=file:///serve -e ARTIFACTIZE_VERSION="$VERSION" \
-            debian:stable-slim sh -euc '
-              apt-get update -qq
-              apt-get install -y -qq --no-install-recommends curl >/dev/null
-              curl -fsSL file:///src/install.sh | sh
-              test "$(~/.local/bin/artifactize --version)" = "artifactize $ARTIFACTIZE_VERSION"
-              ~/.local/bin/artifactize doctor'
-      - name: Install with install.ps1
-        if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name == 'pull_request'
+          sh -n website/landing/install.sh .github/scripts/smoke-install.sh
+          if command -v shellcheck >/dev/null; then
+            shellcheck website/landing/install.sh .github/scripts/package.sh .github/scripts/smoke-install.sh
+          fi
+          for image in debian:stable-slim alpine:latest; do
+            docker run --rm \
+              -v "$PWD/website/landing/install.sh:/src/install.sh:ro" \
+              -v "$PWD/.github/scripts/smoke-install.sh:/src/smoke-install.sh:ro" \
+              -v "$PWD/dist:/serve/v$VERSION:ro" \
+              -e ARTIFACTIZE_DOWNLOAD_URL=file:///serve -e ARTIFACTIZE_VERSION="$VERSION" \
+              "$image" sh -euc '
+                if command -v apt-get >/dev/null; then
+                  apt-get update -qq
+                  apt-get install -y -qq --no-install-recommends curl >/dev/null
+                else
+                  apk add --no-cache curl
+                fi
+                sh /src/smoke-install.sh /src/install.sh'
+          done
+      - name: Install with install.sh on macOS
+        if: contains(matrix.target, '-apple-darwin') && github.event_name != 'push'
+        run: |
+          sh -n website/landing/install.sh .github/scripts/smoke-install.sh
+          home=$(mktemp -d "$RUNNER_TEMP/artifactize-smoke.XXXXXXXX")
+          trap 'rm -rf "$home"' EXIT
+          mkdir -p "$home/serve/v$VERSION"
+          cp dist/* "$home/serve/v$VERSION/"
+          HOME="$home" ARTIFACTIZE_DOWNLOAD_URL="file://$home/serve" \
+            ARTIFACTIZE_VERSION="$VERSION" sh .github/scripts/smoke-install.sh website/landing/install.sh
+      - name: Install with install.ps1 and preserve previous binaries on launch failure
+        if: matrix.target == 'x86_64-pc-windows-msvc' && github.event_name != 'push'
         shell: powershell
-        run: |
-          New-Item -ItemType Directory -Path "serve\v$env:VERSION" | Out-Null
-          Copy-Item dist\* "serve\v$env:VERSION\"
-          Copy-Item website\landing\install.ps1 serve\
-          $server = Start-Process python -PassThru -WindowStyle Hidden `
-            -ArgumentList '-m', 'http.server', '8737', '--bind', '127.0.0.1', '--directory', 'serve'
-          try {
-            $base = 'http://127.0.0.1:8737'
-            for ($i = 0; ; $i++) {
-              try { Invoke-WebRequest -UseBasicParsing "$base/install.ps1" | Out-Null; break }
-              catch { if ($i -ge 50) { throw }; Start-Sleep -Milliseconds 200 }
-            }
-            $env:ARTIFACTIZE_DOWNLOAD_URL = $base
-            $env:ARTIFACTIZE_VERSION = $env:VERSION
-            irm "$base/install.ps1" | iex
-            $out = & artifactize --version
-            if ($out -ne "artifactize $env:VERSION") { throw "--version printed: $out" }
-            & artifactize doctor
-            if ($LASTEXITCODE -ne 0) { throw 'artifactize doctor failed' }
-          } finally {
-            Stop-Process -Id $server.Id -Force
-          }
+        run: .github/scripts/smoke-install.ps1 -Version $env:VERSION -Dist dist -Installer website/landing/install.ps1
