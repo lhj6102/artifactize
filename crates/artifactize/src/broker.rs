@@ -235,16 +235,7 @@ struct Scheduler<'a, 'g> {
 /// A dependency request is audit-only: no execution, claim, capacity or cache evidence.
 pub(crate) fn derive(request: &mut Request, eval: &EvalEvaluation<'_>) {
     request.status = crate::project::verify::status(eval.status);
-    request.blocked_by = eval
-        .blocked_by
-        .iter()
-        .map(|id| {
-            id.as_str()
-                .to_owned()
-                .try_into()
-                .expect("validated dependency blocker")
-        })
-        .collect();
+    request.blocked_by = eval.blocked_by.iter().copied().map(Into::into).collect();
     request.blocked_reason = (!request.blocked_by.is_empty()).then(|| {
         format!(
             "Derived dependency verdict: waiting for current GREEN evidence from {}.",
@@ -451,16 +442,8 @@ impl Scheduler<'_, '_> {
                         }
                         let eval = &evaluation.evals[request.eval_id.as_str()];
                         let status = crate::project::verify::status(eval.status);
-                        let blocked_by: Vec<_> = eval
-                            .blocked_by
-                            .iter()
-                            .map(|id| {
-                                id.as_str()
-                                    .to_owned()
-                                    .try_into()
-                                    .expect("validated dependency blocker")
-                            })
-                            .collect();
+                        let blocked_by: Vec<_> =
+                            eval.blocked_by.iter().copied().map(Into::into).collect();
                         if request.status != status || request.blocked_by != blocked_by {
                             derive(request, eval);
                             self.receipts.save_request(request).await?;

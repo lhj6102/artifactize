@@ -54,3 +54,21 @@ fn readiness_check_status_wire_display_and_severity_are_pinned() {
         "later warnings/pass cannot erase an earlier failure"
     );
 }
+
+#[test]
+fn typed_details_preserve_null_and_flat_auth_wire_forms() {
+    assert_eq!(serde_json::to_value(Details::None).unwrap(), json!(null));
+    assert_eq!(
+        serde_json::to_value(Details::Schema { schema: None }).unwrap(),
+        json!({"schema":null})
+    );
+    let codex = Details::Codex {
+        status: auth::codex::Status::Absent,
+        test_endpoint: Some("http://localhost".into()),
+        test_auth_endpoint: None,
+    };
+    assert_eq!(
+        serde_json::to_value(codex).unwrap(),
+        json!({"source":"none","expiresAt":null,"expired":false,"testEndpoint":"http://localhost"})
+    );
+}

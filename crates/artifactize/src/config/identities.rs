@@ -89,6 +89,11 @@ macro_rules! identity {
         }
     };
 }
+/// Two declaration identifiers of 64 bytes, joined by one underscore.
+const MAX_TOOL_NAME_BYTES: usize = 129;
+/// Endpoint namespaces retain a complete SHA-256 digest in lowercase hexadecimal.
+const ENDPOINT_HEX_BYTES: usize = 64;
+
 fn name(value: &str) -> bool {
     super::identifier(value, "").is_ok()
 }
@@ -98,11 +103,11 @@ identity!(ToolOperationName, name);
 // Published tool names concatenate an operation and Artifact name with `_`; each
 // component is at most 64 ASCII bytes. Collision detection remains a registry concern.
 identity!(ToolName, |value: &str| !value.is_empty()
-    && value.len() <= 129
+    && value.len() <= MAX_TOOL_NAME_BYTES
     && value.bytes().all(
         |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
     ));
-identity!(EndpointId, |value: &str| value.len() == 64
+identity!(EndpointId, |value: &str| value.len() == ENDPOINT_HEX_BYTES
     && value.bytes().all(
         |byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()
     ));
@@ -129,5 +134,31 @@ impl AsRef<std::path::Path> for LogicalPath {
 impl AsRef<std::ffi::OsStr> for LogicalPath {
     fn as_ref(&self) -> &std::ffi::OsStr {
         std::ffi::OsStr::new(self.as_str())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn declaration_ids_validate_at_json_boundary_and_keep_string_forms() {
+        for invalid in ["", " ", "bad/name", "_bad", "a\nb"] {
+            assert!(serde_json::from_value::<ProfileVariantName>(json!(invalid)).is_err());
+            assert!(serde_json::from_value::<ToolOperationName>(json!(invalid)).is_err());
+        }
+        let model: ModelId = serde_json::from_value(json!("provider/model-v1")).unwrap();
+        assert_eq!(
+            serde_json::to_value(model).unwrap(),
+            json!("provider/model-v1")
+        );
+        for invalid in ["", "a/../b", "a\\b", "C:/outside"] {
+            assert!(serde_json::from_value::<LogicalPath>(json!(invalid)).is_err());
+        }
+        for logical in [".", "folder/file.txt"] {
+            let path: LogicalPath = serde_json::from_value(json!(logical)).unwrap();
+            assert_eq!(serde_json::to_value(path).unwrap(), json!(logical));
+        }
     }
 }

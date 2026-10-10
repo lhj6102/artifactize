@@ -155,8 +155,9 @@ pub async fn verify(
         .path()
         .file_name()
         .unwrap()
-        .to_string_lossy()
-        .into_owned();
+        .to_str()
+        .expect("generated run directory names are ASCII")
+        .to_owned();
     let _ = directory.keep();
     let mut run = Run {
         id: id.parse()?,
@@ -198,7 +199,7 @@ pub async fn verify(
             profile: (eval.declaration.profile()).into(),
             requested_profile: (eval.declaration.profile()).into(),
             eval_def_hash: cache::eval_definition_hash(&eval.declaration),
-            options: ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_deref()),
+            options: ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_ref()),
             execution_id: None,
             provenance: None,
             usage: None,

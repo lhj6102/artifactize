@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 pub(crate) fn reject_link_ancestors(path: &Path) -> Result<(), String> {
     for ancestor in path.ancestors() {
-        if super::paths::entry_kind(ancestor).is_ok_and(|kind| kind == super::FileKind::Symlink) {
+        if super::path_kind(ancestor).is_ok_and(|kind| kind == super::FileKind::Symlink) {
             return Err("Artifact symlinks are not supported.".into());
         }
     }

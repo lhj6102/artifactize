@@ -567,3 +567,12 @@ impl serde::Serialize for BlockedReference<'_> {
         serializer.serialize_str(self.as_str())
     }
 }
+
+impl From<BlockedReference<'_>> for crate::store::Blocker {
+    fn from(reference: BlockedReference<'_>) -> Self {
+        match reference {
+            BlockedReference::Artifact(id) => Self::Artifact(id.clone()),
+            BlockedReference::Eval(id) => Self::Eval(id.clone()),
+        }
+    }
+}

@@ -347,7 +347,14 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
         .unwrap();
     assert_eq!(ready.state, project::EvalCondition::WaitDependency);
     assert_eq!(ready.action, project::VerifyAction::Derive);
-    assert_eq!(ready.blocked_by, vec!["art", "art/check"]);
+    assert_eq!(
+        ready
+            .blocked_by
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec!["art", "art/check"]
+    );
     assert!(ready.key.is_none());
     let first = fixture.verify(&options).await;
     assert_eq!(first.run.status.as_str(), "GREEN");

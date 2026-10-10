@@ -115,9 +115,9 @@ pub struct ExecutionOptions {
 
 impl ExecutionOptions {
     /// The declared options of an effective profile, as declared (absent means the default).
-    pub fn new(profile: &Profile, variant: Option<&str>) -> Self {
+    pub fn new(profile: &Profile, variant: Option<&crate::config::ProfileVariantName>) -> Self {
         let mut options = Self {
-            variant: variant.map(|name| name.parse().expect("declared profile variant")),
+            variant: variant.cloned(),
             ..Self::default()
         };
         match profile {

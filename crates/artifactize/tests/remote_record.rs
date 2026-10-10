@@ -385,7 +385,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         error: None,
         error_code: None,
         profile: artifactize::config::StoredProfile::from(&variant),
-        options: ExecutionOptions::new(&variant, Some("fast")),
+        options: ExecutionOptions::new(&variant, Some(&"fast".parse().unwrap())),
         usage: Some(
             serde_json::from_value(json!([{"turn":1,"attempt":1,"usage":{"inputTokens":10}}]))
                 .unwrap(),

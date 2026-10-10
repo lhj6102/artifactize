@@ -68,7 +68,7 @@ pub struct EvalState {
     pub state: EvalCondition,
     pub action: VerifyAction,
     pub reason: String,
-    pub blocked_by: Vec<String>,
+    pub blocked_by: Vec<crate::store::Blocker>,
     pub obligations: Vec<crate::config::ArtifactName>,
     /// The Eval definition hash: the eval strategy the key covers.
     pub eval_def_hash: crate::types::DefinitionHash,
@@ -438,7 +438,7 @@ pub async fn status(
             state: status,
             action,
             reason,
-            blocked_by: current.blocked_by.iter().map(ToString::to_string).collect(),
+            blocked_by: current.blocked_by.iter().copied().map(Into::into).collect(),
             obligations: obligations_by_artifact[eval.target.as_str()].clone(),
             eval_def_hash: cache::eval_definition_hash(&eval.declaration),
             fingerprint: fingerprints

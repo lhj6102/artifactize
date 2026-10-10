@@ -37,13 +37,3 @@ pub(crate) fn drive_rooted(value: &str) -> bool {
         && value.as_bytes().get(1) == Some(&b':')
         && value.as_bytes().get(2) == Some(&b'/')
 }
-
-/// Inspect an entry through its opened parent, including Windows reparse points.
-pub(crate) fn entry_kind(path: &Path) -> io::Result<super::FileKind> {
-    let absolute = std::path::absolute(path)?;
-    let Some(name) = absolute.file_name() else {
-        return super::open_directory(&absolute).map(|_| super::FileKind::Directory);
-    };
-    let parent = super::open_directory(absolute.parent().expect("entry has a parent"))?;
-    super::entry_kind(&parent, name)
-}

@@ -19,7 +19,7 @@ const MAX_BYTES: u64 = 1024 * 1024 * 1024;
 /// Pins by registered tool name, then by declared workspace-relative path.
 pub type Pins = BTreeMap<
     crate::config::ToolName,
-    BTreeMap<crate::config::LogicalPath, crate::types::DefinitionHash>,
+    BTreeMap<crate::config::LogicalPath, crate::types::Sha256Digest>,
 >;
 
 /// Hash every `executionPaths` entry of the Agent eval's command tools, off the async runtime.
@@ -59,7 +59,7 @@ pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins,
 }
 
 fn pin(path: &Path) -> Result<String, String> {
-    let kind = platform::paths::entry_kind(path).map_err(|e| e.to_string())?;
+    let kind = platform::path_kind(path).map_err(|e| e.to_string())?;
     let mut bytes = 0;
     if kind == platform::FileKind::File {
         let file = platform::open_regular(path).map_err(|e| e.to_string())?;

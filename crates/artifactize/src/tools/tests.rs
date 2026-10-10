@@ -196,7 +196,7 @@ request = json.load(sys.stdin)
 context = request['context']
 assert request['version'] == 1 and request['args'] == {}
 assert type(request['version']) is int
-assert os.getcwd() == context['artifactPath']
+assert os.path.samefile(os.getcwd(), context['artifactPath'])
 {PRIVATE_ENVIRONMENT}
 print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':context}]}))
 "#
@@ -657,10 +657,13 @@ async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
     };
     assert_eq!(data["a"]["mounts"], json!({"alias":"leaf"}));
     assert_eq!(data["a"]["children"], json!({"cases":"leaf"}));
-    assert_eq!(data["leaf"]["path"], json!(fixture.repo.join("cases")));
+    assert_eq!(
+        data["leaf"]["path"],
+        json!(crate::platform::path_text(&fixture.repo.join("cases")))
+    );
     assert_eq!(
         data["leaf"],
-        json!({"path":fixture.repo.join("cases"),"kind":"folder","children":{},"mounts":{}})
+        json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","children":{},"mounts":{}})
     );
     assert_eq!(data["a"].as_object().unwrap().len(), 4);
 }
