@@ -1,7 +1,10 @@
 #!/bin/sh
-# Install artifactize from its GitHub release.
+# Install artifactize on Linux or macOS from its GitHub release.
 #
 #   curl -fsSL https://artifactize.dev/install.sh | sh
+#
+# Other channels (Homebrew, cargo, winget, the Microsoft Store) are listed at
+# https://artifactize.dev/docs/getting-started/install.html
 #
 # Downloads the release archive for this OS and CPU over https, checks its SHA-256
 # against the release's .sha256 file, and installs artifactize and artifactize-tools to
@@ -45,13 +48,13 @@ detect_target() {
     case $arch in
         x86_64 | amd64) arch=x86_64 ;;
         aarch64 | arm64) arch=aarch64 ;;
-        *) err "no prebuilt binary for the $arch CPU; install with: cargo install artifactize --locked" ;;
+        *) err "no prebuilt binary for the $arch CPU; build it with: cargo install artifactize artifactize-tools --locked" ;;
     esac
     # One line per OS that has release binaries.
     case $os in
         Linux) printf '%s\n' "$arch-unknown-linux-musl" ;;
         Darwin) printf '%s\n' "$arch-apple-darwin" ;;
-        *) err "no prebuilt binary for $os; install with: cargo install artifactize --locked" ;;
+        *) err "no prebuilt binary for $os; build it with: cargo install artifactize artifactize-tools --locked" ;;
     esac
 }
 
@@ -170,7 +173,7 @@ main() {
     case ":${PATH:-}:" in
         *":$install_dir:"* | *":$install_dir/:"*) ;;
         *)
-            say "$install_dir is not on PATH. To use artifactize in this shell, run:"
+            say "$install_dir is not on PATH. To use artifactize and artifactize-tools in this shell, run:"
             # shellcheck disable=SC2016 # $PATH is meant literally
             printf '\n    export PATH="%s:$PATH"\n\n' "$install_dir"
             say "and add that line to your shell's startup file (such as ~/.profile, ~/.bashrc or ~/.zshrc)."
@@ -202,8 +205,8 @@ warn_other_copies() {
     printf '%s\n' "$others" | while IFS= read -r other; do
         printf '    %s (%s)\n' "$other" "$("$other" --version 2>/dev/null || echo 'version unknown')"
     done
-    say "remove it (a cargo install: cargo uninstall $2), or put $(dirname "$1") first on PATH."
-    say "in an open shell, run 'hash -r' (zsh: 'rehash'), or open a new terminal."
+    say "remove that install (cargo: 'cargo uninstall $2'; Homebrew: 'brew uninstall artifactize') or put $(dirname "$1") first on PATH."
+    say "a shell that already ran $2 may keep the old path: run 'hash -r' (zsh: 'rehash') or open a new terminal."
 }
 
 main "$@"

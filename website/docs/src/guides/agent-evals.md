@@ -68,6 +68,7 @@ tools.
 ```toml
 [views.agent_tools]
 read = { builtin = "read", description = "Read {artifactName}." }
+section = { builtin = "section", args = ["spec.md"] }   # the model passes only the heading
 
 [views.agent_tools.inspect]
 description = "Inspect a section of {artifactName}."
@@ -91,8 +92,9 @@ keep their existing names. A file Artifact's built-ins expose its file, mounts a
 referenced Artifacts, not sibling files; command tools use the containing folder
 as cwd and remain trusted local programs.
 
-Field rules, the built-in tools, the `json` and `plain` protocols and their limits
-are in the [reference](../reference/agent-tools.md#agent-tools).
+Field rules, the `json` and `plain` protocols and their limits are in the
+[reference](../reference/agent-tools.md#agent-tools); every built-in tool, with its
+fixed `args` forms, is in [Built-in tools](../reference/builtin-tools.md).
 [`tools check`](../reference/agent-tools.md#tool-diagnostics) validates declared
 tools and runs one without a review.
 

@@ -1,6 +1,10 @@
-# Install artifactize from its GitHub release on Windows (experimental before v1).
+# Install artifactize on Windows from its GitHub release.
 #
 #   irm https://artifactize.dev/install.ps1 | iex
+#
+# winget (lhj6102.Artifactize) and the Microsoft Store install the same commands; the
+# Store version is signed, so prefer it where Smart App Control is on. See
+# https://artifactize.dev/docs/getting-started/install.html
 #
 # Downloads the release zip for Windows x64 over https, checks its SHA-256 against
 # the release's .sha256 file, installs artifactize.exe and artifactize-tools.exe to
@@ -40,7 +44,7 @@
         Fail 'needs Windows PowerShell 5.1 or PowerShell 7'
     }
     if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) {
-        Fail 'install.ps1 is for Windows; on Linux use https://artifactize.dev/install.sh'
+        Fail 'install.ps1 is for Windows; on Linux and macOS, use https://artifactize.dev/install.sh'
     }
     if (-not [Environment]::Is64BitOperatingSystem) {
         Fail 'no prebuilt binary for 32-bit Windows'
@@ -124,7 +128,7 @@
                 if ($LASTEXITCODE -ne 0) { throw "--version exited with code $LASTEXITCODE" }
                 if ($output -ne "$command $version") { throw "--version printed '$output', not '$command $version'" }
             } catch {
-                Fail "Windows could not run the new ${command}: $($_.Exception.Message). Existing binaries were kept and Path was not changed. Smart App Control or another application control policy may block unsigned downloads. Use the Microsoft Store version instead: https://apps.microsoft.com/detail/9PB6W4LL165D"
+                Fail "Windows could not run the new ${command}: $($_.Exception.Message). Existing binaries were kept and Path was not changed. Smart App Control or another application control policy may block this unsigned download. Install the signed Microsoft Store version instead: https://apps.microsoft.com/detail/9PB6W4LL165D"
             }
         }
 
@@ -214,7 +218,7 @@
                 $otherVersion = try { (& $other --version 2>$null) -join ' ' } catch { 'version unknown' }
                 Write-Host "    $other ($otherVersion)"
             }
-            Say "remove it (a cargo install: cargo uninstall $command), or put $dir first on your Path, then open a new terminal."
+            Say "remove that install (cargo: 'cargo uninstall $command'; winget: 'winget uninstall lhj6102.Artifactize') or put $dir first on your user Path, then open a new terminal."
         }
     }
 }
