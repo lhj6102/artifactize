@@ -189,6 +189,9 @@ warn_other_copies() {
         set -f
         for dir in ${PATH:-}; do
             other=${dir%/}/$2
+            # -ef is supported by the Linux/macOS shells we install on; it also
+            # avoids warnings for symlinks or alternate paths to this same file.
+            # shellcheck disable=SC3013
             if [ -n "$dir" ] && [ -f "$other" ] && [ -x "$other" ] && ! [ "$other" -ef "$1" ]; then
                 printf '%s\n' "$other"
             fi

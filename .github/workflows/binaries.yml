@@ -100,7 +100,7 @@ jobs:
             vs=$("/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe" \
               -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 \
               -property installationPath)
-            dumpbin=$(ls "$(cygpath -u "$vs")"/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe | tail -n 1)
+            dumpbin=$(printf '%s\n' "$(cygpath -u "$vs")"/VC/Tools/MSVC/*/bin/Hostx64/x64/dumpbin.exe | tail -n 1)
           fi
           for command in artifactize artifactize-tools; do
             bin=target/$TARGET/release/$command
