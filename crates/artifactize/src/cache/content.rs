@@ -80,7 +80,7 @@ fn matcher(patterns: &[String]) -> Result<Gitignore, String> {
 /// Hash an Artifact's own inputs off the async runtime.
 pub(super) async fn files(
     config: &RepoConfig,
-    id: &str,
+    id: &crate::types::ArtifactName,
     inputs: &[String],
     ignore: &[String],
     cancellation: &CancellationToken,
@@ -116,18 +116,19 @@ struct State {
 impl Walk {
     fn new(
         config: &RepoConfig,
-        id: &str,
+        id: &crate::types::ArtifactName,
         inputs: &[String],
         ignore: &[String],
     ) -> Result<Self, String> {
         let artifact = &config.artifacts[id];
         let owner =
             scope::scoped_path(&config.root, artifact.folder()).map_err(|e| e.to_string())?;
-        let prefix = artifact
+        // Preserve the UTF-8 input contract before rendering portable separators.
+        artifact
             .folder()
             .to_str()
-            .ok_or("Artifact paths must be UTF-8.")?
-            .to_owned();
+            .ok_or("Artifact paths must be UTF-8.")?;
+        let prefix = platform::path_text(artifact.folder());
         let excluded = artifact.children.keys().map(ToString::to_string).collect();
         let inputs: Vec<_> = inputs
             .iter()

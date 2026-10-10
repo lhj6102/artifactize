@@ -8,11 +8,14 @@ use crate::{config::read_workspace_config, test_os::symlink_file};
 
 async fn prepare_all<'a>(
     repo: &Repo,
-    config: &RepoConfig,
-) -> BTreeMap<&'a str, PreparedFingerprint> {
+    config: &'a RepoConfig,
+) -> BTreeMap<&'a ArtifactName, PreparedFingerprint> {
     prepare(
         config,
-        ["app", "basis"],
+        [
+            &config.artifacts["app"].name,
+            &config.artifacts["basis"].name,
+        ],
         repo.output.path(),
         &Parallelism::new(2),
         CancellationToken::new(),
@@ -38,8 +41,12 @@ async fn default_artifactsum_matches_explicit_form_and_keys_a_basis_dependency()
     let default = prepare_all(&repo, &config).await;
     let key = eval_key(&config, &config.evals[0], &default).unwrap();
     for id in ["app", "basis"] {
-        assert!(default[id].value.starts_with("artifactsum:"));
-        assert_eq!(default[id].value.len(), 76);
+        assert!(
+            default[&config.artifacts[id].name]
+                .value
+                .starts_with("artifactsum:")
+        );
+        assert_eq!(default[&config.artifacts[id].name].value.len(), 76);
         assert!(key.fingerprints.contains_key(id));
     }
     repo.artifact(
@@ -48,8 +55,14 @@ async fn default_artifactsum_matches_explicit_form_and_keys_a_basis_dependency()
     );
     let explicit_config = read_workspace_config(repo.root.path()).unwrap();
     let explicit = prepare_all(&repo, &explicit_config).await;
-    assert_eq!(default["basis"].value, explicit["basis"].value);
-    assert_eq!(default["basis"].manifest, explicit["basis"].manifest);
+    assert_eq!(
+        default[&config.artifacts["basis"].name].value,
+        explicit[&explicit_config.artifacts["basis"].name].value
+    );
+    assert_eq!(
+        default[&config.artifacts["basis"].name].manifest,
+        explicit[&explicit_config.artifacts["basis"].name].manifest
+    );
     assert_eq!(
         key,
         eval_key(&explicit_config, &explicit_config.evals[0], &explicit).unwrap()
@@ -71,7 +84,7 @@ async fn fingerprint_false_is_not_prepared_or_rechecked_and_leaves_no_key() {
     let config = read_workspace_config(repo.root.path()).unwrap();
     let fingerprints = prepare(
         &config,
-        ["app"],
+        [&config.artifacts["app"].name],
         repo.output.path(),
         &Parallelism::new(2),
         CancellationToken::new(),

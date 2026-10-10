@@ -266,10 +266,10 @@ fn explicit_file_fingerprints_allow_only_the_target_and_reject_ignore_even_if_em
 async fn fingerprints(
     config: &RepoConfig,
     output: &Path,
-) -> std::collections::BTreeMap<String, cache::PreparedFingerprint> {
+) -> std::collections::BTreeMap<artifactize::types::ArtifactName, cache::PreparedFingerprint> {
     cache::prepare(
         config,
-        config.artifacts.keys().map(|name| name.as_str()),
+        config.artifacts.keys(),
         output,
         &Parallelism::new(2),
         CancellationToken::new(),
@@ -772,7 +772,7 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
     assert!(
         cache::prepare(
             &config,
-            ["file"],
+            [&config.artifacts["file"].name],
             &fixture.state,
             &Parallelism::new(1),
             CancellationToken::new()
@@ -1019,8 +1019,12 @@ fn reuse_key_covers_kinds_of_target_mount_child_and_reference_but_never_paths_or
         json!({"name":"reference","basis":true}),
     );
     let mut config = fixture.config();
-    let fingerprints = ["owner", "mount", "child", "reference"]
+    let names: Vec<artifactize::types::ArtifactName> = ["owner", "mount", "child", "reference"]
         .into_iter()
+        .map(|id| id.parse().unwrap())
+        .collect();
+    let fingerprints = names
+        .iter()
         .map(|id| {
             (
                 id,
@@ -1102,7 +1106,7 @@ async fn script_fingerprint_preparation_and_recheck_reject_every_invalid_target_
         assert!(
             cache::prepare(
                 &config,
-                ["file"],
+                [&config.artifacts["file"].name],
                 &fixture.state,
                 &Parallelism::new(1),
                 CancellationToken::new()
