@@ -41,8 +41,8 @@ pub struct Command {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChildIdentity {
     pub pid: u32,
-    /// Linux: field 22 of /proc/PID/stat, in clock ticks since boot. Windows: the creation
-    /// time, in 100 ns intervals since 1601.
+    /// Linux: clock ticks since boot (procfs field 22). macOS: microseconds since the
+    /// epoch (kernel birth timestamp). Windows: 100 ns intervals since 1601.
     pub start_time: u64,
 }
 
@@ -71,6 +71,17 @@ pub enum Error {
     Cancelled,
     #[error("process output pipes did not close after cleanup")]
     OutputDidNotClose,
+}
+
+impl Error {
+    pub(crate) fn argument_refusal(&self) -> Option<String> {
+        match self {
+            Self::Spawn(error) if error.kind() == io::ErrorKind::InvalidInput => Some(format!(
+                "Process arguments could not be passed safely: {error}"
+            )),
+            _ => None,
+        }
+    }
 }
 
 /// Register the inert child before allowing exec. A rejected, cancelled, or timed-out
@@ -144,7 +155,14 @@ where
         return Err(Error::Timeout);
     }
 
-    let mut child = tokio::process::Command::new(&command.program);
+    let program = artifactize_tools::program::resolve_with(
+        &command.program,
+        &command.cwd,
+        environment_value(&command.env, "PATH"),
+        environment_value(&command.env, "PATHEXT"),
+    )
+    .map_err(Error::Spawn)?;
+    let mut child = tokio::process::Command::new(&program);
     child
         .args(&command.args)
         .current_dir(&command.cwd)
@@ -158,7 +176,7 @@ where
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    let (gate, mut spawning) = platform::spawn_gated(child)?;
+    let (gate, mut spawning) = platform::spawn_gated(child).map_err(Error::Spawn)?;
     let admission = tokio::select! {
         biased;
         _ = cancellation.cancelled() => Err(Error::Cancelled),
@@ -260,12 +278,34 @@ where
     })
 }
 
+/// Windows environment names are case-insensitive even though the typed map is not.
+fn environment_value<'a>(
+    environment: &'a BTreeMap<OsString, OsString>,
+    name: &str,
+) -> Option<&'a std::ffi::OsStr> {
+    #[cfg(windows)]
+    {
+        environment.iter().find_map(|(key, value)| {
+            key.to_str()
+                .is_some_and(|key| key.eq_ignore_ascii_case(name))
+                .then_some(value.as_os_str())
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        environment
+            .get(std::ffi::OsStr::new(name))
+            .map(OsString::as_os_str)
+    }
+}
+
 /// Intentional desktop handoff: no owned process group, pipes, or kill-on-drop policy.
 pub(crate) fn launch_detached(
     program: &std::ffi::OsStr,
     args: &[String],
     cwd: &std::path::Path,
 ) -> Result<(), Error> {
+    let program = artifactize_tools::program::resolve(program, cwd).map_err(Error::Spawn)?;
     let mut command = tokio::process::Command::new(program);
     command
         .args(args)

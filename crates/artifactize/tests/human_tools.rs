@@ -442,27 +442,19 @@ fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
     assert!(started.elapsed() < Duration::from_secs(3));
     #[cfg(unix)]
     {
-        let stat = fs::read_to_string(format!("/proc/{}/stat", child.0)).unwrap();
-        let fields: Vec<_> = stat
-            .rsplit_once(')')
-            .unwrap()
-            .1
-            .split_whitespace()
-            .collect();
-        assert_ne!(fields[0], "Z", "detached child is still running");
+        // SAFETY: these calls only query the detached child.
         assert_eq!(
-            fields[2].parse::<u32>().unwrap(),
-            child.0,
+            unsafe { libc::getpgid(child.0 as i32) },
+            child.0 as i32,
             "separate process group"
         );
         assert_eq!(
-            fields[3].parse::<u32>().unwrap(),
-            child.0,
+            unsafe { libc::getsid(child.0 as i32) },
+            child.0 as i32,
             "separate session"
         );
     }
     // The probe that launched it has exited; the detached child keeps running.
-    #[cfg(windows)]
     assert!(
         support::os::running(child.0),
         "detached child is still running"

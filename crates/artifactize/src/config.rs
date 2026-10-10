@@ -1160,6 +1160,9 @@ fn discovery_ignore(root: &Path) -> Result<ignore::gitignore::Gitignore, ConfigE
     }
     let file = root.join(IGNORE_FILE);
     let mut builder = ignore::gitignore::GitignoreBuilder::new(root);
+    builder
+        .case_insensitive(false)
+        .expect("case-sensitive discovery");
     // A regular file only: discovery never follows links.
     if fs::symlink_metadata(&file).is_ok_and(|metadata| metadata.is_file())
         && let Some(error) = builder.add(&file)

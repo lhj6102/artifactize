@@ -16,7 +16,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(tool: Value) -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_os::tempdir();
         let repo = directory.path().join("repo");
         let output = directory.path().join("output");
         fs::create_dir_all(&repo).unwrap();
@@ -206,6 +206,9 @@ assert os.environ['HOME'] != os.environ['TMPDIR']
 assert context['tmpDir'] == os.environ['TMPDIR']
 assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR']
 allowed = {'PATH','LANG','HOME','TMP','TEMP','TMPDIR','XDG_CACHE_HOME','ARTIFACTIZE_WORKSPACE_DIR','ARTIFACTIZE_OUTPUT_DIR','ARTIFACTIZE_TMP_DIR','LC_CTYPE'}
+if sys.platform == 'darwin':
+    # CoreFoundation supplies the effective users text encoding during framework startup.
+    allowed.add('__CF_USER_TEXT_ENCODING')
 if os.name == 'nt':
     allowed |= {'USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','COMSPEC','PATHEXT'}
 assert set(os.environ) <= allowed
@@ -263,7 +266,7 @@ async fn json_success_authored_error_and_credential_safe_failures() {
 
 #[test]
 fn json_result_limits_and_strict_shapes() {
-    let output = tempfile::tempdir().unwrap();
+    let output = crate::test_os::tempdir();
     let parse = |value: Value| result::parse(&serde_json::to_vec(&value).unwrap(), output.path());
     let block = json!({"type":"text","text":"ok"});
     for invalid in [
@@ -729,7 +732,7 @@ async fn dropping_call_cleans_process_before_removing_directories() {
     .await
     .unwrap();
     #[cfg(unix)]
-    assert!(!Path::new(&format!("/proc/{pid}")).exists());
+    assert!(!crate::test_os::exists(pid as u32));
     #[cfg(windows)]
     assert!(!crate::test_os::running(pid));
 }

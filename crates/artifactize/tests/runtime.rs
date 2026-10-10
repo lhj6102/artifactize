@@ -149,12 +149,13 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     let scratch = Scratch::new();
     let cancellation = CancellationToken::new();
     let (registered, child) = oneshot::channel();
-    // Windows shows no command name for a running process; the child marks its start.
-    let command = if cfg!(windows) {
-        scratch.command("/bin/sh", &["-c", "touch started; sleep 30"], None)
+    // exec keeps the observed PID stable while the final long-lived command runs.
+    let script = if cfg!(windows) {
+        "touch started; sleep 30"
     } else {
-        scratch.command("/bin/sleep", &["30"], None)
+        "touch started; exec sleep 30"
     };
+    let command = scratch.command("/bin/sh", &["-c", script], None);
     let running = tokio::spawn(runtime::execute(
         command,
         cancellation.clone(),
@@ -164,19 +165,16 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
         },
     ));
     let child = child.await.unwrap();
-    #[cfg(unix)]
-    wait_for(|| {
-        std::fs::read_to_string(format!("/proc/{}/comm", child.pid))
-            .is_ok_and(|comm| comm.trim() == "sleep")
-    })
-    .await;
-    #[cfg(windows)]
     wait_for(|| scratch.workspace().join("started").exists()).await;
     cancellation.cancel();
-    assert!(matches!(
-        timeout(TEST_TIMEOUT, running).await.unwrap().unwrap(),
-        Outcome::OperationalError(Error::Process(process::Error::Cancelled))
-    ));
+    let outcome = timeout(TEST_TIMEOUT, running).await.unwrap().unwrap();
+    assert!(
+        matches!(
+            outcome,
+            Outcome::OperationalError(Error::Process(process::Error::Cancelled))
+        ),
+        "{outcome:?}"
+    );
     assert_gone(child.pid).await;
 }
 
@@ -260,7 +258,9 @@ async fn runtime_has_independent_private_external_directories() {
     assert_eq!(environment.len(), if cfg!(windows) { 16 } else { 10 });
     assert_eq!(
         environment["ARTIFACTIZE_WORKSPACE_DIR"],
-        scratch.workspace().to_str().unwrap()
+        support::os::canonical(&scratch.workspace())
+            .to_str()
+            .unwrap()
     );
     for (variable, name) in [
         ("ARTIFACTIZE_OUTPUT_DIR", "output"),
@@ -359,7 +359,11 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
         None,
     )
     .unwrap();
-    assert!(command.directory().starts_with(external.join("new/nested")));
+    assert!(
+        command
+            .directory()
+            .starts_with(support::os::canonical(&external.join("new/nested")))
+    );
     assert_eq!(completed(execute(command).await).verdict, Verdict::Green);
 }
 
@@ -557,17 +561,20 @@ async fn deadline_is_not_reset_after_registration() {
         Ok(())
     })
     .await;
-    assert!(matches!(
-        outcome,
-        Outcome::OperationalError(Error::Process(process::Error::Timeout))
-    ));
+    assert!(
+        matches!(
+            outcome,
+            Outcome::OperationalError(Error::Process(process::Error::Timeout))
+        ),
+        "{outcome:?}"
+    );
     assert!(!marker.exists());
 }
 
 async fn assert_gone(pid: u32) {
     assert!(pid > 0, "must have observed a real process");
     #[cfg(unix)]
-    wait_for(|| !PathBuf::from(format!("/proc/{pid}")).exists()).await;
+    wait_for(|| !support::os::exists(pid)).await;
     #[cfg(windows)]
     wait_for(|| !support::os::running(pid)).await;
 }

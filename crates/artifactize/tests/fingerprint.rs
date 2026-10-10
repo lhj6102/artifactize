@@ -434,7 +434,7 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         assert_eq!(result.status.code(), Some(2));
         assert!(!Path::new(output).exists());
         #[cfg(unix)]
-        assert!(!Path::new(&format!("/proc/{pid}")).exists());
+        assert!(!support::os::exists(pid as u32));
         #[cfg(windows)]
         assert!(!support::os::running(pid));
         let result: Value = serde_json::from_slice(&result.stdout).unwrap();

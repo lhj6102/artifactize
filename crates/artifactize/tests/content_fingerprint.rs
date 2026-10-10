@@ -533,20 +533,34 @@ fn config_check_rejects_true_and_nonobject_fingerprints_with_a_clear_message() {
     }
 }
 
-/// Windows opens `Secret` and `secret` as one folder, but ignore rules match names as written.
+/// Case-insensitive volumes open `Secret` and `secret` as one folder, but ignore rules
+/// match names as written.
 /// A rule for `secret/` therefore leaves `Secret/` in the fingerprint: a change there still
 /// reviews again, rather than a differently cased name hiding it.
-#[cfg(windows)]
 #[test]
 fn an_ignore_rule_in_another_case_never_hides_a_change() {
-    let fixture = Fixture::new();
-    fixture.artifact(
-        "app",
-        artifact("app", json!({"ignore":["secret/"]}), json!({}), PASS),
-    );
-    fixture.file("app/Secret/key.txt", "v1");
-    assert_eq!(fixture.executed(0), ["app/check"]);
-    assert!(fixture.executed(0).is_empty());
-    fixture.file("app/Secret/key.txt", "v2");
-    assert_eq!(fixture.executed(0), ["app/check"]);
+    for declared in [true, false] {
+        let fixture = Fixture::new();
+        let fingerprint = if declared {
+            json!({"ignore":["secret/"]})
+        } else {
+            json!({})
+        };
+        fixture.artifact("app", artifact("app", fingerprint, json!({}), PASS));
+        if !declared {
+            fixture.file(".gitignore", "secret/\n");
+        }
+        fixture.file("app/Secret/key.txt", "v1");
+        assert_eq!(fixture.executed(0), ["app/check"]);
+        assert!(fixture.executed(0).is_empty());
+        // On a case-insensitive volume this write reaches the original entry through an
+        // alias. The enumerated name, not the caller's spelling, still controls the matcher.
+        let path = if fixture.repo.join("app/secret").exists() {
+            "app/secret/key.txt"
+        } else {
+            "app/Secret/key.txt"
+        };
+        fixture.file(path, "v2");
+        assert_eq!(fixture.executed(0), ["app/check"]);
+    }
 }

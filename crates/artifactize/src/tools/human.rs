@@ -195,7 +195,11 @@ impl<'a> Registry<'a> {
                     content: vec![Content::Launch { launched: true }],
                     is_error: false,
                 },
-                Err(_) => ToolResult::error("Human tool could not be launched."),
+                Err(error) => ToolResult::error(
+                    error
+                        .argument_refusal()
+                        .unwrap_or_else(|| "Human tool could not be launched.".into()),
+                ),
             },
             HumanToolKind::Output => {
                 let command = process::Command {
@@ -211,7 +215,11 @@ impl<'a> Registry<'a> {
                     Err(process::Error::Cancelled) => {
                         ToolResult::error("Human tool call was cancelled.")
                     }
-                    Err(_) => ToolResult::error("Human tool execution failed."),
+                    Err(error) => ToolResult::error(
+                        error
+                            .argument_refusal()
+                            .unwrap_or_else(|| "Human tool execution failed.".into()),
+                    ),
                 }
             }
         }

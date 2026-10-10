@@ -60,8 +60,9 @@ fn git(path: &Path, args: &[&str]) {
 async fn catalog_is_global_and_scope_filter_precedes_more_than_one_page() {
     let root = tempfile::tempdir().unwrap();
     let state = root.path().join("state");
-    let alpha = root.path().join("alpha");
-    let beta = root.path().join("beta");
+    let base = crate::test_os::canonical(root.path());
+    let alpha = base.join("alpha");
+    let beta = base.join("beta");
     fs::create_dir_all(&alpha).unwrap();
     fs::create_dir_all(&beta).unwrap();
     let receipts = store::Receipts::open(&state, &alpha).await.unwrap();
@@ -121,8 +122,14 @@ async fn catalog_is_global_and_scope_filter_precedes_more_than_one_page() {
 #[tokio::test]
 async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_empty_worktrees() {
     let root = tempfile::tempdir().unwrap();
-    let repo = root.path().join("repo");
-    let other = root.path().join("other space\nline");
+    let base = crate::test_os::canonical(root.path());
+    let repo = base.join("repo");
+    // Windows forbids newline in file names; keep whitespace coverage with a space.
+    let other = base.join(if cfg!(windows) {
+        "other space"
+    } else {
+        "other space\nline"
+    });
     fs::create_dir_all(repo.join("workspace/sub")).unwrap();
     git(&repo, &["init", "-b", "main"]);
     git(
@@ -187,7 +194,7 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
             .any(|row| matches!(&row.scope, Scope::Worktree(_, path) if path == &other))
     );
     git(&repo, &["worktree", "remove", other.to_str().unwrap()]);
-    let empty = root.path().join("empty");
+    let empty = base.join("empty");
     git(
         &repo,
         &["worktree", "add", "-b", "empty", empty.to_str().unwrap()],
