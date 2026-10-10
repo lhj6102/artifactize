@@ -84,6 +84,28 @@ fn process_group_empty(pgid: u32) -> io::Result<bool> {
     {
         return Err(io::Error::last_os_error());
     }
+    // Darwin's size-only query includes spare capacity for processes that could appear
+    // before the copy. Only an actual copy's returned byte count proves the group empty.
+    const MAX_GROUP_INFO_BYTES: usize = 16 * 1024 * 1024;
+    if bytes > MAX_GROUP_INFO_BYTES {
+        return Err(io::Error::other("process group information exceeds 16 MiB"));
+    }
+    let mut records = vec![0_u8; bytes.max(1)];
+    // SAFETY: the writable byte buffer has the queried capacity. No record is interpreted;
+    // an ENOMEM race is kept as an error, never retried or mistaken for an empty group.
+    if unsafe {
+        libc::sysctl(
+            query.as_mut_ptr(),
+            query.len() as u32,
+            records.as_mut_ptr().cast(),
+            &mut bytes,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
     Ok(bytes == 0)
 }
 
