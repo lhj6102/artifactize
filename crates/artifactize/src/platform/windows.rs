@@ -12,7 +12,7 @@ use std::{
 
 use tokio::signal::windows::{ctrl_break, ctrl_c, ctrl_close};
 use windows_sys::Win32::{
-    Foundation::{HANDLE, INVALID_HANDLE_VALUE},
+    Foundation::{ERROR_ACCESS_DENIED, HANDLE, INVALID_HANDLE_VALUE},
     Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
     System::{
         Console::{
@@ -28,6 +28,16 @@ pub(crate) use security::{
     PrivateTempDir, create_private_dir, create_private_dir_all, is_private_dir, is_private_file,
     private_options, private_pipe, private_tempdir_in, restrict_file, user_identity,
 };
+
+/// Whether `error` is Windows transiently refusing a metadata or open probe on a file that
+/// another handle is still finalizing: emptying or deleting a WAL `-wal`/`-shm` sidecar, for
+/// one, leaves the name `ERROR_ACCESS_DENIED` until that handle closes, even though no one
+/// holds an incompatible lock. The condition clears on its own, so callers retry briefly
+/// rather than surface it; any other error (a real permission problem, a missing file) is not
+/// this and must not be retried as if it were.
+pub(crate) fn transient_file_access(error: &io::Error) -> bool {
+    error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32)
+}
 
 /// How a private directory and file are described in messages.
 pub(crate) const PRIVATE_DIRECTORY: &str = "owner-only (a protected DACL granting only this user)";

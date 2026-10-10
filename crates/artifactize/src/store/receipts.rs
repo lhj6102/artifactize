@@ -807,7 +807,7 @@ pub fn read_state_id(state: &Path) -> Result<Option<crate::types::StateId>, Stri
 pub(crate) fn regular_files(state: &Path) -> Result<(), String> {
     for suffix in ["", "-wal", "-shm"] {
         let path = state.join(format!("{DATABASE}{suffix}"));
-        match crate::platform::path_kind(&path) {
+        match super::retry_transient_access(|| crate::platform::path_kind(&path)) {
             Ok(kind) if kind != crate::platform::FileKind::File => {
                 return Err(format!(
                     "State files must be regular files: {}",

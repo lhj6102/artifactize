@@ -27,7 +27,7 @@ pub(crate) use os::{
     create_private_dir_all, editor, exit_signal, file_identity, home_directory, host_name, ipc,
     is_owner_only, is_private_dir, is_private_file, path_from_bytes, private_options,
     private_tempdir_in, process_start_time, resolve_system_aliases, restrict_file, spawn_detached,
-    spawn_gated, stop_requested, sync_dir,
+    spawn_gated, stop_requested, sync_dir, transient_file_access,
 };
 pub(crate) use os::{PRIVATE_DIRECTORY, PRIVATE_FILE};
 

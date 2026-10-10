@@ -44,6 +44,31 @@ pub use requests::{
 /// immediate busy error, while limiting how long one database operation can block.
 pub(crate) const SQLITE_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// How many times [`retry_transient_access`] retries past a transient Windows file-access
+/// race, and how long it waits between attempts.
+const TRANSIENT_ACCESS_RETRIES: u32 = 5;
+const TRANSIENT_ACCESS_BACKOFF: std::time::Duration = std::time::Duration::from_millis(20);
+
+/// Retry `attempt` past [`platform::transient_file_access`] (Windows transiently denying a
+/// metadata or open probe while another handle finishes closing a just-deleted WAL sidecar)
+/// before giving up with its last error. Every read-only state open reaches this through
+/// [`receipts::check_files`]/[`check_probe_files`], which every reader calls first, so this is
+/// the one place the retry needs to live.
+pub(crate) fn retry_transient_access<T>(
+    mut attempt: impl FnMut() -> std::io::Result<T>,
+) -> std::io::Result<T> {
+    for remaining in (0..TRANSIENT_ACCESS_RETRIES).rev() {
+        match attempt() {
+            Ok(value) => return Ok(value),
+            Err(error) if remaining > 0 && platform::transient_file_access(&error) => {
+                std::thread::sleep(TRANSIENT_ACCESS_BACKOFF);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("the loop above always returns by its last attempt")
+}
+
 /// Resolve the single state directory without creating it.
 pub fn state_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
     let path = match explicit {

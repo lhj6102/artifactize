@@ -21,6 +21,12 @@ use tokio::signal::unix::{SignalKind, signal};
 
 pub(crate) use process::{Child, process_start_time, spawn_detached, spawn_gated};
 
+/// POSIX file locks are advisory, and unlinking a name never invalidates another handle's
+/// access to it, so a plain metadata or open race like Windows's never happens here.
+pub(crate) fn transient_file_access(_error: &io::Error) -> bool {
+    false
+}
+
 /// Owner-only directory mode (rwx------): these directories hold credentials, Agent sessions,
 /// sockets and review state, so no other local user may list or enter them.
 const PRIVATE_DIR_MODE: u32 = 0o700;

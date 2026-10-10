@@ -101,6 +101,7 @@ pub fn usage(state: &Path) -> Result<Usage, String> {
 
 /// The sessions of requests that are still RUNNING, read without a writer lock.
 fn running(state: &Path) -> Result<BTreeSet<SessionId>, String> {
+    crate::store::check_probe_files(state)?;
     let database = state.join(DATABASE);
     if !database.try_exists().map_err(|e| e.to_string())? {
         return Ok(BTreeSet::new());
