@@ -11,7 +11,6 @@ agent-tools/
     ├── spec.md          the specification under review
     ├── diagram.png      checked with the built-in view_image tool
     ├── notes.md         review notes for the Human eval
-    ├── section.sh       plain-protocol Agent tool
     └── coverage.py      json-protocol Agent tool
 ```
 
@@ -26,9 +25,11 @@ What it demonstrates:
 - **Built-in tools.** `read`, `grep` and `view_image` are declared as
   `{ builtin = "read" }`. They run inside artifactize, read only, and see `spec` plus
   its mount, so `reqs/requirements.md` can be read through the alias.
-- **A declared `plain` tool.** `section` validates `{"title": ...}` against its
-  `input_schema` and substitutes the value for `{title}` as one argv element.
-  Its stdout is the text result, and a nonzero exit makes it a tool error.
+- **A fixed-file built-in tool.** `section` is declared as
+  `{ builtin = "section", args = ["spec.md"] }`. The model passes only
+  `{"heading": ...}`. It prints the matching Markdown heading and its contents,
+  stopping before the next heading at the same or a higher level; no shell script
+  or external program is needed.
 - **A declared `json` tool.** `coverage` reads `{version, context, args}` on
   stdin. Its argv gets `{reqs}/requirements.md` as an absolute path. It prints a
   structured observation: the spec lines that cite each requirement ID, and the
@@ -39,10 +40,12 @@ What it demonstrates:
 - **A basis and a dependency.** `requirements` is a basis Artifact. The mount
   makes `spec` depend on it, and the instruction names it as `{reqs}`.
 - **A Human eval with Human tools.** `spec/signoff` declares two Human tools.
-  `open` is a `launch` tool: it runs `xdg-open {artifactPath}/notes.md` and
-  records only that the program started. `notes` is an `output` tool: it prints
-  the notes in the terminal. Human tools take no arguments and run in your real
-  environment.
+  `open` uses `{ builtin = "open", args = ["{artifactPath}/notes.md"] }` to
+  launch the desktop's default application on Linux, macOS or Windows; it records
+  only that the application launch was accepted. `notes` uses the `read` builtin
+  with the same fixed path to print the notes in the terminal. These tools run
+  inside artifactize, take no model arguments and need no `artifactize-tools`
+  executable on `PATH`.
 
 `spec` uses the default artifactsum fingerprint, so unchanged files reuse earlier reviews.
 
@@ -58,16 +61,17 @@ artifactize config graph
 artifactize tools check      # static: schemas, executables and scoped paths; runs nothing
 artifactize tools check --execute --artifact spec --audience agent --tool coverage --args '{}'
 artifactize tools check --execute --artifact spec --audience agent --tool coverage --args '{"id":"R9"}'
-artifactize tools check --execute --artifact spec --audience agent --tool section --args '{"title":"Dry run"}'
+artifactize tools check --execute --artifact spec --audience agent --tool section --args '{"heading":"Dry run"}'
 artifactize tools check --execute --artifact spec --audience agent --tool grep --args '{"pattern":"archive","path":"reqs"}'
 artifactize tools check --execute --artifact spec --audience agent --tool view_image --args '{"path":"diagram.png"}'
 artifactize tools check --execute --artifact spec --audience human --tool notes
 ```
 
 An explicit check runs one tool and creates no Run, verdict or cache entry. It
-exits 1 when the tool reports an error, as `coverage` does for `R9`. On a
-machine without `xdg-open`, the static check reports `open_spec` as
-unavailable. `notes_spec` works in any terminal.
+exits 1 when the tool reports an error, as `coverage` does for `R9`. Static checks
+validate built-in tools without launching a desktop application. Actually using
+`open_spec` requires a working desktop default-application mechanism;
+`notes_spec` works in any terminal.
 
 ## Choose a backend and model
 
@@ -118,7 +122,7 @@ While `verify` waits, in a second terminal:
 artifactize request list --run RUN_ID   # shows the REQUEST_ID of spec/signoff
 artifactize request claim REQUEST_ID
 artifactize request tool REQUEST_ID notes_spec   # prints notes.md
-artifactize request tool REQUEST_ID open_spec    # opens notes.md with xdg-open
+artifactize request tool REQUEST_ID open_spec    # opens notes.md in the desktop's default application
 artifactize request submit REQUEST_ID --verdict GREEN --fields '{"approved":true,"comment":"Both questions are answered."}'
 artifactize run show RUN_ID
 ```

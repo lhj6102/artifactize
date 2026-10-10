@@ -2,7 +2,7 @@ name = "logo"
 fingerprint = {}
 
 [views.human_tools]
-notes = { description = "Print the design notes for {artifactName}.", kind = "output", command = "cat", args = ["{artifactPath}/notes.md"] }
+notes = { description = "Print the design notes for {artifactName}.", builtin = "read", args = ["{artifactPath}/notes.md"] }
 
 [evals.svg]
 title = "The logo is well-formed SVG"

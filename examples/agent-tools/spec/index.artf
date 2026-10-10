@@ -7,12 +7,9 @@ grep = { builtin = "grep" }
 view_image = { builtin = "view_image", description = "View an image in {artifactName}, such as diagram.png." }
 
 [views.agent_tools.section]
-description = "Print one '## ' section of spec.md in {artifactName}, by its exact title."
-input_schema = { type = "object", properties = { title = { type = "string", minLength = 1 } }, required = ["title"], additionalProperties = false }
-protocol = "plain"
-command = "/bin/sh"
-args = ["section.sh", "{title}"]
-timeout_ms = 10000
+description = "Print one Markdown section of spec.md in {artifactName}, by its exact heading."
+builtin = "section"
+args = ["spec.md"]
 
 [views.agent_tools.coverage]
 description = "List each requirement for {artifactName} with the spec.md lines that cite its ID. Pass id to see one requirement."
@@ -23,8 +20,8 @@ args = ["coverage.py", "{reqs}/requirements.md"]
 timeout_ms = 10000
 
 [views.human_tools]
-open = { description = "Open the review notes of {artifactName} in the desktop's default application.", kind = "launch", command = "xdg-open", args = ["{artifactPath}/notes.md"] }
-notes = { description = "Print the review notes of {artifactName}.", kind = "output", command = "cat", args = ["{artifactPath}/notes.md"] }
+open = { description = "Open the review notes of {artifactName} in the desktop's default application.", builtin = "open", args = ["{artifactPath}/notes.md"] }
+notes = { description = "Print the review notes of {artifactName}.", builtin = "read", args = ["{artifactPath}/notes.md"] }
 
 [evals.review]
 title = "The specification covers every requirement"
