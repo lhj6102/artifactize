@@ -46,7 +46,7 @@ const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v2\n";
 /// is executed. Execution options (backend, model, reasoning, limits, the profile variant),
 /// the eval's id and title, and tool views stay out.
 pub fn eval_definition_hash(eval: &EvalDeclaration) -> crate::types::DefinitionHash {
-    let kind = match &eval.profile {
+    let kind = match &eval.profile() {
         Profile::Agent { .. } => "agent",
         Profile::Human {} => "human",
         Profile::Dependency { .. } => "dependency",
@@ -54,15 +54,15 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> crate::types::DefinitionH
     };
     let mut strategy = json!({
         "kind": kind,
-        "payload": eval.payload,
-        "passSchema": eval.pass_schema,
-        "failSchema": eval.fail_schema,
+        "payload": eval.payload(),
+        "passSchema": eval.pass_schema(),
+        "failSchema": eval.fail_schema(),
     });
-    if let Profile::Runtime { command, args, .. } = &eval.profile {
+    if let Profile::Runtime { command, args, .. } = &eval.profile() {
         strategy["command"] = json!(command);
         strategy["args"] = json!(args);
     }
-    if let Profile::Dependency { depends_on } = &eval.profile {
+    if let Profile::Dependency { depends_on } = &eval.profile() {
         strategy["dependsOn"] = json!(depends_on);
     }
     strategy.sort_all_objects();
@@ -153,7 +153,7 @@ pub(crate) fn fingerprint_targets<'a>(
         .iter()
         .filter(|eval| {
             required.contains(eval.target.as_str())
-                && !matches!(eval.declaration.profile, Profile::Dependency { .. })
+                && !matches!(eval.declaration.profile(), Profile::Dependency { .. })
         })
         .flat_map(|eval| dependencies(config, eval))
         .collect()
@@ -200,7 +200,7 @@ pub fn eval_key(
     eval: &Eval,
     fingerprints: &BTreeMap<&str, PreparedFingerprint>,
 ) -> Result<Key, Unkeyed> {
-    if matches!(eval.declaration.profile, Profile::Dependency { .. }) {
+    if matches!(eval.declaration.profile(), Profile::Dependency { .. }) {
         return Err(Unkeyed::Derived);
     }
     if !fingerprints.contains_key(eval.target.as_str()) {
@@ -394,11 +394,15 @@ async fn compute(
     scope::validate_file_target(&config.root, &config.artifacts[id])
         .map_err(|error| error.to_string())?;
     let result = match &config.artifacts[id].fingerprint {
-        Some(Fingerprint::Artifactsum { files, ignore }) => {
-            content(config, id, files, ignore, &cancellation)
-                .await
-                .map_err(|error| format!("Artifactsum for Artifact {id} failed: {error}"))
-        }
+        Some(Fingerprint::Artifactsum { files, ignore }) => content(
+            config,
+            id,
+            &files.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            ignore,
+            &cancellation,
+        )
+        .await
+        .map_err(|error| format!("Artifactsum for Artifact {id} failed: {error}")),
         Some(Fingerprint::Script { .. }) => Ok(PreparedFingerprint {
             value: script(config, id, output_root, cancellation)
                 .await

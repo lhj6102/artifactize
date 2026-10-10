@@ -98,9 +98,9 @@ pub struct ExecutionOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<crate::config::Backend>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
+    pub model: Option<crate::config::ModelId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reasoning: Option<String>,
+    pub reasoning: Option<crate::config::Reasoning>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(with = "crate::config::validation::milliseconds")]
     pub timeout_ms: Option<std::time::Duration>,
@@ -110,14 +110,14 @@ pub struct ExecutionOptions {
     pub max_tokens: Option<u64>,
     /// The selected `profileVariants` entry; absent for the declared profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub variant: Option<String>,
+    pub variant: Option<crate::config::ProfileVariantName>,
 }
 
 impl ExecutionOptions {
     /// The declared options of an effective profile, as declared (absent means the default).
-    pub fn new(profile: &Profile, variant: Option<&str>) -> Self {
+    pub fn new(profile: &Profile, variant: Option<&crate::config::ProfileVariantName>) -> Self {
         let mut options = Self {
-            variant: variant.map(str::to_owned),
+            variant: variant.cloned(),
             ..Self::default()
         };
         match profile {
@@ -131,7 +131,7 @@ impl ExecutionOptions {
             } => {
                 options.backend = Some(*backend);
                 options.model = Some(model.clone());
-                options.reasoning = reasoning.clone();
+                options.reasoning = *reasoning;
                 options.timeout_ms = *timeout_ms;
                 options.max_tool_calls = *max_tool_calls;
                 options.max_tokens = *max_tokens;

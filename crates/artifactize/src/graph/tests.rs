@@ -14,10 +14,10 @@ fn config(definitions: &[(&str, bool, &[&str])], edges: &[(&str, &str)]) -> Repo
         relations: edges
             .iter()
             .map(|&(source, target)| Relation {
-                source: source.into(),
-                target: target.into(),
+                source: source.parse().unwrap(),
+                target: target.parse().unwrap(),
                 kind: RelationKind::Mount {
-                    alias: source.into(),
+                    alias: source.parse().unwrap(),
                 },
             })
             .collect(),
@@ -74,10 +74,10 @@ fn reviewed(ids: &[&str], edges: &[(&str, &str)]) -> RepoConfig {
     config(&definitions, edges)
 }
 
-fn evidence(entries: &[(&str, Evidence)]) -> BTreeMap<String, Evidence> {
+fn evidence(entries: &[(&str, Evidence)]) -> BTreeMap<EvalId, Evidence> {
     entries
         .iter()
-        .map(|&(id, outcome)| (id.into(), outcome))
+        .map(|&(id, outcome)| (id.parse().unwrap(), outcome))
         .collect()
 }
 
@@ -112,14 +112,14 @@ fn cycle_peers_share_external_gates_but_need_individual_final_evidence() {
     assert!(waiting.evals["external/check"].can_execute());
     assert!(waiting.evals["independent/check"].can_execute());
 
-    outcomes.insert("external/check".into(), GREEN);
+    outcomes.insert("external/check".parse().unwrap(), GREEN);
     let ready = graph.evaluate(&outcomes);
     assert!(ready.evals["a/check"].can_execute());
     assert!(ready.evals["b/check"].can_execute());
     assert!(!ready.evals["external/check"].can_execute());
     assert_eq!(ready.evals["consumer/check"].readiness, Readiness::Wait);
 
-    outcomes.insert("a/check".into(), GREEN);
+    outcomes.insert("a/check".parse().unwrap(), GREEN);
     let partial = graph.evaluate(&outcomes);
     assert_eq!(partial.evals["a/check"].status, EvalStatus::Green);
     assert!(partial.evals["b/check"].can_execute());
@@ -129,12 +129,12 @@ fn cycle_peers_share_external_gates_but_need_individual_final_evidence() {
     assert_eq!(partial.obligations, ["b", "consumer", "independent"]);
     assert_eq!(partial.status, FinalStatus::Incomplete);
 
-    outcomes.insert("b/check".into(), GREEN);
+    outcomes.insert("b/check".parse().unwrap(), GREEN);
     let released = graph.evaluate(&outcomes);
     assert!(released.evals["consumer/check"].can_execute());
     assert!(released.artifacts["a"].satisfied);
-    outcomes.insert("consumer/check".into(), GREEN);
-    outcomes.insert("independent/check".into(), GREEN);
+    outcomes.insert("consumer/check".parse().unwrap(), GREEN);
+    outcomes.insert("independent/check".parse().unwrap(), GREEN);
     let complete = graph.evaluate(&outcomes);
     assert_eq!(complete.status, FinalStatus::Green);
     assert!(complete.obligations.is_empty());
@@ -155,7 +155,7 @@ fn red_blocks_transitively_and_retry_releases_retained_evidence() {
     }
     assert_eq!(blocked.evals["c/check"].unmet_gates, ["b/check"]);
     assert_eq!(blocked.artifacts["c"].passed, 0);
-    outcomes.insert("a/check".into(), GREEN);
+    outcomes.insert("a/check".parse().unwrap(), GREEN);
     let released = graph.evaluate(&outcomes);
     assert_eq!(released.status, FinalStatus::Green);
     assert_eq!(released.evals["c/check"].status, EvalStatus::Green);
@@ -190,7 +190,7 @@ fn stale_and_missing_evidence_never_satisfy_a_gate() {
     assert_eq!(missing.evals["a/check"].status, EvalStatus::Unreviewed);
     assert!(missing.evals["a/check"].can_execute());
     assert_eq!(missing.evals["b/check"].readiness, Readiness::Wait);
-    outcomes.insert("a/check".into(), Evidence::Stale);
+    outcomes.insert("a/check".parse().unwrap(), Evidence::Stale);
     let stale = graph.evaluate(&outcomes);
     assert_eq!(stale.evals["a/check"].status, EvalStatus::Stale);
     assert!(stale.evals["a/check"].can_execute());
@@ -214,13 +214,13 @@ fn every_eval_is_an_external_obligation_and_red_wins_over_wait() {
     assert_eq!(partial.evals["b/check"].unmet_gates, ["a/two"]);
     assert_eq!(partial.artifacts["a"].passed, 1);
     assert_eq!(partial.artifacts["a"].total, 2);
-    outcomes.insert("a/one".into(), RED);
-    outcomes.insert("a/two".into(), Evidence::OperationalError);
+    outcomes.insert("a/one".parse().unwrap(), RED);
+    outcomes.insert("a/two".parse().unwrap(), Evidence::OperationalError);
     let blocked = graph.evaluate(&outcomes);
     assert_eq!(blocked.evals["b/check"].readiness, Readiness::Blocked);
     assert_eq!(blocked.status, FinalStatus::Error);
-    outcomes.insert("a/one".into(), GREEN);
-    outcomes.insert("a/two".into(), GREEN);
+    outcomes.insert("a/one".parse().unwrap(), GREEN);
+    outcomes.insert("a/two".parse().unwrap(), GREEN);
     assert!(graph.evaluate(&outcomes).evals["b/check"].can_execute());
 }
 
@@ -324,7 +324,7 @@ fn components_and_gates_are_deterministic_and_only_direct() {
 
 #[test]
 fn all_scope_relation_kinds_feed_the_same_graph() {
-    let fixture = tempfile::tempdir().unwrap();
+    let fixture = crate::test_os::tempdir();
     for (path, declaration) in [
         (
             "owner",
@@ -361,7 +361,10 @@ fn all_scope_relation_kinds_feed_the_same_graph() {
         graph.dependency_closure(&["owner"]).unwrap(),
         ["argument", "child", "instruction", "mounted", "owner"]
     );
-    assert_eq!(graph.eval_target("owner/check"), Some("owner"));
+    assert_eq!(
+        graph.eval_target("owner/check").map(ArtifactName::as_str),
+        Some("owner")
+    );
     assert!(graph.evaluate(&BTreeMap::new()).evals["owner/check"].can_execute());
 }
 

@@ -114,7 +114,10 @@ fn root_and_nested_sidecars_coexist_without_changing_folder_ownership() {
     );
     assert_eq!(
         config.artifacts["folder"].children,
-        std::collections::BTreeMap::from([("nested/deep".into(), "deep".parse().unwrap())])
+        std::collections::BTreeMap::from([(
+            "nested/deep".parse().unwrap(),
+            "deep".parse().unwrap()
+        )])
     );
     assert!(config.artifacts["hero"].children.is_empty());
     assert!(config.artifacts["build"].children.is_empty());
@@ -955,7 +958,7 @@ fn sidecar_checks_keep_s2_source_locations_and_literal_owner_data() {
     assert_eq!(
         fixture.config().evals[0]
             .declaration
-            .payload
+            .payload()
             .as_ref()
             .unwrap()
             .extra["owner"]["$__toml_private_datetime"],

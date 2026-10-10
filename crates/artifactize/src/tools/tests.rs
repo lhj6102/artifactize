@@ -6,7 +6,7 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::config::{parse_declaration, read_workspace_config};
-use crate::test_os::{bin, make_executable, symlink_dir};
+use crate::test_os::bin;
 
 struct Fixture {
     directory: TempDir,
@@ -33,13 +33,7 @@ impl Fixture {
     }
 
     fn script(&self, code: &str) {
-        // Python writes pipes in the ANSI code page on Windows; the tools here write UTF-8.
-        let code = if cfg!(windows) {
-            format!("import sys\nsys.stdout.reconfigure(encoding='utf-8')\n{code}")
-        } else {
-            code.to_owned()
-        };
-        fs::write(self.repo.join("tool.py"), code).unwrap();
+        crate::test_os::write_python_script(&self.repo.join("tool.py"), code);
     }
 
     async fn call(&self, args: Value) -> ToolResult {
@@ -78,7 +72,7 @@ fn command() -> Value {
     json!({
         "description":"Inspect {artifactName}",
         "protocol":"json",
-        "command":"python3",
+        "command":crate::test_os::python_program(),
         "args":["tool.py"],
     })
 }
@@ -196,24 +190,21 @@ async fn json_context_has_private_paths_declared_material_and_owner_cwd() {
     tool["execution_paths"] = json!(["shared.txt"]);
     let fixture = Fixture::new(tool);
     fs::write(fixture.repo.join("shared.txt"), "material").unwrap();
-    fixture.script(r#"import json, os, sys
+    fixture.script(
+        &r#"import json, os, sys
 request = json.load(sys.stdin)
 context = request['context']
 assert request['version'] == 1 and request['args'] == {}
 assert type(request['version']) is int
-assert os.getcwd() == context['artifactPath']
-assert os.environ['HOME'] != os.environ['TMPDIR']
-assert context['tmpDir'] == os.environ['TMPDIR']
-assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR']
-allowed = {'PATH','LANG','HOME','TMP','TEMP','TMPDIR','XDG_CACHE_HOME','ARTIFACTIZE_WORKSPACE_DIR','ARTIFACTIZE_OUTPUT_DIR','ARTIFACTIZE_TMP_DIR','LC_CTYPE'}
-if sys.platform == 'darwin':
-    # CoreFoundation supplies the effective users text encoding during framework startup.
-    allowed.add('__CF_USER_TEXT_ENCODING')
-if os.name == 'nt':
-    allowed |= {'USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','COMSPEC','PATHEXT'}
-assert set(os.environ) <= allowed
+assert os.path.samefile(os.getcwd(), context['artifactPath'])
+{PRIVATE_ENVIRONMENT}
 print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':context}]}))
-"#);
+"#
+        .replace(
+            "{PRIVATE_ENVIRONMENT}",
+            crate::test_os::PYTHON_PRIVATE_ENVIRONMENT,
+        ),
+    );
     let result = fixture.call(json!({})).await;
     assert!(!result.is_error, "{result:?}");
     let Content::Json { data } = &result.content[1] else {
@@ -343,18 +334,7 @@ print(json.dumps({{'content':[
         );
     }
     fs::write(fixture.repo.join("source"), &image::tests::fixtures()[0].1).unwrap();
-    // Windows symlinks need a privilege; junctions, which redirect the same way, do not.
-    let (file_link, directory_link) = if cfg!(windows) {
-        (
-            "path = 'link'; _winapi.CreateJunction(os.getcwd(), os.path.join(root, path))",
-            "path = 'linkdir/source'; _winapi.CreateJunction(os.getcwd(), os.path.join(root, 'linkdir'))",
-        )
-    } else {
-        (
-            "path = 'link'; os.symlink(os.path.abspath('source'), os.path.join(root, path))",
-            "path = 'linkdir/source'; os.symlink(os.getcwd(), os.path.join(root, 'linkdir'))",
-        )
-    };
+    let (file_link, directory_link) = crate::test_os::python_output_links();
     for setup in [
         "path = request['context']['artifactPath'] + '/source'",
         "path = '../tmp/image'; shutil.copy('source', os.path.join(root, path))",
@@ -364,7 +344,7 @@ print(json.dumps({{'content':[
         "path = 'image'; open(os.path.join(root,path), 'wb').truncate(4*1024*1024+1)",
     ] {
         fixture.script(&format!(
-            "import json, os, shutil, sys\nif os.name == 'nt': import _winapi\nrequest = json.load(sys.stdin)\nroot = request['context']['outputDir']\n{setup}\nprint(json.dumps({{'content':[{{'type':'image','path':path,'mimeType':'image/png'}}]}}))"
+            "import json, os, shutil, sys\nrequest = json.load(sys.stdin)\nroot = request['context']['outputDir']\n{setup}\nprint(json.dumps({{'content':[{{'type':'image','path':path,'mimeType':'image/png'}}]}}))"
         ));
         let result = fixture.call(json!({})).await;
         assert!(result.is_error, "{setup}");
@@ -450,8 +430,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
     tool["protocol"] = json!("plain");
     let fixture = Fixture::new(tool.clone());
     let script = fixture.repo.join("unique-artifactize-tool-not-on-path");
-    fs::write(&script, "#!/bin/sh\nprintf 'owner executable'\n").unwrap();
-    make_executable(&script);
+    crate::test_os::output_script(&script, "owner executable");
     assert!(fixture.call(json!({})).await.is_error);
     tool["command"] = json!("./unique-artifactize-tool-not-on-path");
     write_artifact(
@@ -461,14 +440,9 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
         "Review.",
     );
     assert_eq!(text(&fixture.call(json!({})).await), "owner executable");
-    // Windows has no printf on every PATH; python3 is a test prerequisite anyway.
-    if cfg!(windows) {
-        tool["command"] = json!("python3");
-        tool["args"] = json!(["-c", "import sys; sys.stdout.write('from PATH')"]);
-    } else {
-        tool["command"] = json!("printf");
-        tool["args"] = json!(["%s", "from PATH"]);
-    }
+    let (program, args) = crate::test_os::path_output("from PATH");
+    tool["command"] = json!(program);
+    tool["args"] = json!(args);
     write_artifact(
         &fixture.repo,
         "a",
@@ -486,10 +460,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
 async fn path_preparation_rejects_scope_and_workspace_escapes() {
     let fixture = Fixture::new(command());
     fixture.script("open('spawned','w').write('yes')\n");
-    if symlink_dir(fixture.directory.path(), fixture.repo.join("link")).is_none() {
-        #[cfg(windows)]
-        crate::test_os::junction(fixture.directory.path(), &fixture.repo.join("link"));
-    }
+    crate::test_os::link_dir(fixture.directory.path(), &fixture.repo.join("link"));
     for (key, value) in [
         ("command", json!("../outside")),
         ("command", json!("link/outside")),
@@ -624,7 +595,7 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
     let mut tool = command();
     tool["timeout_ms"] = json!(50);
     let fixture = Fixture::new(tool);
-    fixture.script("import time\ntime.sleep(60)");
+    fixture.script("import threading\nthreading.Event().wait()");
     assert_eq!(
         text(&fixture.call(json!({})).await),
         "Agent tool timed out."
@@ -686,10 +657,13 @@ async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
     };
     assert_eq!(data["a"]["mounts"], json!({"alias":"leaf"}));
     assert_eq!(data["a"]["children"], json!({"cases":"leaf"}));
-    assert_eq!(data["leaf"]["path"], json!(fixture.repo.join("cases")));
+    assert_eq!(
+        data["leaf"]["path"],
+        json!(crate::platform::path_text(&fixture.repo.join("cases")))
+    );
     assert_eq!(
         data["leaf"],
-        json!({"path":fixture.repo.join("cases"),"kind":"folder","children":{},"mounts":{}})
+        json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","children":{},"mounts":{}})
     );
     assert_eq!(data["a"].as_object().unwrap().len(), 4);
 }
@@ -697,7 +671,10 @@ async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
 #[tokio::test]
 async fn dropping_call_cleans_process_before_removing_directories() {
     let fixture = Fixture::new(command());
-    fixture.script("import os,time\nopen('started','w').write(str(os.getpid()))\ntime.sleep(60)");
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    fixture.script(&format!("import os,socket,threading\ns = socket.create_connection(('127.0.0.1', {}))\ns.sendall(str(os.getpid()).encode())\ns.shutdown(socket.SHUT_WR)\nthreading.Event().wait()", listener.local_addr().unwrap().port()));
     let config = read_workspace_config(&fixture.repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     let mut call = Box::pin(registry.call(
@@ -706,27 +683,20 @@ async fn dropping_call_cleans_process_before_removing_directories() {
         &fixture.output,
         CancellationToken::new(),
     ));
-    tokio::select! {
+    let pid = tokio::select! {
         result = &mut call => panic!("unexpected completion: {result:?}"),
-        // The file exists before its PID is written; wait for the PID itself.
         result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while fs::read_to_string(fixture.repo.join("started"))
-                .map_or(true, |pid| pid.parse::<u32>().is_err())
-            {
-                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-            }
-        }) => {
-            result.unwrap();
-        }
-    }
-    let pid: u32 = fs::read_to_string(fixture.repo.join("started"))
-        .unwrap()
-        .parse()
-        .unwrap();
+            use tokio::io::AsyncReadExt;
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut pid = String::new();
+            socket.read_to_string(&mut pid).await.unwrap();
+            pid.parse::<u32>().unwrap()
+        }) => result.unwrap(),
+    };
     drop(call);
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while fs::read_dir(&fixture.output).unwrap().count() != 1 {
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            tokio::task::yield_now().await;
         }
     })
     .await

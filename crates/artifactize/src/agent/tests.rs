@@ -145,7 +145,7 @@ impl Fixture {
 
     async fn run(&self, responses: Vec<MockHttpResponse>) -> (Review, SequencedHttpClient) {
         let http = SequencedHttpClient::new(responses);
-        let backend = match self.config.evals[0].declaration.profile {
+        let backend = match self.config.evals[0].declaration.profile() {
             Profile::Agent { backend, .. } => backend,
             _ => unreachable!(),
         };
@@ -373,8 +373,7 @@ async fn openai_exact_payload_sequential_registry_round_trip_and_usage() {
     assert_eq!(
         fixture.config.evals[0]
             .declaration
-            .payload
-            .as_ref()
+            .payload()
             .unwrap()
             .instruction,
         "Check {a}"
@@ -622,7 +621,8 @@ fn profiles_reject_remapped_effort() {
 #[tokio::test(start_paused = true)]
 async fn deadline_stops_retry_without_extra_requests() {
     let mut fixture = Fixture::new("openai");
-    let Profile::Agent { timeout_ms, .. } = &mut fixture.config.evals[0].declaration.profile else {
+    let Profile::Agent { timeout_ms, .. } = fixture.config.evals[0].declaration.profile_mut()
+    else {
         unreachable!()
     };
     *timeout_ms = Some(std::time::Duration::from_millis(20));
@@ -761,8 +761,7 @@ async fn file_artifact_instruction_prompt_uses_target_path_and_file_kind() {
     assert_eq!(
         fixture.config.evals[0]
             .declaration
-            .payload
-            .as_ref()
+            .payload()
             .unwrap()
             .instruction,
         "Check {a}"

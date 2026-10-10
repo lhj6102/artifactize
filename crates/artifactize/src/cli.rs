@@ -227,23 +227,15 @@ impl SelectionArgs {
     fn resolve(self) -> Result<Selection, String> {
         if let Some(selector) = self.artifact {
             Ok(match selector {
-                Selector::Artifact(id) => Selection::Artifact {
-                    artifact_id: id.into(),
-                },
-                Selector::Eval(id) => Selection::Eval { eval_id: id.into() },
+                Selector::Artifact(id) => Selection::Artifact { artifact_id: id },
+                Selector::Eval(id) => Selection::Eval { eval_id: id },
             })
         } else if let Some(eval_id) = self.eval {
-            Ok(Selection::Eval {
-                eval_id: eval_id.into(),
-            })
+            Ok(Selection::Eval { eval_id })
         } else if let Some(ids) = self.evals {
-            Ok(Selection::Evals {
-                eval_ids: ids.into_iter().map(String::from).collect(),
-            })
+            Ok(Selection::Evals { eval_ids: ids })
         } else if let Some(ids) = self.artifacts {
-            Ok(Selection::Artifacts {
-                artifact_ids: ids.into_iter().map(String::from).collect(),
-            })
+            Ok(Selection::Artifacts { artifact_ids: ids })
         } else if let Some(path) = self.evals_file {
             Ok(Selection::Evals {
                 eval_ids: selection_file::<crate::types::EvalId>(&path)?,
@@ -262,7 +254,7 @@ impl SelectionArgs {
 pub struct PolicyArgs {
     /// Use a declared profile variant for every included Eval.
     #[arg(long, value_name = "NAME")]
-    profile: Option<String>,
+    profile: Option<crate::config::ProfileVariantName>,
     /// Include all Evals in the required dependency scope, including cycle peers.
     #[arg(long)]
     recursive: bool,
@@ -504,12 +496,12 @@ impl std::str::FromStr for Selector {
         }
     }
 }
-fn selection_file<T>(path: &std::path::Path) -> Result<Vec<String>, String>
+fn selection_file<T>(path: &std::path::Path) -> Result<Vec<T>, String>
 where
-    T: std::str::FromStr<Err = String> + Into<String>,
+    T: std::str::FromStr<Err = String>,
 {
     read_selection_file(path)?
         .into_iter()
-        .map(|text| text.parse::<T>().map(Into::into))
+        .map(|text| text.parse::<T>())
         .collect()
 }

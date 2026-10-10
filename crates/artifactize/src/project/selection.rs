@@ -9,7 +9,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    config::{ArtifactName, Eval, RepoConfig, identifier},
+    config::{ArtifactName, Eval, EvalId, ProfileVariantName, RepoConfig},
     graph::Graph,
 };
 
@@ -19,19 +19,19 @@ pub enum Selection {
     All,
     Artifact {
         #[serde(rename = "artifactId")]
-        artifact_id: String,
+        artifact_id: ArtifactName,
     },
     Eval {
         #[serde(rename = "evalId")]
-        eval_id: String,
+        eval_id: EvalId,
     },
     Artifacts {
         #[serde(rename = "artifactIds")]
-        artifact_ids: Vec<String>,
+        artifact_ids: Vec<ArtifactName>,
     },
     Evals {
         #[serde(rename = "evalIds")]
-        eval_ids: Vec<String>,
+        eval_ids: Vec<EvalId>,
     },
 }
 
@@ -125,7 +125,7 @@ impl Selection {
             while index < included.len() {
                 let eval = included[index];
                 if matches!(
-                    eval.declaration.profile,
+                    eval.declaration.profile(),
                     crate::config::Profile::Dependency { .. }
                 ) {
                     let roots: Vec<_> = eval.deps.iter().map(ArtifactName::as_str).collect();
@@ -135,7 +135,7 @@ impl Selection {
                         .into_iter()
                         .collect();
                     for dependency in &config.evals {
-                        if required.contains(dependency.target.as_str())
+                        if required.contains(&dependency.target)
                             && seen.insert(dependency.id.as_str())
                         {
                             included.push(dependency);
@@ -155,12 +155,12 @@ impl Selection {
         Ok(config
             .evals
             .iter()
-            .filter(|eval| required.contains(eval.target.as_str()))
+            .filter(|eval| required.contains(&eval.target))
             .collect())
     }
 }
 
-fn nonempty(ids: &[String]) -> Result<(), String> {
+fn nonempty<T>(ids: &[T]) -> Result<(), String> {
     if ids.is_empty() {
         return Err("Multi-root selection requires a nonempty array of IDs.".into());
     }
@@ -178,8 +178,8 @@ fn selected_artifact<'a>(config: &'a RepoConfig, id: &str) -> Result<&'a str, St
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ProfileSelection {
-    Named(String),
-    Evals(BTreeMap<String, String>),
+    Named(ProfileVariantName),
+    Evals(BTreeMap<EvalId, ProfileVariantName>),
 }
 
 /// Resolve complete declared profiles in owned configuration, never rewriting source files.
@@ -199,7 +199,7 @@ pub fn select_profiles(
             .iter()
             .filter(|eval| {
                 !matches!(
-                    eval.declaration.profile,
+                    eval.declaration.profile(),
                     crate::config::Profile::Dependency { .. }
                 )
             })
@@ -216,7 +216,7 @@ pub fn select_profiles(
             format!("Profile selection is outside the submitted Eval scope: {id}")
         })?;
         if matches!(
-            eval.declaration.profile,
+            eval.declaration.profile(),
             crate::config::Profile::Dependency { .. }
         ) {
             return Err(format!(
@@ -225,15 +225,20 @@ pub fn select_profiles(
         }
         let variant = eval
             .declaration
-            .profile_variants
+            .profile_variants()
             .get(name)
-            .filter(|_| identifier(name, "Profile variant name").is_ok())
             .ok_or_else(|| format!("Unknown profile variant for {id}: {name}"))?;
-        profiles.insert(id.to_owned(), (name.to_owned(), variant.clone()));
+        profiles.insert(
+            id.to_owned(),
+            (
+                name.parse().expect("declared profile variant"),
+                variant.clone(),
+            ),
+        );
     }
     for eval in &mut config.evals {
-        if let Some((name, profile)) = profiles.remove(eval.id.as_str()) {
-            eval.declaration.profile = profile;
+        if let Some((name, _profile)) = profiles.remove(eval.id.as_str()) {
+            eval.declaration.select_profile(&name)?;
             eval.variant = Some(name);
         }
     }
@@ -305,7 +310,7 @@ pub fn parse_selection_file(text: &str) -> Result<Vec<String>, String> {
 pub fn read_selection_file(path: &Path) -> Result<Vec<String>, String> {
     // Nonblocking open lets us reject a FIFO without waiting for its writer.
     let file = crate::platform::open_nonblocking(path)
-        .map_err(|error| format!("{}: {error}", path.display()))?;
+        .map_err(|error| format!("{}: {error}", crate::platform::path_text(path)))?;
     let info = file.metadata().map_err(|error| error.to_string())?;
     if !info.is_file() || info.len() > MAX_FILE_BYTES as u64 {
         return Err("Selection input must be a regular file no larger than 4 MiB.".into());

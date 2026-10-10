@@ -62,7 +62,7 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
     let config = read_workspace_config(root).unwrap();
     let eval = &config.evals[0];
     let scope = eval_scope(&config, eval).unwrap();
-    let Profile::Runtime { command, args, .. } = &eval.declaration.profile else {
+    let Profile::Runtime { command, args, .. } = &eval.declaration.profile() else {
         panic!()
     };
     let args = resolve_argv(&config, &scope, &eval.target, args).unwrap();

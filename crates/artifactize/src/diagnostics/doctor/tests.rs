@@ -1,5 +1,6 @@
 //! All finite readiness statuses preserve their exact JSON/text and report severity.
 use super::*;
+use serde_json::json;
 
 #[test]
 fn readiness_check_status_wire_display_and_severity_are_pinned() {
@@ -15,7 +16,12 @@ fn readiness_check_status_wire_display_and_severity_are_pinned() {
             state_dir: "/fixture-state".into(),
             checks: Vec::new(),
         };
-        report.add("fixture", status, "pinned message", json!({"fixture":true}));
+        report.add(
+            "fixture",
+            status,
+            "pinned message",
+            Details::State { writable: true },
+        );
         assert_eq!(report.ok, ready);
         assert_eq!(
             serde_json::to_value(&report.checks).unwrap(),
@@ -24,7 +30,7 @@ fn readiness_check_status_wire_display_and_severity_are_pinned() {
                     "name":"fixture",
                     "status":wire,
                     "message":"pinned message",
-                    "details":{"fixture":true},
+                    "details":{"writable":true},
                 },
             ])
         );
@@ -41,10 +47,28 @@ fn readiness_check_status_wire_display_and_severity_are_pinned() {
         CheckStatus::Pass,
         CheckStatus::Warn,
     ] {
-        report.add("fixture", status, "", Value::Null);
+        report.add("fixture", status, "", Details::None);
     }
     assert!(
         !report.ok,
         "later warnings/pass cannot erase an earlier failure"
+    );
+}
+
+#[test]
+fn typed_details_preserve_null_and_flat_auth_wire_forms() {
+    assert_eq!(serde_json::to_value(Details::None).unwrap(), json!(null));
+    assert_eq!(
+        serde_json::to_value(Details::Schema { schema: None }).unwrap(),
+        json!({"schema":null})
+    );
+    let codex = Details::Codex {
+        status: auth::codex::Status::Absent,
+        test_endpoint: Some("http://localhost".into()),
+        test_auth_endpoint: None,
+    };
+    assert_eq!(
+        serde_json::to_value(codex).unwrap(),
+        json!({"source":"none","expiresAt":null,"expired":false,"testEndpoint":"http://localhost"})
     );
 }

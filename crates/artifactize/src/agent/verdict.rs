@@ -6,7 +6,7 @@ use crate::{config::EvalDeclaration, tools::schema::quoted};
 /// Validate a parsed Agent or Human result without repair or owner-field rewriting.
 /// Errors list at most five failing instance paths, so a reviewer can correct the fields.
 pub fn validate_result(eval: &EvalDeclaration, value: &Value) -> Result<ValidatedResult, String> {
-    let schema = VerdictSchema::new(eval.pass_schema.as_ref(), eval.fail_schema.as_ref())?;
+    let schema = VerdictSchema::new(eval.pass_schema(), eval.fail_schema())?;
     schema
         .validate(value)
         .map_err(|error| schema.explain(error, value))?;

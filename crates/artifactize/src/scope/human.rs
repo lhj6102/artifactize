@@ -31,7 +31,7 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
                 for argument in tool.args() {
                     if let Some(reference) = reference(argument)? {
                         let target = if reference.name == "artifactPath" {
-                            owner
+                            &config.artifacts[owner.as_str()].name
                         } else {
                             reference_target(config, owner, reference.name)?
                         };
@@ -43,7 +43,7 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
                         artifacts: config
                             .artifacts
                             .iter()
-                            .map(|(id, artifact)| (id.as_str(), artifact))
+                            .map(|(id, artifact)| (id.clone(), artifact))
                             .collect(),
                     };
                     builtin_args(config, &scope, owner, tool)?;
@@ -74,15 +74,15 @@ pub(crate) fn resolve_human_argv(
                 return Ok(argument.clone());
             };
             let id = if reference.name == "artifactPath" {
-                owner
+                &config.artifacts[owner].name
             } else {
                 reference_target(config, owner, reference.name)?
             };
             super::reference_path(config, id, reference.path)?;
             let path = scope.resolve_input(&config.root, id, reference.path)?;
-            let path = path
-                .to_str()
+            path.to_str()
                 .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
+            let path = crate::platform::path_text(&path);
             Ok(format!("{}{path}", reference.prefix))
         })
         .collect()
@@ -109,7 +109,7 @@ pub(crate) fn builtin_args(
             ));
         }
         let target = if reference.name == "artifactPath" {
-            owner
+            &config.artifacts[owner].name
         } else {
             reference_target(config, owner, reference.name)?
         };

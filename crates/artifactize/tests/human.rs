@@ -886,7 +886,9 @@ async fn a_variant_human_signoff_reconnects_and_its_record_names_the_variant() {
     support::declaration::write(&path, declaration.to_string()).unwrap();
     let run = fixture
         .verify(VerifyOptions {
-            profile: Some(project::selection::ProfileSelection::Named("lead".into())),
+            profile: Some(project::selection::ProfileSelection::Named(
+                "lead".parse().unwrap(),
+            )),
             ..returning()
         })
         .await;

@@ -33,7 +33,7 @@ fn defaults_and_payload_are_preserved_without_interpolation() {
     let original = eval(json!({ "kind": "human" }));
     let declaration = parse(json!({"name": "review", "evals": [original.clone()]})).unwrap();
     assert_eq!(
-        serde_json::to_value(&declaration.evals[0].payload).unwrap(),
+        serde_json::to_value(declaration.evals[0].payload()).unwrap(),
         original["payload"]
     );
 }
@@ -53,7 +53,7 @@ fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
         .remove("instruction");
     assert!(parse(json!({"name":"a","evals":[missing]})).is_err());
     let parsed = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
-    let payload = parsed.evals[0].payload.as_ref().unwrap();
+    let payload = parsed.evals[0].payload().unwrap();
     assert_eq!(payload.instruction, "Inspect {input}.");
     assert_eq!(payload.extra["ownerData"], declared["payload"]["ownerData"]);
     assert_eq!(serde_json::to_value(payload).unwrap(), declared["payload"]);
@@ -164,7 +164,7 @@ fn fixed_scripts_preserve_literal_args_but_reject_invalid_process_fields() {
         args: actual,
         timeout_ms,
         ..
-    } = &declaration.evals[0].profile
+    } = &declaration.evals[0].profile()
     else {
         panic!()
     };
@@ -283,7 +283,7 @@ fn response_schemas_are_validated_without_rewriting_owner_fields() {
     declared["pass_schema"] = schema.clone();
     let declaration = parse(json!({"name": "a", "evals": [declared.clone()]})).unwrap();
     assert_eq!(
-        declaration.evals[0].pass_schema.as_ref().unwrap(),
+        declaration.evals[0].pass_schema().unwrap(),
         schema.as_object().unwrap()
     );
 }
@@ -399,7 +399,7 @@ fn removed_template_fields_are_unknown_but_owner_payloads_stay_literal() {
         "payload":{"instruction":"Inspect.","owner":{"$param":"/literal"}}});
     let declaration = parse(json!({"name":"a","evals":[declared]})).unwrap();
     assert_eq!(
-        declaration.evals[0].payload.as_ref().unwrap().extra["owner"],
+        declaration.evals[0].payload().unwrap().extra["owner"],
         json!({"$param":"/literal"})
     );
 }

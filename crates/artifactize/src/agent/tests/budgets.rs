@@ -11,7 +11,7 @@ async fn tool_budget_counts_unknown_and_invalid_calls_before_validation() {
     ] {
         let mut fixture = Fixture::new("openai");
         let Profile::Agent { max_tool_calls, .. } =
-            &mut fixture.config.evals[0].declaration.profile
+            fixture.config.evals[0].declaration.profile_mut()
         else {
             unreachable!()
         };
@@ -49,7 +49,7 @@ async fn tool_budget_and_duplicate_ids_span_turns() {
     for duplicate in [false, true] {
         let mut fixture = Fixture::new("openai");
         let Profile::Agent { max_tool_calls, .. } =
-            &mut fixture.config.evals[0].declaration.profile
+            fixture.config.evals[0].declaration.profile_mut()
         else {
             unreachable!()
         };
@@ -88,7 +88,8 @@ async fn tool_budget_and_duplicate_ids_span_turns() {
 #[tokio::test]
 async fn token_budget_is_cumulative_and_crosses_before_tools() {
     let mut fixture = Fixture::new("openai");
-    let Profile::Agent { max_tokens, .. } = &mut fixture.config.evals[0].declaration.profile else {
+    let Profile::Agent { max_tokens, .. } = fixture.config.evals[0].declaration.profile_mut()
+    else {
         unreachable!()
     };
     *max_tokens = Some(14);
@@ -136,7 +137,8 @@ async fn token_budget_is_cumulative_and_crosses_before_tools() {
 #[tokio::test]
 async fn token_budget_includes_anthropic_cache_reads_and_writes() {
     let mut fixture = Fixture::new("anthropic");
-    let Profile::Agent { max_tokens, .. } = &mut fixture.config.evals[0].declaration.profile else {
+    let Profile::Agent { max_tokens, .. } = fixture.config.evals[0].declaration.profile_mut()
+    else {
         unreachable!()
     };
     // 10 uncached + 2 cache reads + 5 cache writes + 4 output = 21.
@@ -154,7 +156,8 @@ async fn token_budget_includes_anthropic_cache_reads_and_writes() {
 #[tokio::test]
 async fn repair_tokens_can_exceed_budget_even_with_a_valid_verdict() {
     let mut fixture = Fixture::new("openai");
-    let Profile::Agent { max_tokens, .. } = &mut fixture.config.evals[0].declaration.profile else {
+    let Profile::Agent { max_tokens, .. } = fixture.config.evals[0].declaration.profile_mut()
+    else {
         unreachable!()
     };
     *max_tokens = Some(14);

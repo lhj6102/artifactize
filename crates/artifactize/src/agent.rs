@@ -74,7 +74,7 @@ pub async fn execute(
     recorder: &mut Recorder,
     cancellation: CancellationToken,
 ) -> Review {
-    let Profile::Agent { backend, model, .. } = &eval.declaration.profile else {
+    let Profile::Agent { backend, model, .. } = eval.declaration.profile() else {
         unreachable!("Agent executor requires an Agent profile")
     };
     match Client::new(*backend, model, state, &config.root) {
@@ -320,7 +320,7 @@ async fn run(
         timeout_ms,
         max_tokens,
         max_tool_calls,
-    } = &eval.declaration.profile
+    } = eval.declaration.profile()
     else {
         unreachable!()
     };
@@ -328,19 +328,19 @@ async fn run(
     let deadline = Instant::now() + timeout_ms;
     let registry = Registry::new(config, &eval.id)?;
     let verdict = verdict::VerdictSchema::new(
-        eval.declaration.pass_schema.as_ref(),
-        eval.declaration.fail_schema.as_ref(),
+        eval.declaration.pass_schema(),
+        eval.declaration.fail_schema(),
     )?;
     let mut request = prompt(config, eval, &registry, &verdict.schema)?;
     request.additional_params = Some(Client::parameters(
         *backend,
-        reasoning.as_deref(),
+        reasoning.map(crate::config::Reasoning::as_str),
         recorder.id(),
     )?);
     recorder.start(session::Header {
         backend: Some(*backend),
-        model: Some(model.clone()),
-        reasoning: reasoning.clone(),
+        model: Some(model.to_string()),
+        reasoning: reasoning.map(|effort| effort.to_string()),
         parameters: json!(request.additional_params),
         budgets: Some(session::Budgets {
             timeout_ms: Some(timeout_ms),
@@ -608,7 +608,7 @@ fn definitions(registry: &Registry<'_>) -> Vec<ToolDefinition> {
     registry
         .list()
         .map(|tool| ToolDefinition {
-            name: tool.name.clone(),
+            name: tool.name.to_string(),
             description: tool.description.clone(),
             parameters: tool.input_schema.clone(),
         })
@@ -648,8 +648,8 @@ fn prompt(
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
     let mut payload = eval
         .declaration
-        .payload
-        .clone()
+        .payload()
+        .cloned()
         .expect("Agent payload is validated");
     let instruction: String =
         scope::parse_artifact_instruction(&payload.instruction, &scope, &eval.references)
@@ -712,8 +712,8 @@ fn prompt(
         eval.target,
         json!(eval.deps),
         json!(artifacts),
-        json!(eval.declaration.pass_schema),
-        json!(eval.declaration.fail_schema),
+        json!(eval.declaration.pass_schema()),
+        json!(eval.declaration.fail_schema()),
     );
     let mut request = CompletionRequest::new(text).preamble(system);
     request.tools = definitions(registry);

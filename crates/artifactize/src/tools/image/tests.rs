@@ -233,6 +233,7 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
         paths.push("escape");
     }
     // Only Unix has FIFOs.
+    // Unix-only special-file or filesystem permission behavior.
     #[cfg(unix)]
     {
         crate::test_os::fifo(&output.join("fifo"));
@@ -248,6 +249,7 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
         assert!(from_output(&output, "image", "image/png").is_err());
     }
     // A junction needs no privilege and redirects the output root just the same.
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
         let _ = fs::remove_dir(&output);

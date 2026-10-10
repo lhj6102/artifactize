@@ -87,7 +87,7 @@ pub(super) async fn graph(
     let config = read_workspace_config(&context.repo.unwrap_or_else(|| PathBuf::from(".")))
         .map_err(|error| error.to_string())?;
     let selection = artifact.map_or(Selection::All, |artifact_id| Selection::Artifact {
-        artifact_id: artifact_id.into(),
+        artifact_id,
     });
     let view = crate::query::graph(&config, &selection)?;
     if context.json {

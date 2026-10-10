@@ -9,9 +9,17 @@ use std::{
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::platform::path_serde::option"
+    )]
     pub common_dir: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::platform::path_serde::option"
+    )]
     pub worktree_path: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,

@@ -134,7 +134,7 @@ impl Walk {
             .to_str()
             .ok_or("Artifact paths must be UTF-8.")?
             .to_owned();
-        let excluded = artifact.children.keys().cloned().collect();
+        let excluded = artifact.children.keys().map(ToString::to_string).collect();
         let inputs: Vec<_> = inputs
             .iter()
             .map(|input| {

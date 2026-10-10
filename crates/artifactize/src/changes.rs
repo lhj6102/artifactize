@@ -89,7 +89,7 @@ impl Dirty {
 }
 struct Inbox {
     #[cfg(test)]
-    registration: tokio::sync::watch::Sender<Option<String>>,
+    registration: tokio::sync::watch::Sender<Option<crate::config::HubEpoch>>,
     dirty: Mutex<Dirty>,
     wake: Notify,
 }
@@ -173,7 +173,8 @@ struct Publishing {
 /// Cloneable synchronous producer, also safe to invoke on the SQLite worker thread.
 #[derive(Clone, Default)]
 pub(crate) struct Publisher(Option<Arc<Publishing>>);
-static PUBLISHERS: OnceLock<Mutex<BTreeMap<String, Weak<Publishing>>>> = OnceLock::new();
+static PUBLISHERS: OnceLock<Mutex<BTreeMap<crate::config::EndpointId, Weak<Publishing>>>> =
+    OnceLock::new();
 impl Publisher {
     pub(crate) fn new(state: &Path) -> Self {
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
@@ -246,16 +247,16 @@ pub(crate) async fn drain() {
 enum Frame {
     Hello {
         version: u32,
-        identity: String,
+        identity: crate::config::EndpointId,
         subscriber: bool,
     },
     Registered {
-        epoch: String,
+        epoch: crate::config::HubEpoch,
     },
     Publish(Change),
     Delivered,
     Hint {
-        epoch: String,
+        epoch: crate::config::HubEpoch,
         sequence: u64,
         change: Change,
     },
@@ -281,7 +282,7 @@ async fn write_frame<W: AsyncWrite + Unpin>(writer: &mut W, frame: &Frame) -> st
 async fn connect(
     endpoint: &Endpoint,
     subscriber: bool,
-) -> std::io::Result<(transport::Stream, String)> {
+) -> std::io::Result<(transport::Stream, crate::config::HubEpoch)> {
     let mut stream = endpoint.connect().await?;
     write_frame(
         &mut stream,
@@ -428,7 +429,7 @@ async fn watch(
 }
 async fn receive(
     mut stream: transport::Stream,
-    epoch: String,
+    epoch: crate::config::HubEpoch,
     inbox: Arc<Inbox>,
 ) -> std::io::Result<()> {
     let mut previous = None;
@@ -461,7 +462,10 @@ async fn serve(
     _owner: std::fs::File,
     cancel: CancellationToken,
 ) -> std::io::Result<()> {
-    let epoch = crate::agent::uuid().map_err(std::io::Error::other)?;
+    let epoch: crate::config::HubEpoch = crate::agent::uuid()
+        .map_err(std::io::Error::other)?
+        .parse()
+        .expect("UUID hub epoch");
     let (sender, _) = broadcast::channel(MAX_BACKLOG);
     let sequence = Arc::new(Mutex::new(0_u64));
     let mut clients = JoinSet::new();
@@ -489,8 +493,8 @@ async fn serve(
 }
 async fn client(
     mut stream: transport::Stream,
-    identity: String,
-    epoch: String,
+    identity: crate::config::EndpointId,
+    epoch: crate::config::HubEpoch,
     sender: broadcast::Sender<Hint>,
     sequence: Arc<Mutex<u64>>,
 ) -> std::io::Result<()> {

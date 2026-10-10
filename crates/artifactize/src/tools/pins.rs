@@ -1,12 +1,7 @@
 //! SHA-256 pins of the files Agent tools execute (`executionPaths`), recorded in the
 //! provenance of every Agent result so that results show which binary produced them.
 
-use std::{
-    collections::BTreeMap,
-    fs::{self, File},
-    io::Read,
-    path::Path,
-};
+use std::{collections::BTreeMap, fs::File, io::Read, path::Path};
 
 use sha2::{Digest, Sha256};
 
@@ -22,7 +17,10 @@ const MAX_ENTRIES: usize = 10_000;
 const MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Pins by registered tool name, then by declared workspace-relative path.
-pub type Pins = BTreeMap<String, BTreeMap<String, String>>;
+pub type Pins = BTreeMap<
+    crate::config::ToolName,
+    BTreeMap<crate::config::LogicalPath, crate::types::Sha256Digest>,
+>;
 
 /// Hash every `executionPaths` entry of the Agent eval's command tools, off the async runtime.
 /// A file pins to the SHA-256 of its bytes; a directory to the SHA-256 over each entry's
@@ -50,7 +48,9 @@ pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins,
         for (name, path, absolute) in resolved {
             let digest =
                 pin(&absolute).map_err(|e| format!("Tool {name} executionPaths {path}: {e}"))?;
-            pins.entry(name).or_default().insert(path, digest);
+            pins.entry(name)
+                .or_default()
+                .insert(path, digest.parse().expect("SHA-256 pin digest"));
         }
         Ok(pins)
     })
@@ -59,13 +59,13 @@ pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins,
 }
 
 fn pin(path: &Path) -> Result<String, String> {
-    let metadata = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    let kind = platform::path_kind(path).map_err(|e| e.to_string())?;
     let mut bytes = 0;
-    if metadata.is_file() {
-        let file = File::open(path).map_err(|e| e.to_string())?;
+    if kind == platform::FileKind::File {
+        let file = platform::open_regular(path).map_err(|e| e.to_string())?;
         return Ok(hex(&hash_file(file, &mut bytes)?));
     }
-    if !metadata.is_dir() {
+    if kind != platform::FileKind::Directory {
         return Err("execution paths must be regular files or directories.".into());
     }
     let directory = platform::open_directory(path).map_err(|e| e.to_string())?;
@@ -117,7 +117,8 @@ fn walk(
             }
             platform::FileKind::Symlink => {
                 let target = platform::link_target(&path.join(&name)).map_err(|e| e.to_string())?;
-                let target = target.to_str().ok_or("execution paths must be UTF-8.")?;
+                target.to_str().ok_or("execution paths must be UTF-8.")?;
+                let target = platform::path_text(&target);
                 entries.push((label, b'l', Sha256::digest(target.as_bytes()).into()));
             }
             platform::FileKind::Other => {
