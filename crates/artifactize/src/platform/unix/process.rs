@@ -64,31 +64,38 @@ impl Child {
 #[cfg(target_os = "macos")]
 fn process_group_exited(pgid: u32) -> io::Result<bool> {
     let pgid = i32::try_from(pgid).map_err(|_| io::ErrorKind::InvalidInput)?;
-    // libproc's size query includes spare PID capacity; only the copy's length is used.
+    // libproc returns PID counts, not bytes, including spare capacity on a size query.
     // SAFETY: a null buffer asks for capacity and does not read or write records.
-    let bytes = unsafe { libc::proc_listpgrppids(pgid, std::ptr::null_mut(), 0) };
-    if bytes <= 0 {
+    let capacity = unsafe { libc::proc_listpgrppids(pgid, std::ptr::null_mut(), 0) };
+    if capacity <= 0 {
         return Err(io::Error::last_os_error());
     }
+    let bytes = capacity
+        .checked_mul(std::mem::size_of::<i32>() as i32)
+        .ok_or_else(|| io::Error::other("process group information size overflow"))?;
     // Bound kernel-reported allocations and reject a truncated list rather than
     // overlooking a live descendant. No signalling or enumeration retries.
     const MAX_GROUP_INFO_BYTES: i32 = 16 * 1024 * 1024;
     if bytes > MAX_GROUP_INFO_BYTES {
         return Err(io::Error::other("process group information exceeds 16 MiB"));
     }
-    let mut pids = vec![0_i32; bytes as usize / std::mem::size_of::<i32>()];
-    // SAFETY: the aligned PID buffer has the queried byte capacity.
-    let read = unsafe { libc::proc_listpgrppids(pgid, pids.as_mut_ptr().cast(), bytes) };
-    if read < 0 {
-        return Err(io::Error::last_os_error());
+    let mut pids = vec![0_i32; capacity as usize];
+    // libproc also returns zero on error. Clear this thread's errno before the call
+    // so an empty group is distinguishable from a failed enumeration.
+    // SAFETY: __error returns this thread's writable errno; the aligned PID buffer
+    // has the queried byte capacity. Both calls execute on the same thread.
+    let (read, error) = unsafe {
+        *libc::__error() = 0;
+        let read = libc::proc_listpgrppids(pgid, pids.as_mut_ptr().cast(), bytes);
+        (read, io::Error::last_os_error())
+    };
+    if read < 0 || (read == 0 && error.raw_os_error() != Some(0)) {
+        return Err(error);
     }
-    if read >= bytes || read as usize % std::mem::size_of::<i32>() != 0 {
+    if read >= capacity {
         return Err(io::Error::other("incomplete process group information"));
     }
-    for pid in pids
-        .into_iter()
-        .take(read as usize / std::mem::size_of::<i32>())
-    {
+    for pid in pids.into_iter().take(read as usize) {
         // Include zombies explicitly. ESRCH means the listed member was reaped
         // during inspection; every other lookup error must remain an error.
         match process_info(pid, 1) {
