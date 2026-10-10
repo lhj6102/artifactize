@@ -544,7 +544,7 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
     let fixture = Fixture::new();
     let markers = concurrent_scripts(&fixture);
     let status = |jobs: &str| {
-        let child = fixture
+        let mut child = fixture
             .command()
             .args(["status", "--json", "--fingerprint-jobs", jobs])
             .stdout(Stdio::piped())
@@ -567,6 +567,14 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
             .count()
             < bound
         {
+            if child.try_wait().unwrap().is_some() {
+                let output = child.wait_with_output().unwrap();
+                panic!(
+                    "status ended before its fingerprint workers met: {}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
             assert!(
                 Instant::now() < deadline,
                 "fingerprint workers did not reach the barrier"

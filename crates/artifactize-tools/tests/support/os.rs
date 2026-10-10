@@ -242,10 +242,17 @@ pub fn timeout_tree(binary: &str, root: &Path) -> std::process::Output {
         .expect("the help child completed its startup handshake")
         .unwrap();
     stream.set_read_timeout(Some(CLEANUP_WATCHDOG)).unwrap();
-    assert_eq!(
-        stream.read(&mut [0]).unwrap(),
-        0,
-        "the help child outlived the timeout"
-    );
+    // The child's end closes when it ends: an orderly close on Unix, a reset on Windows,
+    // which tears down the connections of a terminated process.
+    match stream.read(&mut [0]) {
+        Ok(read) => assert_eq!(read, 0, "the help child outlived the timeout"),
+        Err(error) => assert!(
+            matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+            ),
+            "the help child outlived the timeout: {error}"
+        ),
+    }
     output
 }
