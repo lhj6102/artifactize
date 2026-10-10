@@ -965,6 +965,90 @@ mod acl {
     }
 }
 
+/// Run one test in a fresh process with a literal environment, without mutating the
+/// parallel test runner's environment.
+pub fn run_test(test: &str, environment: &[(&str, std::ffi::OsString)]) -> std::process::Output {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command.args(["--exact", test, "--nocapture"]);
+    for (name, value) in environment {
+        command.env(name, value);
+    }
+    command.output().unwrap()
+}
+
+/// An external editor fixture, compiled rather than relying on a Python installation or
+/// shell shebang. The platform editor receives its quoted path as a command.
+pub fn editor_command(directory: &Path, text: &str) -> String {
+    let source = directory.join("draft-editor.rs");
+    std::fs::write(&source, format!("fn main() {{ std::fs::write(std::env::args_os().nth(1).unwrap(), {text:?}).unwrap(); }}")).unwrap();
+    let executable = directory.join(format!("draft-editor{}", std::env::consts::EXE_SUFFIX));
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let output = Command::new(rustc)
+        .args(["--edition", "2024", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    format!("\"{}\"", executable.to_string_lossy())
+}
+
+/// Create or replace an owner-only fixture file. Replacement keeps the inode for tests
+/// of same-sized rewrites; atomic replacement is set up explicitly by those tests.
+pub fn rewrite_private_file(path: &Path, contents: impl AsRef<[u8]>) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .unwrap();
+    }
+    #[cfg(windows)]
+    {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
+        acl::restrict(path);
+    }
+    std::fs::write(path, contents).unwrap();
+}
+
+/// Pin a fixture's last-write time independently of clock resolution and scheduling.
+pub fn set_modified(path: &Path, time: std::time::SystemTime) {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(time)
+        .unwrap();
+}
+
+/// Run Git against a fixture repository; no shell or process-status decoding in tests.
+pub fn git(path: &Path, arguments: &[&str]) {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(arguments)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 /// Point a copied declaration's Unix commands at the stand-ins, and with `deadlines` give
 /// its deadlines of a second or more `os::slow` room. The runtime fixture's `check.sh`
 /// compares its working folder as a file rather than as text: Windows spells that folder

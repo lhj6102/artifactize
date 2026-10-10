@@ -82,8 +82,8 @@ fn line(nodes: &[Node], id: &str) -> String {
     find(nodes, id).line()
 }
 
-fn x(ids: &[&str]) -> Vec<String> {
-    ids.iter().map(|id| (*id).to_owned()).collect()
+fn x(ids: &[&str]) -> Vec<crate::types::ArtifactName> {
+    ids.iter().map(|id| id.parse().unwrap()).collect()
 }
 
 /// code-style ← cli ← docs, each with one eval.
@@ -213,7 +213,7 @@ fn queued_for_a_slot_or_jobs_differs_from_waiting_for_an_artifact() {
             json!({
                 "blockedReason":"Waiting for a free codex slot: all 2 are in use on this machine (limits.json).",
             }),
-            Queue::Slot("codex".into()),
+            Queue::Slot(crate::config::Backend::Codex),
             "queued · codex slots full",
         ),
         (
@@ -331,7 +331,7 @@ fn every_x_waiting_adds_one_level_of_root_cause() {
         view(&nodes, "docs/matches-cli"),
         &EvalView::WaitingOn(Waits {
             x: x(&["cli"]),
-            root: Some(("cli".into(), "code-style".into()))
+            root: Some(("cli".parse().unwrap(), "code-style".parse().unwrap()))
         })
     );
     assert_eq!(
@@ -350,7 +350,7 @@ fn every_x_waiting_adds_one_level_of_root_cause() {
 }
 
 /// style ← {api, web} (one SCC) with a dependency eval in api naming its peer web.
-fn cycle(dependency_status: &str) -> (Vec<Node>, Vec<(String, Vec<String>)>) {
+fn cycle(dependency_status: &str) -> (Vec<Node>, Vec<(String, Vec<crate::types::ArtifactName>)>) {
     let definitions = definitions(
         &[(&["style"], &[]), (&["web", "api"], &[0])],
         vec![
@@ -559,7 +559,7 @@ fn artifact_rows_roll_up_current_eval_rows_and_mark_changes_after_the_run() {
     let detail = detail(
         &run,
         &saved_requests,
-        &Target::Artifact("code-style".into()),
+        &Target::Artifact("code-style".parse().unwrap()),
         now(),
     );
     assert_eq!(detail.field("Status"), Some("✓ complete · 1/1 Evals GREEN"));
@@ -726,7 +726,7 @@ fn waits_for_detail_lists_upstream_with_origins_and_pending_evals() {
     let detail = detail(
         &run,
         &requests,
-        &Target::Eval("cli/follows-style".into()),
+        &Target::Eval("cli/follows-style".parse().unwrap()),
         now(),
     );
     assert_eq!(
@@ -789,10 +789,16 @@ fn upstream_rows_are_marked_counted_off_screen_and_reached_with_b() {
     let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
     wide(&mut monitor);
     // up-a/x runs, so the cursor starts there; up-b is all done and folded.
-    assert_eq!(monitor.target(), Some(Target::Eval("up-a/x".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Eval("up-a/x".parse().unwrap()))
+    );
     let text = render(&mut monitor, 200, 60);
     assert!(text.contains("│ ▸ ✓ up-b  "), "{text}");
-    monitor.tree.select(vec!["a:m1".into(), "e:m1/x".into()]);
+    monitor.tree.select(vec![
+        "a:m1".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:m1/x".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     let text = render(&mut monitor, 200, 60);
     // Unmet upstream first; a complete one still gets a (dim) marker.
     assert!(text.contains("│↑▾ ◐ up-a  "), "{text}");
@@ -803,9 +809,9 @@ fn upstream_rows_are_marked_counted_off_screen_and_reached_with_b() {
     );
     assert!(text.contains("b/Backspace blocker"), "{text}");
     for expected in [
-        Target::Artifact("up-a".into()),
-        Target::Artifact("up-b".into()),
-        Target::Artifact("up-a".into()),
+        Target::Artifact("up-a".parse().unwrap()),
+        Target::Artifact("up-b".parse().unwrap()),
+        Target::Artifact("up-a".parse().unwrap()),
     ] {
         monitor.key(KeyEvent::from(KeyCode::Char('b')));
         assert_eq!(monitor.target(), Some(expected));
@@ -814,14 +820,23 @@ fn upstream_rows_are_marked_counted_off_screen_and_reached_with_b() {
         assert!(text.contains("│↑▸ ✓ up-b  "), "{text}");
     }
     monitor.key(KeyEvent::from(KeyCode::Backspace));
-    assert_eq!(monitor.target(), Some(Target::Eval("m1/x".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Eval("m1/x".parse().unwrap()))
+    );
     // Off-screen marks are counted on the borders, separately above and below. The Run
     // headline leaves eleven tree rows at this height.
-    monitor.tree.select(vec!["a:m6".into(), "e:m6/x".into()]);
+    monitor.tree.select(vec![
+        "a:m6".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:m6/x".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     let text = render(&mut monitor, 200, 18);
     assert!(text.contains("↑1 above"), "{text}");
     assert!(!text.contains("below"), "{text}");
-    monitor.tree.select(vec!["a:m1".into(), "e:m1/x".into()]);
+    monitor.tree.select(vec![
+        "a:m1".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:m1/x".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     render(&mut monitor, 200, 18);
     monitor.tree.scroll_down(3);
     let text = render(&mut monitor, 200, 18);
@@ -830,17 +845,28 @@ fn upstream_rows_are_marked_counted_off_screen_and_reached_with_b() {
     let text = render(&mut monitor, 200, 18);
     assert!(!text.contains("above") && !text.contains("below"), "{text}");
     // A row without upstream: no marks, no hint, and `b` stays put.
-    monitor.tree.select(vec!["a:m2".into(), "e:m2/x".into()]);
+    monitor.tree.select(vec![
+        "a:m2".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:m2/x".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     let text = render(&mut monitor, 200, 60);
     assert!(!text.contains("│↑") && !text.contains("blocker"), "{text}");
     monitor.key(KeyEvent::from(KeyCode::Char('b')));
-    assert_eq!(monitor.target(), Some(Target::Eval("m2/x".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Eval("m2/x".parse().unwrap()))
+    );
 }
 
 #[test]
 fn a_dependency_eval_marks_a_peer_below_it() {
     let (nodes, _) = cycle("WAIT_DEPENDENCY");
-    let path = ["a:api".to_owned(), "e:api/ready".to_owned()];
+    let path = [
+        "a:api".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:api/ready"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ];
     let upstream = fold::upstream(&nodes, &path);
     let mut state = tui_tree_widget::TreeState::default();
     for node in &nodes {
@@ -884,19 +910,28 @@ fn a_dependency_eval_marks_a_peer_below_it() {
 fn refreshes_fold_done_artifacts_unless_the_user_toggled_them() {
     let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
     wide(&mut monitor);
-    let opened =
-        |monitor: &Monitor, id: &str| monitor.tree.opened().contains(&vec![format!("a:{id}")]);
+    let opened = |monitor: &Monitor, id: &str| {
+        monitor
+            .tree
+            .opened()
+            .contains(&vec![model::NodeId::artifact(id.parse().unwrap())])
+    };
     assert!(opened(&monitor, "up-a") && !opened(&monitor, "up-b") && opened(&monitor, "m1"));
     render(&mut monitor, 200, 60);
     // The user unfolds up-b and folds m2.
-    monitor.tree.select(vec!["a:up-b".into()]);
+    monitor.tree.select(vec![
+        "a:up-b".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     monitor.key(KeyEvent::from(KeyCode::Char(' ')));
-    monitor.tree.select(vec!["a:m2".into()]);
+    monitor.tree.select(vec![
+        "a:m2".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     monitor.key(KeyEvent::from(KeyCode::Char('h')));
     // up-a finishes while the cursor sits on its eval; m2 finishes too.
-    monitor
-        .tree
-        .select(vec!["a:up-a".into(), "e:up-a/x".into()]);
+    monitor.tree.select(vec![
+        "a:up-a".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:up-a/x".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     let (_, requests) = monitor.run.as_mut().unwrap();
     for view in requests {
         if matches!(view.request.eval_id.as_str(), "up-a/x" | "m2/x") {
@@ -905,7 +940,10 @@ fn refreshes_fold_done_artifacts_unless_the_user_toggled_them() {
     }
     monitor.sync_tree(false);
     assert!(!opened(&monitor, "up-a"), "folded once all done");
-    assert_eq!(monitor.target(), Some(Target::Artifact("up-a".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Artifact("up-a".parse().unwrap()))
+    );
     assert!(opened(&monitor, "up-b"), "the user's unfold stays");
     assert!(!opened(&monitor, "m2"), "the user's fold stays");
     assert!(opened(&monitor, "m1"));
@@ -932,7 +970,11 @@ fn compact_rows_keep_glyph_name_and_one_right_column() {
     for node in &nodes {
         state.open(vec![node.id.clone()]);
     }
-    state.select(vec!["a:code-style".into()]);
+    state.select(vec![
+        "a:code-style"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     let mut terminal = Terminal::new(TestBackend::new(28, 6)).unwrap();
     terminal
         .draw(|frame| {
@@ -1002,7 +1044,7 @@ fn a_done_eval_held_by_its_own_gates_does_not_fulfil_downstream_gates() {
     assert_eq!(
         find(&nodes, "e:docs/matches-cli").upstream,
         [Upstream {
-            artifact: "cli".into(),
+            artifact: "cli".parse().unwrap(),
             completion: Completion::Waiting { blocked: true }
         }]
     );
@@ -1019,7 +1061,7 @@ fn a_done_eval_held_by_its_own_gates_does_not_fulfil_downstream_gates() {
         view(&nodes, "docs/matches-cli"),
         &EvalView::WaitingOn(Waits {
             x: x(&["cli"]),
-            root: Some(("cli".into(), "code-style".into()))
+            root: Some(("cli".parse().unwrap(), "code-style".parse().unwrap()))
         })
     );
     assert_eq!(
@@ -1089,12 +1131,22 @@ fn a_done_eval_held_by_its_own_gates_does_not_fulfil_downstream_gates() {
 fn backspace_lands_on_a_visible_row_after_the_origin_folded() {
     let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
     wide(&mut monitor);
-    let opened =
-        |monitor: &Monitor, id: &str| monitor.tree.opened().contains(&vec![format!("a:{id}")]);
-    monitor.tree.select(vec!["a:m6".into(), "e:m6/x".into()]);
+    let opened = |monitor: &Monitor, id: &str| {
+        monitor
+            .tree
+            .opened()
+            .contains(&vec![model::NodeId::artifact(id.parse().unwrap())])
+    };
+    monitor.tree.select(vec![
+        "a:m6".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:m6/x".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     render(&mut monitor, 200, 60);
     monitor.key(KeyEvent::from(KeyCode::Char('b')));
-    assert_eq!(monitor.target(), Some(Target::Artifact("up-a".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Artifact("up-a".parse().unwrap()))
+    );
     // Meanwhile up-a and m6 finish, and m6 folds automatically.
     let (_, requests) = monitor.run.as_mut().unwrap();
     for view in requests {
@@ -1105,14 +1157,20 @@ fn backspace_lands_on_a_visible_row_after_the_origin_folded() {
     monitor.sync_tree(false);
     assert!(!opened(&monitor, "m6"));
     monitor.key(KeyEvent::from(KeyCode::Backspace));
-    assert_eq!(monitor.target(), Some(Target::Eval("m6/x".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Eval("m6/x".parse().unwrap()))
+    );
     assert!(opened(&monitor, "m6"), "the origin unfolds");
     let text = render(&mut monitor, 200, 60);
     assert!(text.contains("│ ▾ ✓ m6 "), "{text}");
     // The unfold counts as the user's: later refreshes leave it open.
     monitor.sync_tree(false);
     assert!(opened(&monitor, "m6"));
-    assert_eq!(monitor.target(), Some(Target::Eval("m6/x".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Eval("m6/x".parse().unwrap()))
+    );
 }
 
 #[test]
@@ -1184,9 +1242,7 @@ fn large_runs_build_without_quadratic_lookups() {
         })
         .collect();
     let (run, requests) = saved(definitions, true, requests);
-    let started = std::time::Instant::now();
     let nodes = tree(&run, &requests, now());
-    let elapsed = started.elapsed();
     assert_eq!(nodes.len(), count);
     // A wait chain: every row waits for a waiting Artifact, one level of cause each.
     assert_eq!(
@@ -1197,8 +1253,8 @@ fn large_runs_build_without_quadratic_lookups() {
         line(&nodes, "e:a00011/x"),
         "… x  waits for a00010 ◐ in progress"
     );
-    // Generous for debug builds on slow CI; the superlinear version took minutes.
-    assert!(elapsed < std::time::Duration::from_secs(10), "{elapsed:?}");
+    // Each Eval has exactly one view and one readiness derivation, even on a long chain.
+    assert_eq!(model::derivation_count(&run, &requests), 20_000);
 }
 
 #[test]
@@ -1340,7 +1396,7 @@ fn effective_statuses_saved_at_run_end_are_not_changes() {
 }
 
 /// Rows marked with `*`, as `id` → changed.
-fn marks(nodes: &[Node]) -> Vec<(String, bool)> {
+fn marks(nodes: &[Node]) -> Vec<(model::NodeId, bool)> {
     nodes
         .iter()
         .flat_map(|node| std::iter::once(node).chain(&node.children))
@@ -1372,11 +1428,26 @@ fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
     assert_eq!(
         marks(&nodes),
         [
-            ("a:a".to_owned(), true),
-            ("e:a/one".to_owned(), true),
-            ("e:a/two".to_owned(), false),
-            ("a:b".to_owned(), false),
-            ("e:b/x".to_owned(), false),
+            (
+                "a:a".parse::<crate::monitor::model::NodeId>().unwrap(),
+                true
+            ),
+            (
+                "e:a/one".parse::<crate::monitor::model::NodeId>().unwrap(),
+                true
+            ),
+            (
+                "e:a/two".parse::<crate::monitor::model::NodeId>().unwrap(),
+                false
+            ),
+            (
+                "a:b".parse::<crate::monitor::model::NodeId>().unwrap(),
+                false
+            ),
+            (
+                "e:b/x".parse::<crate::monitor::model::NodeId>().unwrap(),
+                false
+            ),
         ]
     );
     assert_eq!(
@@ -1420,7 +1491,10 @@ fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
             .into_iter()
             .filter(|(_, changed)| *changed)
             .collect::<Vec<_>>(),
-        [("e:a/one".to_owned(), true)]
+        [(
+            "e:a/one".parse::<crate::monitor::model::NodeId>().unwrap(),
+            true
+        )]
     );
 }
 
@@ -1428,7 +1502,10 @@ fn changes_after_the_run_are_a_diff_against_the_run_end_derivation() {
 async fn detail_shows_waits_for_as_a_section_with_pending_evals_behind_w() {
     let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
     wide(&mut monitor);
-    monitor.tree.select(vec!["a:m1".into(), "e:m1/x".into()]);
+    monitor.tree.select(vec![
+        "a:m1".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:m1/x".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     // The peek names the Artifacts and how many of their evals are pending.
     let text = render(&mut monitor, 200, 40);
     assert!(text.contains("Waits for:"), "{text}");

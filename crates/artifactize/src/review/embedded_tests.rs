@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::json;
 
 fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
@@ -72,7 +72,7 @@ fn opened(state: &std::path::Path, view: RequestView, reviewer: &str) -> Review 
         state.to_path_buf(),
         None,
         reviewer.into(),
-        Some(view.request.id.to_string()),
+        Some(view.request.id.clone()),
     );
     review.load_single(view);
     review
@@ -174,7 +174,7 @@ fn nested_json_is_utf8_editable_and_enter_is_not_submit() {
             "list":{"type":"array","items":{"type":"string"}},
         },
     });
-    let mut form = Form::new("RED", Some(&schema));
+    let mut form = Form::new(crate::runtime::Verdict::Red, Some(&schema));
     form.json = Some(String::new());
     form.cursor = 0;
     form.paste("{\"nested\":{\"name\":\"한글\"},\"list\":[\"é\"]}");
@@ -283,13 +283,11 @@ async fn remote_failure_after_local_submit_leaves_completed_modal_not_resubmissi
     )
     .unwrap();
     let credentials = state.join("auth");
-    crate::platform::create_private_dir_all(&credentials).unwrap();
-    let file = crate::platform::private_options()
-        .write(true)
-        .create_new(true)
-        .open(credentials.join("remote-token.json"))
-        .unwrap();
-    serde_json::to_writer(file, &json!({"url":url,"token":"fixture-token-never-real"})).unwrap();
+    crate::test_os::create_private_dir_all(&credentials);
+    crate::test_os::write_private_file(
+        &credentials.join("remote-token.json"),
+        json!({"url":url,"token":"fixture-token-never-real"}).to_string(),
+    );
     let server = tokio::spawn(async move {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let (mut connection, _) = listener.accept().await.unwrap();
@@ -460,7 +458,10 @@ async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
     assert!(review.settled());
     assert_eq!(review.control(Control::RunTool), Action::None);
     assert_eq!(review.mode(), &Mode::Request);
-    assert_eq!(review.drafts["RED"].fields[0].display(), "draft with 한글");
+    assert_eq!(
+        review.drafts[&crate::runtime::Verdict::Red].fields[0].display(),
+        "draft with 한글"
+    );
 }
 
 #[tokio::test]
@@ -468,7 +469,7 @@ async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;
     let id = view.request.id.clone();
-    let mut review = Review::new(state.clone(), None, "alice".into(), Some(id.to_string()));
+    let mut review = Review::new(state.clone(), None, "alice".into(), Some(id.clone()));
     review.refresh().await;
     let Action::Start(job) = review.key(KeyEvent::from(KeyCode::Char('c'))) else {
         panic!("claim job");
@@ -530,7 +531,7 @@ async fn keyboard_reclaim_restores_the_release_draft() {
 #[test]
 fn wrapped_flat_fields_share_their_actual_rendered_hit_rows() {
     let form = Form::new(
-        "RED",
+        crate::runtime::Verdict::Red,
         Some(&json!({
             "type":"object",
             "properties":{
@@ -567,7 +568,7 @@ fn wrapped_flat_fields_share_their_actual_rendered_hit_rows() {
 #[test]
 fn long_json_line_keeps_unicode_cursor_visible() {
     let mut form = Form::new(
-        "RED",
+        crate::runtime::Verdict::Red,
         Some(&json!({"type":"object","properties":{"nested":{"type":"object"}}})),
     );
     form.json = Some(format!("{}한글", "x".repeat(140)));
@@ -642,7 +643,7 @@ fn keyboard_pages_flat_fields_without_mouse_capture() {
         .map(|n| (format!("field-{n:02}"), json!({"type":"string"})))
         .collect();
     review.mode = Mode::Form(Form::new(
-        "RED",
+        crate::runtime::Verdict::Red,
         Some(&json!({"type":"object","properties":properties})),
     ));
     press(&mut review, KeyEvent::from(KeyCode::PageDown));
@@ -668,7 +669,7 @@ fn keyboard_pages_flat_fields_without_mouse_capture() {
 /// The owner's file Artifact sign-off: a FILE Artifact whose launch tool opens the file, and a
 /// GREEN schema whose only required property is a `const` without `type`.
 fn file_signoff() -> (tempfile::TempDir, PathBuf, PathBuf) {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     let brand = repo.join("assets/brand");
@@ -770,7 +771,7 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
         state.clone(),
         Some(repo.clone()),
         "alice".into(),
-        Some(followers[0].request.id.to_string()),
+        Some(followers[0].request.id.clone()),
     );
     review.refresh().await;
     assert_eq!(review.open.as_ref(), Some(&original.request.id));
@@ -866,7 +867,7 @@ fn const_properties_are_fixed_fields_with_or_without_a_type() {
             "required":["approved"],
             "additionalProperties":false,
         });
-        let form = Form::new("GREEN", Some(&schema));
+        let form = Form::new(crate::runtime::Verdict::Green, Some(&schema));
         assert!(form.json.is_none(), "{schema}");
         assert_eq!(form.fields[0].input, Input::Fixed(json!(true)));
         assert_eq!(form.fields[0].display(), "true (fixed)");

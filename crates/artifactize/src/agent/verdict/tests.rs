@@ -19,7 +19,10 @@ fn exact_object_and_declared_owner_fields_only() {
         assert!(schema.parse(invalid).is_err(), "{invalid}");
     }
     assert_eq!(
-        schema.parse(" \n{\"verdict\":\"RED\"}\t").unwrap(),
+        schema
+            .parse(" \n{\"verdict\":\"RED\"}\t")
+            .unwrap()
+            .into_json(),
         json!({"verdict":"RED"})
     );
 }
@@ -40,7 +43,10 @@ fn schema_uses_jsonschema_without_rewriting_owner_values() {
     });
     let schema = VerdictSchema::new(owner.as_object(), None).unwrap();
     let result = json!({"verdict":"GREEN","evidence":["  keep spacing  ",3]});
-    assert_eq!(schema.parse(&result.to_string()).unwrap(), result);
+    assert_eq!(
+        schema.parse(&result.to_string()).unwrap().into_json(),
+        result
+    );
     assert!(
         schema
             .parse(r#"{"verdict":"GREEN","evidence":[-1]}"#)
@@ -65,16 +71,13 @@ fn raw_and_normalized_size_limits_are_explicit_not_truncation() {
     let owner = json!({"properties":{"reason":{"type":"string"}}});
     let schema = VerdictSchema::new(owner.as_object(), None).unwrap();
     let prefix = r#"{"verdict":"GREEN","reason":""#;
-    let text = format!(
-        "{prefix}{}\"}}",
-        "x".repeat(MAX_RESULT_CHARS - prefix.len() - 2)
-    );
+    let text = format!("{prefix}{}\"}}", "x".repeat(256_000 - prefix.len() - 2));
     assert!(schema.parse(&text).is_ok());
     let too_big = text.replacen('x', "xx", 1);
     assert!(schema.parse(&too_big).unwrap_err().contains("normalized"));
     assert!(
         schema
-            .parse(&"x".repeat(MAX_RESPONSE_BYTES + 1))
+            .parse(&"x".repeat(1_048_577))
             .unwrap_err()
             .contains("1 MiB")
     );
@@ -83,7 +86,7 @@ fn raw_and_normalized_size_limits_are_explicit_not_truncation() {
         schema
             .parse(&format!(
                 "{compact}{}",
-                " ".repeat(MAX_RESPONSE_BYTES - compact.len())
+                " ".repeat(1_048_576 - compact.len())
             ))
             .is_ok()
     );
@@ -112,7 +115,7 @@ fn parsed_human_submission_uses_same_validation_without_repair() {
     }))
     .unwrap();
     let valid = json!({"verdict":"GREEN","reason":"  preserved  "});
-    assert_eq!(validate_result(&eval, &valid).unwrap(), valid);
+    assert_eq!(validate_result(&eval, &valid).unwrap().into_json(), valid);
     assert!(validate_result(&eval, &json!({"verdict":"RED"})).is_ok());
     for invalid in [
         json!({"verdict":"GREEN"}),

@@ -6,7 +6,7 @@
 mod lookup_tests;
 
 use std::{
-    env, fs,
+    fs,
     io::{Read, Write},
     net::IpAddr,
     path::Path,
@@ -95,7 +95,7 @@ pub struct Failure {
 }
 
 fn variable(name: &str) -> Option<String> {
-    env::var(name).ok().filter(|value| !value.is_empty())
+    crate::platform::environment::var_text(name).filter(|value| !value.is_empty())
 }
 
 /// Accept HTTPS, or plain HTTP only on loopback; never credentials, queries or fragments.
@@ -332,7 +332,10 @@ impl Remote {
     }
 
     /// Decode each record at the HTTP boundary; malformed entries remain individually skippable.
-    pub async fn lookup(&self, keys: &[String]) -> Result<Vec<Result<Record, String>>, Failure> {
+    pub async fn lookup(
+        &self,
+        keys: &[crate::types::ReuseKey],
+    ) -> Result<Vec<Result<Record, String>>, Failure> {
         #[derive(Deserialize)]
         struct Found {
             entries: Vec<Value>,

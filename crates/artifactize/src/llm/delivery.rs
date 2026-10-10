@@ -30,6 +30,8 @@ const PENDING_BYTES: usize = 64 * 1024;
 const FRAME_SLICE: usize = 4096;
 /// Bound pathological empty summary parts and provider item identities independently.
 const SUMMARY_PARTS: usize = 256;
+/// Bound provider-controlled SSE item identifiers retained by the delivery tap;
+/// 1 KiB accommodates opaque IDs without allowing unbounded per-block memory.
 const ITEM_ID_BYTES: usize = 1024;
 
 struct Pending {

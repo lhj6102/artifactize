@@ -48,6 +48,7 @@ const CALLBACK_PATH: &str = "/auth/callback";
 const SCOPE: &str = "openid profile email offline_access";
 /// The `originator` that sign-in and every Codex request name.
 pub const ORIGINATOR: &str = "artifactize";
+#[cfg(test)]
 const CLAIM: &str = "https://api.openai.com/auth";
 const CREDENTIALS: &str = "codex.json";
 const LOCK: &str = "codex";
@@ -81,7 +82,7 @@ const LOGIN_REQUIRED: &str =
 struct Credentials {
     access_token: String,
     refresh_token: String,
-    account_id: String,
+    account_id: crate::types::CodexAccountId,
     expires_at: u64,
     saved_at: u64,
 }
@@ -112,7 +113,7 @@ impl From<&str> for TokenError {
 /// A bearer token and the ChatGPT account it belongs to. Never printed or logged.
 pub struct Token {
     pub access_token: String,
-    pub account_id: String,
+    pub account_id: crate::types::CodexAccountId,
 }
 
 pub(crate) fn now() -> Result<u64, String> {
@@ -129,7 +130,7 @@ pub fn auth_root() -> Result<String, String> {
 
 /// The configured read-only auth file, if any.
 pub fn auth_file() -> Option<PathBuf> {
-    std::env::var_os(AUTH_FILE_VARIABLE)
+    crate::platform::environment::var(AUTH_FILE_VARIABLE)
         .filter(|value| !value.is_empty())
         .map(PathBuf::from)
 }
@@ -145,7 +146,7 @@ fn client() -> Result<reqwest::Client, String> {
 
 /// The JSON claims of a JWT, read without verifying its signature, as Pi does: the
 /// token came over TLS from the token endpoint or from the user's own auth file.
-fn claims(token: &str) -> Option<Value> {
+fn claims(token: &str) -> Option<JwtClaims> {
     let mut parts = token.split('.');
     let (_, payload, _, None) = (parts.next()?, parts.next()?, parts.next()?, parts.next()) else {
         return None;
@@ -157,17 +158,25 @@ fn claims(token: &str) -> Option<Value> {
     serde_json::from_slice(&bytes).ok()
 }
 
-fn account_id(access_token: &str) -> Option<String> {
-    claims(access_token)?
-        .get(CLAIM)?
-        .get("chatgpt_account_id")?
-        .as_str()
-        .filter(|id| !id.is_empty())
-        .map(str::to_owned)
+fn account_id(access_token: &str) -> Option<crate::types::CodexAccountId> {
+    claims(access_token)?.auth.0?.0.chatgpt_account_id.0
 }
 
 fn expiry(access_token: &str) -> Option<u64> {
-    claims(access_token)?["exp"].as_u64()
+    claims(access_token)?.exp.0
+}
+
+#[derive(Default, Deserialize)]
+struct JwtClaims {
+    #[serde(default)]
+    exp: crate::json::Optional<u64>,
+    #[serde(default, rename = "https://api.openai.com/auth")]
+    auth: crate::json::Optional<crate::json::Object<AccountClaim>>,
+}
+#[derive(Default, Deserialize)]
+struct AccountClaim {
+    #[serde(default)]
+    chatgpt_account_id: crate::json::Optional<crate::types::CodexAccountId>,
 }
 
 fn random(bytes: usize) -> Result<Vec<u8>, String> {
@@ -571,11 +580,19 @@ pub async fn access_token(state: Option<&Path>, repo: Option<&Path>) -> Result<T
 }
 
 async fn stored_token(storage: &Storage, root: &str) -> Result<Token, TokenError> {
+    stored_token_at(storage, root, now).await
+}
+
+async fn stored_token_at(
+    storage: &Storage,
+    root: &str,
+    clock: impl Fn() -> Result<u64, String>,
+) -> Result<Token, TokenError> {
     let _lock = storage.lock(LOCK).await?;
     let stored = storage
         .read::<Credentials>(CREDENTIALS)?
         .ok_or(LOGIN_REQUIRED)?;
-    if stored.expires_at > now()?.saturating_add(REFRESH_MARGIN) {
+    if stored.expires_at > clock()?.saturating_add(REFRESH_MARGIN) {
         return Ok(Token {
             access_token: stored.access_token,
             account_id: stored.account_id,
@@ -591,7 +608,7 @@ async fn stored_token(storage: &Storage, root: &str) -> Result<Token, TokenError
         Some(storage),
     )
     .await?;
-    let refreshed = credentials(tokens, now()?)?;
+    let refreshed = credentials(tokens, clock()?)?;
     if refreshed.account_id != stored.account_id {
         return Err(
             "The refreshed Codex token is for another ChatGPT account; run `artifactize login codex`."
@@ -674,9 +691,14 @@ impl<'de> Deserialize<'de> for AuthFileTokens {
 /// The access token of a Codex auth file (`{"tokens":{"access_token",...}}`), read
 /// once per use and never written. An expiring token is an error, never a refresh.
 fn read_auth_file(path: &Path) -> Result<Token, String> {
-    let name = path.display();
+    read_auth_file_at(path, now().unwrap_or(u64::MAX))
+}
+
+fn read_auth_file_at(path: &Path, now: u64) -> Result<Token, String> {
+    let name = crate::platform::path_text(path);
     let unreadable = |reason: &str| format!("{AUTH_FILE_VARIABLE}: cannot read {name}: {reason}.");
-    let file = std::fs::File::open(path).map_err(|error| unreadable(&error.to_string()))?;
+    let file =
+        crate::platform::open_regular(path).map_err(|error| unreadable(&error.to_string()))?;
     if !file.metadata().is_ok_and(|metadata| metadata.is_file()) {
         return Err(unreadable("it is not a regular file"));
     }
@@ -699,9 +721,7 @@ fn read_auth_file(path: &Path) -> Result<Token, String> {
         .and_then(|tokens| tokens.access_token.0.as_deref())
         .filter(|token| !token.is_empty())
         .ok_or_else(|| unreadable("it holds no ChatGPT sign-in tokens"))?;
-    if expiry(access_token)
-        .is_some_and(|exp| exp <= now().unwrap_or(u64::MAX).saturating_add(FILE_MARGIN))
-    {
+    if expiry(access_token).is_some_and(|exp| exp <= now.saturating_add(FILE_MARGIN)) {
         return Err(format!(
             "The Codex access token in {name} has expired; sign in with Codex again (for example `codex login`). artifactize never refreshes that file."
         ));
@@ -710,7 +730,7 @@ fn read_auth_file(path: &Path) -> Result<Token, String> {
         .as_ref()
         .and_then(|tokens| tokens.account_id.0.as_deref())
         .filter(|id| !id.is_empty())
-        .map(str::to_owned)
+        .and_then(|id| id.parse().ok())
         .or_else(|| account_id(access_token))
         .ok_or_else(|| unreadable("its token names no ChatGPT account"))?;
     Ok(Token {
@@ -800,10 +820,8 @@ pub fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Status, Strin
     let location = Location::find(state, repo)?;
     if let Some(refusal) = location.refusal(Tokens::Codex) {
         // Only a sign-in already stored there is at risk; without one this is advice.
-        return match location.directory.join(CREDENTIALS).symlink_metadata() {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                Ok(Status::Refused { reason: refusal })
-            }
+        return match crate::platform::entry_exists(&location.directory.join(CREDENTIALS)) {
+            Ok(false) => Ok(Status::Refused { reason: refusal }),
             _ => Err(refusal),
         };
     }

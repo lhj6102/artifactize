@@ -253,7 +253,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     let mut monitor = Monitor::new(root.path().into(), None);
     monitor.detail = Some(DetailPane {
         run_id: "run".parse().unwrap(),
-        target: Target::Eval("app/check".into()),
+        target: Target::Eval("app/check".parse().unwrap()),
         request: None,
         evidence: evidence::Evidence::default(),
         evidence_stamp: None,
@@ -458,9 +458,12 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     monitor.focus = Pane::Artifacts;
-    monitor
-        .tree
-        .select(vec!["a:app".into(), "e:app/check".into()]);
+    monitor.tree.select(vec![
+        "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:app/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     let id = monitor.selected_request().unwrap().request.id.clone();
     monitor.peek = Some(Peek {
         request: id,
@@ -495,7 +498,7 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
 
 #[tokio::test]
 async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let (view, mut requests) = tests::live();
     let agent = requests
         .iter_mut()
@@ -507,9 +510,12 @@ async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
     let mut monitor = Monitor::new(root.path().into(), None);
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
-    monitor
-        .tree
-        .select(vec!["a:app".into(), "e:app/check".into()]);
+    monitor.tree.select(vec![
+        "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:app/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     monitor.size = ratatui::layout::Rect::new(0, 0, 160, 30);
     monitor.focus = Pane::Runs;
     monitor.sync_peek().await;
@@ -526,9 +532,12 @@ async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
         "{}",
         peek.text
     );
-    monitor
-        .tree
-        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    monitor.tree.select(vec![
+        "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:p2/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     monitor.sync_peek().await;
     assert!(
         monitor.peek.is_none(),
@@ -539,7 +548,7 @@ async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
 #[tokio::test]
 async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_readers_stay() {
     use serde_json::json;
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
@@ -561,9 +570,12 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     monitor.refresh().await;
     monitor.focus = Pane::Artifacts;
     monitor.size = ratatui::layout::Rect::new(0, 0, 160, 30);
-    monitor
-        .tree
-        .select(vec!["a:app".into(), "e:app/check".into()]);
+    monitor.tree.select(vec![
+        "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:app/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     monitor.sync_peek().await;
     let failed = monitor.peek.as_ref().unwrap();
     assert!(failed.live.is_none() && !failed.text.is_empty());
@@ -575,14 +587,14 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     // The session appears: the peek reads it after the refresh that brings it.
     let session = |id: &str| crate::agent::session::SessionRef {
         producer: store::Producer::current().name,
-        state: String::new(),
+        state: "placeholder".parse().unwrap(),
         run_id: "run-1".parse().unwrap(),
         request_id: request.id.clone(),
         session_id: id.parse().unwrap(),
     };
-    let state_id = receipts.state_id().await.unwrap();
+    let state_id: crate::types::StateId = receipts.state_id().await.unwrap();
     request.session = Some(crate::agent::session::SessionRef {
-        state: state_id.to_string(),
+        state: state_id.clone(),
         ..session("session-1")
     });
     receipts.save_request(&request).await.unwrap();
@@ -598,7 +610,7 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     );
     // A replaced session is resolved again and read from the start.
     request.session = Some(crate::agent::session::SessionRef {
-        state: state_id.to_string(),
+        state: state_id.clone(),
         ..session("session-2")
     });
     receipts.save_request(&request).await.unwrap();

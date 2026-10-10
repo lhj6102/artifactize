@@ -91,11 +91,7 @@ impl Session {
         if !has_scope(principal, "read") {
             return Ok(Vec::new());
         }
-        let entries = match self
-            .remote
-            .lookup(&keys.iter().map(ToString::to_string).collect::<Vec<_>>())
-            .await
-        {
+        let entries = match self.remote.lookup(keys).await {
             Ok(entries) => entries,
             Err(failure) => return self.failed(failure),
         };

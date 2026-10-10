@@ -41,14 +41,7 @@ pub(super) async fn review(
     }
     let repo = (!all).then(|| context.repo.unwrap_or_else(|| PathBuf::from(".")));
     let (cancellation, listener) = cancellation_listener()?;
-    let result = crate::review::run(
-        state,
-        repo,
-        reviewer,
-        request.map(String::from),
-        cancellation,
-    )
-    .await;
+    let result = crate::review::run(state, repo, reviewer, request, cancellation).await;
     listener.abort();
     result?;
     Ok(0)

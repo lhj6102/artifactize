@@ -4,7 +4,11 @@
 //! target in words, the target as a repository-relative logical path with `/`, so a reviewer
 //! sees what Enter does without reading the declaration.
 
-use serde_json::{Map, Value};
+use crate::{
+    store::definitions::{Artifact, HumanTool},
+    types::ArtifactName,
+};
+use std::collections::BTreeMap;
 
 use crate::config::Builtin;
 
@@ -32,14 +36,16 @@ pub enum Runs {
 
 impl Runs {
     /// The declaration of one Human tool of `owner`, within the definition's Artifacts.
-    pub(super) fn parse(artifacts: &Map<String, Value>, owner: &str, tool: &Value) -> Self {
-        let args: Vec<&str> = tool["args"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(Value::as_str)
-            .collect();
-        let builtin = serde_json::from_value::<Builtin>(tool["builtin"].clone()).ok();
+    pub(super) fn parse(
+        artifacts: &BTreeMap<ArtifactName, Artifact>,
+        owner: &ArtifactName,
+        tool: &HumanTool,
+    ) -> Self {
+        let (builtin, command, args) = match tool {
+            HumanTool::Command(tool) => (None, tool.command.as_str(), tool.args.as_slice()),
+            HumanTool::Builtin(tool) => (Some(tool.builtin), "", tool.args.as_slice()),
+        };
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
         let target = || {
             args.first()
                 .map(|arg| logical(artifacts, owner, arg))
@@ -57,12 +63,26 @@ impl Runs {
                 heading: (*heading).to_owned(),
             },
             (Some(Builtin::Help), [_, ..]) => Self::Help(super::shell(args.iter().copied())),
-            // Any other declaration is shown as recorded.
-            _ => Self::Command(super::shell(
-                std::iter::once(tool.get("builtin").unwrap_or(&tool["command"]))
-                    .filter_map(Value::as_str)
-                    .chain(args.iter().copied()),
-            )),
+            _ => {
+                let program = builtin
+                    .map(|builtin| {
+                        match builtin {
+                            Builtin::Read => "read",
+                            Builtin::List => "list",
+                            Builtin::Glob => "glob",
+                            Builtin::Grep => "grep",
+                            Builtin::ViewImage => "view_image",
+                            Builtin::Section => "section",
+                            Builtin::Help => "help",
+                            Builtin::Open => "open",
+                        }
+                        .to_owned()
+                    })
+                    .unwrap_or_else(|| command.to_owned());
+                Self::Command(super::shell(
+                    std::iter::once(program.as_str()).chain(args.iter().copied()),
+                ))
+            }
         }
     }
 
@@ -92,17 +112,22 @@ fn folder(path: &str) -> String {
 /// A builtin target as a repository-relative logical path: `{artifactPath}[/path]`,
 /// `{name}[/path]` through the owner's mounts, or a path in the owner that may enter a mount.
 /// A target the definition cannot place is shown as declared.
-fn logical(artifacts: &Map<String, Value>, owner: &str, arg: &str) -> String {
+fn logical(
+    artifacts: &BTreeMap<ArtifactName, Artifact>,
+    owner: &ArtifactName,
+    arg: &str,
+) -> String {
     let mount = |id: &str, name: &str| {
         artifacts
             .get(id)
-            .and_then(|artifact| artifact["mounts"][name].as_str())
-            .map(str::to_owned)
+            .and_then(|artifact| artifact.mounts.value())
+            .and_then(|mounts| mounts.get(name))
+            .map(ToString::to_string)
     };
     let (mut id, rest) = match arg.strip_prefix('{').and_then(|arg| arg.split_once('}')) {
-        Some(("artifactPath", rest)) => (owner.to_owned(), rest),
+        Some(("artifactPath", rest)) => (owner.to_string(), rest),
         Some((name, rest)) => (mount(owner, name).unwrap_or_else(|| name.to_owned()), rest),
-        None => (owner.to_owned(), arg),
+        None => (owner.to_string(), arg),
     };
     let mut rest = rest.strip_prefix('/').unwrap_or(rest);
     // A first segment that names a mount continues in the mounted Artifact, as in the scope.
@@ -113,17 +138,19 @@ fn logical(artifacts: &Map<String, Value>, owner: &str, arg: &str) -> String {
             _ => break,
         }
     }
-    let Some(artifact) = artifacts.get(&id) else {
+    let Some(artifact) = artifacts.get(id.as_str()) else {
         return arg.to_owned();
     };
-    let Some(path) = artifact["path"].as_str() else {
+    let Some(path) = artifact.path.value() else {
         return arg.to_owned();
     };
-    let base = if rest.is_empty() || artifact["kind"] != "file" {
-        path
-    } else {
-        path.rsplit_once('/').map_or("", |(parent, _)| parent)
-    };
+    let path = crate::platform::path_text(path);
+    let base =
+        if rest.is_empty() || artifact.kind.value() != Some(&crate::config::ArtifactKind::File) {
+            path.as_str()
+        } else {
+            path.rsplit_once('/').map_or("", |(parent, _)| parent)
+        };
     match (base, rest) {
         ("", "") => ROOT.to_owned(),
         ("", rest) => rest.to_owned(),

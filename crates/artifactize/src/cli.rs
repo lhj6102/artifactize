@@ -124,10 +124,9 @@ pub enum Command {
         #[arg(
             long,
             value_name = "MS",
-            value_parser = clap::value_parser!(u32)
-                .range(1..=crate::config::validation::MAX_TIMEOUT_MS as i64)
+            value_parser = timeout_duration
         )]
-        timeout_ms: Option<u32>,
+        timeout_ms: Option<std::time::Duration>,
         /// Only reuse results for these kinds (comma-separated); an eval with nothing to reuse is
         /// not executed.
         #[arg(long, value_name = "KINDS", value_enum, value_delimiter = ',')]
@@ -203,16 +202,16 @@ pub enum Command {
 #[group(multiple = false)]
 pub struct SelectionArgs {
     /// Select one Artifact.
-    artifact: Option<String>,
+    artifact: Option<Selector>,
     /// Select one qualified Eval ID.
     #[arg(long, value_name = "ID")]
-    eval: Option<String>,
+    eval: Option<crate::types::EvalId>,
     /// Select comma-separated qualified Eval IDs.
-    #[arg(long, value_name = "CSV")]
-    evals: Option<String>,
+    #[arg(long, value_name = "CSV", value_delimiter = ',', num_args = 1)]
+    evals: Option<Vec<crate::types::EvalId>>,
     /// Select comma-separated Artifact names.
-    #[arg(long, value_name = "CSV")]
-    artifacts: Option<String>,
+    #[arg(long, value_name = "CSV", value_delimiter = ',', num_args = 1)]
+    artifacts: Option<Vec<crate::types::ArtifactName>>,
     /// Read Eval IDs from a JSON array or one ID per line.
     #[arg(long, value_name = "PATH")]
     evals_file: Option<PathBuf>,
@@ -226,31 +225,32 @@ pub struct SelectionArgs {
 
 impl SelectionArgs {
     fn resolve(self) -> Result<Selection, String> {
-        if let Some(artifact_id) = self.artifact {
-            if artifact_id.contains('/') {
-                Ok(Selection::Eval {
-                    eval_id: artifact_id,
-                })
-            } else {
-                Ok(Selection::Artifact { artifact_id })
-            }
+        if let Some(selector) = self.artifact {
+            Ok(match selector {
+                Selector::Artifact(id) => Selection::Artifact {
+                    artifact_id: id.into(),
+                },
+                Selector::Eval(id) => Selection::Eval { eval_id: id.into() },
+            })
         } else if let Some(eval_id) = self.eval {
-            Ok(Selection::Eval { eval_id })
+            Ok(Selection::Eval {
+                eval_id: eval_id.into(),
+            })
         } else if let Some(ids) = self.evals {
             Ok(Selection::Evals {
-                eval_ids: ids.split(',').map(str::to_owned).collect(),
+                eval_ids: ids.into_iter().map(String::from).collect(),
             })
         } else if let Some(ids) = self.artifacts {
             Ok(Selection::Artifacts {
-                artifact_ids: ids.split(',').map(str::to_owned).collect(),
+                artifact_ids: ids.into_iter().map(String::from).collect(),
             })
         } else if let Some(path) = self.evals_file {
             Ok(Selection::Evals {
-                eval_ids: read_selection_file(&path)?,
+                eval_ids: selection_file::<crate::types::EvalId>(&path)?,
             })
         } else if let Some(path) = self.artifacts_file {
             Ok(Selection::Artifacts {
-                artifact_ids: read_selection_file(&path)?,
+                artifact_ids: selection_file::<crate::types::ArtifactName>(&path)?,
             })
         } else {
             Ok(Selection::All)
@@ -323,7 +323,7 @@ pub enum ConfigCommand {
     /// Inspect full static definitions, relations, and cycles.
     Graph {
         /// Select one Artifact and its required closure; defaults to all.
-        artifact: Option<String>,
+        artifact: Option<crate::types::ArtifactName>,
     },
 }
 
@@ -355,10 +355,9 @@ pub enum RunCommand {
             long,
             value_name = "MS",
             requires = "wait",
-            value_parser = clap::value_parser!(u32)
-                .range(1..=crate::config::validation::MAX_TIMEOUT_MS as i64)
+            value_parser = timeout_duration
         )]
-        timeout_ms: Option<u32>,
+        timeout_ms: Option<std::time::Duration>,
     },
 }
 
@@ -476,4 +475,41 @@ pub fn run() -> ExitCode {
         Ok(code) => ExitCode::from(code),
         Err(error) => failure(&error, json),
     }
+}
+
+/// Parse protocol milliseconds exactly once, preserving the public signed 32-bit bound.
+fn timeout_duration(text: &str) -> Result<std::time::Duration, String> {
+    let millis: u64 = text
+        .parse()
+        .map_err(|_| "timeout must be milliseconds".to_owned())?;
+    if !(1..=crate::config::validation::MAX_TIMEOUT_MS).contains(&millis) {
+        return Err("timeoutMs must be between 1 and 2147483647".into());
+    }
+    Ok(std::time::Duration::from_millis(millis))
+}
+
+/// The positional selection intentionally accepts either an Artifact or qualified Eval.
+#[derive(Debug, Clone)]
+enum Selector {
+    Artifact(crate::types::ArtifactName),
+    Eval(crate::types::EvalId),
+}
+impl std::str::FromStr for Selector {
+    type Err = String;
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        if text.contains('/') {
+            text.parse().map(Self::Eval)
+        } else {
+            text.parse().map(Self::Artifact)
+        }
+    }
+}
+fn selection_file<T>(path: &std::path::Path) -> Result<Vec<String>, String>
+where
+    T: std::str::FromStr<Err = String> + Into<String>,
+{
+    read_selection_file(path)?
+        .into_iter()
+        .map(|text| text.parse::<T>().map(Into::into))
+        .collect()
 }

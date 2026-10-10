@@ -441,7 +441,7 @@ impl Transcript {
             }
             Kind::End(end) => {
                 self.stopped(&mut dirty);
-                if let Some(result) = &end.result {
+                if let Some(result) = end.result() {
                     let digest: [u8; 32] = Sha256::digest(result.to_string().as_bytes()).into();
                     let text = result_text(result);
                     if let Some((id, candidate)) = self.result_candidate.take()
@@ -455,11 +455,12 @@ impl Transcript {
                         self.prose(&text, false, &mut patches);
                     }
                 }
-                if let Some(error) = &end.error {
+                if let Some((code, error)) = end.failure() {
                     self.prose(
                         &format!(
                             "Review failed: {}\n{error}",
-                            end.error_code.as_deref().unwrap_or_default()
+                            code.map(crate::agent::error::Code::as_str)
+                                .unwrap_or_default()
                         ),
                         false,
                         &mut patches,
@@ -467,18 +468,19 @@ impl Transcript {
                 }
             }
             Kind::Answer(answer) => {
-                if let Some(text) = &answer.text {
+                if let Some(text) = answer.text() {
                     let digest: [u8; 32] = Sha256::digest(markdown(text).trim().as_bytes()).into();
                     if self.assistant != Some(digest) {
                         self.prose(text, false, &mut patches);
                     }
                 }
-                if let Some(error) = &answer.error {
+                if let Some((code, error)) = answer.failure() {
                     self.stopped(&mut dirty);
                     self.prose(
                         &format!(
                             "Follow-up failed: {}\n{error}",
-                            answer.error_code.as_deref().unwrap_or_default()
+                            code.map(crate::agent::error::Code::as_str)
+                                .unwrap_or_default()
                         ),
                         false,
                         &mut patches,

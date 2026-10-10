@@ -10,7 +10,9 @@ fn populated() -> Monitor {
     let (run, requests) = tests::live();
     let mut monitor = Monitor::new("/fixture-state".into(), None);
     monitor.set_run(run, requests);
-    monitor.tree.select(vec!["a:p2".into()]);
+    monitor.tree.select(vec![
+        "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     // Tree key navigation uses paths from its most recently drawn frame.
     ratatui::Terminal::new(ratatui::backend::TestBackend::new(180, 40))
         .unwrap()
@@ -51,7 +53,7 @@ fn main_arrows_move_both_directions_without_wrapping_or_changing_tree() {
 fn tree_h_l_and_space_still_expand_and_collapse() {
     let mut monitor = populated();
     monitor.focus = Pane::Artifacts;
-    let artifact = vec!["a:p2".to_owned()];
+    let artifact = vec!["a:p2".parse::<crate::monitor::model::NodeId>().unwrap()];
     press(&mut monitor, KeyCode::Char('h'));
     assert!(!monitor.tree.opened().contains(&artifact));
     assert_eq!(press(&mut monitor, KeyCode::Char('l')), Action::None);
@@ -98,7 +100,7 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
         "/fixture-state".into(),
         None,
         "alice".into(),
-        Some(view.request.id.to_string()),
+        Some(view.request.id.clone()),
     );
     review.load_single(view);
     review.control(review::Control::Red);
@@ -174,12 +176,14 @@ fn bang_cycles_attention_evals_in_tree_order_and_focuses_the_tree() {
     assert_eq!(
         seen,
         [
-            Some(Target::Eval("p2/check".into())),
-            Some(Target::Eval("app/review".into())),
-            Some(Target::Eval("p2/check".into())),
+            Some(Target::Eval("p2/check".parse().unwrap())),
+            Some(Target::Eval("app/review".parse().unwrap())),
+            Some(Target::Eval("p2/check".parse().unwrap())),
         ]
     );
-    assert!(monitor.tree.opened().contains(&vec!["a:app".to_owned()]));
+    assert!(monitor.tree.opened().contains(&vec![
+        "a:app".parse::<crate::monitor::model::NodeId>().unwrap()
+    ]));
     let mut idle = Monitor::new("/fixture-state".into(), None);
     press(&mut idle, KeyCode::Char('!'));
     assert!(idle.notice.as_deref().unwrap().contains("Open a Run"));

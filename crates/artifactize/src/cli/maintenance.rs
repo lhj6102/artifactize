@@ -60,8 +60,12 @@ pub(super) async fn doctor(context: Context) -> Result<u8, String> {
         print_json(&report)?;
     } else {
         let mut out = io::stdout().lock();
-        writeln!(out, "State directory: {}", report.state_dir.display())
-            .map_err(|e| e.to_string())?;
+        writeln!(
+            out,
+            "State directory: {}",
+            crate::platform::path_text(&report.state_dir)
+        )
+        .map_err(|e| e.to_string())?;
         for check in &report.checks {
             writeln!(out, "{} {}: {}", check.status, check.name, check.message)
                 .map_err(|e| e.to_string())?;
@@ -85,10 +89,12 @@ pub(super) async fn prune(
     } else {
         let mut out = io::stdout().lock();
         for path in &report.removed {
-            writeln!(out, "Removed {}", path.display()).map_err(|e| e.to_string())?;
+            writeln!(out, "Removed {}", crate::platform::path_text(path))
+                .map_err(|e| e.to_string())?;
         }
         for path in &report.would_remove {
-            writeln!(out, "Would remove {}", path.display()).map_err(|e| e.to_string())?;
+            writeln!(out, "Would remove {}", crate::platform::path_text(path))
+                .map_err(|e| e.to_string())?;
         }
         for id in &report.skipped_runs {
             writeln!(out, "Skipped Run {id}").map_err(|e| e.to_string())?;

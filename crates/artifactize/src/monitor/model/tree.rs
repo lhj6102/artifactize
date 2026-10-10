@@ -66,7 +66,7 @@ pub enum Kind {
 #[derive(Debug, Clone)]
 pub struct Node {
     /// Stable tree identifier: `a:<artifact>` or `e:<eval>`.
-    pub id: String,
+    pub id: super::NodeId,
     pub kind: Kind,
     pub glyph: &'static str,
     pub tone: Tone,
@@ -191,7 +191,7 @@ const SHOWN: usize = 2;
 const SHOWN_TEXT: usize = 24;
 
 /// `cli ◐ in progress`, or `a ◐, b ? +1`; an ERROR-failed X asks for a retry.
-fn tokens(states: &States, x: &[String], glyphs: bool) -> Vec<Segment> {
+fn tokens(states: &States, x: &[crate::types::ArtifactName], glyphs: bool) -> Vec<Segment> {
     let mut segments = Vec::new();
     for (index, id) in x.iter().take(SHOWN).enumerate() {
         if index > 0 {
@@ -199,7 +199,7 @@ fn tokens(states: &States, x: &[String], glyphs: bool) -> Vec<Segment> {
         }
         let (glyph, tone, word) = completion(states.completion(id));
         let text = match (glyphs, x.len()) {
-            (false, _) => id.clone(),
+            (false, _) => id.to_string(),
             (true, 1) => format!("{id} {glyph} {word}"),
             (true, _) => format!("{id} {glyph}"),
         };
@@ -370,7 +370,7 @@ fn eval_node<'a>(states: &States<'a>, eval: &'a str, now: OffsetDateTime) -> Nod
     let right = clock.map_or_else(String::new, |clock| clock.elapsed(now));
     Node {
         clock,
-        id: format!("e:{eval}"),
+        id: super::NodeId::eval(eval.parse().expect("saved Eval ID")),
         glyph,
         tone,
         weight,
@@ -424,7 +424,7 @@ fn summary(states: &States, id: &str, children: &[Node]) -> Vec<Segment> {
             .filter(|node| view(node).is_some_and(|view| view.rank() == rank))
             .collect()
     };
-    let x = |ids: Vec<String>| tokens(states, &ids, false);
+    let x = |ids: Vec<crate::types::ArtifactName>| tokens(states, &ids, false);
     let mut segments = match top {
         0 => {
             let failed = class(0);
@@ -564,7 +564,7 @@ fn artifact_node<'a>(
         (glyph, tone, weight, summary(states, id, &children))
     };
     Node {
-        id: format!("a:{id}"),
+        id: super::NodeId::artifact(id.parse().expect("saved Artifact ID")),
         clock: None,
         kind: Kind::Artifact { completion, basis },
         glyph,
@@ -678,7 +678,10 @@ fn mark(nodes: &mut [Node], ended: &[Node]) {
 }
 
 /// Every eval's direct dependency Artifacts, from the Run's saved definitions.
-pub fn upstream_index(run: &RunView, requests: &[RequestView]) -> Vec<(String, Vec<String>)> {
+pub fn upstream_index(
+    run: &RunView,
+    requests: &[RequestView],
+) -> Vec<(String, Vec<crate::types::ArtifactName>)> {
     let saved = Saved { run, requests };
     let index = super::states::Index::new(&saved);
     index
@@ -687,7 +690,10 @@ pub fn upstream_index(run: &RunView, requests: &[RequestView]) -> Vec<(String, V
         .map(|(eval, artifacts)| {
             (
                 (*eval).to_owned(),
-                artifacts.iter().map(|id| (*id).to_owned()).collect(),
+                artifacts
+                    .iter()
+                    .map(|id| id.parse().expect("saved Artifact ID"))
+                    .collect(),
             )
         })
         .collect()

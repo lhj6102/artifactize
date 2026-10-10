@@ -188,7 +188,6 @@ pub struct Review {
     /// The open request, if any, and its last successfully loaded view.
     open: Option<RequestId>,
     /// An invalid compatibility constructor ID never enters state reads or jobs.
-    invalid_open: Option<String>,
     request: Option<RequestView>,
     tool: usize,
     output: Option<Output>,
@@ -206,7 +205,7 @@ pub struct Review {
     /// Leave once nothing else waits after a submission.
     submitted: bool,
     /// Embedded mode keeps GREEN and RED drafts separate across verdict switches.
-    drafts: std::collections::BTreeMap<&'static str, Form>,
+    drafts: std::collections::BTreeMap<crate::runtime::Verdict, Form>,
     field_scroll: u16,
     instruction_scroll: u16,
     /// Standalone mouse capture, on by default like monitor; F2 toggles it.
@@ -221,18 +220,14 @@ impl Review {
         state: PathBuf,
         repo: Option<PathBuf>,
         reviewer: String,
-        open: Option<String>,
+        open: Option<RequestId>,
     ) -> Self {
-        let (open, invalid_open) = match open.map(|id| id.parse::<RequestId>()).transpose() {
-            Ok(open) => (open, None),
-            Err(error) => (None, Some(error)),
-        };
         Self {
             state,
             repo,
             reviewer,
             mode: Mode::Request,
-            focus: if open.is_some() || invalid_open.is_some() {
+            focus: if open.is_some() {
                 Focus::Detail
             } else {
                 Focus::List
@@ -243,7 +238,6 @@ impl Review {
             waiting: Vec::new(),
             list: TableState::default(),
             open,
-            invalid_open,
             request: None,
             tool: 0,
             output: None,
@@ -281,10 +275,6 @@ impl Review {
 
     /// Reload the visible screen read-only; on failure keep the last-known data.
     pub async fn refresh(&mut self) -> Action {
-        if let Some(error) = &self.invalid_open {
-            self.error = Some(error.clone());
-            return Action::None;
-        }
         // The standalone list stays beside the open request; monitor reads only the request.
         // Followers of later Runs collapse onto the original request, which records the Human
         // definition (tools and owner schemas) and receives every action, as in monitor.
@@ -621,7 +611,6 @@ impl Review {
             self.drafts.clear();
         }
         self.open = Some(view.request.id.clone());
-        self.invalid_open = None;
         self.request = Some(view);
         self.focus = Focus::Detail;
         Action::Refresh
@@ -950,31 +939,35 @@ impl Job {
 
 /// Declared Human tools in the eval scope, named like the registry.
 pub fn tools(request: &Request) -> Vec<Tool> {
-    let definition = request.human_definition.as_ref();
-    let artifacts = definition
+    use crate::store::definitions::HumanTool;
+    let Some(artifacts) = request
+        .human_definition
+        .as_ref()
         .and_then(|definition| definition.artifacts.value())
-        .map(|artifacts| serde_json::to_value(artifacts).expect("saved Human artifacts are JSON"));
-    let Some(artifacts) = artifacts.as_ref().and_then(Value::as_object) else {
+    else {
         return Vec::new();
     };
     let mut tools: Vec<_> = artifacts
         .iter()
         .flat_map(|(id, artifact)| {
-            let declared = artifact["views"]["humanTools"]
-                .as_object()
+            artifact
+                .views
+                .value()
+                .and_then(|views| views.human_tools.value())
                 .into_iter()
-                .flatten();
-            declared.filter_map(move |(operation, tool)| {
-                Some(Tool {
-                    name: format!("{operation}_{id}"),
-                    kind: serde_json::from_value(tool["kind"].clone()).ok()?,
-                    description: tool["description"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .replace("{artifactName}", id),
-                    declared: Runs::parse(artifacts, id, tool),
+                .flatten()
+                .map(move |(operation, tool)| {
+                    let (kind, description) = match tool {
+                        HumanTool::Command(tool) => (tool.kind, &tool.description),
+                        HumanTool::Builtin(tool) => (tool.kind, &tool.description),
+                    };
+                    Tool {
+                        name: format!("{operation}_{id}"),
+                        kind,
+                        description: description.replace("{artifactName}", id.as_str()),
+                        declared: Runs::parse(artifacts, id, tool),
+                    }
                 })
-            })
         })
         .collect();
     tools.sort_by(|a, b| a.name.cmp(&b.name));
@@ -1028,31 +1021,14 @@ fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
 /// Edit text in `$VISUAL`, then `$EDITOR` (default `vi`, Notepad on Windows); bounded
 /// like `--fields-file`.
 async fn edit(text: String) -> Result<String, String> {
-    let file = tempfile::Builder::new()
-        .prefix("artifactize-fields-")
-        .suffix(".json")
-        .tempfile()
-        .map_err(|e| e.to_string())?;
+    let file =
+        crate::platform::private_temp_file("artifactize-fields-").map_err(|e| e.to_string())?;
     std::fs::write(file.path(), text).map_err(|e| e.to_string())?;
-    let editor = ["VISUAL", "EDITOR"]
-        .into_iter()
-        .find_map(|variable| {
-            std::env::var(variable)
-                .ok()
-                .filter(|editor| !editor.trim().is_empty())
-        })
-        .unwrap_or_else(|| crate::platform::DEFAULT_EDITOR.into());
-    let status = crate::platform::editor(&editor, file.path())
-        .status()
+    crate::platform::run_editor(&crate::platform::selected_editor(), file.path())
         .await
-        .map_err(|e| format!("cannot start the editor: {e}"))?;
-    if !status.success() {
-        return Err(format!(
-            "The editor exited unsuccessfully ({status}); nothing was submitted."
-        ));
-    }
+        .map_err(|e| format!("cannot run the editor: {e}"))?;
     let mut bytes = Vec::new();
-    std::fs::File::open(file.path())
+    crate::platform::open_regular(file.path())
         .and_then(|file| {
             file.take(crate::human::FIELDS_READ_BYTES)
                 .read_to_end(&mut bytes)
@@ -1072,7 +1048,7 @@ pub async fn run(
     state: PathBuf,
     repo: Option<PathBuf>,
     reviewer: String,
-    open: Option<String>,
+    open: Option<RequestId>,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
     // ratatui's panic hook restores the terminal before a panic message is printed.

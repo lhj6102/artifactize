@@ -157,14 +157,13 @@ impl Review {
             .repo
             .as_ref()
             .map_or("all repositories".into(), |repo| {
-                format!("repo {}", repo.display())
+                format!("repo {}", crate::platform::path_text(repo))
             });
         let mut segments = vec![scope];
         if self.focus == Focus::Detail {
-            match (&self.request, &self.open, &self.invalid_open) {
-                (Some(view), _, _) => segments.push(view.request.eval_id.to_string()),
-                (None, Some(id), _) => segments.push(id.to_string()),
-                (None, None, Some(id)) => segments.push(id.clone()),
+            match (&self.request, &self.open) {
+                (Some(view), _) => segments.push(view.request.eval_id.to_string()),
+                (None, Some(id)) => segments.push(id.to_string()),
                 _ => {}
             }
         }
@@ -526,7 +525,7 @@ pub(super) fn draw_inline_form(
 }
 
 fn draw_fields(frame: &mut Frame, area: Rect, form: &Form, scroll: u16, border: Style) {
-    let color = if form.verdict == "GREEN" {
+    let color = if form.verdict == crate::runtime::Verdict::Green {
         Color::Green
     } else {
         Color::Red

@@ -34,7 +34,7 @@ pub enum Queue {
     /// Waiting for one of the Run's `--jobs`.
     Jobs,
     /// Waiting for a backend slot (limits.json); holds the backend name.
-    Slot(String),
+    Slot(crate::config::Backend),
     /// Waiting for the running execution of the same reuse key.
     Joined,
 }
@@ -51,8 +51,8 @@ pub enum Activity {
 /// every one of them is itself waiting: `(via, root)` reads "via waits for root".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Waits {
-    pub x: Vec<String>,
-    pub root: Option<(String, String)>,
+    pub x: Vec<crate::types::ArtifactName>,
+    pub root: Option<(crate::types::ArtifactName, crate::types::ArtifactName)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,7 +77,7 @@ pub enum EvalView {
     /// Only while the Run is running.
     WaitingOn(Waits),
     /// Upstream failed with a RED verdict or is itself blocked.
-    BlockedBy(Vec<String>),
+    BlockedBy(Vec<crate::types::ArtifactName>),
     NotRun(NotRun),
 }
 
@@ -134,7 +134,7 @@ impl Completion {
 /// One Artifact an eval depends on, with its current completion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Upstream {
-    pub artifact: String,
+    pub artifact: crate::types::ArtifactName,
     pub completion: Completion,
 }
 
@@ -336,13 +336,15 @@ impl<'a> Index<'a> {
 /// Lazily derived views over one Run; dependency evals may read peers in any order.
 pub(super) struct States<'a> {
     run: &'a crate::store::Run,
+    #[cfg(test)]
+    pub derivations: std::cell::Cell<usize>,
     pub index: Index<'a>,
     pub running: bool,
     ignore_gates: bool,
     views: RefCell<HashMap<&'a str, Option<EvalView>>>,
     effective: RefCell<HashMap<&'a str, Option<EvalStatus>>>,
     completions: RefCell<HashMap<&'a str, Completion>>,
-    waits: RefCell<HashMap<&'a str, Vec<String>>>,
+    waits: RefCell<HashMap<&'a str, Vec<crate::types::ArtifactName>>>,
 }
 
 impl<'a> States<'a> {
@@ -352,6 +354,8 @@ impl<'a> States<'a> {
         let run = &saved.run.run;
         let states = Self {
             run,
+            #[cfg(test)]
+            derivations: std::cell::Cell::new(0),
             index: Index::new(saved),
             running: run.status == RunStatus::Running,
             ignore_gates: run.ignore_gates,
@@ -464,6 +468,8 @@ impl<'a> States<'a> {
             return view.clone().unwrap_or(EvalView::NotRun(NotRun::Unreviewed));
         }
         self.views.borrow_mut().insert(eval, None);
+        #[cfg(test)]
+        self.derivations.set(self.derivations.get() + 1);
         let view = self.derive(eval);
         self.views.borrow_mut().insert(eval, Some(view.clone()));
         view
@@ -477,6 +483,8 @@ impl<'a> States<'a> {
             return status.unwrap_or(EvalStatus::Wait);
         }
         self.effective.borrow_mut().insert(eval, None);
+        #[cfg(test)]
+        self.derivations.set(self.derivations.get() + 1);
         let status = self.evaluate(eval);
         self.effective.borrow_mut().insert(eval, Some(status));
         status
@@ -608,7 +616,9 @@ impl<'a> States<'a> {
             .as_deref()
             .and_then(|reason| reason.strip_prefix("Waiting for a free "))
             .and_then(|rest| rest.split_once(" slot"))
-            .map(|(backend, _)| backend.to_owned());
+            .and_then(|(backend, _)| {
+                serde_json::from_value(serde_json::Value::String(backend.into())).ok()
+            });
         EvalView::InProgress(Activity::Queued(if let Some(backend) = slot {
             Queue::Slot(backend)
         } else if request.execution_id.is_some() {
@@ -619,7 +629,7 @@ impl<'a> States<'a> {
     }
 
     /// Dependency Artifacts whose gates are not met, most actionable first.
-    pub fn unmet(&self, artifacts: &[&'a str]) -> Vec<String> {
+    pub fn unmet(&self, artifacts: &[&'a str]) -> Vec<crate::types::ArtifactName> {
         let mut unmet: Vec<_> = artifacts
             .iter()
             .filter(|artifact| !self.met(artifact))
@@ -628,7 +638,7 @@ impl<'a> States<'a> {
         unmet.sort_by_key(|(artifact, completion)| (completion.rank(), self.position(artifact)));
         unmet
             .into_iter()
-            .map(|(artifact, _)| artifact.to_owned())
+            .map(|(artifact, _)| artifact.parse().expect("saved Artifact ID"))
             .collect()
     }
 
@@ -690,8 +700,8 @@ impl<'a> States<'a> {
     }
 
     /// Done evals whose own gates are unmet: the Artifacts holding them back.
-    fn held(&self, artifact: &str, blocked: bool) -> Vec<String> {
-        let mut x: Vec<String> = Vec::new();
+    fn held(&self, artifact: &str, blocked: bool) -> Vec<crate::types::ArtifactName> {
+        let mut x: Vec<crate::types::ArtifactName> = Vec::new();
         for &eval in self.evals(artifact) {
             let wanted = if blocked {
                 EvalStatus::Blocked
@@ -710,7 +720,7 @@ impl<'a> States<'a> {
     }
 
     /// The Artifacts this Artifact's evals wait for, as one X list.
-    pub fn waits_of(&self, artifact: &str) -> Vec<String> {
+    pub fn waits_of(&self, artifact: &str) -> Vec<crate::types::ArtifactName> {
         if let Some(x) = self.waits.borrow().get(artifact) {
             return x.clone();
         }
@@ -732,7 +742,7 @@ impl<'a> States<'a> {
     }
 
     /// The Artifacts this Artifact's blocked evals are blocked by.
-    pub fn blockers_of(&self, artifact: &str) -> Vec<String> {
+    pub fn blockers_of(&self, artifact: &str) -> Vec<crate::types::ArtifactName> {
         let mut x = self.held(artifact, true);
         for view in self.views_of(artifact) {
             if let EvalView::BlockedBy(blockers) = view {
@@ -747,7 +757,10 @@ impl<'a> States<'a> {
     }
 
     /// When every X is itself waiting, exactly one level of cause: what the first X waits for.
-    fn root(&self, x: &[String]) -> Option<(String, String)> {
+    fn root(
+        &self,
+        x: &[crate::types::ArtifactName],
+    ) -> Option<(crate::types::ArtifactName, crate::types::ArtifactName)> {
         if x.iter()
             .any(|id| !matches!(self.completion(id), Completion::Waiting { blocked: false }))
         {
@@ -764,7 +777,7 @@ impl<'a> States<'a> {
             .upstream(eval)
             .iter()
             .map(|artifact| Upstream {
-                artifact: (*artifact).to_owned(),
+                artifact: (*artifact).parse().expect("saved Artifact ID"),
                 completion: self.completion(artifact),
             })
             .collect();

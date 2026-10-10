@@ -87,12 +87,8 @@ pub(super) async fn execute(
             request.usage = Some(review.attempts);
             match review.result {
                 Ok(result) => {
-                    let verdict = if result["verdict"] == "GREEN" {
-                        Verdict::Green
-                    } else {
-                        Verdict::Red
-                    };
-                    request.result = Some(result);
+                    let verdict = result.verdict;
+                    request.result = Some(result.into_json());
                     Some(verdict)
                 }
                 Err(failure) => {

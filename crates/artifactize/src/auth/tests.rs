@@ -1,12 +1,4 @@
-use std::{
-    fs,
-    path::Path,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::{fs, path::Path, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +18,7 @@ fn secret(token: &str) -> Secret {
 
 fn test_storage(root: &Path) -> Storage {
     let directory = root.join("auth");
-    crate::platform::create_private_dir(&directory).unwrap();
+    crate::test_os::create_private_dir_all(&directory);
     Storage { directory }
 }
 
@@ -39,7 +31,7 @@ fn file_id(file: &fs::File) -> crate::platform::FileIdentity {
 
 #[test]
 fn storage_is_atomic_private_and_refuses_links() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::test_os::tempdir();
     let storage = test_storage(temp.path());
     storage.save("secret.json", &secret("old-secret")).unwrap();
     let path = storage.directory.join("secret.json");
@@ -80,7 +72,7 @@ fn storage_is_atomic_private_and_refuses_links() {
 
 #[test]
 fn credential_storage_rejects_repositories_and_symlink_escapes() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::test_os::tempdir();
     let repo = temp.path().join("repo");
     fs::create_dir(&repo).unwrap();
     fs::write(repo.join(".git"), "worktree marker").unwrap();
@@ -134,30 +126,21 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
 
 #[tokio::test]
 async fn named_locks_serialize_holders_and_stay_private() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::test_os::tempdir();
     let storage = Arc::new(test_storage(temp.path()));
     let first = storage.lock("codex").await.unwrap();
     let lock = storage.directory.join("codex.lock");
     assert!(private_file(&lock));
     // Another name is independent of a held lock.
     drop(storage.lock("other").await.unwrap());
-    let acquired = Arc::new(AtomicBool::new(false));
-    let waiter = tokio::spawn({
-        let storage = storage.clone();
-        let acquired = acquired.clone();
-        async move {
-            let _second = storage.lock("codex").await.unwrap();
-            acquired.store(true, Ordering::SeqCst);
-        }
-    });
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert!(!acquired.load(Ordering::SeqCst));
+    // Poll the competing acquisition once: Pending proves it reached the held lock,
+    // rather than assuming the executor scheduled a spawned task during a sleep.
+    let second = storage.lock("codex");
+    tokio::pin!(second);
+    assert!(futures_util::poll!(&mut second).is_pending());
     drop(first);
-    tokio::time::timeout(Duration::from_secs(5), waiter)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(acquired.load(Ordering::SeqCst));
+    let second = second.await.unwrap();
+    drop(second);
     fs::remove_file(&lock).unwrap();
     if symlink_file(temp.path().join("elsewhere"), &lock).is_some() {
         assert!(storage.lock("codex").await.is_err());
@@ -167,7 +150,7 @@ async fn named_locks_serialize_holders_and_stay_private() {
 #[test]
 fn credential_storage_keeps_current_and_legacy_workspace_markers_as_boundaries() {
     for marker in ["index.artf", "artifactize.json", ".artifactizeignore"] {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::test_os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
         fs::write(repo.join(marker), "marker").unwrap();

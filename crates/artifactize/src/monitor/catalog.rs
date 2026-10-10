@@ -99,7 +99,7 @@ impl Catalog {
     }
     fn initial_path(&mut self, path: &Path, paths: &BTreeMap<Scope, BTreeSet<PathBuf>>) -> Scope {
         if let Some((scope, _)) = paths.iter().find(|(scope, workspaces)| {
-            matches!(scope, Scope::Worktree(_, tree) if tree == path || workspaces.contains(path))
+            matches!(scope, Scope::Worktree(_, tree) if crate::platform::paths_equal(tree, path) || workspaces.iter().any(|workspace| crate::platform::paths_equal(workspace, path)))
         }) {
             return scope.clone();
         }
@@ -114,7 +114,7 @@ impl Catalog {
             .filter_map(|(scope, workspaces)| match scope {
                 Scope::Worktree(Repository::Workspace(_), _) => workspaces
                     .iter()
-                    .filter(|workspace| path.starts_with(workspace))
+                    .filter(|workspace| crate::platform::is_within(path, workspace))
                     .map(|workspace| (workspace.components().count(), scope))
                     .max_by_key(|(depth, _)| *depth),
                 _ => None,

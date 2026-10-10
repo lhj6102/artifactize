@@ -8,6 +8,7 @@ mod delivery_tests;
 pub mod models;
 #[cfg(test)]
 pub(crate) mod tests;
+mod usage;
 
 use std::{
     net::IpAddr,
@@ -26,7 +27,7 @@ use rig_core::{
     streaming::CompletionStream,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
@@ -60,11 +61,11 @@ pub struct Attempt {
     #[serde(default)]
     pub attempt: usize,
     #[serde(default)]
-    pub usage: Map<String, Value>,
+    pub usage: usage::Usage,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_code: Option<String>,
+    pub error_code: Option<Code>,
 }
 
 /// A classified provider failure, with the wait the provider asked for, if any.
@@ -92,7 +93,7 @@ impl From<Failure> for Classified {
 
 // Only counters cross this boundary; prompts, reasoning and raw responses stay transient.
 #[derive(Default)]
-struct ReportedUsage(Mutex<Map<String, Value>>);
+struct ReportedUsage(Mutex<std::collections::BTreeMap<String, u64>>);
 
 impl Witness for ReportedUsage {
     fn observe(&self, observation: Observation) {
@@ -113,9 +114,13 @@ impl Witness for ReportedUsage {
     }
 }
 
-fn insert_counter(counters: &mut Map<String, Value>, name: &str, value: Option<u64>) {
+fn insert_counter(
+    counters: &mut std::collections::BTreeMap<String, u64>,
+    name: &str,
+    value: Option<u64>,
+) {
     if let Some(value) = value.filter(|value| *value <= crate::types::MAX_SAFE_JSON_INTEGER) {
-        counters.insert(name.into(), json!(value));
+        counters.insert(name.into(), value);
     }
 }
 
@@ -151,7 +156,7 @@ impl Client {
     pub fn parameters(
         backend: Backend,
         reasoning: Option<&str>,
-        session: &str,
+        session: &crate::types::SessionId,
     ) -> Result<Value, String> {
         if let Some(reasoning) = reasoning {
             backend.validate_reasoning(reasoning)?;
@@ -374,16 +379,13 @@ impl Client {
             if let Ok(response) = &result {
                 add_cache_usage(&mut counters, response);
             }
-            let used_tokens = counters.values().any(|v| v.as_u64().is_some_and(|v| v > 0));
+            let used_tokens = counters.values().any(|value| *value > 0);
             attempts.push(Attempt {
                 turn: context.number,
                 attempt,
-                usage: counters,
+                usage: counters.into(),
                 error: result.as_ref().err().map(|failure| failure.message.clone()),
-                error_code: result
-                    .as_ref()
-                    .err()
-                    .map(|failure| failure.code.as_str().to_owned()),
+                error_code: result.as_ref().err().map(|failure| failure.code),
             });
             let failure = match result {
                 Ok(response) => return Ok(response),
@@ -426,7 +428,10 @@ pub struct Turn<'a> {
     pub cancellation: &'a CancellationToken,
 }
 
-fn add_cache_usage(counters: &mut Map<String, Value>, response: &CompletionResponse) {
+fn add_cache_usage(
+    counters: &mut std::collections::BTreeMap<String, u64>,
+    response: &CompletionResponse,
+) {
     insert_counter(
         counters,
         "cacheWriteTokens",
@@ -545,7 +550,8 @@ pub fn test_endpoint(backend: Backend) -> Result<Option<String>, String> {
 /// The loopback test endpoint in `variable`, if set. An empty value is unset; any other
 /// value must be a loopback URL.
 pub fn variable_endpoint(variable: &str) -> Result<Option<String>, String> {
-    let Some(value) = std::env::var_os(variable).filter(|value| !value.is_empty()) else {
+    let Some(value) = crate::platform::environment::var(variable).filter(|value| !value.is_empty())
+    else {
         return Ok(None);
     };
     value
@@ -558,9 +564,9 @@ pub fn variable_endpoint(variable: &str) -> Result<Option<String>, String> {
 
 /// The first test endpoint variable that is set, valid or not.
 pub fn active_test_endpoint() -> Option<&'static str> {
-    TEST_ENDPOINTS
-        .into_iter()
-        .find(|variable| std::env::var_os(variable).is_some_and(|value| !value.is_empty()))
+    TEST_ENDPOINTS.into_iter().find(|variable| {
+        crate::platform::environment::var(variable).is_some_and(|value| !value.is_empty())
+    })
 }
 
 /// An http(s) URL on localhost, 127.0.0.0/8 or [::1], without credentials, a query or a
@@ -601,8 +607,7 @@ fn base_url(backend: Backend) -> Result<String, String> {
 /// The backend's API key from its environment variable; never printed or logged.
 fn api_key(backend: Backend, purpose: &str) -> Result<String, String> {
     let variable = key_variable(backend).expect("an API-key backend");
-    std::env::var(variable)
-        .ok()
+    crate::platform::environment::var_text(variable)
         .filter(|key| !key.trim().is_empty())
         .ok_or_else(|| format!("{variable} is required {purpose}."))
 }

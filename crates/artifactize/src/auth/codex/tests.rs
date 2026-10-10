@@ -23,7 +23,7 @@ pub(crate) fn jwt(account: &str, exp: u64) -> String {
 
 fn storage(root: &Path) -> Storage {
     let directory = root.join("auth");
-    crate::platform::create_private_dir(&directory).unwrap();
+    crate::test_os::create_private_dir_all(&directory);
     Storage { directory }
 }
 
@@ -41,7 +41,7 @@ fn stored(storage: &Storage, access: &str, expires_at: u64) {
             &Credentials {
                 access_token: access.into(),
                 refresh_token: "old-refresh".into(),
-                account_id: "account-1".into(),
+                account_id: "account-1".parse().unwrap(),
                 expires_at,
                 saved_at: 1,
             },
@@ -62,7 +62,7 @@ fn form(body: &Value) -> BTreeMap<String, String> {
 
 #[test]
 fn authorize_url_carries_pkce_and_the_codex_flow_parameters() {
-    let pending = Pending::new().unwrap();
+    let mut pending = Pending::new().unwrap();
     assert_eq!(pending.verifier.len(), 43);
     assert_eq!(URL_SAFE_NO_PAD.decode(&pending.verifier).unwrap().len(), 32);
     assert!(
@@ -81,18 +81,20 @@ fn authorize_url_carries_pkce_and_the_codex_flow_parameters() {
     assert_ne!(pending.state, Pending::new().unwrap().state);
     let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
     assert_eq!(redirect_uri, REDIRECT_URI);
+    // RFC 7636, Appendix B: independent S256 verifier/challenge vector.
+    pending.verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk".into();
     let url = pending
         .authorize_url("https://auth.openai.com", &redirect_uri)
         .unwrap();
     assert_eq!(url.path(), "/oauth/authorize");
     let query: BTreeMap<_, _> = url.query_pairs().into_owned().collect();
-    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(pending.verifier.as_bytes()));
+    let challenge = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
     let expected: BTreeMap<String, String> = [
         ("response_type", "code"),
         ("client_id", "app_EMoamEEZ73f0CkXaXp7hrann"),
         ("redirect_uri", "http://localhost:1455/auth/callback"),
         ("scope", "openid profile email offline_access"),
-        ("code_challenge", &challenge),
+        ("code_challenge", challenge),
         ("code_challenge_method", "S256"),
         ("state", &pending.state),
         ("id_token_add_organizations", "true"),
@@ -142,9 +144,9 @@ async fn browser(port: u16, host: &str, target: &str) -> String {
 
 #[tokio::test]
 async fn login_exchanges_the_callback_code_and_saves_private_tokens() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::test_os::tempdir();
     let storage = storage(temp.path());
-    let access = jwt("account-1", now().unwrap() + 3600);
+    let access = jwt("account-1", 10_000 + 3600);
     let server = Server::new(vec![tokens(&access, "refresh-1")]).await;
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -230,14 +232,14 @@ async fn login_exchanges_the_callback_code_and_saves_private_tokens() {
     assert_eq!(saved.access_token, access);
     assert_eq!(saved.refresh_token, "refresh-1");
     assert_eq!(saved.account_id, "account-1");
-    assert!(saved.expires_at >= saved.saved_at + 3600);
+    assert_eq!(saved.expires_at, saved.saved_at + 3600);
     // The ID token is not kept.
     assert!(!fs::read_to_string(path).unwrap().contains("\"id\""));
 }
 
 #[tokio::test]
 async fn login_accepts_a_pasted_redirect_and_rejects_unusable_token_responses() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::test_os::tempdir();
     let storage = storage(temp.path());
     let without_account = MockHttpResponse::success(
         json!({"access_token":"not-a-jwt","refresh_token":"r","expires_in":3600}).to_string(),
@@ -293,16 +295,20 @@ async fn login_accepts_a_pasted_redirect_and_rejects_unusable_token_responses() 
 
 #[tokio::test]
 async fn expiring_tokens_refresh_once_under_the_lock_and_rotate() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::test_os::tempdir();
     let storage = Arc::new(storage(temp.path()));
-    stored(&storage, "old-access", now().unwrap() + 60);
-    let fresh = jwt("account-1", now().unwrap() + 3600);
+    stored(&storage, "old-access", 10_000 + 60);
+    let fresh = jwt("account-1", 10_000 + 3600);
     let server = Arc::new(Server::new(vec![tokens(&fresh, "new-refresh")]).await);
     let tasks: Vec<_> = (0..2)
         .map(|_| {
             let storage = storage.clone();
             let server = server.clone();
-            tokio::spawn(async move { stored_token(&storage, &root(&server)).await.unwrap() })
+            tokio::spawn(async move {
+                stored_token_at(&storage, &root(&server), || Ok(10_000))
+                    .await
+                    .unwrap()
+            })
         })
         .collect();
     for task in tasks {
@@ -327,9 +333,9 @@ async fn expiring_tokens_refresh_once_under_the_lock_and_rotate() {
 
 #[tokio::test]
 async fn refresh_failures_keep_or_drop_the_sign_in() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::test_os::tempdir();
     let storage = storage(temp.path());
-    let other = jwt("account-2", now().unwrap() + 3600);
+    let other = jwt("account-2", 10_000 + 3600);
     let server = Server::new(vec![
         MockHttpResponse::error(StatusCode::INTERNAL_SERVER_ERROR, "{}"),
         tokens(&other, "other-refresh"),
@@ -341,33 +347,45 @@ async fn refresh_failures_keep_or_drop_the_sign_in() {
     .await;
     stored(&storage, "old-access", 1);
     // A failing token endpoint is transient, so a review may retry it.
-    let transient = stored_token(&storage, &root(&server)).await.err().unwrap();
+    let transient = stored_token_at(&storage, &root(&server), || Ok(10_000))
+        .await
+        .err()
+        .unwrap();
     assert!(transient.transient);
     let transient = transient.message;
     assert!(
         transient.contains("HTTP 500") && transient.contains("kept"),
         "{transient}"
     );
-    let mismatch = stored_token(&storage, &root(&server)).await.err().unwrap();
+    let mismatch = stored_token_at(&storage, &root(&server), || Ok(10_000))
+        .await
+        .err()
+        .unwrap();
     assert!(!mismatch.transient);
     let mismatch = mismatch.message;
     assert!(mismatch.contains("another ChatGPT account"), "{mismatch}");
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_some());
-    let terminal = stored_token(&storage, &root(&server)).await.err().unwrap();
+    let terminal = stored_token_at(&storage, &root(&server), || Ok(10_000))
+        .await
+        .err()
+        .unwrap();
     assert!(!terminal.transient);
     let terminal = terminal.message;
     assert!(terminal.contains("refresh_token_reused"), "{terminal}");
     assert!(terminal.contains("artifactize login codex"), "{terminal}");
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
-    let missing = stored_token(&storage, &root(&server)).await.err().unwrap();
+    let missing = stored_token_at(&storage, &root(&server), || Ok(10_000))
+        .await
+        .err()
+        .unwrap();
     assert_eq!(missing.message, LOGIN_REQUIRED);
 }
 
 #[test]
 fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::test_os::tempdir();
     let path = temp.path().join("auth.json");
-    let access = jwt("claim-account", now().unwrap() + 3600);
+    let access = jwt("claim-account", 10_000 + 3600);
     let write = |value: Value| fs::write(&path, value.to_string()).unwrap();
 
     write(json!({
@@ -384,7 +402,7 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
         fs::read(&path).unwrap(),
         path.metadata().unwrap().modified().unwrap(),
     );
-    let token = read_auth_file(&path).unwrap();
+    let token = read_auth_file_at(&path, 10_000).unwrap();
     assert_eq!(token.access_token, access);
     assert_eq!(token.account_id, "file-account");
     assert_eq!(
@@ -396,14 +414,17 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
     );
 
     write(json!({"tokens":{"access_token":access}}));
-    assert_eq!(read_auth_file(&path).unwrap().account_id, "claim-account");
+    assert_eq!(
+        read_auth_file_at(&path, 10_000).unwrap().account_id,
+        "claim-account"
+    );
 
     // The fake-provider docs' dummy file: an opaque token has no expiry to check.
     write(json!({"tokens":{"access_token":"dummy","account_id":"test"}}));
-    assert_eq!(read_auth_file(&path).unwrap().account_id, "test");
+    assert_eq!(read_auth_file_at(&path, 10_000).unwrap().account_id, "test");
 
-    write(json!({"tokens":{"access_token":jwt("a", now().unwrap() + 30),"refresh_token":"r"}}));
-    let expired = read_auth_file(&path).err().unwrap();
+    write(json!({"tokens":{"access_token":jwt("a", 10_000 + 30),"refresh_token":"r"}}));
+    let expired = read_auth_file_at(&path, 10_000).err().unwrap();
     assert!(expired.contains("has expired"), "{expired}");
     assert!(expired.contains("sign in with Codex again"), "{expired}");
     assert!(expired.contains("never refreshes"), "{expired}");
@@ -420,11 +441,11 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
         ),
     ] {
         fs::write(&path, contents).unwrap();
-        let error = read_auth_file(&path).err().unwrap();
+        let error = read_auth_file_at(&path, 10_000).err().unwrap();
         assert!(error.contains(expected), "{error}");
         assert!(!error.contains("sk-secret"), "{error}");
     }
-    let error = read_auth_file(&temp.path().join("missing.json"))
+    let error = read_auth_file_at(&temp.path().join("missing.json"), 10_000)
         .err()
         .unwrap();
     assert!(
@@ -435,9 +456,9 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
 
 #[test]
 fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::test_os::tempdir();
     let path = temp.path().join("fixture-auth.json");
-    let access = jwt("claim-account", now().unwrap() + 3600);
+    let access = jwt("claim-account", 10_000 + 3600);
     for account in [Value::Null, json!(17), json!([]), json!({}), json!("")] {
         fs::write(
             &path,
@@ -448,7 +469,10 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
             .to_string(),
         )
         .unwrap();
-        assert_eq!(read_auth_file(&path).unwrap().account_id, "claim-account");
+        assert_eq!(
+            read_auth_file_at(&path, 10_000).unwrap().account_id,
+            "claim-account"
+        );
     }
     for contents in [
         "null",
@@ -463,7 +487,7 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
     ] {
         fs::write(&path, contents).unwrap();
         assert!(
-            read_auth_file(&path)
+            read_auth_file_at(&path, 10_000)
                 .err()
                 .unwrap()
                 .contains("no ChatGPT sign-in tokens"),
@@ -475,7 +499,7 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
         r#"{"tokens":{"access_token":"first","access_token":"last","account_id":"first","account_id":"last"}}"#,
     )
     .unwrap();
-    let token = read_auth_file(&path).unwrap();
+    let token = read_auth_file_at(&path, 10_000).unwrap();
     assert_eq!(
         (token.access_token.as_str(), token.account_id.as_str()),
         ("last", "last")
@@ -485,14 +509,17 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
         r#"{"tokens":17,"tokens":{"access_token":"dummy","account_id":"final"}}"#,
     )
     .unwrap();
-    assert_eq!(read_auth_file(&path).unwrap().account_id, "final");
+    assert_eq!(
+        read_auth_file_at(&path, 10_000).unwrap().account_id,
+        "final"
+    );
     fs::write(
         &path,
         r#"{"tokens":{"access_token":"dummy","account_id":"final"},"tokens":null}"#,
     )
     .unwrap();
     assert!(
-        read_auth_file(&path)
+        read_auth_file_at(&path, 10_000)
             .err()
             .unwrap()
             .contains("no ChatGPT sign-in tokens")
@@ -501,14 +528,14 @@ fn typed_auth_file_import_keeps_missing_null_wrong_type_and_token_priority() {
 
 #[tokio::test]
 async fn logout_revokes_the_refresh_token_and_removes_only_own_tokens() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = crate::test_os::tempdir();
     let storage = storage(temp.path());
     let server = Server::new(vec![
         MockHttpResponse::success("{}".to_owned()),
         MockHttpResponse::error(StatusCode::BAD_REQUEST, "{}"),
     ])
     .await;
-    stored(&storage, "access", now().unwrap() + 3600);
+    stored(&storage, "access", 10_000 + 3600);
     assert!(sign_out(&storage, &root(&server)).await.unwrap());
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
     let request = &server.requests()[0];
@@ -520,7 +547,7 @@ async fn logout_revokes_the_refresh_token_and_removes_only_own_tokens() {
     // Nothing stored: nothing to revoke.
     assert!(sign_out(&storage, &root(&server)).await.unwrap());
     assert_eq!(server.requests().len(), 1);
-    stored(&storage, "access", now().unwrap() + 3600);
+    stored(&storage, "access", 10_000 + 3600);
     assert!(!sign_out(&storage, &root(&server)).await.unwrap());
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
 }
@@ -529,9 +556,8 @@ async fn logout_revokes_the_refresh_token_and_removes_only_own_tokens() {
 #[cfg(unix)]
 #[tokio::test]
 async fn sign_in_browser_uses_the_shared_literal_opener() {
-    use std::process::Command;
     let url = Url::parse("https://example.invalid/?a=1&b=two words").unwrap();
-    if let Some(record) = std::env::var_os(crate::test_os::RECORD) {
+    if let Some(record) = crate::platform::environment::var(crate::test_os::RECORD) {
         open_browser(&url).await;
         assert_eq!(
             fs::read_to_string(record).unwrap(),
@@ -541,16 +567,16 @@ async fn sign_in_browser_uses_the_shared_literal_opener() {
     }
     let root = crate::test_os::tempdir();
     crate::test_os::recording_program(root.path(), crate::test_os::OPENER);
-    let output = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "auth::codex::tests::sign_in_browser_uses_the_shared_literal_opener",
-            "--nocapture",
-        ])
-        .env("PATH", root.path())
-        .env(crate::test_os::RECORD, root.path().join("record"))
-        .output()
-        .unwrap();
+    let output = crate::test_os::run_test(
+        "auth::codex::tests::sign_in_browser_uses_the_shared_literal_opener",
+        &[
+            ("PATH", root.path().as_os_str().to_owned()),
+            (
+                crate::test_os::RECORD,
+                root.path().join("record").into_os_string(),
+            ),
+        ],
+    );
     assert!(
         output.status.success(),
         "{}{}",

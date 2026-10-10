@@ -425,3 +425,6 @@ mod tests {
         assert!("INCOMPLETE".parse::<RequestStatus>().is_err());
     }
 }
+
+// OAuth account claims are opaque provider strings, historically any nonempty text.
+identity!(CodexAccountId, |value: &str| !value.is_empty());

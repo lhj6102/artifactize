@@ -464,7 +464,7 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
         let detail = monitor::detail(
             &run,
             &requests,
-            &Target::Eval("player/ready".into()),
+            &Target::Eval("player/ready".parse().unwrap()),
             OffsetDateTime::now_utc(),
         );
         assert_eq!(detail.field("Source"), Some("derived (no execution)"));

@@ -41,7 +41,7 @@ pub(super) async fn list(
                 out,
                 "{}\t{}\t{}\t{}\t{}\t{}",
                 run.id,
-                run.repo_path.display(),
+                crate::platform::path_text(&run.repo_path),
                 run.created_at,
                 run.completed_at
                     .map_or_else(|| "-".to_owned(), |time| time.to_string()),
@@ -58,11 +58,10 @@ pub(super) async fn show(
     context: Context,
     run_id: crate::types::RunId,
     wait: bool,
-    timeout_ms: Option<u32>,
+    timeout_ms: Option<Duration>,
 ) -> Result<u8, String> {
     let state = crate::store::state_dir(context.state_dir.as_deref())?;
-    let deadline = tokio::time::Instant::now()
-        + timeout_ms.map_or(DEFAULT_RUN_WAIT, |ms| Duration::from_millis(ms.into()));
+    let deadline = tokio::time::Instant::now() + timeout_ms.unwrap_or(DEFAULT_RUN_WAIT);
     let mut view = crate::store::read_run(&state, &run_id).await?;
     while wait && view.run.status == crate::types::RunStatus::Running {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
