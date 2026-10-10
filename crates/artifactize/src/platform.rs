@@ -59,3 +59,102 @@ pub(crate) fn open_regular(path: &std::path::Path) -> std::io::Result<std::fs::F
         ))
     }
 }
+
+/// Default state directory policy belongs with the platform's environment names.
+pub(crate) fn state_directory() -> Option<std::path::PathBuf> {
+    resolve_state_directory(
+        environment::var("ARTIFACTIZE_STATE_HOME").map(Into::into),
+        STATE_VARIABLES
+            .iter()
+            .find_map(|name| environment::var(name).filter(|v| !v.is_empty()))
+            .map(Into::into),
+        home_directory(),
+    )
+}
+
+fn resolve_state_directory(
+    artifactize: Option<std::path::PathBuf>,
+    state: Option<std::path::PathBuf>,
+    home: Option<std::path::PathBuf>,
+) -> Option<std::path::PathBuf> {
+    artifactize
+        .filter(|p| !p.as_os_str().is_empty())
+        .or_else(|| {
+            state
+                .filter(|p| !p.as_os_str().is_empty())
+                .map(|p| p.join("artifactize"))
+        })
+        .or_else(|| {
+            home.filter(|p| !p.as_os_str().is_empty())
+                .map(|p| p.join(".local/state/artifactize"))
+        })
+}
+
+/// Printable user metadata, not an authenticated principal.
+pub(crate) fn user_name() -> Option<String> {
+    USER_VARIABLES
+        .iter()
+        .find_map(|name| environment::var_text(name).filter(|value| !value.is_empty()))
+}
+
+/// Strip one platform-supported script line ending and name the accepted endings.
+pub(crate) fn fingerprint_line_ending(stdout: &[u8]) -> (&[u8], &'static str) {
+    if CRLF_LINE_ENDINGS {
+        (
+            stdout
+                .strip_suffix(b"\r\n")
+                .or_else(|| stdout.strip_suffix(b"\n"))
+                .unwrap_or(stdout),
+            "LF or CRLF",
+        )
+    } else {
+        (stdout.strip_suffix(b"\n").unwrap_or(stdout), "LF")
+    }
+}
+
+/// Classify the final component without following links or Windows reparse points.
+pub(crate) fn path_kind(path: &std::path::Path) -> std::io::Result<FileKind> {
+    match (path.parent(), path.file_name()) {
+        (Some(parent), Some(name)) => entry_kind(&open_directory(parent)?, name),
+        _ => open_directory(path).map(|_| FileKind::Directory),
+    }
+}
+
+#[cfg(test)]
+mod state_directory_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn state_home_precedence_and_empty_values() {
+        let artifactize = PathBuf::from("custom/state");
+        let state = PathBuf::from("state");
+        let home = PathBuf::from("reviewer");
+        assert_eq!(
+            resolve_state_directory(
+                Some(artifactize.clone()),
+                Some(state.clone()),
+                Some(home.clone())
+            ),
+            Some(artifactize)
+        );
+        assert_eq!(
+            resolve_state_directory(None, Some(state.clone()), Some(home.clone())),
+            Some(state.join("artifactize"))
+        );
+        assert_eq!(
+            resolve_state_directory(None, None, Some(home.clone())),
+            Some(home.join(".local/state/artifactize"))
+        );
+        let empty = Some(PathBuf::new());
+        assert_eq!(
+            resolve_state_directory(empty.clone(), empty.clone(), Some(home.clone())),
+            Some(home.join(".local/state/artifactize"))
+        );
+        assert_eq!(
+            resolve_state_directory(empty.clone(), empty.clone(), empty),
+            None
+        );
+        assert_eq!(resolve_state_directory(None, None, None), None);
+    }
+}
