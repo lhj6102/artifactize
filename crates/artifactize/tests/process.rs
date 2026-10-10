@@ -136,9 +136,7 @@ async fn registration_is_covered_by_the_deadline() {
     let scratch = Scratch::new();
     let mut command = command("/bin/sh", &["-c", "touch started"]);
     command.cwd = scratch.0.clone();
-    // Long enough that even a loaded machine reaches registration before the deadline; the
-    // registration below never finishes, so the deadline always ends the run.
-    command.timeout = support::os::patience(Duration::from_secs(2));
+    command.timeout = Duration::from_millis(100);
     let pid = Arc::new(AtomicU32::new(0));
     let observed = pid.clone();
     let result = process::run(command, CancellationToken::new(), move |child| async move {
