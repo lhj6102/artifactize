@@ -508,7 +508,7 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
         "runId":"run-1",
         "requestId":original.request.id,
         "evalId":"app/original",
-        "evalDefHash":"hash",
+        "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "completedAt":null,
     }))
     .unwrap();
@@ -543,7 +543,7 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
             "id":"execution-fixture",
             "key":null,
             "fingerprint":null,
-            "evalDefHash":"hash",
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
             "ownerPid":0,
             "ownerStartTime":0,
             "status":"RUNNING",

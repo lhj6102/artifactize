@@ -417,7 +417,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
             "key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "fingerprint":"old",
             "fingerprints":fingerprints,
-            "evalDefHash":"hash",
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
             "ownerPid":1,
             "ownerStartTime":1,
             "status":"GREEN",
@@ -431,7 +431,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
                 "runId":"run-1",
                 "requestId":"run-1-1",
                 "evalId":"a/check",
-                "evalDefHash":"hash",
+                "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
                 "completedAt":null,
             },
             "startedAt":"2026-01-01T00:00:00Z",
@@ -444,7 +444,9 @@ fn changes_name_target_files_and_dependency_fingerprints() {
         value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
             .parse()
             .unwrap(),
-        eval_def_hash: "hash".into(),
+        eval_def_hash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            .parse()
+            .unwrap(),
         fingerprints: fingerprints(pairs),
         artifact_kinds: BTreeMap::new(),
     };

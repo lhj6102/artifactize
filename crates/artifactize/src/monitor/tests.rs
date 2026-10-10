@@ -21,7 +21,7 @@ pub(crate) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
         "title":"Title",
         "profile":{"kind":"runtime","command":"true","args":[]},
         "requestedProfile":{"kind":"runtime","command":"true","args":[]},
-        "evalDefHash":"hash",
+        "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "payload":{"instruction":"Check."},
         "references":{},
         "deps":[],
@@ -443,7 +443,7 @@ fn heavy() -> (RunView, Vec<RequestView>) {
         request.provenance = Some(
             serde_json::from_value(
                 json!({"repoPath":"/repo","runId":"run-1","requestId":request.id,
-                "evalId":eval,"evalDefHash":"hash","completedAt":"2026-01-01T00:00:04Z"}),
+                "evalId":eval,"evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","completedAt":"2026-01-01T00:00:04Z"}),
             )
             .unwrap(),
         );

@@ -416,7 +416,7 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
                     "maxToolCalls":null,
                     "maxTokens":null,
                 },
-                "evalDefHash":"fixture",
+                "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
                 "executionId":null,
                 "provenance":null,
                 "usage":null,

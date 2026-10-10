@@ -37,7 +37,7 @@ pub struct Provenance {
     pub run_id: RunId,
     pub request_id: RequestId,
     pub eval_id: String,
-    pub eval_def_hash: String,
+    pub eval_def_hash: crate::types::DefinitionHash,
     pub completed_at: Option<crate::types::Timestamp>,
     /// For Agent results: the SHA-256 of each tool's `executionPaths` when the review started,
     /// by tool name and declared path.
@@ -62,7 +62,7 @@ pub struct Execution {
     /// Kinds of exactly the Artifacts covered by a new-format reuse key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub artifact_kinds: BTreeMap<String, crate::config::ArtifactKind>,
-    pub eval_def_hash: String,
+    pub eval_def_hash: crate::types::DefinitionHash,
     pub owner_pid: u32,
     pub owner_start_time: u64,
     pub status: ExecutionStatus,
@@ -409,8 +409,8 @@ pub async fn read_keyed_executions(
 /// changed key is explained against.
 pub async fn read_latest_cached(
     state: &std::path::Path,
-    keys: &[(String, String)],
-) -> Result<std::collections::BTreeMap<(String, String), Execution>, String> {
+    keys: &[(String, crate::types::DefinitionHash)],
+) -> Result<std::collections::BTreeMap<(String, crate::types::DefinitionHash), Execution>, String> {
     if keys.is_empty() {
         return Ok(Default::default());
     }

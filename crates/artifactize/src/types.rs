@@ -166,10 +166,17 @@ identity!(Fingerprint, |value: &str| (1..=MAX_FINGERPRINT_BYTES)
     && value.bytes().all(
         |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-')
     ));
-identity!(ReuseKey, |value: &str| value.len() == SHA256_HEX_BYTES
-    && value.bytes().all(
-        |byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)
-    ));
+/// Lowercase hexadecimal SHA-256: what reuse keys and definition hashes are.
+fn sha256_hex(value: &str) -> bool {
+    value.len() == SHA256_HEX_BYTES
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+identity!(ReuseKey, sha256_hex);
+// The SHA-256 of an eval's review strategy (`cache::eval_definition_hash`).
+identity!(DefinitionHash, sha256_hex);
 
 macro_rules! status {
     ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {

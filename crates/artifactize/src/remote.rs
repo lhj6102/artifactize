@@ -31,7 +31,7 @@ pub const MAX_FULL_BYTES: usize = crate::store::history::MAX_ENTRY_BYTES;
 pub struct Record {
     pub schema: u32,
     pub key: crate::types::ReuseKey,
-    pub eval_def_hash: String,
+    pub eval_def_hash: crate::types::DefinitionHash,
     /// Each Artifact the key covers, with its fingerprint.
     pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

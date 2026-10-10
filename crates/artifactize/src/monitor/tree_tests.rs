@@ -156,7 +156,7 @@ fn own_facts_come_before_dependencies() {
         "cli/follows-style",
         "GREEN",
         json!({"provenance":{"runId":"run-0","requestId":"run-0-x","evalId":"cli/follows-style",
-            "evalDefHash":"hash","repoPath":"/repo","completedAt":"2026-01-01T00:00:00Z"}}),
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","repoPath":"/repo","completedAt":"2026-01-01T00:00:00Z"}}),
     );
     let (run, requests) = saved(
         definitions(&[(&["cli"], &[])], vec![runtime("cli/follows-style")]),
@@ -966,7 +966,7 @@ fn compact_rows_keep_glyph_name_and_one_right_column() {
 
 fn reused() -> Value {
     json!({"provenance":{"runId":"run-0","requestId":"run-0-x","evalId":"cli/follows-style",
-        "evalDefHash":"hash","repoPath":"/repo","completedAt":"2026-01-01T00:00:00Z"}})
+        "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","repoPath":"/repo","completedAt":"2026-01-01T00:00:00Z"}})
 }
 
 #[test]

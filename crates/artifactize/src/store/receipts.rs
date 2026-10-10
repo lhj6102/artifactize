@@ -146,7 +146,7 @@ pub struct Request {
     pub title: String,
     pub profile: crate::config::StoredProfile,
     pub requested_profile: crate::config::StoredProfile,
-    pub eval_def_hash: String,
+    pub eval_def_hash: crate::types::DefinitionHash,
     /// The requested execution options, or a reused result's.
     #[serde(default)]
     pub options: ExecutionOptions,

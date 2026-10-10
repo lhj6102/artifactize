@@ -32,7 +32,7 @@ pub(super) const LATEST: &str = "e.completed_at DESC, e.rowid DESC";
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     pub key: crate::types::ReuseKey,
-    pub eval_def_hash: String,
+    pub eval_def_hash: crate::types::DefinitionHash,
     pub execution_id: crate::types::ExecutionId,
     pub verdict: crate::types::ExecutionStatus,
     pub repo_path: String,

@@ -43,7 +43,7 @@ const REUSE_KEY_FORMAT_PREFIX: &str = "artifactize-key-v2\n";
 /// Hash the eval strategy: what is asked and how the answer is judged, never how the eval
 /// is executed. Execution options (backend, model, reasoning, limits, the profile variant),
 /// the eval's id and title, and tool views stay out.
-pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
+pub fn eval_definition_hash(eval: &EvalDeclaration) -> crate::types::DefinitionHash {
     let kind = match &eval.profile {
         Profile::Agent { .. } => "agent",
         Profile::Human {} => "human",
@@ -67,6 +67,8 @@ pub fn eval_definition_hash(eval: &EvalDeclaration) -> String {
     content::hex(&Sha256::digest(
         serde_json::to_vec(&strategy).expect("eval strategy is JSON"),
     ))
+    .parse()
+    .expect("a SHA-256 digest in hex is a definition hash")
 }
 
 /// A prepared fingerprint; artifactsum also carries its manifest.
@@ -92,7 +94,7 @@ pub struct Manifest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Key {
     pub value: crate::types::ReuseKey,
-    pub eval_def_hash: String,
+    pub eval_def_hash: crate::types::DefinitionHash,
     /// Each Artifact the eval depends on, its target included, with its fingerprint.
     pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
     pub artifact_kinds: BTreeMap<String, crate::config::ArtifactKind>,

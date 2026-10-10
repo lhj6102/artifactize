@@ -190,7 +190,7 @@ fn view(status: &str, reviewer: Option<&str>, definition: Value) -> RequestView 
             "title":"Approve",
             "profile":{"kind":"human"},
             "requestedProfile":{"kind":"human"},
-            "evalDefHash":"hash",
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
             "payload":{"instruction":"Approve the notes."},
             "references":{},
             "deps":[],
@@ -388,10 +388,10 @@ fn shared_requests_name_where_actions_go_in_the_metadata() {
     let mut review = opened(None, demo());
     let execution = |request: &str| {
         let provenance = json!({"repoPath":"/origin","runId":"run-0","requestId":request,
-            "evalId":"release/signoff","evalDefHash":"hash","completedAt":null});
+            "evalId":"release/signoff","evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","completedAt":null});
         serde_json::from_value(
             json!({"id":"execution-fixture","key":null,"fingerprint":null,
-            "evalDefHash":"hash","ownerPid":0,"ownerStartTime":0,"status":"WAITING_HUMAN",
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","ownerPid":0,"ownerStartTime":0,"status":"WAITING_HUMAN",
             "result":null,"error":null,"errorCode":null,"profile":{"kind":"human"},"usage":null,
             "provenance":provenance,"startedAt":"2026-01-01T00:00:00Z","completedAt":null}),
         )
