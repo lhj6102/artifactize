@@ -16,7 +16,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(tool: Value) -> Self {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_os::tempdir();
         let repo = directory.path().join("repo");
         let output = directory.path().join("output");
         fs::create_dir_all(&repo).unwrap();
@@ -263,7 +263,7 @@ async fn json_success_authored_error_and_credential_safe_failures() {
 
 #[test]
 fn json_result_limits_and_strict_shapes() {
-    let output = tempfile::tempdir().unwrap();
+    let output = crate::test_os::tempdir();
     let parse = |value: Value| result::parse(&serde_json::to_vec(&value).unwrap(), output.path());
     let block = json!({"type":"text","text":"ok"});
     for invalid in [

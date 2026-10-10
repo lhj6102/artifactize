@@ -28,7 +28,12 @@ fn endpoint_names_keep_the_same_twenty_four_hex_character_directory_prefix() {
         let user = unsafe { libc::geteuid() };
         assert_eq!(
             directory,
-            Path::new("/tmp").join(format!(
+            Path::new(if cfg!(target_os = "macos") {
+                "/private/tmp"
+            } else {
+                "/tmp"
+            })
+            .join(format!(
                 "artifactize-ipc-{user}-{}",
                 &endpoint.identity[..24]
             ))

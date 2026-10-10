@@ -6,6 +6,12 @@
 
 use std::{path::Path, process::Command};
 
+/// A temporary fixture below the physical OS temp root, not macOS /var or Windows 8.3
+/// aliases. Scoped file reads intentionally refuse symlink traversal.
+pub fn tempdir() -> tempfile::TempDir {
+    tempfile::tempdir_in(std::fs::canonicalize(std::env::temp_dir()).unwrap()).unwrap()
+}
+
 /// The program a test names a Unix utility by, such as `/bin/sh` or `cat`: unchanged on
 /// Unix. On Windows, `fixture.rs` built once and linked under the utility's file name, a
 /// stand-in for the shell and the utilities the test scripts use. Setting
