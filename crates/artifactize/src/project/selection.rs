@@ -193,8 +193,8 @@ pub fn select_profiles(
         return Ok(config);
     };
     let evals = selection.included_evals(&config, recursive)?;
-    let included: BTreeMap<_, _> = evals.iter().map(|eval| (eval.id.as_str(), *eval)).collect();
-    let mapping: Vec<(&str, &str)> = match profile {
+    let included: BTreeMap<_, _> = evals.iter().map(|eval| (&eval.id, *eval)).collect();
+    let mapping: Vec<(&EvalId, &ProfileVariantName)> = match profile {
         ProfileSelection::Named(name) => evals
             .iter()
             .filter(|eval| {
@@ -203,12 +203,9 @@ pub fn select_profiles(
                     crate::config::Profile::Dependency { .. }
                 )
             })
-            .map(|eval| (eval.id.as_str(), name.as_str()))
+            .map(|eval| (&eval.id, name))
             .collect(),
-        ProfileSelection::Evals(mapping) => mapping
-            .iter()
-            .map(|(id, name)| (id.as_str(), name.as_str()))
-            .collect(),
+        ProfileSelection::Evals(mapping) => mapping.iter().collect(),
     };
     let mut profiles = BTreeMap::new();
     for (id, name) in mapping {
@@ -228,16 +225,10 @@ pub fn select_profiles(
             .profile_variants()
             .get(name)
             .ok_or_else(|| format!("Unknown profile variant for {id}: {name}"))?;
-        profiles.insert(
-            id.to_owned(),
-            (
-                name.parse().expect("declared profile variant"),
-                variant.clone(),
-            ),
-        );
+        profiles.insert(id.clone(), (name.clone(), variant.clone()));
     }
     for eval in &mut config.evals {
-        if let Some((name, _profile)) = profiles.remove(eval.id.as_str()) {
+        if let Some((name, _profile)) = profiles.remove(&eval.id) {
             eval.declaration.select_profile(&name)?;
             eval.variant = Some(name);
         }

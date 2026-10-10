@@ -24,7 +24,7 @@ pub struct Collection {
     /// Its size after it, or with a dry run, after the deletions it reports.
     pub remaining: u64,
     /// The sessions deleted, or with a dry run those that would be, oldest first.
-    pub removed: Vec<String>,
+    pub removed: Vec<SessionId>,
 }
 
 /// The session store's size.
@@ -185,7 +185,7 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
             }
         }
         collection.remaining = collection.remaining.saturating_sub(entry.bytes);
-        collection.removed.push(entry.id.into());
+        collection.removed.push(entry.id);
     }
     Ok(collection)
 }
@@ -234,11 +234,17 @@ mod tests {
         let state = store(&[("a", 100), ("b", 100), ("c", 100), ("d", 100)]);
         // At the maximum, nothing is collected.
         let collection = collect(state.path(), bounds(400, 150), false).unwrap();
-        assert_eq!(collection.removed, Vec::<String>::new());
+        assert!(collection.removed.is_empty());
         assert_eq!(usage(state.path()).unwrap().sessions, 4);
 
         let dry = collect(state.path(), bounds(399, 150), true).unwrap();
-        assert_eq!(dry.removed, ["a", "b", "c"]);
+        assert_eq!(
+            dry.removed
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["a", "b", "c"]
+        );
         assert_eq!((dry.bytes, dry.remaining), (400, 100));
         assert_eq!(usage(state.path()).unwrap().sessions, 4);
 
@@ -247,7 +253,14 @@ mod tests {
         let held = File::create(&lock).unwrap();
         held.lock().unwrap();
         let collection = collect(state.path(), bounds(399, 200), false).unwrap();
-        assert_eq!(collection.removed, ["a", "c"]);
+        assert_eq!(
+            collection
+                .removed
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["a", "c"]
+        );
         assert_eq!(collection.remaining, 200);
         drop(held);
         let left: BTreeSet<_> = fs::read_dir(directory(state.path()))
@@ -268,7 +281,14 @@ mod tests {
         let state = store(&[("valid", 100), ("..", 100), ("bad name", 100)]);
         assert_eq!(usage(state.path()).unwrap().sessions, 1);
         let collection = collect(state.path(), bounds(1, 0), false).unwrap();
-        assert_eq!(collection.removed, ["valid"]);
+        assert_eq!(
+            collection
+                .removed
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["valid"]
+        );
         assert!(directory(state.path()).join("...jsonl").is_file());
         assert!(directory(state.path()).join("bad name.jsonl").is_file());
     }
@@ -283,7 +303,14 @@ mod tests {
         )
         .unwrap();
         let collection = collect(state.path(), bounds(1, 0), false).unwrap();
-        assert_eq!(collection.removed, ["finished"]);
+        assert_eq!(
+            collection
+                .removed
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["finished"]
+        );
         db.execute_batch("UPDATE requests SET data='{\"sessionId\":\"../invalid\"}';")
             .unwrap();
         assert!(running(state.path()).is_err());

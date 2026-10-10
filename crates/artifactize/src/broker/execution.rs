@@ -55,7 +55,10 @@ pub(super) async fn execute(
     let outcome = match prepared {
         Ok(Prepared::Human) => {
             request.human_definition = None;
-            Err((process::Error::Cancelled.to_string(), "CANCELLED".into()))
+            Err((
+                process::Error::Cancelled.to_string(),
+                crate::types::FailureCode::Cancelled,
+            ))
         }
         Ok(Prepared::Agent {
             state,
@@ -88,7 +91,7 @@ pub(super) async fn execute(
             review
                 .result
                 .map(Into::into)
-                .map_err(|failure| (failure.message, failure.code.as_str().into()))
+                .map_err(|failure| (failure.message, failure.code.into()))
         }
         Ok(Prepared::Runtime(command)) => {
             let receipts = receipts.clone();
@@ -112,7 +115,7 @@ pub(super) async fn execute(
         }
         Err(error) => {
             request.human_definition = None;
-            Err((error, "PREPARATION_FAILED".into()))
+            Err((error, crate::types::FailureCode::PreparationFailed))
         }
     };
     let outcome = if outcome.is_ok() {
@@ -123,7 +126,7 @@ pub(super) async fn execute(
             .expect("included eval");
         match cache::validate_file_inputs(&config, eval) {
             Ok(()) => outcome,
-            Err(error) => Err((error, "INPUT_CHANGED".into())),
+            Err(error) => Err((error, crate::types::FailureCode::InputChanged)),
         }
     } else {
         outcome
@@ -140,23 +143,25 @@ pub(super) async fn execute(
             Ok(Some(value)) if &value == expected => outcome,
             Ok(_) => Err((
                 "Fingerprint changed during review.".into(),
-                "INPUT_CHANGED".into(),
+                crate::types::FailureCode::InputChanged,
             )),
             Err(error) => Err((
                 error,
                 if cancellation.is_cancelled() {
-                    "CANCELLED"
+                    crate::types::FailureCode::Cancelled
                 } else {
-                    "FINGERPRINT_RECHECK_FAILED"
-                }
-                .into(),
+                    crate::types::FailureCode::FingerprintRecheckFailed
+                },
             )),
         }
     } else {
         outcome
     };
     let outcome = if cancellation.is_cancelled() {
-        Err((process::Error::Cancelled.to_string(), "CANCELLED".into()))
+        Err((
+            process::Error::Cancelled.to_string(),
+            crate::types::FailureCode::Cancelled,
+        ))
     } else {
         outcome
     };
@@ -196,13 +201,19 @@ fn runtime_result(
         )),
         Outcome::OperationalError(error) => {
             let code = match &error {
-                runtime::Error::Process(process::Error::Cancelled) => "CANCELLED",
-                runtime::Error::Process(process::Error::Timeout) => "TIMEOUT",
-                runtime::Error::Process(process::Error::Spawn(_)) => "SPAWN_FAILED",
-                runtime::Error::AbnormalExit { .. } => "ABNORMAL_EXIT",
-                _ => "RUNTIME_ERROR",
+                runtime::Error::Process(process::Error::Cancelled) => {
+                    crate::types::FailureCode::Cancelled
+                }
+                runtime::Error::Process(process::Error::Timeout) => {
+                    crate::types::FailureCode::Timeout
+                }
+                runtime::Error::Process(process::Error::Spawn(_)) => {
+                    crate::types::FailureCode::SpawnFailed
+                }
+                runtime::Error::AbnormalExit { .. } => crate::types::FailureCode::AbnormalExit,
+                _ => crate::types::FailureCode::RuntimeError,
             };
-            Err((error.to_string(), code.into()))
+            Err((error.to_string(), code))
         }
     }
 }

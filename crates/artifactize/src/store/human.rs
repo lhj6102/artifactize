@@ -355,7 +355,7 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
             "Superseded by the completed result {} for this key.",
             entry.id
         ),
-        code: Some("SUPERSEDED".into()),
+        code: Some(crate::types::FailureCode::Superseded),
         at: now,
     };
     execution.provenance.completed_at = Some(now);

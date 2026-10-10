@@ -29,8 +29,23 @@ pub enum Code {
     AgentError,
 }
 
-/// The `errorCode` of a review a Run did not start because its backend stopped.
-pub const BACKEND_STOPPED: &str = "BACKEND_STOPPED";
+/// An Agent failure's code as its saved `errorCode`.
+impl From<Code> for crate::types::FailureCode {
+    fn from(code: Code) -> Self {
+        match code {
+            Code::Authentication => Self::Authentication,
+            Code::Quota => Self::Quota,
+            Code::RateLimit => Self::RateLimit,
+            Code::Transient => Self::Transient,
+            Code::Timeout => Self::Timeout,
+            Code::Cancelled => Self::Cancelled,
+            Code::ProviderBudgetExceeded => Self::ProviderBudgetExceeded,
+            Code::InvalidResult => Self::InvalidResult,
+            Code::ProviderError => Self::ProviderError,
+            Code::AgentError => Self::AgentError,
+        }
+    }
+}
 
 impl Code {
     pub fn as_str(self) -> &'static str {

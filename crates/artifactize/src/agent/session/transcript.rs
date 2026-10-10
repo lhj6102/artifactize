@@ -145,11 +145,22 @@ struct LiveBlock {
     text: String,
 }
 
+/// The id a tool call and its result share on the wire, which links the two: built only
+/// from a recorded call identity.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Correlation(String);
+
+impl Correlation {
+    fn of(id: &rig_core::message::CallId) -> Self {
+        Self(id.wire().into_owned())
+    }
+}
+
 #[derive(Default)]
 pub struct Transcript {
     blocks: usize,
     groups: BTreeMap<BlockId, Group>,
-    calls: BTreeMap<(Option<usize>, String), (BlockId, usize)>,
+    calls: BTreeMap<(Option<usize>, Correlation), (BlockId, usize)>,
     active: Option<BlockId>,
     expanded: BTreeSet<BlockId>,
     assistant: Option<[u8; 32]>,
@@ -214,7 +225,7 @@ impl Transcript {
         id
     }
     fn call(&mut self, send: Option<usize>, call: &ToolCall, dirty: &mut BTreeSet<BlockId>) {
-        let key = (send, call.id.wire().into_owned());
+        let key = (send, Correlation::of(&call.id));
         // Repeated recorded IDs do not invent another execution or attach to a later call.
         if self.calls.contains_key(&key) {
             return;
@@ -238,7 +249,7 @@ impl Transcript {
         failed: Option<bool>,
         dirty: &mut BTreeSet<BlockId>,
     ) {
-        let key = (send, result.call.wire().into_owned());
+        let key = (send, Correlation::of(&result.call));
         let state = match failed {
             Some(true) => State::Failed(failure_reason(result)),
             Some(false) => State::Succeeded,

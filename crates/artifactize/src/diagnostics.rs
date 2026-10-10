@@ -230,7 +230,7 @@ pub async fn check_tools(
                 ),
                 Profile::Runtime { .. } | Profile::Dependency { .. } => continue,
             };
-            catalogs.push((Some(eval.id.as_str()), None, audience, catalog));
+            catalogs.push((Some(&eval.id), None, audience, catalog));
         }
     }
     for (eval, artifact, audience, catalog) in catalogs {
@@ -269,7 +269,7 @@ pub async fn check_tools(
             );
         }
         report.scopes.push(ToolCheckScope {
-            eval_id: eval.map(|id| id.parse().expect("configured Eval id")),
+            eval_id: eval.cloned(),
             artifact_id: artifact.map(|id| config.artifacts[id].name.clone()),
             audience,
             tools: definitions.clone(),

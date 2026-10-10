@@ -200,12 +200,15 @@ async fn recheck(
     let (code, error) =
         match cache::recheck(config, eval, output, &parallelism, cancellation.clone()).await {
             Ok(Some(actual)) if &actual == expected => return Ok(()),
-            Ok(_) => ("INPUT_CHANGED", "Fingerprint changed during review.".into()),
+            Ok(_) => (
+                crate::types::FailureCode::InputChanged,
+                "Fingerprint changed during review.".into(),
+            ),
             Err(error) if cancellation.is_cancelled() => return Err(error),
-            Err(error) => ("FINGERPRINT_RECHECK_FAILED", error),
+            Err(error) => (crate::types::FailureCode::FingerprintRecheckFailed, error),
         };
     request.state =
-        crate::store::RequestState::failed(error.clone(), Some(code.into()), crate::broker::now());
+        crate::store::RequestState::failed(error.clone(), Some(code), crate::broker::now());
     receipts.settle_human(request, reviewer).await?;
     Err(error)
 }

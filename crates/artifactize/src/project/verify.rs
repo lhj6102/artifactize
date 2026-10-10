@@ -292,7 +292,7 @@ pub async fn verify(
         if cancellation.is_cancelled() {
             request.state = crate::store::RequestState::failed(
                 "Run was cancelled.".into(),
-                Some("CANCELLED".into()),
+                Some(crate::types::FailureCode::Cancelled),
                 now(),
             );
             evidence.insert(request.eval_id.clone(), Evidence::OperationalError);

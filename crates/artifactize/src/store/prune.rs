@@ -84,17 +84,9 @@ pub fn prune(
     let bounds = crate::limits::Limits::read(&state)?.agent_sessions();
     let sessions = crate::agent::session::collect(&state, bounds, dry_run)?;
     if dry_run {
-        report.would_remove_sessions = sessions
-            .removed
-            .into_iter()
-            .map(|id| id.parse().expect("validated session filename"))
-            .collect();
+        report.would_remove_sessions = sessions.removed.into_iter().collect();
     } else {
-        report.removed_sessions = sessions
-            .removed
-            .into_iter()
-            .map(|id| id.parse().expect("validated session filename"))
-            .collect();
+        report.removed_sessions = sessions.removed.into_iter().collect();
     }
     if !state
         .join(DATABASE)

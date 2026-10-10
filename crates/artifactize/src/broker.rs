@@ -12,7 +12,7 @@ use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    agent::error::{self as agent_error, Code},
+    agent::error::Code,
     cache,
     config::{ProfileKind, RepoConfig},
     graph::{EvalEvaluation, EvalStatus, Evidence, Graph},
@@ -390,7 +390,7 @@ impl Scheduler<'_, '_> {
                             let request = &mut self.requests[index];
                             request.state = crate::store::RequestState::failed(
                                 error,
-                                Some("PREPARATION_FAILED".into()),
+                                Some(crate::types::FailureCode::PreparationFailed),
                                 now(),
                             );
                             self.receipts.save_request(request).await?;
@@ -449,7 +449,7 @@ impl Scheduler<'_, '_> {
                         if let Err(error) = cache::validate_file_inputs(&self.config, declared) {
                             request.state = crate::store::RequestState::failed(
                                 error,
-                                Some("PREPARATION_FAILED".into()),
+                                Some(crate::types::FailureCode::PreparationFailed),
                                 now(),
                             );
                             self.receipts.save_request(request).await?;
@@ -483,7 +483,7 @@ impl Scheduler<'_, '_> {
                         waiting.remove(&index);
                         request.state = crate::store::RequestState::failed(
                             error,
-                            Some("PREPARATION_FAILED".into()),
+                            Some(crate::types::FailureCode::PreparationFailed),
                             now(),
                         );
                         self.receipts.save_request(request).await?;
@@ -703,7 +703,7 @@ impl Scheduler<'_, '_> {
                                     "Not started: this Run stopped admitting {} reviews after {} in {}: {}",
                                     cause.backend, cause.error_code, cause.eval_id, cause.error
                                 ),
-                                Some(agent_error::BACKEND_STOPPED.into()),
+                                Some(crate::types::FailureCode::BackendStopped),
                                 now(),
                             );
                             self.receipts.save_request(request).await?;

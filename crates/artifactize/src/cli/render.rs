@@ -44,7 +44,7 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
                 .requests
                 .iter()
                 .filter(|request| {
-                    request.error_code().as_deref() == Some(crate::agent::error::BACKEND_STOPPED)
+                    request.error_code() == Some(crate::types::FailureCode::BackendStopped)
                         && request.options.backend.as_ref() == Some(&stopped.backend)
                 })
                 .count();

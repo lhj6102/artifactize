@@ -286,11 +286,6 @@ impl std::ops::Deref for FailureCode {
         self.as_str()
     }
 }
-impl From<&str> for FailureCode {
-    fn from(value: &str) -> Self {
-        value.parse().expect("a program-defined failure code")
-    }
-}
 status!(BackendStopCode { Authentication => "AUTHENTICATION", Quota => "QUOTA" });
 impl TryFrom<FailureCode> for BackendStopCode {
     type Error = String;

@@ -27,6 +27,9 @@ pub(super) const CADENCE: Duration = Duration::from_millis(100);
 const FRAME_BYTES: usize = 256 * 1024;
 /// Bound coalesced deltas until the consuming task drains them.
 const PENDING_BYTES: usize = 64 * 1024;
+/// Ask for a drain once half the bound is pending, so the consumer catches up before
+/// further deltas would be dropped at the full bound.
+const READY_BYTES: usize = PENDING_BYTES / 2;
 /// Framing slices bound allocations even when the transport yields a very large chunk.
 const FRAME_SLICE: usize = 4096;
 /// Bound pathological empty summary parts and provider item identities independently.
@@ -115,7 +118,7 @@ impl Sink {
             .values()
             .map(|entry| entry.text.len())
             .sum::<usize>()
-            >= PENDING_BYTES / 2
+            >= READY_BYTES
     }
     pub fn take(&self, turn: usize, attempt: usize) -> Vec<Delivery> {
         let mut buffer = self.0.lock().unwrap();
