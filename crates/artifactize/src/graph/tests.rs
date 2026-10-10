@@ -96,7 +96,7 @@ fn cycle_peers_share_external_gates_but_need_individual_final_evidence() {
         &[("a", "b"), ("b", "a"), ("external", "a"), ("b", "consumer")],
     );
     let graph = Graph::new(&config).unwrap();
-    let component = &graph.components()[graph.artifacts()["a"].component];
+    let component = &graph.components()[graph.artifacts()["a"].component.index()];
     assert_eq!(component.artifacts, ["a", "b"]);
     assert_eq!(component.gates, ["external/check"]);
     assert_eq!(
@@ -218,7 +218,7 @@ fn every_eval_is_an_external_obligation_and_red_wins_over_wait() {
         &[("a", "b"), ("a", "b")],
     );
     let graph = Graph::new(&config).unwrap();
-    let component = &graph.components()[graph.artifacts()["b"].component];
+    let component = &graph.components()[graph.artifacts()["b"].component.index()];
     assert_eq!(component.gates, ["a/one", "a/two"]);
     assert_eq!(component.dependencies.len(), 1);
     let mut outcomes = evidence(&[("a/one", GREEN)]);
@@ -296,7 +296,7 @@ fn basis_does_not_erase_its_own_dependencies_or_create_transitive_gates() {
         &[("input", "basis"), ("basis", "consumer")],
     );
     let graph = Graph::new(&config).unwrap();
-    let component = &graph.components()[graph.artifacts()["consumer"].component];
+    let component = &graph.components()[graph.artifacts()["consumer"].component.index()];
     assert!(component.gates.is_empty());
     let evaluation = graph.evaluate(&evidence(&[("consumer/check", GREEN)]));
     assert_eq!(
@@ -324,7 +324,7 @@ fn components_and_gates_are_deterministic_and_only_direct() {
     let config = reviewed(&ids, &edges);
     let graph = Graph::new(&config).unwrap();
     let result = graph.evaluate(&BTreeMap::new());
-    let component = &graph.components()[graph.artifacts()["c"].component];
+    let component = &graph.components()[graph.artifacts()["c"].component.index()];
     assert_eq!(component.gates, ["b/check"]);
     assert_eq!(component.dependencies, [graph.artifacts()["b"].component]);
     assert!(result.evals["isolated/check"].can_execute());

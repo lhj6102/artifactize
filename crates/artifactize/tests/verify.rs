@@ -411,14 +411,10 @@ fn wait_for(mut child: Child) -> Output {
 fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() {
     let fixture = Fixture::new();
     let marker = fixture._root.path().join("started");
+    let script = format!("{} & echo $! > \"$1\"; wait", support::os::LINGERING);
     fixture.runtime(
         &support::os::shell(),
-        &[
-            "-c",
-            "sleep 30 & echo $! > \"$1\"; wait",
-            "sh",
-            marker.to_str().unwrap(),
-        ],
+        &["-c", &script, "sh", marker.to_str().unwrap()],
     );
     let child = fixture
         .command()

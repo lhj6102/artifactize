@@ -90,7 +90,11 @@ pub fn graph<'a>(
         .map(|(id, component)| GraphComponent {
             id,
             artifacts: component.artifacts.clone(),
-            dependencies: component.dependencies.clone(),
+            dependencies: component
+                .dependencies
+                .iter()
+                .map(|dependency| dependency.index())
+                .collect(),
             gates: component.gates.clone(),
             cyclic: component.artifacts.len() > 1
                 || relations.iter().any(|edge| {

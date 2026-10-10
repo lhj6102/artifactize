@@ -153,7 +153,7 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
             "exited with",
         ),
         (
-            json!({"script":{"command":sleep_program(),"args":["30"],"timeout_ms":50}}),
+            json!({"script":{"command":sleep_program(),"args":[support::os::LINGERING_SECONDS],"timeout_ms":50}}),
             "timed out",
         ),
         (

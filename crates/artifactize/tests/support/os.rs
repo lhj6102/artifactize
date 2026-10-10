@@ -1634,6 +1634,10 @@ impl Drop for Release {
 /// A shell command that runs until it is killed: an hour outlasts any test.
 pub const LINGERING: &str = "sleep 3600";
 
+/// The duration `LINGERING` sleeps, as a bare argument for a test that calls
+/// `sleep_program()` directly instead of through a shell.
+pub const LINGERING_SECONDS: &str = "3600";
+
 /// A shell command whose leader ignores SIGTERM and waits for a child that, in the
 /// background, writes its PID and a newline to `$ARTIFACTIZE_OUTPUT_DIR/grandchild` and
 /// then runs until it is killed: an hour outlasts any test.

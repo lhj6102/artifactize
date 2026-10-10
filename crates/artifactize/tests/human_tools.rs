@@ -336,7 +336,11 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
 #[tokio::test]
 async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     let repo = support::os::tempdir();
-    let mut command = tool("output", &support::os::sleep_program(), &["60"]);
+    let mut command = tool(
+        "output",
+        &support::os::sleep_program(),
+        &[support::os::LINGERING_SECONDS],
+    );
     command["timeout_ms"] = json!(40);
     write_artifact(repo.path(), "a", json!({"inspect":command}), "Review.");
     assert_eq!(text(&call(repo.path()).await), "Human tool timed out.");

@@ -705,7 +705,7 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
         EvalStatus::Wait
     );
     let mut slow = runtime(&support::os::shell());
-    slow["profile"]["args"] = json!(["-c", "touch started; sleep 30"]);
+    slow["profile"]["args"] = json!(["-c", format!("touch started; {}", support::os::LINGERING)]);
     fixture.write(
         "art",
         json!({"name":"art","fingerprint":false,"evals":[slow]}),

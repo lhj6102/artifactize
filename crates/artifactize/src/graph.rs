@@ -15,18 +15,30 @@ use crate::{
 #[error("{0}")]
 pub struct GraphError(pub String);
 
+/// A strongly-connected component's position in `Graph::components`, guarding it from
+/// arbitrary `usize` arithmetic: dependency-first, so a lower id is never a later
+/// component's dependency.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ComponentId(usize);
+
+impl ComponentId {
+    pub(crate) fn index(self) -> usize {
+        self.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactNode<'a> {
     pub basis: bool,
     pub evals: Vec<&'a EvalId>,
-    pub component: usize,
+    pub component: ComponentId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Component<'a> {
     pub artifacts: Vec<&'a ArtifactName>,
     /// Direct condensation dependencies, always earlier in the component list.
-    pub dependencies: Vec<usize>,
+    pub dependencies: Vec<ComponentId>,
     /// External Eval gates shared by every member; never includes SCC peers.
     pub gates: Vec<&'a EvalId>,
 }
@@ -58,7 +70,7 @@ impl<'a> Graph<'a> {
                     ArtifactNode {
                         basis: artifact.basis == Some(true),
                         evals: Vec::new(),
-                        component: 0,
+                        component: ComponentId(0),
                     },
                 )
             })
@@ -109,7 +121,7 @@ impl<'a> Graph<'a> {
             .collect();
         for (index, component) in components.iter().enumerate() {
             for id in &component.artifacts {
-                artifacts.get_mut(id.as_str()).unwrap().component = index;
+                artifacts.get_mut(id.as_str()).unwrap().component = ComponentId(index);
             }
         }
         let mut dependencies = vec![BTreeSet::new(); components.len()];
@@ -118,13 +130,13 @@ impl<'a> Graph<'a> {
             let dependency = artifacts[dependency.as_str()].component;
             if consumer != dependency {
                 debug_assert!(dependency < consumer);
-                dependencies[consumer].insert(dependency);
+                dependencies[consumer.index()].insert(dependency);
             }
         }
         for (index, dependencies) in dependencies.into_iter().enumerate() {
             let mut gates: Vec<_> = dependencies
                 .iter()
-                .flat_map(|&dependency| &components[dependency].artifacts)
+                .flat_map(|&dependency| &components[dependency.index()].artifacts)
                 .flat_map(|id| &artifacts[id.as_str()].evals)
                 .copied()
                 .collect();
@@ -216,7 +228,7 @@ impl<'a> Graph<'a> {
             if !visited.insert(index) {
                 continue;
             }
-            let component = &self.components[index];
+            let component = &self.components[index.index()];
             required.extend(component.artifacts.iter().copied());
             pending.extend(&component.dependencies);
         }
@@ -375,13 +387,16 @@ impl<'a> Graph<'a> {
         let mut satisfied = vec![false; self.components.len()];
         for (index, component) in self.components.iter().enumerate() {
             satisfied[index] = component.artifacts.iter().all(|id| own_satisfied[id])
-                && component.dependencies.iter().all(|&index| satisfied[index]);
+                && component
+                    .dependencies
+                    .iter()
+                    .all(|&dependency| satisfied[dependency.index()]);
         }
         let artifacts = self
             .artifacts
             .iter()
             .map(|(id, artifact)| {
-                let satisfied = satisfied[artifact.component];
+                let satisfied = satisfied[artifact.component.index()];
                 let status = if satisfied {
                     if artifact.basis {
                         ArtifactStatus::Basis

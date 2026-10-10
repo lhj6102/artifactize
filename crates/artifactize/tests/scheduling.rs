@@ -330,7 +330,10 @@ fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
                 .map(|id| {
                     eval(
                         &format!("e{id}"),
-                        "sleep 30 & printf '%s %s\n' \"$$\" \"$!\" > \"$1.pids\"; wait",
+                        &format!(
+                            "{} & printf '%s %s\n' \"$$\" \"$!\" > \"$1.pids\"; wait",
+                            support::os::LINGERING
+                        ),
                     )
                 })
                 .collect(),
