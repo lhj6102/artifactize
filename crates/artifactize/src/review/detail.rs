@@ -4,7 +4,7 @@
 //! IDs, the repository and the raw owner schemas move to a folded Technical section (`t`).
 //! The focused sub-area grows: the instruction (`i`), the tools with their output, or the
 //! CLAIM/REVIEW fields. Keys follow one protocol in both entry points.
-use super::{Action, Area, Control, Mode, Review, SCROLL_PAGE, Tool, view};
+use super::{Action, Area, Control, Mode, Review, Runs, SCROLL_PAGE, Tool, view};
 use crate::{
     config::HumanToolKind,
     monitor::{duration, plain},
@@ -32,6 +32,8 @@ const FOLDED: u16 = 2;
 const TOOLS_FOCUSED: u16 = 60;
 const TOOLS_UNFOCUSED: u16 = 40;
 const BUTTON_GAP: u16 = 1;
+/// A wrapped builtin action continues two columns deeper than its first row.
+const WRAP_INDENT: u16 = 4;
 
 /// Where a key left a Human review Detail.
 #[derive(Debug, Clone, PartialEq)]
@@ -79,6 +81,23 @@ fn kind(kind: HumanToolKind) -> &'static str {
         HumanToolKind::Launch => "launch",
         HumanToolKind::Output => "output",
     }
+}
+
+/// Words of `text` in rows of at most `width` columns; a longer word keeps a row of its own.
+/// The first row is indented like the other detail rows, the rest `WRAP_INDENT` deep.
+fn wrap(text: &str, width: u16) -> Vec<String> {
+    text.split(' ')
+        .fold(Vec::new(), |mut rows: Vec<String>, word| {
+            match rows.last_mut() {
+                Some(row) if Line::from(format!("{row} {word}")).width() <= usize::from(width) => {
+                    row.push(' ');
+                    row.push_str(word);
+                }
+                Some(_) => rows.push(format!("{:1$}{word}", "", usize::from(WRAP_INDENT))),
+                None => rows.push(format!("  {word}")),
+            }
+            rows
+        })
 }
 
 fn focused_border(focused: bool) -> Style {
@@ -626,7 +645,7 @@ impl Review {
         hits
     }
 
-    /// One row per tool; the selected tool shows its command and description when focused.
+    /// One row per tool; the selected tool shows what it runs and its description when focused.
     fn draw_tools(&self, frame: &mut Frame, area: Rect) -> Vec<(Rect, usize)> {
         let tools = self.tools();
         let focused = self.area == Area::Tools;
@@ -644,18 +663,33 @@ impl Review {
                     index,
                 ));
                 if focused {
-                    // What Enter runs: the resolved command line once known, else as declared.
-                    let command = match self.command(&tool.name) {
-                        Some(Ok(command)) => {
+                    // What Enter runs: a command's resolved line once known, else as declared;
+                    // a builtin's action on its logical target.
+                    match (&tool.declared, self.command(&tool.name)) {
+                        (Runs::Command(_), Some(Ok(command))) => {
                             let words =
                                 std::iter::once(command.program.to_string_lossy().into_owned())
                                     .chain(command.args.iter().cloned())
                                     .collect::<Vec<_>>();
-                            super::shell(words.iter().map(String::as_str))
+                            let command = super::shell(words.iter().map(String::as_str));
+                            rows.push((Line::from(format!("  $ {}", plain(&command))), index));
                         }
-                        _ => tool.declared.clone(),
-                    };
-                    rows.push((Line::from(format!("  $ {}", plain(&command))), index));
+                        (declared @ Runs::Command(_), _) => {
+                            rows.push((
+                                Line::from(format!("  {}", plain(&declared.line()))),
+                                index,
+                            ));
+                        }
+                        // A builtin's target wraps rather than being cut off at the border.
+                        (declared, _) => {
+                            let width = area.width.saturating_sub(2);
+                            rows.extend(
+                                wrap(&plain(&declared.line()), width)
+                                    .into_iter()
+                                    .map(|row| (Line::from(row), index)),
+                            );
+                        }
+                    }
                     if let Some(Err(error)) = self.command(&tool.name) {
                         rows.push((Line::from(format!("  {}", plain(error))).red(), index));
                     }
