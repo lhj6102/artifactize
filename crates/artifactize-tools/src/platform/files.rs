@@ -79,7 +79,20 @@ pub fn path_text(path: &std::path::Path) -> String {
     let text = path.to_string_lossy();
     #[cfg(windows)]
     {
-        text.replace('\\', "/")
+        use std::path::{Component, Prefix};
+        let text = text.replace('\\', "/");
+        // Canonical Windows paths carry verbatim prefixes that are not useful in a
+        // breadcrumb. Only disk/UNC prefixes have equivalent ordinary path spellings.
+        const VERBATIM: &str = "//?/";
+        const VERBATIM_UNC: &str = "//?/UNC/";
+        match path.components().next() {
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                Prefix::VerbatimDisk(_) => text[VERBATIM.len()..].to_owned(),
+                Prefix::VerbatimUNC(_, _) => format!("//{}", &text[VERBATIM_UNC.len()..]),
+                _ => text,
+            },
+            _ => text,
+        }
     }
     #[cfg(unix)]
     {
@@ -149,6 +162,20 @@ mod tests {
         assert_eq!(
             path_text(std::path::Path::new(r"C:\input\name")),
             "C:/input/name"
+        );
+    }
+
+    // reason: Windows canonical paths can carry verbatim disk and UNC prefixes.
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_paths_render_without_the_native_prefix() {
+        assert_eq!(
+            path_text(std::path::Path::new(r"\\?\C:\input\name")),
+            "C:/input/name"
+        );
+        assert_eq!(
+            path_text(std::path::Path::new(r"\\?\UNC\server\share\input")),
+            "//server/share/input"
         );
     }
 }
