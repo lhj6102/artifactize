@@ -1,8 +1,8 @@
-# artifactize code checklist
+# Code checklist
 
-What a change to `crates/artifactize` must follow. Items marked `M-` come from
+Rules for Rust code. Items marked `M-` come from
 Microsoft's [Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guidelines/guidelines/checklist/);
-`T-` (type-driven) and `F-` (functional) are this project's own.
+`T-` (type-driven) and `F-` (functional) are this checklist's own.
 
 ## Verification and safety
 
@@ -20,13 +20,13 @@ Microsoft's [Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guideli
 ## Types (type-driven)
 
 - **M-STRONG-TYPES**: values use the proper type, such as `PathBuf` for paths and `Duration` for time.
-- **M-STRONG-TYPES-GUARD / T-NEWTYPE-IDS**: identifiers (Run, request, session, reuse key, fingerprint) are newtypes that guard their invariants.
+- **M-STRONG-TYPES-GUARD / T-NEWTYPE-IDS**: identifiers (IDs, keys, hashes) are newtypes that guard their invariants.
 - **T-ILLEGAL-STATES**: a state is an enum, not a string or a set of booleans, so that illegal states cannot be written.
-- **T-PARSE-AT-EDGE**: external input (config JSON, CLI arguments, database rows, provider responses) is parsed into types once, at the edge. The core does not pass `serde_json::Value` around.
+- **T-PARSE-AT-EDGE**: external input (configuration, CLI arguments, database rows, network responses) is parsed into types once, at the edge. The core does not pass `serde_json::Value` around.
 
 ## Functions (functional)
 
-- **F-PURE-CORE**: computations (reuse keys, hashes, scheduling decisions, summaries) are pure functions; effects (the database, processes, the network, files) stay at the edges.
+- **F-PURE-CORE**: computations (keys, hashes, decisions, summaries) are pure functions; effects (the database, processes, the network, files) stay at the edges.
 - **F-EXPRESSIONS**: iterator transformations and expressions are preferred over mutable accumulation loops where they read better.
 - **F-IMMUTABLE**: bindings are immutable by default, `mut` scopes are small, and shared mutable state is explicitly synchronized.
 
