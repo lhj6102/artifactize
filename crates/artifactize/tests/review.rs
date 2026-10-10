@@ -252,9 +252,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
             .collect()
     };
     let notes = release.join("notes.md").display().to_string();
-    let program =
-        artifactize_tools::program::resolve(std::ffi::OsStr::new(&bin("cat")), &release).unwrap();
-    let command = artifactize::review::shell([program.to_str().unwrap(), notes.as_str()]);
+    let command = artifactize::review::shell([bin("cat").as_str(), notes.as_str()]);
     let shown = format!("$ {command}");
     let prefix: String = unwrapped(&shown).chars().take(20).collect();
     assert!(unwrapped(&selected).contains(&prefix), "{selected}");

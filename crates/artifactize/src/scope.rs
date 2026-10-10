@@ -150,8 +150,8 @@ pub fn artifact_scope<'a>(config: &'a RepoConfig, roots: &[&str]) -> Result<Scop
     Ok(Scope { artifacts })
 }
 
-/// Resolve a declared command once: scope-relative paths retain the same input boundary,
-/// while bare names and absolute paths use the shared PATH/PATHEXT rule.
+/// Validate scope-relative command paths before process lookup. Bare names and absolute
+/// paths stay literal here; preflight and both launchers use the shared PATH/PATHEXT rule.
 pub(crate) fn executable(
     root: &Path,
     scope: &Scope<'_>,
@@ -190,9 +190,7 @@ pub(crate) fn executable(
     } else {
         PathBuf::from(command)
     };
-    artifactize_tools::program::resolve(program.as_os_str(), &cwd)
-        .map(PathBuf::into_os_string)
-        .map_err(|error| error.to_string())
+    Ok(program.into_os_string())
 }
 
 pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, ScopeError> {
