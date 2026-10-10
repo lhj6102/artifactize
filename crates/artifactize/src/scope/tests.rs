@@ -331,7 +331,7 @@ fn logical_paths_reject_traversal_and_noncanonical_components() {
         "a/",
         "//",
         "a\\b",
-        "C:/file",
+        &crate::test_os::windows_drive("file"),
         "a:b",
         "a\0b",
         "a\nb",

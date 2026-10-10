@@ -159,13 +159,14 @@ pub fn prune(
                 .map_err(|e| e.to_string())?;
             statement
                 .query_map([&id], |row| {
-                    Ok((
-                        process::ChildIdentity {
-                            pid: row.get(0)?,
-                            start_time: row.get::<_, i64>(1)? as u64,
-                        },
-                        row.get::<_, crate::types::ExecutionStatus>(2)?,
-                    ))
+                    // A mirrored remote result has no local owner: a saved pid of 0.
+                    let pid: u32 = row.get(0)?;
+                    let start_time = row.get::<_, i64>(1)? as u64;
+                    let owner = std::num::NonZeroU32::new(pid).map(|pid| process::ChildIdentity {
+                        pid: process::ProcessId::from(pid),
+                        start_time,
+                    });
+                    Ok((owner, row.get::<_, crate::types::ExecutionStatus>(2)?))
                 })
                 .map_err(|e| e.to_string())?
                 .collect::<Result<Vec<_>, _>>()

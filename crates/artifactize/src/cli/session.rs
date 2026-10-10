@@ -418,8 +418,8 @@ fn show_summary(located: &Located, summary: &Summary) -> io::Result<()> {
     });
     heading(&mut out, located, &header)?;
     if let (Some(start), Some(end)) = (&summary.started_at, &summary.ended_at) {
-        let took = summary.duration_ms.map_or(String::new(), |ms| {
-            format!(" ({:.1} s)", ms as f64 / 1000.0)
+        let took = summary.duration_ms.map_or(String::new(), |duration| {
+            format!(" ({:.1} s)", duration.as_secs_f64())
         });
         writeln!(out, "Time: {start} to {end}{took}")?;
     }

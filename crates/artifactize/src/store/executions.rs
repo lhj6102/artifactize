@@ -138,8 +138,8 @@ impl TryFrom<ExecutionWire> for Execution {
             fingerprints: wire.fingerprints,
             artifact_kinds: wire.artifact_kinds,
             eval_def_hash: wire.eval_def_hash,
-            owner: (wire.owner_pid != 0).then_some(process::ChildIdentity {
-                pid: wire.owner_pid,
+            owner: std::num::NonZeroU32::new(wire.owner_pid).map(|pid| process::ChildIdentity {
+                pid: process::ProcessId::from(pid),
                 start_time: wire.owner_start_time,
             }),
             profile: wire.profile,
@@ -204,7 +204,7 @@ impl Execution {
     /// the `owner_pid` SQL column and wire field's sentinel for "no owner", confined to
     /// this persistence boundary.
     pub fn owner_pid(&self) -> u32 {
-        self.owner.map_or(0, |owner| owner.pid)
+        self.owner.map_or(0, |owner| owner.pid.get())
     }
     /// The owning process's start time, or 0 alongside [`Self::owner_pid`]'s sentinel.
     pub fn owner_start_time(&self) -> u64 {
@@ -396,7 +396,7 @@ fn held_slots(
     };
     let mut held = 0;
     for (id, owner) in owners {
-        if process::is_alive(owner).map_err(|e| Error::Invalid(e.to_string()))? {
+        if process::is_alive(Some(owner)).map_err(|e| Error::Invalid(e.to_string()))? {
             held += 1;
         } else {
             owner_died(db, &id, at)?;
@@ -500,7 +500,7 @@ fn available(db: &rusqlite::Connection, key: &ReuseKey) -> Result<Option<Claim>,
         if status == ExecutionStatus::WaitingHuman {
             return Ok(Some(Claim::WaitHuman(id)));
         }
-        if process::is_alive(owner).map_err(|e| Error::Invalid(e.to_string()))? {
+        if process::is_alive(Some(owner)).map_err(|e| Error::Invalid(e.to_string()))? {
             return Ok(Some(Claim::Wait(id)));
         }
     }

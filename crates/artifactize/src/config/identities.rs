@@ -153,7 +153,12 @@ mod tests {
             serde_json::to_value(model).unwrap(),
             json!("provider/model-v1")
         );
-        for invalid in ["", "a/../b", "a\\b", "C:/outside"] {
+        for invalid in [
+            "",
+            "a/../b",
+            "a\\b",
+            &crate::test_os::windows_drive("outside"),
+        ] {
             assert!(serde_json::from_value::<LogicalPath>(json!(invalid)).is_err());
         }
         for logical in [".", "folder/file.txt"] {

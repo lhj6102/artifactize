@@ -12,13 +12,14 @@ use super::Conversation;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
-    pub backend: Option<String>,
+    pub backend: Option<crate::config::Backend>,
     pub model: Option<crate::config::ModelId>,
     pub reasoning: Option<crate::config::Reasoning>,
     /// The first and last event's time.
     pub started_at: Option<crate::types::Timestamp>,
     pub ended_at: Option<crate::types::Timestamp>,
-    pub duration_ms: Option<u64>,
+    #[serde(serialize_with = "crate::config::validation::milliseconds::serialize")]
+    pub duration_ms: Option<std::time::Duration>,
     pub follow_ups: usize,
     /// Every provider turn in order: the review's, then each follow-up's.
     pub turns: Vec<Turn>,
@@ -59,15 +60,9 @@ impl Summary {
         );
         let duration_ms = started_at
             .zip(ended_at)
-            .map(|(start, end)| end.since(start).as_millis() as u64);
+            .map(|(start, end)| end.since(start));
         let mut summary = Self {
-            backend: header.backend.map(|backend| {
-                serde_json::to_value(backend)
-                    .expect("backend is JSON")
-                    .as_str()
-                    .expect("backend is text")
-                    .to_owned()
-            }),
+            backend: header.backend,
             model: header.model.clone(),
             reasoning: header.reasoning,
             started_at,
@@ -228,8 +223,11 @@ mod tests {
                 .map(|event| serde_json::from_value(event).unwrap())
                 .collect(),
         });
-        assert_eq!(summary.backend.as_deref(), Some("openai"));
-        assert_eq!(summary.duration_ms, Some(2500));
+        assert_eq!(summary.backend, Some(crate::config::Backend::Openai));
+        assert_eq!(
+            summary.duration_ms,
+            Some(std::time::Duration::from_millis(2500))
+        );
         assert_eq!(summary.follow_ups, 1);
         let turns: Vec<_> = summary
             .turns

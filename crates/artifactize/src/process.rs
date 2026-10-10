@@ -37,10 +37,60 @@ pub struct Command {
     pub timeout: Duration,
 }
 
+/// A process id, guaranteed nonzero: every OS reserves 0 for the kernel or an idle
+/// process, never one artifactize spawns or supervises. `#[serde(transparent)]` keeps
+/// the saved and wire representation the same plain integer.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct ProcessId(std::num::NonZeroU32);
+
+impl ProcessId {
+    /// `pid` is a real, just-observed OS process id, so it is never 0.
+    pub fn new(pid: u32) -> Self {
+        Self(std::num::NonZeroU32::new(pid).expect("a real process id is never 0"))
+    }
+
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+impl From<std::num::NonZeroU32> for ProcessId {
+    fn from(pid: std::num::NonZeroU32) -> Self {
+        Self(pid)
+    }
+}
+
+impl std::fmt::Display for ProcessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl rusqlite::types::ToSql for ProcessId {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(rusqlite::types::ToSqlOutput::from(i64::from(self.0.get())))
+    }
+}
+
+impl rusqlite::types::FromSql for ProcessId {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        let pid = u32::try_from(value.as_i64()?)
+            .map_err(|error| rusqlite::types::FromSqlError::Other(error.into()))?;
+        std::num::NonZeroU32::new(pid).map(Self).ok_or_else(|| {
+            rusqlite::types::FromSqlError::Other(
+                "a saved owner_pid of 0 is not a process id".into(),
+            )
+        })
+    }
+}
+
 /// Process id and start time, captured while the group leader is still inert.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChildIdentity {
-    pub pid: u32,
+    pub pid: ProcessId,
     /// Linux: clock ticks since boot (procfs field 22). macOS: microseconds since the
     /// epoch (kernel birth timestamp). Windows: 100 ns intervals since 1601.
     pub start_time: u64,
@@ -368,11 +418,19 @@ pub(crate) fn launch_detached(
 
 pub(crate) fn child_identity(pid: u32) -> io::Result<ChildIdentity> {
     let start_time = platform::process_start_time(pid)?;
-    Ok(ChildIdentity { pid, start_time })
+    Ok(ChildIdentity {
+        pid: ProcessId::new(pid),
+        start_time,
+    })
 }
 
-pub(crate) fn is_alive(owner: ChildIdentity) -> io::Result<bool> {
-    match child_identity(owner.pid) {
+/// Whether `owner` is both present and still the process it was: absent (no local
+/// owner, such as a result mirrored from a remote review store) is never alive.
+pub(crate) fn is_alive(owner: Option<ChildIdentity>) -> io::Result<bool> {
+    let Some(owner) = owner else {
+        return Ok(false);
+    };
+    match child_identity(owner.pid.get()) {
         Ok(current) => Ok(current == owner),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),

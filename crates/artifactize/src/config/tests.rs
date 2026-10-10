@@ -228,8 +228,8 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
     for path in [
         "",
         "/absolute",
-        "C:/absolute",
-        "C:\\absolute",
+        &crate::test_os::windows_drive("absolute"),
+        &crate::test_os::windows_drive_native("absolute"),
         "../escape",
         "a/../b",
         "a/./b",

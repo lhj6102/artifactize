@@ -385,7 +385,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         artifact_kinds: key.artifact_kinds.clone(),
         eval_def_hash: key.eval_def_hash.clone(),
         owner: Some(artifactize::process::ChildIdentity {
-            pid: 1,
+            pid: artifactize::process::ProcessId::new(1),
             start_time: 1,
         }),
         state: artifactize::store::ExecutionState::Completed {

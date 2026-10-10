@@ -320,8 +320,8 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
     );
     assert_eq!(tools[0].description, "Print the notes of release.");
     assert_eq!(
-        shell(["sh", "-c", "echo 'hi' $HOME", ""]),
-        r#"sh -c "echo 'hi' $HOME" """#
+        shell(["tool", "-c", "echo 'hi' $THING", ""]),
+        r#"tool -c "echo 'hi' $THING" """#
     );
     let text = screen(&mut review);
     for expected in [

@@ -68,8 +68,8 @@ async fn registration_observes_inert_group_leader_before_exec() {
         CancellationToken::new(),
         move |child| async move {
             assert!(!marker.exists());
-            support::os::assert_group(child.pid);
-            assert_eq!(support::os::start_time(child.pid), child.start_time);
+            support::os::assert_group(child.pid.get());
+            assert_eq!(support::os::start_time(child.pid.get()), child.start_time);
             registered.send(child).unwrap();
             held.await.unwrap();
             assert!(
@@ -80,7 +80,7 @@ async fn registration_observes_inert_group_leader_before_exec() {
         },
     ));
     let child = identity.await.unwrap();
-    assert!(support::os::running(child.pid));
+    assert!(support::os::running(child.pid.get()));
     assert!(!scratch.0.join("started").exists());
     release.send(()).unwrap();
     let output = running.await.unwrap().unwrap();
@@ -103,7 +103,7 @@ async fn failed_registration_never_executes_and_reaps_the_child() {
     let pid = Arc::new(AtomicU32::new(0));
     let observed = pid.clone();
     let result = process::run(command, CancellationToken::new(), move |child| async move {
-        observed.store(child.pid, Ordering::SeqCst);
+        observed.store(child.pid.get(), Ordering::SeqCst);
         Err(io::Error::other("registration rejected"))
     })
     .await;
@@ -129,7 +129,7 @@ async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
     let child = child.await.unwrap();
     running.abort();
     assert!(running.await.unwrap_err().is_cancelled());
-    assert_gone(child.pid).await;
+    assert_gone(child.pid.get()).await;
     assert!(!scratch.0.join("started").exists());
 }
 
@@ -157,7 +157,7 @@ async fn registration_is_covered_by_the_deadline() {
         Err(process::Error::Timeout)
     ));
     assert!(!scratch.0.join("started").exists());
-    assert_gone(pid).await;
+    assert_gone(pid.get()).await;
 }
 
 #[tokio::test]

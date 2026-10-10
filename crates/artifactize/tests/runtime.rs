@@ -162,7 +162,7 @@ async fn timeout_is_an_operational_error_and_reaps_the_leader() {
         ),
         "{outcome:?}"
     );
-    assert_gone(pid).await;
+    assert_gone(pid.get()).await;
 }
 
 #[tokio::test]
@@ -195,7 +195,7 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
         ),
         "{outcome:?}"
     );
-    assert_gone(child.pid).await;
+    assert_gone(child.pid.get()).await;
 }
 
 #[tokio::test]
@@ -574,7 +574,7 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
         .unwrap();
     running.abort();
     assert!(running.await.unwrap_err().is_cancelled());
-    assert_gone(child.pid).await;
+    assert_gone(child.pid.get()).await;
     assert_gone(pid).await;
 }
 
@@ -634,7 +634,7 @@ async fn deadline_is_not_reset_after_registration() {
         ),
         "{outcome:?}"
     );
-    assert_gone(child.pid).await;
+    assert_gone(child.pid.get()).await;
 }
 
 async fn assert_gone(pid: u32) {

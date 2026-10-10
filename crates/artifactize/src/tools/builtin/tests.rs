@@ -283,8 +283,8 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     fixture.write("outside/secret", "secret");
     let mut paths = vec![
         "../outside/secret",
-        "/etc/passwd",
-        "C:/Windows/win.ini",
+        crate::test_os::unix_system_file(),
+        crate::test_os::windows_system_file(),
         "data/../index.artf",
         "data//file",
         "data/./file",

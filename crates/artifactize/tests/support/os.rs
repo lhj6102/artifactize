@@ -82,6 +82,30 @@ pub fn touch_program() -> String {
     bin("/usr/bin/touch")
 }
 
+/// A Windows drive-letter absolute path naming `suffix`, rejected by the portable
+/// declaration path grammar on every platform: a sample value, never a real path this
+/// test opens.
+pub fn windows_drive(suffix: &str) -> String {
+    format!("C:/{suffix}")
+}
+
+/// The same drive-letter absolute path, with native Windows separators.
+pub fn windows_drive_native(suffix: &str) -> String {
+    format!("C:\\{suffix}")
+}
+
+/// A well-known Windows system file path, rejected the same way as any other escape
+/// attempt: a sample value, never a real path this test opens.
+pub fn windows_system_file() -> &'static str {
+    "C:/Windows/win.ini"
+}
+
+/// A well-known Unix system file path, rejected the same way as any other escape
+/// attempt: a sample value, never a real path this test opens.
+pub fn unix_system_file() -> &'static str {
+    "/etc/passwd"
+}
+
 /// Whether tests run the stand-ins `bin` names.
 pub fn stand_ins() -> bool {
     cfg!(windows) || std::env::var_os("ARTIFACTIZE_TEST_STAND_INS").is_some()

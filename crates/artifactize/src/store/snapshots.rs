@@ -12,7 +12,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChildIdentity {
-    pub pid: u32,
+    pub pid: crate::process::ProcessId,
     pub start_time: u64,
 }
 impl From<crate::process::ChildIdentity> for ChildIdentity {
