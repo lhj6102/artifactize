@@ -31,6 +31,8 @@ const FOLDED: u16 = 2;
 /// Width shares of the tools column with and without focus.
 const TOOLS_FOCUSED: u16 = 60;
 const TOOLS_UNFOCUSED: u16 = 40;
+/// One blank column between buttons: the narrowest gap that still reads as two buttons,
+/// so a full row of them fits narrow terminals.
 const BUTTON_GAP: u16 = 1;
 /// A wrapped builtin action continues two columns deeper than its first row.
 const WRAP_INDENT: u16 = 4;

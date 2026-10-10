@@ -3,10 +3,6 @@ use std::{
     ffi::OsString,
     io,
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    },
     time::Duration,
 };
 
@@ -125,23 +121,32 @@ async fn windows_exit_statuses_are_verdicts_not_signals() {
     assert_eq!(result.exit_code, -1073741510);
 }
 
-#[tokio::test]
+// The held child keeps the paused clock still until registration has handed over its PID;
+// the test then advances the clock past the deadline.
+#[tokio::test(start_paused = true)]
 async fn timeout_is_an_operational_error_and_reaps_the_leader() {
     let scratch = Scratch::new();
-    // The deadline also covers spawn and registration; leave room for both under load.
-    let command = scratch.command("/bin/sleep", &["30"], Some(1000));
-    let pid = Arc::new(AtomicU32::new(0));
-    let observed = pid.clone();
-    let outcome = runtime::execute(command, CancellationToken::new(), move |child| async move {
-        observed.store(child.pid, Ordering::SeqCst);
-        Ok(())
-    })
-    .await;
-    assert!(matches!(
-        outcome,
-        Outcome::OperationalError(Error::Process(process::Error::Timeout))
+    let command = scratch.command("/bin/sh", &["-c", support::os::LINGERING], Some(1000));
+    let (registered, child) = oneshot::channel();
+    let running = tokio::spawn(runtime::execute(
+        command,
+        CancellationToken::new(),
+        |child| async move {
+            registered.send(child.pid).unwrap();
+            Ok(())
+        },
     ));
-    assert_gone(pid.load(Ordering::SeqCst)).await;
+    let pid = child.await.unwrap();
+    tokio::time::advance(Duration::from_millis(1000)).await;
+    let outcome = running.await.unwrap();
+    assert!(
+        matches!(
+            outcome,
+            Outcome::OperationalError(Error::Process(process::Error::Timeout))
+        ),
+        "{outcome:?}"
+    );
+    assert_gone(pid).await;
 }
 
 #[tokio::test]

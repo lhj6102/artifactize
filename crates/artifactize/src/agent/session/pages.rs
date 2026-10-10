@@ -14,9 +14,16 @@ const CHUNK: usize = 256 * 1024;
 /// Bound each layout job even for empty events, which spend no byte budget, so input stays
 /// responsive.
 const LAYOUT_EVENTS: usize = 128;
-/// Each disk row stores three u64s: source byte offset, rendered byte offset and rendered length.
-/// Keep these offsets on disk instead of retaining a heap Range for every terminal row.
-const ENTRY: u64 = 24;
+/// Each disk row stores three little-endian u64s: source byte offset, rendered byte offset
+/// and rendered length. Keep these offsets on disk instead of retaining a heap Range for
+/// every terminal row.
+const FIELD: usize = size_of::<u64>();
+/// One row record: its three fields.
+const ENTRY: u64 = 3 * FIELD as u64;
+/// Where the rendered offset starts in a row record, after the source offset.
+const RENDERED_OFFSET: u64 = FIELD as u64;
+/// The rendered offset and rendered length, read together.
+const RENDERED_FIELDS: usize = 2 * FIELD;
 
 fn temporary() -> Result<File, String> {
     crate::platform::private_anonymous_file().map_err(|error| error.to_string())
@@ -33,13 +40,14 @@ struct Rows {
     rendered_end: u64,
 }
 fn rendered_row(file: &mut File, rendered: &mut File, row: usize) -> Result<String, String> {
-    file.seek(SeekFrom::Start(row as u64 * ENTRY + 8))
+    file.seek(SeekFrom::Start(row as u64 * ENTRY + RENDERED_OFFSET))
         .map_err(|error| error.to_string())?;
-    let mut entry = [0; 16];
+    let mut entry = [0; RENDERED_FIELDS];
     file.read_exact(&mut entry)
         .map_err(|error| error.to_string())?;
-    let offset = u64::from_le_bytes(entry[..8].try_into().expect("rendered offset"));
-    let size = u64::from_le_bytes(entry[8..].try_into().expect("rendered length")) as usize;
+    let (offset, size) = entry.split_at(FIELD);
+    let offset = u64::from_le_bytes(offset.try_into().expect("rendered offset"));
+    let size = u64::from_le_bytes(size.try_into().expect("rendered length")) as usize;
     rendered
         .seek(SeekFrom::Start(offset))
         .map_err(|error| error.to_string())?;
@@ -125,7 +133,7 @@ impl Index {
                 .file
                 .seek(SeekFrom::Start(row as u64 * ENTRY))
                 .map_err(|error| error.to_string())?;
-            let mut bytes = [0; 8];
+            let mut bytes = [0; FIELD];
             segment
                 .file
                 .read_exact(&mut bytes)

@@ -418,20 +418,14 @@ fn auth_files_are_read_only_and_expired_tokens_are_never_refreshed() {
     // identity; one rewritten in place gets new contents.
     let identity =
         || crate::platform::file_identity(&crate::platform::open_regular(&path).unwrap()).unwrap();
-    let mut permissions = path.metadata().unwrap().permissions();
-    permissions.set_readonly(true);
-    fs::set_permissions(&path, permissions.clone()).unwrap();
-    let before = (fs::read(&path).unwrap(), identity());
-    let token = read_auth_file_at(&path, Timestamp::from_seconds(10_000)).unwrap();
-    assert_eq!(token.access_token, access);
-    assert_eq!(token.account_id, "file-account");
-    assert_eq!((fs::read(&path).unwrap(), identity()), before);
-    #[expect(
-        clippy::permissions_set_readonly_false,
-        reason = "the test file becomes writable again for the next case"
-    )]
-    permissions.set_readonly(false);
-    fs::set_permissions(&path, permissions).unwrap();
+    {
+        let _read_only = crate::test_os::read_only(&path);
+        let before = (fs::read(&path).unwrap(), identity());
+        let token = read_auth_file_at(&path, Timestamp::from_seconds(10_000)).unwrap();
+        assert_eq!(token.access_token, access);
+        assert_eq!(token.account_id, "file-account");
+        assert_eq!((fs::read(&path).unwrap(), identity()), before);
+    }
 
     write(json!({"tokens":{"access_token":access}}));
     assert_eq!(

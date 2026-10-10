@@ -1498,10 +1498,38 @@ pub fn port_fixture(path: &Path, deadlines: bool) {
     }
 }
 
+/// A shell command that runs until it is killed: an hour outlasts any test.
+pub const LINGERING: &str = "sleep 3600";
+
 /// A shell command whose leader ignores SIGTERM and waits for a child that, in the
 /// background, writes its PID and a newline to `$ARTIFACTIZE_OUTPUT_DIR/grandchild` and
 /// then runs until it is killed: an hour outlasts any test.
 pub const LINGERING_GRANDCHILD: &str = "trap '' TERM; sh -c 'sleep 3600 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait";
+
+/// A file made read-only until this drops, when its original permissions come back: the
+/// Unix mode, or the Windows read-only attribute.
+pub struct ReadOnly {
+    path: std::path::PathBuf,
+    original: std::fs::Permissions,
+}
+
+/// Make the file at `path` read-only while the result lives.
+pub fn read_only(path: &Path) -> ReadOnly {
+    let original = std::fs::metadata(path).unwrap().permissions();
+    let mut permissions = original.clone();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(path, permissions).unwrap();
+    ReadOnly {
+        path: path.to_owned(),
+        original,
+    }
+}
+
+impl Drop for ReadOnly {
+    fn drop(&mut self) {
+        let _ = std::fs::set_permissions(&self.path, self.original.clone());
+    }
+}
 
 /// Physical temporary root, without aliases that scoped reads intentionally reject.
 pub fn temp_root() -> std::path::PathBuf {
