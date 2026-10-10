@@ -442,30 +442,58 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
     assert!(result.output.truncated);
 }
 
-#[tokio::test]
+// The paused clock reaches the deadline only when the test advances it, once the
+// grandchild has started.
+#[tokio::test(start_paused = true)]
 async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     let scratch = Scratch::new();
-    // Each Windows process start costs more, and the deadline covers three of them.
     let command = scratch.command(
         "/bin/sh",
-        &[
-            "-c",
-            "trap '' TERM; sh -c 'sleep 30 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait",
-        ],
-        Some(support::os::slow(500) as u32),
+        &["-c", support::os::LINGERING_GRANDCHILD],
+        Some(1000),
     );
     let marker = command.directory().join("output/grandchild");
-    let outcome = execute(command).await;
-    assert!(matches!(
-        outcome,
-        Outcome::OperationalError(Error::Process(process::Error::Timeout))
+    let running = tokio::spawn(runtime::execute(
+        command,
+        CancellationToken::new(),
+        |_| async { Ok(()) },
     ));
-    let pid = std::fs::read_to_string(marker)
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    let pid = grandchild(&marker, &running).await;
+    tokio::time::advance(Duration::from_millis(1000)).await;
+    let outcome = running.await.unwrap();
+    assert!(
+        matches!(
+            outcome,
+            Outcome::OperationalError(Error::Process(process::Error::Timeout))
+        ),
+        "{outcome:?}"
+    );
     assert_gone(pid).await;
+}
+
+/// The PID the lingering grandchild wrote to `marker`, once it has. The test yields rather
+/// than sleeps while it waits, so that a paused clock stands still.
+async fn grandchild(marker: &Path, running: &tokio::task::JoinHandle<Outcome>) -> u32 {
+    let failure_deadline = std::time::Instant::now() + support::os::patience(TEST_TIMEOUT);
+    loop {
+        let written = std::fs::read_to_string(marker).ok();
+        if let Some(pid) = written
+            .as_deref()
+            .and_then(|text| text.strip_suffix('\n'))
+            .and_then(|text| text.trim().parse().ok())
+        {
+            return pid;
+        }
+        assert!(
+            !running.is_finished(),
+            "execution ended before its grandchild started"
+        );
+        assert!(
+            std::time::Instant::now() < failure_deadline,
+            "the grandchild did not start"
+        );
+        tokio::task::yield_now().await;
+    }
 }
 
 #[tokio::test]
@@ -485,14 +513,7 @@ async fn normal_exit_also_kills_a_background_descendant() {
 #[tokio::test]
 async fn dropping_an_active_caller_cleans_its_grandchild() {
     let scratch = Scratch::new();
-    let command = scratch.command(
-        "/bin/sh",
-        &[
-            "-c",
-            "trap '' TERM; sh -c 'sleep 30 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait",
-        ],
-        None,
-    );
+    let command = scratch.command("/bin/sh", &["-c", support::os::LINGERING_GRANDCHILD], None);
     let marker = command.directory().join("output/grandchild");
     let (registered, child) = oneshot::channel();
     let running = tokio::spawn(runtime::execute(

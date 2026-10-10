@@ -1494,6 +1494,11 @@ pub fn port_fixture(path: &Path, deadlines: bool) {
     }
 }
 
+/// A shell command whose leader ignores SIGTERM and waits for a child that, in the
+/// background, writes its PID and a newline to `$ARTIFACTIZE_OUTPUT_DIR/grandchild` and
+/// then runs until it is killed: an hour outlasts any test.
+pub const LINGERING_GRANDCHILD: &str = "trap '' TERM; sh -c 'sleep 3600 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait";
+
 /// Physical temporary root, without aliases that scoped reads intentionally reject.
 pub fn temp_root() -> std::path::PathBuf {
     // Not `\\?\` on Windows: a verbatim path takes `/` literally, but test scripts join with it.
