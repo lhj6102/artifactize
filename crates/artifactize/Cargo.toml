@@ -59,6 +59,7 @@ url = { version = "2", features = ["serde"] }
 unicode-segmentation = "1.13"
 
 [target.'cfg(unix)'.dependencies]
+hostname = "0.4.2"
 libc = "0.2"
 process-wrap = { version = "10.0.1", default-features = false, features = ["tokio1", "process-group"] }
 

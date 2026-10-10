@@ -10,11 +10,10 @@ use std::{
         fs::OpenOptionsExt,
         io::{AsRawHandle, FromRawHandle, OwnedHandle},
     },
-    path::Path,
+    path::{Path, PathBuf},
     ptr, slice,
 };
 
-use tempfile::TempDir;
 use windows_sys::Win32::{
     Foundation::{ERROR_SUCCESS, HANDLE, INVALID_HANDLE_VALUE, LocalFree},
     Security::{
@@ -30,9 +29,9 @@ use windows_sys::Win32::{
     },
     Storage::FileSystem::{
         BY_HANDLE_FILE_INFORMATION, CreateDirectoryW, FILE_ATTRIBUTE_DIRECTORY,
-        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TYPE_DISK,
-        GetFileInformationByHandle, GetFileType, READ_CONTROL, ReOpenFile, WRITE_DAC,
+        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_SHARE_DELETE,
+        FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TYPE_DISK, GetFileInformationByHandle, GetFileType,
+        READ_CONTROL, ReOpenFile, WRITE_DAC,
     },
     System::{
         SystemServices::{
@@ -78,16 +77,56 @@ pub(crate) fn create_private_dir(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// A new owner-only temporary directory below `parent`. It inherits `parent`'s DACL until
-/// the protected one replaces it, which is owner-only too when artifactize made `parent`.
-pub(crate) fn private_tempdir_in(prefix: &str, parent: &Path) -> io::Result<TempDir> {
-    let directory = tempfile::Builder::new().prefix(prefix).tempdir_in(parent)?;
-    let opened = OpenOptions::new()
-        .access_mode(READ_CONTROL | WRITE_DAC)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
-        .open(directory.path())?;
-    restrict(opened.as_raw_handle(), true)?;
-    Ok(directory)
+/// A new temporary directory with a protected owner-only DACL from creation, even when
+/// `parent` grants access to other users.
+pub(crate) fn private_tempdir_in(prefix: &str, parent: &Path) -> io::Result<PrivateTempDir> {
+    // 128 bits of OS entropy make guessing names impractical; a bounded retry also handles
+    // an existing name without ever opening or changing that existing directory.
+    const RANDOM_BYTES: usize = 16;
+    const CREATE_ATTEMPTS: usize = 128;
+    if prefix.contains(['/', '\\', '\0']) {
+        return Err(io::ErrorKind::InvalidInput.into());
+    }
+    // Match TempDir's absolute paths so a later working-directory change cannot redirect
+    // cleanup to a different relative parent.
+    let parent = std::path::absolute(parent)?;
+    for _ in 0..CREATE_ATTEMPTS {
+        let mut random = [0_u8; RANDOM_BYTES];
+        getrandom::fill(&mut random).map_err(io::Error::other)?;
+        let path = parent.join(format!("{prefix}{:032x}", u128::from_ne_bytes(random)));
+        match create_private_dir(&path) {
+            Ok(()) => return Ok(PrivateTempDir(Some(path))),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        "could not create a unique private temporary directory",
+    ))
+}
+
+/// Own the directory until dropped, or transfer cleanup responsibility with `keep`.
+pub(crate) struct PrivateTempDir(Option<PathBuf>);
+
+impl PrivateTempDir {
+    pub(crate) fn path(&self) -> &Path {
+        self.0
+            .as_deref()
+            .expect("temporary directory is still owned")
+    }
+
+    pub(crate) fn keep(mut self) -> PathBuf {
+        self.0.take().expect("temporary directory is still owned")
+    }
+}
+
+impl Drop for PrivateTempDir {
+    fn drop(&mut self) {
+        if let Some(path) = &self.0 {
+            let _ = std::fs::remove_dir_all(path);
+        }
+    }
 }
 
 /// Whether only the current user can use a directory; see `is_owner_only`.
@@ -378,4 +417,35 @@ fn wide(path: &Path) -> io::Result<Vec<u16>> {
     }
     wide.push(0);
     Ok(wide)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_private_dir, private_tempdir_in};
+
+    #[test]
+    fn temporary_directory_has_an_explicit_owner_only_dacl_under_a_shared_parent() {
+        let parent = crate::test_os::tempdir();
+        crate::test_os::share_dir(parent.path());
+        assert!(!is_private_dir(parent.path()).unwrap());
+
+        let directory = private_tempdir_in("draft-", parent.path()).unwrap();
+        let path = directory.path().to_owned();
+        assert!(is_private_dir(&path).unwrap());
+        assert!(crate::test_os::private_dir(&path));
+        assert!(!crate::test_os::has_inherited_aces(&path));
+        std::fs::write(path.join("draft"), "private").unwrap();
+        assert!(crate::test_os::private_file(&path.join("draft")));
+        drop(directory);
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn kept_temporary_directory_transfers_cleanup_responsibility() {
+        let parent = crate::test_os::tempdir();
+        let directory = private_tempdir_in("kept-", parent.path()).unwrap();
+        let path = directory.keep();
+        assert!(path.is_dir());
+        assert!(is_private_dir(&path).unwrap());
+    }
 }

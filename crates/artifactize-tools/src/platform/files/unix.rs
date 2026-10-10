@@ -1,15 +1,16 @@
 //! Unix pinned opens and descriptor-based directory listings.
 
 use std::{
-    ffi::{CStr, CString, OsStr, OsString},
+    ffi::{CString, OsStr, OsString},
     fs::{self, File, OpenOptions},
     io,
-    os::{
-        fd::{AsRawFd, FromRawFd},
-        unix::{ffi::OsStrExt, fs::OpenOptionsExt},
-    },
+    os::unix::{ffi::OsStrExt, fs::OpenOptionsExt},
     path::{Path, PathBuf},
-    ptr::NonNull,
+};
+
+use rustix::{
+    fs::{AtFlags, Dir, FileType, Mode, OFlags, openat, statat},
+    io::Errno,
 };
 
 use super::FileKind;
@@ -27,7 +28,7 @@ pub fn canonicalize(path: &Path) -> io::Result<PathBuf> {
 /// Open without following a link in the last component or blocking on a FIFO.
 pub fn open_no_follow(options: &mut OpenOptions, path: &Path) -> io::Result<File> {
     options
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits() as i32)
         .open(path)
 }
 
@@ -35,7 +36,7 @@ pub fn open_no_follow(options: &mut OpenOptions, path: &Path) -> io::Result<File
 pub fn open_nonblocking(path: &Path) -> io::Result<File> {
     OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NONBLOCK)
+        .custom_flags(OFlags::NONBLOCK.bits() as i32)
         .open(path)
 }
 
@@ -58,64 +59,45 @@ impl EntryName {
 
 /// Open one entry of a pinned directory read-only, without following a symlink.
 pub fn open_entry(directory: &File, name: &EntryName) -> io::Result<File> {
-    // O_NONBLOCK avoids waiting on a FIFO before its type can be rejected.
-    // SAFETY: a valid directory descriptor and a NUL-terminated name; the result is checked.
-    let fd = unsafe {
-        libc::openat(
-            directory.as_raw_fd(),
-            name.0.as_ptr(),
-            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
-        )
-    };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: openat returned a new descriptor that nothing else owns.
-    Ok(unsafe { File::from_raw_fd(fd) })
+    // NONBLOCK avoids waiting on a FIFO before its type can be rejected.
+    Ok(openat(
+        directory,
+        &name.0,
+        OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?
+    .into())
 }
 
 /// Whether `open_entry` failed because the entry is a symlink: `O_NOFOLLOW` reports `ELOOP`
 /// on Linux and macOS, and `EMLINK` on FreeBSD and DragonFly.
 pub fn is_link_refusal(error: &io::Error) -> bool {
     let link = if cfg!(any(target_os = "freebsd", target_os = "dragonfly")) {
-        libc::EMLINK
+        Errno::MLINK
     } else {
-        libc::ELOOP
+        Errno::LOOP
     };
-    error.raw_os_error() == Some(link)
+    error.raw_os_error() == Some(link.raw_os_error())
 }
 
 /// The entries of a pinned directory, listed through its descriptor rather than a path
 /// that could have been replaced by a link.
 pub fn read_dir(directory: &File) -> io::Result<impl Iterator<Item = io::Result<DirEntry<'_>>>> {
     // Open a new description, not dup: directory offsets must be independent across scans.
-    // SAFETY: a live descriptor and a constant NUL-terminated name; no links are followed.
-    let fd = unsafe {
-        libc::openat(
-            directory.as_raw_fd(),
-            c".".as_ptr(),
-            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
-        )
-    };
-    if fd < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: fd is an owned directory descriptor. fdopendir takes ownership on success.
-    let stream = unsafe { libc::fdopendir(fd) };
-    let Some(stream) = NonNull::new(stream) else {
-        let error = io::Error::last_os_error();
-        // SAFETY: fdopendir failed, leaving fd owned here.
-        unsafe { libc::close(fd) };
-        return Err(error);
-    };
+    let fd = openat(
+        directory,
+        c".",
+        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+        Mode::empty(),
+    )?;
     Ok(ReadDir {
-        stream,
+        stream: Dir::new(fd)?,
         directory,
         state: Scan::Reading,
     })
 }
 
-/// A failed or exhausted stream never calls readdir again.
+/// A failed or exhausted stream never reads the directory again.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Scan {
     Reading,
@@ -123,7 +105,7 @@ enum Scan {
 }
 
 struct ReadDir<'a> {
-    stream: NonNull<libc::DIR>,
+    stream: Dir,
     directory: &'a File,
     state: Scan,
 }
@@ -133,19 +115,18 @@ impl<'a> Iterator for ReadDir<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.state == Scan::Reading {
-            // SAFETY: this iterator exclusively owns the stream. errno distinguishes EOF
-            // from failure; the name is copied before the next readdir can overwrite it.
-            let entry = unsafe {
-                *errno() = 0;
-                libc::readdir(self.stream.as_ptr())
+            let entry = match self.stream.next() {
+                Some(Ok(entry)) => entry,
+                Some(Err(error)) => {
+                    self.state = Scan::Done;
+                    return Some(Err(error.into()));
+                }
+                None => {
+                    self.state = Scan::Done;
+                    return None;
+                }
             };
-            if entry.is_null() {
-                self.state = Scan::Done;
-                let error = io::Error::last_os_error();
-                return (error.raw_os_error() != Some(0)).then_some(Err(error));
-            }
-            // SAFETY: readdir returned a dirent with a NUL-terminated d_name.
-            let name = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
+            let name = entry.file_name().to_bytes();
             if name == b"." || name == b".." {
                 continue;
             }
@@ -155,13 +136,6 @@ impl<'a> Iterator for ReadDir<'a> {
             }));
         }
         None
-    }
-}
-
-impl Drop for ReadDir<'_> {
-    fn drop(&mut self) {
-        // SAFETY: this stream is owned exclusively, and closed exactly once.
-        unsafe { libc::closedir(self.stream.as_ptr()) };
     }
 }
 
@@ -183,40 +157,14 @@ impl DirEntry<'_> {
 /// The type of one entry of a pinned directory, without following it.
 pub fn entry_kind(directory: &File, name: &OsStr) -> io::Result<FileKind> {
     let name = EntryName::new(name).ok_or(io::ErrorKind::InvalidInput)?;
-    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
-    // SAFETY: the descriptor and name are live and stat is a writable output buffer.
-    // AT_SYMLINK_NOFOLLOW inspects the entry itself, never its target.
-    if unsafe {
-        libc::fstatat(
-            directory.as_raw_fd(),
-            name.0.as_ptr(),
-            stat.as_mut_ptr(),
-            libc::AT_SYMLINK_NOFOLLOW,
-        )
-    } != 0
-    {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: fstatat filled the struct on success.
-    Ok(match unsafe { stat.assume_init() }.st_mode & libc::S_IFMT {
-        libc::S_IFREG => FileKind::File,
-        libc::S_IFDIR => FileKind::Directory,
-        libc::S_IFLNK => FileKind::Symlink,
+    // Inspect the entry itself, never its target.
+    let stat = statat(directory, &name.0, AtFlags::SYMLINK_NOFOLLOW)?;
+    Ok(match FileType::from_raw_mode(stat.st_mode) {
+        FileType::RegularFile => FileKind::File,
+        FileType::Directory => FileKind::Directory,
+        FileType::Symlink => FileKind::Symlink,
         _ => FileKind::Other,
     })
-}
-
-/// This thread's `errno`, which `readdir` leaves unchanged at the end of a directory.
-fn errno() -> *mut libc::c_int {
-    // SAFETY: both functions return this thread's errno location and have no preconditions.
-    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
-    unsafe {
-        libc::__error()
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
-    unsafe {
-        libc::__errno_location()
-    }
 }
 
 /// Other Unix platforms keep their existing case-sensitive open behavior.

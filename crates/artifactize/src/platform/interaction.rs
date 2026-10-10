@@ -66,7 +66,7 @@ pub(crate) async fn run_editor(command: &str, file: &Path) -> io::Result<()> {
 /// Keep the protected parent alive until its editor draft has been removed.
 pub(crate) struct PrivateTempFile {
     file: tempfile::NamedTempFile,
-    _directory: tempfile::TempDir,
+    _directory: super::PrivateTempDir,
 }
 impl PrivateTempFile {
     pub fn path(&self) -> &Path {

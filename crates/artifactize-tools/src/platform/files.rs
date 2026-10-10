@@ -76,7 +76,28 @@ pub fn current_directory() -> std::io::Result<std::path::PathBuf> {
 
 /// Render a native path for people and JSON clients with portable `/` separators.
 pub fn path_text(path: &std::path::Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
+    let text = path.to_string_lossy();
+    #[cfg(windows)]
+    {
+        use std::path::{Component, Prefix};
+        let text = text.replace('\\', "/");
+        // Canonical Windows paths carry verbatim prefixes that are not useful in a
+        // breadcrumb. Only disk/UNC prefixes have equivalent ordinary path spellings.
+        const VERBATIM: &str = "//?/";
+        const VERBATIM_UNC: &str = "//?/UNC/";
+        match path.components().next() {
+            Some(Component::Prefix(prefix)) => match prefix.kind() {
+                Prefix::VerbatimDisk(_) => text[VERBATIM.len()..].to_owned(),
+                Prefix::VerbatimUNC(_, _) => format!("//{}", &text[VERBATIM_UNC.len()..]),
+                _ => text,
+            },
+            _ => text,
+        }
+    }
+    #[cfg(unix)]
+    {
+        text.into_owned()
+    }
 }
 
 /// Convert a native relative path into logical components; roots, traversal and non-UTF-8
@@ -115,4 +136,46 @@ pub fn scoped_relative(path: &std::path::Path) -> std::io::Result<String> {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>()
         .join("/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::path_text;
+
+    // reason: only Unix allows '\' in file names.
+    #[cfg(unix)]
+    #[test]
+    fn literal_backslash_in_a_file_name_is_not_a_separator() {
+        let root = crate::test_os::tempdir();
+        let path = root.path().join(r"input\name");
+        std::fs::write(&path, "data").unwrap();
+        assert_eq!(
+            path_text(std::path::Path::new(path.file_name().unwrap())),
+            r"input\name"
+        );
+    }
+
+    // reason: Windows native paths use backslash separators.
+    #[cfg(windows)]
+    #[test]
+    fn native_separators_are_rendered_as_slashes() {
+        assert_eq!(
+            path_text(std::path::Path::new(r"C:\input\name")),
+            "C:/input/name"
+        );
+    }
+
+    // reason: Windows canonical paths can carry verbatim disk and UNC prefixes.
+    #[cfg(windows)]
+    #[test]
+    fn verbatim_paths_render_without_the_native_prefix() {
+        assert_eq!(
+            path_text(std::path::Path::new(r"\\?\C:\input\name")),
+            "C:/input/name"
+        );
+        assert_eq!(
+            path_text(std::path::Path::new(r"\\?\UNC\server\share\input")),
+            "//server/share/input"
+        );
+    }
 }
