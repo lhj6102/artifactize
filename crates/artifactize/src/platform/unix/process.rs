@@ -214,6 +214,11 @@ fn process_info(pid: i32, include_zombies: u64) -> io::Result<libc::proc_bsdinfo
     Ok(info)
 }
 
+/// The one byte the parent writes on the gate socket to admit the held child past
+/// `pre_exec`. Its value carries no meaning beyond "admitted"; the handshake only checks
+/// that this exact byte, not some other write, arrived.
+const GATE_ADMIT: u8 = 1;
+
 pub(crate) struct Gate(Arc<AsyncFd<UnixStream>>);
 
 impl Gate {
@@ -233,7 +238,7 @@ impl Gate {
     }
 
     pub fn admit(&self) -> io::Result<()> {
-        self.0.get_ref().write_all(&[1])
+        self.0.get_ref().write_all(&[GATE_ADMIT])
     }
 }
 
@@ -275,7 +280,7 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
             let mut admission = 0_u8;
             loop {
                 match libc::read(fd, (&mut admission as *mut u8).cast(), 1) {
-                    1 if admission == 1 => return Ok(()),
+                    1 if admission == GATE_ADMIT => return Ok(()),
                     -1 => {
                         let error = io::Error::last_os_error();
                         if error.raw_os_error() != Some(libc::EINTR) {

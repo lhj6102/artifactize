@@ -8,7 +8,7 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::{bin, shell};
 use tempfile::TempDir;
 
 mod support;
@@ -116,7 +116,7 @@ impl Fixture {
                         "title":"Review",
                         "profile":{
                             "kind":"runtime",
-                            "command":bin("/bin/sh"),
+                            "command":shell(),
                             "args":[
                                 "review.sh",
                                 self.root.path().join("starts"),
@@ -289,7 +289,7 @@ fn eval(id: &str, script: &str) -> Value {
     json!({
         "id":id,
         "title":"Review",
-        "profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script]},
+        "profile":{"kind":"runtime","command":shell(),"args":["-c",script]},
         "payload":{"instruction":"Review."},
     })
 }
@@ -1596,7 +1596,7 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
         "fail":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
         "patient":{
             "kind":"runtime",
-            "command":bin("/bin/sh"),
+            "command":shell(),
             "args":["-c","exit 0"],
             "timeout_ms":60000,
         },

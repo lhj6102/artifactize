@@ -232,10 +232,7 @@ impl<'a> Registry<'a> {
             AgentTool::Command(command) => command,
             AgentTool::Builtin(tool_declaration) => {
                 if let Some(fixed_args) = &tool_declaration.args {
-                    let owner = match ArtifactId::new(tool.definition.artifact_id.as_str()) {
-                        Ok(owner) => owner,
-                        Err(error) => return ToolResult::error(error.to_string()),
-                    };
+                    let owner = scope::tool_id(&tool.definition.artifact_id);
                     // An Agent's help program gets only the explicit standalone variables.
                     let launcher = crate::process::Launcher {
                         env: artifactize_tools::launch::passed_environment(),
@@ -261,10 +258,7 @@ impl<'a> Registry<'a> {
                     Err(error) => return ToolResult::error(error),
                 };
                 let root = self.config.root.clone();
-                let owner = match ArtifactId::new(tool.definition.artifact_id.as_str()) {
-                    Ok(owner) => owner,
-                    Err(error) => return ToolResult::error(error.to_string()),
-                };
+                let owner = scope::tool_id(&tool.definition.artifact_id);
                 let scope = self.scope.tool_scope();
                 let cancellation = cancellation.child_token();
                 let _cancel_on_drop = cancellation.clone().drop_guard();

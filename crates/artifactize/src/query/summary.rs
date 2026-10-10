@@ -24,8 +24,8 @@ pub enum SourceKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Source<'a> {
-    pub run_id: &'a str,
-    pub request_id: &'a str,
+    pub run_id: &'a crate::types::RunId,
+    pub request_id: &'a crate::types::RequestId,
     pub kind: SourceKind,
 }
 

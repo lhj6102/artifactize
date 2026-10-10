@@ -35,6 +35,12 @@ pub fn bin(path: &str) -> String {
         .to_owned()
 }
 
+/// The POSIX shell, resolved through [`bin`] like any other named utility: a semantic call
+/// for test code that just needs a shell, so the shell's own path lives only here.
+pub fn shell() -> String {
+    bin("/bin/sh")
+}
+
 /// Whether tests run the stand-ins `bin` names.
 pub fn stand_ins() -> bool {
     cfg!(windows) || std::env::var_os("ARTIFACTIZE_TEST_STAND_INS").is_some()
