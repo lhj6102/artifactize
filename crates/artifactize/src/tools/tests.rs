@@ -206,6 +206,9 @@ assert os.environ['HOME'] != os.environ['TMPDIR']
 assert context['tmpDir'] == os.environ['TMPDIR']
 assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR']
 allowed = {'PATH','LANG','HOME','TMP','TEMP','TMPDIR','XDG_CACHE_HOME','ARTIFACTIZE_WORKSPACE_DIR','ARTIFACTIZE_OUTPUT_DIR','ARTIFACTIZE_TMP_DIR','LC_CTYPE'}
+if sys.platform == 'darwin':
+    # The python.org macOS launcher supplies this internally when starting its framework.
+    allowed.add('__PYVENV_LAUNCHER__')
 if os.name == 'nt':
     allowed |= {'USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','COMSPEC','PATHEXT'}
 assert set(os.environ) <= allowed
