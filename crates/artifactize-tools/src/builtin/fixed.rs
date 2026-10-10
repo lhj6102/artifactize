@@ -49,6 +49,27 @@ pub fn validate_args(builtin: Builtin, args: Option<&[String]>, human: bool) -> 
     Ok(())
 }
 
+pub fn fixed_description(builtin: Builtin, args: &[String]) -> &'static str {
+    match builtin {
+        Builtin::Read => {
+            "Read the declared UTF-8 file in {artifactName}, up to 64 KiB. No input arguments; no symlinks or binary data."
+        }
+        Builtin::List => {
+            "List the declared directory in {artifactName}. No input arguments; returns sorted entries and truncation metadata."
+        }
+        Builtin::Section if args.len() == 1 => {
+            "Read the declared Markdown file in {artifactName} by exact heading. Supply only heading; includes nested sections until the next same or higher level heading. Missing headings list available titles."
+        }
+        Builtin::Section => {
+            "Read the declared Markdown section in {artifactName}. No input arguments; includes nested sections until the next same or higher level heading."
+        }
+        Builtin::Help => {
+            "Read the declared program/subcommand --help output. No input arguments; limited to 10 seconds and 64 KiB."
+        }
+        _ => super::description(builtin),
+    }
+}
+
 pub fn fixed_schema(builtin: Builtin, args: &[String]) -> Value {
     if builtin == Builtin::Section && args.len() == 1 {
         super::input_schema(builtin)

@@ -98,10 +98,14 @@ impl<'a> Registry<'a> {
                 let name = format!("{operation}_{id}");
                 let description = match declaration {
                     AgentTool::Command(tool) => tool.description.clone(),
-                    AgentTool::Builtin(tool) => tool
-                        .description
-                        .clone()
-                        .unwrap_or_else(|| builtin::description(tool.builtin).into()),
+                    AgentTool::Builtin(tool) => {
+                        tool.description
+                            .clone()
+                            .unwrap_or_else(|| match &tool.args {
+                                Some(args) => builtin::fixed_description(tool.builtin, args).into(),
+                                None => builtin::description(tool.builtin).into(),
+                            })
+                    }
                 }
                 .replace("{artifactName}", id);
                 let input_schema = declaration.input_schema();

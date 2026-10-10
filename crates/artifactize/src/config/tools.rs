@@ -210,9 +210,10 @@ impl<'de> Deserialize<'de> for HumanBuiltinTool {
         }
         Ok(Self {
             builtin: declaration.builtin,
-            description: declaration
-                .description
-                .unwrap_or_else(|| crate::tools::builtin::description(declaration.builtin).into()),
+            description: declaration.description.unwrap_or_else(|| {
+                crate::tools::builtin::fixed_description(declaration.builtin, &declaration.args)
+                    .into()
+            }),
             kind,
             args: declaration.args,
         })

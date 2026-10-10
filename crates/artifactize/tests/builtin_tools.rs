@@ -216,6 +216,77 @@ async fn fixed_agent_reads_sections_mounts_and_schemas() {
 }
 
 #[test]
+fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    declaration(&repo, json!({}), json!({}));
+    if support::os::symlink_file(repo.join("a/notes.md"), repo.join("a/link.md")).is_none() {
+        return;
+    }
+    for audience in ["agent_tools", "human_tools"] {
+        let mut value = json!({"name":"a","views":{}});
+        value["views"][audience] = json!({"linked":{"builtin":"read","args":["link.md"]}});
+        support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
+        let report = parsed(
+            command(&repo, &state)
+                .args(["config", "check", "--json"])
+                .output()
+                .unwrap(),
+            2,
+        );
+        let error = report["error"].as_str().unwrap();
+        assert!(
+            error.contains(&format!("views.{audience}.linked.args")),
+            "{error}"
+        );
+        assert!(
+            error.contains("symlink") || error.contains("link"),
+            "{error}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition() {
+    let root = tempfile::tempdir().unwrap();
+    let repo = root.path().join("repo");
+    declaration(
+        &repo,
+        json!({}),
+        json!({"reference":{"builtin":"read","args":["{b}/reference.md"]}}),
+    );
+    fs::create_dir_all(repo.join("b")).unwrap();
+    fs::write(repo.join("b/reference.md"), "reference text\n").unwrap();
+    support::declaration::write(
+        repo.join("b/index.artf"),
+        json!({"name":"b","basis":true}).to_string(),
+    )
+    .unwrap();
+    let mut value =
+        support::declaration::read(fs::read(repo.join("a/index.artf")).unwrap()).unwrap();
+    value["evals"][0]["payload"]["instruction"] = json!("Review {b}.");
+    support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
+    let config = read_workspace_config(&repo).unwrap();
+    let result = tools::human::Registry::new(&config, "a/review")
+        .unwrap()
+        .call("reference_a", CancellationToken::new())
+        .await;
+    assert!(!result.is_error, "{result:?}");
+    assert_eq!(
+        result.content,
+        vec![tools::human::Content::Text {
+            text: "reference text\n".into()
+        }]
+    );
+    let outside = tools::human::Registry::for_artifact(&config, "a")
+        .unwrap()
+        .call("reference_a", CancellationToken::new())
+        .await;
+    assert!(outside.is_error, "{outside:?}");
+}
+
+#[test]
 fn changing_only_builtin_args_preserves_reuse_identity_like_command_views() {
     let root = tempfile::tempdir().unwrap();
     let repo = root.path().join("repo");
