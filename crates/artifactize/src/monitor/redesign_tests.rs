@@ -303,22 +303,14 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
     render(&mut monitor, 200, 45);
     let area = monitor.hits.tree;
     let point = (area.x + 5, area.y + 1);
-    assert_eq!(
-        monitor.mouse(mouse(
-            MouseEventKind::Down(MouseButton::Left),
-            point.0,
-            point.1
-        )),
-        Action::None
-    );
-    assert_eq!(
-        monitor.mouse(mouse(
-            MouseEventKind::Down(MouseButton::Left),
-            point.0,
-            point.1
-        )),
-        Action::OpenDetail
-    );
+    let click = || mouse(MouseEventKind::Down(MouseButton::Left), point.0, point.1);
+    // Click times are given, not read from the clock: a second click past the double-click
+    // interval is a new first click, and one within it opens the row.
+    let start = std::time::Instant::now();
+    let later = |milliseconds| start + std::time::Duration::from_millis(milliseconds);
+    assert_eq!(monitor.mouse_at(click(), start), Action::None);
+    assert_eq!(monitor.mouse_at(click(), later(401)), Action::None);
+    assert_eq!(monitor.mouse_at(click(), later(500)), Action::OpenDetail);
     monitor.open_detail().await;
     render(&mut monitor, 200, 45);
     assert_eq!(monitor.focus, Pane::Detail);

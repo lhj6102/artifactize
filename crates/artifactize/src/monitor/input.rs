@@ -77,6 +77,12 @@ fn contains(rect: Rect, point: Position) -> bool {
 }
 impl Monitor {
     pub fn mouse(&mut self, event: MouseEvent) -> Action {
+        self.mouse_at(event, Instant::now())
+    }
+
+    /// `mouse`, for an event that happened at `at`: a second left click on the same row
+    /// within [`DOUBLE_CLICK`] of the first opens it.
+    pub(crate) fn mouse_at(&mut self, event: MouseEvent, at: Instant) -> Action {
         if !self.mouse_capture {
             return Action::None;
         }
@@ -148,13 +154,12 @@ impl Monitor {
                     },
                     Pane::Detail => return Action::None,
                 };
-                let now = Instant::now();
                 let double = self.last_click.as_ref().is_some_and(|click| {
-                    click.hit == hit && now.duration_since(click.at) <= DOUBLE_CLICK
+                    click.hit == hit && at.saturating_duration_since(click.at) <= DOUBLE_CLICK
                 });
                 self.last_click = Some(Click {
                     hit: hit.clone(),
-                    at: now,
+                    at,
                 });
                 match hit {
                     Hit::Scope(index) => self.select_scope(index),
