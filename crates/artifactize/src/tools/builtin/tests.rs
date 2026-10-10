@@ -346,13 +346,18 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
             CancellationToken::new(),
         )
     };
-    if symlink_dir("old-a", fixture.root.join("a")).is_some() {
+    let symlinked = symlink_dir("old-a", fixture.root.join("a")).is_some();
+    if symlinked {
         assert!(read().await.is_error());
     }
     // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
-        crate::test_os::remove_link_dir(&fixture.root.join("a"));
+        // Without the privilege to create the symlink above, there is nothing at "a" yet
+        // to remove.
+        if symlinked {
+            crate::test_os::remove_link_dir(&fixture.root.join("a"));
+        }
         crate::test_os::junction(&fixture.root.join("old-a"), &fixture.root.join("a"));
         assert!(read().await.is_error());
     }

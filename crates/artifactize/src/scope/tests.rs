@@ -413,7 +413,8 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
     assert!(scoped_path(&fixture.0, Path::new("../outside")).is_err());
     assert!(scoped_path(&fixture.0, &outside.0).is_err());
     fs::rename(fixture.0.join("owner"), fixture.0.join("old-owner")).unwrap();
-    if symlink_dir("old-owner", fixture.0.join("owner")).is_some() {
+    let symlinked = symlink_dir("old-owner", fixture.0.join("owner")).is_some();
+    if symlinked {
         assert!(
             scope
                 .resolve_input(&config.root, "owner", "directory/file")
@@ -425,8 +426,11 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
     // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
-        // A directory symlink is removed as a directory on Windows.
-        crate::test_os::remove_link_dir(&fixture.0.join("owner"));
+        // A directory symlink is removed as a directory on Windows; without one (lacking
+        // the privilege to create it), there is nothing at "owner" yet to remove.
+        if symlinked {
+            crate::test_os::remove_link_dir(&fixture.0.join("owner"));
+        }
         crate::test_os::junction(&fixture.0.join("old-owner"), &fixture.0.join("owner"));
         assert!(
             scope

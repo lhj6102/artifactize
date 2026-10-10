@@ -48,6 +48,9 @@ const HELP_WIDTH: u16 = 72;
 /// One more than "Tab / Shift-Tab", the longest key label in [`HELP`], so every label gets
 /// at least one space before its text.
 const HELP_KEY_WIDTH: usize = 16;
+/// The headline wraps into at most this share of the pane's height, so nothing below it is
+/// pushed off.
+const HEADLINE_HEIGHT_SHARE: u16 = 3;
 /// Beside the evidence, the sections take this share of the Detail's width, as the evidence
 /// lines (commands, paths, output) are usually the longer ones.
 const SECTIONS_BESIDE: u16 = 45;
@@ -621,12 +624,11 @@ impl Monitor {
             format!("{HEADLINE_SEPARATOR}{headline}").into(),
         ]))
         .wrap(Wrap { trim: false });
-        // The headline wraps into at most a third of the pane; its height is measured after
-        // wrapping, so nothing below it is pushed off.
+        // The headline's height is measured after wrapping.
         let cap = if density == Density::Compact {
             1
         } else {
-            (inner.height / 3).max(1)
+            (inner.height / HEADLINE_HEIGHT_SHARE).max(1)
         };
         let wrapped = u16::try_from(headline.line_count(inner.width)).unwrap_or(u16::MAX);
         let headline_height = wrapped.clamp(1, cap);

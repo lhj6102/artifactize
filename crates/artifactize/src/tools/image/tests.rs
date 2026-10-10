@@ -245,14 +245,19 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
         assert!(from_output(&output, path, "image/png").is_err(), "{path}");
     }
     fs::rename(&output, directory.path().join("old-output")).unwrap();
-    if symlink_dir("old-output", &output).is_some() {
+    let symlinked = symlink_dir("old-output", &output).is_some();
+    if symlinked {
         assert!(from_output(&output, "image", "image/png").is_err());
     }
     // A junction needs no privilege and redirects the output root just the same.
     // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
-        crate::test_os::remove_link_dir(&output);
+        // Without the privilege to create the symlink above, there is nothing at the
+        // output root yet to remove.
+        if symlinked {
+            crate::test_os::remove_link_dir(&output);
+        }
         crate::test_os::junction(&directory.path().join("old-output"), &output);
         assert!(from_output(&output, "image", "image/png").is_err());
     }
