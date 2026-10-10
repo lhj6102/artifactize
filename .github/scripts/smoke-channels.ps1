@@ -49,7 +49,7 @@ try {
             $out = & $command --version
             if ($LASTEXITCODE -ne 0 -or $out -ne "$command $Version") { throw "winget alias $command failed: $out" }
         }
-        & winget uninstall --id lhj6102.Artifactize --exact --source winget --disable-interactivity
+        & winget uninstall --manifest $manifests --scope user --accept-source-agreements --disable-interactivity
         if ($LASTEXITCODE -ne 0) { throw 'winget uninstall failed' }
     } else {
         & (Join-Path $PSScriptRoot 'build-msix.ps1') -Version $Version -Dist $Dist -Output $root
