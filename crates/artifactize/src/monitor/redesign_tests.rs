@@ -791,7 +791,7 @@ async fn human_detail_keys_follow_the_shared_protocol() {
         row.x + 1,
         row.y,
     ));
-    assert!(render_text(&mut monitor, 160, 40).contains("$ xdg-open {artifactPath}"));
+    assert!(render_text(&mut monitor, 160, 40).contains("$ show-release {artifactPath}"));
     // The wheel over the instruction scrolls it without moving focus.
     let instruction = monitor.hits.review.instruction;
     monitor.mouse(mouse(

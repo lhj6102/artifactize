@@ -1506,6 +1506,40 @@ pub const LINGERING: &str = "sleep 3600";
 /// then runs until it is killed: an hour outlasts any test.
 pub const LINGERING_GRANDCHILD: &str = "trap '' TERM; sh -c 'sleep 3600 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait";
 
+/// The identity of the file at `path` on its volume: the device and inode on Unix, the
+/// volume serial number and file index on Windows. A file replaced by a rename has a new one.
+pub fn file_identity(path: &Path) -> (u64, u64) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = std::fs::metadata(path).unwrap();
+        (metadata.dev(), metadata.ino())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        };
+        let file = std::fs::File::open(path).unwrap();
+        let mut information = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+        // SAFETY: the handle is open for the call, and the record is read only once filled.
+        let information = unsafe {
+            assert_ne!(
+                GetFileInformationByHandle(file.as_raw_handle(), information.as_mut_ptr()),
+                0,
+                "{}",
+                std::io::Error::last_os_error()
+            );
+            information.assume_init()
+        };
+        (
+            u64::from(information.dwVolumeSerialNumber),
+            u64::from(information.nFileIndexHigh) << 32 | u64::from(information.nFileIndexLow),
+        )
+    }
+}
+
 /// A file made read-only until this drops, when its original permissions come back: the
 /// Unix mode, or the Windows read-only attribute.
 pub struct ReadOnly {

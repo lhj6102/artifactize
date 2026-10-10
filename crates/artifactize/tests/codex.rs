@@ -394,17 +394,10 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
     project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
     let access = codex::jwt("claim-account", now() + 3600);
     let file = project.auth_file(&access);
-    // A fixed old marker makes any rewrite visible without relying on clock resolution.
-    fs::File::options()
-        .write(true)
-        .open(&file)
-        .unwrap()
-        .set_modified(UNIX_EPOCH + std::time::Duration::from_secs(1))
-        .unwrap();
-    let before = (
-        fs::read(&file).unwrap(),
-        file.metadata().unwrap().modified().unwrap(),
-    );
+    // A file that cannot be written fails any write; one replaced by a rename gets a new
+    // identity; one rewritten in place gets new contents.
+    let read_only = support::os::read_only(&file);
+    let before = (fs::read(&file).unwrap(), support::os::file_identity(&file));
     let own = fs::read(project.credentials()).unwrap();
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
@@ -421,12 +414,10 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
         assert_eq!(call.headers["chatgpt-account-id"], "file-account");
     }
     assert_eq!(
-        (
-            fs::read(&file).unwrap(),
-            file.metadata().unwrap().modified().unwrap()
-        ),
+        (fs::read(&file).unwrap(), support::os::file_identity(&file)),
         before
     );
+    drop(read_only);
     assert_eq!(fs::read(project.credentials()).unwrap(), own);
 
     let expired = project.auth_file(&codex::jwt("claim-account", now() - 10));

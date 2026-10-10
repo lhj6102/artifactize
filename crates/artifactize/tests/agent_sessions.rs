@@ -4,7 +4,7 @@
 mod support;
 
 use std::{
-    fs::{self, File},
+    fs,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     sync::{
@@ -638,16 +638,6 @@ fn concurrent_sends_take_turns_in_one_thread() {
     assert!(last.contains(answers[0].1.as_str().unwrap()), "{last}");
 }
 
-/// Stamp a session file's last write, so that collection order is certain.
-fn written(path: &Path, seconds: u64) {
-    File::options()
-        .write(true)
-        .open(path)
-        .unwrap()
-        .set_modified(UNIX_EPOCH + Duration::from_secs(seconds))
-        .unwrap();
-}
-
 #[test]
 fn the_session_store_is_collected_oldest_first_down_to_its_target() {
     let project = Project::new("openai");
@@ -682,14 +672,10 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
             .len()
     };
     let sizes: Vec<_> = reviews.iter().map(|(_, session)| size(session)).collect();
-    for (index, (_, session)) in reviews.iter().enumerate() {
-        written(
-            &project.sessions().join(format!("{session}.jsonl")),
-            // A day apart, far beyond any filesystem's timestamp resolution.
-            1_000 + index as u64 * 86_400,
-        );
-    }
     let total: u64 = sizes.iter().sum();
+    // Down to the largest session, two of the three go, whichever are oldest: the order
+    // itself is the store's unit test, on given write times.
+    let target = *sizes.iter().max().unwrap();
     let doctor = project.json(&provider, &["doctor"], 0);
     let check = doctor["checks"]
         .as_array()
@@ -702,36 +688,34 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
     assert_eq!(check["details"]["bytes"], total);
 
     // At the maximum nothing goes; one byte over, the oldest go down to the target.
-    project.limits(json!({"agentSessions":{"maxBytes":total,"targetBytes":sizes[2]}}));
+    project.limits(json!({"agentSessions":{"maxBytes":total,"targetBytes":target}}));
     let pruned = project.json(&provider, &["prune"], 0);
     assert_eq!(pruned["removedSessions"], json!([]));
-    project.limits(json!({"agentSessions":{"maxBytes":total - 1,"targetBytes":sizes[2]}}));
+    project.limits(json!({"agentSessions":{"maxBytes":total - 1,"targetBytes":target}}));
     let dry = project.json(&provider, &["prune", "--dry-run"], 0);
-    assert_eq!(
-        dry["wouldRemoveSessions"],
-        json!([&reviews[0].1, &reviews[1].1])
-    );
-    assert!(
-        project
-            .sessions()
-            .join(format!("{}.jsonl", reviews[0].1))
-            .exists()
-    );
+    let doomed: Vec<_> = dry["wouldRemoveSessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|session| session.as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(doomed.len(), 2, "{dry}");
+    let [removed, survivor] = [true, false].map(|gone| {
+        reviews
+            .iter()
+            .filter(|(_, session)| doomed.contains(session) == gone)
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    assert_eq!((removed.len(), survivor.len()), (2, 1));
+    let survivor = survivor[0].1.clone();
+    let file = |session: &str| project.sessions().join(format!("{session}.jsonl"));
+    assert!(file(&removed[0].1).exists());
     let pruned = project.json(&provider, &["prune"], 0);
     assert_eq!(pruned["removedSessions"], dry["wouldRemoveSessions"]);
-    assert!(
-        !project
-            .sessions()
-            .join(format!("{}.jsonl", reviews[0].1))
-            .exists()
-    );
-    assert!(
-        project
-            .sessions()
-            .join(format!("{}.jsonl", reviews[2].1))
-            .exists()
-    );
-    for form in [&reviews[0].0, &reviews[1].1] {
+    assert!(!file(&removed[0].1).exists() && !file(&removed[1].1).exists());
+    assert!(file(&survivor).exists());
+    for form in [&removed[0].0, &removed[1].1] {
         let error = project.json(&provider, &["session", "show", form], 2);
         assert!(
             error["error"]
@@ -762,7 +746,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
                 let name = entry.unwrap().file_name().into_string().unwrap();
                 name.strip_suffix(".jsonl").map(str::to_owned)
             })
-            .find(|session| *session != reviews[2].1);
+            .find(|session| *session != survivor);
         if let Some(session) = found {
             break session;
         }
@@ -770,7 +754,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
         thread::sleep(Duration::from_millis(20));
     };
     let pruned = project.json(&provider, &["prune"], 0);
-    assert_eq!(pruned["removedSessions"], json!([&reviews[2].1]));
+    assert_eq!(pruned["removedSessions"], json!([&survivor]));
     assert!(project.sessions().join(format!("{session}.jsonl")).exists());
     release.open();
     let output = running.wait_with_output().unwrap();

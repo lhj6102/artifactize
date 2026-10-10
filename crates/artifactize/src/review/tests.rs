@@ -74,7 +74,7 @@ fn definition(pass: Value, fail: Value) -> Value {
                         "open":{
                             "description":"Open {artifactName}.",
                             "kind":"launch",
-                            "command":"xdg-open",
+                            "command":"show-release",
                             "args":["{artifactPath}"],
                         },
                     },
@@ -310,7 +310,7 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
             (
                 "open_release",
                 HumanToolKind::Launch,
-                &Runs::Command("xdg-open {artifactPath}".into())
+                &Runs::Command("show-release {artifactPath}".into())
             ),
         ]
     );
@@ -368,7 +368,7 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
     ] {
         assert!(text.contains(expected), "{expected}\n{text}");
     }
-    assert!(!text.contains("xdg-open"), "{text}");
+    assert!(!text.contains("show-release"), "{text}");
 }
 
 #[test]
@@ -450,7 +450,7 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     press(&mut review, KeyCode::Down);
     let text = screen(&mut review);
     assert!(
-        text.contains("$ xdg-open {artifactPath}")
+        text.contains("$ show-release {artifactPath}")
             && text.contains("Tool executable path is unavailable."),
         "{text}"
     );
