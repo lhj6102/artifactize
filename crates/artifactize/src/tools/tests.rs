@@ -243,9 +243,7 @@ async fn json_success_authored_error_and_credential_safe_failures() {
         text(&fixture.call(json!({})).await),
         "Agent tool execution failed."
     );
-    fixture.script(
-        "import os, signal\nos.kill(os.getpid(), getattr(signal, 'SIGKILL', signal.SIGTERM))",
-    );
+    fixture.script(&crate::test_os::self_terminating_python());
     assert_eq!(
         text(&fixture.call(json!({})).await),
         "Agent tool execution failed."

@@ -82,7 +82,46 @@ pub struct Remote {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Principal {
     pub principal: String,
-    pub scopes: Vec<String>,
+    pub scopes: Vec<Scope>,
+}
+
+/// A permission a remote token grants, as the server names it. A scope this version does
+/// not know is kept by its name, so it is still shown, but it grants nothing here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum Scope {
+    Read,
+    Publish,
+    Human,
+    Other(String),
+}
+
+impl From<String> for Scope {
+    fn from(name: String) -> Self {
+        match name.as_str() {
+            "read" => Self::Read,
+            "publish" => Self::Publish,
+            "human" => Self::Human,
+            _ => Self::Other(name),
+        }
+    }
+}
+
+impl From<Scope> for String {
+    fn from(scope: Scope) -> Self {
+        scope.to_string()
+    }
+}
+
+impl std::fmt::Display for Scope {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Read => "read",
+            Self::Publish => "publish",
+            Self::Human => "human",
+            Self::Other(name) => name,
+        })
+    }
 }
 
 #[derive(Debug)]

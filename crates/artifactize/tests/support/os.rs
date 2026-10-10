@@ -1838,6 +1838,13 @@ pub fn valid_fingerprints() -> Vec<Vec<u8>> {
     values
 }
 
+/// A Python program that ends itself abnormally: by SIGKILL on Unix. Windows has no
+/// signals; Python's `os.kill` there ends the process with TerminateProcess.
+pub fn self_terminating_python() -> String {
+    let signal = if cfg!(windows) { "SIGTERM" } else { "SIGKILL" };
+    format!("import os, signal\nos.kill(os.getpid(), signal.{signal})")
+}
+
 /// Only Unix offers an independently observable signal termination status.
 pub fn signal_fingerprint() -> Option<Value> {
     if cfg!(windows) {

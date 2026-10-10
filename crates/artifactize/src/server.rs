@@ -20,6 +20,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::remote::{MAX_FULL_BYTES, MAX_SUMMARY_BYTES, SCHEMA, valid_hash};
 
+/// Loopback only by default: a review store is reachable from other machines only when its
+/// owner says so with `--listen`. 8417 is an unassigned port, fixed so that clients and docs
+/// agree on one default URL.
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8417";
 /// Bound one lookup's SQL work and response fan-out; clients batch larger key sets.
 pub(crate) const MAX_LOOKUP_KEYS: usize = 1000;

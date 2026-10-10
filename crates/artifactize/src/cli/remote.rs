@@ -59,7 +59,12 @@ pub(super) async fn execute(
                     "Signed in to {} as {} (scopes: {}).",
                     remote.url,
                     principal.principal,
-                    principal.scopes.join(", ")
+                    principal
+                        .scopes
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 )
                 .map_err(|e| e.to_string())?;
             }
@@ -137,7 +142,12 @@ pub(super) async fn execute(
                         out,
                         "Principal: {} (scopes: {})",
                         principal.principal,
-                        principal.scopes.join(", ")
+                        principal
+                            .scopes
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     ),
                     (_, Some(failure)) => writeln!(out, "Error: {}", failure.message),
                     _ => Ok(()),

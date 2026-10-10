@@ -88,7 +88,7 @@ impl Session {
         let Some(principal) = self.principal().await? else {
             return Ok(Vec::new());
         };
-        if !has_scope(principal, "read") {
+        if !has_scope(principal, &crate::auth::remote::Scope::Read) {
             return Ok(Vec::new());
         }
         let entries = match self.remote.lookup(keys).await {
@@ -169,7 +169,7 @@ impl Session {
         let Some(principal) = self.principal().await? else {
             return Ok(());
         };
-        if !has_scope(principal, "publish") {
+        if !has_scope(principal, &crate::auth::remote::Scope::Publish) {
             return Ok(());
         }
         let record = match record(execution, principal, self.remote.share) {
@@ -186,8 +186,8 @@ impl Session {
     }
 }
 
-pub(super) fn has_scope(principal: &Principal, name: &str) -> bool {
-    principal.scopes.iter().any(|scope| scope == name)
+pub(super) fn has_scope(principal: &Principal, scope: &crate::auth::remote::Scope) -> bool {
+    principal.scopes.contains(scope)
 }
 
 /// The record a publishing token may send for a local result, or why it stays local.
@@ -197,7 +197,7 @@ pub(super) fn record(
     share: Share,
 ) -> Result<Record, String> {
     if execution.profile.kind() == crate::config::ProfileKind::Human
-        && !has_scope(principal, "human")
+        && !has_scope(principal, &crate::auth::remote::Scope::Human)
     {
         return Err(format!(
             "remote token {} lacks the human scope",

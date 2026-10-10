@@ -221,7 +221,7 @@ fn tokens(states: &States, x: &[crate::types::ArtifactName], glyphs: bool) -> Ve
 
 fn waits(states: &States, prefix: &str, waits: &Waits) -> Vec<Segment> {
     let mut segments = vec![Segment::plain(prefix)];
-    segments.extend(tokens(states, &waits.x, true));
+    segments.extend(tokens(states, &waits.artifacts, true));
     if let Some((via, root)) = &waits.root {
         segments.push(Segment::plain(format!(" ({via} waits for ")));
         let (_, tone, _) = completion(states.completion(root));
@@ -354,7 +354,9 @@ fn clock(view: &EvalView, request: Option<&RequestView>) -> Option<Clock> {
 
 fn compact(view: &EvalView, right: &str) -> String {
     let x = match view {
-        EvalView::WaitingOn(waits) | EvalView::NotRun(NotRun::Dependency(waits)) => &waits.x,
+        EvalView::WaitingOn(waits) | EvalView::NotRun(NotRun::Dependency(waits)) => {
+            &waits.artifacts
+        }
         EvalView::BlockedBy(x) => x,
         _ => return right.to_owned(),
     };
@@ -647,12 +649,12 @@ fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
 fn state(node: &Node) -> (Kind, &'static str, String) {
     let kind = match &node.kind {
         Kind::Eval(EvalView::WaitingOn(waits)) => Kind::Eval(EvalView::WaitingOn(Waits {
-            x: waits.x.clone(),
+            artifacts: waits.artifacts.clone(),
             root: None,
         })),
         Kind::Eval(EvalView::NotRun(NotRun::Dependency(waits))) => {
             Kind::Eval(EvalView::NotRun(NotRun::Dependency(Waits {
-                x: waits.x.clone(),
+                artifacts: waits.artifacts.clone(),
                 root: None,
             })))
         }

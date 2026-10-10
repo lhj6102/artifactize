@@ -30,7 +30,7 @@ pub async fn push(
         "No remote review store is configured; run `artifactize remote login URL` or set ARTIFACTIZE_REMOTE.",
     )?;
     let principal = remote.whoami().await.map_err(|failure| failure.message)?;
-    if !has_scope(&principal, "publish") {
+    if !has_scope(&principal, &crate::auth::remote::Scope::Publish) {
         return Err(format!(
             "Remote token {} lacks the publish scope.",
             principal.principal
@@ -64,7 +64,7 @@ pub async fn push(
             }
         }
         // With the read scope, a record that is already the store's latest is not sent again.
-        let existing: BTreeSet<_> = if has_scope(&principal, "read") {
+        let existing: BTreeSet<_> = if has_scope(&principal, &crate::auth::remote::Scope::Read) {
             let keys: Vec<_> = records.iter().map(|record| record.key.clone()).collect();
             remote
                 .lookup(&keys)

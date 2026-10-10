@@ -51,7 +51,7 @@ pub enum Activity {
 /// every one of them is itself waiting: `(via, root)` reads "via waits for root".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Waits {
-    pub x: Vec<crate::types::ArtifactName>,
+    pub artifacts: Vec<crate::types::ArtifactName>,
     pub root: Option<(crate::types::ArtifactName, crate::types::ArtifactName)>,
 }
 
@@ -576,7 +576,7 @@ impl<'a> States<'a> {
                 if !unmet.is_empty() {
                     let waits = Waits {
                         root: self.root(&unmet),
-                        x: unmet,
+                        artifacts: unmet,
                     };
                     return if self.running {
                         EvalView::WaitingOn(waits)
@@ -708,7 +708,7 @@ impl<'a> States<'a> {
         let mut x = self.held(artifact, false);
         for view in self.views_of(artifact) {
             if let EvalView::WaitingOn(waits) | EvalView::NotRun(NotRun::Dependency(waits)) = view {
-                for id in waits.x {
+                for id in waits.artifacts {
                     if !x.contains(&id) {
                         x.push(id);
                     }

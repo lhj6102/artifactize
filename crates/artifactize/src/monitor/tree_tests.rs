@@ -190,7 +190,7 @@ fn queued_for_a_slot_or_jobs_differs_from_waiting_for_an_artifact() {
     assert_eq!(
         view(&nodes, "cli/follows-style"),
         &EvalView::WaitingOn(Waits {
-            x: x(&["code-style"]),
+            artifacts: x(&["code-style"]),
             root: None
         })
     );
@@ -300,7 +300,7 @@ fn red_upstream_blocks_and_error_upstream_waits_for_a_retry() {
     assert_eq!(
         view(&nodes, "cli/follows-style"),
         &EvalView::NotRun(NotRun::Dependency(Waits {
-            x: x(&["code-style"]),
+            artifacts: x(&["code-style"]),
             root: None
         }))
     );
@@ -332,7 +332,7 @@ fn every_x_waiting_adds_one_level_of_root_cause() {
     assert_eq!(
         view(&nodes, "docs/matches-cli"),
         &EvalView::WaitingOn(Waits {
-            x: x(&["cli"]),
+            artifacts: x(&["cli"]),
             root: Some(("cli".parse().unwrap(), "code-style".parse().unwrap()))
         })
     );
@@ -484,7 +484,7 @@ fn dependency_evals_wait_for_their_artifacts_with_at_most_two_x() {
     assert_eq!(
         view(&nodes, "player/ready"),
         &EvalView::WaitingOn(Waits {
-            x: x(&["hero-art", "level", "player-movement"]),
+            artifacts: x(&["hero-art", "level", "player-movement"]),
             root: None
         })
     );
@@ -619,7 +619,7 @@ fn ignored_gates_and_saved_blocked_requests() {
     assert_eq!(
         view(&nodes, "cli/follows-style"),
         &EvalView::NotRun(NotRun::Dependency(Waits {
-            x: x(&["code-style"]),
+            artifacts: x(&["code-style"]),
             root: None
         }))
     );
@@ -1070,7 +1070,7 @@ fn a_done_eval_held_by_its_own_gates_does_not_fulfil_downstream_gates() {
     assert_eq!(
         view(&nodes, "docs/matches-cli"),
         &EvalView::WaitingOn(Waits {
-            x: x(&["cli"]),
+            artifacts: x(&["cli"]),
             root: Some(("cli".parse().unwrap(), "code-style".parse().unwrap()))
         })
     );
