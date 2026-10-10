@@ -417,16 +417,7 @@ impl Pages {
     }
     #[cfg(test)]
     pub(super) fn private(&self) -> bool {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            self.text.metadata().unwrap().mode() & 0o777 == 0o600
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::io::AsRawHandle;
-            crate::platform::is_owner_only(self.text.as_raw_handle()).unwrap()
-        }
+        crate::platform::is_owner_only(&self.text).unwrap()
     }
     pub(super) fn layout_chunk(&mut self, chunk: usize) -> Result<bool, String> {
         let mut budget = chunk;

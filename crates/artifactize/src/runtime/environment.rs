@@ -47,21 +47,18 @@ pub(super) fn prepare(
     ] {
         environment.insert(key.into(), root.join(name).into());
     }
-    // Windows programs look for their home and caches here, and many cannot start without
-    // the system variables.
-    #[cfg(windows)]
-    {
-        for (key, name) in [
-            ("USERPROFILE", "home"),
-            ("APPDATA", "home"),
-            ("LOCALAPPDATA", "cache"),
-        ] {
-            environment.insert(key.into(), root.join(name).into());
-        }
-        for key in ["SystemRoot", "ComSpec", "PATHEXT"] {
-            if let Some(value) = env::var_os(key) {
-                environment.insert(key.into(), value);
-            }
+    // Some systems' programs look for their home and caches in variables of their own, and
+    // cannot start without a few system variables.
+    let private = platform::HOME_VARIABLES
+        .iter()
+        .map(|key| (key, "home"))
+        .chain(platform::CACHE_VARIABLES.iter().map(|key| (key, "cache")));
+    for (key, name) in private {
+        environment.insert(key.into(), root.join(name).into());
+    }
+    for key in platform::SYSTEM_VARIABLES {
+        if let Some(value) = env::var_os(key) {
+            environment.insert(key.into(), value);
         }
     }
     Ok((workspace, directory.keep(), environment))

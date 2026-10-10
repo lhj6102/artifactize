@@ -162,10 +162,9 @@ const MAX_PRODUCER_CHARS: usize = 200;
 
 impl Producer {
     pub fn current() -> Self {
-        // Windows sets neither, only USERNAME.
-        let user = ["USER", "LOGNAME", "USERNAME"]
+        let user = ["USER", "LOGNAME"]
             .into_iter()
-            .take(if cfg!(windows) { 3 } else { 2 })
+            .chain(crate::platform::USER_NAME_VARIABLE)
             .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()));
         let host = crate::platform::host_name();
         let name = format!(

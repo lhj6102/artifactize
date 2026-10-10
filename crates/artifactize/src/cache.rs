@@ -602,10 +602,9 @@ async fn script(
 }
 
 fn validate_output(stdout: &[u8]) -> Result<crate::types::Fingerprint, String> {
-    // Windows programs end a line with CRLF, as Python's print does there; the value is the
-    // same as from an LF-ending Unix script.
+    // Where programs end a line with CRLF, the value is the same as from an LF-ending script.
     let value = match stdout.strip_suffix(b"\r\n") {
-        Some(value) if cfg!(windows) => value,
+        Some(value) if crate::platform::CRLF_LINE_ENDINGS => value,
         _ => stdout.strip_suffix(b"\n").unwrap_or(stdout),
     };
     if !(1..=crate::types::MAX_FINGERPRINT_BYTES).contains(&value.len())
@@ -613,7 +612,7 @@ fn validate_output(stdout: &[u8]) -> Result<crate::types::Fingerprint, String> {
             .iter()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b':' | b'-'))
     {
-        return Err(if cfg!(windows) {
+        return Err(if crate::platform::CRLF_LINE_ENDINGS {
             "stdout must contain 1–128 characters from [A-Za-z0-9._:-], with at most one trailing LF or CRLF."
                 .into()
         } else {

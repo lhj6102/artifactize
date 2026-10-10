@@ -79,13 +79,7 @@ fn parse_worktrees(bytes: &[u8]) -> Vec<Worktree> {
     let mut trees: Vec<Worktree> = Vec::new();
     for field in bytes.split(|byte| *byte == 0) {
         if let Some(path) = field.strip_prefix(b"worktree ") {
-            #[cfg(unix)]
-            let path = {
-                use std::os::unix::ffi::OsStringExt;
-                PathBuf::from(std::ffi::OsString::from_vec(path.to_vec()))
-            };
-            #[cfg(not(unix))]
-            let path = PathBuf::from(String::from_utf8_lossy(path).into_owned());
+            let path = crate::platform::path_from_bytes(path);
             trees.push(Worktree { path, branch: None });
         } else if let Some(branch) = field.strip_prefix(b"branch refs/heads/")
             && let Some(tree) = trees.last_mut()

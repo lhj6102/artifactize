@@ -1,14 +1,19 @@
 //! Windows owner-only DACLs, Job Objects, and console modes and events.
 //! Pinned file access lives in artifactize-tools.
 
+pub(crate) mod ipc;
 mod process;
 mod security;
 
-use std::{future::Future, io, path::Path, process::ExitStatus, ptr};
+use std::{
+    fs::File, future::Future, io, os::windows::io::AsRawHandle, path::Path, process::ExitStatus,
+    ptr,
+};
 
 use tokio::signal::windows::{ctrl_break, ctrl_c, ctrl_close};
 use windows_sys::Win32::{
     Foundation::{HANDLE, INVALID_HANDLE_VALUE},
+    Storage::FileSystem::{BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle},
     System::{
         Console::{
             CONSOLE_MODE, ENABLE_ECHO_INPUT, GetConsoleMode, GetStdHandle, STD_INPUT_HANDLE,
@@ -20,8 +25,8 @@ use windows_sys::Win32::{
 
 pub(crate) use process::{Child, process_start_time, spawn_detached, spawn_gated};
 pub(crate) use security::{
-    create_private_dir, create_private_dir_all, is_owner_only, is_private_dir, is_private_file,
-    private_options, private_pipe, private_tempdir_in, restrict_file, user_identity,
+    create_private_dir, create_private_dir_all, is_private_dir, is_private_file, private_options,
+    private_pipe, private_tempdir_in, restrict_file, user_identity,
 };
 
 /// NTFS persists a rename through its journal, and Windows cannot flush a directory handle
@@ -30,12 +35,55 @@ pub(crate) fn sync_dir(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Windows has no execute bit. `std::process::Command` runs a path as given or, without an
-/// extension, with `.exe` appended, so either existing as a file counts.
-pub(crate) fn is_executable(path: &Path) -> bool {
-    let file = |path: &Path| path.metadata().is_ok_and(|m| m.is_file());
-    file(path) || (path.extension().is_none() && file(&path.with_extension("exe")))
+/// A file's identity on its volume: the volume serial number and the file index.
+pub(crate) fn file_identity(file: &File) -> io::Result<super::FileIdentity> {
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    // SAFETY: an open file handle and a correctly sized writable output.
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(super::FileIdentity {
+        volume: u64::from(info.dwVolumeSerialNumber),
+        index: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
+    })
 }
+
+/// Whether an open file or directory belongs to the current user and grants access to
+/// nobody else; see `security::is_owner_only`.
+pub(crate) fn is_owner_only(file: &File) -> io::Result<bool> {
+    security::is_owner_only(file.as_raw_handle())
+}
+
+/// Windows compares environment variable names without regard to case.
+pub(crate) const ENV_NAMES_IGNORE_CASE: bool = true;
+
+/// Variables, besides `HOME`, that Windows programs read their home directory from.
+pub(crate) const HOME_VARIABLES: &[&str] = &["USERPROFILE", "APPDATA"];
+
+/// Variables, besides `XDG_CACHE_HOME`, that Windows programs read their cache from.
+pub(crate) const CACHE_VARIABLES: &[&str] = &["LOCALAPPDATA"];
+
+/// System variables many Windows programs cannot start without.
+pub(crate) const SYSTEM_VARIABLES: &[&str] = &["SystemRoot", "ComSpec", "PATHEXT"];
+
+/// The variable naming the per-user local data directory.
+pub(crate) const LOCAL_DATA_VARIABLE: Option<&str> = Some("LOCALAPPDATA");
+
+/// A path from the bytes a tool such as git prints, which are UTF-8 on Windows.
+pub(crate) fn path_from_bytes(bytes: &[u8]) -> std::path::PathBuf {
+    String::from_utf8_lossy(bytes).into_owned().into()
+}
+
+/// Windows names the signed-in user in `USERNAME` and sets no `USER`.
+pub(crate) const USER_NAME_VARIABLE: Option<&str> = Some("USERNAME");
+
+/// Windows programs end a line with CRLF, as Python's print does there.
+pub(crate) const CRLF_LINE_ENDINGS: bool = true;
+
+/// Whether a terminal that cannot hide input is still read, visibly, after a warning:
+/// mintty (Git Bash) hands Windows programs a pipe that only looks like a terminal, with no
+/// console echo to turn off.
+pub(crate) const VISIBLE_INPUT_FALLBACK: bool = true;
 
 /// The editor a review opens fields in when `EDITOR` is unset.
 pub(crate) const DEFAULT_EDITOR: &str = "notepad";
@@ -65,6 +113,12 @@ pub(crate) fn host_name() -> Option<String> {
     }
     buffer.truncate(size as usize);
     Some(String::from_utf16_lossy(&buffer))
+}
+
+/// The absolute form of `path`; Windows has no aliased system roots of the macOS kind, and
+/// 8.3 names are resolved by canonicalization.
+pub(crate) fn resolve_system_aliases(path: &Path) -> io::Result<std::path::PathBuf> {
+    std::path::absolute(path)
 }
 
 /// Register for Ctrl-C, Ctrl-Break and console close now; the future completes at the first.

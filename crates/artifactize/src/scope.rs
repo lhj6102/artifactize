@@ -191,8 +191,8 @@ pub(crate) fn executable(
         )
         .into_iter()
         .find_map(|candidate| {
-            #[cfg(windows)]
-            let candidate = if Path::new(relative).extension().is_none() {
+            // A suffix the lookup added is matched to the entry's actual spelling.
+            let candidate = if candidate.as_path() != Path::new(relative) {
                 executable_spelling(root, scope, owner, &cwd, &candidate, mounted)?
             } else {
                 candidate
@@ -200,7 +200,11 @@ pub(crate) fn executable(
             let resolved = if artifact.file_name().is_some() && !mounted {
                 scoped_path(&cwd, &candidate)
             } else {
-                scope.resolve_input(root, owner, &candidate.to_str()?.replace('\\', "/"))
+                scope.resolve_input(
+                    root,
+                    owner,
+                    &artifactize_tools::scope::logical_from_native(&candidate)?,
+                )
             };
             match resolved {
                 Ok(program) if program.is_file() => Some(program),
@@ -222,7 +226,6 @@ pub(crate) fn executable(
 
 /// PATHEXT supplies a suffix, not a model-authored name: use its actual directory-entry
 /// spelling before strict scoped validation. Parent components retain their input spelling.
-#[cfg(windows)]
 fn executable_spelling(
     root: &Path,
     scope: &Scope<'_>,

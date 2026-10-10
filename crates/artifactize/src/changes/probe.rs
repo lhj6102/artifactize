@@ -7,35 +7,9 @@ use std::{
 };
 use tokio_rusqlite::Connection;
 
-#[derive(PartialEq, Eq)]
-struct Identity {
-    first: u64,
-    second: u64,
-}
-#[cfg(unix)]
+use platform::FileIdentity as Identity;
 fn identity(file: &File) -> Result<Identity, String> {
-    use std::os::unix::fs::MetadataExt;
-    let metadata = file.metadata().map_err(|error| error.to_string())?;
-    Ok(Identity {
-        first: metadata.dev(),
-        second: metadata.ino(),
-    })
-}
-#[cfg(windows)]
-fn identity(file: &File) -> Result<Identity, String> {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
-    };
-    let mut info = BY_HANDLE_FILE_INFORMATION::default();
-    // SAFETY: an open file handle and a correctly sized writable output.
-    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
-        return Err(std::io::Error::last_os_error().to_string());
-    }
-    Ok(Identity {
-        first: u64::from(info.dwVolumeSerialNumber),
-        second: (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
-    })
+    platform::file_identity(file).map_err(|error| error.to_string())
 }
 struct Open {
     file: File,

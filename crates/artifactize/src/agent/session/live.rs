@@ -157,51 +157,15 @@ pub async fn resolve(state: &Path, view: &RequestView) -> Result<Resolution, Str
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Identity(u64, u64);
-#[cfg(unix)]
-fn identity(file: &File) -> Result<Identity, String> {
-    use std::os::unix::fs::MetadataExt;
-    let metadata = file.metadata().map_err(|error| error.to_string())?;
-    Ok(Identity(metadata.dev(), metadata.ino()))
-}
-#[cfg(windows)]
-fn identity(file: &File) -> Result<Identity, String> {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::Storage::FileSystem::{
-        BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
-    };
-    let mut info = BY_HANDLE_FILE_INFORMATION::default();
-    // SAFETY: the file owns a valid handle and info is a correctly sized output buffer.
-    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
-        return Err(std::io::Error::last_os_error().to_string());
-    }
-    Ok(Identity(
-        u64::from(info.dwVolumeSerialNumber),
-        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow),
-    ))
+fn identity(file: &File) -> Result<platform::FileIdentity, String> {
+    platform::file_identity(file).map_err(|error| error.to_string())
 }
 fn private_directory(file: &File) -> Result<(), String> {
     if !file.metadata().map_err(|error| error.to_string())?.is_dir() {
         return Err("Session store is not a directory.".into());
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let metadata = file.metadata().map_err(|error| error.to_string())?;
-        // SAFETY: geteuid has no arguments or side effects.
-        if metadata.mode() & platform::GROUP_OTHER_BITS != 0
-            || metadata.uid() != unsafe { libc::geteuid() }
-        {
-            return Err("Session store must be owner-only and owned by this user.".into());
-        }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawHandle;
-        if !platform::is_owner_only(file.as_raw_handle()).map_err(|error| error.to_string())? {
-            return Err("Session store must be owner-only.".into());
-        }
+    if !platform::is_owner_only(file).map_err(|error| error.to_string())? {
+        return Err("Session store must be owner-only and owned by this user.".into());
     }
     Ok(())
 }
@@ -223,13 +187,8 @@ fn open(source: &Source) -> Result<Option<File>, String> {
                 "Session must be a private, single-link regular file.",
             ));
         }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            // SAFETY: geteuid has no arguments or side effects.
-            if file.metadata()?.uid() != unsafe { libc::geteuid() } {
-                return Err(std::io::Error::other("Session belongs to another user."));
-            }
+        if !platform::is_owner_only(&file)? {
+            return Err(std::io::Error::other("Session belongs to another user."));
         }
         Ok(file)
     })();
@@ -258,7 +217,7 @@ impl From<String> for ReadError {
 pub struct Reader {
     pub source: Source,
     file: Option<File>,
-    identity: Option<Identity>,
+    identity: Option<platform::FileIdentity>,
     modified: Option<SystemTime>,
     length: u64,
     offset: u64,

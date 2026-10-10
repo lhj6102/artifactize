@@ -159,9 +159,8 @@ fn read_token() -> Result<String, String> {
         // Echo goes off before the prompt invites a paste.
         let hidden = match HiddenInput::new() {
             Ok(hidden) => Some(hidden),
-            // mintty (Git Bash) hands Windows programs a pipe that only looks like a terminal,
-            // with no console echo to turn off: read the token visibly rather than not at all.
-            Err(error) if cfg!(windows) => {
+            // Where the platform allows it, read the token visibly rather than not at all.
+            Err(error) if crate::platform::VISIBLE_INPUT_FALLBACK => {
                 writeln!(
                     io::stderr().lock(),
                     "Warning: this terminal cannot hide input ({error}); the token will be visible."

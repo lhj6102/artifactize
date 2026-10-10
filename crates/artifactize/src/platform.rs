@@ -17,16 +17,21 @@ use unix as os;
 use windows as os;
 
 pub(crate) use os::{
-    Child, DEFAULT_EDITOR, HiddenInput, create_private_dir, create_private_dir_all, editor,
-    exit_signal, host_name, is_executable, is_private_dir, is_private_file, private_options,
-    private_tempdir_in, process_start_time, restrict_file, spawn_detached, spawn_gated,
-    stop_requested, sync_dir,
+    CACHE_VARIABLES, CRLF_LINE_ENDINGS, Child, DEFAULT_EDITOR, ENV_NAMES_IGNORE_CASE,
+    HOME_VARIABLES, HiddenInput, LOCAL_DATA_VARIABLE, SYSTEM_VARIABLES, USER_NAME_VARIABLE,
+    VISIBLE_INPUT_FALLBACK, create_private_dir, create_private_dir_all, editor, exit_signal,
+    file_identity, host_name, ipc, is_owner_only, is_private_dir, is_private_file, path_from_bytes,
+    private_options, private_tempdir_in, process_start_time, resolve_system_aliases, restrict_file,
+    spawn_detached, spawn_gated, stop_requested, sync_dir,
 };
 
-#[cfg(unix)]
-pub(crate) use unix::GROUP_OTHER_BITS;
-#[cfg(windows)]
-pub(crate) use windows::{is_owner_only, private_pipe, user_identity};
+/// A file's identity on its volume. Two open files with equal identities are the same file,
+/// whatever paths reached them; a replaced file gets a new identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct FileIdentity {
+    volume: u64,
+    index: u64,
+}
 
 /// Poll contended process-shared file locks without blocking the async runtime;
 /// 25 ms keeps session sends and credential refreshes responsive without busy-waiting.

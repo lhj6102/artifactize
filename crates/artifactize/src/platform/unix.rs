@@ -1,6 +1,7 @@
 //! Unix private file modes, process control, signals, and termios.
 //! Pinned file access lives in artifactize-tools.
 
+pub(crate) mod ipc;
 mod process;
 
 use std::{
@@ -34,9 +35,6 @@ pub(crate) const GROUP_OTHER_BITS: u32 = 0o077;
 /// The permission bits of a mode, without the file type and set-id bits, so a file can be
 /// compared with [`PRIVATE_FILE_MODE`] exactly.
 const PERMISSION_BITS: u32 = 0o777;
-
-/// The owner, group and other execute bits; any one of them makes a file runnable.
-const EXECUTE_BITS: u32 = 0o111;
 
 /// Create a directory and its missing parents as 0700; existing ones keep their mode.
 pub(crate) fn create_private_dir_all(path: &Path) -> io::Result<()> {
@@ -92,11 +90,59 @@ pub(crate) fn sync_dir(path: &Path) -> io::Result<()> {
     File::open(path).and_then(|directory| directory.sync_all())
 }
 
-/// Whether a path is a regular file with an execute bit.
-pub(crate) fn is_executable(path: &Path) -> bool {
-    path.metadata()
-        .is_ok_and(|m| m.is_file() && m.permissions().mode() & EXECUTE_BITS != 0)
+/// A file's identity on its volume: its device and inode.
+pub(crate) fn file_identity(file: &File) -> io::Result<super::FileIdentity> {
+    let metadata = file.metadata()?;
+    Ok(super::FileIdentity {
+        volume: metadata.dev(),
+        index: metadata.ino(),
+    })
 }
+
+/// The effective user, the owner that private paths must have.
+pub(crate) fn current_user() -> u32 {
+    // SAFETY: geteuid has no preconditions and does not mutate process identity.
+    unsafe { libc::geteuid() }
+}
+
+/// Whether an open file or directory belongs to the current user and grants nothing to its
+/// group or others.
+pub(crate) fn is_owner_only(file: &File) -> io::Result<bool> {
+    let metadata = file.metadata()?;
+    Ok(metadata.mode() & GROUP_OTHER_BITS == 0 && metadata.uid() == current_user())
+}
+
+/// Environment variable names compare exactly.
+pub(crate) const ENV_NAMES_IGNORE_CASE: bool = false;
+
+/// Variables, besides `HOME`, that programs read their home directory from.
+pub(crate) const HOME_VARIABLES: &[&str] = &[];
+
+/// Variables, besides `XDG_CACHE_HOME`, that programs read their cache directory from.
+pub(crate) const CACHE_VARIABLES: &[&str] = &[];
+
+/// System variables a child cannot start without; none beyond `PATH` here.
+pub(crate) const SYSTEM_VARIABLES: &[&str] = &[];
+
+/// The variable naming the per-user local data directory, if the system has one; Unix uses
+/// `XDG_STATE_HOME` and `HOME`.
+pub(crate) const LOCAL_DATA_VARIABLE: Option<&str> = None;
+
+/// A path from the raw bytes a tool such as git prints: any bytes name a Unix path.
+pub(crate) fn path_from_bytes(bytes: &[u8]) -> std::path::PathBuf {
+    use std::os::unix::ffi::OsStringExt;
+    std::ffi::OsString::from_vec(bytes.to_vec()).into()
+}
+
+/// The variable, besides `USER` and `LOGNAME`, naming the signed-in user; Unix sets those.
+pub(crate) const USER_NAME_VARIABLE: Option<&str> = None;
+
+/// Unix programs end a line with LF only.
+pub(crate) const CRLF_LINE_ENDINGS: bool = false;
+
+/// Whether a terminal that cannot hide input is still read, visibly, after a warning. A Unix
+/// terminal always can; failing to hide input is an error.
+pub(crate) const VISIBLE_INPUT_FALLBACK: bool = false;
 
 /// The editor a review opens fields in when `EDITOR` is unset.
 pub(crate) const DEFAULT_EDITOR: &str = "vi";
@@ -134,6 +180,49 @@ pub(crate) fn host_name() -> Option<String> {
     }
     let end = name.iter().position(|&byte| byte == 0)?;
     String::from_utf8(name[..end].to_vec()).ok()
+}
+
+/// The absolute form of `path` with a leading macOS system alias (`/tmp`, `/var`, `/etc`)
+/// replaced by its fixed `/private` target. The alias and its parents must be root-owned
+/// and not replaceable; descendants are left for the caller to open without following links.
+#[cfg(target_os = "macos")]
+pub(crate) fn resolve_system_aliases(path: &Path) -> io::Result<std::path::PathBuf> {
+    let absolute = std::path::absolute(path)?;
+    for name in ["tmp", "var", "etc"] {
+        let alias = Path::new("/").join(name);
+        if let Ok(suffix) = absolute.strip_prefix(&alias) {
+            let metadata = alias.symlink_metadata()?;
+            let target = Path::new("/private").join(name);
+            let link = fs::read_link(&alias)?;
+            let link = if link.is_absolute() {
+                link
+            } else {
+                Path::new("/").join(link)
+            };
+            if !metadata.is_symlink() || metadata.uid() != 0 || link != target {
+                return Err(io::Error::other(format!(
+                    "Refusing an untrusted system alias: {}",
+                    alias.display()
+                )));
+            }
+            for parent in [Path::new("/"), Path::new("/private")] {
+                let metadata = parent.symlink_metadata()?;
+                if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+                    return Err(io::Error::other(
+                        "System alias parents must not be replaceable.",
+                    ));
+                }
+            }
+            return Ok(target.join(suffix));
+        }
+    }
+    Ok(absolute)
+}
+
+/// The absolute form of `path`; this system has no aliased system roots.
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn resolve_system_aliases(path: &Path) -> io::Result<std::path::PathBuf> {
+    std::path::absolute(path)
 }
 
 /// Register for SIGINT and SIGTERM now; the future completes at the first of them.

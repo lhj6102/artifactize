@@ -1,8 +1,11 @@
+//! The changes hub endpoint on Windows: a named pipe with an owner-only DACL and a private
+//! lock directory below the temporary root.
+
 use crate::platform;
 use std::{
     fs::{self, File},
     io,
-    os::windows::{fs::MetadataExt, io::AsRawHandle},
+    os::windows::fs::MetadataExt,
     path::{Path, PathBuf},
     pin::Pin,
     task::{Context, Poll},
@@ -19,13 +22,13 @@ use windows_sys::Win32::{
     },
 };
 
-pub(super) fn user() -> io::Result<String> {
-    platform::user_identity()
+pub(crate) fn user() -> io::Result<String> {
+    super::user_identity()
 }
-pub(super) fn owned(file: &File) -> io::Result<bool> {
+pub(crate) fn owned(file: &File) -> io::Result<bool> {
     platform::is_private_file(file)
 }
-pub(super) fn validate_directory(path: &Path) -> io::Result<()> {
+pub(crate) fn validate_directory(path: &Path) -> io::Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_dir()
         || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
@@ -35,11 +38,9 @@ pub(super) fn validate_directory(path: &Path) -> io::Result<()> {
     }
     Ok(())
 }
-pub(super) fn directory(identity: &str, _user: &str) -> io::Result<PathBuf> {
-    let directory = std::env::temp_dir().join(format!(
-        "artifactize-ipc-{}",
-        &identity[..super::RUNTIME_ID_PREFIX_HEX_CHARS]
-    ));
+/// The private directory for one state namespace, created when missing and then validated.
+pub(crate) fn directory(namespace: &str, _user: &str) -> io::Result<PathBuf> {
+    let directory = std::env::temp_dir().join(format!("artifactize-ipc-{}", namespace));
     match platform::create_private_dir(&directory) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
@@ -48,7 +49,7 @@ pub(super) fn directory(identity: &str, _user: &str) -> io::Result<PathBuf> {
     validate_directory(&directory)?;
     Ok(directory)
 }
-pub(super) fn address(_directory: &Path, identity: &str) -> PathBuf {
+pub(crate) fn address(_directory: &Path, identity: &str) -> PathBuf {
     PathBuf::from(format!(r"\\.\pipe\artifactize-changes-{identity}"))
 }
 fn instance(address: &Path, first: bool) -> io::Result<NamedPipeServer> {
@@ -57,13 +58,13 @@ fn instance(address: &Path, first: bool) -> io::Result<NamedPipeServer> {
         .first_pipe_instance(first)
         .reject_remote_clients(true)
         .access_system_security(false);
-    platform::private_pipe(&options, address)
+    super::private_pipe(&options, address)
 }
 pub(crate) struct Listener {
     address: PathBuf,
     pending: Option<NamedPipeServer>,
 }
-pub(super) fn listen(address: &Path) -> io::Result<Listener> {
+pub(crate) fn listen(address: &Path) -> io::Result<Listener> {
     Ok(Listener {
         address: address.into(),
         pending: Some(instance(address, true)?),
@@ -86,7 +87,7 @@ impl Listener {
 pub(crate) fn validate_peer(_stream: &Stream) -> io::Result<()> {
     Ok(())
 }
-pub(super) async fn connect(address: &Path) -> io::Result<Stream> {
+pub(crate) async fn connect(address: &Path) -> io::Result<Stream> {
     use std::os::windows::{fs::OpenOptionsExt, io::IntoRawHandle};
     // Check the exact connected pipe object, not a second instance that could race it.
     // Identification prevents the server from impersonating this client.
@@ -94,7 +95,7 @@ pub(super) async fn connect(address: &Path) -> io::Result<Stream> {
         .access_mode(GENERIC_READ | GENERIC_WRITE | READ_CONTROL)
         .custom_flags(FILE_FLAG_OVERLAPPED | SECURITY_IDENTIFICATION | SECURITY_SQOS_PRESENT)
         .open(address)?;
-    if !platform::is_owner_only(file.as_raw_handle())? {
+    if !super::is_owner_only(&file)? {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
     // SAFETY: the overlapped pipe handle is transferred exactly once to Tokio.

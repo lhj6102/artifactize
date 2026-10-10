@@ -283,16 +283,13 @@ fn environment_value<'a>(
     environment: &'a BTreeMap<OsString, OsString>,
     name: &str,
 ) -> Option<&'a std::ffi::OsStr> {
-    #[cfg(windows)]
-    {
+    if crate::platform::ENV_NAMES_IGNORE_CASE {
         environment.iter().find_map(|(key, value)| {
             key.to_str()
                 .is_some_and(|key| key.eq_ignore_ascii_case(name))
                 .then_some(value.as_os_str())
         })
-    }
-    #[cfg(not(windows))]
-    {
+    } else {
         environment
             .get(std::ffi::OsStr::new(name))
             .map(OsString::as_os_str)
