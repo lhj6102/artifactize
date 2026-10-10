@@ -2,11 +2,10 @@ use std::{fs, path::Path, process::Command};
 
 use rusqlite::params;
 use serde_json::{Value, json};
-use support::os::bin;
 
 mod support;
 
-use support::os::{link_dir, remove_link_dir as remove_link};
+use support::os::{link_dir, remove_link_dir as remove_link, true_program};
 
 fn command(state: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
@@ -68,7 +67,7 @@ fn runtime_run(state: &Path, repo: &Path) -> Value {
     verify(
         state,
         repo,
-        json!({"kind":"runtime", "command":bin("/bin/true"), "args":[]}),
+        json!({"kind":"runtime", "command":true_program(), "args":[]}),
         0,
     )
 }
@@ -543,7 +542,7 @@ fn state_home_under_system_tmp_verifies_and_prunes_without_following_user_links(
         repo.join("index.artf"),
         json!({"name":"a","fingerprint":false,"evals":[{
             "id":"check","title":"Check","payload":{"instruction":"Check"},
-            "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]}
+            "profile":{"kind":"runtime","command":true_program(),"args":[]}
         }]})
         .to_string(),
     )

@@ -10,7 +10,7 @@ use artifactize::{
     process,
     runtime::{self, Command, Error, Outcome, Verdict},
 };
-use support::os::{bin, private_dir, symlink_dir};
+use support::os::{private_dir, symlink_dir};
 use tokio::{sync::oneshot, time::timeout};
 use tokio_util::sync::CancellationToken;
 
@@ -37,7 +37,7 @@ impl Scratch {
 
     fn command(&self, program: &str, args: &[&str], timeout_ms: Option<u32>) -> Command {
         Command::prepare(
-            bin(program).into(),
+            program.into(),
             args.iter().map(OsString::from).collect(),
             &self.workspace(),
             &self.run_dir(),
@@ -67,7 +67,12 @@ fn completed(outcome: Outcome) -> runtime::ReviewResult {
 async fn ordinary_zero_exit_is_green_with_actual_output() {
     let scratch = Scratch::new();
     let result = completed(
-        execute(scratch.command("/bin/sh", &["-c", "printf out; printf err >&2"], None)).await,
+        execute(scratch.command(
+            &support::os::shell(),
+            &["-c", "printf out; printf err >&2"],
+            None,
+        ))
+        .await,
     );
     assert_eq!(result.verdict, Verdict::Green);
     assert_eq!(result.exit_code, 0);
@@ -79,7 +84,8 @@ async fn ordinary_zero_exit_is_green_with_actual_output() {
 #[tokio::test]
 async fn ordinary_nonzero_exit_is_red() {
     let scratch = Scratch::new();
-    let result = completed(execute(scratch.command("/bin/sh", &["-c", "exit 127"], None)).await);
+    let result =
+        completed(execute(scratch.command(&support::os::shell(), &["-c", "exit 127"], None)).await);
     assert_eq!(result.verdict, Verdict::Red);
     assert_eq!(result.exit_code, 127);
 }
@@ -100,7 +106,12 @@ async fn missing_binary_is_an_operational_error_not_red() {
 async fn signal_is_an_operational_error() {
     let scratch = Scratch::new();
     assert!(matches!(
-        execute(scratch.command("/bin/sh", &["-c", "kill -TERM $$"], None)).await,
+        execute(scratch.command(
+            &support::os::shell(),
+            &["-c", support::os::SELF_TERMINATE],
+            None
+        ))
+        .await,
         Outcome::OperationalError(Error::AbnormalExit {
             signal: Some(support::os::SIGTERM),
             ..
@@ -115,8 +126,9 @@ async fn signal_is_an_operational_error() {
 async fn windows_exit_statuses_are_verdicts_not_signals() {
     let scratch = Scratch::new();
     // STATUS_CONTROL_C_EXIT, as a process ended by Ctrl-C reports it.
-    let result =
-        completed(execute(scratch.command("/bin/sh", &["-c", "exit -1073741510"], None)).await);
+    let result = completed(
+        execute(scratch.command(&support::os::shell(), &["-c", "exit -1073741510"], None)).await,
+    );
     assert_eq!(result.verdict, Verdict::Red);
     assert_eq!(result.exit_code, -1073741510);
 }
@@ -126,7 +138,11 @@ async fn windows_exit_statuses_are_verdicts_not_signals() {
 #[tokio::test(start_paused = true)]
 async fn timeout_is_an_operational_error_and_reaps_the_leader() {
     let scratch = Scratch::new();
-    let command = scratch.command("/bin/sh", &["-c", support::os::LINGERING], Some(1000));
+    let command = scratch.command(
+        &support::os::shell(),
+        &["-c", support::os::LINGERING],
+        Some(1000),
+    );
     let (registered, child) = oneshot::channel();
     let running = tokio::spawn(runtime::execute(
         command,
@@ -156,7 +172,7 @@ async fn cancellation_is_an_operational_error_and_cleans_up() {
     let (registered, child) = oneshot::channel();
     // exec keeps the observed PID stable while the final long-lived command runs.
     let script = support::os::cancellation_script();
-    let command = scratch.command("/bin/sh", &["-c", script], None);
+    let command = scratch.command(&support::os::shell(), &["-c", script], None);
     let running = tokio::spawn(runtime::execute(
         command,
         cancellation.clone(),
@@ -185,7 +201,7 @@ async fn pre_cancelled_commands_never_register() {
     let cancellation = CancellationToken::new();
     cancellation.cancel();
     let outcome = runtime::execute(
-        scratch.command("/bin/true", &[], None),
+        scratch.command(&support::os::true_program(), &[], None),
         cancellation,
         |_| async { panic!("pre-cancelled commands must not spawn") },
     )
@@ -201,7 +217,7 @@ async fn literal_argv_is_preserved() {
     let scratch = Scratch::new();
     let result = completed(
         execute(scratch.command(
-            "/usr/bin/printf",
+            &support::os::printf_program(),
             &["%s\n", "$(id); $HOME * a b", "{artifact}/path"],
             None,
         ))
@@ -217,12 +233,16 @@ async fn literal_argv_is_preserved() {
 fn runtime_timeout_defaults_and_bounds_match_current_source() {
     let scratch = Scratch::new();
     assert_eq!(
-        scratch.command("/bin/true", &[], None).timeout(),
+        scratch
+            .command(&support::os::true_program(), &[], None)
+            .timeout(),
         Duration::from_secs(30)
     );
     for ms in [1, 2_147_483_647] {
         assert_eq!(
-            scratch.command("/bin/true", &[], Some(ms)).timeout(),
+            scratch
+                .command(&support::os::true_program(), &[], Some(ms))
+                .timeout(),
             Duration::from_millis(ms.into())
         );
     }
@@ -230,7 +250,7 @@ fn runtime_timeout_defaults_and_bounds_match_current_source() {
         let run_dir = scratch.0.path().join("invalid-timeout");
         assert!(matches!(
             Command::prepare(
-                "/bin/true".into(),
+                support::os::true_program().into(),
                 vec![],
                 &scratch.workspace(),
                 &run_dir,
@@ -245,9 +265,9 @@ fn runtime_timeout_defaults_and_bounds_match_current_source() {
 #[tokio::test]
 async fn runtime_has_independent_private_external_directories() {
     let scratch = Scratch::new();
-    let command = scratch.command("/usr/bin/env", &[], None);
+    let command = scratch.command(&support::os::env_program(), &[], None);
     let directory = command.directory().to_owned();
-    let other = scratch.command("/bin/true", &[], None);
+    let other = scratch.command(&support::os::true_program(), &[], None);
     assert_ne!(directory, other.directory());
     let result = completed(execute(command).await);
     let text = String::from_utf8(result.output.stdout).unwrap();
@@ -290,7 +310,7 @@ fn output_inside_workspace_is_rejected_before_creation_even_through_symlinks() {
     let symlink = scratch.0.path().join("symlink");
     if symlink_dir(scratch.workspace(), &symlink).is_some() {
         let result = Command::prepare(
-            bin("/bin/true").into(),
+            support::os::true_program().into(),
             vec![],
             &workspace_alias,
             &symlink.join("new/nested"),
@@ -308,7 +328,7 @@ fn output_inside_workspace_is_rejected_before_creation_even_through_symlinks() {
         scratch.0.path().join("missing/../workspace/new"),
     ] {
         let result = Command::prepare(
-            bin("/bin/true").into(),
+            support::os::true_program().into(),
             vec![],
             &workspace_alias,
             &output,
@@ -331,7 +351,7 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
     let alias = scratch.0.path().join("alias");
     support::os::link_dir(&external, &alias);
     let command = Command::prepare(
-        bin("/usr/bin/env").into(),
+        support::os::env_program().into(),
         vec![],
         &scratch.workspace(),
         &alias.join("new/nested"),
@@ -349,7 +369,7 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
 #[test]
 fn parent_secret_is_not_visible_to_runtime_child() {
     // The probe's PATH has no compiler, so build the Windows stand-ins first.
-    bin("/usr/bin/env");
+    support::os::env_program();
     // Set the parent environment in another process, never mutate this test runner's env.
     let result = std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "environment_subprocess_probe", "--nocapture"])
@@ -376,7 +396,7 @@ async fn environment_subprocess_probe() {
     }
     assert_eq!(std::env::var("PROVIDER_SECRET").unwrap(), "not-for-child");
     let scratch = Scratch::new();
-    let result = completed(execute(scratch.command("/usr/bin/env", &[], None)).await);
+    let result = completed(execute(scratch.command(&support::os::env_program(), &[], None)).await);
     let output = String::from_utf8(result.output.stdout).unwrap();
     assert!(
         output
@@ -401,7 +421,7 @@ async fn runtime_cleans_ansi_and_controls_without_changing_whitespace_or_del() {
     let scratch = Scratch::new();
     let result = completed(
         execute(scratch.command(
-            "/usr/bin/printf",
+            &support::os::printf_program(),
             &["\\033[31mred\\033[0m\\000\\001\\010\\013\\014\\016\\037\\t\\n\\r\\177\\377\\033[?25l\\033[1 qend"],
             None,
         ))
@@ -411,7 +431,7 @@ async fn runtime_cleans_ansi_and_controls_without_changing_whitespace_or_del() {
     assert!(!result.output.truncated);
     let stderr = completed(
         execute(scratch.command(
-            "/bin/sh",
+            &support::os::shell(),
             &["-c", "printf '\\033[31merror\\033[0m\\001' >&2"],
             None,
         ))
@@ -425,7 +445,7 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
     let scratch = Scratch::new();
     let result = completed(
         execute(scratch.command(
-            "/bin/sh",
+            &support::os::shell(),
             &["-c", &support::os::letter_output(262144, 262144)],
             None,
         ))
@@ -437,7 +457,7 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
     assert!(result.output.truncated);
     let result = completed(
         execute(scratch.command(
-            "/bin/sh",
+            &support::os::shell(),
             &["-c", &support::os::capped_output(131072)],
             None,
         ))
@@ -453,7 +473,7 @@ async fn both_streams_are_bounded_before_cleaning_and_keep_truncation_metadata()
 async fn timeout_kills_a_grandchild_even_when_the_leader_ignores_term() {
     let scratch = Scratch::new();
     let command = scratch.command(
-        "/bin/sh",
+        &support::os::shell(),
         &["-c", support::os::LINGERING_GRANDCHILD],
         Some(1000),
     );
@@ -504,8 +524,14 @@ async fn grandchild(marker: &Path, running: &tokio::task::JoinHandle<Outcome>) -
 #[tokio::test]
 async fn normal_exit_also_kills_a_background_descendant() {
     let scratch = Scratch::new();
-    let result =
-        completed(execute(scratch.command("/bin/sh", &["-c", "sleep 30 & echo $!"], None)).await);
+    let result = completed(
+        execute(scratch.command(
+            &support::os::shell(),
+            &["-c", &format!("{} & echo $!", support::os::LINGERING)],
+            None,
+        ))
+        .await,
+    );
     assert_eq!(result.verdict, Verdict::Green);
     let pid = String::from_utf8(result.output.stdout)
         .unwrap()
@@ -518,7 +544,11 @@ async fn normal_exit_also_kills_a_background_descendant() {
 #[tokio::test]
 async fn dropping_an_active_caller_cleans_its_grandchild() {
     let scratch = Scratch::new();
-    let command = scratch.command("/bin/sh", &["-c", support::os::LINGERING_GRANDCHILD], None);
+    let command = scratch.command(
+        &support::os::shell(),
+        &["-c", support::os::LINGERING_GRANDCHILD],
+        None,
+    );
     let marker = command.directory().join("output/grandchild");
     let (registered, child) = oneshot::channel();
     let running = tokio::spawn(runtime::execute(
@@ -549,7 +579,7 @@ async fn dropping_an_active_caller_cleans_its_grandchild() {
 async fn deadline_is_not_reset_after_registration() {
     let scratch = Scratch::new();
     let command = scratch.command(
-        "/bin/sh",
+        &support::os::shell(),
         &[
             "-c",
             "touch started; while [ ! -e release ]; do sleep 0.01; done",

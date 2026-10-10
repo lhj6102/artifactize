@@ -5,7 +5,7 @@ use artifactize::config::{Profile, read_workspace_config};
 use artifactize::runtime::{self, Command, Outcome, Verdict};
 use artifactize::scope::{eval_scope, resolve_argv, scoped_path};
 use serde_json::json;
-use support::os::bin;
+use support::os::cat_program;
 use tokio_util::sync::CancellationToken;
 
 mod support;
@@ -38,7 +38,7 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
                     "payload":{"instruction":"Inspect inputs."},
                     "profile":{
                         "kind":"runtime",
-                        "command":bin("/bin/cat"),
+                        "command":cat_program(),
                         "args":[
                             "local",
                             "{review}/nested/file",

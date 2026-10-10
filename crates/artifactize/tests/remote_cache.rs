@@ -13,7 +13,7 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::{cat_program, shell, true_program};
 
 mod support;
 
@@ -196,12 +196,12 @@ fn runtime_repo(root: &Path, name: &str, docs: &str) -> PathBuf {
             &folder,
             json!({
                 "name":artifact,
-                "fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
+                "fingerprint":{"script":{"command":cat_program(),"args":["version"]}},
                 "evals":[
                     {
                         "id":"check",
                         "title":"Check",
-                        "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
+                        "profile":{"kind":"runtime","command":true_program(),"args":[]},
                         "payload":{"instruction":"Check."},
                     },
                 ],
@@ -218,7 +218,7 @@ fn human_repo(root: &Path, name: &str) -> PathBuf {
         &repo,
         json!({
             "name":"brand",
-            "fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
+            "fingerprint":{"script":{"command":cat_program(),"args":["version"]}},
             "evals":[
                 {
                     "id":"signoff",
@@ -559,14 +559,14 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
             &repo,
             json!({
                 "name":"app",
-                "fingerprint":{"script":{"command":bin("cat"),"args":["version"]}},
+                "fingerprint":{"script":{"command":cat_program(),"args":["version"]}},
                 "evals":[
                     {
                         "id":"check",
                         "title":"Check",
                         "profile":{
                             "kind":"runtime",
-                            "command":bin("/bin/sh"),
+                            "command":shell(),
                             "args":["-c","test ! -e broken"],
                         },
                         "payload":{"instruction":"Check."},

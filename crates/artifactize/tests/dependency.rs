@@ -41,7 +41,7 @@ fn runtime(command: &str) -> Value {
     json!({
         "id":"check",
         "title":"Check input",
-        "profile":{"kind":"runtime","command":support::os::bin(command),"args":[]},
+        "profile":{"kind":"runtime","command":command,"args":[]},
         "payload":{"instruction":"Check the input."},
     })
 }
@@ -163,7 +163,7 @@ fn dependency_declarations_are_strict_and_other_profiles_still_require_payload()
 #[test]
 fn dependency_targets_resolve_mount_aliases_and_reject_unknown_self_and_duplicate_targets() {
     let fixture = Fixture::new();
-    fixture.declare("art", vec![runtime("/bin/true")]);
+    fixture.declare("art", vec![runtime(&support::os::true_program())]);
     fixture.write(
         "player",
         json!({"name":"player","mounts":{"sprite":"art"},"evals":[dependency(&["sprite"])]}),
@@ -210,8 +210,8 @@ fn dependency_targets_resolve_mount_aliases_and_reject_unknown_self_and_duplicat
 #[test]
 fn dependency_verdicts_are_derived_even_when_gates_are_ignored() {
     let fixture = Fixture::new();
-    fixture.declare("art", vec![runtime("/bin/true")]);
-    fixture.declare("movement", vec![runtime("/bin/true")]);
+    fixture.declare("art", vec![runtime(&support::os::true_program())]);
+    fixture.declare("movement", vec![runtime(&support::os::true_program())]);
     fixture.declare("player", vec![dependency(&["art", "movement"])]);
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
@@ -290,7 +290,7 @@ fn dependency_cycles_fail_config_check_but_ordinary_sccs_keep_working() {
             .contains("Dependency Eval cycle: a/ready, b/ready, c/ready.")
     );
     for (name, target) in [("a", "b"), ("b", "c"), ("c", "a")] {
-        let mut eval = runtime("/bin/true");
+        let mut eval = runtime(&support::os::true_program());
         eval["payload"]["instruction"] = json!(format!("Check {{{target}}}."));
         fixture.declare(name, vec![eval]);
     }
@@ -301,14 +301,17 @@ fn dependency_cycles_fail_config_check_but_ordinary_sccs_keep_working() {
 #[test]
 fn selecting_dependency_eval_includes_required_evals_and_their_graph_closure() {
     let fixture = Fixture::new();
-    let mut movement = runtime("/bin/true");
+    let mut movement = runtime(&support::os::true_program());
     movement["payload"]["instruction"] = json!("Check {source}.");
-    fixture.declare("source", vec![runtime("/bin/true")]);
+    fixture.declare("source", vec![runtime(&support::os::true_program())]);
     fixture.declare("movement", vec![movement]);
-    fixture.declare("other", vec![runtime("/bin/false")]);
+    fixture.declare("other", vec![runtime(&support::os::false_program())]);
     fixture.declare(
         "player",
-        vec![dependency(&["movement"]), runtime("/bin/false")],
+        vec![
+            dependency(&["movement"]),
+            runtime(&support::os::false_program()),
+        ],
     );
     let config = fixture.config();
     let included: Vec<_> = Fixture::selection()
@@ -336,7 +339,7 @@ fn selecting_dependency_eval_includes_required_evals_and_their_graph_closure() {
 #[tokio::test]
 async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entry() {
     let fixture = Fixture::new();
-    fixture.declare("art", vec![runtime("/bin/true")]);
+    fixture.declare("art", vec![runtime(&support::os::true_program())]);
     fixture.declare("player", vec![dependency(&["art"])]);
     let options = VerifyOptions::default();
     let before = fixture.status(&options).await;
@@ -430,11 +433,11 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
 #[tokio::test]
 async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_evals() {
     for (command, reuse_only, expected) in [
-        ("/bin/false", false, "BLOCKED"),
-        ("/bin/true", true, "WAIT_DEPENDENCY"),
+        (support::os::false_program(), false, "BLOCKED"),
+        (support::os::true_program(), true, "WAIT_DEPENDENCY"),
     ] {
         let fixture = Fixture::new();
-        fixture.declare("art", vec![runtime(command)]);
+        fixture.declare("art", vec![runtime(&command)]);
         fixture.declare("player", vec![dependency(&["art"])]);
         let options = VerifyOptions {
             ignore_gates: Some(true),
@@ -701,7 +704,7 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
         graph.evaluate(&cancelled).evals["player/ready"].status,
         EvalStatus::Wait
     );
-    let mut slow = runtime("/bin/sh");
+    let mut slow = runtime(&support::os::shell());
     slow["profile"]["args"] = json!(["-c", "touch started; sleep 30"]);
     fixture.write(
         "art",
@@ -755,7 +758,7 @@ async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations()
             .to_string(),
     )
     .unwrap();
-    fixture.declare("art", vec![runtime("/bin/false")]);
+    fixture.declare("art", vec![runtime(&support::os::false_program())]);
     fixture.declare("player", vec![dependency(&["art"])]);
     let run = fixture.verify(&VerifyOptions::default()).await;
     assert!(run.run.ignore_gates);
@@ -783,7 +786,7 @@ async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations()
 #[test]
 fn dependency_eval_inside_an_ordinary_scc_uses_current_peer_evidence() {
     let fixture = Fixture::new();
-    let mut art = runtime("/bin/true");
+    let mut art = runtime(&support::os::true_program());
     art["payload"]["instruction"] = json!("Check {player}.");
     fixture.declare("art", vec![art]);
     fixture.declare("player", vec![dependency(&["art"])]);
@@ -834,7 +837,7 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
         json!({
             "name":"player",
             "mounts":{"basis":"basis"},
-            "evals":[dependency(&["basis"]), runtime("/bin/true")],
+            "evals":[dependency(&["basis"]), runtime(&support::os::true_program())],
         }),
     );
     let output = fixture
@@ -861,9 +864,9 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
 #[test]
 fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
     let fixture = Fixture::new();
-    let mut eval = runtime("/bin/false");
+    let mut eval = runtime(&support::os::false_program());
     eval["profile_variants"] =
-        json!({"fast":{"kind":"runtime","command":support::os::bin("/bin/true"),"args":[]}});
+        json!({"fast":{"kind":"runtime","command":support::os::true_program(),"args":[]}});
     fixture.declare("art", vec![eval]);
     for derived in [false, true] {
         if derived {

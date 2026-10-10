@@ -8,7 +8,7 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::{bin, symlink_file};
+use support::os::{shell, sleep_program, symlink_file, true_program};
 use tempfile::TempDir;
 
 mod support;
@@ -86,13 +86,13 @@ fn eval(id: &str, script: &str) -> Value {
     json!({
         "id":id,
         "title":"Check",
-        "profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script]},
+        "profile":{"kind":"runtime","command":shell(),"args":["-c",script]},
         "payload":{"instruction":"Check input."},
     })
 }
 
 fn fingerprint(script: &str) -> Value {
-    json!({"script":{"command":bin("/bin/sh"),"args":["-c",script]}})
+    json!({"script":{"command":shell(),"args":["-c",script]}})
 }
 
 #[test]
@@ -140,7 +140,7 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
     if symlink_file("key", fixture.repo.join("link")).is_some() {
         links.extend([
             (
-                json!({"script":{"command":bin("/bin/true"),"args":[],"files":["link"]}}),
+                json!({"script":{"command":true_program(),"args":[],"files":["link"]}}),
                 "symlinks",
             ),
             (json!({"script":{"command":"./link","args":[]}}), "symlinks"),
@@ -153,7 +153,7 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
             "exited with",
         ),
         (
-            json!({"script":{"command":bin("/bin/sleep"),"args":["30"],"timeout_ms":50}}),
+            json!({"script":{"command":sleep_program(),"args":["30"],"timeout_ms":50}}),
             "timed out",
         ),
         (
@@ -161,11 +161,11 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
             "spawned",
         ),
         (
-            json!({"script":{"command":bin("/bin/true"),"args":[],"files":["missing"]}}),
+            json!({"script":{"command":true_program(),"args":[],"files":["missing"]}}),
             "missing",
         ),
         (
-            json!({"script":{"command":bin("/bin/true"),"args":[],"files":["dir-link/key"]}}),
+            json!({"script":{"command":true_program(),"args":[],"files":["dir-link/key"]}}),
             "symlinks",
         ),
         (
@@ -510,7 +510,7 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
             json!({
                 "name":name,
                 "fingerprint":{
-                    "script":{"command":bin("/bin/sh"),"args":["-c",script,"sh",name,markers]},
+                    "script":{"command":shell(),"args":["-c",script,"sh",name,markers]},
                 },
                 "evals":[eval("check", "exit 0")],
             }),

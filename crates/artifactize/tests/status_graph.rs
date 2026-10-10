@@ -6,7 +6,7 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::{echo_program, shell};
 use tempfile::TempDir;
 
 mod support;
@@ -311,7 +311,7 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     );
     assert_eq!(
         green["evals"][0]["declaration"]["profile"]["command"],
-        bin("/bin/sh")
+        shell()
     );
     let text =
         String::from_utf8(fixture.output(&["config", "graph", "cycle-a"], 0).stdout).unwrap();
@@ -337,7 +337,7 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let path = fixture.repo.join("review/index.artf");
     let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     declaration["fingerprint"]["script"] =
-        json!({"command":bin("/bin/echo"),"args":["current-fingerprint"]});
+        json!({"command":echo_program(),"args":["current-fingerprint"]});
     support::declaration::write(path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");

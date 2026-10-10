@@ -6,7 +6,7 @@ use std::{
 
 use artifactize::store;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::echo_program;
 
 mod support;
 
@@ -43,14 +43,14 @@ fn fixture(repo: &Path) {
                     },
                     "data":{
                         "description":"JSON",
-                        "command":bin("/bin/echo"),
+                        "command":echo_program(),
                         "args":["{\"content\":[{\"type\":\"json\",\"data\":{\"answer\":42}}]}"],
                         "protocol":"json",
                         "input_schema":{"type":"object"},
                     },
                     "error":{
                         "description":"Authored error",
-                        "command":bin("/bin/echo"),
+                        "command":echo_program(),
                         "args":[
                             "{\"content\":[{\"type\":\"text\",\"text\":\"Owner error\"}],\"isError\":true}",
                         ],

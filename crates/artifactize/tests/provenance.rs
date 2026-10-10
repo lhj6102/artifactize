@@ -6,7 +6,7 @@ use std::{fs, path::Path, process::Command};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use support::{FakeProvider, openai, os::bin};
+use support::{FakeProvider, openai, os::true_program};
 
 struct Fixture {
     root: tempfile::TempDir,
@@ -38,7 +38,7 @@ impl Fixture {
                             "description":"Simulate {artifactName}.",
                             "input_schema":{"type":"object","additionalProperties":false},
                             "protocol":"json",
-                            "command":bin("/bin/true"),
+                            "command":true_program(),
                             "args":[],
                             "execution_paths":["bin/sim","rules"],
                         },

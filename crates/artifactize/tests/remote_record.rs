@@ -8,7 +8,7 @@ use artifactize::{
 };
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::{cat_program, shell, true_program};
 use tokio_util::sync::CancellationToken;
 
 mod support;
@@ -41,7 +41,7 @@ fn write_repo(repo: &Path, profile: Value) {
         repo.join("index.artf"),
         json!({
             "name":"app",
-            "fingerprint":{"script":{"command":bin("cat"),"args":["fingerprint"]}},
+            "fingerprint":{"script":{"command":cat_program(),"args":["fingerprint"]}},
             "evals":[
                 {
                     "id":"check",
@@ -84,7 +84,7 @@ async fn runtime_summary_omits_local_audit_and_its_mirror_is_reusable() {
     let repo = root.path().join("repo");
     write_repo(
         &repo,
-        json!({"kind":"runtime","command":bin("/bin/sh"),"args":["check.sh"]}),
+        json!({"kind":"runtime","command":shell(),"args":["check.sh"]}),
     );
     let producer_state = root.path().join("producer");
     let produced = verify(&repo, &producer_state).await;
@@ -204,7 +204,7 @@ async fn maximum_wire_execution_ids_mirror_and_reuse_without_renaming() {
     let repo = root.path().join("repo");
     write_repo(
         &repo,
-        json!({"kind":"runtime","command":bin("/bin/true"),"args":[]}),
+        json!({"kind":"runtime","command":true_program(),"args":[]}),
     );
     let producer_state = root.path().join("producer");
     let produced = verify(&repo, &producer_state).await;

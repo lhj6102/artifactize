@@ -5,7 +5,7 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::{cat_program, echo_program, shell, true_program};
 use tempfile::TempDir;
 
 mod support;
@@ -88,7 +88,7 @@ fn artifact(name: &str, fingerprint: Value, mounts: Value, args: &[&str]) -> Val
             {
                 "id":"check",
                 "title":"Check",
-                "profile":{"kind":"runtime","command":bin("/bin/sh"),"args":args},
+                "profile":{"kind":"runtime","command":shell(),"args":args},
                 "payload":{"instruction":"Check."},
             },
         ],
@@ -124,7 +124,7 @@ fn a_dependency_change_misses_but_two_connections_away_only_through_the_fingerpr
     assert_eq!(fixture.executed(0), ["mid/check", "top/check"]);
 
     // A developer whose review of top reads base says so in top's fingerprint.
-    let covered = json!({"script":{"command":bin("/bin/sh"),"args":[
+    let covered = json!({"script":{"command":shell(),"args":[
         "-c", "cat file.txt \"$1\" | cksum | tr ' ' -", "sh", "{base}/file.txt"
     ]}});
     fixture.artifact("top", artifact("top", covered, json!({"mid":"mid"}), PASS));
@@ -172,7 +172,7 @@ fn a_dependency_disabling_fingerprints_leaves_its_dependents_unkeyed() {
 #[test]
 fn equal_fingerprints_of_different_artifacts_never_share_a_result() {
     let fixture = Fixture::new();
-    let same = json!({"script":{"command":bin("/bin/echo"),"args":["same-output"]}});
+    let same = json!({"script":{"command":echo_program(),"args":["same-output"]}});
     for name in ["first", "second"] {
         fixture.artifact(name, artifact(name, same.clone(), json!({}), PASS));
     }
@@ -200,7 +200,7 @@ fn a_tool_declaration_change_alone_reuses() {
                         "additionalProperties":false,
                     },
                     "protocol":"json",
-                    "command":bin("/bin/true"),
+                    "command":true_program(),
                     "args":[],
                 },
             },
@@ -318,7 +318,7 @@ fn status_explains_which_inputs_and_dependencies_changed() {
         "legacy",
         artifact(
             "legacy",
-            json!({"script":{"command":bin("/bin/cat"),"args":["key"]}}),
+            json!({"script":{"command":cat_program(),"args":["key"]}}),
             json!({}),
             PASS,
         ),

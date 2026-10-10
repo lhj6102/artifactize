@@ -87,7 +87,7 @@ fn runtime(name: &str, args: &[&str]) -> Value {
             {
                 "id":"check",
                 "title":"Check",
-                "profile":{"kind":"runtime","command":support::os::bin("/bin/sh"),"args":args},
+                "profile":{"kind":"runtime","command":support::os::shell(),"args":args},
                 "payload":{"instruction":"Check."},
             },
         ],
@@ -531,7 +531,7 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
                     "open":{
                         "description":"Open",
                         "kind":"output",
-                        "command":support::os::bin("/bin/cat"),
+                        "command":support::os::cat_program(),
                         "args":["{artifactPath}","{file}"],
                     },
                 },
@@ -584,7 +584,7 @@ async fn fingerprint_scripts_run_in_containing_folder_with_file_arguments_and_re
             "name":"file",
             "fingerprint":{
                 "script":{
-                    "command":support::os::bin("/bin/sh"),
+                    "command":support::os::shell(),
                     "args":["hash.sh","{file}"],
                     "files":["hash.sh"],
                 },
@@ -1064,7 +1064,7 @@ fn runtime_target_replacements_fail_even_with_constant_or_disabled_fingerprints(
     for script in ["rm input.txt; mkdir input.txt", "rm input.txt"] {
         for fingerprint in [
             json!(false),
-            json!({"script":{"command":support::os::bin("/bin/echo"),"args":["constant"]}}),
+            json!({"script":{"command":support::os::echo_program(),"args":["constant"]}}),
         ] {
             let fixture = Fixture::new();
             fixture.write("input.txt", "input");
@@ -1085,7 +1085,7 @@ async fn script_fingerprint_preparation_and_recheck_reject_every_invalid_target_
         fixture.write("input.txt", "input");
         let mut declaration = runtime("file", &["-c", "exit 0"]);
         declaration["fingerprint"] =
-            json!({"script":{"command":support::os::bin("/bin/echo"),"args":["constant"]}});
+            json!({"script":{"command":support::os::echo_program(),"args":["constant"]}});
         fixture.declare("input.txt.artf", declaration);
         let config = fixture.config();
         fs::remove_file(fixture.repo.join("input.txt")).unwrap();
@@ -1145,7 +1145,7 @@ fn disabled_fingerprint_target_deleted_by_dependency_script_is_not_executed() {
             "basis":true,
             "fingerprint":{
                 "script":{
-                    "command":support::os::bin("/bin/sh"),
+                    "command":support::os::shell(),
                     "args":["-c","rm ../files/input.txt; printf constant"],
                 },
             },
@@ -1209,7 +1209,7 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
                         "inspect":{
                             "description":"Inspect",
                             "kind":"output",
-                            "command":support::os::bin("/bin/sh"),
+                            "command":support::os::shell(),
                             "args":["-c","touch started"],
                         },
                     },
@@ -1388,7 +1388,7 @@ fn removed_file_target_cannot_reuse_green_evidence_after_preparation() {
             "name":"dep",
             "basis":true,
             "fingerprint":{
-                "script":{"command":support::os::bin("/bin/sh"),"args":["-c","printf constant"]},
+                "script":{"command":support::os::shell(),"args":["-c","printf constant"]},
             },
         }),
     );
@@ -1400,7 +1400,7 @@ fn removed_file_target_cannot_reuse_green_evidence_after_preparation() {
             "basis":true,
             "fingerprint":{
                 "script":{
-                    "command":support::os::bin("/bin/sh"),
+                    "command":support::os::shell(),
                     "args":["-c","rm ../files/input.txt; printf constant"],
                 },
             },

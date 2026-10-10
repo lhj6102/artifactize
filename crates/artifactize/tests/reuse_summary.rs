@@ -8,7 +8,10 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use support::{FakeProvider, openai, os::bin};
+use support::{
+    FakeProvider, openai,
+    os::{shell, true_program},
+};
 
 /// Checkouts of one project sharing a state directory, with a fake OpenAI provider
 /// that passes every Agent review.
@@ -36,11 +39,11 @@ impl Fixture {
     /// `versions` are the api, web, style, docs and brand contents; each one is its fingerprint.
     fn checkout(&self, name: &str, versions: [&str; 5]) -> PathBuf {
         let repo = self.root.path().join(name);
-        let runtime = json!({"kind":"runtime","command":bin("/bin/true"),"args":[]});
+        let runtime = json!({"kind":"runtime","command":true_program(),"args":[]});
         // web/tests is RED when its version says "broken".
         let web = json!({
             "kind":"runtime",
-            "command":bin("/bin/sh"),
+            "command":shell(),
             "args":["-c","! grep -q broken version"],
         });
         let agent = json!({

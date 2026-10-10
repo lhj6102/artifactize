@@ -6,7 +6,7 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::{echo_program, false_program, true_program};
 
 mod support;
 
@@ -78,11 +78,11 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
                     {
                         "id":"review",
                         "title":title,
-                        "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+                        "profile":{"kind":"runtime","command":false_program(),"args":[]},
                         "profile_variants":{
                             "brief":{
                                 "kind":"runtime",
-                                "command":bin("/bin/echo"),
+                                "command":echo_program(),
                                 "args":["saved result"],
                             },
                         },
@@ -103,13 +103,13 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
                 {
                     "id":"pass",
                     "title":"Pass",
-                    "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
+                    "profile":{"kind":"runtime","command":true_program(),"args":[]},
                     "payload":{"instruction":"Pass."},
                 },
                 {
                     "id":"fail",
                     "title":"Fail",
-                    "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+                    "profile":{"kind":"runtime","command":false_program(),"args":[]},
                     "payload":{"instruction":"Fail."},
                 },
                 {
@@ -179,7 +179,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     assert_eq!(definitions["evals"][0]["declaration"]["title"], "Checkout");
     assert_eq!(
         definitions["evals"][0]["declaration"]["profile"]["command"],
-        bin("/bin/echo")
+        echo_program()
     );
     assert_eq!(
         definitions["evals"][0]["declaration"]["passSchema"],

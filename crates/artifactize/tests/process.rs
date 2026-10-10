@@ -11,7 +11,6 @@ use std::{
 };
 
 use artifactize::process::{self, ChildIdentity, Command};
-use support::os::bin;
 use tokio::{sync::oneshot, time::timeout};
 use tokio_util::sync::CancellationToken;
 
@@ -21,7 +20,7 @@ const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn command(program: &str, args: &[&str]) -> Command {
     Command {
-        program: bin(program).into(),
+        program: program.into(),
         args: args.iter().map(OsString::from).collect(),
         cwd: support::os::temp_root(),
         env: BTreeMap::from([("PATH".into(), support::os::path())]),
@@ -41,11 +40,11 @@ async fn execute(command: Command) -> process::Output {
 
 #[tokio::test]
 async fn explicit_environment_and_literal_argv_are_preserved() {
-    let mut env = command("/usr/bin/env", &[]);
+    let mut env = command(&support::os::env_program(), &[]);
     env.env = BTreeMap::from([("ONLY_EXPLICIT".into(), "value".into())]);
     assert_eq!(execute(env).await.stdout, b"ONLY_EXPLICIT=value\n");
     let result = execute(command(
-        "/usr/bin/printf",
+        &support::os::printf_program(),
         &["%s\n", "$(id); $HOME * a b", "{artifact}/path"],
     ))
     .await;
@@ -56,7 +55,10 @@ async fn explicit_environment_and_literal_argv_are_preserved() {
 async fn registration_observes_inert_group_leader_before_exec() {
     let scratch = Scratch::new();
     let marker = scratch.0.join("started");
-    let mut command = command("/bin/sh", &["-c", "printf started > started; pwd"]);
+    let mut command = command(
+        &support::os::shell(),
+        &["-c", "printf started > started; pwd"],
+    );
     command.cwd = scratch.0.clone();
     let expected_cwd = scratch.0.clone();
     let (registered, identity) = oneshot::channel();
@@ -96,7 +98,7 @@ async fn registration_observes_inert_group_leader_before_exec() {
 #[tokio::test]
 async fn failed_registration_never_executes_and_reaps_the_child() {
     let scratch = Scratch::new();
-    let mut command = command("/bin/sh", &["-c", "touch started"]);
+    let mut command = command(&support::os::shell(), &["-c", "touch started"]);
     command.cwd = scratch.0.clone();
     let pid = Arc::new(AtomicU32::new(0));
     let observed = pid.clone();
@@ -113,7 +115,7 @@ async fn failed_registration_never_executes_and_reaps_the_child() {
 #[tokio::test]
 async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
     let scratch = Scratch::new();
-    let mut command = command("/bin/sh", &["-c", "touch started"]);
+    let mut command = command(&support::os::shell(), &["-c", "touch started"]);
     command.cwd = scratch.0.clone();
     let (registered, child) = oneshot::channel::<ChildIdentity>();
     let running = tokio::spawn(process::run(
@@ -136,7 +138,7 @@ async fn dropping_the_caller_during_registration_does_not_release_the_gate() {
 #[tokio::test(start_paused = true)]
 async fn registration_is_covered_by_the_deadline() {
     let scratch = Scratch::new();
-    let mut command = command("/bin/sh", &["-c", "touch started"]);
+    let mut command = command(&support::os::shell(), &["-c", "touch started"]);
     command.cwd = scratch.0.clone();
     command.timeout = Duration::from_secs(60);
     let (registered, pid) = oneshot::channel();
@@ -160,7 +162,7 @@ async fn registration_is_covered_by_the_deadline() {
 
 #[tokio::test]
 async fn invalid_cwd_is_a_spawn_error_before_registration() {
-    let mut command = command("/bin/true", &[]);
+    let mut command = command(&support::os::true_program(), &[]);
     let scratch = Scratch::new();
     command.cwd = scratch.0.join("nonexistent-directory");
     let result = timeout(
@@ -181,7 +183,7 @@ async fn invalid_cwd_is_a_spawn_error_before_registration() {
 #[tokio::test]
 async fn stdout_and_stderr_are_drained_concurrently_after_capture_limit() {
     let result = execute(command(
-        "/bin/sh",
+        &support::os::shell(),
         &["-c", &support::os::zero_output(262144, 262144)],
     ))
     .await;

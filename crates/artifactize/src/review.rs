@@ -984,7 +984,9 @@ pub fn tools(request: &Request) -> Vec<Tool> {
     tools
 }
 
-/// Words joined for display, single-quoted when the shell would split or expand them.
+/// Words joined for an on-screen preview, double-quoted when a word has whitespace or a
+/// quote of its own. This is a reading aid, not a shell command: it claims no single
+/// shell's escaping rules, which differ between Unix shells and Windows's.
 pub fn shell<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
     let quote = |word: &str| {
         let plain = !word.is_empty()
@@ -994,7 +996,7 @@ pub fn shell<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
         if plain {
             word.to_owned()
         } else {
-            format!("'{}'", word.replace('\'', r"'\''"))
+            format!("\"{}\"", word.replace('"', "\"\""))
         }
     };
     words.into_iter().map(quote).collect::<Vec<_>>().join(" ")

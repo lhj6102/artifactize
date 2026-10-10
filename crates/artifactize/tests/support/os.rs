@@ -41,6 +41,42 @@ pub fn shell() -> String {
     bin("/bin/sh")
 }
 
+/// A program that exits 0 and does nothing else, resolved through [`bin`].
+pub fn true_program() -> String {
+    bin("/bin/true")
+}
+
+/// A program that exits 1 and does nothing else, resolved through [`bin`].
+pub fn false_program() -> String {
+    bin("/bin/false")
+}
+
+/// A program that prints its arguments, resolved through [`bin`].
+pub fn echo_program() -> String {
+    bin("/bin/echo")
+}
+
+/// A program that prints a file's contents, resolved through [`bin`].
+pub fn cat_program() -> String {
+    bin("/bin/cat")
+}
+
+/// A program that waits for the given duration and exits 0, resolved through [`bin`].
+pub fn sleep_program() -> String {
+    bin("/bin/sleep")
+}
+
+/// A program that runs another program with an adjusted environment, resolved through
+/// [`bin`].
+pub fn env_program() -> String {
+    bin("/usr/bin/env")
+}
+
+/// A program that formats and prints its arguments, resolved through [`bin`].
+pub fn printf_program() -> String {
+    bin("/usr/bin/printf")
+}
+
 /// Whether tests run the stand-ins `bin` names.
 pub fn stand_ins() -> bool {
     cfg!(windows) || std::env::var_os("ARTIFACTIZE_TEST_STAND_INS").is_some()
@@ -241,6 +277,10 @@ pub fn not_a_directory() -> std::io::Error {
 /// The signal number of SIGTERM.
 #[cfg(unix)]
 pub const SIGTERM: i32 = libc::SIGTERM;
+
+/// A shell command whose own shell sends itself SIGTERM: meaningful only where a signal
+/// can end a process, so only Unix code reads this value.
+pub const SELF_TERMINATE: &str = "kill -TERM $$";
 
 /// End a process and everything in its tree at once: SIGKILL to its process group on Unix;
 /// on Windows the process, as its Job Object holds the rest.
@@ -1942,17 +1982,21 @@ pub fn path_text(path: &Path) -> String {
 pub const PATHEXT: (&str, &str) = ("PATHEXT", ".CMD;.EXE;.BAT;.COM");
 
 /// Runtime operational failures supported by this platform.
-pub fn runtime_failures() -> Vec<(&'static str, Vec<&'static str>, &'static str)> {
+pub fn runtime_failures() -> Vec<(String, Vec<&'static str>, &'static str)> {
     let cases = vec![
-        ("artifactize-missing-command", vec![], "SPAWN_FAILED"),
-        ("/bin/cat", vec!["{test}/missing"], "PREPARATION_FAILED"),
+        (bin("artifactize-missing-command"), vec![], "SPAWN_FAILED"),
+        (
+            bin("/bin/cat"),
+            vec!["{test}/missing"],
+            "PREPARATION_FAILED",
+        ),
     ];
     cases.into_iter().chain(signal_failure()).collect()
 }
 
-fn signal_failure() -> Option<(&'static str, Vec<&'static str>, &'static str)> {
+fn signal_failure() -> Option<(String, Vec<&'static str>, &'static str)> {
     if cfg!(unix) {
-        Some(("/bin/sh", vec!["-c", "kill -TERM $$"], "ABNORMAL_EXIT"))
+        Some((shell(), vec!["-c", SELF_TERMINATE], "ABNORMAL_EXIT"))
     } else {
         None
     }

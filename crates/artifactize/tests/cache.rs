@@ -8,7 +8,7 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::{bin, shell};
+use support::os::{cat_program, echo_program, false_program, shell, true_program};
 use tempfile::TempDir;
 
 mod support;
@@ -295,7 +295,7 @@ fn eval(id: &str, script: &str) -> Value {
 }
 
 fn fingerprint(key: &str) -> Value {
-    json!({"script":{"command":bin("/bin/echo"),"args":[key]}})
+    json!({"script":{"command":echo_program(),"args":[key]}})
 }
 
 /// The reuse key of a Run's request.
@@ -420,13 +420,13 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
                 {
                     "id":"pass",
                     "title":"Pass",
-                    "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
+                    "profile":{"kind":"runtime","command":true_program(),"args":[]},
                     "payload":{"instruction":"Review."},
                 },
                 {
                     "id":"fail",
                     "title":"Fail",
-                    "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+                    "profile":{"kind":"runtime","command":false_program(),"args":[]},
                     "payload":{"instruction":"Review."},
                 },
             ],
@@ -671,7 +671,7 @@ fn status_uses_current_fingerprint_and_only_prepares_the_selected_closure() {
         "repo",
         json!({
             "name":"test",
-            "fingerprint":{"script":{"command":bin("/bin/cat"),"args":["key"]}},
+            "fingerprint":{"script":{"command":cat_program(),"args":["key"]}},
             "evals":[eval("check", "touch executed")],
         }),
     );
@@ -1518,7 +1518,7 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
     let base = json!({
         "id":"check",
         "title":"Review",
-        "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
+        "profile":{"kind":"runtime","command":true_program(),"args":[]},
         "payload":{"instruction":"Review."},
     });
     let repo = fixture.repo(
@@ -1562,7 +1562,7 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
             json!({"type":"object","properties":{"reason":{"type":"string"}}}),
             0,
         ),
-        ("/profile/command", json!(bin("/bin/false")), 1),
+        ("/profile/command", json!(false_program()), 1),
         ("/profile/args", json!(["unused"]), 0),
         ("/payload/instruction", json!("Different criteria."), 0),
         ("/payload/extra", json!({"criteria":[1,2]}), 0),
@@ -1593,7 +1593,7 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
     let mut declaration = eval("check", "exit 0");
     declaration["profile"]["timeout_ms"] = json!(5000);
     declaration["profile_variants"] = json!({
-        "fail":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+        "fail":{"kind":"runtime","command":false_program(),"args":[]},
         "patient":{
             "kind":"runtime",
             "command":shell(),

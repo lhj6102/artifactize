@@ -8,7 +8,7 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::shell;
 use tempfile::TempDir;
 
 mod support;
@@ -76,7 +76,7 @@ fn eval(id: &str, script: &str) -> Value {
         "title":"Check",
         "profile":{
             "kind":"runtime",
-            "command":bin("/bin/sh"),
+            "command":shell(),
             "args":["-c",script,"sh",id],
             "timeout_ms":10000,
         },
