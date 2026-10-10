@@ -30,7 +30,7 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       # Packages the crate and builds the package as crates.io would, without uploading.
-      - run: cargo publish --dry-run --locked -p artifactize
+      - run: cargo publish --dry-run --locked -p artifactize-tools -p artifactize
   windows:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest

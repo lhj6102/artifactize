@@ -1,28 +1,20 @@
 //! Mounts, aliases, artifact references, and canonical scoped paths.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{self, File};
-use std::io;
-use std::path::{Component, Path, PathBuf};
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use thiserror::Error;
 
 use crate::config::{Artifact, ConfigError, Eval, Fingerprint, Profile, RepoConfig};
-use crate::platform;
 
 mod human;
 mod instruction;
 pub(crate) use human::{resolve_human_argv, validate_human_args};
 pub use instruction::instruction_references;
 
-/// Bound logical tool paths in UTF-16 units, matching JSON Schema string limits
-/// across supported clients without tying scoped paths to an OS-specific PATH_MAX.
-pub(crate) const MAX_PATH_UNITS: usize = 4096;
-
-#[derive(Debug, Error)]
-#[error("{0}")]
-pub struct ScopeError(pub String);
+pub use artifactize_tools::scope::{ArtifactId, ScopeError, ScopedPath, scoped_path};
+pub(crate) use artifactize_tools::scope::{logical_path, open_child, open_scoped};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Relation {
@@ -63,80 +55,43 @@ pub enum RelationKind {
     },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ScopedPath {
-    pub artifact_id: String,
-    pub path: String,
-}
-
 #[derive(Debug)]
 pub struct Scope<'a> {
     pub artifacts: BTreeMap<&'a str, &'a Artifact>,
 }
 
 impl Scope<'_> {
-    /// Pure logical resolution. Each mount or child hop consumes path components.
-    pub fn resolve_path(&self, artifact_id: &str, path: &str) -> Result<ScopedPath, ScopeError> {
-        logical_path(path)?;
-        let mut current = artifact_id;
-        let mut remaining = path;
-        loop {
-            let artifact = self
+    /// Snapshot only access data; composition and eval dependencies are decided here.
+    pub(crate) fn tool_scope(&self) -> artifactize_tools::scope::Scope {
+        artifactize_tools::scope::Scope {
+            artifacts: self
                 .artifacts
-                .get(current)
-                .ok_or_else(|| ScopeError(format!("Artifact is outside this review: {current}")))?;
-            if remaining.is_empty() {
-                break;
-            }
-            let (first, rest) = remaining.split_once('/').unwrap_or((remaining, ""));
-            if let Some(target) = artifact.mounts.get(first) {
-                current = target;
-                remaining = rest;
-                continue;
-            }
-            if let Some((prefix, target)) = artifact.children.iter().find(|(prefix, _)| {
-                remaining == prefix.as_str()
-                    || remaining
-                        .strip_prefix(prefix.as_str())
-                        .is_some_and(|rest| rest.starts_with('/'))
-            }) {
-                current = target;
-                remaining = remaining[prefix.len()..].strip_prefix('/').unwrap_or("");
-                continue;
-            }
-            break;
+                .iter()
+                .map(|(id, artifact)| (tool_id(id), artifact.tool_scope()))
+                .collect(),
         }
-        let artifact = self.artifacts[current];
-        file_input(artifact, remaining)?;
-        Ok(ScopedPath {
-            artifact_id: current.to_owned(),
-            path: remaining.to_owned(),
-        })
     }
 
-    /// Existing file or directory, without traversing links even inside the owner.
+    pub fn resolve_path(&self, artifact_id: &str, path: &str) -> Result<ScopedPath, ScopeError> {
+        self.tool_scope()
+            .resolve_path(&ArtifactId::new(artifact_id)?, path)
+    }
+
     pub fn resolve_input(
         &self,
         root: &Path,
         artifact_id: &str,
         path: &str,
     ) -> Result<PathBuf, ScopeError> {
-        let location = self.resolve_path(artifact_id, path)?;
-        let artifact = self.artifacts[location.artifact_id.as_str()];
-        let owner = scoped_path(root, artifact.folder())?;
-        let path = if location.path.is_empty() {
-            artifact.file_name().unwrap_or("")
-        } else {
-            &location.path
-        };
-        let resolved = scoped_path(&owner, Path::new(path))?;
-        if artifact.file_name().is_some() && !resolved.is_file() {
-            return Err(ScopeError(
-                "File Artifact target must remain a regular file.".into(),
-            ));
-        }
-        Ok(resolved)
+        self.tool_scope()
+            .resolve_input(root, &ArtifactId::new(artifact_id)?, path)
     }
+}
+
+/// The tool-side ID of a configured Artifact. Configuration validates every Artifact name,
+/// mount target and child, so a name that fails here is a bug in that validation.
+pub(crate) fn tool_id(name: &str) -> ArtifactId {
+    ArtifactId::new(name).expect("configuration validates Artifact names")
 }
 
 /// Revalidate file targets at every preparation/read boundary, without following links.
@@ -168,52 +123,6 @@ pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(
     Ok(())
 }
 
-/// Why a scoped open failed. A missing entry stays distinct, so a caller that knows the
-/// logical path the user asked for can name it.
-#[derive(Debug, Error)]
-pub(crate) enum OpenError {
-    #[error("No such file or directory.")]
-    NotFound,
-    #[error(transparent)]
-    Refused(#[from] ScopeError),
-}
-
-/// Open each component relative to its pinned parent, so replacement cannot redirect a read
-/// through a link.
-pub(crate) fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, OpenError> {
-    if !root.is_absolute() || artifact.path.is_absolute() {
-        return Err(
-            ScopeError("Artifact roots must be absolute and owner paths relative.".into()).into(),
-        );
-    }
-    file_input(artifact, path)?;
-    let file = open_scoped(&root.join(artifact.folder()), path)?;
-    if artifact.file_name().is_some()
-        && !path.is_empty()
-        && !file
-            .metadata()
-            .map_err(|e| ScopeError(e.to_string()))?
-            .is_file()
-    {
-        return Err(ScopeError("File Artifact target must remain a regular file.".into()).into());
-    }
-    Ok(file)
-}
-
-/// A file Artifact exposes a virtual root containing only its target and mounts.
-fn file_input(artifact: &Artifact, path: &str) -> Result<(), ScopeError> {
-    if let Some(target) = artifact.file_name()
-        && !path.is_empty()
-        && path != target
-    {
-        return Err(ScopeError(format!(
-            "File Artifact {} exposes only its target {target} and mounts.",
-            artifact.name
-        )));
-    }
-    Ok(())
-}
-
 fn reference_path(config: &RepoConfig, id: &str, path: &str) -> Result<(), ScopeError> {
     if config.artifacts[id].file_name().is_some() && !path.is_empty() {
         return Err(ScopeError(format!(
@@ -221,54 +130,6 @@ fn reference_path(config: &RepoConfig, id: &str, path: &str) -> Result<(), Scope
         )));
     }
     Ok(())
-}
-
-/// Open a relative path below an absolute root without following any symlink components.
-pub(crate) fn open_scoped(root: &Path, path: &str) -> Result<File, OpenError> {
-    logical_path(path)?;
-    if !root.is_absolute() {
-        return Err(ScopeError("Scoped roots must be absolute.".into()).into());
-    }
-    let target = root.join(path);
-    // `/`, or on Windows the volume or share root such as `C:\`.
-    let filesystem_root = target.ancestors().last().unwrap_or(&target);
-    let mut directory =
-        platform::open_directory(filesystem_root).map_err(|e| ScopeError(e.to_string()))?;
-    for component in target.components() {
-        directory = match component {
-            Component::Prefix(_) | Component::RootDir => continue,
-            Component::Normal(name) => open_child(&directory, name)?,
-            _ => {
-                return Err(ScopeError(
-                    "Artifact path must not traverse parent directories.".into(),
-                )
-                .into());
-            }
-        };
-    }
-    Ok(directory)
-}
-
-/// Open one entry of a pinned directory without following a symlink.
-pub(crate) fn open_child(directory: &File, name: &std::ffi::OsStr) -> Result<File, OpenError> {
-    let name = platform::EntryName::new(name)
-        .ok_or_else(|| ScopeError("Invalid Artifact path.".into()))?;
-    let file = platform::open_entry(directory, &name).map_err(|error| {
-        if error.kind() == io::ErrorKind::NotFound {
-            OpenError::NotFound
-        } else if platform::is_link_refusal(&error) {
-            ScopeError("Cannot open Artifact input without symlink traversal.".into()).into()
-        } else {
-            ScopeError(format!("Cannot open Artifact input: {error}")).into()
-        }
-    })?;
-    let metadata = file.metadata().map_err(|e| ScopeError(e.to_string()))?;
-    if !metadata.is_file() && !metadata.is_dir() {
-        return Err(
-            ScopeError("Artifact input must be a regular file or directory.".into()).into(),
-        );
-    }
-    Ok(file)
 }
 
 /// Composition grants access; a referenced Artifact's Eval instructions do not.
@@ -309,62 +170,6 @@ pub fn argv_scope<'a>(
         }
     }
     artifact_scope(config, &roots)
-}
-
-fn logical_path(path: &str) -> Result<(), ScopeError> {
-    if path.encode_utf16().count() > MAX_PATH_UNITS
-        || path
-            .bytes()
-            .any(|byte| byte.is_ascii_control() || matches!(byte, b'\\' | b':'))
-        || (!path.is_empty()
-            && path
-                .split('/')
-                .any(|part| part.is_empty() || part == "." || part == ".."))
-    {
-        return Err(ScopeError(
-            "Artifact path must be a safe relative logical path.".into(),
-        ));
-    }
-    Ok(())
-}
-
-/// Resolve a physical input below a canonical root. No component may be a symlink.
-pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
-    let path = path
-        .to_str()
-        .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-    if path.contains(['\0', '\\'])
-        || Path::new(path).is_absolute()
-        || path.split('/').any(|part| part == "." || part == "..")
-    {
-        return Err(ScopeError(
-            "Artifact path must be relative to its declared root.".into(),
-        ));
-    }
-    let mut target = root.to_owned();
-    for component in path.split('/').filter(|part| !part.is_empty()) {
-        target.push(component);
-        let metadata = fs::symlink_metadata(&target)
-            .map_err(|error| ScopeError(format!("{}: {error}", target.display())))?;
-        if metadata.is_symlink() {
-            return Err(ScopeError("Artifact symlinks are not supported.".into()));
-        }
-    }
-    let actual = platform::canonicalize(&target)
-        .map_err(|error| ScopeError(format!("{}: {error}", target.display())))?;
-    if !actual.starts_with(root) {
-        return Err(ScopeError(
-            "Artifact path escapes its declared root.".into(),
-        ));
-    }
-    let metadata = fs::metadata(&actual)
-        .map_err(|error| ScopeError(format!("{}: {error}", actual.display())))?;
-    if !metadata.is_file() && !metadata.is_dir() {
-        return Err(ScopeError(
-            "Artifact input must be a file or directory.".into(),
-        ));
-    }
-    Ok(actual)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

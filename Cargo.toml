@@ -10,3 +10,8 @@ rust-version = "1.95"
 license = "Apache-2.0"
 repository = "https://github.com/lhj6102/artifactize"
 homepage = "https://artifactize.dev"
+
+# The release version script updates both this publish dependency and the workspace version.
+[workspace.dependencies.artifactize-tools]
+version = "0.0.0-dev"
+path = "crates/artifactize-tools"

@@ -25,6 +25,7 @@ bin-dir = "{ name }-v{ version }-{ target }/{ bin }{ binary-ext }"
 pkg-fmt = "zip"
 
 [dependencies]
+artifactize-tools.workspace = true
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 base64 = "0.22"
 # The existing rig transport byte type is needed by the transparent stream observer.
@@ -38,7 +39,6 @@ ignore = "0.4"
 jsonschema = { version = "0.58.4", default-features = false }
 petgraph = { version = "0.8", default-features = false, features = ["std"] }
 ratatui = { version = "0.30", default-features = false, features = ["crossterm", "unstable-rendered-line-info"] }
-regex = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form"] }
 rig-core = { version = "=0.43.0", default-features = false, features = ["reqwest", "rustls"] }
 rig-reqwest = { version = "=0.43.0", default-features = false, features = ["rustls"] }
@@ -64,8 +64,6 @@ process-wrap = { version = "10.0.1", default-features = false, features = ["toki
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
-    "Wdk_Foundation",
-    "Wdk_Storage_FileSystem",
     "Win32_Foundation",
     "Win32_Security",
     "Win32_Security_Authorization",

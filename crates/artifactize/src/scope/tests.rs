@@ -114,7 +114,7 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
             .resolve_path("parent", "unmarked/material.txt")
             .unwrap(),
         ScopedPath {
-            artifact_id: "parent".into(),
+            artifact_id: ArtifactId::new("parent").unwrap(),
             path: "unmarked/material.txt".into(),
         }
     );
@@ -123,7 +123,7 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
             .resolve_path("parent", "unmarked/deep/input.txt")
             .unwrap(),
         ScopedPath {
-            artifact_id: "child".into(),
+            artifact_id: ArtifactId::new("child").unwrap(),
             path: "input.txt".into(),
         }
     );
@@ -183,7 +183,7 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
     assert_eq!(
         location,
         ScopedPath {
-            artifact_id: "input".into(),
+            artifact_id: ArtifactId::new("input").unwrap(),
             path: "file".into()
         }
     );

@@ -1,6 +1,6 @@
 //! Scoped read-only Agent tools.
 mod input;
-pub(super) use input::Input;
+pub use input::Input;
 
 /// Bound the compiled regex automaton to limit search memory.
 const REGEX_BYTES: usize = 2 * 1024 * 1024;
@@ -18,17 +18,17 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    config::Builtin,
-    platform::{self, FileKind},
-    scope::{self, OpenError, Scope, ScopedPath},
+    Builtin,
+    files::{self as platform, FileKind},
+    scope::{self, ArtifactId, OpenError, Scope, ScopedPath},
 };
 
-use super::{Content, ToolResult, image};
+use crate::{Content, ToolResult, image};
 
 /// Bound one read's contribution to the Agent context while preserving complete lines.
-const READ_BYTES: usize = 64 * 1024;
+pub const READ_BYTES: usize = 64 * 1024;
 /// Cap serialized tool output even when match text or logical paths are very long.
-const RESULT_BYTES: usize = 512 * 1024;
+pub const RESULT_BYTES: usize = 512 * 1024;
 /// Reserve 1 KiB for serialized list/glob/grep keys, brackets and page metadata before
 /// accumulating entries; the final serialized-result check still enforces RESULT_BYTES.
 const RESULT_ENVELOPE_BYTES: usize = 1024;
@@ -37,7 +37,7 @@ const MAX_RESULTS: usize = 200;
 /// Bound directory fan-out and traversal work regardless of the requested result count.
 const MAX_ENTRIES: usize = 10_000;
 /// Skip individual oversized files so one input cannot monopolize a search.
-const SEARCH_FILE_BYTES: usize = 8 * 1024 * 1024;
+pub const SEARCH_FILE_BYTES: usize = 8 * 1024 * 1024;
 /// Bound total search I/O across files; exhausting the budget reports truncation.
 const SEARCH_BYTES: usize = 64 * 1024 * 1024;
 /// Patterns are user input rather than paths, but share their bounded schema size.
@@ -47,7 +47,7 @@ const MAX_PATTERN_UNITS: usize = scope::MAX_PATH_UNITS;
 const DEFAULT_READ_LINES: usize = 80;
 const MAX_READ_LINES: usize = 500;
 
-pub(crate) fn description(builtin: Builtin) -> &'static str {
+pub fn description(builtin: Builtin) -> &'static str {
     match builtin {
         Builtin::Read => {
             "Read UTF-8 complete lines in {artifactName}. path is a relative logical file path, including child/mount paths. Paths are relative to {artifactName} itself: use \"notes.md\", not \"{artifactName}/notes.md\". offset is 1-based (default 1); limit defaults to 80, maximum 500. Returns numbered lines preserving LF/CRLF/BOM, up to 64 KiB, startLine/endLine/lineCount, totalLines when known, truncated and nextOffset. No symlinks or binary text."
@@ -67,7 +67,7 @@ pub(crate) fn description(builtin: Builtin) -> &'static str {
     }
 }
 
-pub(crate) fn input_schema(builtin: Builtin) -> Value {
+pub fn input_schema(builtin: Builtin) -> Value {
     let path = json!({
         "type":"string",
         "maxLength":scope::MAX_PATH_UNITS,
@@ -80,7 +80,7 @@ pub(crate) fn input_schema(builtin: Builtin) -> Value {
         Builtin::Read => (
             json!({
                 "path":path,
-                "offset":integer(1, crate::types::MAX_SAFE_JSON_INTEGER, 1),
+                "offset":integer(1, crate::MAX_SAFE_JSON_INTEGER, 1),
                 "limit":integer(1, MAX_READ_LINES as u64, DEFAULT_READ_LINES as u64),
             }),
             vec!["path"],
@@ -88,7 +88,7 @@ pub(crate) fn input_schema(builtin: Builtin) -> Value {
         Builtin::List => (
             json!({
                 "path":path,
-                "offset":integer(0, crate::types::MAX_SAFE_JSON_INTEGER, 0),
+                "offset":integer(0, crate::MAX_SAFE_JSON_INTEGER, 0),
                 "limit":integer(1, MAX_RESULTS as u64, MAX_RESULTS as u64),
             }),
             vec![],
@@ -114,11 +114,11 @@ pub(crate) fn input_schema(builtin: Builtin) -> Value {
     })
 }
 
-pub(super) fn call(
+pub fn call(
     input: Input,
     root: &Path,
-    scope: &Scope<'_>,
-    owner: &str,
+    scope: &Scope,
+    owner: &ArtifactId,
     cancellation: &CancellationToken,
 ) -> ToolResult {
     let reader = Reader {
@@ -157,8 +157,8 @@ pub(super) fn call(
 
 struct Reader<'a> {
     root: &'a Path,
-    scope: &'a Scope<'a>,
-    owner: &'a str,
+    scope: &'a Scope,
+    owner: &'a ArtifactId,
     cancellation: &'a CancellationToken,
 }
 
@@ -187,7 +187,7 @@ impl Reader<'_> {
 
     /// Open the resolved `location` of the logical `path`, which a missing entry names.
     fn open(&self, path: &str, location: &ScopedPath) -> Result<File, String> {
-        let artifact = self.scope.artifacts[location.artifact_id.as_str()];
+        let artifact = &self.scope.artifacts[&location.artifact_id];
         scope::open_input(self.root, artifact, &location.path).map_err(|error| match error {
             OpenError::NotFound => missing(self.owner, path),
             error => error.to_string(),
@@ -233,7 +233,7 @@ impl Reader<'_> {
                 if returned_bytes + line.len() + fragment.len() > READ_BYTES {
                     if lines.is_empty() {
                         return Err(format!(
-                            "Artifact line {current} exceeds the 65536-byte read limit."
+                            "Artifact line {current} exceeds the {READ_BYTES}-byte read limit."
                         ));
                     }
                     break;
@@ -285,7 +285,7 @@ impl Reader<'_> {
         if !file.metadata().map_err(|e| e.to_string())?.is_dir() {
             return Err("Listing requires a directory.".into());
         }
-        let owner = self.scope.artifacts[location.artifact_id.as_str()];
+        let owner = &self.scope.artifacts[&location.artifact_id];
         let mut entries = BTreeMap::new();
         if let Some(name) = owner.file_name() {
             let target = scope::open_child(&file, std::ffi::OsStr::new(name))
@@ -332,7 +332,7 @@ impl Reader<'_> {
                             .into(),
                     );
                 }
-                if !self.scope.artifacts.contains_key(id.as_str()) {
+                if !self.scope.artifacts.contains_key(id) {
                     return Err("Mount is outside this eval's scope.".into());
                 }
                 if entries
@@ -539,8 +539,8 @@ impl Reader<'_> {
 }
 
 /// A missing path, with a hint when a model prefixed it with the Artifact's own name.
-fn missing(owner: &str, path: &str) -> String {
-    match path.strip_prefix(owner) {
+fn missing(owner: &ArtifactId, path: &str) -> String {
+    match path.strip_prefix(owner.as_str()) {
         Some("") => format!(
             "No {path:?} in Artifact {owner}; paths are relative to the Artifact, without its name (its root is \"\")."
         ),
@@ -591,6 +591,3 @@ fn glob(pattern: &str) -> Result<GlobMatcher, String> {
         .map(|glob| glob.compile_matcher())
         .map_err(|_| "Invalid glob pattern.".into())
 }
-
-#[cfg(test)]
-mod tests;

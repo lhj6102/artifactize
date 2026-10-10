@@ -70,15 +70,7 @@ pub struct BuiltinTool {
     pub description: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Builtin {
-    Read,
-    List,
-    Glob,
-    Grep,
-    ViewImage,
-}
+pub use artifactize_tools::Builtin;
 
 impl AgentTool {
     pub(super) fn validate(&self) -> Result<(), String> {

@@ -766,11 +766,16 @@ fn reject_non_json_values(
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ArtifactKind {
-    Folder,
-    File,
+pub use artifactize_tools::scope::ArtifactKind;
+
+/// Child paths or mount aliases with their target Artifacts as tool-side IDs.
+fn tool_ids(
+    targets: &BTreeMap<String, String>,
+) -> BTreeMap<String, artifactize_tools::scope::ArtifactId> {
+    targets
+        .iter()
+        .map(|(key, name)| (key.clone(), crate::scope::tool_id(name)))
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -789,6 +794,16 @@ pub struct Artifact {
 }
 
 impl Artifact {
+    pub(crate) fn tool_scope(&self) -> artifactize_tools::scope::Artifact {
+        artifactize_tools::scope::Artifact {
+            path: self.path.clone(),
+            kind: self.kind,
+            name: self.name.clone(),
+            children: tool_ids(&self.children),
+            mounts: tool_ids(&self.mounts),
+        }
+    }
+
     /// Runtime commands and relative declarations use the containing folder.
     pub fn folder(&self) -> &Path {
         match self.kind {
