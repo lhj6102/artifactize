@@ -477,7 +477,7 @@ async fn sign_in(
 
 async fn open_browser(url: &Url) {
     // The printed authorization URL remains available if desktop handoff fails.
-    let _ = artifactize_tools::opener::open(std::ffi::OsStr::new(url.as_str())).await;
+    let _ = crate::platform::program::open_desktop(std::ffi::OsStr::new(url.as_str())).await;
 }
 
 #[derive(Deserialize)]

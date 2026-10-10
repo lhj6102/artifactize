@@ -290,11 +290,7 @@ async fn publish(
     } else {
         MAX_SUMMARY_BYTES
     };
-    let completed_at = record
-        .completed_at
-        .parse::<crate::types::Timestamp>()
-        .ok()
-        .map(|time| time.to_string());
+    let completed_at = record.completed_at.parse::<crate::types::Timestamp>().ok();
     let (true, Some(completed_at)) = (
         record.schema == SCHEMA
             && record.key.as_str() == key
@@ -335,10 +331,10 @@ async fn publish(
         .insert("publishedAt".into(), json!(crate::broker::now()));
     let created = store
         .insert(
-            &key,
+            &record.key,
             &record.execution_id,
             &principal.name,
-            &completed_at,
+            completed_at,
             serde_json::to_string(&record)
                 .map_err(|error| ApiError::internal(error.to_string()))?,
         )

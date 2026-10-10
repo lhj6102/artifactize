@@ -385,7 +385,7 @@ fn preflight_executable(
         .map_err(|_| "Tool executable path is unavailable or outside scope.".to_owned())?;
     let cwd = scope::scoped_path(root, scope.artifacts[owner].folder())
         .map_err(|error| error.to_string())?;
-    artifactize_tools::program::resolve(&program, &cwd)
+    crate::platform::program::resolve(&program, &cwd)
         .map(|_| ())
         .map_err(|_| format!("Tool executable is unavailable: {command}"))
 }

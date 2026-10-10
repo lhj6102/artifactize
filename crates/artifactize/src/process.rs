@@ -217,11 +217,10 @@ where
         return Err(Error::Timeout);
     }
 
-    let program =
-        artifactize_tools::program::resolve_with(&command.program, &command.cwd, |name| {
-            environment_value(&command.env, name).map(ToOwned::to_owned)
-        })
-        .map_err(Error::Spawn)?;
+    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
+        environment_value(&command.env, name).map(ToOwned::to_owned)
+    })
+    .map_err(Error::Spawn)?;
     let mut child = tokio::process::Command::new(&program);
     child
         .args(&command.args)
@@ -351,7 +350,7 @@ pub(crate) fn launch_detached(
     args: &[String],
     cwd: &std::path::Path,
 ) -> Result<(), Error> {
-    let program = artifactize_tools::program::resolve(program, cwd).map_err(Error::Spawn)?;
+    let program = platform::program::resolve(program, cwd).map_err(Error::Spawn)?;
     let mut command = tokio::process::Command::new(program);
     command
         .args(args)

@@ -26,19 +26,19 @@ pub enum Audience {
 pub struct ToolCheckOptions {
     /// Select one Agent or Human eval's admitted scope (same as --eval).
     #[arg(conflicts_with = "eval")]
-    pub selector: Option<String>,
+    pub selector: Option<crate::types::EvalId>,
     /// Select one Agent or Human eval's admitted scope.
     #[arg(long, value_name = "ID")]
-    pub eval: Option<String>,
+    pub eval: Option<crate::types::EvalId>,
     /// Check tools declared for one Artifact.
     #[arg(long, value_name = "ID")]
-    pub artifact: Option<String>,
+    pub artifact: Option<crate::types::ArtifactName>,
     /// Restrict --artifact to Agent or Human tools.
     #[arg(long, value_enum)]
     pub audience: Option<Audience>,
     /// Check one tool by short or published name.
     #[arg(long, value_name = "NAME")]
-    pub tool: Option<String>,
+    pub tool: Option<crate::config::ToolName>,
     /// Invoke exactly one explicitly selected tool; never create review evidence.
     #[arg(long)]
     pub execute: bool,

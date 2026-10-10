@@ -323,17 +323,17 @@ impl Store {
     /// Append a record to its key's history; `false` when this execution is already stored.
     pub(super) async fn insert(
         &self,
-        key: &str,
-        execution_id: &str,
-        publisher: &str,
-        completed_at: &str,
+        key: &crate::types::ReuseKey,
+        execution_id: &crate::types::ExecutionId,
+        publisher: &crate::types::TokenName,
+        completed_at: crate::types::Timestamp,
         data: String,
     ) -> Result<bool, String> {
         let record = (
-            key.parse::<crate::types::ReuseKey>()?,
-            execution_id.parse::<crate::types::ExecutionId>()?,
-            publisher.parse::<crate::types::TokenName>()?,
-            completed_at.parse::<crate::types::Timestamp>()?,
+            key.clone(),
+            execution_id.clone(),
+            publisher.clone(),
+            completed_at,
         );
         self.connection
             .call(move |db| -> Result<_, Error> {

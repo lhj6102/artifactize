@@ -281,7 +281,7 @@ impl<'a> Registry<'a> {
             };
             return tokio::select! {
                 _ = cancellation.cancelled() => ToolResult::error("Human tool call was cancelled."),
-                result = artifactize_tools::opener::open(std::ffi::OsStr::new(&target)) => match result {
+                result = crate::platform::program::open_desktop(std::ffi::OsStr::new(&target)) => match result {
                     Ok(()) => ToolResult { content: vec![Content::Launch { launched: true }], is_error: false },
                     Err(error) => ToolResult::error(error.to_string()),
                 }

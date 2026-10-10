@@ -37,13 +37,33 @@ pub(crate) fn suffix_spelling(directory: &Path, candidate: &Path) -> Option<Path
         })
 }
 
+/// Find `program` as a child whose environment `variable` reads would: by `PATH` (and on
+/// Windows `PATHEXT`) for a bare name, below `cwd` for a path.
+pub(crate) fn resolve_with(
+    program: &std::ffi::OsStr,
+    cwd: &Path,
+    variable: impl Fn(&str) -> Option<std::ffi::OsString>,
+) -> std::io::Result<PathBuf> {
+    artifactize_tools::program::resolve_with(program, cwd, variable)
+}
+
+/// Find `program` as a child with this process's environment would.
+pub(crate) fn resolve(program: &std::ffi::OsStr, cwd: &Path) -> std::io::Result<PathBuf> {
+    resolve_with(program, cwd, super::environment::var)
+}
+
+/// Hand `target`, a file or URL, to the desktop's opener.
+pub(crate) async fn open_desktop(target: &std::ffi::OsStr) -> std::io::Result<()> {
+    artifactize_tools::opener::open(target).await
+}
+
 /// A short, synchronous host-tool probe; no shell is added.
 pub(crate) fn tool_output<'a>(
     program: &str,
     args: impl IntoIterator<Item = &'a std::ffi::OsStr>,
 ) -> Option<Vec<u8>> {
     let cwd = std::env::current_dir().ok()?;
-    let program = artifactize_tools::program::resolve(std::ffi::OsStr::new(program), &cwd).ok()?;
+    let program = resolve(std::ffi::OsStr::new(program), &cwd).ok()?;
     let output = std::process::Command::new(program)
         .args(args)
         .stdin(std::process::Stdio::null())

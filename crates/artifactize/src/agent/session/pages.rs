@@ -144,14 +144,13 @@ impl Index {
         self.file
             .seek(SeekFrom::Start(row as u64 * ENTRY))
             .map_err(|error| error.to_string())?;
-        let mut bytes = [0; ENTRY as usize];
+        // The source offset, the first field of the row record.
+        let mut bytes = [0; FIELD];
         self.file
             .read_exact(&mut bytes)
             .map_err(|error| error.to_string())?;
-        Ok(
-            u64::from_le_bytes(bytes[..8].try_into().expect("first offset")) as usize
-                ..u64::from_le_bytes(bytes[..8].try_into().expect("first offset")) as usize,
-        )
+        let start = u64::from_le_bytes(bytes) as usize;
+        Ok(start..start)
     }
     fn rendered(&mut self, row: usize) -> Result<String, String> {
         if let Some(segment) = self
@@ -161,23 +160,7 @@ impl Index {
         {
             return rendered_row(&mut segment.file, &mut segment.rendered, row);
         }
-        self.file
-            .seek(SeekFrom::Start(row as u64 * ENTRY + 8))
-            .map_err(|error| error.to_string())?;
-        let mut entry = [0; 16];
-        self.file
-            .read_exact(&mut entry)
-            .map_err(|error| error.to_string())?;
-        let offset = u64::from_le_bytes(entry[..8].try_into().expect("rendered offset"));
-        let size = u64::from_le_bytes(entry[8..].try_into().expect("rendered length")) as usize;
-        self.rendered
-            .seek(SeekFrom::Start(offset))
-            .map_err(|error| error.to_string())?;
-        let mut bytes = vec![0; size];
-        self.rendered
-            .read_exact(&mut bytes)
-            .map_err(|error| error.to_string())?;
-        String::from_utf8(bytes).map_err(|error| error.to_string())
+        rendered_row(&mut self.file, &mut self.rendered, row)
     }
     fn anchor(&mut self, row: usize) -> Result<Anchor, String> {
         let visible = self
