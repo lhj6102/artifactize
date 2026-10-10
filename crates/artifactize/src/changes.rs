@@ -329,7 +329,8 @@ async fn publish(publisher: Arc<Publishing>) {
             }
             Ok::<_, std::io::Error>(())
         };
-        let _ = tokio::time::timeout(DELIVERY_TIMEOUT, delivery).await;
+        let delivery = tokio::time::timeout(DELIVERY_TIMEOUT, delivery).await;
+        eprintln!("publish result: {delivery:?}");
         publisher.pending.lock().unwrap().delivered = target;
         publisher.drained.notify_one();
     }

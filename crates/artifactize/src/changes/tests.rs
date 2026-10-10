@@ -306,7 +306,8 @@ async fn multiprocess_fixture() {
     let address = std::env::var("ARTIFACTIZE_IPC_FIXTURE_CONTROL").unwrap();
     let mut control = TcpStream::connect(address).await.unwrap();
     if role == "writer" {
-        Publisher::new(&state).notify(Change::SessionInvalidated(
+        let publisher = Publisher::new(&state);
+        publisher.notify(Change::SessionInvalidated(
             "multiprocess-session".parse().unwrap(),
         ));
         drain().await;
@@ -316,6 +317,7 @@ async fn multiprocess_fixture() {
         let epoch = registration(&subscription, None).await;
         control.write_u8(1).await.unwrap();
         loop {
+            eprintln!("{role:?} waiting for first publication");
             if next(&mut subscription).await
                 == Change::SessionInvalidated("multiprocess-session".parse().unwrap())
             {
@@ -330,6 +332,7 @@ async fn multiprocess_fixture() {
             assert_eq!(next(&mut subscription).await, Change::Resync);
             control.write_u8(3).await.unwrap();
             loop {
+                eprintln!("{role:?} waiting for after-crash publication");
                 if next(&mut subscription).await
                     == Change::SessionInvalidated("after-crash".parse().unwrap())
                 {
