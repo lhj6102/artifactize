@@ -14,6 +14,7 @@ use time::OffsetDateTime;
 use crate::{
     query,
     store::{RequestView, RunSummary, RunView},
+    types::{ArtifactName, EvalId},
 };
 
 /// What a tree node shows in the detail pane, parsed from its stable tree identifier.
@@ -185,7 +186,7 @@ fn join<T: AsRef<str>>(items: impl IntoIterator<Item = T>, separator: &str) -> S
     items.join(separator)
 }
 
-fn mark(name: &str, status: Option<Status>) -> String {
+fn mark(name: &EvalId, status: Option<Status>) -> String {
     format!(
         "{} {name} {}",
         glyph(status),
@@ -529,7 +530,7 @@ impl<'a> Saved<'a> {
             .into_iter()
             .flat_map(|graph| graph.artifacts())
     }
-    fn artifact(&self, id: &str) -> Option<&'a crate::store::definitions::Artifact> {
+    fn artifact(&self, id: &ArtifactName) -> Option<&'a crate::store::definitions::Artifact> {
         self.definitions().and_then(|graph| graph.artifact(id))
     }
     fn eval_definitions(&self) -> &'a [crate::store::definitions::Eval] {
@@ -539,59 +540,53 @@ impl<'a> Saved<'a> {
         self.definitions().map_or(&[], |graph| graph.components())
     }
 
-    fn request(&self, eval: &str) -> Option<&'a RequestView> {
+    fn request(&self, eval: &EvalId) -> Option<&'a RequestView> {
         self.requests
             .iter()
-            .find(|view| view.request.eval_id == eval)
+            .find(|view| &view.request.eval_id == eval)
     }
 
-    fn status(&self, eval: &str) -> Option<Status> {
+    fn status(&self, eval: &EvalId) -> Option<Status> {
         self.request(eval).map(|view| view.request.status().into())
     }
 
     /// Dependency-first component order with cycle peers by name, then any other saved or
     /// requested Artifact.
-    fn artifact_ids(&self) -> Vec<&'a str> {
+    fn artifact_ids(&self) -> Vec<&'a ArtifactName> {
         let components = self.components().iter();
         let saved = components
             .flat_map(|component| {
-                let mut members: Vec<_> = component
-                    .artifacts
-                    .value()
-                    .into_iter()
-                    .flatten()
-                    .map(crate::types::ArtifactName::as_str)
-                    .collect();
+                let mut members: Vec<_> =
+                    component.artifacts.value().into_iter().flatten().collect();
                 members.sort_unstable();
                 members
             })
-            .chain(self.artifacts().map(|(id, _)| id.as_str()))
-            .chain(
-                self.requests
-                    .iter()
-                    .map(|view| view.request.target.as_str()),
-            );
+            .chain(self.artifacts().map(|(id, _)| id))
+            .chain(self.requests.iter().map(|view| &view.request.target));
         let mut seen = std::collections::HashSet::new();
         saved.filter(|id| seen.insert(*id)).collect()
     }
 
     /// Saved Eval definitions targeting the Artifact, then requests without one.
-    fn evals(&self, artifact: &str) -> Vec<(&'a str, Option<&'a crate::store::definitions::Eval>)> {
+    fn evals(
+        &self,
+        artifact: &ArtifactName,
+    ) -> Vec<(&'a EvalId, Option<&'a crate::store::definitions::Eval>)> {
         let mut evals: Vec<_> = self
             .eval_definitions()
             .iter()
-            .filter(|eval| eval.target == artifact)
-            .map(|eval| (eval.id.as_str(), Some(eval)))
+            .filter(|eval| &eval.target == artifact)
+            .map(|eval| (&eval.id, Some(eval)))
             .collect();
         for request in self.requests.iter().map(|view| &view.request) {
-            if request.target == artifact && !evals.iter().any(|(id, _)| *id == request.eval_id) {
+            if &request.target == artifact && !evals.iter().any(|(id, _)| *id == &request.eval_id) {
                 evals.push((&request.eval_id, None));
             }
         }
         evals
     }
 
-    fn validation(&self, artifact: &str) -> Option<&'a crate::store::ArtifactValidation> {
+    fn validation(&self, artifact: &ArtifactName) -> Option<&'a crate::store::ArtifactValidation> {
         self.run
             .run
             .validation
@@ -599,10 +594,10 @@ impl<'a> Saved<'a> {
             .artifacts
             .value()?
             .iter()
-            .find(|a| a.id == artifact)
+            .find(|a| &a.id == artifact)
     }
 
-    fn component(&self, id: &str) -> Option<&'a crate::store::definitions::Component> {
+    fn component(&self, id: &ArtifactName) -> Option<&'a crate::store::definitions::Component> {
         self.components().iter().find(|component| {
             component
                 .artifacts
@@ -613,7 +608,7 @@ impl<'a> Saved<'a> {
 
     fn relations(
         &self,
-        artifact: &str,
+        artifact: &ArtifactName,
         input: bool,
     ) -> Vec<&'a crate::store::definitions::Relation> {
         self.definitions()
@@ -621,9 +616,9 @@ impl<'a> Saved<'a> {
             .flat_map(|graph| graph.relations())
             .filter(|relation| {
                 if input {
-                    relation.target == artifact
+                    &relation.target == artifact
                 } else {
-                    relation.source == artifact
+                    &relation.source == artifact
                 }
             })
             .collect()

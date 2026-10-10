@@ -352,7 +352,12 @@ fn every_x_waiting_adds_one_level_of_root_cause() {
 }
 
 /// style ← {api, web} (one SCC) with a dependency eval in api naming its peer web.
-fn cycle(dependency_status: &str) -> (Vec<Node>, Vec<(String, Vec<crate::types::ArtifactName>)>) {
+fn cycle(
+    dependency_status: &str,
+) -> (
+    Vec<Node>,
+    Vec<(crate::types::EvalId, Vec<crate::types::ArtifactName>)>,
+) {
     let definitions = definitions(
         &[(&["style"], &[]), (&["web", "api"], &[0])],
         vec![
@@ -407,10 +412,10 @@ fn cycle_peers_never_wait_for_each_other_unless_a_dependency_eval_names_one() {
     assert_eq!(
         index,
         [
-            ("api/ready".to_owned(), x(&["web"])),
-            ("api/schema".to_owned(), x(&["style"])),
-            ("style/tokens".to_owned(), x(&[])),
-            ("web/colors".to_owned(), x(&["style"])),
+            ("api/ready".parse().unwrap(), x(&["web"])),
+            ("api/schema".parse().unwrap(), x(&["style"])),
+            ("style/tokens".parse().unwrap(), x(&[])),
+            ("web/colors".parse().unwrap(), x(&["style"])),
         ]
     );
     assert_eq!(
@@ -665,8 +670,8 @@ fn upstream_index_falls_back_to_relations_and_request_deps() {
         [
             ("a/x".parse().unwrap(), x(&[])),
             ("b/x".parse().unwrap(), x(&[])),
-            ("c/x".to_owned(), x(&["a", "b"])),
-            ("d/x".to_owned(), x(&["c"])),
+            ("c/x".parse().unwrap(), x(&["a", "b"])),
+            ("d/x".parse().unwrap(), x(&["c"])),
         ]
     );
     let nodes = tree(&run, &requests, now());
@@ -680,8 +685,8 @@ fn upstream_index_falls_back_to_relations_and_request_deps() {
     assert_eq!(
         upstream_index(&run, &requests),
         [
-            ("app/x".to_owned(), x(&["lib"])),
-            ("lib/x".to_owned(), x(&[]))
+            ("app/x".parse().unwrap(), x(&["lib"])),
+            ("lib/x".parse().unwrap(), x(&[]))
         ]
     );
     let nodes = tree(&run, &requests, now());

@@ -132,7 +132,13 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
     );
     git(
         &repo,
-        &["worktree", "add", "-b", "topic", other.to_str().unwrap()],
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "topic",
+            &crate::platform::path_text(&other),
+        ],
     );
     let workspace = repo.join("workspace");
     let state = root.path().join("state");
@@ -178,11 +184,20 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
             .iter()
             .any(|row| matches!(&row.scope, Scope::Worktree(_, path) if path == &other))
     );
-    git(&repo, &["worktree", "remove", other.to_str().unwrap()]);
+    git(
+        &repo,
+        &["worktree", "remove", &crate::platform::path_text(&other)],
+    );
     let empty = base.join("empty");
     git(
         &repo,
-        &["worktree", "add", "-b", "empty", empty.to_str().unwrap()],
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "empty",
+            &crate::platform::path_text(&empty),
+        ],
     );
     let mut fresh = Monitor::new(state.clone(), None);
     fresh.refresh().await;
