@@ -1,5 +1,9 @@
 use super::*;
-use std::{path::PathBuf, process::Command};
+use std::path::PathBuf;
+use tokio::{
+    net::{TcpListener, TcpStream},
+    process::{Child, Command},
+};
 
 fn temporary_state() -> tempfile::TempDir {
     tempfile::tempdir().unwrap()
@@ -9,24 +13,25 @@ async fn next(subscription: &mut Subscription) -> Change {
         .await
         .unwrap()
 }
-async fn registered(subscription: &mut Subscription) {
-    // Subscription::new may return a degraded baseline after a bounded connection timeout.
-    // IPC-only tests need the actual Registered ACK, not just the fallback Resync.
+async fn registration(subscription: &Subscription, previous: Option<&str>) -> String {
+    // Wait for the real ACK, including a different hub epoch after owner death.
+    let mut registered = subscription.inbox.registration.subscribe();
     tokio::time::timeout(Duration::from_secs(4), async {
-        while !subscription
-            .inbox
-            .connected
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
-            tokio::time::sleep(Duration::from_millis(10)).await;
+        loop {
+            if let Some(epoch) = registered.borrow_and_update().as_ref()
+                && Some(epoch.as_str()) != previous
+            {
+                return epoch.clone();
+            }
+            registered.changed().await.unwrap();
         }
     })
     .await
-    .unwrap();
+    .unwrap()
+}
+async fn registered(subscription: &mut Subscription) {
+    registration(subscription, None).await;
     assert_eq!(next(subscription).await, Change::Resync);
-    // Let the initial periodic probe finish without consuming later publication hints.
-    tokio::time::sleep(Duration::from_millis(50)).await;
-    while subscription.inbox.dirty.lock().unwrap().pop().is_some() {}
 }
 
 #[test]
@@ -109,6 +114,29 @@ async fn unsupported_wire_version_is_refused_before_registration() {
 }
 
 #[tokio::test]
+async fn disconnected_connections_do_not_stop_registered_subscribers() {
+    let state = temporary_state();
+    let mut subscriber = Subscription::new(state.path()).await;
+    registered(&mut subscriber).await;
+    let endpoint = Endpoint::new(state.path()).unwrap();
+    let epoch = registration(&subscriber, None).await;
+    let (mut writer, current) = connect(&endpoint, false).await.unwrap();
+    assert_eq!(current, epoch);
+    // Close before the hub validates the peer or reads Hello. Darwin may report
+    // ENOTCONN during peer lookup; existing connections must remain usable.
+    // Register the writer first so Windows has installed its next pipe instance.
+    drop(endpoint.connect().await.unwrap());
+    write_frame(&mut writer, &Frame::Publish(Change::StateInvalidated))
+        .await
+        .unwrap();
+    assert!(matches!(
+        read_frame(&mut writer).await.unwrap(),
+        Frame::Delivered
+    ));
+    assert_eq!(next(&mut subscriber).await, Change::StateInvalidated);
+}
+
+#[tokio::test]
 async fn oversized_frames_are_refused_before_reading_the_payload() {
     let (mut writer, mut reader) = tokio::io::duplex(16);
     writer
@@ -148,11 +176,11 @@ async fn two_readers_observe_short_writer_and_hub_owner_exit_without_db_change()
     drain().await;
     assert_eq!(next(&mut first).await, Change::StateInvalidated);
     assert_eq!(next(&mut second).await, Change::StateInvalidated);
+    let epoch = registration(&second, None).await;
     drop(first);
+    registration(&second, Some(&epoch)).await;
+    // Disconnect and registration may coalesce; consume only after the new ACK.
     assert_eq!(next(&mut second).await, Change::Resync);
-    // Wait for the reconnection handshake; its initial resync may coalesce with disconnect.
-    tokio::time::sleep(RECONNECT + DELIVERY_TIMEOUT).await;
-    while second.inbox.dirty.lock().unwrap().pop().is_some() {}
     publisher.notify(Change::SessionInvalidated(
         "after-owner-exit".parse().unwrap(),
     ));
@@ -298,82 +326,97 @@ async fn multiprocess_fixture() {
         return;
     };
     let state = PathBuf::from(std::env::var_os("ARTIFACTIZE_IPC_FIXTURE_STATE").unwrap());
-    let marker = PathBuf::from(std::env::var_os("ARTIFACTIZE_IPC_FIXTURE_MARKER").unwrap());
+    let address = std::env::var("ARTIFACTIZE_IPC_FIXTURE_CONTROL").unwrap();
+    let mut control = TcpStream::connect(address).await.unwrap();
     if role == "writer" {
-        Publisher::new(&state).notify(Change::SessionInvalidated(
+        let publisher = Publisher::new(&state);
+        publisher.notify(Change::SessionInvalidated(
             "multiprocess-session".parse().unwrap(),
         ));
         drain().await;
     } else {
         let mut subscription = Subscription::new(&state).await;
         registered(&mut subscription).await;
-        std::fs::write(marker.with_extension("ready"), "registered").unwrap();
+        let epoch = registration(&subscription, None).await;
+        control.write_u8(1).await.unwrap();
         loop {
             if next(&mut subscription).await
                 == Change::SessionInvalidated("multiprocess-session".parse().unwrap())
             {
-                std::fs::write(&marker, "observed").unwrap();
+                control.write_u8(2).await.unwrap();
                 break;
             }
         }
         if role == "owner" {
             std::future::pending::<()>().await;
         } else {
+            registration(&subscription, Some(&epoch)).await;
+            assert_eq!(next(&mut subscription).await, Change::Resync);
+            control.write_u8(3).await.unwrap();
             loop {
                 if next(&mut subscription).await
                     == Change::SessionInvalidated("after-crash".parse().unwrap())
                 {
-                    std::fs::write(marker.with_extension("reconnected"), "observed after crash")
-                        .unwrap();
+                    control.write_u8(4).await.unwrap();
                     break;
                 }
             }
         }
     }
 }
-fn child(state: &Path, marker: &Path, role: &str) -> std::process::Child {
-    Command::new(std::env::current_exe().unwrap())
+async fn child(state: &Path, role: &str) -> (Child, TcpStream) {
+    let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    let child = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
             "changes::tests::multiprocess_fixture",
             "--nocapture",
         ])
         .env("ARTIFACTIZE_IPC_FIXTURE_STATE", state)
-        .env("ARTIFACTIZE_IPC_FIXTURE_MARKER", marker)
+        .env(
+            "ARTIFACTIZE_IPC_FIXTURE_CONTROL",
+            listener.local_addr().unwrap().to_string(),
+        )
         .env("ARTIFACTIZE_IPC_FIXTURE_ROLE", role)
+        .kill_on_drop(true)
         .spawn()
+        .unwrap();
+    let (control, _) = tokio::time::timeout(Duration::from_secs(6), listener.accept())
+        .await
         .unwrap()
+        .unwrap();
+    (child, control)
 }
-async fn exists(path: &Path) {
-    tokio::time::timeout(Duration::from_secs(6), async {
-        while !path.exists() {
-            tokio::time::sleep(Duration::from_millis(20)).await;
-        }
-    })
-    .await
-    .unwrap();
+async fn phase(control: &mut TcpStream, expected: u8) {
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(6), control.read_u8())
+            .await
+            .unwrap()
+            .unwrap(),
+        expected
+    );
 }
 #[tokio::test]
 async fn multiprocess_two_readers_short_writer_and_crashed_hub() {
     let state = temporary_state();
-    let owner_marker = state.path().join("owner");
-    let reader_marker = state.path().join("reader");
-    let mut owner = child(state.path(), &owner_marker, "owner");
-    exists(&owner_marker.with_extension("ready")).await;
-    let mut reader = child(state.path(), &reader_marker, "reader");
-    exists(&reader_marker.with_extension("ready")).await;
-    let mut writer = child(state.path(), &state.path().join("writer"), "writer");
-    assert!(writer.wait().unwrap().success());
-    exists(&owner_marker).await;
-    exists(&reader_marker).await;
+    let (mut owner, mut owner_control) = child(state.path(), "owner").await;
+    phase(&mut owner_control, 1).await;
+    let (mut reader, mut reader_control) = child(state.path(), "reader").await;
+    phase(&mut reader_control, 1).await;
+    let (mut writer, _) = child(state.path(), "writer").await;
+    assert!(writer.wait().await.unwrap().success());
+    phase(&mut owner_control, 2).await;
+    phase(&mut reader_control, 2).await;
     // No database commit accompanies hub death. The existing reader must reconnect.
-    owner.kill().unwrap();
-    owner.wait().unwrap();
+    owner.kill().await.unwrap();
+    owner.wait().await.unwrap();
     let mut replacement = Subscription::new(state.path()).await;
     registered(&mut replacement).await;
-    tokio::time::sleep(RECONNECT + DELIVERY_TIMEOUT).await;
+    phase(&mut reader_control, 3).await;
     Publisher::new(state.path()).notify(Change::SessionInvalidated("after-crash".parse().unwrap()));
     drain().await;
-    exists(&reader_marker.with_extension("reconnected")).await;
-    assert!(reader.wait().unwrap().success());
+    phase(&mut reader_control, 4).await;
+    assert!(reader.wait().await.unwrap().success());
 }

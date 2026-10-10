@@ -82,6 +82,10 @@ impl Listener {
         Ok(Stream::Server(connected))
     }
 }
+// The private pipe DACL and reject_remote_clients enforce peer access at connect.
+pub(crate) fn validate_peer(_stream: &Stream) -> io::Result<()> {
+    Ok(())
+}
 pub(super) async fn connect(address: &Path) -> io::Result<Stream> {
     use std::os::windows::{fs::OpenOptionsExt, io::IntoRawHandle};
     // Check the exact connected pipe object, not a second instance that could race it.
