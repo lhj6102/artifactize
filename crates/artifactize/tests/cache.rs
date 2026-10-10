@@ -1450,9 +1450,10 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
         )
         .unwrap();
     let mut request: Request = serde_json::from_str(&data).unwrap();
-    owner.kill().unwrap();
-    owner.wait().unwrap();
-    kill_orphans(&fs::read_to_string(fixture.root.path().join("starts")).unwrap());
+    // Keep the publisher alive while injecting its completion. The frozen waiter may
+    // have an in-flight read snapshot from before publication; killing the publisher
+    // would make that snapshot legitimately exhaust its zero execution budget.
+    signal(owner.id(), "-STOP");
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
     execution.status = artifactize::types::ExecutionStatus::Green;
     execution.result = Some(json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)}));
@@ -1484,6 +1485,9 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     );
     assert_eq!(joined["requests"][0]["executionId"], execution.id.as_str());
     assert_eq!(joined["executionsStarted"], 0);
+    owner.kill().unwrap();
+    owner.wait().unwrap();
+    kill_orphans(&fs::read_to_string(fixture.root.path().join("starts")).unwrap());
     assert_eq!(fixture.records(), 0);
     assert_eq!(fixture.count("executions"), 1);
     assert_eq!(fixture.starts(), 1);

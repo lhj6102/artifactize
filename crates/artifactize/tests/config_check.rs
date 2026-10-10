@@ -98,7 +98,9 @@ fn config_check_reports_bad_mounts_and_references_without_opening_runtime_inputs
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-    assert!(error.contains(&native("review/index.artf")));
+    // Reference validation reports the authored logical declaration path (forward slashes),
+    // unlike discovery errors that report a physical directory entry with native separators.
+    assert!(error.contains("review/index.artf"), "{error}");
     assert!(error.contains("review/run"));
     assert!(error.contains("Unknown Artifact reference {missing}"));
     declaration["evals"][0]["payload"]["instruction"] = json!("Inspect.");

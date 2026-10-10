@@ -14,7 +14,6 @@ use std::{
     io::{IsTerminal, Read, Write},
     net::Ipv4Addr,
     path::{Path, PathBuf},
-    process::Stdio,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -29,7 +28,6 @@ use sha2::{Digest, Sha256};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
-    process::Command,
     sync::oneshot,
 };
 
@@ -72,8 +70,6 @@ const AUTH_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 const CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(5);
 /// A stalled browser must not hold up a completed callback while receiving its short reply.
 const CALLBACK_WRITE_TIMEOUT: Duration = Duration::from_secs(2);
-/// Fall back to the printed authorization URL if the OS browser launcher hangs.
-const BROWSER_OPEN_TIMEOUT: Duration = Duration::from_secs(3);
 /// Best-effort logout should finish sooner than an ordinary token exchange.
 const REVOCATION_TIMEOUT: Duration = Duration::from_secs(10);
 /// OAuth error codes are diagnostics, not arbitrary provider text; keep them short.
@@ -469,27 +465,8 @@ async fn sign_in(
 }
 
 async fn open_browser(url: &Url) {
-    // Explorer hands a URL to the default browser without a shell parsing its `&`s. It exits
-    // 1 even then, which only means no other program is tried.
-    let programs = if cfg!(windows) {
-        ["explorer"].as_slice()
-    } else {
-        &["xdg-open", "wslview"]
-    };
-    for program in programs {
-        let mut command = Command::new(program);
-        command
-            .arg(url.as_str())
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true);
-        if let Ok(Ok(status)) = tokio::time::timeout(BROWSER_OPEN_TIMEOUT, command.status()).await
-            && status.success()
-        {
-            break;
-        }
-    }
+    // The printed authorization URL remains available if desktop handoff fails.
+    let _ = artifactize_tools::opener::open(std::ffi::OsStr::new(url.as_str())).await;
 }
 
 #[derive(Deserialize)]

@@ -31,7 +31,12 @@ fn git_path(path: &Path, arg: &str) -> Option<PathBuf> {
     let output = git(path, &["rev-parse", "--path-format=absolute", arg])?;
     let text = String::from_utf8(output).ok()?;
     // rev-parse emits one trailing newline; embedded newlines belong to the path.
-    Some(PathBuf::from(text.strip_suffix('\n').unwrap_or(&text)))
+    let path = PathBuf::from(
+        text.strip_suffix("\r\n")
+            .or_else(|| text.strip_suffix('\n'))
+            .unwrap_or(&text),
+    );
+    crate::platform::canonicalize(&path).ok()
 }
 
 /// Missing paths and non-Git workspaces have no inferred Git identity.
@@ -43,7 +48,7 @@ pub fn identify(path: &Path) -> Identity {
     }
     let branch = git(path, &["symbolic-ref", "--quiet", "--short", "HEAD"])
         .and_then(|bytes| String::from_utf8(bytes).ok())
-        .map(|text| text.trim_end_matches('\n').to_owned());
+        .map(|text| text.trim_end_matches(['\r', '\n']).to_owned());
     Identity {
         common_dir,
         worktree_path,

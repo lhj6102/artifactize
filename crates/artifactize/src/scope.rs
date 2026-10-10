@@ -150,6 +150,70 @@ pub fn artifact_scope<'a>(config: &'a RepoConfig, roots: &[&str]) -> Result<Scop
     Ok(Scope { artifacts })
 }
 
+/// Validate scope-relative command paths before process lookup. Bare names and absolute
+/// paths stay literal here; preflight and both launchers use the shared PATH/PATHEXT rule.
+pub(crate) fn executable(
+    root: &Path,
+    scope: &Scope<'_>,
+    owner: &str,
+    command: &str,
+) -> Result<std::ffi::OsString, String> {
+    let artifact = scope.artifacts[owner];
+    let cwd = scoped_path(root, artifact.folder()).map_err(|error| error.to_string())?;
+    let program = if !Path::new(command).is_absolute() && command.contains('/') {
+        let relative = command.strip_prefix("./").unwrap_or(command);
+        let mounted = artifact
+            .mounts
+            .contains_key(relative.split('/').next().unwrap_or(""));
+        let physical = if artifact.file_name().is_some() && !mounted {
+            artifactize_tools::scope::logical_path(relative).map_err(|error| error.to_string())?;
+            cwd.join(relative)
+        } else {
+            let resolved = scope
+                .resolve_path(owner, relative)
+                .map_err(|error| error.to_string())?;
+            root.join(scope.artifacts[resolved.artifact_id.as_str()].folder())
+                .join(resolved.path)
+        };
+        // Even an extensionless declaration must not hide a link behind PATHEXT.
+        for path in physical.ancestors() {
+            if path
+                .symlink_metadata()
+                .is_ok_and(|metadata| metadata.is_symlink())
+            {
+                return Err("Artifact symlinks are not supported.".into());
+            }
+        }
+        let mut failure = None;
+        artifactize_tools::program::candidates(
+            Path::new(relative),
+            std::env::var_os("PATHEXT").as_deref(),
+        )
+        .into_iter()
+        .find_map(|candidate| {
+            let resolved = if artifact.file_name().is_some() && !mounted {
+                scoped_path(&cwd, &candidate)
+            } else {
+                scope.resolve_input(root, owner, candidate.to_str()?)
+            };
+            match resolved {
+                Ok(program) if program.is_file() => Some(program),
+                Ok(_) => None,
+                Err(error) => {
+                    failure.get_or_insert_with(|| error.to_string());
+                    None
+                }
+            }
+        })
+        .ok_or_else(|| {
+            failure.unwrap_or_else(|| "Executable path is unavailable or outside scope.".into())
+        })?
+    } else {
+        PathBuf::from(command)
+    };
+    Ok(program.into_os_string())
+}
+
 pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, ScopeError> {
     let roots: Vec<_> = std::iter::once(eval.target.as_str())
         .chain(eval.deps.iter().map(String::as_str))
