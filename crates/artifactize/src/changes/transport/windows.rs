@@ -83,7 +83,7 @@ impl Listener {
     }
 }
 // The private pipe DACL and reject_remote_clients enforce peer access at connect.
-pub(super) fn validate_peer(_stream: &Stream) -> io::Result<()> {
+pub(crate) fn validate_peer(_stream: &Stream) -> io::Result<()> {
     Ok(())
 }
 pub(super) async fn connect(address: &Path) -> io::Result<Stream> {

@@ -95,7 +95,7 @@ impl Listener {
         Ok(stream)
     }
 }
-pub(super) fn validate_peer(stream: &Stream) -> io::Result<()> {
+pub(crate) fn validate_peer(stream: &Stream) -> io::Result<()> {
     if stream.peer_cred()?.uid().to_string() != user()? {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
