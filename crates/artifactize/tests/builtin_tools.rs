@@ -375,11 +375,11 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
     }
 }
 
+// Windows opens through ShellExecute, which runs no program a test can stand in for.
 #[cfg(unix)]
 #[test]
 fn request_open_hands_one_target_to_the_shared_opener() {
-    use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     declaration(
@@ -389,17 +389,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
     );
     let bin = root.path().join("bin");
     fs::create_dir(&bin).unwrap();
-    let stub = bin.join(if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    });
-    fs::write(
-        &stub,
-        "#!/bin/sh\nprintf '%s\\n%s\\n' \"$#\" \"$1\" > \"$RECORD\"\n",
-    )
-    .unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o700)).unwrap();
+    support::os::recording_program(&bin, support::os::OPENER);
     let run = parsed(
         command(&repo, &state)
             .args(["verify", "--all", "--timeout-ms", "1", "--json"])
@@ -418,7 +408,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
     let record = root.path().join("record");
     let output = command(&repo, &state)
         .env("PATH", bin)
-        .env("RECORD", &record)
+        .env(support::os::RECORD, &record)
         .args(["request", "tool", id, "open_a", "--json"])
         .output()
         .unwrap();

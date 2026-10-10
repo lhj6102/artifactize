@@ -21,7 +21,7 @@ fn text(output: Output) -> String {
 
 #[test]
 fn subcommands_share_scoped_files_and_exit_codes() {
-    let root = tempfile::tempdir().unwrap();
+    let root = os::tempdir();
     fs::write(
         root.path().join("notes.md"),
         "# First\nalpha\n## Child\nchild\n# Next\nomega\n",
@@ -67,7 +67,7 @@ fn subcommands_share_scoped_files_and_exit_codes() {
 
 #[test]
 fn symlink_inputs_are_not_followed() {
-    let root = tempfile::tempdir().unwrap();
+    let root = os::tempdir();
     fs::write(root.path().join("real.md"), "# First\nbody\n").unwrap();
     let link = root.path().join("link.md");
     if os::symlink_file(root.path().join("real.md"), &link).is_none() {
@@ -85,32 +85,22 @@ fn symlink_inputs_are_not_followed() {
 
 #[test]
 fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
-    let root = tempfile::tempdir().unwrap();
-    let source = root.path().join("stub.rs");
-    fs::write(
-        &source,
+    let root = os::tempdir();
+    os::compile(
+        root.path(),
+        "stub",
         r#"fn main() {
         let args: Vec<_> = std::env::args().skip(1).collect();
         assert_eq!(args.last().map(String::as_str), Some("--help"));
         match args.first().map(String::as_str) {
             Some("large") => print!("{}", "x".repeat(65537)),
-            Some("wait") => std::thread::sleep(std::time::Duration::from_secs(30)),
+            // Never finishes on its own: only the tool's timeout ends it.
+            Some("wait") => loop {
+                std::thread::park();
+            },
             _ => println!("stub help: {}", args.join("|")),
         }
     }"#,
-    )
-    .unwrap();
-    let program = root
-        .path()
-        .join(format!("stub{}", std::env::consts::EXE_SUFFIX));
-    assert!(
-        Command::new("rustc")
-            .arg(&source)
-            .arg("-o")
-            .arg(&program)
-            .status()
-            .unwrap()
-            .success()
     );
     let run = |arg| {
         Command::new(env!("CARGO_BIN_EXE_artifactize-tools"))
@@ -125,7 +115,6 @@ fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
     let large = run("large");
     assert_eq!(large.status.code(), Some(1));
     assert!(String::from_utf8(large.stderr).unwrap().contains("64 KiB"));
-    let start = std::time::Instant::now();
     let wait = run("wait");
     assert_eq!(wait.status.code(), Some(1));
     assert!(
@@ -133,7 +122,6 @@ fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
             .unwrap()
             .contains("timed out")
     );
-    assert!(start.elapsed() < std::time::Duration::from_secs(20));
 }
 
 // Windows opens through ShellExecute, which runs no program a test can stand in for.

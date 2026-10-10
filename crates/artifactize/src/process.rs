@@ -55,6 +55,57 @@ pub struct Output {
     pub duration: Duration,
 }
 
+/// Starts a built-in's program, such as `help`'s, through this process layer: admitted
+/// before it runs, kept in one process group or Job Object and cleaned up with its children,
+/// with exactly the environment given here.
+pub(crate) struct Launcher {
+    pub env: BTreeMap<OsString, OsString>,
+}
+
+impl artifactize_tools::launch::Launcher for Launcher {
+    fn run<'a>(
+        &'a self,
+        launch: artifactize_tools::launch::Launch,
+        cancellation: &'a CancellationToken,
+    ) -> artifactize_tools::launch::Running<'a> {
+        use artifactize_tools::launch::{Finished, LaunchError};
+        Box::pin(async move {
+            let command = Command {
+                program: launch.program.into(),
+                args: launch.args,
+                cwd: launch.cwd,
+                env: self.env.clone(),
+                timeout: launch.timeout,
+            };
+            let ready = |_| async { Ok(()) };
+            match run_with_input_limit(
+                command,
+                None,
+                launch.output_limit,
+                cancellation.clone(),
+                ready,
+            )
+            .await
+            {
+                Ok(output) => Ok(Finished {
+                    success: output.status.success(),
+                    status: output.status.to_string(),
+                    stdout: output.stdout,
+                    stderr: output.stderr,
+                    truncated: output.truncated,
+                }),
+                Err(Error::Timeout) => Err(LaunchError::TimedOut),
+                Err(Error::Cancelled) => Err(LaunchError::Cancelled),
+                Err(error) => Err(LaunchError::Failed(
+                    error
+                        .argument_refusal()
+                        .unwrap_or_else(|| error.to_string()),
+                )),
+            }
+        })
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("process could not be spawned: {0}")]
@@ -155,13 +206,11 @@ where
         return Err(Error::Timeout);
     }
 
-    let program = artifactize_tools::program::resolve_with(
-        &command.program,
-        &command.cwd,
-        environment_value(&command.env, "PATH"),
-        environment_value(&command.env, "PATHEXT"),
-    )
-    .map_err(Error::Spawn)?;
+    let program =
+        artifactize_tools::program::resolve_with(&command.program, &command.cwd, |name| {
+            environment_value(&command.env, name).map(ToOwned::to_owned)
+        })
+        .map_err(Error::Spawn)?;
     let mut child = tokio::process::Command::new(&program);
     child
         .args(&command.args)

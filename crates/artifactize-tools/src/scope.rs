@@ -4,7 +4,7 @@ use std::{
     borrow::Borrow,
     collections::BTreeMap,
     fmt,
-    fs::{self, File},
+    fs::File,
     io,
     path::{Component, Path, PathBuf},
 };
@@ -208,6 +208,9 @@ impl Scope {
 pub enum OpenError {
     #[error("No such file or directory.")]
     NotFound,
+    /// A component is a link, which scoped access never follows.
+    #[error("Cannot open Artifact input without symlink traversal.")]
+    Link,
     #[error(transparent)]
     Refused(#[from] ScopeError),
 }
@@ -324,7 +327,7 @@ fn open_named(directory: &File, name: &std::ffi::OsStr, exact: bool) -> Result<F
         if error.kind() == io::ErrorKind::NotFound {
             OpenError::NotFound
         } else if platform::is_link_refusal(&error) {
-            ScopeError("Cannot open Artifact input without symlink traversal.".into()).into()
+            OpenError::Link
         } else {
             ScopeError(format!("Cannot open Artifact input: {error}")).into()
         }
@@ -385,33 +388,20 @@ pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
             "Artifact path must be relative to its declared root.".into(),
         ));
     }
-    let mut target = root.to_owned();
-    for component in path.split('/').filter(|part| !part.is_empty()) {
-        target.push(component);
-        let metadata = fs::symlink_metadata(&target)
-            .map_err(|error| ScopeError(format!("{}: {error}", target.display())))?;
-        if metadata.is_symlink() {
-            return Err(ScopeError("Artifact symlinks are not supported.".into()));
-        }
+    let relative = path
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("/");
+    // The pinned, no-follow walk decides: it refuses links, special files and spellings
+    // other than the directory entry's own, so the returned path names what it opened.
+    match open_scoped(root, &relative) {
+        Ok(_) if relative.is_empty() => Ok(root.to_owned()),
+        Ok(_) => Ok(root.join(&relative)),
+        Err(OpenError::NotFound) => Err(ScopeError(format!(
+            "Artifact input does not exist: {relative}"
+        ))),
+        Err(OpenError::Link) => Err(ScopeError("Artifact symlinks are not supported.".into())),
+        Err(OpenError::Refused(error)) => Err(error),
     }
-    // The path-returning interface must enforce the same exact spelling as pinned reads;
-    // otherwise a Human tool or explicit fingerprint input could bypass logical ownership.
-    if platform::ALIASED_NAMES {
-        open_scoped(root, path).map_err(|error| ScopeError(error.to_string()))?;
-    }
-    let actual = platform::canonicalize(&target)
-        .map_err(|error| ScopeError(format!("{}: {error}", target.display())))?;
-    if !actual.starts_with(root) {
-        return Err(ScopeError(
-            "Artifact path escapes its declared root.".into(),
-        ));
-    }
-    let metadata = fs::metadata(&actual)
-        .map_err(|error| ScopeError(format!("{}: {error}", actual.display())))?;
-    if !metadata.is_file() && !metadata.is_dir() {
-        return Err(ScopeError(
-            "Artifact input must be a file or directory.".into(),
-        ));
-    }
-    Ok(actual)
 }

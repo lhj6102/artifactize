@@ -168,11 +168,7 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
             (json!({"script":{"command":"./link","args":[]}}), "symlinks"),
         ]);
     }
-    #[cfg(unix)]
-    support::os::symlink_dir(&fixture.repo, fixture.repo.join("dir-link")).unwrap();
-    // A junction redirects like a directory symlink and needs no privilege.
-    #[cfg(windows)]
-    support::os::junction(&fixture.repo, &fixture.repo.join("dir-link"));
+    support::os::link_dir(&fixture.repo, &fixture.repo.join("dir-link"));
     for (declared, message) in [
         (
             fingerprint("printf valid; printf private-diagnostic >&2; exit 7"),
@@ -262,11 +258,7 @@ print('protocol:v1')
     fs::write(fixture.repo.join("owner/key"), "material").unwrap();
     let path = fixture.repo.join("owner/fingerprint.py");
     support::declaration::write(&path, script).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    support::os::allow_execution(&path);
     let run = fixture.verify(&["--all", "--force"], 1);
     assert_eq!(run["requests"][0]["fingerprint"], "protocol:v1");
     assert_eq!(run["requests"][1]["fingerprint"], "protocol:v1");
@@ -425,18 +417,11 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         let mut lines = marker.lines();
         let pid: u32 = lines.next().unwrap().parse().unwrap();
         let output = lines.next().unwrap();
-        // SIGTERM on Unix; Windows asks with Ctrl-Break, the closest it has.
-        #[cfg(unix)]
-        assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
-        #[cfg(windows)]
-        support::os::interrupt(child.id());
+        support::os::terminate(child.id());
         let result = child.wait_with_output().unwrap();
         assert_eq!(result.status.code(), Some(2));
         assert!(!Path::new(output).exists());
-        #[cfg(unix)]
-        assert!(!support::os::exists(pid as u32));
-        #[cfg(windows)]
-        assert!(!support::os::running(pid));
+        assert!(support::os::gone(pid));
         let result: Value = serde_json::from_slice(&result.stdout).unwrap();
         let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
         assert_eq!(

@@ -199,17 +199,17 @@ fn symlink_targets_and_declarations_are_rejected() {
     fixture.error("actual.artf", "declaration must be a regular file");
 }
 
+// Sockets and FIFOs are Unix entries; Windows has no special files to declare.
 #[cfg(unix)]
 #[test]
 fn special_targets_and_declarations_are_rejected() {
-    use std::os::unix::net::UnixListener;
     let fixture = Fixture::new();
-    let _socket = UnixListener::bind(fixture.repo.join("socket")).unwrap();
+    let _socket = support::os::socket(&fixture.repo.join("socket"));
     fixture.declare("socket.artf", json!({"name":"file"}));
     fixture.error("socket.artf", "special file");
     fs::remove_file(fixture.repo.join("socket.artf")).unwrap();
     fixture.write("input", "input");
-    let _declaration = UnixListener::bind(fixture.repo.join("input.artf")).unwrap();
+    let _declaration = support::os::socket(&fixture.repo.join("input.artf"));
     fixture.error("input.artf", "declaration must be a regular file");
 }
 
@@ -1282,6 +1282,7 @@ fn artfignore_applies_to_individual_sidecars_and_declaration_target_prechecks() 
     fixture.error("nested/draft.artf.artf", "must not be a declaration");
 }
 
+// Windows file names cannot contain ':' at all.
 #[cfg(unix)]
 #[test]
 fn colon_targets_are_rejected_before_scoped_tools_can_be_declared() {
@@ -1291,16 +1292,16 @@ fn colon_targets_are_rejected_before_scoped_tools_can_be_declared() {
     fixture.error("a:b.artf", "must not contain ':'");
 }
 
+// Search-only (execute without read) directories are a Unix permission.
 #[cfg(unix)]
 #[test]
 fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_markers() {
-    use std::os::unix::fs::PermissionsExt;
     let fixture = Fixture::new();
     fixture.declare("index.artf", runtime("folder", &["-c", "exit 0"]));
     let ancestor = fixture._root.path().join("search-only");
     let parent = ancestor.join("writable");
     fs::create_dir_all(&parent).unwrap();
-    fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o111)).unwrap();
+    support::os::set_mode(&ancestor, 0o111);
     let state = parent.join("state");
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .arg("--repo")
@@ -1310,10 +1311,10 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
         .args(["verify", "--all", "--json"])
         .output()
         .unwrap();
-    fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o700)).unwrap();
+    support::os::set_mode(&ancestor, 0o700);
     assert!(output.status.success(), "{output:?}");
     fs::write(ancestor.join("artifactize.json"), "legacy marker").unwrap();
-    fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o111)).unwrap();
+    support::os::set_mode(&ancestor, 0o111);
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .arg("--repo")
         .arg(&fixture.repo)
@@ -1322,7 +1323,7 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
         .args(["verify", "--all", "--json"])
         .output()
         .unwrap();
-    fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o700)).unwrap();
+    support::os::set_mode(&ancestor, 0o700);
     assert!(!output.status.success());
     assert!(!parent.join("blocked-state").exists());
 }

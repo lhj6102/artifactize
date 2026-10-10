@@ -185,39 +185,36 @@ pub(crate) fn executable(
             }
         }
         let mut failure = None;
-        artifactize_tools::program::candidates(
-            Path::new(relative),
-            std::env::var_os("PATHEXT").as_deref(),
-        )
-        .into_iter()
-        .find_map(|candidate| {
-            // A suffix the lookup added is matched to the entry's actual spelling.
-            let candidate = if candidate.as_path() != Path::new(relative) {
-                executable_spelling(root, scope, owner, &cwd, &candidate, mounted)?
-            } else {
-                candidate
-            };
-            let resolved = if artifact.file_name().is_some() && !mounted {
-                scoped_path(&cwd, &candidate)
-            } else {
-                scope.resolve_input(
-                    root,
-                    owner,
-                    &artifactize_tools::scope::logical_from_native(&candidate)?,
-                )
-            };
-            match resolved {
-                Ok(program) if program.is_file() => Some(program),
-                Ok(_) => None,
-                Err(error) => {
-                    failure.get_or_insert_with(|| error.to_string());
-                    None
+        artifactize_tools::program::candidates(Path::new(relative), |name| std::env::var_os(name))
+            .into_iter()
+            .find_map(|candidate| {
+                // A suffix the lookup added is matched to the entry's actual spelling.
+                let candidate = if candidate.as_path() != Path::new(relative) {
+                    executable_spelling(root, scope, owner, &cwd, &candidate, mounted)?
+                } else {
+                    candidate
+                };
+                let resolved = if artifact.file_name().is_some() && !mounted {
+                    scoped_path(&cwd, &candidate)
+                } else {
+                    scope.resolve_input(
+                        root,
+                        owner,
+                        &artifactize_tools::scope::logical_from_native(&candidate)?,
+                    )
+                };
+                match resolved {
+                    Ok(program) if program.is_file() => Some(program),
+                    Ok(_) => None,
+                    Err(error) => {
+                        failure.get_or_insert_with(|| error.to_string());
+                        None
+                    }
                 }
-            }
-        })
-        .ok_or_else(|| {
-            failure.unwrap_or_else(|| "Executable path is unavailable or outside scope.".into())
-        })?
+            })
+            .ok_or_else(|| {
+                failure.unwrap_or_else(|| "Executable path is unavailable or outside scope.".into())
+            })?
     } else {
         PathBuf::from(command)
     };
@@ -559,7 +556,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
     let mut resolved = Vec::new();
     for eval in &config.evals {
         let error = |field: &[&str], failure: ScopeError| {
-            let mut keys = vec!["evals", &eval.declaration.id];
+            let mut keys = vec!["evals", eval.declaration.id.as_ref()];
             keys.extend_from_slice(field);
             ConfigError::declaration(
                 config

@@ -300,14 +300,12 @@ async fn paths_reject_escapes_links_and_nonregular_targets_without_writes() {
     if symlink_dir(fixture.directory.path(), a.join("escape")).is_some() {
         paths.push("escape");
     }
+    // Sockets and FIFOs: entries that are neither files nor directories, which only Unix has.
+    #[cfg(unix)]
+    let _socket = crate::test_os::socket(&a.join("socket"));
     #[cfg(unix)]
     {
-        // Sockets and FIFOs: entries that are neither files nor directories.
-        let _socket = std::os::unix::net::UnixListener::bind(a.join("socket")).unwrap();
-        let fifo = std::ffi::CString::new(a.join("fifo").to_str().unwrap()).unwrap();
-        // SAFETY: CString supplies a live NUL-terminated path in this test's private
-        // temporary directory; mkfifo retains no pointer and 0600 is a valid mode.
-        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        crate::test_os::fifo(&a.join("fifo"));
         paths.extend(["socket", "fifo"]);
     }
     // Junctions redirect like directory symlinks and need no privilege.
@@ -419,13 +417,13 @@ async fn missing_paths_and_links_report_their_cause() {
             "{tool} {path}"
         );
     }
-    // Any other failure names the operating system's error.
+    // Any other failure names the operating system's error; Unix's is ENOTDIR here.
     #[cfg(unix)]
     assert_eq!(
         error(fixture.call("read_a", json!({"path":"data/file/x"})).await),
         format!(
             "Cannot open Artifact input: {}",
-            std::io::Error::from_raw_os_error(libc::ENOTDIR)
+            crate::test_os::not_a_directory()
         )
     );
 }

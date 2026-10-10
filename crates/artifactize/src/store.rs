@@ -58,24 +58,24 @@ pub struct StateHomeError;
 
 /// The variables `state_home` reads, in order, for the error that names them.
 fn state_home_variables() -> String {
-    let names: Vec<&str> = ["ARTIFACTIZE_STATE_HOME", "XDG_STATE_HOME"]
-        .into_iter()
-        .chain(platform::LOCAL_DATA_VARIABLE)
-        .chain(["HOME"])
+    let names: Vec<&str> = std::iter::once("ARTIFACTIZE_STATE_HOME")
+        .chain(platform::STATE_VARIABLES.iter().copied())
+        .chain([platform::HOME_VARIABLE])
         .collect();
     let (last, rest) = names.split_last().expect("constant names");
     format!("{}, or {last}", rest.join(", "))
 }
 
 /// Resolve the default state home without creating directories; empty variables are ignored.
-/// On Windows, `%LOCALAPPDATA%\artifactize` comes after `XDG_STATE_HOME` and before `HOME`.
+/// The platform's state variables come after `ARTIFACTIZE_STATE_HOME` and before the home.
 pub fn state_home() -> Result<PathBuf, StateHomeError> {
-    let xdg = env::var_os("XDG_STATE_HOME").filter(|path| !path.is_empty());
-    let xdg = xdg.or_else(|| platform::LOCAL_DATA_VARIABLE.and_then(env::var_os));
+    let state = platform::STATE_VARIABLES
+        .iter()
+        .find_map(|name| env::var_os(name).filter(|path| !path.is_empty()));
     resolve_state_home(
         env::var_os("ARTIFACTIZE_STATE_HOME").map(PathBuf::from),
-        xdg.map(PathBuf::from),
-        env::var_os("HOME").map(PathBuf::from),
+        state.map(PathBuf::from),
+        env::var_os(platform::HOME_VARIABLE).map(PathBuf::from),
     )
 }
 

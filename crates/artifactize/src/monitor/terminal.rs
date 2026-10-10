@@ -1,5 +1,5 @@
 //! Terminal ownership and the asynchronous event/job driver.
-use super::{Action, Monitor, REFRESH, SPIN, input, review};
+use super::{Action, Monitor, REFRESH, SESSION_PROBE, SPIN, input, review};
 use crossterm::event::{Event, EventStream, KeyEventKind};
 use futures_util::StreamExt;
 use std::{future::Future, path::PathBuf, pin::Pin};
@@ -71,7 +71,7 @@ async fn watch(
     let mut session_job: Option<
         tokio::task::JoinHandle<(super::session::Job, crate::agent::session::live::Window)>,
     > = None;
-    let mut session_probe = tokio::time::interval(std::time::Duration::from_secs(5));
+    let mut session_probe = tokio::time::interval(SESSION_PROBE);
     session_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         match action {

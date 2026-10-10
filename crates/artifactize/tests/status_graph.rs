@@ -333,11 +333,7 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
         ),
     )
     .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(hook, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    support::os::allow_execution(&hook);
     fixture.json(&["config", "check"], 0);
     fixture.json(&["config", "graph"], 0);
     assert!(!marker.exists());
@@ -416,10 +412,7 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
         99
     );
     let link = fixture.root.path().join("redirected-state");
-    #[cfg(unix)]
-    support::os::symlink_dir(&fixture.repo, &link).unwrap();
-    #[cfg(windows)]
-    support::os::junction(&fixture.repo, &link);
+    support::os::link_dir(&fixture.repo, &link);
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .arg("--repo")
         .arg(&fixture.repo)

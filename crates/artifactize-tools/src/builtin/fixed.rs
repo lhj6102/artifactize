@@ -1,13 +1,20 @@
 //! Fixed declarations shared by the Agent/Human registries and standalone CLI.
-use std::{ffi::OsStr, io::Read, path::Path, process::Stdio, time::Duration};
+use std::{
+    ffi::{OsStr, OsString},
+    io::Read,
+    path::Path,
+    time::Duration,
+};
 
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    Builtin, Content, ToolResult, program,
+    Builtin, Content, ToolResult,
+    launch::{Launch, LaunchError, Launcher},
+    program,
     scope::{self, ArtifactId, Scope},
 };
 
@@ -109,15 +116,28 @@ pub fn validate_target(
         .map_err(|error| error.to_string())
 }
 
+/// Where a fixed built-in runs: the workspace root, the scope it may read, the Artifact
+/// that declares it, and the launcher that starts a `help` program.
+pub struct Context<'a> {
+    pub root: &'a Path,
+    pub scope: &'a Scope,
+    pub owner: &'a ArtifactId,
+    pub launcher: &'a dyn Launcher,
+}
+
 pub async fn call_fixed(
     builtin: Builtin,
     args: &[String],
     input: Value,
-    root: &Path,
-    scope: &Scope,
-    owner: &ArtifactId,
+    context: Context<'_>,
     cancellation: &CancellationToken,
 ) -> ToolResult {
+    let Context {
+        root,
+        scope,
+        owner,
+        launcher,
+    } = context;
     if cancellation.is_cancelled() {
         return ToolResult::error("Tool call was cancelled.");
     }
@@ -126,11 +146,22 @@ pub async fn call_fixed(
     }
     if builtin == Builtin::Help {
         let cwd = root.join(scope.artifacts[owner].folder());
-        return match help(args, &cwd, cancellation).await {
+        return match help(args, &cwd, launcher, cancellation).await {
             Ok(text) => text_result(text),
             Err(error) => ToolResult::error(bounded(&error)),
         };
     }
+    let heading = match builtin {
+        Builtin::Section => match serde_json::from_value::<SectionInput>(input) {
+            Ok(input) => input.heading,
+            Err(_) => {
+                return ToolResult::error(
+                    "Tool arguments cannot be read as the declared builtin input.",
+                );
+            }
+        },
+        _ => None,
+    };
     let root = root.to_owned();
     let scope = Scope {
         artifacts: scope.artifacts.clone(),
@@ -140,16 +171,32 @@ pub async fn call_fixed(
     let cancellation = cancellation.child_token();
     let _cancel_on_drop = cancellation.clone().drop_guard();
     tokio::task::spawn_blocking(move || {
-        call_text(builtin, &args, input, &root, &scope, &owner, &cancellation)
+        call_text(
+            builtin,
+            &args,
+            heading.as_deref(),
+            &root,
+            &scope,
+            &owner,
+            &cancellation,
+        )
     })
     .await
     .unwrap_or_else(|_| ToolResult::error("Built-in tool execution failed."))
 }
 
+/// The model's input to a fixed `section` tool: the heading, when the declaration leaves
+/// it open.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SectionInput {
+    heading: Option<String>,
+}
+
 fn call_text(
     builtin: Builtin,
     args: &[String],
-    input: Value,
+    heading: Option<&str>,
     root: &Path,
     scope: &Scope,
     owner: &ArtifactId,
@@ -160,10 +207,7 @@ fn call_text(
             read_text(root, scope, owner, &args[0], TEXT_BYTES).map(|text| bounded(&text))
         }
         Builtin::Section => {
-            let heading = args
-                .get(1)
-                .map(String::as_str)
-                .or_else(|| input["heading"].as_str());
+            let heading = args.get(1).map(String::as_str).or(heading);
             match heading {
                 Some(heading) => read_text(root, scope, owner, &args[0], DOCUMENT_BYTES)
                     .and_then(|text| section(&text, heading)),
@@ -298,58 +342,44 @@ fn section(text: &str, wanted: &str) -> Result<String, String> {
     Ok(bounded(&text[*start..end]))
 }
 
-async fn capture(reader: impl AsyncRead + Unpin) -> Result<Vec<u8>, String> {
-    let mut bytes = Vec::new();
-    reader
-        .take((TEXT_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .await
-        .map_err(|error| error.to_string())?;
-    if bytes.len() > TEXT_BYTES {
-        return Err("Help output exceeds 64 KiB.".into());
-    }
-    Ok(bytes)
-}
-
 async fn help(
     args: &[String],
     cwd: &Path,
+    launcher: &dyn Launcher,
     cancellation: &CancellationToken,
 ) -> Result<String, String> {
     let program = program::resolve(OsStr::new(&args[0]), cwd).map_err(|error| error.to_string())?;
-    let mut child = tokio::process::Command::new(program)
-        .args(&args[1..])
-        .arg("--help")
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|error| error.to_string())?;
-    let stdout = child.stdout.take().expect("piped stdout");
-    let stderr = child.stderr.take().expect("piped stderr");
-    let execution = async {
-        let (stdout, stderr, status) = tokio::try_join!(capture(stdout), capture(stderr), async {
-            child.wait().await.map_err(|error| error.to_string())
-        })?;
-        if !status.success() {
-            return Err(format!(
-                "Help exited unsuccessfully ({status}).\n{}",
-                String::from_utf8_lossy(&stderr)
-            ));
-        }
-        let mut bytes = stdout;
-        bytes.extend(stderr);
-        if bytes.len() > TEXT_BYTES {
-            return Err("Help output exceeds 64 KiB.".into());
-        }
-        Ok(String::from_utf8(crate::result::clean_output(&bytes)).expect("clean output is UTF-8"))
+    let launch = Launch {
+        program,
+        args: args[1..]
+            .iter()
+            .map(OsString::from)
+            .chain([OsString::from("--help")])
+            .collect(),
+        cwd: cwd.to_owned(),
+        timeout: HELP_TIMEOUT,
+        output_limit: TEXT_BYTES,
     };
-    tokio::select! {
-        _ = cancellation.cancelled() => Err("Tool call was cancelled.".into()),
-        result = tokio::time::timeout(HELP_TIMEOUT, execution) => result.map_err(|_| "Help timed out.".to_owned())?,
+    let finished = launcher
+        .run(launch, cancellation)
+        .await
+        .map_err(|error| match error {
+            LaunchError::TimedOut => "Help timed out.".to_owned(),
+            error => error.to_string(),
+        })?;
+    if !finished.success {
+        return Err(format!(
+            "Help exited unsuccessfully ({}).\n{}",
+            finished.status,
+            String::from_utf8_lossy(&finished.stderr)
+        ));
     }
+    let mut bytes = finished.stdout;
+    bytes.extend(finished.stderr);
+    if finished.truncated || bytes.len() > TEXT_BYTES {
+        return Err("Help output exceeds 64 KiB.".into());
+    }
+    Ok(String::from_utf8(crate::result::clean_output(&bytes)).expect("clean output is UTF-8"))
 }
 
 #[cfg(test)]

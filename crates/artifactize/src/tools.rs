@@ -201,13 +201,22 @@ impl<'a> Registry<'a> {
                         Ok(owner) => owner,
                         Err(error) => return ToolResult::error(error.to_string()),
                     };
+                    // An Agent's help program gets only the explicit standalone variables.
+                    let launcher = crate::process::Launcher {
+                        env: artifactize_tools::launch::passed_environment(),
+                    };
+                    let scope = self.scope.tool_scope();
+                    let context = builtin::Context {
+                        root: &self.config.root,
+                        scope: &scope,
+                        owner: &owner,
+                        launcher: &launcher,
+                    };
                     return builtin::call_fixed(
                         tool_declaration.builtin,
                         fixed_args,
                         args,
-                        &self.config.root,
-                        &self.scope.tool_scope(),
-                        &owner,
+                        context,
                         &cancellation,
                     )
                     .await;

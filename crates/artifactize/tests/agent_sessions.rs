@@ -321,15 +321,11 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         let end = events.last().unwrap();
         assert_eq!(end["kind"], "end");
         assert_eq!(end["result"], json!({"verdict":"GREEN","covered":["R1"]}));
-        #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode(&project.sessions()), 0o700);
-            assert_eq!(
-                mode(&project.sessions().join(format!("{session}.jsonl"))),
-                0o600
-            );
+            assert!(support::os::private_dir(&project.sessions()));
+            assert!(support::os::private_file(
+                &project.sessions().join(format!("{session}.jsonl"))
+            ));
         }
 
         // show: text, and the raw events with --json, by any form of the reference.

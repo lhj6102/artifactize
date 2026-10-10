@@ -280,18 +280,8 @@ fn output(output: Output, code: i32) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-/// SIGINT, SIGSTOP or SIGCONT on Unix; on Windows Ctrl-Break and suspending or resuming
-/// every thread.
+/// Interrupt, freeze or resume a process, named as the Unix signals that do it.
 fn signal(pid: u32, signal: &str) {
-    #[cfg(unix)]
-    assert!(
-        Command::new("/bin/kill")
-            .args([signal, &pid.to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
-    #[cfg(windows)]
     match signal {
         "-INT" => support::os::interrupt(pid),
         "-STOP" => support::os::suspend(pid),
@@ -300,23 +290,10 @@ fn signal(pid: u32, signal: &str) {
     }
 }
 
-/// SIGKILL cannot run foreground cleanup; stop the killed owner's orphaned review group. On
-/// Windows the owner's Job Object closed with it and took the review along.
+/// A killed owner cannot run foreground cleanup; stop its orphaned review and children. On
+/// Windows the owner's Job Object closed with it and took the review along already.
 fn kill_orphans(starts: &str) {
-    #[cfg(unix)]
-    assert!(
-        Command::new("/bin/kill")
-            .args([
-                "-KILL",
-                "--",
-                &format!("-{}", starts.lines().next().unwrap())
-            ])
-            .status()
-            .unwrap()
-            .success()
-    );
-    #[cfg(windows)]
-    let _ = starts;
+    support::os::kill_tree(starts.lines().next().unwrap().parse().unwrap());
 }
 
 fn write(repo: &Path, path: &str, value: Value) {
@@ -881,10 +858,7 @@ fn waiter_ctrl_c_leaves_owner_running_and_owner_ctrl_c_releases_the_claim() {
     assert_eq!(recovered["requests"][0]["result"]["stdout"], "retried");
     assert_eq!(fixture.count("executions"), 2);
     let pid = cancelled["requests"][0]["child"]["pid"].as_u64().unwrap();
-    #[cfg(unix)]
-    assert!(!support::os::exists(pid as u32));
-    #[cfg(windows)]
-    assert!(!support::os::running(pid as u32));
+    assert!(support::os::gone(pid as u32));
 }
 
 #[test]

@@ -3,31 +3,45 @@
 use crate::platform;
 use std::{
     env,
-    ffi::OsStr,
+    ffi::{OsStr, OsString},
     io,
     path::{Path, PathBuf},
 };
 
+/// The variable listing the directories a bare program name is looked up in.
+const SEARCH_PATH: &str = "PATH";
+/// The Windows variable listing the extensions an extensionless name is tried with.
+const EXTENSIONS: &str = "PATHEXT";
+
 /// Resolve against the inherited PATH and, on Windows, PATHEXT. A bare name never
 /// implicitly searches the working directory; relative PATH entries are based on `cwd`.
 pub fn resolve(program: &OsStr, cwd: &Path) -> io::Result<PathBuf> {
-    resolve_with(
+    resolve_with(program, cwd, |name| env::var_os(name))
+}
+
+/// Resolve using the environment that the child will receive, not the caller's PATH:
+/// `variable` reads one variable of that environment.
+pub fn resolve_with(
+    program: &OsStr,
+    cwd: &Path,
+    variable: impl Fn(&str) -> Option<OsString>,
+) -> io::Result<PathBuf> {
+    resolve_from(
         program,
         cwd,
-        env::var_os("PATH").as_deref(),
-        env::var_os("PATHEXT").as_deref(),
+        variable(SEARCH_PATH).as_deref(),
+        variable(EXTENSIONS).as_deref(),
     )
 }
 
-/// Resolve using the environment that the child will receive, not the caller's PATH.
-pub fn resolve_with(
+fn resolve_from(
     program: &OsStr,
     cwd: &Path,
     path: Option<&OsStr>,
     pathext: Option<&OsStr>,
 ) -> io::Result<PathBuf> {
     let program = Path::new(program);
-    let candidates = candidates(program, pathext);
+    let candidates = candidates_from(program, pathext);
     let explicit = program.is_absolute() || program.components().count() > 1;
     let found = if explicit {
         candidates
@@ -50,9 +64,14 @@ pub fn resolve_with(
     })
 }
 
-/// Candidate paths in lookup order. Scoped callers validate each candidate inside
-/// their own access boundary before allowing it to reach a process launcher.
-pub fn candidates(program: &Path, pathext: Option<&OsStr>) -> Vec<PathBuf> {
+/// Candidate paths in lookup order, for the environment `variable` reads. Scoped callers
+/// validate each candidate inside their own access boundary before allowing it to reach a
+/// process launcher.
+pub fn candidates(program: &Path, variable: impl Fn(&str) -> Option<OsString>) -> Vec<PathBuf> {
+    candidates_from(program, variable(EXTENSIONS).as_deref())
+}
+
+fn candidates_from(program: &Path, pathext: Option<&OsStr>) -> Vec<PathBuf> {
     if platform::USES_PATHEXT && program.extension().is_none() {
         pathext_candidates(program, pathext)
     } else {
@@ -84,7 +103,7 @@ mod tests {
 
     #[test]
     fn lookup_uses_path_order_relative_to_child_cwd_and_never_implicit_local_search() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::test_os::tempdir();
         for directory in ["first", "second"] {
             std::fs::create_dir(root.path().join(directory)).unwrap();
             let file = root.path().join(directory).join("shim.cmd");
@@ -93,10 +112,10 @@ mod tests {
         }
         let path = env::join_paths(["second", "first"]).unwrap();
         assert_eq!(
-            resolve_with(OsStr::new("shim.cmd"), root.path(), Some(&path), None).unwrap(),
+            resolve_from(OsStr::new("shim.cmd"), root.path(), Some(&path), None).unwrap(),
             root.path().join("second/shim.cmd")
         );
-        assert!(resolve_with(OsStr::new("shim.cmd"), root.path(), None, None).is_err());
+        assert!(resolve_from(OsStr::new("shim.cmd"), root.path(), None, None).is_err());
     }
 
     #[test]
@@ -118,13 +137,13 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn extensionless_names_follow_pathext_order_not_exe_preference() {
-        let root = tempfile::tempdir().unwrap();
+        let root = crate::test_os::tempdir();
         for extension in ["cmd", "exe", "bat"] {
             std::fs::write(root.path().join(format!("shim.{extension}")), "fixture").unwrap();
         }
         let path = env::join_paths([root.path()]).unwrap();
         assert_eq!(
-            resolve_with(
+            resolve_from(
                 OsStr::new("shim"),
                 root.path(),
                 Some(&path),
@@ -134,7 +153,7 @@ mod tests {
             root.path().join("shim.CMD")
         );
         assert_eq!(
-            resolve_with(
+            resolve_from(
                 OsStr::new("shim"),
                 root.path(),
                 Some(&path),

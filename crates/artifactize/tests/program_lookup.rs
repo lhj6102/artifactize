@@ -27,6 +27,7 @@ impl Project {
         fs::create_dir(&repo).unwrap();
         fs::create_dir(&programs).unwrap();
         fs::write(programs.join("argv.py"), "import json,pathlib,sys\nif sys.argv[1:] == ['fingerprint']:\n print('lookup-key')\nelif sys.argv[1:] == ['launch']:\n pathlib.Path('launched').write_text('launched')\nelse:\n print(json.dumps(sys.argv[1:]))\n").unwrap();
+        // Windows finds a `.cmd` shim through PATHEXT; Unix runs a script by its execute bit.
         #[cfg(windows)]
         fs::write(
             programs.join("artifactize-lookup-shim.cmd"),
@@ -35,14 +36,16 @@ impl Project {
         .unwrap();
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
             let shim = programs.join("artifactize-lookup-shim");
             fs::write(
                 &shim,
-                "#!/bin/sh\nexec python3 \"$(dirname \"$0\")/argv.py\" \"$@\"\n",
+                format!(
+                    "#!{}\nexec python3 \"$(dirname \"$0\")/argv.py\" \"$@\"\n",
+                    support::os::bin("/bin/sh")
+                ),
             )
             .unwrap();
-            fs::set_permissions(shim, fs::Permissions::from_mode(0o700)).unwrap();
+            support::os::make_executable(&shim);
         }
         let mut paths = vec![programs];
         paths.extend(std::env::split_paths(
@@ -151,6 +154,7 @@ fn declared_eval_fingerprint_agent_and_human_share_path_lookup_and_literal_argum
     );
 }
 
+// Only Windows runs `.cmd` shims, whose arguments Rust refuses when cmd would misparse them.
 #[cfg(windows)]
 #[test]
 fn batch_argument_refusal_is_clear_for_runtime_agent_human_output_and_launch() {

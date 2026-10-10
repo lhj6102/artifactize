@@ -83,6 +83,226 @@ pub fn make_executable(path: &Path) {
     }
 }
 
+/// Give a script its execute bits (0755) on Unix, for a declaration that runs it by path
+/// through its `#!` line. Windows has no execute bit and runs a script by its extension.
+pub fn allow_execution(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    #[cfg(windows)]
+    let _ = path;
+}
+
+/// Take a file's execute bits away (0600). Only Unix has them.
+#[cfg(unix)]
+pub fn deny_execution(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+/// The program a Unix desktop opens files with: `open` on macOS, `xdg-open` elsewhere.
+/// Windows opens through ShellExecute and runs no program by name.
+#[cfg(unix)]
+pub const OPENER: &str = if cfg!(target_os = "macos") {
+    "open"
+} else {
+    "xdg-open"
+};
+
+/// The environment variable naming the file a recording program appends to.
+pub const RECORD: &str = "ARTIFACTIZE_OPENER_RECORD";
+
+/// Build a program named `name` in `directory` that appends its argument count and first
+/// argument, one per line, to the file named by `RECORD`. A compiled program needs no shell.
+pub fn recording_program(directory: &Path, name: &str) -> std::path::PathBuf {
+    let source = directory.join(format!("{name}-recorder.rs"));
+    std::fs::write(
+        &source,
+        r#"use std::io::Write;
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let record = std::env::var_os("ARTIFACTIZE_OPENER_RECORD").expect("record path");
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(record).unwrap();
+    writeln!(file, "{}", args.len()).unwrap();
+    writeln!(file, "{}", args.first().map(String::as_str).unwrap_or_default()).unwrap();
+}
+"#,
+    )
+    .unwrap();
+    let program = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let output = Command::new(rustc)
+        .args(["--edition", "2024", "-o"])
+        .arg(&program)
+        .arg(&source)
+        .output()
+        .expect("rustc builds the recording program");
+    assert!(
+        output.status.success(),
+        "building the recording program failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    program
+}
+
+/// Set a Unix permission mode, for checks of modes artifactize refuses or must tolerate.
+#[cfg(unix)]
+pub fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
+/// A Unix permission mode, without the file type bits.
+#[cfg(unix)]
+pub fn mode(path: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    path.metadata().unwrap().permissions().mode() & 0o7777
+}
+
+/// Let everyone list and enter a directory: mode 0755 on Unix, and on Windows an extra
+/// Everyone read ACE. Either way it is no longer private.
+pub fn share_dir(path: &Path) {
+    #[cfg(unix)]
+    set_mode(path, 0o755);
+    #[cfg(windows)]
+    grant_everyone_read(path);
+}
+
+/// The effective user ID of this process.
+#[cfg(unix)]
+pub fn current_uid() -> u32 {
+    // SAFETY: geteuid has no preconditions and does not change process state.
+    unsafe { libc::geteuid() }
+}
+
+/// The null device: `/dev/null` on Unix, `NUL` on Windows.
+pub fn null_device() -> &'static Path {
+    Path::new(if cfg!(windows) { "NUL" } else { "/dev/null" })
+}
+
+/// A FIFO, an entry that is neither a file nor a directory. Windows has none.
+#[cfg(unix)]
+pub fn fifo(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: a live NUL-terminated path; mkfifo retains no pointer and 0600 is a valid mode.
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+}
+
+/// A bound Unix socket at `path`, another special entry; it stays bound while held.
+#[cfg(unix)]
+pub fn socket(path: &Path) -> std::os::unix::net::UnixListener {
+    std::os::unix::net::UnixListener::bind(path).unwrap()
+}
+
+/// The error opening a path below a regular file reports on Unix.
+#[cfg(unix)]
+pub fn not_a_directory() -> std::io::Error {
+    std::io::Error::from_raw_os_error(libc::ENOTDIR)
+}
+
+/// The signal number of SIGTERM.
+#[cfg(unix)]
+pub const SIGTERM: i32 = libc::SIGTERM;
+
+/// End a process and everything in its tree at once: SIGKILL to its process group on Unix;
+/// on Windows the process, as its Job Object holds the rest.
+pub fn kill_tree(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: a plain signal to the group of a child this test started; one that has
+        // already gone is fine.
+        unsafe { libc::kill(-(pid as i32), libc::SIGKILL) };
+    }
+    #[cfg(windows)]
+    kill(pid);
+}
+
+/// Whether a Unix process leads its own process group.
+#[cfg(unix)]
+pub fn leads_group(pid: u32) -> bool {
+    // SAFETY: getpgid only queries a process.
+    unsafe { libc::getpgid(pid as i32) == pid as i32 }
+}
+
+/// Whether a Unix process leads its own session, detached from the caller's terminal.
+#[cfg(unix)]
+pub fn leads_session(pid: u32) -> bool {
+    // SAFETY: getsid only queries a process.
+    unsafe { libc::getsid(pid as i32) == pid as i32 }
+}
+
+/// A pseudo-terminal pair from openpty(3): the master to drive and the slave to hand a child.
+#[cfg(unix)]
+pub fn pty() -> (std::fs::File, std::os::fd::OwnedFd) {
+    use std::os::fd::{FromRawFd, OwnedFd};
+    let (mut master, mut slave) = (0, 0);
+    // SAFETY: openpty writes two new descriptors, owned below.
+    let opened = unsafe {
+        libc::openpty(
+            &mut master,
+            &mut slave,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
+    assert_eq!(opened, 0);
+    // SAFETY: both descriptors were just opened and are owned exactly once.
+    unsafe {
+        (
+            std::fs::File::from_raw_fd(master),
+            OwnedFd::from_raw_fd(slave),
+        )
+    }
+}
+
+/// A pipe named like the one Git Bash's mintty hands a program: the writer and the reader,
+/// which `is_terminal` takes for a terminal although it has no console.
+#[cfg(windows)]
+pub fn mintty_pipe() -> (std::fs::File, std::fs::File) {
+    use std::{os::windows::io::FromRawHandle, ptr};
+    use windows_sys::Win32::{
+        Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE},
+        Storage::FileSystem::{CreateFileW, OPEN_EXISTING, PIPE_ACCESS_OUTBOUND},
+        System::Pipes::{CreateNamedPipeW, PIPE_TYPE_BYTE, PIPE_WAIT},
+    };
+    let name: Vec<u16> = format!(r"\\.\pipe\msys-{}-pty0-from-master", std::process::id())
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    // SAFETY: a NUL-terminated name; each handle is checked, then owned by one File.
+    unsafe {
+        let server_end = CreateNamedPipeW(
+            name.as_ptr(),
+            PIPE_ACCESS_OUTBOUND,
+            PIPE_TYPE_BYTE | PIPE_WAIT,
+            1,
+            4096,
+            4096,
+            0,
+            ptr::null(),
+        );
+        assert_ne!(server_end, INVALID_HANDLE_VALUE);
+        let client_end = CreateFileW(
+            name.as_ptr(),
+            GENERIC_READ,
+            0,
+            ptr::null(),
+            OPEN_EXISTING,
+            0,
+            ptr::null_mut(),
+        );
+        assert_ne!(client_end, INVALID_HANDLE_VALUE);
+        (
+            std::fs::File::from_raw_handle(server_end),
+            std::fs::File::from_raw_handle(client_end),
+        )
+    }
+}
+
 mod fixture {
     use std::{
         env::consts::EXE_SUFFIX,
@@ -152,6 +372,49 @@ mod fixture {
             directory
         })
     }
+}
+
+/// A link to a directory that needs no privilege: a symlink on Unix, and on Windows a
+/// junction, which artifactize refuses and resolves just as it does a directory symlink.
+pub fn link_dir(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    symlink_dir(target, link).unwrap();
+    #[cfg(windows)]
+    junction(target, link);
+}
+
+/// Remove a link `link_dir` made, without touching its target: Windows removes a directory
+/// link as a directory.
+pub fn remove_link_dir(link: &Path) {
+    #[cfg(unix)]
+    std::fs::remove_file(link).unwrap();
+    #[cfg(windows)]
+    std::fs::remove_dir(link).unwrap();
+}
+
+/// Whether a process has exited for good: on Unix also reaped, so no zombie entry remains;
+/// on Windows no longer running.
+pub fn gone(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        !exists(pid)
+    }
+    #[cfg(windows)]
+    {
+        !running(pid)
+    }
+}
+
+/// Ask a process to terminate: SIGTERM on Unix, and on Windows Ctrl-Break to the group
+/// `new_group` gave it, the closest request it has.
+pub fn terminate(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: a plain signal to a child this test spawned.
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGTERM) }, 0);
+    }
+    #[cfg(windows)]
+    interrupt(pid);
 }
 
 /// A symbolic link to a file, which may not exist. On Windows this needs Developer Mode or
@@ -262,15 +525,25 @@ pub fn interrupt(pid: u32) {
     }
 }
 
-/// Freeze every thread of a process, as SIGSTOP does.
-#[cfg(windows)]
+/// Freeze a process: SIGSTOP on Unix, and on Windows every thread suspended.
 pub fn suspend(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: a plain signal to a process this test started.
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGSTOP) }, 0);
+    }
+    #[cfg(windows)]
     nt_process(pid, true);
 }
 
-/// Let a process frozen by `suspend` run again, as SIGCONT does.
-#[cfg(windows)]
+/// Let a process frozen by `suspend` run again: SIGCONT on Unix.
 pub fn resume(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: a plain signal to a process this test started.
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGCONT) }, 0);
+    }
+    #[cfg(windows)]
     nt_process(pid, false);
 }
 

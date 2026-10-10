@@ -255,11 +255,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         json!([all[0], all[2]])
     );
     let alias = root.path().join("alias");
-    #[cfg(unix)]
-    support::os::symlink_dir(&second, &alias).unwrap();
-    // A junction needs no privilege and aliases the folder just the same.
-    #[cfg(windows)]
-    support::os::junction(&second, &alias);
+    support::os::link_dir(&second, &alias);
     assert_eq!(query(&alias, &state, &["run", "list"], 0), json!([all[1]]));
     let current = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .current_dir(&second)

@@ -62,12 +62,34 @@ pub const OPENER: &str = if cfg!(target_os = "macos") {
 /// The environment variable naming the file a recording program appends to.
 pub const RECORD: &str = "ARTIFACTIZE_OPENER_RECORD";
 
+/// Compile one Rust source file into the program `name` in `directory`, with the compiler
+/// Cargo names in `RUSTC`. A compiled stand-in needs no shell on any system.
+pub fn compile(directory: &Path, name: &str, source: &str) -> PathBuf {
+    let file = directory.join(format!("{name}-source.rs"));
+    fs::write(&file, source).unwrap();
+    let program = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let output = Command::new(rustc)
+        .args(["--edition", "2024", "-o"])
+        .arg(&program)
+        .arg(&file)
+        .output()
+        .expect("rustc builds the stand-in program");
+    assert!(
+        output.status.success(),
+        "building the stand-in program failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    make_executable(&program);
+    program
+}
+
 /// Build a program named `name` in `directory` that appends its argument count and first
-/// argument, one per line, to the file named by `RECORD`. A compiled program needs no shell.
+/// argument, one per line, to the file named by `RECORD`.
 pub fn recording_program(directory: &Path, name: &str) -> PathBuf {
-    let source = directory.join(format!("{name}-recorder.rs"));
-    fs::write(
-        &source,
+    compile(
+        directory,
+        name,
         r#"use std::io::Write;
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -78,20 +100,4 @@ fn main() {
 }
 "#,
     )
-    .unwrap();
-    let program = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let output = Command::new(rustc)
-        .args(["--edition", "2024", "-o"])
-        .arg(&program)
-        .arg(&source)
-        .output()
-        .expect("rustc builds the recording program");
-    assert!(
-        output.status.success(),
-        "building the recording program failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    make_executable(&program);
-    program
 }

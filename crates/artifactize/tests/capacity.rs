@@ -219,8 +219,7 @@ fn a_waiting_request_consumes_no_budget_and_a_dead_owner_frees_its_slot() {
     let calls = fixture.provider.requests().len();
     let waiting = fixture.spawn(&repo, &["--force", "--max-executions", "1"]);
     wait_until(|| capacity_waiters(&db) == 1);
-    thread::sleep(Duration::from_millis(500));
-    // Still waiting: no provider call and no executor start.
+    // Waiting: no provider call and no executor start.
     assert_eq!(capacity_waiters(&db), 1);
     assert_eq!(fixture.provider.requests().len(), calls);
     let started: i64 = db

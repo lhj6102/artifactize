@@ -303,16 +303,13 @@ fn truncate_replacement_same_size_and_gc_reset_even_when_paused() {
     assert!(removed.status.unwrap().contains("session GC"));
 }
 
+// Unix modes, FIFOs and symlinks; the Windows counterpart below checks DACLs and junctions.
 #[cfg(unix)]
 #[test]
 fn links_fifo_permissions_and_directory_links_are_refused() {
-    use std::os::unix::{
-        ffi::OsStrExt,
-        fs::{PermissionsExt, symlink},
-    };
     let (root, source) = fixture();
     let file = path(&source.state, "session").unwrap();
-    fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+    crate::test_os::set_mode(&file, 0o644);
     assert!(
         Reader::new(source.clone())
             .step(80, 20, Position::Bottom)
@@ -321,7 +318,9 @@ fn links_fifo_permissions_and_directory_links_are_refused() {
             .contains("private")
     );
     fs::remove_file(&file).unwrap();
-    symlink("/etc/passwd", &file).unwrap();
+    let outside = root.path().join("outside");
+    fs::write(&outside, "not a session").unwrap();
+    crate::test_os::symlink_file(&outside, &file).unwrap();
     assert!(
         Reader::new(source.clone())
             .step(80, 20, Position::Bottom)
@@ -329,9 +328,7 @@ fn links_fifo_permissions_and_directory_links_are_refused() {
             .is_some()
     );
     fs::remove_file(&file).unwrap();
-    let name = std::ffi::CString::new(file.as_os_str().as_bytes()).unwrap();
-    // SAFETY: name is a valid NUL-terminated fixture path and mode is a valid permission mask.
-    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    crate::test_os::fifo(&file);
     assert!(
         Reader::new(source.clone())
             .step(80, 20, Position::Bottom)
@@ -343,7 +340,33 @@ fn links_fifo_permissions_and_directory_links_are_refused() {
     fs::remove_dir(directory(root.path())).unwrap();
     let elsewhere = root.path().join("elsewhere");
     platform::create_private_dir_all(&elsewhere).unwrap();
-    symlink(elsewhere, directory(root.path())).unwrap();
+    crate::test_os::symlink_dir(elsewhere, directory(root.path())).unwrap();
+    assert!(
+        Reader::new(source)
+            .step(80, 20, Position::Bottom)
+            .status
+            .is_some()
+    );
+}
+
+// The Windows counterpart of the Unix check above: a shared DACL and a junction.
+#[cfg(windows)]
+#[test]
+fn shared_sessions_and_directory_junctions_are_refused() {
+    let (root, source) = fixture();
+    let file = path(&source.state, "session").unwrap();
+    crate::test_os::grant_everyone_read(&file);
+    assert!(
+        Reader::new(source.clone())
+            .step(80, 20, Position::Bottom)
+            .status
+            .is_some()
+    );
+    fs::remove_file(file).unwrap();
+    fs::remove_dir(directory(root.path())).unwrap();
+    let elsewhere = root.path().join("elsewhere");
+    platform::create_private_dir_all(&elsewhere).unwrap();
+    crate::test_os::junction(&elsewhere, &directory(root.path()));
     assert!(
         Reader::new(source)
             .step(80, 20, Position::Bottom)

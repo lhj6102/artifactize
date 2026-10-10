@@ -36,26 +36,20 @@ pub(super) fn prepare(
         ),
         ("ARTIFACTIZE_WORKSPACE_DIR".into(), workspace.clone().into()),
     ]);
-    for (key, name) in [
+    // The child's home, cache and temporary directories are private ones, under every
+    // variable the platform's programs read them from.
+    let private = [
         ("ARTIFACTIZE_OUTPUT_DIR", "output"),
         ("ARTIFACTIZE_TMP_DIR", "tmp"),
-        ("TMPDIR", "tmp"),
-        ("TMP", "tmp"),
-        ("TEMP", "tmp"),
-        ("HOME", "home"),
-        ("XDG_CACHE_HOME", "cache"),
-    ] {
-        environment.insert(key.into(), root.join(name).into());
-    }
-    // Some systems' programs look for their home and caches in variables of their own, and
-    // cannot start without a few system variables.
-    let private = platform::HOME_VARIABLES
-        .iter()
-        .map(|key| (key, "home"))
-        .chain(platform::CACHE_VARIABLES.iter().map(|key| (key, "cache")));
+    ]
+    .into_iter()
+    .chain(platform::TEMP_VARIABLES.iter().map(|key| (*key, "tmp")))
+    .chain(platform::HOME_VARIABLES.iter().map(|key| (*key, "home")))
+    .chain(platform::CACHE_VARIABLES.iter().map(|key| (*key, "cache")));
     for (key, name) in private {
         environment.insert(key.into(), root.join(name).into());
     }
+    // Some systems' programs cannot start without a few system variables.
     for key in platform::SYSTEM_VARIABLES {
         if let Some(value) = env::var_os(key) {
             environment.insert(key.into(), value);

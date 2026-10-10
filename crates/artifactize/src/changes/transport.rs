@@ -43,6 +43,11 @@ impl Endpoint {
         endpoint.validate()?;
         Ok(endpoint)
     }
+    /// The private directory that holds the election lock.
+    #[cfg(test)]
+    pub(super) fn directory(&self) -> &Path {
+        &self.directory
+    }
     fn validate(&self) -> io::Result<()> {
         os::validate_directory(&self.directory)
     }

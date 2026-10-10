@@ -11,7 +11,26 @@ use super::Content;
 
 /// Bound decoded image memory and base64 provider payloads while allowing review screenshots.
 pub const IMAGE_LIMIT: usize = 4 * 1024 * 1024;
+/// The eight bytes every PNG file starts with.
 const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+/// The first chunk header of a PNG: IHDR with its fixed 13-byte length.
+const PNG_IHDR_HEADER: &[u8] = b"\0\0\0\rIHDR";
+/// A PNG chunk header: a 4-byte big-endian data length and a 4-byte chunk type.
+const PNG_CHUNK_HEADER_BYTES: usize = 8;
+/// A PNG chunk's bytes besides its data: the header and a 4-byte CRC.
+const PNG_CHUNK_OVERHEAD_BYTES: usize = 12;
+/// The chunk type that marks an animated PNG, which reviews do not accept.
+const PNG_ANIMATION_CONTROL: &[u8] = b"acTL";
+/// The chunk type that ends a PNG.
+const PNG_END: &[u8] = b"IEND";
+/// A JPEG start-of-image marker followed by the first byte of the next marker.
+const JPEG_START: &[u8] = b"\xff\xd8\xff";
+/// The marker code after `JPEG_START` that means JPEG-LS, which is not a baseline JPEG.
+const JPEG_LS_MARKER: u8 = 0xf7;
+/// A WebP file is a RIFF container whose form type, at bytes 8 to 12, is `WEBP`.
+const RIFF_SIGNATURE: &[u8] = b"RIFF";
+const WEBP_FORM: &[u8] = b"WEBP";
+const RIFF_FORM_TYPE: std::ops::Range<usize> = 8..12;
 
 pub fn from_base64(data: &str, mime_type: &str) -> Result<Content, String> {
     if data.len() > IMAGE_LIMIT.div_ceil(3) * 4 {
@@ -73,28 +92,32 @@ pub fn normalize(bytes: &[u8], declared: Option<&str>) -> Result<Content, String
 }
 
 fn mime_type(bytes: &[u8]) -> Option<&'static str> {
-    if bytes.starts_with(b"\xff\xd8\xff") && bytes.get(3) != Some(&0xf7) {
+    if bytes.starts_with(JPEG_START) && bytes.get(JPEG_START.len()) != Some(&JPEG_LS_MARKER) {
         Some("image/jpeg")
     } else if bytes.starts_with(PNG_SIGNATURE) {
-        if bytes.get(8..16) != Some(b"\0\0\0\rIHDR") {
+        let ihdr = PNG_SIGNATURE.len()..PNG_SIGNATURE.len() + PNG_IHDR_HEADER.len();
+        if bytes.get(ihdr) != Some(PNG_IHDR_HEADER) {
             return None;
         }
         // Scan chunk boundaries, not image payloads, for animation control.
         let mut offset = PNG_SIGNATURE.len();
         while offset < bytes.len() {
-            let header = bytes.get(offset..offset + 8)?;
-            let length = u32::from_be_bytes(header[..4].try_into().ok()?) as usize;
-            let end = offset.checked_add(12)?.checked_add(length)?;
-            if end > bytes.len() || &header[4..] == b"acTL" {
+            let header = bytes.get(offset..offset + PNG_CHUNK_HEADER_BYTES)?;
+            let (length, kind) = header.split_at(4);
+            let length = u32::from_be_bytes(length.try_into().ok()?) as usize;
+            let end = offset
+                .checked_add(PNG_CHUNK_OVERHEAD_BYTES)?
+                .checked_add(length)?;
+            if end > bytes.len() || kind == PNG_ANIMATION_CONTROL {
                 return None;
             }
-            if &header[4..] == b"IEND" {
+            if kind == PNG_END {
                 return Some("image/png");
             }
             offset = end;
         }
         None
-    } else if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") {
+    } else if bytes.starts_with(RIFF_SIGNATURE) && bytes.get(RIFF_FORM_TYPE) == Some(WEBP_FORM) {
         Some("image/webp")
     } else {
         None

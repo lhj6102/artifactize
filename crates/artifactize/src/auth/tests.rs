@@ -30,53 +30,11 @@ fn test_storage(root: &Path) -> Storage {
     Storage { directory }
 }
 
-/// Mode 0600 on Unix; on Windows a single-link file whose DACL grants only this user.
-pub(crate) fn private_file(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        path.metadata().unwrap().permissions().mode() & 0o777 == 0o600
-    }
-    #[cfg(windows)]
-    {
-        crate::platform::is_private_file(&fs::File::open(path).unwrap()).unwrap()
-    }
-}
+pub(crate) use crate::test_os::{private_dir, private_file};
 
-/// Mode 0700 on Unix; on Windows a DACL that grants only this user.
-pub(crate) fn private_dir(path: &Path) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        path.metadata().unwrap().permissions().mode() & 0o777 == 0o700
-    }
-    #[cfg(windows)]
-    {
-        crate::platform::is_private_dir(path).unwrap()
-    }
-}
-
-/// The inode on Unix, the file index on Windows: what a rename replaces.
-fn file_id(file: &fs::File) -> u64 {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        file.metadata().unwrap().ino()
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::Storage::FileSystem::{
-            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
-        };
-        let mut info = BY_HANDLE_FILE_INFORMATION::default();
-        // SAFETY: an open handle and a valid out pointer.
-        assert_ne!(
-            unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) },
-            0
-        );
-        (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow)
-    }
+/// What a rename replaces: the file's identity on its volume.
+fn file_id(file: &fs::File) -> crate::platform::FileIdentity {
+    crate::platform::file_identity(file).unwrap()
 }
 
 #[test]
@@ -141,12 +99,9 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
     if symlink_dir(&repo, &alias).is_some() {
         assert!(Storage::new(Some(&alias.join("state")), None, Tokens::Codex).is_err());
     }
-    #[cfg(windows)]
-    {
-        let junction = temp.path().join("junction");
-        crate::test_os::junction(&repo, &junction);
-        assert!(Storage::new(Some(&junction.join("state")), None, Tokens::Codex).is_err());
-    }
+    let junction = temp.path().join("junction");
+    crate::test_os::link_dir(&repo, &junction);
+    assert!(Storage::new(Some(&junction.join("state")), None, Tokens::Codex).is_err());
     fs::remove_file(repo.join(".git")).unwrap();
     let Err(refusal) = Storage::new(Some(&repo.join("state")), Some(&repo), Tokens::Codex) else {
         panic!("auth storage inside --repo");
@@ -173,13 +128,7 @@ fn credential_storage_rejects_repositories_and_symlink_escapes() {
     let state = temp.path().join("state");
     let storage = Storage::new(Some(&state), None, Tokens::Codex).unwrap();
     assert!(private_dir(&storage.directory));
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&storage.directory, fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    #[cfg(windows)]
-    grant_everyone_read(&storage.directory);
+    crate::test_os::share_dir(&storage.directory);
     assert!(Storage::new(Some(&state), None, Tokens::Codex).is_err());
 }
 

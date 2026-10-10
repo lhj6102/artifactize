@@ -232,19 +232,14 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     {
         paths.push("escape");
     }
+    // Only Unix has FIFOs.
     #[cfg(unix)]
     {
-        let fifo = std::ffi::CString::new(output.join("fifo").to_str().unwrap()).unwrap();
-        // SAFETY: CString supplies a live NUL-terminated path in this test's private
-        // temporary directory; mkfifo retains no pointer and 0600 is a valid mode.
-        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        crate::test_os::fifo(&output.join("fifo"));
         paths.push("fifo");
     }
-    #[cfg(windows)]
-    {
-        crate::test_os::junction(&output.join("nested"), &output.join("joined"));
-        paths.push("joined/image");
-    }
+    crate::test_os::link_dir(&output.join("nested"), &output.join("joined"));
+    paths.push("joined/image");
     for path in paths {
         assert!(from_output(&output, path, "image/png").is_err(), "{path}");
     }
@@ -252,6 +247,7 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     if symlink_dir("old-output", &output).is_some() {
         assert!(from_output(&output, "image", "image/png").is_err());
     }
+    // A junction needs no privilege and redirects the output root just the same.
     #[cfg(windows)]
     {
         let _ = fs::remove_dir(&output);

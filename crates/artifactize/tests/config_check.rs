@@ -222,11 +222,8 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     fixture.write(".git/ignored/index.artf", "not JSON");
     fixture.write("node_modules/ignored/index.artf", "not JSON");
     fixture.write("other.json", "other names are not configuration");
-    // Discovery never enters a linked folder; a junction needs no privilege on Windows.
-    #[cfg(unix)]
-    support::os::symlink_dir(fixture.0.join("review"), fixture.0.join("linked-review")).unwrap();
-    #[cfg(windows)]
-    support::os::junction(&fixture.0.join("review"), &fixture.0.join("linked-review"));
+    // Discovery never enters a linked folder.
+    support::os::link_dir(&fixture.0.join("review"), &fixture.0.join("linked-review"));
 
     let output = fixture
         .command()

@@ -25,9 +25,10 @@ pub(crate) const MAX_RESULT_BYTES: usize = 256_000;
 pub(crate) const FIELDS_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
 
 pub fn default_reviewer() -> Result<String, String> {
-    let reviewer = std::env::var("USER")
-        .or_else(|error| crate::platform::USER_NAME_VARIABLE.map_or(Err(error), std::env::var))
-        .map_err(|_| "Set USER or provide a reviewer id.")?;
+    let reviewer = crate::platform::USER_VARIABLES
+        .iter()
+        .find_map(|name| std::env::var(name).ok())
+        .ok_or("Set USER or provide a reviewer id.")?;
     validate_reviewer(&reviewer)?;
     Ok(reviewer)
 }

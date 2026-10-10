@@ -99,6 +99,7 @@ async fn missing_binary_is_an_operational_error_not_red() {
     ));
 }
 
+// Only Unix ends a process with a signal; Windows reports exit codes.
 #[cfg(unix)]
 #[tokio::test]
 async fn signal_is_an_operational_error() {
@@ -106,7 +107,7 @@ async fn signal_is_an_operational_error() {
     assert!(matches!(
         execute(scratch.command("/bin/sh", &["-c", "kill -TERM $$"], None)).await,
         Outcome::OperationalError(Error::AbnormalExit {
-            signal: Some(libc::SIGTERM),
+            signal: Some(support::os::SIGTERM),
             ..
         })
     ));
@@ -291,33 +292,22 @@ fn output_inside_workspace_is_rejected_before_creation_even_through_symlinks() {
     let scratch = Scratch::new();
     let alias = scratch.0.path().join("alias");
     let workspace_alias = scratch.0.path().join("workspace-alias");
-    // Junctions alias a folder as directory symlinks do, without a privilege.
-    #[cfg(windows)]
-    let linked = {
-        support::os::junction(&scratch.workspace(), &alias);
-        support::os::junction(&scratch.workspace(), &workspace_alias);
-        true
-    };
-    #[cfg(unix)]
-    let linked = symlink_dir(scratch.workspace(), &alias).is_some()
-        && symlink_dir(scratch.workspace(), &workspace_alias).is_some();
-    assert!(linked);
-    #[cfg(windows)]
-    {
-        let symlink = scratch.0.path().join("symlink");
-        if symlink_dir(scratch.workspace(), &symlink).is_some() {
-            let result = Command::prepare(
-                bin("/bin/true").into(),
-                vec![],
-                &workspace_alias,
-                &symlink.join("new/nested"),
-                None,
-            );
-            assert!(
-                matches!(result, Err(Error::OutputInsideWorkspace)),
-                "{result:?}"
-            );
-        }
+    support::os::link_dir(&scratch.workspace(), &alias);
+    support::os::link_dir(&scratch.workspace(), &workspace_alias);
+    // A symbolic link, where creating one is allowed, is refused like the links above.
+    let symlink = scratch.0.path().join("symlink");
+    if symlink_dir(scratch.workspace(), &symlink).is_some() {
+        let result = Command::prepare(
+            bin("/bin/true").into(),
+            vec![],
+            &workspace_alias,
+            &symlink.join("new/nested"),
+            None,
+        );
+        assert!(
+            matches!(result, Err(Error::OutputInsideWorkspace)),
+            "{result:?}"
+        );
     }
     for output in [
         scratch.workspace(),
@@ -347,10 +337,7 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
     let external = scratch.0.path().join("external");
     std::fs::create_dir(&external).unwrap();
     let alias = scratch.0.path().join("alias");
-    #[cfg(unix)]
-    symlink_dir(&external, &alias).unwrap();
-    #[cfg(windows)]
-    support::os::junction(&external, &alias);
+    support::os::link_dir(&external, &alias);
     let command = Command::prepare(
         bin("/usr/bin/env").into(),
         vec![],
@@ -573,10 +560,7 @@ async fn deadline_is_not_reset_after_registration() {
 
 async fn assert_gone(pid: u32) {
     assert!(pid > 0, "must have observed a real process");
-    #[cfg(unix)]
-    wait_for(|| !support::os::exists(pid)).await;
-    #[cfg(windows)]
-    wait_for(|| !support::os::running(pid)).await;
+    wait_for(|| support::os::gone(pid)).await;
 }
 
 async fn wait_for(condition: impl Fn() -> bool) {

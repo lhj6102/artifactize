@@ -263,10 +263,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     let fixture = Fixture::new();
     fixture.runtime("/bin/echo", &["$HOME", "a; echo injected", "a b"]);
     let alias = fixture._root.path().join("alias");
-    #[cfg(unix)]
-    support::os::symlink_dir(&fixture.repo, &alias).unwrap();
-    #[cfg(windows)]
-    support::os::junction(&fixture.repo, &alias);
+    support::os::link_dir(&fixture.repo, &alias);
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .arg("--repo")

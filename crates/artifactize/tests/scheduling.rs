@@ -105,20 +105,13 @@ fn finish(mut child: Child, code: i32) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-/// SIGINT or SIGTERM on Unix; Windows has Ctrl-Break for both.
+/// Interrupt or terminate a child, named as the Unix signals that do it; Windows has
+/// Ctrl-Break for both.
 fn signal(child: &Child, signal: &str) {
-    #[cfg(unix)]
-    assert!(
-        Command::new("/bin/kill")
-            .args([signal, &child.id().to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
-    #[cfg(windows)]
-    {
-        let _ = signal;
-        support::os::interrupt(child.id());
+    match signal {
+        "-INT" => support::os::interrupt(child.id()),
+        "-TERM" => support::os::terminate(child.id()),
+        _ => unreachable!("{signal}"),
     }
 }
 

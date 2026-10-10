@@ -115,27 +115,34 @@ pub(crate) fn is_owner_only(file: &File) -> io::Result<bool> {
 /// Environment variable names compare exactly.
 pub(crate) const ENV_NAMES_IGNORE_CASE: bool = false;
 
-/// Variables, besides `HOME`, that programs read their home directory from.
-pub(crate) const HOME_VARIABLES: &[&str] = &[];
+/// The variable naming the user's home directory.
+pub(crate) const HOME_VARIABLE: &str = "HOME";
 
-/// Variables, besides `XDG_CACHE_HOME`, that programs read their cache directory from.
-pub(crate) const CACHE_VARIABLES: &[&str] = &[];
+/// Variables programs read their home directory from.
+pub(crate) const HOME_VARIABLES: &[&str] = &[HOME_VARIABLE];
+
+/// Variables programs read their cache directory from.
+pub(crate) const CACHE_VARIABLES: &[&str] = &["XDG_CACHE_HOME"];
+
+/// Variables programs read their temporary directory from. `TMP` and `TEMP` are set too, for
+/// programs written for Windows.
+pub(crate) const TEMP_VARIABLES: &[&str] = &["TMPDIR", "TMP", "TEMP"];
 
 /// System variables a child cannot start without; none beyond `PATH` here.
 pub(crate) const SYSTEM_VARIABLES: &[&str] = &[];
 
-/// The variable naming the per-user local data directory, if the system has one; Unix uses
-/// `XDG_STATE_HOME` and `HOME`.
-pub(crate) const LOCAL_DATA_VARIABLE: Option<&str> = None;
+/// Variables naming a per-user state directory, in order; artifactize keeps its state in an
+/// `artifactize` folder below the first one set, and otherwise below `HOME`.
+pub(crate) const STATE_VARIABLES: &[&str] = &["XDG_STATE_HOME"];
+
+/// The variables naming the signed-in user, in order.
+pub(crate) const USER_VARIABLES: &[&str] = &["USER", "LOGNAME"];
 
 /// A path from the raw bytes a tool such as git prints: any bytes name a Unix path.
 pub(crate) fn path_from_bytes(bytes: &[u8]) -> std::path::PathBuf {
     use std::os::unix::ffi::OsStringExt;
     std::ffi::OsString::from_vec(bytes.to_vec()).into()
 }
-
-/// The variable, besides `USER` and `LOGNAME`, naming the signed-in user; Unix sets those.
-pub(crate) const USER_NAME_VARIABLE: Option<&str> = None;
 
 /// Unix programs end a line with LF only.
 pub(crate) const CRLF_LINE_ENDINGS: bool = false;

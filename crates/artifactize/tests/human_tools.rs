@@ -253,11 +253,8 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     let config = read_workspace_config(repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     fs::remove_file(&input).unwrap();
-    #[cfg(unix)]
-    support::os::symlink_file("/etc/passwd", &input).unwrap();
-    // A junction needs no privilege and redirects the operand just the same.
-    #[cfg(windows)]
-    support::os::junction(&std::env::temp_dir(), &input);
+    // A link to a folder outside the repository redirects the operand.
+    support::os::link_dir(&std::env::temp_dir(), &input);
     assert!(
         registry
             .call("inspect_a", CancellationToken::new())
@@ -404,12 +401,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
 struct Launched(u32);
 impl Drop for Launched {
     fn drop(&mut self) {
-        #[cfg(unix)]
-        unsafe {
-            libc::kill(-(self.0 as i32), libc::SIGKILL);
-        }
-        #[cfg(windows)]
-        support::os::kill(self.0);
+        support::os::kill_tree(self.0);
     }
 }
 
@@ -440,19 +432,11 @@ fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
     assert!(result.status.success(), "{result:?}");
     let child = child.expect("launcher wrote its pid");
     assert!(started.elapsed() < Duration::from_secs(3));
+    // Process groups and sessions are Unix's; a Windows child is detached by its flags.
     #[cfg(unix)]
     {
-        // SAFETY: these calls only query the detached child.
-        assert_eq!(
-            unsafe { libc::getpgid(child.0 as i32) },
-            child.0 as i32,
-            "separate process group"
-        );
-        assert_eq!(
-            unsafe { libc::getsid(child.0 as i32) },
-            child.0 as i32,
-            "separate session"
-        );
+        assert!(support::os::leads_group(child.0), "separate process group");
+        assert!(support::os::leads_session(child.0), "separate session");
     }
     // The probe that launched it has exited; the detached child keeps running.
     assert!(

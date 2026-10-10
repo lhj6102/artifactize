@@ -1,7 +1,7 @@
 //! Unix pinned opens and descriptor-based directory listings.
 
 use std::{
-    ffi::{CString, OsStr},
+    ffi::{CStr, CString, OsStr, OsString},
     fs::{self, File, OpenOptions},
     io,
     os::{
@@ -9,18 +9,15 @@ use std::{
         unix::{ffi::OsStrExt, fs::OpenOptionsExt},
     },
     path::{Path, PathBuf},
+    ptr::NonNull,
 };
 
-#[cfg(not(target_os = "macos"))]
-use std::ffi::OsString;
-
-#[cfg(not(target_os = "macos"))]
 use super::FileKind;
 
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
-pub use macos::{case_sensitive, entry_kind, exact_name, read_dir};
+pub use macos::{case_sensitive, exact_name};
 
 /// The absolute path of an existing file with every link resolved.
 pub fn canonicalize(path: &Path) -> io::Result<PathBuf> {
@@ -90,45 +87,128 @@ pub fn is_link_refusal(error: &io::Error) -> bool {
 
 /// The entries of a pinned directory, listed through its descriptor rather than a path
 /// that could have been replaced by a link.
-#[cfg(not(target_os = "macos"))]
-pub fn read_dir(directory: &File) -> io::Result<impl Iterator<Item = io::Result<DirEntry>> + '_> {
-    Ok(
-        fs::read_dir(format!("/proc/self/fd/{}", directory.as_raw_fd()))?
-            .map(|entry| entry.map(DirEntry)),
-    )
+pub fn read_dir(directory: &File) -> io::Result<impl Iterator<Item = io::Result<DirEntry<'_>>>> {
+    // Open a new description, not dup: directory offsets must be independent across scans.
+    // SAFETY: a live descriptor and a constant NUL-terminated name; no links are followed.
+    let fd = unsafe {
+        libc::openat(
+            directory.as_raw_fd(),
+            c".".as_ptr(),
+            libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fd is an owned directory descriptor. fdopendir takes ownership on success.
+    let stream = unsafe { libc::fdopendir(fd) };
+    let Some(stream) = NonNull::new(stream) else {
+        let error = io::Error::last_os_error();
+        // SAFETY: fdopendir failed, leaving fd owned here.
+        unsafe { libc::close(fd) };
+        return Err(error);
+    };
+    Ok(ReadDir {
+        stream,
+        directory,
+        finished: false,
+    })
 }
 
-#[cfg(not(target_os = "macos"))]
-pub struct DirEntry(fs::DirEntry);
+struct ReadDir<'a> {
+    stream: NonNull<libc::DIR>,
+    directory: &'a File,
+    finished: bool,
+}
 
-#[cfg(not(target_os = "macos"))]
-impl DirEntry {
+impl<'a> Iterator for ReadDir<'a> {
+    type Item = io::Result<DirEntry<'a>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while !self.finished {
+            // SAFETY: this iterator exclusively owns the stream. errno distinguishes EOF
+            // from failure; the name is copied before the next readdir can overwrite it.
+            let entry = unsafe {
+                *errno() = 0;
+                libc::readdir(self.stream.as_ptr())
+            };
+            if entry.is_null() {
+                self.finished = true;
+                let error = io::Error::last_os_error();
+                return (error.raw_os_error() != Some(0)).then_some(Err(error));
+            }
+            // SAFETY: readdir returned a dirent with a NUL-terminated d_name.
+            let name = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) }.to_bytes();
+            if name == b"." || name == b".." {
+                continue;
+            }
+            return Some(Ok(DirEntry {
+                directory: self.directory,
+                name: OsStr::from_bytes(name).to_owned(),
+            }));
+        }
+        None
+    }
+}
+
+impl Drop for ReadDir<'_> {
+    fn drop(&mut self) {
+        // SAFETY: this stream is owned exclusively, and closed exactly once.
+        unsafe { libc::closedir(self.stream.as_ptr()) };
+    }
+}
+
+pub struct DirEntry<'a> {
+    directory: &'a File,
+    name: OsString,
+}
+
+impl DirEntry<'_> {
     pub fn file_name(&self) -> OsString {
-        self.0.file_name()
+        self.name.clone()
     }
 
     pub fn file_type(&self) -> io::Result<FileKind> {
-        self.0.file_type().map(kind)
+        entry_kind(self.directory, &self.name)
     }
 }
 
 /// The type of one entry of a pinned directory, without following it.
-#[cfg(not(target_os = "macos"))]
 pub fn entry_kind(directory: &File, name: &OsStr) -> io::Result<FileKind> {
-    let path = Path::new(&format!("/proc/self/fd/{}", directory.as_raw_fd())).join(name);
-    fs::symlink_metadata(path).map(|metadata| kind(metadata.file_type()))
+    let name = EntryName::new(name).ok_or(io::ErrorKind::InvalidInput)?;
+    let mut stat = std::mem::MaybeUninit::<libc::stat>::uninit();
+    // SAFETY: the descriptor and name are live and stat is a writable output buffer.
+    // AT_SYMLINK_NOFOLLOW inspects the entry itself, never its target.
+    if unsafe {
+        libc::fstatat(
+            directory.as_raw_fd(),
+            name.0.as_ptr(),
+            stat.as_mut_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW,
+        )
+    } != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: fstatat filled the struct on success.
+    Ok(match unsafe { stat.assume_init() }.st_mode & libc::S_IFMT {
+        libc::S_IFREG => FileKind::File,
+        libc::S_IFDIR => FileKind::Directory,
+        libc::S_IFLNK => FileKind::Symlink,
+        _ => FileKind::Other,
+    })
 }
 
-#[cfg(not(target_os = "macos"))]
-fn kind(file_type: fs::FileType) -> FileKind {
-    if file_type.is_file() {
-        FileKind::File
-    } else if file_type.is_dir() {
-        FileKind::Directory
-    } else if file_type.is_symlink() {
-        FileKind::Symlink
-    } else {
-        FileKind::Other
+/// This thread's `errno`, which `readdir` leaves unchanged at the end of a directory.
+fn errno() -> *mut libc::c_int {
+    // SAFETY: both functions return this thread's errno location and have no preconditions.
+    #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
+    unsafe {
+        libc::__error()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "freebsd")))]
+    unsafe {
+        libc::__errno_location()
     }
 }
 

@@ -162,9 +162,8 @@ const MAX_PRODUCER_CHARS: usize = 200;
 
 impl Producer {
     pub fn current() -> Self {
-        let user = ["USER", "LOGNAME"]
-            .into_iter()
-            .chain(crate::platform::USER_NAME_VARIABLE)
+        let user = crate::platform::USER_VARIABLES
+            .iter()
             .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()));
         let host = crate::platform::host_name();
         let name = format!(

@@ -731,10 +731,7 @@ async fn dropping_call_cleans_process_before_removing_directories() {
     })
     .await
     .unwrap();
-    #[cfg(unix)]
-    assert!(!crate::test_os::exists(pid as u32));
-    #[cfg(windows)]
-    assert!(!crate::test_os::running(pid));
+    assert!(crate::test_os::gone(pid));
 }
 
 #[test]

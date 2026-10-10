@@ -6,22 +6,7 @@ use support::os::bin;
 
 mod support;
 
-/// A link to a directory: a symlink on Unix, and on Windows a junction, which needs no
-/// privilege and which artifactize refuses just the same.
-fn link_dir(target: &Path, link: &Path) {
-    #[cfg(unix)]
-    support::os::symlink_dir(target, link).unwrap();
-    #[cfg(windows)]
-    support::os::junction(target, link);
-}
-
-fn remove_link(link: &Path) {
-    #[cfg(unix)]
-    fs::remove_file(link).unwrap();
-    // Windows removes a directory link as a directory.
-    #[cfg(windows)]
-    fs::remove_dir(link).unwrap();
-}
+use support::os::{link_dir, remove_link_dir as remove_link};
 
 fn command(state: &Path) -> Command {
     let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));

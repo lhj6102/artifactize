@@ -2,7 +2,7 @@
 mod fixed;
 mod input;
 pub use fixed::{
-    call_fixed, fixed_description, fixed_schema, is_url, validate_args, validate_target,
+    Context, call_fixed, fixed_description, fixed_schema, is_url, validate_args, validate_target,
 };
 pub use input::Input;
 

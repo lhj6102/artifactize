@@ -67,18 +67,32 @@ struct WireResult {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase", deny_unknown_fields)]
 enum WireContent {
-    Text {
-        text: String,
-    },
-    Json {
-        data: Value,
-    },
-    Image {
-        #[serde(rename = "mimeType")]
-        mime_type: String,
-        data: Option<String>,
-        path: Option<String>,
-    },
+    Text { text: String },
+    Json { data: Value },
+    Image(WireImage),
+}
+
+/// An image block carries its bytes inline or names a file in the output directory, never
+/// both and never neither.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum WireImage {
+    Data(InlineImage),
+    Path(ImageFile),
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct InlineImage {
+    mime_type: String,
+    data: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ImageFile {
+    mime_type: String,
+    path: String,
 }
 
 /// Malformed or oversized command output; callers expose their own execution diagnostic.
@@ -110,16 +124,12 @@ pub fn parse(stdout: &[u8], output_dir: &Path) -> Result<ToolResult, InvalidOutp
             {
                 Content::Json { data }
             }
-            WireContent::Image {
-                data,
-                path,
-                mime_type,
-            } => match (data, path) {
-                (Some(data), None) => image::from_base64(&data, &mime_type),
-                (None, Some(path)) => image::from_output(output_dir, &path, &mime_type),
-                _ => return Err(InvalidOutput),
+            WireContent::Image(WireImage::Data(InlineImage { mime_type, data })) => {
+                image::from_base64(&data, &mime_type).map_err(|_| InvalidOutput)?
             }
-            .map_err(|_| InvalidOutput)?,
+            WireContent::Image(WireImage::Path(ImageFile { mime_type, path })) => {
+                image::from_output(output_dir, &path, &mime_type).map_err(|_| InvalidOutput)?
+            }
             _ => return Err(InvalidOutput),
         };
         size += serde_json::to_vec(&block).map_err(|_| InvalidOutput)?.len();

@@ -1,4 +1,4 @@
-use std::{fs, path::Path, process::Command, sync::mpsc, thread};
+use std::{fs, process::Command, sync::mpsc, thread};
 
 use artifactize::store::{
     DATABASE, Receipts, STATE_SCHEMA_VERSION, read_keyed_executions, read_latest_requests,
@@ -8,14 +8,7 @@ use rusqlite::Connection;
 
 mod support;
 
-/// A link to a directory: a symlink on Unix, and on Windows a junction, which needs no
-/// privilege and which artifactize refuses just the same.
-fn link_dir(target: &Path, link: &Path) {
-    #[cfg(unix)]
-    support::os::symlink_dir(target, link).unwrap();
-    #[cfg(windows)]
-    support::os::junction(target, link);
-}
+use support::os::link_dir;
 
 #[tokio::test]
 async fn missing_read_is_inert_and_future_schemas_are_not_modified() {

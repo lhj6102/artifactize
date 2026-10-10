@@ -52,6 +52,9 @@ use tui_tree_widget::TreeState;
 const REFRESH: Duration = Duration::from_secs(1);
 /// Animate cancellable Human jobs without increasing database polling.
 const SPIN: Duration = Duration::from_millis(100);
+/// Check an open Agent conversation for new events: often enough that a live session
+/// follows within seconds, rarely enough that reading the session file stays cheap.
+const SESSION_PROBE: Duration = Duration::from_secs(5);
 /// Bound retained Run pages while allowing the selected scope to page older records.
 const PAGE: u32 = 100;
 

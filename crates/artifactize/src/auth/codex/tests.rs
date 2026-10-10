@@ -525,12 +525,13 @@ async fn logout_revokes_the_refresh_token_and_removes_only_own_tokens() {
     assert!(storage.read::<Credentials>(CREDENTIALS).unwrap().is_none());
 }
 
+// Windows opens through ShellExecute, which runs no program a test can stand in for.
 #[cfg(unix)]
 #[tokio::test]
 async fn sign_in_browser_uses_the_shared_literal_opener() {
-    use std::{os::unix::fs::PermissionsExt, process::Command};
+    use std::process::Command;
     let url = Url::parse("https://example.invalid/?a=1&b=two words").unwrap();
-    if let Some(record) = std::env::var_os("ARTIFACTIZE_CODEX_OPENER_RECORD") {
+    if let Some(record) = std::env::var_os(crate::test_os::RECORD) {
         open_browser(&url).await;
         assert_eq!(
             fs::read_to_string(record).unwrap(),
@@ -538,18 +539,8 @@ async fn sign_in_browser_uses_the_shared_literal_opener() {
         );
         return;
     }
-    let root = tempfile::tempdir().unwrap();
-    let opener = root.path().join(if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    });
-    fs::write(
-        &opener,
-        "#!/bin/sh\nprintf '%s\\n' \"$#\" \"$1\" > \"$ARTIFACTIZE_CODEX_OPENER_RECORD\"\n",
-    )
-    .unwrap();
-    fs::set_permissions(opener, fs::Permissions::from_mode(0o700)).unwrap();
+    let root = crate::test_os::tempdir();
+    crate::test_os::recording_program(root.path(), crate::test_os::OPENER);
     let output = Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
@@ -557,10 +548,7 @@ async fn sign_in_browser_uses_the_shared_literal_opener() {
             "--nocapture",
         ])
         .env("PATH", root.path())
-        .env(
-            "ARTIFACTIZE_CODEX_OPENER_RECORD",
-            root.path().join("record"),
-        )
+        .env(crate::test_os::RECORD, root.path().join("record"))
         .output()
         .unwrap();
     assert!(

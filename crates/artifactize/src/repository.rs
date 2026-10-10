@@ -17,8 +17,16 @@ pub struct Identity {
     pub branch: Option<String>,
 }
 
+/// Git, found through the shared program lookup; `None` when it is not installed.
+fn git_command() -> Option<Command> {
+    let cwd = std::env::current_dir().ok()?;
+    artifactize_tools::program::resolve(std::ffi::OsStr::new("git"), &cwd)
+        .ok()
+        .map(Command::new)
+}
+
 fn git(path: &Path, args: &[&str]) -> Option<Vec<u8>> {
-    let output = Command::new("git")
+    let output = git_command()?
         .arg("-C")
         .arg(path)
         .args(args)
@@ -64,7 +72,10 @@ pub struct Worktree {
 
 /// NUL-delimited porcelain does not quote spaces, tabs or newlines in paths.
 pub fn worktrees(common_dir: &Path) -> Vec<Worktree> {
-    let output = Command::new("git")
+    let Some(mut git) = git_command() else {
+        return Vec::new();
+    };
+    let output = git
         .arg("--git-dir")
         .arg(common_dir)
         .args(["worktree", "list", "--porcelain", "-z"])

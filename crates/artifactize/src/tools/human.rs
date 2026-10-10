@@ -285,13 +285,22 @@ impl<'a> Registry<'a> {
                 }
             };
         }
+        // A Human tool runs as the reviewer, with the reviewer's environment, as output
+        // tools do.
+        let launcher = process::Launcher {
+            env: std::env::vars_os().collect(),
+        };
+        let context = artifactize_tools::builtin::Context {
+            root: &self.config.root,
+            scope: &tool_scope,
+            owner: &owner,
+            launcher: &launcher,
+        };
         let result = artifactize_tools::builtin::call_fixed(
             declaration.builtin,
             &args,
             serde_json::json!({}),
-            &self.config.root,
-            &tool_scope,
-            &owner,
+            context,
             &cancellation,
         )
         .await;

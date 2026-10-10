@@ -134,7 +134,13 @@ async fn run(cli: Cli) -> Result<(), String> {
         }
     };
     let result = if let Some(args) = args {
-        builtin::call_fixed(tool, &args, input, &root, &scope, &owner, &cancellation).await
+        let context = builtin::Context {
+            root: &root,
+            scope: &scope,
+            owner: &owner,
+            launcher: &artifactize_tools::launch::Standalone,
+        };
+        builtin::call_fixed(tool, &args, input, context, &cancellation).await
     } else {
         let validator = artifactize_tools::schema::compile(&builtin::input_schema(tool))?;
         artifactize_tools::schema::validate(&validator, &input)?;

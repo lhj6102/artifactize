@@ -57,25 +57,32 @@ pub(crate) fn is_owner_only(file: &File) -> io::Result<bool> {
 /// Windows compares environment variable names without regard to case.
 pub(crate) const ENV_NAMES_IGNORE_CASE: bool = true;
 
-/// Variables, besides `HOME`, that Windows programs read their home directory from.
-pub(crate) const HOME_VARIABLES: &[&str] = &["USERPROFILE", "APPDATA"];
+/// The variable naming the user's home directory, which Unix-style tools read on Windows too.
+pub(crate) const HOME_VARIABLE: &str = "HOME";
 
-/// Variables, besides `XDG_CACHE_HOME`, that Windows programs read their cache from.
-pub(crate) const CACHE_VARIABLES: &[&str] = &["LOCALAPPDATA"];
+/// Variables Windows programs, and Unix-style tools on Windows, read their home from.
+pub(crate) const HOME_VARIABLES: &[&str] = &[HOME_VARIABLE, "USERPROFILE", "APPDATA"];
+
+/// Variables programs read their cache directory from.
+pub(crate) const CACHE_VARIABLES: &[&str] = &["XDG_CACHE_HOME", "LOCALAPPDATA"];
+
+/// Variables programs read their temporary directory from.
+pub(crate) const TEMP_VARIABLES: &[&str] = &["TMPDIR", "TMP", "TEMP"];
 
 /// System variables many Windows programs cannot start without.
 pub(crate) const SYSTEM_VARIABLES: &[&str] = &["SystemRoot", "ComSpec", "PATHEXT"];
 
-/// The variable naming the per-user local data directory.
-pub(crate) const LOCAL_DATA_VARIABLE: Option<&str> = Some("LOCALAPPDATA");
+/// Variables naming a per-user state directory, in order; artifactize keeps its state in an
+/// `artifactize` folder below the first one set, and otherwise below `HOME`.
+pub(crate) const STATE_VARIABLES: &[&str] = &["XDG_STATE_HOME", "LOCALAPPDATA"];
+
+/// The variables naming the signed-in user, in order; Windows sets `USERNAME`, not `USER`.
+pub(crate) const USER_VARIABLES: &[&str] = &["USER", "USERNAME"];
 
 /// A path from the bytes a tool such as git prints, which are UTF-8 on Windows.
 pub(crate) fn path_from_bytes(bytes: &[u8]) -> std::path::PathBuf {
     String::from_utf8_lossy(bytes).into_owned().into()
 }
-
-/// Windows names the signed-in user in `USERNAME` and sets no `USER`.
-pub(crate) const USER_NAME_VARIABLE: Option<&str> = Some("USERNAME");
 
 /// Windows programs end a line with CRLF, as Python's print does there.
 pub(crate) const CRLF_LINE_ENDINGS: bool = true;

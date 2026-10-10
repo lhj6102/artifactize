@@ -61,11 +61,9 @@ async fn registration_observes_inert_group_leader_before_exec() {
     let expected_cwd = scratch.0.clone();
     let output = process::run(command, CancellationToken::new(), move |child| async move {
         assert!(!marker.exists());
+        // A Unix child leads its own process group; Windows holds it in a Job Object instead.
         #[cfg(unix)]
-        {
-            // SAFETY: getpgid only queries the live registered child.
-            assert_eq!(unsafe { libc::getpgid(child.pid as i32) }, child.pid as i32);
-        }
+        assert!(support::os::leads_group(child.pid));
         assert_eq!(support::os::start_time(child.pid), child.start_time);
         // Windows holds the child suspended in its job; its identity is already final.
 
@@ -183,10 +181,7 @@ async fn stdout_and_stderr_are_drained_concurrently_after_capture_limit() {
 
 async fn assert_gone(pid: u32) {
     assert!(pid > 0, "must have observed a real process");
-    #[cfg(unix)]
-    wait_for(|| !support::os::exists(pid)).await;
-    #[cfg(windows)]
-    wait_for(|| !support::os::running(pid)).await;
+    wait_for(|| support::os::gone(pid)).await;
 }
 
 async fn wait_for(condition: impl Fn() -> bool) {

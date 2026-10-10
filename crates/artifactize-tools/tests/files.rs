@@ -7,7 +7,7 @@ use artifactize_tools::files::{self, FileKind};
 
 #[test]
 fn listings_and_kinds_stay_relative_to_the_pinned_directory() {
-    let root = tempfile::tempdir().unwrap();
+    let root = os::tempdir();
     let original = root.path().join("original");
     fs::create_dir(&original).unwrap();
     fs::write(original.join("input"), "pinned").unwrap();

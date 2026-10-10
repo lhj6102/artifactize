@@ -254,10 +254,49 @@ pub struct EvalPayload {
     pub extra: Map<String, Value>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", try_from = "EvalFields")]
+/// An Eval's id within its Artifact, such as `follows-style`: the key of its
+/// `[evals.<id>]` table, validated when the declaration is read.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct EvalId(String);
+
+impl std::str::FromStr for EvalId {
+    type Err = String;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        identifier(value, "Eval id")?;
+        Ok(Self(value.to_owned()))
+    }
+}
+
+impl EvalId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl PartialEq<&str> for EvalId {
+    fn eq(&self, other: &&str) -> bool {
+        self.0 == *other
+    }
+}
+
+impl std::ops::Deref for EvalId {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for EvalId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EvalDeclaration {
-    pub id: String,
+    pub id: EvalId,
     pub title: String,
     pub profile: Profile,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -285,10 +324,9 @@ struct EvalFields {
     fail_schema: Option<Map<String, Value>>,
 }
 
-impl TryFrom<EvalFields> for EvalDeclaration {
-    type Error = String;
-
-    fn try_from(fields: EvalFields) -> Result<Self, Self::Error> {
+impl EvalDeclaration {
+    /// Check the fields of the `[evals.<id>]` table that every profile needs together.
+    fn new(id: EvalId, fields: EvalFields) -> Result<Self, String> {
         if matches!(fields.profile, Profile::Dependency { .. }) {
             if fields.payload.is_some()
                 || fields.pass_schema.is_some()
@@ -304,7 +342,7 @@ impl TryFrom<EvalFields> for EvalDeclaration {
             return Err("Eval payload is required for runtime, agent and human profiles.".into());
         }
         Ok(Self {
-            id: String::new(),
+            id,
             title: fields.title,
             profile: fields.profile,
             profile_variants: fields.profile_variants.unwrap_or_default(),
@@ -317,7 +355,6 @@ impl TryFrom<EvalFields> for EvalDeclaration {
 
 impl EvalDeclaration {
     fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
-        location.check(identifier(&self.id, "Eval id"))?;
         location
             .child("title")
             .check(text(&self.title, "Eval title"))?;
@@ -639,14 +676,14 @@ impl ArtifactDeclaration {
 fn declared_evals<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Vec<EvalDeclaration>, D::Error> {
-    let evals = BTreeMap::<String, EvalDeclaration>::deserialize(deserializer)?;
-    Ok(evals
+    use serde::de::Error;
+    BTreeMap::<String, EvalFields>::deserialize(deserializer)?
         .into_iter()
-        .map(|(id, mut eval)| {
-            eval.id = id;
-            eval
+        .map(|(id, fields)| {
+            let id = id.parse().map_err(D::Error::custom)?;
+            EvalDeclaration::new(id, fields).map_err(D::Error::custom)
         })
-        .collect())
+        .collect()
 }
 
 /// Validate an Artifact declaration without opening scripts or declared inputs.

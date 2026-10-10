@@ -1,3 +1,6 @@
+#[path = "support/os.rs"]
+mod os;
+
 use std::{collections::BTreeMap, fs};
 
 use artifactize_tools::{
@@ -14,7 +17,7 @@ fn id(value: &str) -> ArtifactId {
 
 #[test]
 fn child_and_mount_names_cannot_be_bypassed_by_a_filesystem_alias() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = os::tempdir();
     let root = fs::canonicalize(directory.path()).unwrap();
     fs::create_dir(root.join("Secret")).unwrap();
     fs::write(root.join("Secret/x"), "excluded").unwrap();

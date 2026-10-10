@@ -2,14 +2,14 @@
 
 pub mod builtin;
 pub mod image;
+pub mod launch;
 pub mod opener;
 mod platform;
-pub mod program;
 pub mod result;
 pub mod schema;
 pub mod scope;
 
-pub use platform::files;
+pub use platform::{files, program};
 
 /// Temporary roots, links and executable files, shared with the integration tests.
 #[cfg(test)]

@@ -38,12 +38,11 @@ async fn registered(subscription: &mut Subscription) {
 fn endpoint_names_keep_the_same_twenty_four_hex_character_directory_prefix() {
     let state = temporary_state();
     let endpoint = Endpoint::new(state.path()).unwrap();
-    #[cfg(unix)]
-    let directory = endpoint.address.parent().unwrap();
+    // Unix binds a socket below the sticky system temporary root; Windows names a pipe.
     #[cfg(unix)]
     {
-        // SAFETY: geteuid has no preconditions; compare against the existing naming contract.
-        let user = unsafe { libc::geteuid() };
+        let directory = endpoint.address.parent().unwrap();
+        let user = crate::test_os::current_uid();
         assert_eq!(
             directory,
             Path::new(if cfg!(target_os = "macos") {
@@ -208,6 +207,7 @@ async fn idle_probe_never_reloads_and_missed_commit_is_detected_on_persistent_co
     assert!(probe.changed().await);
     assert!(!probe.changed().await);
 }
+// Windows cannot rename or delete a database file that the probe holds open.
 #[cfg(unix)]
 #[tokio::test]
 async fn database_replacement_and_deletion_force_resync() {
@@ -230,25 +230,19 @@ async fn database_replacement_and_deletion_force_resync() {
     assert!(probe.changed().await);
     assert!(!probe.changed().await);
 }
-#[cfg(unix)]
 #[test]
 fn unsafe_endpoint_directory_and_lock_are_refused_not_repaired() {
-    use std::os::unix::fs::PermissionsExt;
     let state = temporary_state();
     let endpoint = Endpoint::new(state.path()).unwrap();
-    let directory = endpoint.address.parent().unwrap();
-    std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o755)).unwrap();
-    assert!(endpoint.elect().is_err());
-    assert_eq!(
-        std::fs::metadata(directory).unwrap().permissions().mode() & 0o777,
-        0o755
-    );
-    std::fs::set_permissions(directory, std::fs::Permissions::from_mode(0o700)).unwrap();
     let target = state.path().join("foreign-lock");
     std::fs::write(&target, "untouched").unwrap();
-    std::os::unix::fs::symlink(&target, directory.join("owner.lock")).unwrap();
+    if crate::test_os::symlink_file(&target, endpoint.directory().join("owner.lock")).is_some() {
+        assert!(endpoint.elect().is_err());
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
+    }
+    crate::test_os::share_dir(endpoint.directory());
     assert!(endpoint.elect().is_err());
-    assert_eq!(std::fs::read_to_string(target).unwrap(), "untouched");
+    assert!(!crate::test_os::private_dir(endpoint.directory()));
 }
 
 #[tokio::test]
@@ -305,7 +299,6 @@ async fn a_slow_inbox_overflow_keeps_no_unbounded_session_history() {
     assert!(subscriber.inbox.dirty.lock().unwrap().is_empty());
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn probe_refuses_linked_sqlite_sidecars_before_opening_sqlite() {
     let state = temporary_state();
@@ -313,7 +306,9 @@ async fn probe_refuses_linked_sqlite_sidecars_before_opening_sqlite() {
     rusqlite::Connection::open(&database).unwrap();
     let target = state.path().join("unrelated");
     std::fs::write(&target, "untouched").unwrap();
-    std::os::unix::fs::symlink(&target, state.path().join("state.sqlite-shm")).unwrap();
+    if crate::test_os::symlink_file(&target, state.path().join("state.sqlite-shm")).is_none() {
+        return;
+    }
     let mut probe = probe::Probe::new(state.path().into());
     assert!(probe.changed().await);
     assert_eq!(std::fs::read_to_string(target).unwrap(), "untouched");

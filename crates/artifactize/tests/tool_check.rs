@@ -151,8 +151,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     // Windows has no execute bit to take away.
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o600)).unwrap();
+        support::os::deny_execution(&repo.join("a/env.sh"));
         assert_eq!(
             parsed(
                 &check(
@@ -165,7 +164,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
             false
         );
         assert!(!repo.join("a/touched").exists());
-        fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o700)).unwrap();
+        support::os::make_executable(&repo.join("a/env.sh"));
     }
     let agent = parsed(
         &check(

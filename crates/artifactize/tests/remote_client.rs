@@ -333,26 +333,10 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
 #[cfg(unix)]
 #[test]
 fn login_on_a_terminal_does_not_echo_the_token() {
-    use std::os::fd::{FromRawFd, OwnedFd};
-
     let root = tempfile::tempdir().unwrap();
     let token = test_token();
     let server = Whoami::start(&token);
-    let (mut master, mut slave) = (0, 0);
-    // SAFETY: openpty writes two new descriptors, owned below.
-    let opened = unsafe {
-        libc::openpty(
-            &mut master,
-            &mut slave,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
-    assert_eq!(opened, 0);
-    // SAFETY: both descriptors were just opened and are owned exactly once.
-    let (mut master, slave) =
-        unsafe { (fs::File::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
+    let (mut master, slave) = support::os::pty();
     let mut child = artifactize(&root.path().join("state"))
         .args(["remote", "login", &server.url])
         .stdin(slave.try_clone().unwrap())
@@ -385,48 +369,10 @@ fn login_on_a_terminal_does_not_echo_the_token() {
 #[cfg(windows)]
 #[test]
 fn login_on_a_mintty_pipe_reads_the_token_visibly_with_a_warning() {
-    use std::{os::windows::io::FromRawHandle, ptr};
-    use windows_sys::Win32::{
-        Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE},
-        Storage::FileSystem::{CreateFileW, OPEN_EXISTING, PIPE_ACCESS_OUTBOUND},
-        System::Pipes::{CreateNamedPipeW, PIPE_TYPE_BYTE, PIPE_WAIT},
-    };
-
     let root = tempfile::tempdir().unwrap();
     let token = test_token();
     let server = Whoami::start(&token);
-    let name: Vec<u16> = format!(r"\\.\pipe\msys-{}-pty0-from-master", std::process::id())
-        .encode_utf16()
-        .chain([0])
-        .collect();
-    // SAFETY: a NUL-terminated name; each handle is checked, then owned by one File.
-    let (mut writer, reader) = unsafe {
-        let server_end = CreateNamedPipeW(
-            name.as_ptr(),
-            PIPE_ACCESS_OUTBOUND,
-            PIPE_TYPE_BYTE | PIPE_WAIT,
-            1,
-            4096,
-            4096,
-            0,
-            ptr::null(),
-        );
-        assert_ne!(server_end, INVALID_HANDLE_VALUE);
-        let client_end = CreateFileW(
-            name.as_ptr(),
-            GENERIC_READ,
-            0,
-            ptr::null(),
-            OPEN_EXISTING,
-            0,
-            ptr::null_mut(),
-        );
-        assert_ne!(client_end, INVALID_HANDLE_VALUE);
-        (
-            fs::File::from_raw_handle(server_end),
-            fs::File::from_raw_handle(client_end),
-        )
-    };
+    let (mut writer, reader) = support::os::mintty_pipe();
     assert!(
         std::io::IsTerminal::is_terminal(&reader),
         "the pipe passes for a mintty terminal"
