@@ -191,6 +191,7 @@ impl Scope {
         } else {
             &location.path
         };
+        open_input(root, artifact, path).map_err(|error| ScopeError(error.to_string()))?;
         let resolved = scoped_path(&owner, Path::new(path))?;
         if artifact.file_name().is_some() && !resolved.is_file() {
             return Err(ScopeError(
