@@ -16,7 +16,7 @@ use tokio::{
 };
 
 /// The child's process group, killed when dropped.
-pub(crate) struct Child(Box<dyn ChildWrapper>);
+pub(crate) struct Child(Box<dyn ChildWrapper>, #[cfg(target_os = "macos")] u32);
 
 impl Child {
     pub fn stdin(&mut self) -> &mut Option<ChildStdin> {
@@ -45,9 +45,46 @@ impl Child {
     pub fn kill(&mut self) -> io::Result<()> {
         match self.0.start_kill() {
             Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
+            #[cfg(target_os = "macos")]
+            Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
+                // Darwin can report EPERM after the leader was reaped and its group
+                // disappeared. Suppress it only when the kernel confirms no members.
+                if process_group_empty(self.1)? {
+                    Ok(())
+                } else {
+                    Err(error)
+                }
+            }
             result => result,
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn process_group_empty(pgid: u32) -> io::Result<bool> {
+    let mut query = [
+        libc::CTL_KERN,
+        libc::KERN_PROC,
+        libc::KERN_PROC_PGRP,
+        i32::try_from(pgid).map_err(|_| io::ErrorKind::InvalidInput)?,
+    ];
+    let mut bytes = 0;
+    // SAFETY: the four-element MIB is writable and bytes is a live size output. A null
+    // oldp requests the size of the process records without allocating or reading them.
+    if unsafe {
+        libc::sysctl(
+            query.as_mut_ptr(),
+            query.len() as u32,
+            std::ptr::null_mut(),
+            &mut bytes,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(bytes == 0)
 }
 
 impl Drop for Child {
@@ -214,7 +251,17 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
     }
     // std spawn waits for exec's error pipe, so it cannot run on the task that
     // opens the gate. Returning a guarded child also covers a dropped join handle.
-    let spawning = tokio::task::spawn_blocking(move || command.spawn().map(Child));
+    let spawning = tokio::task::spawn_blocking(move || {
+        command.spawn().map(|child| {
+            #[cfg(target_os = "macos")]
+            let pid = child.id().expect("new child has a PID");
+            Child(
+                child,
+                #[cfg(target_os = "macos")]
+                pid,
+            )
+        })
+    });
     Ok((gate, spawning))
 }
 
