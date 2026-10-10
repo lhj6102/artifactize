@@ -1,3 +1,6 @@
+#[path = "support/os.rs"]
+mod os;
+
 use std::{
     fs,
     path::Path,
@@ -67,14 +70,8 @@ fn symlink_inputs_are_not_followed() {
     let root = tempfile::tempdir().unwrap();
     fs::write(root.path().join("real.md"), "# First\nbody\n").unwrap();
     let link = root.path().join("link.md");
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(root.path().join("real.md"), &link).unwrap();
-    #[cfg(windows)]
-    if let Err(error) = std::os::windows::fs::symlink_file(root.path().join("real.md"), &link) {
-        if error.raw_os_error() == Some(1314) {
-            return;
-        }
-        panic!("{error}");
+    if os::symlink_file(root.path().join("real.md"), &link).is_none() {
+        return;
     }
     for args in [
         vec!["read", "link.md"],
@@ -139,28 +136,18 @@ fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
     assert!(start.elapsed() < std::time::Duration::from_secs(20));
 }
 
+// Windows opens through ShellExecute, which runs no program a test can stand in for.
 #[cfg(unix)]
 #[test]
 fn open_passes_one_absolute_target_to_the_recording_opener() {
-    use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
-    let program = root.path().join(if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    });
-    fs::write(
-        &program,
-        "#!/bin/sh\nprintf '%s\\n%s\\n' \"$#\" \"$1\" > \"$RECORD\"\n",
-    )
-    .unwrap();
-    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+    let root = os::tempdir();
+    os::recording_program(root.path(), os::OPENER);
     fs::write(root.path().join("space ; notes.md"), "notes").unwrap();
     let record = root.path().join("record");
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize-tools"))
         .current_dir(root.path())
         .env("PATH", root.path())
-        .env("RECORD", &record)
+        .env(os::RECORD, &record)
         .args(["open", "space ; notes.md"])
         .output()
         .unwrap();

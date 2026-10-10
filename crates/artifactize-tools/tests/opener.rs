@@ -1,11 +1,15 @@
 //! Test desktop handoff in a subprocess so PATH never races other tests.
+// Windows opens through ShellExecute, which runs no program a test can stand in for.
 #![cfg(unix)]
 
-use std::{ffi::OsStr, fs, os::unix::fs::PermissionsExt, process::Command};
+#[path = "support/os.rs"]
+mod os;
+
+use std::{ffi::OsStr, fs, process::Command};
 
 #[test]
 fn target_is_one_literal_argument() {
-    if let Some(record) = std::env::var_os("ARTIFACTIZE_OPENER_RECORD") {
+    if let Some(record) = std::env::var_os(os::RECORD) {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -24,22 +28,12 @@ fn target_is_one_literal_argument() {
         );
         return;
     }
-    let root = tempfile::tempdir().unwrap();
-    let opener = root.path().join(if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    });
-    fs::write(
-        &opener,
-        "#!/bin/sh\nprintf '%s\\n' \"$#\" \"$1\" >> \"$ARTIFACTIZE_OPENER_RECORD\"\n",
-    )
-    .unwrap();
-    fs::set_permissions(opener, fs::Permissions::from_mode(0o700)).unwrap();
+    let root = os::tempdir();
+    os::recording_program(root.path(), os::OPENER);
     let output = Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "target_is_one_literal_argument", "--nocapture"])
         .env("PATH", root.path())
-        .env("ARTIFACTIZE_OPENER_RECORD", root.path().join("record"))
+        .env(os::RECORD, root.path().join("record"))
         .output()
         .unwrap();
     assert!(

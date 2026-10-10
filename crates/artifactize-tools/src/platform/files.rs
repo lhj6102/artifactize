@@ -18,6 +18,10 @@ pub use windows::{
     open_directory, open_entry, open_no_follow, open_nonblocking, read_dir,
 };
 
+/// Whether a name can reach an entry spelled differently, as case-insensitive Windows and
+/// macOS volumes allow; path-returning interfaces then also check the exact spelling.
+pub const ALIASED_NAMES: bool = cfg!(any(windows, target_os = "macos"));
+
 /// The type of a directory entry, read without following it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileKind {

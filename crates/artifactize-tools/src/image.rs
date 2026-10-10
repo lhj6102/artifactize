@@ -32,15 +32,9 @@ pub fn from_output(root: &Path, path: &str, mime_type: &str) -> Result<Content, 
     let relative = if path.is_absolute() {
         let relative = path
             .strip_prefix(root)
-            .map_err(|_| "Image is outside the tool output directory.")?
-            .to_str()
-            .ok_or("Image path must be UTF-8.")?;
-        // Below the root, a Windows path separates its components with `\`.
-        if cfg!(windows) {
-            relative.replace('\\', "/")
-        } else {
-            relative.to_owned()
-        }
+            .map_err(|_| "Image is outside the tool output directory.")?;
+        scope::logical_from_native(relative)
+            .ok_or("Image path must be a UTF-8 path below the tool output directory.")?
     } else {
         path.to_str().ok_or("Image path must be UTF-8.")?.to_owned()
     };

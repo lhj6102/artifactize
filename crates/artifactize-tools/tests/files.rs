@@ -1,3 +1,6 @@
+#[path = "support/os.rs"]
+mod os;
+
 use std::{ffi::OsStr, fs};
 
 use artifactize_tools::files::{self, FileKind};
@@ -31,11 +34,12 @@ fn listings_and_kinds_stay_relative_to_the_pinned_directory() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn listings_and_entry_kind_inspect_links_without_following_them() {
-    let root = tempfile::tempdir().unwrap();
-    std::os::unix::fs::symlink("missing", root.path().join("link")).unwrap();
+    let root = os::tempdir();
+    if os::symlink_file("missing", root.path().join("link")).is_none() {
+        return;
+    }
     let directory = files::open_directory(root.path()).unwrap();
     let entry = files::read_dir(&directory)
         .unwrap()

@@ -360,6 +360,18 @@ pub fn logical_path(path: &str) -> Result<(), ScopeError> {
     Ok(())
 }
 
+/// The logical form of a native relative path: its components joined with `/`, whatever
+/// separator the platform uses. `None` when a component is not UTF-8 or not a plain name.
+pub fn logical_from_native(path: &Path) -> Option<String> {
+    path.components()
+        .map(|component| match component {
+            Component::Normal(name) => name.to_str(),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(|names| names.join("/"))
+}
+
 /// Resolve a physical input below a canonical root. No component may be a symlink.
 pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
     let path = path
@@ -384,8 +396,9 @@ pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
     }
     // The path-returning interface must enforce the same exact spelling as pinned reads;
     // otherwise a Human tool or explicit fingerprint input could bypass logical ownership.
-    #[cfg(any(windows, target_os = "macos"))]
-    open_scoped(root, path).map_err(|error| ScopeError(error.to_string()))?;
+    if platform::ALIASED_NAMES {
+        open_scoped(root, path).map_err(|error| ScopeError(error.to_string()))?;
+    }
     let actual = platform::canonicalize(&target)
         .map_err(|error| ScopeError(format!("{}: {error}", target.display())))?;
     if !actual.starts_with(root) {

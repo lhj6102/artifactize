@@ -10,7 +10,7 @@ use std::{
 };
 
 use super::EntryName;
-use crate::files::FileKind;
+use crate::platform::files::FileKind;
 
 pub fn read_dir(directory: &File) -> io::Result<impl Iterator<Item = io::Result<DirEntry<'_>>>> {
     // Open a new description, not dup: directory offsets must be independent across scans.

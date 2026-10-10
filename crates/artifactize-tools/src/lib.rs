@@ -1,13 +1,20 @@
 //! Portable read-only tools, scoped paths, and pinned no-follow file access.
 
 pub mod builtin;
-pub mod files;
 pub mod image;
 pub mod opener;
+mod platform;
 pub mod program;
 pub mod result;
 pub mod schema;
 pub mod scope;
+
+pub use platform::files;
+
+/// Temporary roots, links and executable files, shared with the integration tests.
+#[cfg(test)]
+#[path = "../tests/support/os.rs"]
+mod test_os;
 
 pub use result::{Content, ToolResult};
 
