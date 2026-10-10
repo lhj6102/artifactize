@@ -32,6 +32,12 @@ fn segment(value: &str) -> bool {
 
 macro_rules! identity {
     ($name:ident, $valid:expr) => {
+        identity!($name, $valid, |value: &str| format!(
+            "Invalid {}: {value:?}.",
+            stringify!($name)
+        ));
+    };
+    ($name:ident, $valid:expr, $error:expr) => {
         #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
         #[serde(try_from = "String")]
         pub struct $name(String);
@@ -41,7 +47,7 @@ macro_rules! identity {
                 if ($valid)(&value) {
                     Ok(Self(value))
                 } else {
-                    Err(format!("Invalid {}: {value:?}.", stringify!($name)))
+                    Err(($error)(&value))
                 }
             }
         }
@@ -196,9 +202,13 @@ identity!(StoreUrl, |value: &str| reqwest::Url::parse(value)
         && url.username().is_empty()
         && url.password().is_none()));
 // Human audit labels permit printable Unicode and spaces, but never control characters.
-identity!(ReviewerId, |value: &str| !value.trim().is_empty()
-    && value.len() <= MAX_ID_BYTES
-    && !value.chars().any(char::is_control));
+identity!(
+    ReviewerId,
+    |value: &str| !value.trim().is_empty()
+        && value.len() <= MAX_ID_BYTES
+        && !value.chars().any(char::is_control),
+    |_: &str| "A reviewer id of 1–200 bytes without control characters is required.".to_owned()
+);
 
 identity!(TokenName, |value: &str| (1..=MAX_TOKEN_NAME_BYTES)
     .contains(&value.len())
