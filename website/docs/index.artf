@@ -9,7 +9,7 @@ read = { builtin = "read" }
 
 [evals.matches-cli]
 title = "The documentation matches the CLI"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 8000000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 8000000 }
 
 [evals.matches-cli.payload]
 instruction = """

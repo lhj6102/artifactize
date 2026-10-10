@@ -9,11 +9,12 @@ read = { builtin = "read" }
 
 [evals.follows-style]
 title = "The tools code follows the code checklist"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 8000000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 8000000 }
 
 [evals.follows-style.profile_variants]
 sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 4000000 }
 sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 4000000 }
+luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 8000000 }
 
 [evals.follows-style.payload]
 instruction = """
@@ -49,11 +50,12 @@ additionalProperties = false
 
 [evals.follows-platform]
 title = "The tools code follows the platform checklist"
-profile = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 8000000 }
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 8000000 }
 
 [evals.follows-platform.profile_variants]
 sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 4000000 }
 sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 4000000 }
+luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000, max_tool_calls = 120, max_tokens = 8000000 }
 
 [evals.follows-platform.payload]
 instruction = """
