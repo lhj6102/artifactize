@@ -23,6 +23,17 @@ pub struct PruneReport {
     pub would_remove_sessions: Vec<String>,
 }
 
+// `--older-than` units in seconds, each built from the one below it. A day is a fixed
+// 24 hours because pruning compares elapsed time, not calendar dates.
+/// 60 seconds in a minute.
+const SECONDS_PER_MINUTE: u64 = 60;
+/// 60 minutes in an hour.
+const SECONDS_PER_HOUR: u64 = 60 * SECONDS_PER_MINUTE;
+/// 24 hours in a day.
+const SECONDS_PER_DAY: u64 = 24 * SECONDS_PER_HOUR;
+/// 7 days in a week.
+const SECONDS_PER_WEEK: u64 = 7 * SECONDS_PER_DAY;
+
 pub fn parse_duration(value: &str) -> Result<Duration, String> {
     let error = || "Use a whole-number duration with s, m, h, d or w (for example 7d).".to_owned();
     let split = value
@@ -30,16 +41,17 @@ pub fn parse_duration(value: &str) -> Result<Duration, String> {
         .ok_or_else(error)?;
     let multiplier = match &value[split..] {
         "s" => 1,
-        "m" => 60,
-        "h" => 3600,
-        "d" => 86400,
-        "w" => 604800,
+        "m" => SECONDS_PER_MINUTE,
+        "h" => SECONDS_PER_HOUR,
+        "d" => SECONDS_PER_DAY,
+        "w" => SECONDS_PER_WEEK,
         _ => return Err(error()),
     };
     let seconds = value[..split]
         .parse::<u64>()
         .ok()
         .and_then(|amount| amount.checked_mul(multiplier))
+        // `time::Duration` holds whole seconds as an `i64`; the cutoff converts into it.
         .filter(|seconds| *seconds <= i64::MAX as u64)
         .ok_or_else(error)?;
     Ok(Duration::from_secs(seconds))
