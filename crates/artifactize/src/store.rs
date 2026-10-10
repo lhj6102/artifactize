@@ -44,8 +44,9 @@ pub use requests::{
 /// immediate busy error, while limiting how long one database operation can block.
 pub(crate) const SQLITE_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// How many times [`retry_transient_access`] retries past a transient Windows file-access
-/// race, and how long it waits between attempts.
+/// The race [`retry_transient_access`] retries past clears in one handle close; 5 attempts of
+/// 20ms (100ms total at most) comfortably outlasts that under a loaded CI runner, without
+/// making a real, non-transient failure noticeably slower to report.
 const TRANSIENT_ACCESS_RETRIES: u32 = 5;
 const TRANSIENT_ACCESS_BACKOFF: std::time::Duration = std::time::Duration::from_millis(20);
 
