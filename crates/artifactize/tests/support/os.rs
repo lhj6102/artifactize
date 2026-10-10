@@ -1014,7 +1014,8 @@ pub fn editor_command(directory: &Path, text: &str) -> String {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    format!("\"{}\"", executable.to_string_lossy())
+    // cmd, which runs the editor on Windows, cannot start a `\\?\` verbatim path.
+    format!("\"{}\"", canonical(&executable).to_string_lossy())
 }
 
 /// Create or replace an owner-only fixture file. Replacement keeps the inode for tests

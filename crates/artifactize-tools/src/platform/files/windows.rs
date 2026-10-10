@@ -45,8 +45,9 @@ const NAME_SURROGATE: u32 = 0x2000_0000;
 /// Open without following a reparse point in the last component. Windows opens the reparse
 /// point itself instead of failing, so it is refused after the open.
 pub fn open_no_follow(options: &mut OpenOptions, path: &Path) -> io::Result<File> {
+    // Backup semantics let the same open reach a directory, as an ordinary Unix open does.
     let file = options
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)?;
     if file.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(reparse_point());

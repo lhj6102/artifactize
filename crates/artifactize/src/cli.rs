@@ -452,22 +452,38 @@ pub fn run() -> ExitCode {
             };
         }
     };
-    let runtime = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-    {
-        Ok(runtime) => runtime,
-        Err(error) => return failure(&error.to_string(), json),
+    // Run on a thread whose stack is the same size everywhere: Windows gives the main thread
+    // only 1 MiB, which deep review futures outgrow in debug builds.
+    let worker = std::thread::Builder::new()
+        .name("artifactize".into())
+        .stack_size(STACK_BYTES)
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .thread_stack_size(STACK_BYTES)
+                .build()
+                .map_err(|error| error.to_string())?;
+            runtime.block_on(Box::pin(async {
+                let result = dispatch::execute(cli).await;
+                crate::changes::drain().await;
+                result
+            }))
+        });
+    let result = match worker {
+        Ok(worker) => worker
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
+        Err(error) => Err(error.to_string()),
     };
-    match runtime.block_on(async {
-        let result = dispatch::execute(cli).await;
-        crate::changes::drain().await;
-        result
-    }) {
+    match result {
         Ok(code) => ExitCode::from(code),
         Err(error) => failure(&error, json),
     }
 }
+
+/// The stack of the thread commands run on, and of blocking helper threads: 8 MiB, the
+/// usual Linux and macOS main-thread size, so every system runs the same futures.
+const STACK_BYTES: usize = 8 * 1024 * 1024;
 
 /// Parse protocol milliseconds exactly once, preserving the public signed 32-bit bound.
 fn timeout_duration(text: &str) -> Result<std::time::Duration, String> {
