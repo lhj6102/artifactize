@@ -6,7 +6,7 @@ use std::{
     path::PathBuf,
 };
 
-use super::outcome_code;
+use super::{outcome_code, render::WAIT_TIMEOUT_EXIT};
 use std::time::Duration;
 
 /// Match verify's ten-minute Human wait: allow interactive sign-off without an
@@ -87,7 +87,7 @@ pub(super) async fn show(
             "Waiting timed out; Run {run_id} is still RUNNING."
         )
         .map_err(|e| e.to_string())?;
-        return Ok(3);
+        return Ok(WAIT_TIMEOUT_EXIT);
     }
     Ok(outcome_code(&view.run))
 }
