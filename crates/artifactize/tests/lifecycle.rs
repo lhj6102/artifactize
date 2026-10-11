@@ -99,6 +99,17 @@ async fn contradictory_rows_are_unreadable_without_aborting_queries_or_verify() 
         .unwrap();
     assert_eq!(requests.len(), 1);
     let saved = store::read_run(&state, &first.run.id).await.unwrap();
+    let (snapshot, views) = store::read_run_requests(&state, &first.run.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&snapshot).unwrap(),
+        serde_json::to_value(&saved).unwrap()
+    );
+    assert_eq!(
+        serde_json::to_value(&views).unwrap(),
+        serde_json::to_value(&requests).unwrap()
+    );
     let monitor =
         artifactize::monitor::progress(&saved, &requests, time::OffsetDateTime::now_utc());
     for id in [request.id.as_str(), execution.as_str()] {

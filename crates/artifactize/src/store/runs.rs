@@ -13,7 +13,7 @@ use super::{
 };
 use crate::workspace::{canonical_target, outside_workspace};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunSummary {
     pub id: crate::types::RunId,
@@ -83,50 +83,105 @@ pub async fn read_scoped_runs(
             if !schema_initialized(&transaction)? {
                 return Ok(Vec::new());
             }
-            let mut runs = {
-                let mut statement = transaction.prepare(
-                    "SELECT id,repo,json_extract(data,'$.createdAt'),json_extract(data,'$.completedAt'),status
-                 FROM runs WHERE (?1 IS NULL OR repo IN (SELECT value FROM json_each(?1)))
-                 ORDER BY json_extract(data,'$.createdAt') DESC,rowid DESC LIMIT ?2 OFFSET ?3",
-                )?;
-                statement
-                    .query_map(params![repos, limit, offset], |row| {
-                        Ok(RunSummary {
-                            id: row.get(0)?,
-                            repo_path: PathBuf::from(row.get::<_, String>(1)?),
-                            created_at: row.get(2)?,
-                            completed_at: row.get(3)?,
-                            status: row.get(4)?,
-                            counts: BTreeMap::new(),
-                            unreadable: Vec::new(),
-                        })
-                    })?
-                    .collect::<Result<Vec<_>, _>>()?
-            };
-            {
-                let mut statement = transaction.prepare(
-                    "SELECT status,count(*) FROM requests WHERE run_id=?1 AND id NOT IN (SELECT value FROM json_each(?2)) GROUP BY status",
-                )?;
-                for run in &mut runs {
-                    outside_workspace(&run.repo_path, &state)
-                        .map_err(|e| Error::Invalid(e.to_string()))?;
-                    run.unreadable = super::unreadable::in_run(&transaction, &run.id)?;
-                    let invalid: Vec<_> = run
-                        .unreadable
-                        .iter()
-                        .filter(|record| record.kind == "request")
-                        .map(|record| &record.id)
-                        .collect();
-                    run.counts = statement
-                        .query_map(params![run.id, serde_json::to_string(&invalid)?], |row| {
-                            Ok((row.get(0)?, row.get::<_, i64>(1)? as u64))
-                        })?
-                        .collect::<Result<_, _>>()?;
-                }
-            }
+            let runs = in_snapshot(&transaction, &state, repos.as_deref(), limit, offset)?;
             transaction.commit()?;
             Ok(runs)
         })
         .await
         .map_err(|e| e.to_string())
+}
+
+pub(super) fn in_snapshot(
+    db: &rusqlite::Connection,
+    state: &Path,
+    repos: Option<&str>,
+    limit: u32,
+    offset: u32,
+) -> Result<Vec<RunSummary>, Error> {
+    in_snapshot_cached(
+        db,
+        state,
+        repos,
+        limit,
+        offset,
+        None,
+        &mut super::unreadable::Audit::default(),
+    )
+}
+
+pub(super) fn in_snapshot_cached(
+    db: &rusqlite::Connection,
+    state: &Path,
+    repos: Option<&str>,
+    limit: u32,
+    offset: u32,
+    pinned: Option<&crate::types::RunId>,
+    audit: &mut super::unreadable::Audit,
+) -> Result<Vec<RunSummary>, Error> {
+    let mut runs = {
+        let mut statement = db.prepare_cached(
+                    "WITH page AS (
+                 SELECT id,repo,json_extract(data,'$.createdAt') created,json_extract(data,'$.completedAt') completed,status,rowid serial
+                 FROM runs WHERE (?1 IS NULL OR repo IN (SELECT value FROM json_each(?1)))
+                 ORDER BY json_extract(data,'$.createdAt') DESC,rowid DESC LIMIT ?2 OFFSET ?3)
+                 SELECT id,repo,created,completed,status,0,serial FROM page UNION ALL
+                 SELECT id,repo,json_extract(data,'$.createdAt'),json_extract(data,'$.completedAt'),status,1,rowid FROM runs
+                 WHERE id=?4 AND id NOT IN (SELECT id FROM page)
+                 AND (?1 IS NULL OR repo IN (SELECT value FROM json_each(?1))) ORDER BY 3 DESC,7 DESC",
+                )?;
+        statement
+            .query_map(params![repos, limit, offset, pinned], |row| {
+                Ok(RunSummary {
+                    id: row.get(0)?,
+                    repo_path: PathBuf::from(row.get::<_, String>(1)?),
+                    created_at: row.get(2)?,
+                    completed_at: row.get(3)?,
+                    status: row.get(4)?,
+                    counts: BTreeMap::new(),
+                    unreadable: Vec::new(),
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    audit.selected = pinned
+        .cloned()
+        .filter(|id| runs.iter().any(|run| &run.id == id))
+        .or_else(|| runs.first().map(|run| run.id.clone()));
+    let ids: Vec<_> = runs.iter().map(|run| run.id.clone()).collect();
+    let mut unreadable = super::unreadable::in_runs_cached(db, &ids, audit)?;
+    let invalid: Vec<_> = unreadable
+        .values()
+        .flatten()
+        .filter(|record| record.kind == "request")
+        .map(|record| &record.id)
+        .collect();
+    let mut counts: BTreeMap<crate::types::RunId, BTreeMap<crate::types::RequestStatus, u64>> =
+        BTreeMap::new();
+    let mut statement = db.prepare_cached(
+        "SELECT run_id,status,count(*) FROM requests WHERE run_id IN (SELECT value FROM json_each(?1)) AND id NOT IN (SELECT value FROM json_each(?2)) GROUP BY run_id,status",
+    )?;
+    let rows = statement.query_map(
+        params![
+            serde_json::to_string(&ids)?,
+            serde_json::to_string(&invalid)?
+        ],
+        |row| {
+            Ok((
+                row.get::<_, crate::types::RunId>(0)?,
+                row.get::<_, crate::types::RequestStatus>(1)?,
+                row.get::<_, i64>(2)? as u64,
+            ))
+        },
+    )?;
+    for row in rows {
+        let (run, status, count) = row?;
+        counts.entry(run).or_default().insert(status, count);
+    }
+    crate::workspace::outside_workspaces(runs.iter().map(|run| run.repo_path.as_path()), state)
+        .map_err(|error| Error::Invalid(error.to_string()))?;
+    for run in &mut runs {
+        run.unreadable = unreadable.remove(&run.id).unwrap_or_default();
+        run.counts = counts.remove(&run.id).unwrap_or_default();
+    }
+    Ok(runs)
 }

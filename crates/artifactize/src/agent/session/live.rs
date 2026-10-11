@@ -37,8 +37,25 @@ pub enum Resolution {
 }
 
 pub async fn resolve(state: &Path, view: &RequestView) -> Result<Resolution, String> {
-    let state_id: crate::types::StateId =
-        store::read_state_id(state)?.ok_or("State has no identity.")?;
+    resolve_cached(state, view, None).await
+}
+
+pub(crate) async fn resolve_cached(
+    state: &Path,
+    view: &RequestView,
+    identity: Option<&crate::types::StateId>,
+) -> Result<Resolution, String> {
+    let state_id = match identity {
+        Some(identity) => identity.clone(),
+        None => {
+            let identity_state = state.to_path_buf();
+            crate::task::joined(
+                tokio::task::spawn_blocking(move || store::read_state_id(&identity_state)).await,
+            )
+            .map_err(|error| error.to_string())??
+            .ok_or("State has no identity.")?
+        }
+    };
     let producer: crate::types::ProducerId = store::Producer::current().name.parse()?;
     let mut view = view.clone();
     // A local follower may have no session_id until completion. Resolve only its original

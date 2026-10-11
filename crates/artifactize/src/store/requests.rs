@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use rusqlite::params;
 use serde::Serialize;
 
 use tokio_rusqlite::Connection;
@@ -99,6 +98,11 @@ pub async fn read_waiting_originals(
     repo: Option<&Path>,
 ) -> Result<Vec<RequestView>, String> {
     let waiting = read_waiting(state, repo).await?;
+    let by_id: std::collections::BTreeMap<_, _> = waiting
+        .iter()
+        .map(|view| (&view.request.id, view))
+        .collect();
+    let mut seen = std::collections::BTreeSet::new();
     let mut originals: Vec<RequestView> = Vec::with_capacity(waiting.len());
     for view in &waiting {
         let source = view
@@ -107,11 +111,11 @@ pub async fn read_waiting_originals(
             .map_or(&view.request.id, |execution| {
                 &execution.provenance.request_id
             });
-        if originals.iter().any(|seen| &seen.request.id == source) {
+        if seen.contains(source) {
             continue;
         }
-        let original = match waiting.iter().find(|other| &other.request.id == source) {
-            Some(original) => Some(original.clone()),
+        let original = match by_id.get(source) {
+            Some(original) => Some((*original).clone()),
             None => read_original(state, view).await.ok(),
         };
         // A follower whose original is gone or no longer waits stays listed as itself.
@@ -120,10 +124,7 @@ pub async fn read_waiting_originals(
                 original.request.status() == crate::types::RequestStatus::WaitingHuman
             })
             .unwrap_or_else(|| view.clone());
-        if !originals
-            .iter()
-            .any(|seen| seen.request.id == original.request.id)
-        {
+        if seen.insert(original.request.id.clone()) {
             originals.push(original);
         }
     }
@@ -144,6 +145,33 @@ pub async fn read_waiting(state: &Path, repo: Option<&Path>) -> Result<Vec<Reque
 }
 
 async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, String> {
+    Ok(read_with_repo(state, filter)
+        .await?
+        .into_iter()
+        .map(|(view, _)| view)
+        .collect())
+}
+
+/// Human action setup needs only the owning repository, not another full Run/request audit.
+pub(crate) async fn read_request_repo(
+    state: &Path,
+    id: &str,
+) -> Result<(RequestView, std::path::PathBuf), String> {
+    read_with_repo(
+        state,
+        Filter {
+            id: Some(id),
+            ..Filter::default()
+        },
+    )
+    .await?
+    .pop()
+    .ok_or_else(|| "Review request not found.".into())
+}
+async fn read_with_repo(
+    state: &Path,
+    filter: Filter<'_>,
+) -> Result<Vec<(RequestView, std::path::PathBuf)>, String> {
     let state = canonical_target(state).map_err(|e| e.to_string())?;
     let repo = filter
         .repo
@@ -188,85 +216,237 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
             if !schema_initialized(&transaction)? {
                 return Ok(Vec::new());
             }
-            let views = {
-                // A follower shows the claim of the waiting request whose execution it follows.
-                let mut statement = transaction.prepare(
-                    "SELECT q.data,r.repo,e.data,h.id,h.claimed_by,h.claimed_at,
-                json_extract(r.data,'$.definitions.artifacts'),
-                (SELECT value FROM json_each(r.data,'$.definitions.evals') WHERE json_extract(value,'$.id')=q.eval_id),r.data
-                FROM requests q JOIN runs r ON r.id=q.run_id
-                LEFT JOIN executions e ON e.id=q.execution_id
-                LEFT JOIN requests h ON h.id=json_extract(e.data,'$.provenance.requestId') AND h.claimed_by IS NOT NULL
-                WHERE (?1 IS NULL OR q.run_id=?1) AND (?2 IS NULL OR q.id=?2)
-                AND (?3 IS NULL OR r.repo=?3) AND (NOT ?4 OR q.status='WAITING_HUMAN')
-                AND (?5 IS NULL OR json_extract(q.data,'$.sessionId')=?5)
-                ORDER BY r.rowid DESC,q.ordinal",
-                )?;
-                statement
-                    .query_map(params![run, id, repo, waiting, session], |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, String>(1)?,
-                            row.get::<_, Option<String>>(2)?,
-                            row.get::<_, Option<crate::types::RequestId>>(3)?,
-                            row.get::<_, Option<crate::types::ReviewerId>>(4)?,
-                            row.get::<_, Option<crate::types::Timestamp>>(5)?,
-                            row.get::<_, Option<String>>(6)?,
-                            row.get::<_, Option<String>>(7)?,
-                            row.get::<_, String>(8)?,
-                        ))
-                    })?
-                    .map(|row| {
-                        let (
-                            data,
-                            repo,
-                            execution,
-                            request_id,
-                            reviewer,
-                            claimed_at,
-                            artifacts,
-                            eval,
-                            run_data,
-                        ) = row?;
-                        if super::unreadable::evidence::<super::Run>("run", &run_data).is_none() {
-                            return Ok(None);
-                        }
-                        outside_workspace(Path::new(&repo), &state)
-                            .map_err(|e| Error::Invalid(e.to_string()))?;
-                        let Some(request) = super::unreadable::evidence::<Request>("request", &data) else {
-                            return Ok(None);
-                        };
-                        let artifacts: Option<std::collections::BTreeMap<crate::types::ArtifactName, super::definitions::Artifact>> = artifacts
-                            .map(|data| serde_json::from_str(&data))
-                            .transpose()?;
-                        let eval: Option<super::definitions::Eval> =
-                            eval.map(|data| serde_json::from_str(&data)).transpose()?;
-                        let definition = eval
-                            .zip(
-                                artifacts
-                                    .as_ref()
-                                    .and_then(|artifacts| artifacts.get(request.target.as_str())),
-                            )
-                            .map(|(eval, artifact)| RequestDefinition { eval, artifact: artifact.clone() });
-                        Ok(Some(RequestView {
-                            request,
-                            definition,
-                            claim: request_id.zip(reviewer).zip(claimed_at).map(
-                                |((request_id, reviewer), claimed_at)| HumanClaim {
-                                    request_id,
-                                    reviewer,
-                                    claimed_at,
-                                },
-                            ),
-                            execution: execution.and_then(|data| super::unreadable::evidence("execution", &data)),
-                        }))
-                    })
-                    .filter_map(|result| result.transpose())
-                    .collect::<Result<Vec<_>, Error>>()?
+            let filter = Query {
+                run,
+                id,
+                repo,
+                waiting,
+                session,
             };
+            let rows = rows(&transaction, &filter)?;
+            let ids: std::collections::BTreeSet<_> = rows.iter().map(|row| &row.run).collect();
+            let mut statement = transaction.prepare(
+                "SELECT id,repo,data FROM runs WHERE id IN (SELECT value FROM json_each(?))",
+            )?;
+            let runs = statement
+                .query_map([serde_json::to_string(&ids)?], |row| {
+                    Ok((
+                        row.get::<_, crate::types::RunId>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            let mut indexes = std::collections::BTreeMap::new();
+            let mut repos = Vec::new();
+            for (id, repo, data) in runs {
+                let Some(run) = super::unreadable::evidence::<super::Run>("run", &data) else {
+                    continue;
+                };
+                repos.push(std::path::PathBuf::from(repo));
+                indexes.insert(id, (DefinitionIndex::new(&run), run.repo_path));
+            }
+            crate::workspace::outside_workspaces(repos.iter().map(|repo| repo.as_path()), &state)
+                .map_err(|error| Error::Invalid(error.to_string()))?;
+            let views = rows
+                .into_iter()
+                .filter_map(|row| {
+                    indexes
+                        .get(&row.run)
+                        .and_then(|(index, repo)| row.view(index).map(|view| (view, repo.clone())))
+                })
+                .collect();
+            drop(statement);
             transaction.commit()?;
             Ok(views)
         })
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Only present predicates are emitted, so Run and request lookups use their existing indexes.
+#[derive(Default)]
+pub(super) struct Query {
+    pub run: Option<crate::types::RunId>,
+    pub id: Option<crate::types::RequestId>,
+    pub repo: Option<String>,
+    pub waiting: bool,
+    pub session: Option<crate::types::SessionId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Row {
+    pub id: crate::types::RequestId,
+    pub run: crate::types::RunId,
+    pub eval: crate::types::EvalId,
+    pub ordinal: i64,
+    pub data: String,
+    pub execution: Option<String>,
+    pub execution_id: Option<crate::types::ExecutionId>,
+    pub claim: Option<(
+        crate::types::RequestId,
+        crate::types::ReviewerId,
+        crate::types::Timestamp,
+    )>,
+}
+
+pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>, Error> {
+    let mut predicates = Vec::new();
+    let mut values: Vec<rusqlite::types::Value> = Vec::new();
+    for (column, value) in [
+        ("q.run_id", filter.run.as_ref().map(ToString::to_string)),
+        ("q.id", filter.id.as_ref().map(ToString::to_string)),
+        ("r.repo", filter.repo.clone()),
+        (
+            "json_extract(q.data,'$.sessionId')",
+            filter.session.as_ref().map(ToString::to_string),
+        ),
+    ] {
+        if let Some(value) = value {
+            predicates.push(format!("{column}=?"));
+            values.push(value.into());
+        }
+    }
+    if filter.waiting {
+        predicates.push("q.status='WAITING_HUMAN'".into());
+    }
+    let predicate = if predicates.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", predicates.join(" AND "))
+    };
+    let order = if filter.run.is_some() {
+        "q.ordinal"
+    } else {
+        "r.rowid DESC,q.ordinal"
+    };
+    let mut statement = db.prepare_cached(&format!(
+        "SELECT q.id,q.run_id,q.data,e.data,h.id,h.claimed_by,h.claimed_at,q.eval_id,q.ordinal,e.id
+        FROM requests q JOIN runs r ON r.id=q.run_id
+        LEFT JOIN executions e ON e.id=q.execution_id
+        LEFT JOIN requests h ON h.id=json_extract(e.data,'$.provenance.requestId') AND h.claimed_by IS NOT NULL
+        {predicate} ORDER BY {order}"
+    ))?;
+    Ok(statement
+        .query_map(rusqlite::params_from_iter(values), |row| {
+            let id = row.get::<_, Option<crate::types::RequestId>>(4)?;
+            let reviewer = row.get::<_, Option<crate::types::ReviewerId>>(5)?;
+            let at = row.get::<_, Option<crate::types::Timestamp>>(6)?;
+            Ok(Row {
+                id: row.get(0)?,
+                run: row.get(1)?,
+                eval: row.get(7)?,
+                ordinal: row.get(8)?,
+                data: row.get(2)?,
+                execution: row.get(3)?,
+                execution_id: row.get(9)?,
+                claim: id
+                    .zip(reviewer)
+                    .zip(at)
+                    .map(|((id, reviewer), at)| (id, reviewer, at)),
+            })
+        })?
+        .collect::<Result<_, _>>()?)
+}
+
+/// Saved definitions are decoded/indexed once per Run, never once per request. First duplicate
+/// Eval wins, matching SQLite's former json_each lookup; missing/null definitions remain absent.
+pub(super) struct DefinitionIndex {
+    artifacts: std::collections::BTreeMap<crate::types::ArtifactName, super::definitions::Artifact>,
+    evals: std::collections::BTreeMap<crate::types::EvalId, super::definitions::Eval>,
+}
+impl DefinitionIndex {
+    pub fn new(run: &super::Run) -> Self {
+        let mut evals = std::collections::BTreeMap::new();
+        if let Some(graph) = run.definitions.graph() {
+            for eval in graph.evals() {
+                evals.entry(eval.id.clone()).or_insert_with(|| eval.clone());
+            }
+        }
+        Self {
+            artifacts: run
+                .definitions
+                .graph()
+                .map(|graph| {
+                    graph
+                        .artifacts()
+                        .map(|(id, artifact)| (id.clone(), artifact.clone()))
+                        .collect()
+                })
+                .unwrap_or_default(),
+            evals,
+        }
+    }
+}
+impl Row {
+    pub fn view(&self, index: &DefinitionIndex) -> Option<RequestView> {
+        let request = super::unreadable::evidence::<Request>("request", &self.data)?;
+        let execution = self
+            .execution
+            .as_deref()
+            .and_then(|data| super::unreadable::evidence("execution", data));
+        Some(self.with_evidence(index, request, execution))
+    }
+    pub fn view_cached(
+        &self,
+        index: &DefinitionIndex,
+        audit: &mut super::unreadable::Audit,
+    ) -> Option<RequestView> {
+        let request = audit
+            .take_request(&self.id, &self.data)
+            .or_else(|| super::unreadable::evidence("request", &self.data))?;
+        let execution = self.execution.as_deref().and_then(|data| {
+            self.execution_id
+                .as_ref()
+                .and_then(|id| audit.take_execution(id, data))
+                .or_else(|| super::unreadable::evidence("execution", data))
+        });
+        Some(self.with_evidence(index, request, execution))
+    }
+    fn with_evidence(
+        &self,
+        index: &DefinitionIndex,
+        request: Request,
+        execution: Option<Execution>,
+    ) -> RequestView {
+        let definition = index
+            .evals
+            .get(&self.eval)
+            .zip(index.artifacts.get(&request.target))
+            .map(|(eval, artifact)| RequestDefinition {
+                eval: eval.clone(),
+                artifact: artifact.clone(),
+            });
+        RequestView {
+            request,
+            definition,
+            execution,
+            claim: self.claim.as_ref().map(|(id, reviewer, at)| HumanClaim {
+                request_id: id.clone(),
+                reviewer: reviewer.clone(),
+                claimed_at: *at,
+            }),
+        }
+    }
+}
+
+/// Both selected-Run view shapes from the same short read transaction and decoded rows.
+pub async fn read_run_requests(
+    state: &Path,
+    id: &str,
+) -> Result<(super::RunView, Vec<RequestView>), String> {
+    let state = state.to_path_buf();
+    let id: crate::types::RunId = id.parse()?;
+    crate::task::joined(
+        tokio::task::spawn_blocking(move || {
+            let mut reader = super::reader::Reader::default();
+            reader
+                .snapshot(&state, |db, cache, state| {
+                    cache.selected(db, state, &id, None, true)
+                })?
+                .ok_or_else(|| "Run not found.".into())
+        })
+        .await,
+    )
+    .map_err(|error| error.to_string())?
 }
