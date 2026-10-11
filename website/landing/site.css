@@ -788,6 +788,47 @@ p {
   white-space: nowrap;
 }
 
+/* ---------- Privacy policy ---------- */
+
+.privacy {
+  max-width: 820px;
+  padding-top: 64px;
+  padding-bottom: 80px;
+  overflow-wrap: anywhere;
+}
+
+.privacy h1 {
+  font-size: clamp(38px, 6vw, 56px);
+}
+
+.privacy .effective {
+  margin: 12px 0 32px;
+  color: var(--dim);
+  font-size: 15px;
+}
+
+.privacy h2 {
+  margin: 32px 0 12px;
+  font-size: 25px;
+}
+
+.privacy p + p {
+  margin-top: 12px;
+}
+
+.privacy ul {
+  padding-left: 24px;
+}
+
+.privacy a {
+  color: var(--green);
+  text-underline-offset: 3px;
+}
+
+.privacy code {
+  font-size: 0.88em;
+}
+
 /* ---------- Footer ---------- */
 
 .foot {
