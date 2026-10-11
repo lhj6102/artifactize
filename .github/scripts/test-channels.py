@@ -12,6 +12,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
+import xml.etree.ElementTree as ET
 
 sys.dont_write_bytecode = True
 SCRIPT = Path(__file__).with_name("channels.py")
@@ -21,6 +22,25 @@ spec.loader.exec_module(channels)
 
 
 class ChannelsTest(unittest.TestCase):
+    def test_store_manifest_has_one_visible_facade_application(self):
+        manifest = ET.parse(SCRIPT.parent.parent / "packaging/AppxManifest.xml")
+        ns = {"f": "http://schemas.microsoft.com/appx/manifest/foundation/windows10",
+              "uap": "http://schemas.microsoft.com/appx/manifest/uap/windows10",
+              "uap5": "http://schemas.microsoft.com/appx/manifest/uap/windows10/5",
+              "desktop4": "http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"}
+        applications = manifest.findall("f:Applications/f:Application", ns)
+        self.assertEqual(len(applications), 1)
+        app = applications[0]
+        self.assertEqual((app.get("Id"), app.get("Executable")), ("Artifactize", "artifactize.exe"))
+        self.assertNotEqual(app.find("uap:VisualElements", ns).get("AppListEntry"), "none")
+        extensions = app.findall("f:Extensions/uap5:Extension", ns)
+        self.assertEqual(len(extensions), 1)
+        self.assertEqual(extensions[0].get("Category"), "windows.appExecutionAlias")
+        self.assertEqual(extensions[0].get("Executable"), "artifactize.exe")
+        alias = extensions[0].find("uap5:AppExecutionAlias", ns)
+        self.assertEqual(alias.get("{" + ns["desktop4"] + "}Subsystem"), "console")
+        self.assertEqual([item.get("Alias") for item in alias], ["artifactize.exe"])
+
     def dry_run(self, channel, version, env, fixture=None):
         command = [sys.executable, "-I", str(SCRIPT), "publish", channel, "--version", version, "--dry-run"]
         with tempfile.TemporaryDirectory() as tmp:

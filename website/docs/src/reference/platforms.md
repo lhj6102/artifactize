@@ -62,6 +62,18 @@ Standalone `artifactize review` edits the owner fields in `$VISUAL`, else `$EDIT
 else `vi` (Notepad on Windows). The variable may hold arguments, such as
 `code --wait`.
 
+## Desktop console launches
+
+On Windows, launching `artifactize` without arguments from Start or Explorer shows
+help plus a terminal hint and waits for Enter if this process is the console's
+only attached process and both stdin and stdout are consoles. It never pauses
+with arguments, from an existing terminal, or with redirected input/output. Linux
+and macOS retain the ordinary no-argument help and immediate exit.
+
+The Microsoft Store package has one visible **Artifactize** entry and one command
+alias, `artifactize`; its tools are available as `artifactize tools`. Non-Store
+channels also ship the standalone `artifactize-tools` command.
+
 ## State
 
 The state directory is `$ARTIFACTIZE_STATE_HOME`, else `$XDG_STATE_HOME/artifactize`,

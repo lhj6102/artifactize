@@ -1,8 +1,9 @@
 # Release channels
 
 The Linux tests and builds still gate the GitHub release. Other platforms and
-channels are independent, best-effort jobs. All archives/installers contain both
-`artifactize` and `artifactize-tools`. Missing channel credentials produce an
+channels are independent, best-effort jobs. Archives and non-Store installers contain both
+`artifactize` and `artifactize-tools`; the Store MSIX contains only `artifactize`,
+with tools exposed through `artifactize tools`. Missing channel credentials produce an
 explicit skip message; they never fail a release. These scripts never sign or
 submit a Windows zip.
 
@@ -113,10 +114,15 @@ the same files. Do not upload the throwaway CI-signed package; it is test-only.
 No Store credentials or Partner Center changes are needed for build/test.
 The package declares `desktop6:FileSystemWriteVirtualization` as `disabled` plus
 `rescap:Capability Name="unvirtualizedResources"`; it does not change registry
-virtualization. Each executable has its own Application/alias extension because
-MakeAppx permits only one appExecutionAlias extension per Application. The tools
-Application uses `AppListEntry="none"` (the main entry stays visible), as documented
-by [VisualElements](https://learn.microsoft.com/en-us/uwp/schemas/appxpackage/uapmanifestschema/element-uap-visualelements).
+virtualization. The MSIX has one visible Application (`Artifactize`) and one console
+execution alias (`artifactize.exe`); tools run as `artifactize tools <subcommand>`.
+It has no headless Application or `AppListEntry="none"`, so no HeadlessAppBypass
+waiver is needed. MakeAppx accepts only one appExecutionAlias extension per
+Application; the standalone tools executable remains in all non-Store channels.
+Launching Artifactize from Start or Explorer with no arguments shows the normal
+help, a terminal hint and waits for Enter only when stdin/stdout are consoles and
+this process is the console's only attached process. Terminal launches, arguments
+and redirection never add a pause.
 Required PNG logos are resized from the existing brand raster.
 S8 may replace these placeholder package visuals.
 
@@ -145,8 +151,8 @@ Windows Server images may omit winget: the test uses Microsoft's maintained
 silently substituting metadata checks for installation.
 
 The MSIX seam packs with SDK schema validation, signs a *copy* with a throwaway
-certificate, installs via `Add-AppxPackage`, invokes both WindowsApps execution
-aliases, then runs offline `artifactize server token list` (no verify/provider
+certificate, installs via `Add-AppxPackage`, invokes the WindowsApps `artifactize` execution
+alias and its tools facade, then runs offline `artifactize server token list` (no verify/provider
 calls). The unpackaged shell checks that SQLite state was created in real
 `%LOCALAPPDATA%\artifactize`, not anywhere in the package-private directory. The
 test removes its package and certificate. Windows/macOS remain non-gating before

@@ -1,4 +1,4 @@
-# Build an unsigned Store upload from the same two executables as the zip.
+# Build an unsigned Store upload containing only the artifactize facade.
 param(
     [Parameter(Mandatory = $true)][string] $Version,
     [Parameter(Mandatory = $true)][string] $Dist,
@@ -22,9 +22,7 @@ New-Item -ItemType Directory -Path $stage | Out-Null
 try {
     $name = "artifactize-v$Version-x86_64-pc-windows-msvc"
     Expand-Archive -LiteralPath (Join-Path $Dist "$name.zip") -DestinationPath $unpack
-    foreach ($command in @('artifactize', 'artifactize-tools')) {
-        Copy-Item (Join-Path $unpack "$name\$command.exe") $stage
-    }
+    Copy-Item (Join-Path $unpack "$name\artifactize.exe") $stage
     Copy-Item (Join-Path $repo 'LICENSE') $stage
     $manifest = [IO.File]::ReadAllText((Join-Path $repo '.github/packaging/AppxManifest.xml'))
     [IO.File]::WriteAllText((Join-Path $stage 'AppxManifest.xml'), $manifest.Replace('@VERSION@', $msixVersion))
