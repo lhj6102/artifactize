@@ -30,3 +30,4 @@ covers setup.
 - [Review store server](review-store.md#review-store-server)
 - [Remote review store client](review-store.md#remote-review-store-client)
 - [Operating systems](platforms.md)
+- [Privacy policy](https://artifactize.dev/privacy/)
