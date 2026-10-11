@@ -98,15 +98,14 @@ impl Receipts {
                 let mut statement = db.prepare(
                     "SELECT data FROM requests WHERE id IN (SELECT value FROM json_each(?)) AND status!='WAITING_HUMAN'",
                 )?;
-                statement
-                    .query_map([serde_json::to_string(&ids)?], |row| {
-                        row.get::<_, String>(0)
-                    })?
-                    .filter_map(|row| match row {
+                let rows = statement.query_map([serde_json::to_string(&ids)?], |row| {
+                    row.get::<_, String>(0)
+                })?;
+                rows.filter_map(|row| match row {
                     Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
                     Err(error) => Some(Err(Error::Sql(error))),
                 })
-                    .collect()
+                .collect()
             })
             .await
             .map_err(|e| e.to_string())
