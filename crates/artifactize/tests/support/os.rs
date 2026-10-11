@@ -8,6 +8,51 @@ use serde_json::{Value, json};
 use std::fs;
 use std::{path::Path, process::Command};
 
+/// A semantic snapshot, without struct padding, of the input terminal's current modes.
+/// Compare flags, control characters and speeds, not just whether echo is enabled.
+#[derive(Debug, PartialEq, Eq)]
+pub struct InputTerminalMode {
+    #[cfg(unix)]
+    flags: [libc::tcflag_t; 4],
+    #[cfg(unix)]
+    controls: [libc::cc_t; libc::NCCS],
+    #[cfg(unix)]
+    speeds: [libc::speed_t; 2],
+    #[cfg(windows)]
+    mode: u32,
+}
+
+pub fn input_terminal_mode() -> InputTerminalMode {
+    #[cfg(unix)]
+    {
+        let mut mode = std::mem::MaybeUninit::uninit();
+        // SAFETY: tcgetattr fills the valid out pointer; it is read only on success.
+        assert_eq!(
+            unsafe { libc::tcgetattr(libc::STDIN_FILENO, mode.as_mut_ptr()) },
+            0
+        );
+        // SAFETY: the preceding call initialized the termios structure.
+        let mode = unsafe { mode.assume_init() };
+        InputTerminalMode {
+            flags: [mode.c_iflag, mode.c_oflag, mode.c_cflag, mode.c_lflag],
+            controls: mode.c_cc,
+            // SAFETY: these functions only inspect the initialized termios structure.
+            speeds: unsafe { [libc::cfgetispeed(&mode), libc::cfgetospeed(&mode)] },
+        }
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Console::{GetConsoleMode, GetStdHandle, STD_INPUT_HANDLE};
+        // SAFETY: GetStdHandle reads the table; GetConsoleMode writes to a valid DWORD.
+        let mut mode = 0;
+        assert_ne!(
+            unsafe { GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mut mode) },
+            0
+        );
+        InputTerminalMode { mode }
+    }
+}
+
 /// Build the sibling standalone tools CLI once, including when testing only this crate.
 pub fn tools_binary(artifactize: &str) -> &'static Path {
     static BINARY: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
