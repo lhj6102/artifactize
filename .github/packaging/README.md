@@ -4,7 +4,10 @@ The Linux tests and builds still gate the GitHub release. Other platforms and
 channels are independent, best-effort jobs. Archives and non-Store installers contain both
 `artifactize` and `artifactize-tools`; the Store MSIX contains only `artifactize`,
 with tools exposed through `artifactize tools`. Missing channel credentials produce an
-explicit skip message; they never fail a release. These scripts never sign or
+explicit skip message; they never fail a release. Every expected skip also emits an
+Actions warning annotation and a job-summary line, so a green skipped job cannot
+be mistaken for a publication. Successful publications write their outcome to the
+summary too (Store submission ID, winget PR URL when available, or Homebrew formula). These scripts never sign or
 submit a Windows zip.
 
 ## Policy and credentials
