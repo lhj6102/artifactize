@@ -16,8 +16,8 @@ review_policy = { dependency_gates = "ignore" }
 read = { builtin = "read", description = "Read {artifactName}" }
 inspect = { description = "Inspect", protocol = "plain", command = "inspect", args = ["{path}"], timeout_ms = 1000, execution_paths = ["bin/inspect"], input_schema = { type = "object", properties = { path = { type = "string", minLength = 1 } }, required = ["path"], additionalProperties = false } }
 [views.human_tools]
-open = { description = "Open", kind = "launch", command = "open", args = ["{artifactPath}"], timeout_ms = 1000 }
-print = { description = "Print", kind = "output", command = "cat", args = ["{artifactPath}/file"] }
+open = { description = "Open", kind = "launch", command = "launch-fixture", args = ["{artifactPath}"], timeout_ms = 1000 }
+print = { description = "Print", kind = "output", command = "print-fixture", args = ["{artifactPath}/file"] }
 
 [evals.z-runtime]
 title = "Runtime"
@@ -114,7 +114,7 @@ fn declaration_names_are_snake_case_at_every_typed_boundary() {
             "timeoutMs",
         ),
         (
-            "name = 'a'\nviews.human_tools.open = { description = 'Open', kind = 'launch', command = 'open', args = [], timeoutMs = 1 }",
+            "name = 'a'\nviews.human_tools.open = { description = 'Open', kind = 'launch', command = 'launch-fixture', args = [], timeoutMs = 1 }",
             "timeoutMs",
         ),
         (
@@ -557,7 +557,7 @@ fn semantic_errors_include_the_typed_key_path_and_source_position() {
             2,
         ),
         (
-            "name = 'a'\nviews.human_tools.open = { kind = 'launch', command = 'open', args = [], description = ' ' }",
+            "name = 'a'\nviews.human_tools.open = { kind = 'launch', command = 'launch-fixture', args = [], description = ' ' }",
             "views.human_tools.open",
             2,
         ),
@@ -662,7 +662,7 @@ fn cross_artifact_validation_errors_keep_the_referencing_field_position() {
             4,
         ),
         (
-            "name = 'a'\nviews.human_tools.open = { description = 'Open', kind = 'launch', command = 'open', args = ['{missing}'] }",
+            "name = 'a'\nviews.human_tools.open = { description = 'Open', kind = 'launch', command = 'launch-fixture', args = ['{missing}'] }",
             "views.human_tools.open.args",
             2,
         ),

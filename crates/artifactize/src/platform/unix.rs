@@ -42,9 +42,8 @@ pub(crate) const PRIVATE_FILE: &str = "readable by their owner only (mode 0600)"
 /// The group and other permission bits; a private path has none of them set.
 pub(crate) const GROUP_OTHER_BITS: u32 = 0o077;
 
-/// The group and other write bits. A system alias's parent with either set could be
-/// replaced by another user, so the alias it holds cannot be trusted.
-#[cfg(target_os = "macos")]
+/// Group/other write bits let another user replace system-alias or IPC parent
+/// directories, so neither the alias nor the endpoint under them can be trusted.
 const GROUP_OTHER_WRITE_BITS: u32 = 0o022;
 
 /// The permission bits of a mode, without the file type and set-id bits, so a file can be

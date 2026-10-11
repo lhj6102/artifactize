@@ -44,7 +44,10 @@ pub(crate) fn directory(namespace: &str, user: &str) -> io::Result<PathBuf> {
     let root = Path::new("/tmp");
     for parent in root.ancestors().skip(1) {
         let metadata = fs::symlink_metadata(parent)?;
-        if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
+        if !metadata.is_dir()
+            || metadata.uid() != 0
+            || metadata.mode() & super::GROUP_OTHER_WRITE_BITS != 0
+        {
             return Err(io::ErrorKind::PermissionDenied.into());
         }
     }
