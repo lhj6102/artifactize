@@ -11,8 +11,11 @@ neighboring file whose complete name is `<filename>`, including its extension.
 Both use standard TOML and require `name`.
 
 Discovery walks from the repository root and skips `.git`, `node_modules`, and
-paths listed in an optional root `.artfignore` (gitignore syntax), including
-individual sidecar files. An ignored sidecar is not parsed or target-checked; its
+subdirectories and sidecar paths listed in an optional root `.artfignore`
+(gitignore syntax). In every visited directory, `index.artf` is read regardless of
+an ignore pattern matching that filename alone. To suppress a subproject's folder
+declaration, exclude its containing directory from the walk instead. An ignored
+sidecar is not parsed or target-checked; its
 target remains an ordinary file unless another declaration includes it. List folders
 that hold separate projects, fixtures or examples:
 
@@ -122,6 +125,9 @@ Artifact. The nearest-folder ownership rule still applies to subfolder
 Artifact targets and excludes every `*.artf` declaration.
 
 Runtime commands, tools and fingerprint scripts use the containing folder as cwd.
+A non-mount relative executable may be an unrelated sibling in that folder; a
+mount-prefixed executable follows the admitted scope instead. This does not grant
+built-in tools or scoped argv references access to other sibling files.
 `{name}` resolves to the target file path, not the folder; file references cannot
 have a `/path` suffix. Built-in tools expose only the target file, mounts and
 referenced Artifacts, not unrelated siblings. `list .` names the virtual file
@@ -255,7 +261,10 @@ failures abort preparation in the same way.
 The command runs from its owner's working directory with JSON on stdin:
 `{"version":1,"artifactId":"example"}`. Bare commands resolve through PATH;
 absolute executables run as given. Relative executables containing `/` (such as
-`./fingerprint.sh`) must resolve inside the admitted scope without symlinks.
+`./fingerprint.sh`) resolve inside a folder Artifact's admitted scope. For file
+Artifacts, non-mount relative executables instead resolve beneath the containing
+folder and may name unrelated siblings; mount-prefixed executables still use the
+admitted scope. Traversal and symlinks are rejected in both cases.
 Arguments stay literal except explicit scoped Artifact references: `{name}` may
 be a mount alias or global Artifact name. Each referenced Artifact, with its child
 and mount closure, enters the script's scope without becoming a graph relation.

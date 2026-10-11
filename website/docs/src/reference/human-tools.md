@@ -20,9 +20,12 @@ checks happen at discovery and on every tool call too, even with
 `fingerprint = false`; a failed check runs no command.
 
 Executable resolution is identical to Agent tools: bare names use PATH (with
-PATHEXT on Windows), relative
-names containing `/` are owner-relative scoped paths (`./tool` is accepted), and
-absolute executables run as given. No shell is added; the cwd is the declaring
+PATHEXT on Windows), and relative names containing `/` resolve within a folder
+Artifact's admitted scope (`./tool` is accepted). File Artifacts may run non-mount
+relative executables beneath their containing folder, including unrelated
+siblings; mount-prefixed executables still use the admitted scope. Traversal and
+symlinks are rejected in both cases, and absolute executables run as given.
+Executable lookup does not expand built-in-tool or argv-reference access. No shell is added; the cwd is the declaring
 Artifact's working directory (the containing folder for a file Artifact).
 Human commands inherit the reviewer's **complete real
 environment**, including HOME, DISPLAY/WAYLAND_DISPLAY, XDG settings and config.

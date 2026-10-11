@@ -135,9 +135,11 @@ no matches need an owner wrapper if that should count as successful empty output
 
 Bare executables use PATH only (with PATHEXT on Windows; see
 [Program lookup](platforms.md#program-lookup)), never implicit owner or
-`node_modules/.bin` lookup. Commands containing `/` resolve from the owner through the scope resolver
-(`./tool` is accepted; traversal and symlinks are rejected). Absolute commands run
-as given. JSON-protocol argv may use existing scoped Artifact references, but
+`node_modules/.bin` lookup. Commands containing `/` resolve within a folder
+Artifact's admitted scope (`./tool` is accepted). For a file Artifact, a non-mount
+relative executable resolves beneath the containing folder, including unrelated
+siblings; a mount-prefixed executable still uses the admitted scope. Traversal
+and symlinks are rejected in both cases. Absolute commands run as given. JSON-protocol argv may use existing scoped Artifact references, but
 cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
 schema-property placeholders. Commands themselves are never interpolated.
 Command calls use the owner's working directory (the containing folder for a file

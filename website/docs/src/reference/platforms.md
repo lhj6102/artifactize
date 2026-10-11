@@ -22,8 +22,12 @@ fingerprint scripts, command tools and the built-in `help`:
 - A bare name, such as `python3`, is searched on `PATH`, never in the current folder.
   On Windows, a name without an extension tries each extension in `PATHEXT`, in order,
   so `npx` finds `npx.cmd`. Without `PATHEXT`, the order is `.COM;.EXE;.BAT;.CMD`.
-- A relative name containing `/`, such as `./tools/check`, is resolved inside the
-  declaring Artifact's scope; `..` and symlinks are refused.
+- A relative name containing `/`, such as `./tools/check`, is resolved inside a
+  folder Artifact's admitted scope. For a file Artifact, a non-mount relative
+  executable resolves beneath its containing folder and may name an unrelated
+  sibling (for example `./inspect`); a mount-prefixed path still uses the admitted
+  scope. `..` and symlinks are refused in both cases. This executable lookup does
+  not make sibling files visible to built-in tools or scoped argv references.
 - An absolute path runs as given.
 
 Windows batch files (`.cmd`, `.bat`) run directly, without a shell string: the Rust
