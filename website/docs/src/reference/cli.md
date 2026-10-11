@@ -155,15 +155,18 @@ never fall back to line parsing. Relative file paths resolve from the CLI's cwd,
 not `--repo`.
 
 `verify ... --profile NAME` selects a complete declared `profile_variants` entry
-for every included executable eval. Dependency evals are skipped; they have no
-variants. Explicit per-eval library mappings to a dependency eval are rejected.
+for every executable eval included by the selection and recursion policy before
+applying variants. Dependency evals are skipped; they have no variants. Explicit per-eval library mappings to a dependency eval are rejected.
 Each executable eval can declare up to 64 safely named variants,
 all retaining its default reviewer kind. Unknown variants fail before creating a
 Run, and source declarations are never rewritten. The library accepts
 `project::selection::ProfileSelection::Named` or `ProfileSelection::Evals` (a
-qualified-eval-to-name map); mappings outside the included scope fail. With
-`--recursive`, variants also apply to included executable dependencies. Runtime
-variant arguments rebuild scoped references and dependency gates. The selected
+qualified-eval-to-name map); mappings outside that pre-variant included scope fail.
+With `--recursive`, variants apply to executable dependencies already in that
+scope. Runtime variant arguments then rebuild scoped references and dependency
+gates, and the included scope is recomputed. Dependencies newly included through
+those variant arguments retain their default profiles; the named variant is not
+applied again to the expanded scope. The selected
 variant is an execution option: it is not part of the reuse key, so results of
 different variants (and of the declared profile) reuse each other unless a runtime
 variant changes the command or args. Stored request `profile` and `options`
