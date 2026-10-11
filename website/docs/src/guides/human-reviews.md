@@ -124,8 +124,8 @@ The waiting list and Detail use the monitor's reactive layout. With the list
 focused, it is Full and the selected request has a read-only Preview. Enter or →
 opens Detail. With Detail focused, the Compact list sits beside it. Both panes
 remain at every terminal width: the side pane takes 16 columns below 100, 28 at
-100–139, and 36 at 140 or more, borders included; Full fills the rest. The
-breadcrumb is `artifactize review › scope › eval`. ↑/↓ or `j`/`k` selects a
+100–139, and 36 at 140 or more, borders included; Full fills the rest. Extremely
+small terminals clip the side pane rather than dropping a level. The breadcrumb is `artifactize review › scope › eval`. ↑/↓ or `j`/`k` selects a
 request; `r` refreshes the list. Tab opens the selected request with its Tools
 focused. Esc on the list
 stays there, never quits. The standalone UI has no `?` help overlay or `!`
@@ -253,8 +253,9 @@ width, borders included:
 
 Full takes the remaining width after the side panes. Scope has no left neighbour,
 so it shows Full + Preview; Detail has no right neighbour, so it shows Tree
-Compact + Detail Full. No neighbour is hidden at narrower breakpoints. Widen the
-terminal when the focused pane needs more room.
+Compact + Detail Full. No neighbour is hidden at narrower breakpoints. If the
+terminal cannot fit even the sides, they are clipped equally rather than dropping
+a level. Widen the terminal when the focused pane needs more room.
 
 - **Scope.** Git clones group by their common Git directory. `ALL` selects the
   entire state; each repository row selects all its worktrees, without a separate

@@ -186,8 +186,10 @@ Artifact kinds and fingerprints are unchanged and says where each came from.
 ## Human review in the terminal
 
 `verify` waits by default while a Human eval needs a sign-off. The monitor drills
-down through Scope → Runs → Run tree → Detail. Its focused pane gets the space;
-context and previews appear when the terminal is wide enough. `j`/`k` selects an
+down through Scope → Runs → Run tree → Detail. Its immediate context and preview
+panes remain at every width, except at the ends of the drill-down. Side panes take
+16, 28 or 36 columns at widths below 100, 100–139 or 140 and above; the focused pane
+fills the rest, with sides clipped on extremely small terminals. `j`/`k` selects an
 eval and reveals its outcome in the peek; Enter or `o` opens Detail. Press `c` to
 claim a waiting Human request, run the tools its owner declared, choose GREEN or
 RED with `g`/`r`, and submit the schema-backed form with Ctrl-S. Standalone

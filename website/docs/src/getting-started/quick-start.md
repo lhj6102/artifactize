@@ -106,7 +106,10 @@ artifactize monitor --all   # Initially select every repository in this state
 
 Start it in a second terminal while `verify` runs. Drill down through Scope → Runs
 → Run tree → Detail with Enter or →; Esc steps back and never quits. The focused
-pane gets the space, with context and a preview when the terminal is wide enough.
+pane fills the remaining width between its immediate context and preview panes,
+which remain at every terminal width (except the missing neighbour at either end
+of the drill-down). Side panes are 16 columns below 100, 28 at 100–139, and 36 at
+140 or more; extremely small terminals clip them rather than dropping a level.
 `j`/`k` selects; the tree's Detail peek follows the selected eval. `?` shows help,
 `!` finds the next error, RED or waiting Human eval, and `q` or Ctrl-C quits.
 

@@ -189,7 +189,8 @@ current evidence without execution. See [Upgrading to 0.9](../concepts/fingerpri
 The monitor replaces eval modals with Scope → Runs → Run tree → Detail. Panes
 keep both immediate neighbours at every width, except at the ends of the
 drill-down. Each side pane is 16 columns below 100, 28 at 100–139, and 36 at 140
-or more; the focused Full pane fills the remaining width.
+or more; the focused Full pane fills the remaining width. Extremely small
+terminals clip the side panes rather than dropping a level.
 Each eval has one row, with `waits for X` / `blocked by X` and upstream navigation
 (`b` / Backspace). The headline keeps validation **at Run end**; a dim `*` marks
 rows changed since then. Esc steps back and never quits; `q` quits outside editing
