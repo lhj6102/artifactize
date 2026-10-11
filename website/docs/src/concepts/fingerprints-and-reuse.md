@@ -90,8 +90,11 @@ make a tool change matter, include the relevant files in the fingerprint.
 
 An executable eval has a key only when its target and every Artifact it depends on
 have a fingerprint. Omission supplies artifactsum, including for basis Artifacts. If
-any declares `fingerprint = false`, the eval has no reuse: every `verify` reviews it again,
-and `status` names the disabled target or dependency.
+any declares `fingerprint = false`, the eval has no reuse: every `verify` reviews it
+again. For an unforced READY Runtime/Agent eval, `status` names the disabled target
+or dependency in its execution reason. A READY Human eval instead gives the
+request-awaiting-claim-and-submission reason; forced, blocked and waiting evals
+use their respective execution, gate or wait reasons.
 
 Dependency evals have no reuse key. Their verdicts are derived from current required
 evidence on every `status` or Run, never read from cache or published to the team
