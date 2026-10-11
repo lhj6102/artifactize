@@ -50,24 +50,79 @@ pub(crate) const SQLITE_BUSY_TIMEOUT: std::time::Duration = std::time::Duration:
 const TRANSIENT_ACCESS_RETRIES: u32 = 5;
 const TRANSIENT_ACCESS_BACKOFF: std::time::Duration = std::time::Duration::from_millis(20);
 
-/// Retry `attempt` past [`platform::transient_file_access`] (Windows transiently denying a
-/// metadata or open probe while another handle finishes closing a just-deleted WAL sidecar)
-/// before giving up with its last error. Every read-only state open reaches this through
-/// [`receipts::check_files`]/[`check_probe_files`], which every reader calls first, so this is
-/// the one place the retry needs to live.
-pub(crate) fn retry_transient_access<T>(
-    mut attempt: impl FnMut() -> std::io::Result<T>,
-) -> std::io::Result<T> {
+/// Retry `attempt` while `transient` says its error can clear on its own, before giving up
+/// with its last error. `transient` decides alone: a non-transient error, or the bound run out,
+/// both stop the loop and return that error immediately, never retried further.
+fn retry<T, E>(
+    mut attempt: impl FnMut() -> Result<T, E>,
+    transient: impl Fn(&E) -> bool,
+) -> Result<T, E> {
     for remaining in (0..TRANSIENT_ACCESS_RETRIES).rev() {
         match attempt() {
             Ok(value) => return Ok(value),
-            Err(error) if remaining > 0 && platform::transient_file_access(&error) => {
+            Err(error) if remaining > 0 && transient(&error) => {
                 std::thread::sleep(TRANSIENT_ACCESS_BACKOFF);
             }
             Err(error) => return Err(error),
         }
     }
     unreachable!("the loop above always returns by its last attempt")
+}
+
+/// Retry `attempt` past [`platform::transient_file_access`] (Windows transiently denying a
+/// metadata or open probe while another handle finishes closing a just-deleted WAL sidecar)
+/// before giving up with its last error. Every read-only state open reaches this through
+/// [`receipts::check_files`]/[`check_probe_files`], which every reader calls first, so this is
+/// the one place the retry needs to live.
+pub(crate) fn retry_transient_access<T>(
+    attempt: impl FnMut() -> std::io::Result<T>,
+) -> std::io::Result<T> {
+    retry(attempt, platform::transient_file_access)
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use std::cell::Cell;
+
+    #[test]
+    fn retry_succeeds_within_bound_gives_up_past_it_and_never_retries_a_non_transient_error() {
+        let calls = Cell::new(0);
+        let result = super::retry(
+            || {
+                calls.set(calls.get() + 1);
+                if calls.get() <= 2 {
+                    Err::<u32, _>("transient")
+                } else {
+                    Ok(calls.get())
+                }
+            },
+            |error: &&str| *error == "transient",
+        );
+        assert_eq!(result, Ok(3));
+        assert_eq!(calls.get(), 3);
+
+        let calls = Cell::new(0);
+        let result = super::retry(
+            || {
+                calls.set(calls.get() + 1);
+                Err::<(), _>("transient")
+            },
+            |error: &&str| *error == "transient",
+        );
+        assert_eq!(result, Err("transient"));
+        assert_eq!(calls.get(), super::TRANSIENT_ACCESS_RETRIES);
+
+        let calls = Cell::new(0);
+        let result = super::retry(
+            || {
+                calls.set(calls.get() + 1);
+                Err::<(), _>("permanent")
+            },
+            |error: &&str| *error == "transient",
+        );
+        assert_eq!(result, Err("permanent"));
+        assert_eq!(calls.get(), 1);
+    }
 }
 
 /// Resolve the single state directory without creating it.

@@ -205,6 +205,23 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn transient_file_access_is_only_error_access_denied() {
+        assert!(transient_file_access(&io::Error::from_raw_os_error(
+            ERROR_ACCESS_DENIED as i32
+        )));
+        for other in [
+            2,  /* ERROR_FILE_NOT_FOUND */
+            32, /* ERROR_SHARING_VIOLATION */
+        ] {
+            assert!(!transient_file_access(&io::Error::from_raw_os_error(other)));
+        }
+        assert!(!transient_file_access(&io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "no raw code"
+        )));
+    }
+
     #[tokio::test]
     async fn the_editor_runs_through_cmd_and_gets_the_file_as_one_word() {
         let directory = crate::test_os::tempdir();

@@ -281,3 +281,19 @@ impl Drop for HiddenInput {
         unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &self.0) };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Unlike Windows, no error here is ever transient in this sense; the predicate is a
+    /// permanent no-op, not a gap in detecting a race that would need retrying.
+    #[test]
+    fn transient_file_access_is_always_false() {
+        assert!(!transient_file_access(&io::Error::from_raw_os_error(5)));
+        assert!(!transient_file_access(&io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "permission denied"
+        )));
+    }
+}
