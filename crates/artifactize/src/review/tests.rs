@@ -1095,15 +1095,6 @@ fn list_opens_requests_and_esc_steps_back_without_quitting() {
     assert!(review.output.is_none());
 }
 
-/// Which panes a frame shows: the list's title and the Detail's stage or Preview hint.
-fn panes(review: &mut Review, width: u16) -> (bool, bool, bool, String) {
-    let text = sized(review, width, 30);
-    let list = text.contains("Waiting Human reviews");
-    let full = text.contains("· REVIEW (yours)");
-    let preview = text.contains("Enter: open");
-    (list, full, preview, text)
-}
-
 #[test]
 fn a_tool_run_never_claims_once_the_claim_is_gone() {
     // Another terminal releases the claim; a refresh reloads it and Enter starts nothing.
@@ -1261,40 +1252,64 @@ fn control_characters_never_break_one_row_texts() {
 fn review_uses_the_reactive_layout_of_monitor() {
     let mut review = listed();
     press(&mut review, KeyCode::Char('j'));
-    // List focused: the list is Full and the Detail a Preview from two-pane widths up.
-    for width in [160, 120, 100] {
-        let (list, full, preview, text) = panes(&mut review, width);
-        assert!(list && preview && !full, "{width}\n{text}");
+    for (width, side, full) in [
+        (80, 16, 64),
+        (99, 16, 83),
+        (100, 28, 72),
+        (120, 28, 92),
+        (139, 28, 111),
+        (140, 36, 104),
+        (160, 36, 124),
+    ] {
+        // List focused: Full fills the body beside a fixed-width Detail Preview.
+        let text = sized(&mut review, width, 30);
+        assert_eq!((review.hits.list.x, review.hits.list.width), (0, full));
+        assert_eq!(
+            (review.hits.preview.x, review.hits.preview.width),
+            (full, side)
+        );
+        assert_eq!(review.hits.preview.right(), width);
         assert!(
             text.contains("EVAL") && text.contains("REQUEST"),
             "{width}\n{text}"
         );
+        assert!(text.contains("Enter: open"), "{width}\n{text}");
+        assert!(!text.contains("· REVIEW (yours)"), "{width}\n{text}");
     }
-    // Narrow: one pane and the breadcrumb.
-    let (list, full, preview, text) = panes(&mut review, 99);
-    assert!(list && !preview && !full, "{text}");
     press(&mut review, KeyCode::Enter);
-    // Detail focused: the list is Compact beside the Full Detail.
-    for width in [160, 120, 100] {
-        let (list, full, preview, text) = panes(&mut review, width);
-        assert!(list && full && !preview, "{width}\n{text}");
+    for (width, side, full) in [
+        (80, 16, 64),
+        (99, 16, 83),
+        (100, 28, 72),
+        (120, 28, 92),
+        (139, 28, 111),
+        (140, 36, 104),
+        (160, 36, 124),
+    ] {
+        // Detail focused: its immediate list neighbour stays Compact at every width.
+        let text = sized(&mut review, width, 30);
+        assert_eq!((review.hits.list.x, review.hits.list.width), (0, side));
+        assert_eq!(
+            (review.hits.detail.x, review.hits.detail.width),
+            (side, full)
+        );
+        assert_eq!(review.hits.detail.right(), width);
+        assert!(text.contains("· REVIEW (yours)"), "{width}\n{text}");
+        assert!(!text.contains("Enter: open"), "{width}\n{text}");
         assert!(
             !text.contains("EVAL "),
             "the Compact list has no columns\n{text}"
         );
-        assert!(text.contains("? release/signoff (you)"), "{width}\n{text}");
         let first = text.lines().nth(1).unwrap();
         assert!(
-            first.starts_with('┌') && first.chars().nth(30) == Some('┌'),
+            first.starts_with('┌') && first.chars().nth(usize::from(side)) == Some('┌'),
+            "{width}\n{text}"
+        );
+        assert!(
+            text.contains("artifactize review › all repositories › release/signoff"),
             "{width}\n{text}"
         );
     }
-    let (list, full, preview, text) = panes(&mut review, 80);
-    assert!(!list && full && !preview, "{text}");
-    assert!(
-        text.contains("artifactize review › all repositories › release/signoff"),
-        "{text}"
-    );
 }
 
 fn click(review: &mut Review, rect: ratatui::layout::Rect) -> Action {
@@ -1480,16 +1495,25 @@ pub(crate) fn builtin_rows(width: u16) -> Vec<Vec<&'static str>> {
             "  $ get {artifactPath}/notes.md",
             "  Print the notes of release.",
         ],
-        vec![
-            "open_release  launch",
-            "  opens release/notes.md in its default app",
-            "  Open the notes of release.",
-        ],
+        if narrow {
+            vec![
+                "open_release  launch",
+                "  opens release/notes.md in its",
+                "    default app",
+                "  Open the notes of release.",
+            ]
+        } else {
+            vec![
+                "open_release  launch",
+                "  opens release/notes.md in its default app",
+                "  Open the notes of release.",
+            ]
+        },
         if narrow {
             vec![
                 "site_release  launch",
-                "  opens https://example.com/release in the",
-                "    browser",
+                "  opens https://example.com/release",
+                "    in the browser",
                 "  Open the release page.",
             ]
         } else {

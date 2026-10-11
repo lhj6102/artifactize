@@ -52,13 +52,6 @@ impl Badge {
         parts.sort_by_key(|(status, _)| *status);
         parts
     }
-    pub fn text(&self) -> String {
-        self.parts()
-            .into_iter()
-            .map(|(status, count)| format!("{}{count}", status.glyph()))
-            .collect::<Vec<_>>()
-            .join(" ")
-    }
 }
 #[derive(Debug, Clone)]
 pub struct CatalogRow {

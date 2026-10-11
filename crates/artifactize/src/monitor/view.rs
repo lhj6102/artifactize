@@ -3,9 +3,9 @@ use super::model::Status;
 use super::{
     DetailArea, Monitor, Pane, Scope,
     input::{Button, Hits},
-    layout::{self, Density, Hints},
+    layout::{self, Density},
     model::{self, Section},
-    rows::{fit, lead, plain},
+    rows::{fit, plain},
 };
 use ratatui::{
     Frame,
@@ -34,11 +34,9 @@ const SHORT_ID: usize = 6;
 const GLYPH_GAP: usize = 2;
 /// Between the Run's status and its headline.
 const HEADLINE_SEPARATOR: &str = " · ";
-/// A bordered pane's natural width adds its two borders and one spare column, so the widest
+/// A bordered table reserves its two borders and one spare column, so the widest
 /// row ends before the right border instead of touching it.
 const PANE_CHROME: usize = 3;
-/// Table columns are one column apart (ratatui's default spacing).
-const COLUMN_SPACING: usize = 1;
 /// Each level of the Scope list indents by two columns.
 const SCOPE_INDENT: usize = 2;
 /// The label before a running Agent's last transcript line in the peek.
@@ -186,21 +184,13 @@ fn highlight(focused: bool) -> Style {
         Modifier::BOLD.into()
     }
 }
-/// Display columns. Natural widths add up in `usize` and become `u16` only through `cap`, so a
+/// Display columns. Table widths add up in `usize` and become `u16` only through `cap`, so a
 /// saved text of any length cannot overflow them.
 fn width(text: &str) -> usize {
     Line::from(plain(text).as_ref()).width()
 }
 fn cap(columns: usize) -> u16 {
     u16::try_from(columns).unwrap_or(u16::MAX)
-}
-/// Widest tree row: the marker, indentation and fold symbol, then the glyph and the text.
-fn tree_width(nodes: &[model::Node], depth: usize) -> usize {
-    nodes
-        .iter()
-        .map(|node| (lead(depth) + width(&node.line())).max(tree_width(&node.children, depth + 1)))
-        .max()
-        .unwrap_or(0)
 }
 /// Runs columns: glyph, status, id, age, counts, took and workspace.
 fn run_cells(row: &model::RunRow, workspace: bool) -> [String; 7] {
@@ -247,24 +237,6 @@ fn total(widths: &[usize]) -> usize {
     let shown = widths.iter().filter(|width| **width > 0).count();
     widths.iter().sum::<usize>() + shown.saturating_sub(1)
 }
-/// The Run pane's natural width covers its tree rows and headline up to this bound; rows cut
-/// their status text, and the rest of a wide terminal goes to the Detail peek.
-const RUN_BOUND: usize = 80;
-
-/// Columns of the Run headline and its attention lines.
-fn strip_width(strip: &model::Strip) -> usize {
-    let headline = GLYPH_GAP
-        + width(strip.status.as_str())
-        + width(HEADLINE_SEPARATOR)
-        + width(&strip.headline);
-    let attention = strip
-        .attention
-        .iter()
-        .map(|(_, text)| GLYPH_GAP + width(text))
-        .max()
-        .unwrap_or(0);
-    headline.max(attention)
-}
 fn short_id(id: &str) -> &str {
     let id = id.strip_prefix("run-").unwrap_or(id);
     let start = id
@@ -310,17 +282,7 @@ impl Monitor {
                 framed
             }),
         };
-        let hints = Hints {
-            scope: self.scope_width(),
-            runs: self.runs_width(now),
-            tree: nodes.as_deref().map_or(0, |nodes: &Vec<model::Node>| {
-                let strip = self.run.as_ref().map_or(0, |(run, requests)| {
-                    strip_width(&model::strip(&model::progress(run, requests, now)))
-                });
-                cap((tree_width(nodes, 0).max(strip) + PANE_CHROME).min(RUN_BOUND))
-            }),
-        };
-        let plan = layout::plan(body, self.focus, hints);
+        let plan = layout::plan(body, self.focus);
         for (pane, area, density) in plan.panes {
             self.hits.panes.push((pane, area));
             match pane {
@@ -441,23 +403,6 @@ impl Monitor {
         }
         .into()
     }
-    fn scope_width(&self) -> u16 {
-        let label = self
-            .catalog
-            .rows
-            .iter()
-            .map(|row| row.depth * SCOPE_INDENT + width(&row.label))
-            .max()
-            .unwrap_or(0);
-        let badge = self
-            .catalog
-            .rows
-            .iter()
-            .map(|row| width(&row.badge.text()))
-            .max()
-            .unwrap_or(0);
-        cap(label + COLUMN_SPACING + badge + PANE_CHROME)
-    }
     fn draw_scope(&mut self, frame: &mut Frame, area: Rect, density: Density) {
         let focused = self.focus == Pane::Repositories;
         // Compact keeps only the most urgent badge, so names stay readable.
@@ -510,14 +455,6 @@ impl Monitor {
             area,
             &mut self.repositories,
         );
-    }
-    fn runs_width(&self, now: OffsetDateTime) -> u16 {
-        let workspace = !matches!(self.scope, Scope::Worktree(..));
-        let rows: Vec<_> = model::run_rows(&self.runs, now)
-            .iter()
-            .map(|row| run_cells(row, workspace))
-            .collect();
-        cap(total(&run_widths(&rows, usize::MAX)) + PANE_CHROME)
     }
     fn draw_runs(&mut self, frame: &mut Frame, area: Rect, density: Density, now: OffsetDateTime) {
         let focused = self.focus == Pane::Runs;

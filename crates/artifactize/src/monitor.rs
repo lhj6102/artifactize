@@ -496,7 +496,7 @@ impl Monitor {
         use crate::agent::session::live::{self, Resolution};
         let visible = self.focus == Pane::Artifacts
             && self.detail.is_none()
-            && layout::plan(self.size, self.focus, layout::Hints::default()).density(Pane::Detail)
+            && layout::plan(self.size, self.focus).density(Pane::Detail)
                 == layout::Density::Preview;
         let view = visible
             .then(|| self.selected_request())

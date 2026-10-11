@@ -187,7 +187,9 @@ every executable eval once, Human sign-offs included. Dependency evals derive
 current evidence without execution. See [Upgrading to 0.9](../concepts/fingerprints-and-reuse.md#upgrading-to-09).
 
 The monitor replaces eval modals with Scope → Runs → Run tree → Detail. Panes
-resize around focus; at 100–139 columns Full sits beside the next level's Preview.
+keep both immediate neighbours at every width, except at the ends of the
+drill-down. Each side pane is 16 columns below 100, 28 at 100–139, and 36 at 140
+or more; the focused Full pane fills the remaining width.
 Each eval has one row, with `waits for X` / `blocked by X` and upstream navigation
 (`b` / Backspace). The headline keeps validation **at Run end**; a dim `*` marks
 rows changed since then. Esc steps back and never quits; `q` quits outside editing
