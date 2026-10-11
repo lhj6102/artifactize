@@ -11,18 +11,11 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
     thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 use serde_json::{Value, json};
 use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
-
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-}
 
 /// A workspace of Artifacts, each with one Agent eval and its own fingerprint.
 struct Project {
@@ -58,10 +51,10 @@ impl Project {
         let auth = project.state.join("auth");
         support::os::create_private_dir_all(&auth);
         let credentials = json!({
-            "access_token":codex::jwt("account-1", now() + 3600),
+            "access_token":codex::jwt("account-1", codex::VALID_EXPIRY),
             "refresh_token":"refresh",
             "account_id":"account-1",
-            "expires_at":now() + 3600,
+            "expires_at":codex::VALID_EXPIRY,
             "saved_at":1,
         });
         support::os::write_private_file(&auth.join("codex.json"), credentials.to_string());
@@ -472,7 +465,7 @@ fn a_codex_usage_limit_stops_codex_for_the_run() {
                         "type":"usage_limit_reached",
                         "message":"The usage limit has been reached",
                         "plan_type":"plus",
-                        "resets_at":now() + 3600,
+                        "resets_at":codex::VALID_EXPIRY,
                     },
                 }),
             );

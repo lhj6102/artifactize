@@ -352,6 +352,11 @@ pub mod anthropic {
 
 /// Codex replies (`POST <root>/responses`, `GET <root>/models`) and sign-in tokens.
 pub mod codex {
+    /// No CLI fixture expires while scheduling; expiry boundaries use injected unit clocks.
+    pub const VALID_EXPIRY: u64 = u64::MAX;
+    /// Expired independently of wall-clock resolution or how long the fixture takes to run.
+    pub const EXPIRED: u64 = 0;
+
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use serde_json::{Value, json};
 
