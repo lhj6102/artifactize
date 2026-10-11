@@ -23,10 +23,10 @@ pub type Pins = BTreeMap<
 >;
 
 /// Hash every `executionPaths` entry of the Agent eval's command tools, off the async runtime.
-/// A file pins to the SHA-256 of its bytes; a directory to the SHA-256 over each entry's
+/// A file pins to the SHA-256 of its bytes; a directory to the SHA-256 over each file/link's
 /// relative path and digest, in path order, where a symlink inside it contributes its target
 /// without being followed. A missing or unreadable path, a special file or a directory over
-/// 10,000 entries or 1 GiB is an error.
+/// 10,000 descendant entries or 1 GiB of file bytes is an error.
 pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins, String> {
     let registry = Registry::new(config, eval_id)?;
     let mut resolved = Vec::new();
@@ -70,7 +70,8 @@ fn pin(path: &Path) -> Result<crate::types::Sha256Digest, String> {
     }
     let directory = platform::open_directory(path).map_err(|e| e.to_string())?;
     let mut entries = Vec::new();
-    walk(&directory, path, "", &mut entries, &mut bytes)?;
+    let mut count = 0;
+    walk(&directory, path, "", &mut entries, &mut bytes, &mut count)?;
     entries.sort();
     let mut digest = Sha256::new();
     for (relative, kind, entry) in entries {
@@ -91,6 +92,7 @@ fn walk(
     relative: &str,
     entries: &mut Vec<(String, u8, crate::types::Sha256Bytes)>,
     bytes: &mut u64,
+    count: &mut usize,
 ) -> Result<(), String> {
     for entry in platform::read_dir(directory).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -101,7 +103,9 @@ fn walk(
         } else {
             format!("{relative}/{text}")
         };
-        if entries.len() >= MAX_ENTRIES {
+        // Directories count too: empty subtrees must not bypass the traversal bound.
+        *count += 1;
+        if *count > MAX_ENTRIES {
             return Err(format!("more than {MAX_ENTRIES} entries to pin."));
         }
         let open = || {
@@ -110,7 +114,7 @@ fn walk(
         };
         match entry.file_type().map_err(|e| e.to_string())? {
             platform::FileKind::Directory => {
-                walk(&open()?, &path.join(&name), &label, entries, bytes)?;
+                walk(&open()?, &path.join(&name), &label, entries, bytes, count)?;
             }
             platform::FileKind::File => {
                 entries.push((label, b'f', hash_file(open()?, bytes)?));

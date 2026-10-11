@@ -754,3 +754,28 @@ fn plain_templates_validate_at_declaration_and_keep_authored_serialization() {
     let parsed: crate::config::CommandTool = serde_json::from_value(tool).unwrap();
     assert_eq!(serde_json::to_value(parsed).unwrap()["args"], args);
 }
+
+#[tokio::test]
+async fn execution_pin_traversal_limit_counts_empty_directories() {
+    // This is the documented boundary, independent of the implementation constant.
+    const DOCUMENTED_ENTRY_LIMIT: usize = 10_000;
+    let mut tool = command();
+    tool["execution_paths"] = json!(["pinned"]);
+    let fixture = Fixture::new(tool);
+    let pinned = fixture.repo.join("pinned");
+    fs::create_dir(&pinned).unwrap();
+    for index in 0..DOCUMENTED_ENTRY_LIMIT {
+        fs::create_dir(pinned.join(format!("empty-{index}"))).unwrap();
+    }
+    let config = read_workspace_config(&fixture.repo).unwrap();
+    let result = pins::execution_paths(&config, "a/review").await.unwrap();
+    assert_eq!(
+        result["inspect_a"]["pinned"].as_str(),
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    );
+    fs::create_dir(pinned.join("one-too-many")).unwrap();
+    let error = pins::execution_paths(&config, "a/review")
+        .await
+        .unwrap_err();
+    assert!(error.contains("more than 10000 entries"), "{error}");
+}
