@@ -97,14 +97,18 @@ workspace-relative for file Artifacts; it is not relative to their cwd or target
 When an Agent review starts, artifactize pins each execution path of the eval's
 tools: a file to the SHA-256 of its bytes, a directory to the SHA-256 over each
 file's or symlink's relative path and digest (a symlink inside contributes its target
-and is not followed). Directories are traversed and count toward the 10,000-entry
-limit, but empty directories do not contribute a digest. The pins are recorded in the result's provenance as
+and is not followed). Directories are only traversed: they do not contribute a
+digest or increment the entry counter, so empty directories do not count. The pins
+are recorded in the result's provenance as
 `executionPaths: {"TOOL": {"PATH": "sha256"}}` (by registered tool name, such as
 `coverage_spec`, and declared path), travel with remote records, and stay with the
 result when it is reused, so a reused verdict shows which binary produced it. A
-path that cannot be pinned (missing, a special file, or a folder over 10,000
-descendant entries or 1 GiB of file bytes) fails the review with `PREPARATION_FAILED` before the Agent is
-called. Pins are provenance, not part of the
+path that cannot be pinned (missing, a special file, or more than 1 GiB of file
+bytes) fails the review with `PREPARATION_FAILED` before the Agent is called.
+Pins retain at most 10,000 file/symlink entries; after that many have been retained,
+encountering any further filesystem entry fails preparation. This is not a total
+filesystem traversal bound: directory visits alone, including empty directories,
+do not increment the counter. Pins are provenance, not part of the
 [reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key): to review again when a binary
 changes, cover it in a fingerprint.
 Successful stdout is one JSON object with 1–32 content blocks:

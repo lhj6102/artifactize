@@ -11,9 +11,9 @@ use crate::{
     platform, scope,
 };
 
-/// Bound traversal and retained digest metadata for a tool's executable directory pin.
+/// Bound retained file/link digest metadata, not directory visits, for an executable pin.
 const MAX_ENTRIES: usize = 10_000;
-/// Bound total pinning I/O independently of entry count, as for content fingerprints.
+/// Bound file-content hashing I/O independently of retained entry count.
 const MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Pins by registered tool name, then by declared workspace-relative path.
@@ -25,8 +25,9 @@ pub type Pins = BTreeMap<
 /// Hash every `executionPaths` entry of the Agent eval's command tools, off the async runtime.
 /// A file pins to the SHA-256 of its bytes; a directory to the SHA-256 over each file/link's
 /// relative path and digest, in path order, where a symlink inside it contributes its target
-/// without being followed. A missing or unreadable path, a special file or a directory over
-/// 10,000 descendant entries or 1 GiB of file bytes is an error.
+/// without being followed. Missing/unreadable paths, special files, more than 1 GiB
+/// of file bytes, or any further entry after 10,000 retained files/links are errors.
+/// Directories are traversed but do not increment the counter or contribute a digest.
 pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins, String> {
     let registry = Registry::new(config, eval_id)?;
     let mut resolved = Vec::new();
@@ -70,8 +71,7 @@ fn pin(path: &Path) -> Result<crate::types::Sha256Digest, String> {
     }
     let directory = platform::open_directory(path).map_err(|e| e.to_string())?;
     let mut entries = Vec::new();
-    let mut count = 0;
-    walk(&directory, path, "", &mut entries, &mut bytes, &mut count)?;
+    walk(&directory, path, "", &mut entries, &mut bytes)?;
     entries.sort();
     let mut digest = Sha256::new();
     for (relative, kind, entry) in entries {
@@ -92,7 +92,6 @@ fn walk(
     relative: &str,
     entries: &mut Vec<(String, u8, crate::types::Sha256Bytes)>,
     bytes: &mut u64,
-    count: &mut usize,
 ) -> Result<(), String> {
     for entry in platform::read_dir(directory).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -103,9 +102,7 @@ fn walk(
         } else {
             format!("{relative}/{text}")
         };
-        // Directories count too: empty subtrees must not bypass the traversal bound.
-        *count += 1;
-        if *count > MAX_ENTRIES {
+        if entries.len() >= MAX_ENTRIES {
             return Err(format!("more than {MAX_ENTRIES} entries to pin."));
         }
         let open = || {
@@ -114,7 +111,7 @@ fn walk(
         };
         match entry.file_type().map_err(|e| e.to_string())? {
             platform::FileKind::Directory => {
-                walk(&open()?, &path.join(&name), &label, entries, bytes, count)?;
+                walk(&open()?, &path.join(&name), &label, entries, bytes)?;
             }
             platform::FileKind::File => {
                 entries.push((label, b'f', hash_file(open()?, bytes)?));
