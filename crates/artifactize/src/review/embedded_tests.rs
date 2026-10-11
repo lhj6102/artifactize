@@ -580,21 +580,24 @@ fn long_json_line_keeps_unicode_cursor_visible() {
     );
     form.json = Some(format!("{}한글", "x".repeat(140)));
     form.cursor = form.json.as_ref().unwrap().len();
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(32, 8)).unwrap();
-    terminal
-        .draw(|frame| view::draw_inline_form(frame, frame.area(), &form, 0, true))
-        .unwrap();
-    let text: String = terminal
-        .backend()
-        .buffer()
-        .content()
-        .iter()
-        .map(|cell| cell.symbol())
-        .collect();
-    assert!(
-        text.contains('한') && text.contains('글') && text.contains('▏'),
-        "{text}"
-    );
+    for (width, height) in [(12, 5), (32, 8), (80, 24)] {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| view::draw_inline_form(frame, frame.area(), &form, 0, true))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            text.contains('한') && text.contains('글') && text.contains('▏'),
+            "{width}x{height}: {text}"
+        );
+    }
 }
 
 #[test]

@@ -634,14 +634,21 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
     let kind = match &relation.kind {
         RelationKind::Unknown { .. } => serde_json::to_string(relation).unwrap_or_default(),
         RelationKind::Child { path } => {
-            format!("child {}", path.value().map_or("", String::as_str))
+            format!(
+                "child {}",
+                path.value().map_or("", crate::config::ChildPrefix::as_str)
+            )
         }
         RelationKind::Mount { alias } => {
-            format!("mount {}", alias.value().map_or("", String::as_str))
+            format!(
+                "mount {}",
+                alias.value().map_or("", crate::config::MountAlias::as_str)
+            )
         }
         RelationKind::Dependency { name, eval_id } => format!(
             "dependency {} in {}",
-            name.value().map_or("", String::as_str),
+            name.value()
+                .map_or("", crate::config::ReferenceName::as_str),
             eval_id.value().map_or("", crate::types::EvalId::as_str)
         ),
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),

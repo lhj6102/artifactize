@@ -97,7 +97,7 @@ pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing", with = "path_field")]
     pub path: Field<PathBuf>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub children: Field<BTreeMap<String, crate::types::ArtifactName>>,
+    pub children: Field<BTreeMap<config::ChildPrefix, crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub name: Field<crate::types::ArtifactName>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -105,7 +105,7 @@ pub struct Artifact {
     #[serde(default, skip_serializing_if = "missing")]
     pub views: Field<Views>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub mounts: Field<BTreeMap<String, crate::types::ArtifactName>>,
+    pub mounts: Field<BTreeMap<config::MountAlias, crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub basis: Field<bool>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -236,7 +236,7 @@ pub struct Declaration {
     #[serde(default, skip_serializing_if = "missing")]
     pub profile: Field<Profile>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub profile_variants: Field<BTreeMap<String, Profile>>,
+    pub profile_variants: Field<BTreeMap<config::ProfileVariantName, Profile>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub payload: Field<StoredPayload>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -249,11 +249,11 @@ pub struct Declaration {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Component {
     #[serde(default, skip_serializing_if = "missing")]
-    pub id: Field<usize>,
+    pub id: Field<crate::graph::ComponentId>,
     #[serde(default, skip_serializing_if = "missing")]
     pub artifacts: Field<Vec<crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
-    pub dependencies: Field<Vec<usize>>,
+    pub dependencies: Field<Vec<crate::graph::ComponentId>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub gates: Field<Vec<crate::types::EvalId>>,
     #[serde(default, skip_serializing_if = "missing")]
@@ -303,7 +303,14 @@ impl<'de> Deserialize<'de> for Relation {
         let kind = if unknown {
             RelationKind::Unknown { kind: kind_name }
         } else {
-            serde_json::from_value(Value::Object(kind)).map_err(serde::de::Error::custom)?
+            let parsed =
+                serde_json::from_value(Value::Object(kind)).map_err(serde::de::Error::custom)?;
+            if matches!(parsed, RelationKind::Unknown { .. }) {
+                return Err(serde::de::Error::custom(format!(
+                    "Invalid saved {kind_name} relation."
+                )));
+            }
+            parsed
         };
         let cyclic = match fields.remove("cyclic") {
             Some(value) => serde_json::from_value(value).map_err(serde::de::Error::custom)?,
@@ -323,29 +330,29 @@ impl<'de> Deserialize<'de> for Relation {
 pub enum RelationKind {
     Child {
         #[serde(default, skip_serializing_if = "missing")]
-        path: Field<String>,
+        path: Field<config::ChildPrefix>,
     },
     Mount {
         #[serde(default, skip_serializing_if = "missing")]
-        alias: Field<String>,
+        alias: Field<config::MountAlias>,
     },
     Dependency {
         #[serde(rename = "evalId", default, skip_serializing_if = "missing")]
         eval_id: Field<crate::types::EvalId>,
         #[serde(default, skip_serializing_if = "missing")]
-        name: Field<String>,
+        name: Field<config::ReferenceName>,
     },
     Instruction {
         #[serde(rename = "evalId")]
         eval_id: crate::types::EvalId,
-        name: String,
+        name: config::ReferenceName,
     },
     #[serde(rename = "argv")]
     Argument {
         #[serde(rename = "evalId")]
         eval_id: crate::types::EvalId,
         index: usize,
-        name: String,
+        name: config::ReferenceName,
         path: String,
     },
     #[serde(untagged)]

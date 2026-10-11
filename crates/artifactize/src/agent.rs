@@ -187,7 +187,11 @@ impl Turns<'_> {
             self.recorder.event(session::Kind::Attempt(attempt.clone()));
         }
         let response = response?;
-        check_deadline(self.cancellation, self.deadline)?;
+        check_deadline(
+            self.cancellation.is_cancelled(),
+            self.deadline,
+            Instant::now(),
+        )?;
         llm::validate_response(&response, self.model)
             .map_err(|message| Failure::new(Code::ProviderError, message))?;
         self.recorder.message(
@@ -233,7 +237,11 @@ impl Turns<'_> {
                     break;
                 }
             }
-            if let Err(failure) = check_deadline(self.cancellation, self.deadline) {
+            if let Err(failure) = check_deadline(
+                self.cancellation.is_cancelled(),
+                self.deadline,
+                Instant::now(),
+            ) {
                 stopped = Some(failure);
                 break;
             }
@@ -254,7 +262,7 @@ impl Turns<'_> {
         call: &ToolCall,
     ) -> Result<(rig_core::message::ToolResult, bool), Failure> {
         let (cancellation, deadline) = (self.cancellation, self.deadline);
-        check_deadline(cancellation, deadline)?;
+        check_deadline(cancellation.is_cancelled(), deadline, Instant::now())?;
         self.calls_issued = self.calls_issued.saturating_add(1);
         if self
             .max_tool_calls
@@ -395,7 +403,7 @@ async fn run(
             }
             let text = text_of(&response);
             let result = verdict.parse(&text);
-            check_deadline(cancellation, deadline)?;
+            check_deadline(cancellation.is_cancelled(), deadline, Instant::now())?;
             // A schema failure earns the one repair turn.
             let repair = match result {
                 Ok(value) => return Ok(value),
@@ -734,10 +742,10 @@ fn prompt(
     Ok(request)
 }
 
-fn check_deadline(cancellation: &CancellationToken, deadline: Instant) -> Result<(), Failure> {
-    if cancellation.is_cancelled() {
+fn check_deadline(cancelled: bool, deadline: Instant, now: Instant) -> Result<(), Failure> {
+    if cancelled {
         Err(Failure::cancelled())
-    } else if Instant::now() >= deadline {
+    } else if now >= deadline {
         Err(Failure::timeout())
     } else {
         Ok(())

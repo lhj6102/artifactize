@@ -290,3 +290,32 @@ async fn saved_definition_timeouts_reject_unrepresentable_writes() {
         run.id = "run-definition".parse().unwrap();
     }
 }
+
+#[test]
+fn saved_component_ids_and_known_declaration_keys_keep_their_wire_shapes() {
+    let saved = r#"{"id":17,"artifacts":["app"],"dependencies":[0,10],"gates":["spec/check"],"cyclic":false}"#;
+    let component: Component = serde_json::from_str(saved).unwrap();
+    assert_eq!(serde_json::to_string(&component).unwrap(), saved);
+    let saved = r#"{"children":{"nested/child":"child"},"mounts":{"spec":"input"}}"#;
+    let artifact: Artifact = serde_json::from_str(saved).unwrap();
+    assert_eq!(serde_json::to_string(&artifact).unwrap(), saved);
+    let saved = r#"{"profileVariants":{"sol-max":{"kind":"human"}}}"#;
+    let declaration: Declaration = serde_json::from_str(saved).unwrap();
+    assert_eq!(serde_json::to_string(&declaration).unwrap(), saved);
+
+    for invalid in ["-1", "1.5", "\"1\""] {
+        assert!(serde_json::from_str::<crate::graph::ComponentId>(invalid).is_err());
+    }
+    for invalid in [
+        json!({"artifacts":{"app":{"children":{"../outside":"child"}}}}),
+        json!({"artifacts":{"app":{"mounts":{"bad/name":"input"}}}}),
+        json!({"evals":[{"id":"app/check","target":"app","declaration":{"profileVariants":{"bad.name":{"kind":"human"}}}}]}),
+        json!({"relations":[{"source":"input","target":"app","kind":"mount","alias":"bad/name"}]}),
+        json!({"relations":[{"source":"input","target":"app","kind":"instruction","evalId":"app/check","name":"bad.name"}]}),
+    ] {
+        assert!(
+            serde_json::from_value::<Definitions>(invalid.clone()).is_err(),
+            "{invalid}"
+        );
+    }
+}

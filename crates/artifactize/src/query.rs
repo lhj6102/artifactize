@@ -44,9 +44,9 @@ pub struct GraphRelation<'a> {
 
 #[derive(Debug, Serialize)]
 pub struct GraphComponent<'a> {
-    pub id: usize,
+    pub id: crate::graph::ComponentId,
     pub artifacts: Vec<&'a crate::config::ArtifactName>,
-    pub dependencies: Vec<usize>,
+    pub dependencies: Vec<crate::graph::ComponentId>,
     pub gates: Vec<&'a crate::config::EvalId>,
     pub cyclic: bool,
 }
@@ -88,13 +88,9 @@ pub fn graph<'a>(
         .enumerate()
         .filter(|(_, component)| artifacts.contains_key(component.artifacts[0]))
         .map(|(id, component)| GraphComponent {
-            id,
+            id: crate::graph::ComponentId::from_position(id),
             artifacts: component.artifacts.clone(),
-            dependencies: component
-                .dependencies
-                .iter()
-                .map(|dependency| dependency.index())
-                .collect(),
+            dependencies: component.dependencies.clone(),
             gates: component.gates.clone(),
             cyclic: component.artifacts.len() > 1
                 || relations.iter().any(|edge| {

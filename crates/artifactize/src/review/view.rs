@@ -19,6 +19,12 @@ use crate::monitor::{
 
 /// Keep a transient notice inside the fixed four-line footer rather than covering review content.
 const MAX_NOTICE_LINES: usize = 4;
+/// Two opposing borders consume one cell each in either dimension.
+const BORDER_CELLS: u16 = 2;
+/// Keep one spare content row below the JSON caret, in addition to the two border rows.
+const JSON_RESERVED_ROWS: u16 = BORDER_CELLS + 1;
+/// Keep one spare content column after the JSON caret, in addition to the border columns.
+const JSON_RESERVED_COLUMNS: u16 = BORDER_CELLS + 1;
 /// The Compact waiting list, borders included, beside a Full Detail.
 const LIST_COMPACT: u16 = 30;
 /// Fixed columns of the Full waiting list: claim and waiting time.
@@ -52,7 +58,7 @@ pub(super) fn lines(fields: Vec<(&'static str, String)>) -> Vec<Line<'static>> {
 }
 
 fn popup(frame: &mut Frame, area: Rect, title: String, text: Vec<Line<'static>>) {
-    let height = (text.len() as u16 + 2).min(area.height);
+    let height = (text.len() as u16 + BORDER_CELLS).min(area.height);
     let [area] = Layout::horizontal([Constraint::Percentage(POPUP_WIDTH)])
         .flex(Flex::Center)
         .areas(area);
@@ -294,7 +300,7 @@ impl Review {
             Modifier::BOLD
         };
         if density == Density::Compact {
-            let room = usize::from(area.width.saturating_sub(2));
+            let room = usize::from(area.width.saturating_sub(BORDER_CELLS));
             let rows = rows.into_iter().zip(&self.waiting).map(|(cells, view)| {
                 let mark = match &view.claim {
                     Some(claim) if claim.reviewer == self.reviewer => " (you)",
@@ -403,7 +409,7 @@ fn column_widths(rows: &[[String; 5]]) -> [u16; 5] {
 /// The Full list grows to its columns, so the rest of a wide terminal previews the request.
 fn list_width(rows: &[[String; 5]]) -> u16 {
     let widths = column_widths(rows);
-    widths.iter().sum::<u16>() + widths.len() as u16 - 1 + 2
+    widths.iter().sum::<u16>() + widths.len() as u16 - 1 + BORDER_CELLS
 }
 
 fn field_line(field: &super::Field, selected: bool) -> Line<'static> {
@@ -493,14 +499,14 @@ pub(super) fn draw_inline_form(
         .chars()
         .filter(|character| *character == '\n')
         .count();
-    let height = usize::from(area.height.saturating_sub(3));
+    let height = usize::from(area.height.saturating_sub(JSON_RESERVED_ROWS));
     let scroll = if scroll == 0 {
         row.saturating_sub(height.saturating_sub(1))
     } else {
         usize::from(scroll)
     };
     let column = Line::from(before.rsplit('\n').next().unwrap_or_default()).width();
-    let visible_width = usize::from(area.width.saturating_sub(3));
+    let visible_width = usize::from(area.width.saturating_sub(JSON_RESERVED_COLUMNS));
     let horizontal = column.saturating_sub(visible_width.saturating_sub(1));
     let mut text = format!("{}▏{}", before, &json[cursor..]);
     if let Some(error) = &form.error {

@@ -18,12 +18,27 @@ pub struct GraphError(pub String);
 /// A strongly-connected component's position in `Graph::components`, guarding it from
 /// arbitrary `usize` arithmetic: dependency-first, so a lower id is never a later
 /// component's dependency.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
 pub struct ComponentId(usize);
 
 impl ComponentId {
+    /// Live graph and legacy saved components derive their identity from a list position.
+    /// Saved explicit IDs deserialize as the same unsigned integer, never arithmetic indices.
+    pub(crate) fn from_position(index: usize) -> Self {
+        Self(index)
+    }
+
     pub(crate) fn index(self) -> usize {
         self.0
+    }
+}
+
+impl std::fmt::Display for ComponentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

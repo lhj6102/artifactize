@@ -227,10 +227,17 @@ impl<'a> Index<'a> {
             evals.insert(artifact, ids.into_iter().map(|(_, id)| id).collect());
         }
         let components = saved.components();
-        let by_id: HashMap<usize, &Component> = components
+        let by_id: HashMap<crate::graph::ComponentId, &Component> = components
             .iter()
             .enumerate()
-            .map(|(index, component)| (*component.id.value().unwrap_or(&index), component))
+            .map(|(index, component)| {
+                let id = component
+                    .id
+                    .value()
+                    .copied()
+                    .unwrap_or_else(|| crate::graph::ComponentId::from_position(index));
+                (id, component)
+            })
             .collect();
         let mut component_of: HashMap<&ArtifactName, &Component> = HashMap::new();
         let mut peers = BTreeMap::new();

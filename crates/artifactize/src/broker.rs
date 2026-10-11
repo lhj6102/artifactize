@@ -35,8 +35,9 @@ const OWNER_RECONCILE: Duration = Duration::from_secs(1);
 fn future_deadline(
     deadline: Option<tokio::time::Instant>,
     human_wait: bool,
+    now: tokio::time::Instant,
 ) -> Option<tokio::time::Instant> {
-    deadline.filter(|deadline| human_wait && *deadline > tokio::time::Instant::now())
+    deadline.filter(|deadline| human_wait && *deadline > now)
 }
 
 #[cfg(test)]
@@ -77,10 +78,27 @@ mod wake_tests {
             Some("0000-01-01T00:00:00.000000000Z")
         );
     }
+    #[test]
+    fn future_deadline_uses_the_supplied_instant_and_only_waiting_humans() {
+        let now = tokio::time::Instant::now();
+        let future = now + Duration::from_secs(1);
+        assert_eq!(future_deadline(Some(future), true, now), Some(future));
+        assert_eq!(future_deadline(Some(now), true, now), None);
+        assert_eq!(
+            future_deadline(Some(now - Duration::from_secs(1)), true, now),
+            None
+        );
+        assert_eq!(future_deadline(Some(future), false, now), None);
+        assert_eq!(future_deadline(None, true, now), None);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn expired_human_deadline_does_not_spin_while_other_work_drains() {
         let deadline = tokio::time::Instant::now() + Duration::from_millis(10);
-        assert_eq!(future_deadline(Some(deadline), true), Some(deadline));
+        assert_eq!(
+            future_deadline(Some(deadline), true, tokio::time::Instant::now()),
+            Some(deadline)
+        );
         tokio::time::advance(Duration::from_millis(11)).await;
         let mut reconcile = tokio::time::interval(OWNER_RECONCILE);
         reconcile.tick().await;
@@ -88,7 +106,7 @@ mod wake_tests {
         let mut iterations = 0;
         loop {
             iterations += 1;
-            let wake = future_deadline(Some(deadline), true);
+            let wake = future_deadline(Some(deadline), true, tokio::time::Instant::now());
             tokio::select! {
                 biased;
                 _ = tokio::time::sleep_until(finished) => break,
@@ -820,21 +838,22 @@ impl Scheduler<'_, '_> {
                     .requests
                     .iter()
                     .any(|request| request.status() == crate::types::RequestStatus::WaitingHuman);
+            let current = tokio::time::Instant::now();
             if self.tasks.is_empty()
                 && ((waiting.is_empty() && capacity_waiting.is_empty()) || cancelled)
             {
                 if cancelled || !human_wait {
                     break;
                 }
-                if deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline) {
+                if deadline.is_some_and(|deadline| current >= deadline) {
                     self.run.wait_timed_out = true;
                     break;
                 }
             }
             let waiting_external =
                 !waiting.is_empty() || !capacity_waiting.is_empty() || human_wait;
-            let wake_deadline = future_deadline(deadline, human_wait);
-            let deadline_at = wake_deadline.unwrap_or_else(tokio::time::Instant::now);
+            let wake_deadline = future_deadline(deadline, human_wait, current);
+            let deadline_at = wake_deadline.unwrap_or(current);
             tokio::select! {
                 biased;
                 result = self.tasks.join_next(), if !self.tasks.is_empty() => {
