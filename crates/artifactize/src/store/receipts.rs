@@ -805,9 +805,21 @@ pub fn read_state_id(state: &Path) -> Result<Option<crate::types::StateId>, Stri
 }
 
 pub(crate) fn regular_files(state: &Path) -> Result<(), String> {
+    regular_files_with_retry(state, || {
+        std::thread::sleep(super::TRANSIENT_ACCESS_BACKOFF);
+    })
+}
+
+/// The probe and retry path is shared with the seam test; only the between-attempt effect
+/// differs, so a fixture can release a pending-delete handle exactly after a failed probe.
+pub(super) fn regular_files_with_retry(
+    state: &Path,
+    mut before_retry: impl FnMut(),
+) -> Result<(), String> {
     for suffix in ["", "-wal", "-shm"] {
         let path = state.join(format!("{DATABASE}{suffix}"));
-        match super::retry_transient_access(|| crate::platform::path_kind(&path)) {
+        match super::retry_transient_access(|| crate::platform::path_kind(&path), &mut before_retry)
+        {
             Ok(kind) if kind != crate::platform::FileKind::File => {
                 return Err(format!(
                     "State files must be regular files: {}",

@@ -14,6 +14,33 @@ pub fn tempdir() -> tempfile::TempDir {
     tempfile::tempdir_in(temp_root()).unwrap()
 }
 
+/// Keep a file in Windows' pending-delete disposition until the returned handle closes.
+/// A delete-on-close handle establishes the disposition when it closes, while a second
+/// read/delete-sharing handle keeps the name present but inaccessible to new opens.
+/// `remove_file` alone instead unlinks by POSIX semantics on current Windows.
+#[cfg(windows)]
+pub fn pending_delete(path: &Path) -> fs::File {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    // Both opens must coexist for read and allow the delete-on-close disposition.
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+    const FILE_FLAG_DELETE_ON_CLOSE: u32 = 0x0400_0000;
+    let deleter = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_DELETE_ON_CLOSE)
+        .open(path)
+        .unwrap();
+    let holder = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
+        .open(path)
+        .unwrap();
+    drop(deleter);
+    holder
+}
+
 /// The program a test names a Unix utility by, such as `/bin/sh` or `cat`: unchanged on
 /// Unix. On Windows, `fixture.rs` built once and linked under the utility's file name, a
 /// stand-in for the shell and the utilities the test scripts use. Setting

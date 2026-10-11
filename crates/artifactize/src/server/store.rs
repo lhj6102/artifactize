@@ -18,9 +18,6 @@ const SCHEMA_VERSION: u32 = 3;
 pub const MAX_ENTRIES: i64 = 100_000;
 /// Bound JSON payload storage in the shared review database independently of record count.
 pub const MAX_BYTES: i64 = 4 * 1024 * 1024 * 1024;
-/// Keep persistent principal labels and token-admin output bounded; token names
-/// are printable ASCII identifiers, not the opaque bearer secrets themselves.
-const MAX_TOKEN_NAME_BYTES: usize = 64;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, clap::ValueEnum,
@@ -152,14 +149,11 @@ impl Store {
     }
 
     /// Create a token; only its SHA-256 is stored, so the caller prints it once.
-    pub async fn add_token(&self, name: &str, scopes: &[Scope]) -> Result<String, String> {
-        if !(1..=MAX_TOKEN_NAME_BYTES).contains(&name.len())
-            || !name
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-        {
-            return Err("Token names need 1–64 characters from [A-Za-z0-9._-].".into());
-        }
+    pub async fn add_token(
+        &self,
+        name: &crate::types::TokenName,
+        scopes: &[Scope],
+    ) -> Result<String, String> {
         let mut scopes = scopes.to_vec();
         scopes.sort();
         scopes.dedup();
@@ -173,7 +167,7 @@ impl Store {
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret)
         );
         let (name, hash, scopes) = (
-            name.parse::<crate::types::TokenName>()?,
+            name.clone(),
             digest(&token),
             serde_json::to_string(&scopes).map_err(|e| e.to_string())?,
         );
@@ -227,8 +221,12 @@ impl Store {
     }
 
     /// Revoke immediately; `purge` also deletes every entry that token published.
-    pub async fn revoke(&self, name: &str, purge: bool) -> Result<Revocation, String> {
-        let name: crate::types::TokenName = name.parse()?;
+    pub async fn revoke(
+        &self,
+        name: &crate::types::TokenName,
+        purge: bool,
+    ) -> Result<Revocation, String> {
+        let name = name.clone();
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -261,8 +259,8 @@ impl Store {
     }
 
     /// Remove every record of a key.
-    pub async fn remove(&self, key: &str) -> Result<bool, String> {
-        let key: crate::types::ReuseKey = key.parse()?;
+    pub async fn remove(&self, key: &crate::types::ReuseKey) -> Result<bool, String> {
+        let key = key.clone();
         self.connection
             .call(move |db| -> Result<_, Error> {
                 Ok(db.execute("DELETE FROM entries WHERE key=?", [key])? != 0)

@@ -97,9 +97,17 @@ pub struct ToolCheckScope {
     pub audience: Audience,
     pub tools: Vec<tools::ToolDefinition>,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ToolCheckStage {
+    Declarations,
+    Preflight,
+    Execute,
+}
+
 #[derive(Debug, Serialize)]
 pub struct ToolCheck {
-    pub stage: String,
+    pub stage: ToolCheckStage,
     pub tool: Option<String>,
     pub ok: bool,
     pub message: Option<String>,
@@ -112,10 +120,10 @@ pub enum ToolCheckResult {
 }
 
 impl ToolCheckReport {
-    fn check(&mut self, stage: &str, name: Option<&str>, result: Result<(), String>) {
+    fn check(&mut self, stage: ToolCheckStage, name: Option<&str>, result: Result<(), String>) {
         self.ok &= result.is_ok();
         self.checks.push(ToolCheck {
-            stage: stage.into(),
+            stage,
             tool: name.map(str::to_owned),
             ok: result.is_ok(),
             message: result.err(),
@@ -171,7 +179,7 @@ pub async fn check_tools(
     let config = match crate::config::read_workspace_config(repo) {
         Ok(config) => config,
         Err(error) => {
-            report.check("declarations", None, Err(error.to_string()));
+            report.check(ToolCheckStage::Declarations, None, Err(error.to_string()));
             return Ok(report);
         }
     };
@@ -237,7 +245,7 @@ pub async fn check_tools(
         let catalog = match catalog {
             Ok(catalog) => catalog,
             Err(error) => {
-                report.check("preflight", None, Err(error));
+                report.check(ToolCheckStage::Preflight, None, Err(error));
                 continue;
             }
         };
@@ -252,7 +260,7 @@ pub async fn check_tools(
             });
             if definitions.is_empty() {
                 report.check(
-                    "preflight",
+                    ToolCheckStage::Preflight,
                     Some(name),
                     Err(
                         "The selected tool is not registered for this Artifact and audience."
@@ -263,7 +271,7 @@ pub async fn check_tools(
         }
         for definition in &definitions {
             report.check(
-                "preflight",
+                ToolCheckStage::Preflight,
                 Some(&definition.name),
                 catalog.preflight(&definition.name),
             );
@@ -288,7 +296,7 @@ pub async fn check_tools(
             match result {
                 Ok(result) => {
                     report.check(
-                        "execute",
+                        ToolCheckStage::Execute,
                         Some(name),
                         if result.is_error() {
                             Err("The tool returned an error; no review result was created.".into())
@@ -298,7 +306,7 @@ pub async fn check_tools(
                     );
                     report.result = Some(result);
                 }
-                Err(error) => report.check("execute", Some(name), Err(error)),
+                Err(error) => report.check(ToolCheckStage::Execute, Some(name), Err(error)),
             }
         }
     }

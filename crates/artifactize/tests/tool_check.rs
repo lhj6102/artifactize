@@ -122,6 +122,13 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     fixture(&repo);
     let report = parsed(&check(&repo, &state, &[]), 0);
     assert_eq!(report["scopes"].as_array().unwrap().len(), 2);
+    assert!(
+        report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|check| check["stage"] == "preflight")
+    );
     assert!(report["scopes"].as_array().unwrap().iter().all(|scope| {
         scope["tools"]
             .as_array()
@@ -179,6 +186,10 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
             ],
         ),
         0,
+    );
+    assert_eq!(
+        agent["checks"].as_array().unwrap().last().unwrap()["stage"],
+        "execute"
     );
     let text = agent["result"]["content"][0]["text"].as_str().unwrap();
     let home = format!("{}|unset|", support::os::native("/home"));
@@ -244,4 +255,17 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     ] {
         assert_eq!(check(&repo, &state, &args).status.code(), Some(2));
     }
+}
+
+#[test]
+fn declaration_failure_keeps_the_public_stage_label() {
+    let root = support::os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fixture(&repo);
+    fs::write(repo.join("a/index.artf"), "invalid declaration").unwrap();
+    let report = parsed(&check(&repo, &state, &[]), 1);
+    assert_eq!(report["ok"], false);
+    assert_eq!(report["checks"][0]["stage"], "declarations");
+    assert!(!state.exists());
 }

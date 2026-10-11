@@ -31,7 +31,7 @@ pub enum ServerCommand {
 pub enum TokenCommand {
     /// Create a token and print it once; only its SHA-256 is stored.
     Add {
-        name: String,
+        name: crate::types::TokenName,
         /// Comma-separated scopes: read, publish, human.
         #[arg(
             long,
@@ -46,7 +46,7 @@ pub enum TokenCommand {
     List,
     /// Revoke a token at once; --purge also deletes the entries it published.
     Revoke {
-        name: String,
+        name: crate::types::TokenName,
         #[arg(long)]
         purge: bool,
     },

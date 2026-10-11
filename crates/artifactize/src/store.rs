@@ -44,9 +44,8 @@ pub use requests::{
 /// immediate busy error, while limiting how long one database operation can block.
 pub(crate) const SQLITE_BUSY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// The race [`retry_transient_access`] retries past clears in one handle close; 5 attempts of
-/// 20ms (100ms total at most) comfortably outlasts that under a loaded CI runner, without
-/// making a real, non-transient failure noticeably slower to report.
+/// Allow four short backoffs for a pending-delete handle to close, bounding the extra
+/// latency of a real file-access failure to 80ms. This is a retry policy, not a test deadline.
 const TRANSIENT_ACCESS_RETRIES: u32 = 5;
 const TRANSIENT_ACCESS_BACKOFF: std::time::Duration = std::time::Duration::from_millis(20);
 
@@ -56,12 +55,13 @@ const TRANSIENT_ACCESS_BACKOFF: std::time::Duration = std::time::Duration::from_
 fn retry<T, E>(
     mut attempt: impl FnMut() -> Result<T, E>,
     transient: impl Fn(&E) -> bool,
+    mut before_retry: impl FnMut(),
 ) -> Result<T, E> {
     for remaining in (0..TRANSIENT_ACCESS_RETRIES).rev() {
         match attempt() {
             Ok(value) => return Ok(value),
             Err(error) if remaining > 0 && transient(&error) => {
-                std::thread::sleep(TRANSIENT_ACCESS_BACKOFF);
+                before_retry();
             }
             Err(error) => return Err(error),
         }
@@ -76,8 +76,9 @@ fn retry<T, E>(
 /// the one place the retry needs to live.
 pub(crate) fn retry_transient_access<T>(
     attempt: impl FnMut() -> std::io::Result<T>,
+    before_retry: impl FnMut(),
 ) -> std::io::Result<T> {
-    retry(attempt, platform::transient_file_access)
+    retry(attempt, platform::transient_file_access, before_retry)
 }
 
 #[cfg(test)]
@@ -87,6 +88,7 @@ mod retry_tests {
     #[test]
     fn retry_succeeds_within_bound_gives_up_past_it_and_never_retries_a_non_transient_error() {
         let calls = Cell::new(0);
+        let waits = Cell::new(0);
         let result = super::retry(
             || {
                 calls.set(calls.get() + 1);
@@ -97,31 +99,39 @@ mod retry_tests {
                 }
             },
             |error: &&str| *error == "transient",
+            || waits.set(waits.get() + 1),
         );
         assert_eq!(result, Ok(3));
         assert_eq!(calls.get(), 3);
+        assert_eq!(waits.get(), 2);
 
         let calls = Cell::new(0);
+        let waits = Cell::new(0);
         let result = super::retry(
             || {
                 calls.set(calls.get() + 1);
                 Err::<(), _>("transient")
             },
             |error: &&str| *error == "transient",
+            || waits.set(waits.get() + 1),
         );
         assert_eq!(result, Err("transient"));
         assert_eq!(calls.get(), super::TRANSIENT_ACCESS_RETRIES);
+        assert_eq!(waits.get(), 4);
 
         let calls = Cell::new(0);
+        let waits = Cell::new(0);
         let result = super::retry(
             || {
                 calls.set(calls.get() + 1);
                 Err::<(), _>("permanent")
             },
             |error: &&str| *error == "transient",
+            || waits.set(waits.get() + 1),
         );
         assert_eq!(result, Err("permanent"));
         assert_eq!(calls.get(), 1);
+        assert_eq!(waits.get(), 0);
     }
 }
 
