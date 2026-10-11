@@ -219,8 +219,9 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
         list.contains("Waiting Human reviews (1)") && list.contains(&id),
         "{list}"
     );
+    // The fixed 36-column Preview wraps the instruction within its borders.
     assert!(
-        list.contains("Read the release notes and approve them."),
+        list.contains("│Read the release notes and approve│") && list.contains("│them."),
         "{list}"
     );
     assert_eq!(press(&mut review, KeyCode::Enter).await, Action::None);

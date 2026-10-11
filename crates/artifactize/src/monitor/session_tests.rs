@@ -490,8 +490,11 @@ fn tree_peek_of_a_running_agent_shows_its_last_transcript_line_and_hands_its_rea
         "{}",
         screen(&terminal)
     );
-    // At one pane the peek is hidden and nothing is read for it.
+    // Narrow terminals retain the fixed-width peek; moving focus away hides it.
     terminal.backend_mut().resize(90, 30);
+    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    assert!(screen(&terminal).contains("last:"));
+    monitor.focus = Pane::Runs;
     terminal.draw(|frame| monitor.draw(frame)).unwrap();
     assert!(!screen(&terminal).contains("last:"));
 }
@@ -523,7 +526,7 @@ async fn peek_loads_only_for_a_visible_running_agent_and_drops_when_hidden() {
     monitor.focus = Pane::Artifacts;
     monitor.size.width = 90;
     monitor.sync_peek().await;
-    assert!(monitor.peek.is_none(), "no peek at one pane");
+    assert!(monitor.peek.is_some(), "the peek remains at narrow widths");
     monitor.size.width = 160;
     monitor.sync_peek().await;
     let peek = monitor.peek.as_ref().unwrap();
