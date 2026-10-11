@@ -7,7 +7,7 @@ fn fixture() -> (tempfile::TempDir, Saving, Request, crate::types::SessionId) {
     let saving = Saving {
         state: root.path().into(),
         state_id: "fixture-state".parse().unwrap(),
-        producer: "fixture@host".into(),
+        producer: "fixture@host".parse().unwrap(),
     };
     let request = crate::monitor::tests::request(
         "app/check",
@@ -43,7 +43,7 @@ fn initial_header_is_lazy_authoritative_and_end_preserves_saved_reference() {
     recorder.start(Header {
         version: Some(999),
         session_id: Some("wrong".parse().unwrap()),
-        producer: Some("wrong@host".into()),
+        producer: Some("wrong@host".parse().unwrap()),
         model: Some("fixture-model".parse().unwrap()),
         ..Header::default()
     });

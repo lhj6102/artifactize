@@ -13,7 +13,7 @@ pub(crate) fn fixture() -> (tempfile::TempDir, Source) {
     let source = Source {
         state: root.path().into(),
         reference: SessionRef {
-            producer: store::Producer::current().name,
+            producer: store::Producer::current().name.parse().unwrap(),
             state: "state".parse().unwrap(),
             run_id: "run".parse().unwrap(),
             request_id: "request".parse().unwrap(),
@@ -559,7 +559,7 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
     assert!(execution_source.saved);
     follower.request.session = Some(SessionRef {
         state: "remote-state".parse().unwrap(),
-        producer: "remote@host".into(),
+        producer: "remote@host".parse().unwrap(),
         ..source.reference
     });
     assert!(matches!(

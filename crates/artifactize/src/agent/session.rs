@@ -67,7 +67,7 @@ const VERSION: u32 = 1;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRef {
-    pub producer: String,
+    pub producer: crate::types::ProducerId,
     pub state: crate::types::StateId,
     pub run_id: crate::types::RunId,
     pub request_id: crate::types::RequestId,
@@ -96,7 +96,7 @@ impl SessionRef {
             parts.next()?,
         );
         let reference = Self {
-            producer: producer.into(),
+            producer: producer.parse().ok()?,
             state: state.parse().ok()?,
             run_id: run_id.parse().ok()?,
             request_id: request_id.parse().ok()?,
@@ -112,15 +112,14 @@ impl SessionRef {
             (1..=crate::types::MAX_ID_BYTES).contains(&value.len())
                 && !value.chars().any(char::is_control)
         };
-        printable(&self.producer)
-            && [
-                self.state.as_str(),
-                self.run_id.as_str(),
-                self.request_id.as_str(),
-                self.session_id.as_str(),
-            ]
-            .into_iter()
-            .all(|id| printable(id) && valid_id(id))
+        [
+            self.state.as_str(),
+            self.run_id.as_str(),
+            self.request_id.as_str(),
+            self.session_id.as_str(),
+        ]
+        .into_iter()
+        .all(|id| printable(id) && valid_id(id))
     }
 }
 
@@ -146,7 +145,7 @@ pub fn path(state: &Path, id: &str) -> Result<PathBuf, String> {
 pub struct Saving {
     pub state: PathBuf,
     pub state_id: crate::types::StateId,
-    pub producer: String,
+    pub producer: crate::types::ProducerId,
 }
 
 fn warn(message: &str) {
@@ -226,7 +225,7 @@ impl Recorder {
             state: Recording::Pending(Box::new(Pending {
                 path: path(state, &id).unwrap(),
                 reference: SessionRef {
-                    producer: "tester@host".into(),
+                    producer: "tester@host".parse().unwrap(),
                     state: "state".parse().unwrap(),
                     run_id: "run".parse().unwrap(),
                     request_id: "request".parse().unwrap(),
@@ -595,11 +594,36 @@ mod tests {
 
     fn reference() -> SessionRef {
         SessionRef {
-            producer: "alice@laptop".into(),
+            producer: "alice@laptop".parse().unwrap(),
             state: "6f1c0a52-8d1e-4c43-9a55-31f6a7f2d0e4".parse().unwrap(),
             run_id: "run-Hq2b9X".parse().unwrap(),
             request_id: "run-Hq2b9X-3".parse().unwrap(),
             session_id: "0e8c7c2e-2a49-4b8e-9f7a-5d7a0c3b1f20".parse().unwrap(),
+        }
+    }
+
+    #[test]
+    fn producer_identity_validates_at_the_session_wire_boundary() {
+        let valid = serde_json::to_value(reference()).unwrap();
+        for producer in [
+            String::new(),
+            "bad\nproducer".into(),
+            "x".repeat(201),
+            "é".repeat(101),
+        ] {
+            let mut wire = valid.clone();
+            wire["producer"] = json!(producer);
+            assert!(serde_json::from_value::<SessionRef>(wire).is_err());
+        }
+        for producer in [
+            "name/with/slash@host".to_owned(),
+            "x".repeat(200),
+            "é".repeat(100),
+        ] {
+            let mut wire = valid.clone();
+            wire["producer"] = json!(producer);
+            let reference: SessionRef = serde_json::from_value(wire.clone()).unwrap();
+            assert_eq!(serde_json::to_value(reference).unwrap(), wire);
         }
     }
 
@@ -614,7 +638,7 @@ mod tests {
         assert_eq!(SessionRef::parse(&text), Some(reference));
         // A producer may hold a slash; the ids never do.
         let odd = SessionRef {
-            producer: "a/b@host".into(),
+            producer: "a/b@host".parse().unwrap(),
             ..self::reference()
         };
         assert_eq!(SessionRef::parse(&odd.to_string()), Some(odd));

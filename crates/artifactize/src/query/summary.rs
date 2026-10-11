@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -126,7 +129,11 @@ pub struct Reuses {
 #[serde(rename_all = "camelCase")]
 pub struct RequestSummary<'a> {
     pub status: crate::types::RequestStatus,
-    pub wall_ms: Option<u64>,
+    #[serde(
+        rename = "wallMs",
+        serialize_with = "crate::config::validation::milliseconds::serialize"
+    )]
+    pub wall_time: Option<Duration>,
     pub executor_starts: u64,
     #[serde(flatten)]
     pub usage: UsageTotals,
@@ -139,7 +146,11 @@ pub struct RunSummary {
     pub counts: BTreeMap<crate::types::RequestStatus, u64>,
     pub executed: Kinds,
     pub reused: Reuses,
-    pub wall_ms: Option<u64>,
+    #[serde(
+        rename = "wallMs",
+        serialize_with = "crate::config::validation::milliseconds::serialize"
+    )]
+    pub wall_time: Option<Duration>,
     pub executor_starts: u64,
     #[serde(flatten)]
     pub usage: UsageTotals,
@@ -195,13 +206,17 @@ fn local_execution(request: &Request) -> bool {
         .is_some_and(|source| source.request_id == request.id)
 }
 
-fn wall_ms(
+fn wall_time(
     start: crate::types::Timestamp,
     end: Option<crate::types::Timestamp>,
     now: OffsetDateTime,
-) -> Option<u64> {
+) -> Option<Duration> {
     let end = end.map_or(now, crate::types::Timestamp::time);
-    Some((end - start.time()).whole_milliseconds().max(0) as u64)
+    Some(
+        (end - start.time())
+            .max(time::Duration::ZERO)
+            .unsigned_abs(),
+    )
 }
 
 fn usage_totals<'a>(requests: impl IntoIterator<Item = &'a Request>) -> UsageTotals {
@@ -258,7 +273,7 @@ pub fn request_summary(view: &RequestView, now: OffsetDateTime) -> RequestSummar
     let request = &view.request;
     RequestSummary {
         status: request.status(),
-        wall_ms: wall_ms(request.created_at, request.completed_at(), now),
+        wall_time: wall_time(request.created_at, request.completed_at(), now),
         executor_starts: u64::from(
             local_execution(request)
                 && request.started_at.is_some()
@@ -303,7 +318,7 @@ pub fn run_summary(view: &RunView, now: OffsetDateTime) -> (RunSummary, BTreeMap
         counts,
         executed,
         reused: reuses,
-        wall_ms: wall_ms(view.run.created_at, view.run.completed_at(), now),
+        wall_time: wall_time(view.run.created_at, view.run.completed_at(), now),
         executor_starts: view.run.executions_started,
         usage,
     };
@@ -403,8 +418,8 @@ mod tests {
         assert_eq!(output["usage"]["saved"], json!({"inputTokens":17}));
         assert_eq!(run_output(&view, now), output);
         assert_eq!(
-            wall_ms("2026-01-01T00:00:06Z".parse().unwrap(), None, now),
-            Some(0)
+            wall_time("2026-01-01T00:00:06Z".parse().unwrap(), None, now),
+            Some(Duration::ZERO)
         );
         let request = RequestView {
             request: view.requests[0].clone(),

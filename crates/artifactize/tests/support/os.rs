@@ -2295,3 +2295,8 @@ pub fn control_c_exit() -> (String, Vec<String>, i32) {
     let code = windows_sys::Win32::Foundation::STATUS_CONTROL_C_EXIT;
     (shell(), vec!["-c".into(), format!("exit {code}")], code)
 }
+
+/// The standalone shell fixture, even on hosts where the real shell is available.
+pub fn stand_in_shell() -> std::path::PathBuf {
+    stand_in_bin("sh")
+}

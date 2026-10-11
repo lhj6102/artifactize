@@ -111,7 +111,12 @@ pub async fn read_scoped_runs(
                     outside_workspace(&run.repo_path, &state)
                         .map_err(|e| Error::Invalid(e.to_string()))?;
                     run.unreadable = super::unreadable::in_run(&transaction, &run.id)?;
-                    let invalid: Vec<_> = run.unreadable.iter().filter(|record| record.kind == "request").map(|record| &record.id).collect();
+                    let invalid: Vec<_> = run
+                        .unreadable
+                        .iter()
+                        .filter(|record| record.kind == "request")
+                        .map(|record| &record.id)
+                        .collect();
                     run.counts = statement
                         .query_map(params![run.id, serde_json::to_string(&invalid)?], |row| {
                             Ok((row.get(0)?, row.get::<_, i64>(1)? as u64))
