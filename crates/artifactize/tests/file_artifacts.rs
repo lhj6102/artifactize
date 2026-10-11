@@ -123,13 +123,16 @@ fn root_and_nested_sidecars_coexist_without_changing_folder_ownership() {
     assert!(config.artifacts["build"].children.is_empty());
     assert_eq!(config.relations.len(), 1);
     assert!(
-        !artifact_scope(&config, &["folder"])
+        !artifact_scope(&config, &[&"folder".parse().unwrap()])
             .unwrap()
             .artifacts
             .contains_key("hero")
     );
     assert_eq!(
-        artifact_scope(&config, &["hero"]).unwrap().artifacts.len(),
+        artifact_scope(&config, &[&"hero".parse().unwrap()])
+            .unwrap()
+            .artifacts
+            .len(),
         1
     );
 }
@@ -484,7 +487,7 @@ fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
     let args = resolve_argv(
         &config,
         &eval_scope(&config, eval).unwrap(),
-        "file",
+        &eval.target,
         &["{file}".into(), "--input={file}".into()],
     )
     .unwrap();

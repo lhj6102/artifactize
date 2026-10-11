@@ -102,10 +102,10 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     assert!(config.artifacts["child"].views.agent_tools.is_empty());
     assert!(config.artifacts["child"].mounts.is_empty());
     assert_eq!(config.evals.len(), 1);
-    let scope = artifact_scope(&config, &["parent"]).unwrap();
+    let scope = artifact_scope(&config, &[&"parent".parse().unwrap()]).unwrap();
     assert_eq!(
         scope
-            .resolve_path("parent", "unmarked/material.txt")
+            .resolve_path(&"parent".parse().unwrap(), "unmarked/material.txt")
             .unwrap(),
         ScopedPath {
             artifact_id: ArtifactId::new("parent").unwrap(),
@@ -114,7 +114,7 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     );
     assert_eq!(
         scope
-            .resolve_path("parent", "unmarked/deep/input.txt")
+            .resolve_path(&"parent".parse().unwrap(), "unmarked/deep/input.txt")
             .unwrap(),
         ScopedPath {
             artifact_id: ArtifactId::new("child").unwrap(),
@@ -123,14 +123,14 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     );
     assert_eq!(
         scope
-            .resolve_path("parent", "unmarked/deeper")
+            .resolve_path(&"parent".parse().unwrap(), "unmarked/deeper")
             .unwrap()
             .artifact_id,
         "neighbor"
     );
     assert_eq!(
         scope
-            .resolve_path("parent", "unmarked/deep/leaf")
+            .resolve_path(&"parent".parse().unwrap(), "unmarked/deep/leaf")
             .unwrap()
             .artifact_id,
         "leaf"
@@ -173,7 +173,9 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
     assert_eq!(eval.deps, ["input"]);
     let scope = eval_scope(&config, eval).unwrap();
     assert_eq!(scope.artifacts.len(), 2);
-    let location = scope.resolve_path("review", "one/back/two/file").unwrap();
+    let location = scope
+        .resolve_path(&"review".parse().unwrap(), "one/back/two/file")
+        .unwrap();
     assert_eq!(
         location,
         ScopedPath {
@@ -183,7 +185,7 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
     );
     assert_eq!(
         scope
-            .resolve_input(&config.root, "review", "two/file")
+            .resolve_input(&config.root, &"review".parse().unwrap(), "two/file")
             .unwrap(),
         fixture.0.join("data/file")
     );
@@ -239,7 +241,7 @@ fn observation_scope_never_follows_other_evals_instructions() {
     );
     assert!(
         scope
-            .resolve_path("hidden", "")
+            .resolve_path(&"hidden".parse().unwrap(), "")
             .unwrap_err()
             .to_string()
             .contains("outside this review")
@@ -319,7 +321,7 @@ fn logical_paths_reject_traversal_and_noncanonical_components() {
     let fixture = Fixture::new();
     fixture.artifact("owner", json!({"name":"owner"}));
     let config = fixture.config();
-    let scope = artifact_scope(&config, &["owner"]).unwrap();
+    let scope = artifact_scope(&config, &[&"owner".parse().unwrap()]).unwrap();
     for path in [
         "/absolute",
         "../escape",
@@ -337,14 +339,37 @@ fn logical_paths_reject_traversal_and_noncanonical_components() {
         "a\nb",
         "a\u{7f}b",
     ] {
-        assert!(scope.resolve_path("owner", path).is_err(), "{path:?}");
+        assert!(
+            scope.resolve_path(&"owner".parse().unwrap(), path).is_err(),
+            "{path:?}"
+        );
     }
-    assert!(scope.resolve_path("owner", &"a".repeat(4096)).is_ok());
-    assert!(scope.resolve_path("owner", &"a".repeat(4097)).is_err());
-    assert!(scope.resolve_path("owner", &"🦀".repeat(2048)).is_ok());
-    assert!(scope.resolve_path("owner", &"🦀".repeat(2049)).is_err());
-    assert!(scope.resolve_path("owner", "").is_ok());
-    assert!(scope.resolve_path("owner", "a/b c").is_ok());
+    assert!(
+        scope
+            .resolve_path(&"owner".parse().unwrap(), &"a".repeat(4096))
+            .is_ok()
+    );
+    assert!(
+        scope
+            .resolve_path(&"owner".parse().unwrap(), &"a".repeat(4097))
+            .is_err()
+    );
+    assert!(
+        scope
+            .resolve_path(&"owner".parse().unwrap(), &"🦀".repeat(2048))
+            .is_ok()
+    );
+    assert!(
+        scope
+            .resolve_path(&"owner".parse().unwrap(), &"🦀".repeat(2049))
+            .is_err()
+    );
+    assert!(scope.resolve_path(&"owner".parse().unwrap(), "").is_ok());
+    assert!(
+        scope
+            .resolve_path(&"owner".parse().unwrap(), "a/b c")
+            .is_ok()
+    );
 }
 
 #[test]
@@ -388,11 +413,11 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
         links.extend(["joined/file", "escape/secret"]);
     }
     let config = fixture.config();
-    let scope = artifact_scope(&config, &["owner"]).unwrap();
+    let scope = artifact_scope(&config, &[&"owner".parse().unwrap()]).unwrap();
     for path in links {
         assert!(
             scope
-                .resolve_input(&config.root, "owner", path)
+                .resolve_input(&config.root, &"owner".parse().unwrap(), path)
                 .unwrap_err()
                 .to_string()
                 .contains("symlinks"),
@@ -401,12 +426,12 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
     }
     assert!(
         scope
-            .resolve_input(&config.root, "owner", "missing")
+            .resolve_input(&config.root, &"owner".parse().unwrap(), "missing")
             .is_err()
     );
     assert_eq!(
         scope
-            .resolve_input(&config.root, "owner", "directory/file")
+            .resolve_input(&config.root, &"owner".parse().unwrap(), "directory/file")
             .unwrap(),
         fixture.0.join("owner/directory/file")
     );
@@ -417,7 +442,7 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
     if symlinked {
         assert!(
             scope
-                .resolve_input(&config.root, "owner", "directory/file")
+                .resolve_input(&config.root, &"owner".parse().unwrap(), "directory/file")
                 .unwrap_err()
                 .to_string()
                 .contains("symlinks")
@@ -434,7 +459,7 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
         crate::test_os::junction(&fixture.0.join("old-owner"), &fixture.0.join("owner"));
         assert!(
             scope
-                .resolve_input(&config.root, "owner", "directory/file")
+                .resolve_input(&config.root, &"owner".parse().unwrap(), "directory/file")
                 .unwrap_err()
                 .to_string()
                 .contains("symlinks")
@@ -484,7 +509,7 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
     let Profile::Runtime { args, command, .. } = eval.declaration.profile() else {
         panic!()
     };
-    let resolved = resolve_argv(&config, &scope, "review", args).unwrap();
+    let resolved = resolve_argv(&config, &scope, &"review".parse().unwrap(), args).unwrap();
     let file = fixture.0.join("data").join("nested").join("file");
     let file = crate::platform::path_text(&file);
     assert_eq!(
@@ -498,8 +523,8 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
     );
     assert_eq!(&resolved[4..], &args[4..]);
     assert_eq!(*command, crate::test_os::echo_program());
-    let restricted = artifact_scope(&config, &["child"]).unwrap();
-    assert!(resolve_argv(&config, &restricted, "review", args).is_err());
+    let restricted = artifact_scope(&config, &[&"child".parse().unwrap()]).unwrap();
+    assert!(resolve_argv(&config, &restricted, &"review".parse().unwrap(), args).is_err());
 }
 
 #[test]
@@ -516,7 +541,15 @@ fn argument_only_global_reference_is_an_edge_even_without_a_mount() {
     let scope = eval_scope(&config, &config.evals[0]).unwrap();
     assert!(scope.artifacts.contains_key("input"));
     // Config validation does not demand runtime input existence.
-    assert!(resolve_argv(&config, &scope, "review", &["{input}/file".into()]).is_err());
+    assert!(
+        resolve_argv(
+            &config,
+            &scope,
+            &"review".parse().unwrap(),
+            &["{input}/file".into()]
+        )
+        .is_err()
+    );
 }
 
 #[test]

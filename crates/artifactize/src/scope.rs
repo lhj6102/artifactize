@@ -76,19 +76,22 @@ impl Scope<'_> {
         }
     }
 
-    pub fn resolve_path(&self, artifact_id: &str, path: &str) -> Result<ScopedPath, ScopeError> {
-        self.tool_scope()
-            .resolve_path(&ArtifactId::new(artifact_id)?, path)
+    pub fn resolve_path(
+        &self,
+        artifact_id: &ArtifactName,
+        path: &str,
+    ) -> Result<ScopedPath, ScopeError> {
+        self.tool_scope().resolve_path(&tool_id(artifact_id), path)
     }
 
     pub fn resolve_input(
         &self,
         root: &Path,
-        artifact_id: &str,
+        artifact_id: &ArtifactName,
         path: &str,
     ) -> Result<PathBuf, ScopeError> {
         self.tool_scope()
-            .resolve_input(root, &ArtifactId::new(artifact_id)?, path)
+            .resolve_input(root, &tool_id(artifact_id), path)
     }
 }
 
@@ -128,7 +131,7 @@ pub(crate) fn validate_file_target(root: &Path, artifact: &Artifact) -> Result<(
     Ok(())
 }
 
-fn reference_path(config: &RepoConfig, id: &str, path: &str) -> Result<(), ScopeError> {
+fn reference_path(config: &RepoConfig, id: &ArtifactName, path: &str) -> Result<(), ScopeError> {
     if config.artifacts[id].file_name().is_some() && !path.is_empty() {
         return Err(ScopeError(format!(
             "File Artifact {{{id}}} cannot have a /path suffix."
@@ -138,7 +141,10 @@ fn reference_path(config: &RepoConfig, id: &str, path: &str) -> Result<(), Scope
 }
 
 /// Composition grants access; a referenced Artifact's Eval instructions do not.
-pub fn artifact_scope<'a>(config: &'a RepoConfig, roots: &[&str]) -> Result<Scope<'a>, ScopeError> {
+pub fn artifact_scope<'a>(
+    config: &'a RepoConfig,
+    roots: &[&ArtifactName],
+) -> Result<Scope<'a>, ScopeError> {
     let mut artifacts = BTreeMap::new();
     let mut pending = roots.to_vec();
     while let Some(id) = pending.pop() {
@@ -149,8 +155,8 @@ pub fn artifact_scope<'a>(config: &'a RepoConfig, roots: &[&str]) -> Result<Scop
         if artifacts.insert(id.clone(), artifact).is_some() {
             continue;
         }
-        pending.extend(artifact.children.values().map(ArtifactName::as_str));
-        pending.extend(artifact.mounts.values().map(ArtifactName::as_str));
+        pending.extend(artifact.children.values());
+        pending.extend(artifact.mounts.values());
     }
     Ok(Scope { artifacts })
 }
@@ -160,7 +166,7 @@ pub fn artifact_scope<'a>(config: &'a RepoConfig, roots: &[&str]) -> Result<Scop
 pub(crate) fn executable(
     root: &Path,
     scope: &Scope<'_>,
-    owner: &str,
+    owner: &ArtifactName,
     command: &str,
 ) -> Result<std::ffi::OsString, String> {
     let artifact = scope.artifacts[owner];
@@ -223,7 +229,7 @@ pub(crate) fn executable(
 fn executable_spelling(
     root: &Path,
     scope: &Scope<'_>,
-    owner: &str,
+    owner: &ArtifactName,
     cwd: &Path,
     candidate: &Path,
     mounted: bool,
@@ -238,8 +244,8 @@ fn executable_spelling(
 }
 
 pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, ScopeError> {
-    let roots: Vec<_> = std::iter::once(eval.target.as_str())
-        .chain(eval.deps.iter().map(ArtifactName::as_str))
+    let roots: Vec<_> = std::iter::once(&eval.target)
+        .chain(eval.deps.iter())
         .collect();
     artifact_scope(config, &roots)
 }
@@ -247,7 +253,7 @@ pub fn eval_scope<'a>(config: &'a RepoConfig, eval: &Eval) -> Result<Scope<'a>, 
 /// Admit an owner plus the explicit references in its argv, as an Eval's scope admits its deps.
 pub fn argv_scope<'a>(
     config: &'a RepoConfig,
-    owner: &str,
+    owner: &ArtifactName,
     args: &[Argument],
 ) -> Result<Scope<'a>, ScopeError> {
     let mut roots = vec![owner];
@@ -275,16 +281,17 @@ pub fn parse_artifact_instruction(
     let mut parts = Vec::new();
     let mut start = 0;
     for reference in instruction::references(source) {
-        let id = references
-            .get(&reference.name)
-            .map_or(reference.name.as_str(), ArtifactName::as_str);
-        if !scope.artifacts.contains_key(id) {
+        let artifact = match references.get(&reference.name) {
+            Some(id) => scope.artifacts.get(id),
+            None => scope.artifacts.get(reference.name.as_str()),
+        };
+        let Some(artifact) = artifact else {
             continue;
-        }
+        };
         if start < reference.start {
             parts.push(InstructionPart::Text(source[start..reference.start].into()));
         }
-        parts.push(InstructionPart::Artifact(scope.artifacts[id].name.clone()));
+        parts.push(InstructionPart::Artifact(artifact.name.clone()));
         start = reference.end;
     }
     if start < source.len() {
@@ -295,23 +302,22 @@ pub fn parse_artifact_instruction(
 
 fn reference_target<'a>(
     config: &'a RepoConfig,
-    owner: &str,
-    name: &str,
+    owner: &ArtifactName,
+    name: &crate::config::ReferenceName,
 ) -> Result<&'a ArtifactName, ScopeError> {
     let artifact = config
         .artifacts
         .get(owner)
         .ok_or_else(|| ScopeError(format!("Unknown Artifact: {owner}")))?;
-    let target = artifact.mounts.get(name).map_or(name, ArtifactName::as_str);
-    config
-        .artifacts
-        .get_key_value(target)
-        .map(|(id, _)| id)
-        .ok_or_else(|| {
-            ScopeError(format!(
-                "Unknown Artifact reference {{{name}}}. Escape literal braces with a backslash."
-            ))
-        })
+    let target = match artifact.mounts.get(name.as_str()) {
+        Some(target) => config.artifacts.get_key_value(target),
+        None => config.artifacts.get_key_value(name.as_str()),
+    };
+    target.map(|(id, _)| id).ok_or_else(|| {
+        ScopeError(format!(
+            "Unknown Artifact reference {{{name}}}. Escape literal braces with a backslash."
+        ))
+    })
 }
 
 /// Resolve `{name}[/path]` and `--flag={name}[/path]` operands to existing scoped inputs.
@@ -320,7 +326,7 @@ fn reference_target<'a>(
 pub fn resolve_argv(
     config: &RepoConfig,
     scope: &Scope<'_>,
-    owner: &str,
+    owner: &ArtifactName,
     args: &[Argument],
 ) -> Result<Vec<String>, ScopeError> {
     args.iter()
@@ -351,7 +357,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             if let crate::config::AgentTool::Builtin(tool) = tool
                 && let Some(args) = &tool.args
             {
-                let scope = artifact_scope(config, &[id.as_str()]).map_err(|failure| {
+                let scope = artifact_scope(config, &[id]).map_err(|failure| {
                     error(&["views", "agent_tools", name, "args"], failure.to_string())
                 })?;
                 let owner = ArtifactId::new(id.as_str()).map_err(|failure| {
@@ -515,8 +521,12 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
         let mut deps = BTreeSet::new();
         if let Profile::Dependency { depends_on } = eval.declaration.profile() {
             for name in depends_on {
-                let source = reference_target(config, &eval.target, name)
-                    .map_err(|failure| error(&["profile", "depends_on"], failure))?;
+                let source = reference_target(
+                    config,
+                    &eval.target,
+                    &crate::config::ReferenceName::from(name),
+                )
+                .map_err(|failure| error(&["profile", "depends_on"], failure))?;
                 if source == &eval.target {
                     return Err(error(
                         &["profile", "depends_on"],

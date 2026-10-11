@@ -118,9 +118,10 @@ impl<'a> Registry<'a> {
     }
 
     pub fn for_artifact(config: &'a RepoConfig, artifact_id: &str) -> Result<Self, String> {
+        let artifact_id: crate::config::ArtifactName = artifact_id.parse()?;
         Self::with_scope(
             config,
-            scope::artifact_scope(config, &[artifact_id]).map_err(|e| e.to_string())?,
+            scope::artifact_scope(config, &[&artifact_id]).map_err(|e| e.to_string())?,
         )
     }
 
@@ -289,7 +290,12 @@ impl<'a> Registry<'a> {
         .unwrap_or_else(|_| ToolResult::error("Agent tool execution failed."))
     }
 
-    fn prepare(&self, owner: &str, tool: &CommandTool, args: &Value) -> Result<Invocation, ()> {
+    fn prepare(
+        &self,
+        owner: &crate::config::ArtifactName,
+        tool: &CommandTool,
+        args: &Value,
+    ) -> Result<Invocation, ()> {
         let cwd = scope::scoped_path(&self.config.root, self.config.artifacts[owner].folder())
             .map_err(|_| ())?;
         let program = executable(&self.config.root, &self.scope, owner, &tool.command)?;
@@ -365,14 +371,19 @@ impl<'a> Registry<'a> {
     }
 }
 
-fn executable(root: &Path, scope: &Scope<'_>, owner: &str, command: &str) -> Result<OsString, ()> {
+fn executable(
+    root: &Path,
+    scope: &Scope<'_>,
+    owner: &crate::config::ArtifactName,
+    command: &str,
+) -> Result<OsString, ()> {
     scope::executable(root, scope, owner, command).map_err(|_| ())
 }
 
 fn preflight_executable(
     root: &Path,
     scope: &Scope<'_>,
-    owner: &str,
+    owner: &crate::config::ArtifactName,
     command: &str,
 ) -> Result<(), String> {
     let program = executable(root, scope, owner, command)

@@ -165,9 +165,10 @@ impl<'a> Registry<'a> {
     }
 
     pub fn for_artifact(config: &'a RepoConfig, artifact_id: &str) -> Result<Self, String> {
+        let artifact_id: crate::config::ArtifactName = artifact_id.parse()?;
         Self::with_scope(
             config,
-            scope::artifact_scope(config, &[artifact_id]).map_err(|e| e.to_string())?,
+            scope::artifact_scope(config, &[&artifact_id]).map_err(|e| e.to_string())?,
         )
     }
 
@@ -328,7 +329,7 @@ impl<'a> Registry<'a> {
     }
     async fn call_builtin(
         &self,
-        owner: &str,
+        owner: &crate::config::ArtifactName,
         declaration: &crate::config::HumanBuiltinTool,
         cancellation: CancellationToken,
     ) -> ToolResult {
@@ -342,10 +343,7 @@ impl<'a> Registry<'a> {
             Ok(args) => args,
             Err(error) => return ToolResult::error(error.to_string()),
         };
-        let owner = match scope::ArtifactId::new(owner) {
-            Ok(owner) => owner,
-            Err(error) => return ToolResult::error(error.to_string()),
-        };
+        let owner = scope::tool_id(&owner);
         let tool_scope = self.scope.tool_scope();
         if declaration.builtin == crate::config::Builtin::Open {
             let target = if artifactize_tools::builtin::is_url(&args[0]) {
