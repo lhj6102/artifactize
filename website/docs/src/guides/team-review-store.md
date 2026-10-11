@@ -24,8 +24,11 @@ Human sign-offs included, needs one new review. Dependency evals have no store
 records: each client derives them from current required evidence. See [Review store server](../reference/review-store.md#review-store-server) for
 the full reference.
 
-**Clients.** Each machine signs in once. The token is read from stdin and is not
-echoed:
+**Clients.** Each machine signs in once. The token is read from stdin, never from
+command arguments. Interactive input is hidden when the terminal supports it. On
+Windows, if hiding input fails, the CLI warns before reading the token visibly;
+on Linux and macOS, that failure aborts login. Piped input is read without changing
+terminal modes:
 
 ```sh
 artifactize remote login https://reviews.example/     # paste the token
