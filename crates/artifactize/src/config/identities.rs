@@ -118,6 +118,14 @@ identity!(HubEpoch, |value: &str| !value.is_empty()
     ));
 
 identity!(MountAlias, name);
+// An instruction or argv reference can name either an Artifact or its owner's mount.
+identity!(ReferenceName, name);
+impl From<&crate::types::ArtifactName> for ReferenceName {
+    fn from(value: &crate::types::ArtifactName) -> Self {
+        // Artifact names and reference names have the same declaration grammar.
+        Self(value.to_string())
+    }
+}
 identity!(ChildPrefix, |value: &str| crate::config::validation::path(
     value
 )

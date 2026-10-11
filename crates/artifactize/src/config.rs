@@ -9,7 +9,7 @@ pub use crate::types::{ArtifactName, EvalId};
 mod identities;
 pub use identities::{
     ChildPrefix, EndpointId, HubEpoch, LogicalPath, ModelId, MountAlias, ProfileVariantName,
-    ToolName, ToolOperationName,
+    ReferenceName, ToolName, ToolOperationName,
 };
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -1118,7 +1118,7 @@ pub struct Eval {
     /// Workspace-qualified id; declaration.id remains the owner's local id.
     pub id: EvalId,
     pub target: ArtifactName,
-    pub references: BTreeMap<String, ArtifactName>,
+    pub references: BTreeMap<crate::config::ReferenceName, ArtifactName>,
     pub deps: Vec<ArtifactName>,
     pub declaration: EvalDeclaration,
     /// The `profileVariants` entry selected for this execution, if any: an execution option,

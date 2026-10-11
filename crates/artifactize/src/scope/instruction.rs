@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 
-use crate::config::identifier;
+use crate::config::ReferenceName;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Reference<'a> {
-    pub name: &'a str,
+pub struct Reference {
+    pub name: ReferenceName,
     pub start: usize,
     pub end: usize,
 }
@@ -50,7 +50,7 @@ fn closing_brace(source: &[u8], start: usize) -> Option<usize> {
 }
 
 /// Bare tokens only; whole JSON, nested, quoted and escaped brace groups stay literal.
-pub fn references(source: &str) -> Vec<Reference<'_>> {
+pub fn references(source: &str) -> Vec<Reference> {
     let bytes = source.as_bytes();
     let mut result = Vec::new();
     let mut cursor = 0;
@@ -65,7 +65,7 @@ pub fn references(source: &str) -> Vec<Reference<'_>> {
         let name = &source[cursor + 1..end];
         if (cursor == 0 || bytes[cursor - 1] != b'$')
             && !escaped(bytes, cursor)
-            && identifier(name, "Reference").is_ok()
+            && let Ok(name) = name.parse::<ReferenceName>()
         {
             result.push(Reference {
                 name,
@@ -78,10 +78,13 @@ pub fn references(source: &str) -> Vec<Reference<'_>> {
     result
 }
 
-pub fn instruction_references(source: &str) -> Vec<&str> {
+pub fn instruction_references(source: &str) -> Vec<ReferenceName> {
     let mut seen = BTreeSet::new();
     references(source)
         .into_iter()
-        .filter_map(|reference| seen.insert(reference.name).then_some(reference.name))
+        .filter_map(|reference| {
+            seen.insert(reference.name.clone())
+                .then_some(reference.name)
+        })
         .collect()
 }

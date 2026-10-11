@@ -77,7 +77,7 @@ pub struct HumanEval {
     #[serde(default, skip_serializing_if = "Field::missing")]
     pub target: Field<ArtifactName>,
     #[serde(default, skip_serializing_if = "Field::missing")]
-    pub references: Field<BTreeMap<String, ArtifactName>>,
+    pub references: Field<BTreeMap<crate::config::ReferenceName, ArtifactName>>,
     #[serde(default, skip_serializing_if = "Field::missing")]
     pub deps: Field<Vec<ArtifactName>>,
     #[serde(default, skip_serializing_if = "Field::missing")]

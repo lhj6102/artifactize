@@ -265,10 +265,9 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
     value["evals"][0]["payload"]["instruction"] = json!("Review {b}.");
     support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
     let config = read_workspace_config(&repo).unwrap();
-    let result = tools::human::Registry::new(&config, "a/review")
-        .unwrap()
-        .call("reference_a", CancellationToken::new())
-        .await;
+    let registry = tools::human::Registry::new(&config, "a/review").unwrap();
+    registry.preflight("reference_a").unwrap();
+    let result = registry.call("reference_a", CancellationToken::new()).await;
     assert!(!result.is_error(), "{result:?}");
     assert_eq!(
         result.content(),
@@ -456,4 +455,55 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
             text: "# First\nfile body\n".into()
         }]
     );
+}
+
+#[test]
+fn human_builtin_arguments_parse_at_the_declaration_edge_and_keep_saved_bytes() {
+    use artifactize::config::{HumanBuiltinTool, HumanCommandTool, ReferenceName};
+    use std::collections::BTreeMap;
+
+    for saved in [
+        r#"{"builtin":"read","description":"Read","kind":"output","args":["{artifactPath}/notes.md"]}"#,
+        r#"{"builtin":"section","description":"Read","kind":"output","args":["{mount}/notes.md","First"]}"#,
+        r#"{"builtin":"open","description":"Read","kind":"launch","args":["https://example.org/notes"]}"#,
+        r#"{"builtin":"help","description":"Read","kind":"output","args":["missing-program","subcommand"]}"#,
+    ] {
+        let declaration: HumanBuiltinTool = serde_json::from_str(saved).unwrap();
+        assert_eq!(serde_json::to_string(&declaration).unwrap(), saved);
+    }
+    for invalid in [
+        "{bad.name}",
+        "{unclosed",
+        "${HOME}",
+        "{artifactPath}/extra{brace}",
+        "prefix{artifactPath}",
+    ] {
+        assert!(
+            serde_json::from_value::<HumanBuiltinTool>(json!({
+                "builtin":"read", "description":"Read", "args":[invalid]
+            }))
+            .is_err(),
+            "{invalid}"
+        );
+        assert!(
+            serde_json::from_value::<HumanCommandTool>(json!({
+                "description":"Read", "kind":"output", "command":"missing-program", "args":[invalid]
+            }))
+            .is_err(),
+            "{invalid}"
+        );
+    }
+    let saved = r#"{"a-b_9":"target","artifactPath":"owner"}"#;
+    let references: BTreeMap<ReferenceName, artifactize::types::ArtifactName> =
+        serde_json::from_str(saved).unwrap();
+    assert_eq!(serde_json::to_string(&references).unwrap(), saved);
+    for invalid in ["", "bad/name", "bad.name", "_starts-with-underscore"] {
+        assert!(
+            serde_json::from_value::<BTreeMap<ReferenceName, artifactize::types::ArtifactName>>(
+                json!({invalid:"target"})
+            )
+            .is_err(),
+            "{invalid}"
+        );
+    }
 }

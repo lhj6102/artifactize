@@ -1,45 +1,33 @@
 use super::{Argument, RepoConfig, Scope, ScopeError, reference_target};
 
-/// Parse `argument` the permissive (Agent-tool) way, then additionally reject any unescaped
-/// `{`/`}` that didn't form the single recognized reference: Human arguments, unlike Agent and
-/// Runtime ones, never pass stray brace characters through as literal text.
-fn reference(argument: &str) -> Result<Option<Argument>, ScopeError> {
-    let parsed: Argument = argument.parse()?;
-    if argument.contains(['{', '}'])
-        && (matches!(parsed, Argument::Literal(_))
-            || argument.bytes().filter(|byte| *byte == b'{').count() != 1
-            || argument.bytes().filter(|byte| *byte == b'}').count() != 1)
-    {
-        return Err(ScopeError(
-            "Human arguments support only {artifactPath} or {name}[/path] scope placeholders (optionally --flag=)."
-                .into(),
-        ));
-    }
-    Ok(match parsed {
-        Argument::Literal(_) => None,
-        reference @ Argument::Reference { .. } => Some(reference),
-    })
+/// Human declarations reject stray braces at their input edge, including extra braces in a
+/// parsed reference's path. Runtime and Agent arguments deliberately remain permissive.
+pub(crate) fn human_arguments<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Vec<Argument>, D::Error> {
+    use serde::{Deserialize, de::Error};
+    Vec::<String>::deserialize(deserializer)?
+        .into_iter()
+        .map(|text| {
+            let argument: Argument = text.parse().map_err(D::Error::custom)?;
+            validate_human_argument(&argument).map_err(D::Error::custom)?;
+            Ok(argument)
+        })
+        .collect()
 }
 
-/// The same stray-brace rejection as [`reference`], for an argument already parsed into its
-/// typed form (a `HumanCommandTool`'s declared [`Argument`]s).
 pub(crate) fn validate_human_argument(argument: &Argument) -> Result<(), ScopeError> {
-    if let Argument::Literal(text) = argument
-        && text.contains(['{', '}'])
-    {
+    let stray = match argument {
+        Argument::Literal(text) => text.contains(['{', '}']),
+        Argument::Reference { prefix, path, .. } => {
+            prefix.contains(['{', '}']) || path.contains(['{', '}'])
+        }
+    };
+    if stray {
         return Err(ScopeError(
             "Human arguments support only {artifactPath} or {name}[/path] scope placeholders (optionally --flag=)."
                 .into(),
         ));
-    }
-    Ok(())
-}
-
-/// Validate a `HumanBuiltinTool`'s still string-typed args (its placeholders, including the
-/// reserved `{artifactPath}`, are resolved by [`builtin_args`], not by [`super::resolve_argv`]).
-pub(crate) fn validate_human_args(args: &[String]) -> Result<(), ScopeError> {
-    for argument in args {
-        reference(argument)?;
     }
     Ok(())
 }
@@ -77,14 +65,14 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
                     }
                     crate::config::HumanTool::Builtin(tool) => {
                         for argument in &tool.args {
-                            if let Some(Argument::Reference {
+                            if let Argument::Reference {
                                 name: ref_name,
                                 path,
                                 ..
-                            }) = reference(argument)?
+                            } = argument
                             {
-                                let target = reference_target_or_owner(config, owner, &ref_name)?;
-                                super::reference_path(config, target, &path)?;
+                                let target = reference_target_or_owner(config, owner, ref_name)?;
+                                super::reference_path(config, target, path)?;
                             }
                         }
                         let scope = Scope {
@@ -141,23 +129,23 @@ pub(crate) fn builtin_args(
     owner: &str,
     tool: &crate::config::HumanBuiltinTool,
 ) -> Result<(String, Vec<String>), ScopeError> {
+    let mut args: Vec<String> = tool.args.iter().map(ToString::to_string).collect();
     if tool.builtin == crate::config::Builtin::Help
         || tool.builtin == crate::config::Builtin::Open
-            && artifactize_tools::builtin::is_url(&tool.args[0])
+            && matches!(&tool.args[0], Argument::Literal(text) if artifactize_tools::builtin::is_url(text))
     {
-        return Ok((owner.into(), tool.args.clone()));
+        return Ok((owner.into(), args));
     }
-    let mut args = tool.args.clone();
-    let id = if let Some(Argument::Reference { prefix, name, path }) = reference(&args[0])? {
+    let id = if let Argument::Reference { prefix, name, path } = &tool.args[0] {
         if !prefix.is_empty() {
             return Err(ScopeError(
                 "Builtin targets cannot have a flag prefix.".into(),
             ));
         }
-        let target = reference_target_or_owner(config, owner, &name)?;
-        super::reference_path(config, target, &path)?;
-        args[0] = path;
-        target
+        let target = reference_target_or_owner(config, owner, name)?;
+        super::reference_path(config, target, path)?;
+        args[0] = path.clone();
+        target.as_str()
     } else {
         owner
     };

@@ -218,7 +218,7 @@ pub struct Eval {
     pub id: crate::types::EvalId,
     pub target: crate::types::ArtifactName,
     #[serde(default, skip_serializing_if = "missing")]
-    pub references: Field<BTreeMap<String, crate::types::ArtifactName>>,
+    pub references: Field<BTreeMap<crate::config::ReferenceName, crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]
     pub deps: Field<Vec<crate::types::ArtifactName>>,
     #[serde(default, skip_serializing_if = "missing")]

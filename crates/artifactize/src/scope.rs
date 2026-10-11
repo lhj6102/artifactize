@@ -10,7 +10,7 @@ use crate::config::{Artifact, ArtifactName, ConfigError, Eval, Fingerprint, Prof
 mod human;
 mod instruction;
 pub(crate) use human::{
-    builtin_args, resolve_human_argv, validate_human_args, validate_human_argument,
+    builtin_args, human_arguments, resolve_human_argv, validate_human_argument,
 };
 pub use instruction::instruction_references;
 
@@ -39,19 +39,19 @@ pub enum RelationKind {
     Dependency {
         #[serde(rename = "evalId")]
         eval_id: crate::config::EvalId,
-        name: String,
+        name: crate::config::ReferenceName,
     },
     Instruction {
         #[serde(rename = "evalId")]
         eval_id: crate::config::EvalId,
-        name: String,
+        name: crate::config::ReferenceName,
     },
     #[serde(rename = "argv")]
     Argument {
         #[serde(rename = "evalId")]
         eval_id: crate::config::EvalId,
         index: usize,
-        name: String,
+        name: crate::config::ReferenceName,
         path: String,
     },
 }
@@ -267,14 +267,14 @@ pub enum InstructionPart {
 pub fn parse_artifact_instruction(
     source: &str,
     scope: &Scope<'_>,
-    references: &BTreeMap<String, ArtifactName>,
+    references: &BTreeMap<crate::config::ReferenceName, ArtifactName>,
 ) -> Vec<InstructionPart> {
     let mut parts = Vec::new();
     let mut start = 0;
     for reference in instruction::references(source) {
         let id = references
-            .get(reference.name)
-            .map_or(reference.name, ArtifactName::as_str);
+            .get(&reference.name)
+            .map_or(reference.name.as_str(), ArtifactName::as_str);
         if !scope.artifacts.contains_key(id) {
             continue;
         }
@@ -301,7 +301,7 @@ pub enum Argument {
     Literal(String),
     Reference {
         prefix: String,
-        name: String,
+        name: crate::config::ReferenceName,
         path: String,
     },
 }
@@ -342,7 +342,7 @@ impl std::str::FromStr for Argument {
         logical_path(path)?;
         Ok(Self::Reference {
             prefix: prefix.to_owned(),
-            name: reference.name.to_owned(),
+            name: reference.name.clone(),
             path: path.to_owned(),
         })
     }
@@ -670,7 +670,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     target: eval.target.clone(),
                     kind: RelationKind::Dependency {
                         eval_id: eval.id.clone(),
-                        name: name.to_string(),
+                        name: name.into(),
                     },
                 });
             }
@@ -681,13 +681,13 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
             .map_or("", |payload| payload.instruction.as_str());
         for reference in instruction::references(instruction) {
             let name = reference.name;
-            let source = reference_target(config, &eval.target, name)
+            let source = reference_target(config, &eval.target, &name)
                 .map_err(|failure| error(&["payload", "instruction"], failure))?;
             if instruction[reference.end..].starts_with('/') {
                 reference_path(config, source, "/")
                     .map_err(|failure| error(&["payload", "instruction"], failure))?;
             }
-            if references.insert(name.to_owned(), source.clone()).is_some() {
+            if references.insert(name.clone(), source.clone()).is_some() {
                 continue;
             }
             if source != &eval.target {
@@ -697,7 +697,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                     target: eval.target.clone(),
                     kind: RelationKind::Instruction {
                         eval_id: eval.id.clone(),
-                        name: name.to_owned(),
+                        name,
                     },
                 });
             }

@@ -281,7 +281,7 @@ pub struct Request {
     pub session: Option<crate::agent::session::SessionRef>,
     pub human_definition: Option<super::HumanDefinition>,
     pub payload: crate::config::StoredPayload,
-    pub references: BTreeMap<String, crate::types::ArtifactName>,
+    pub references: BTreeMap<crate::config::ReferenceName, crate::types::ArtifactName>,
     pub deps: Vec<crate::types::ArtifactName>,
     pub force: bool,
     /// The target Artifact's fingerprint.
@@ -357,7 +357,7 @@ pub(crate) struct RequestWire {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub human_definition: Option<super::HumanDefinition>,
     pub payload: crate::config::StoredPayload,
-    pub references: BTreeMap<String, crate::types::ArtifactName>,
+    pub references: BTreeMap<crate::config::ReferenceName, crate::types::ArtifactName>,
     pub deps: Vec<crate::types::ArtifactName>,
     #[serde(default)]
     pub force: bool,

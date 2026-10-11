@@ -160,6 +160,7 @@ pub struct HumanCommandTool {
     pub description: String,
     pub kind: HumanToolKind,
     pub command: String,
+    #[serde(deserialize_with = "crate::scope::human_arguments")]
     pub args: Vec<crate::scope::Argument>,
     #[serde(
         default,
@@ -174,7 +175,7 @@ pub struct HumanCommandTool {
 pub struct HumanBuiltinTool {
     pub builtin: Builtin,
     pub description: String,
-    pub args: Vec<String>,
+    pub args: Vec<crate::scope::Argument>,
 }
 
 impl<'de> Deserialize<'de> for HumanBuiltinTool {
@@ -188,15 +189,13 @@ impl<'de> Deserialize<'de> for HumanBuiltinTool {
             description: Option<String>,
             #[serde(default, deserialize_with = "present")]
             kind: Option<HumanToolKind>,
-            args: Vec<String>,
+            #[serde(deserialize_with = "crate::scope::human_arguments")]
+            args: Vec<crate::scope::Argument>,
         }
         let declaration = Declaration::deserialize(deserializer)?;
-        artifactize_tools::builtin::validate_args(
-            declaration.builtin,
-            Some(&declaration.args),
-            true,
-        )
-        .map_err(D::Error::custom)?;
+        let args: Vec<String> = declaration.args.iter().map(ToString::to_string).collect();
+        artifactize_tools::builtin::validate_args(declaration.builtin, Some(&args), true)
+            .map_err(D::Error::custom)?;
         let kind = if declaration.builtin == Builtin::Open {
             HumanToolKind::Launch
         } else {
@@ -210,8 +209,7 @@ impl<'de> Deserialize<'de> for HumanBuiltinTool {
         Ok(Self {
             builtin: declaration.builtin,
             description: declaration.description.unwrap_or_else(|| {
-                crate::tools::builtin::fixed_description(declaration.builtin, &declaration.args)
-                    .into()
+                crate::tools::builtin::fixed_description(declaration.builtin, &args).into()
             }),
             args: declaration.args,
         })
@@ -252,17 +250,23 @@ impl HumanTool {
                 }
             }
             Self::Builtin(tool) => {
-                crate::scope::validate_human_args(&tool.args).map_err(|error| error.to_string())?;
+                for argument in &tool.args {
+                    crate::scope::validate_human_argument(argument)
+                        .map_err(|error| error.to_string())?;
+                }
                 if tool.builtin != Builtin::Help
+                    && let crate::scope::Argument::Literal(target) = &tool.args[0]
                     && !(tool.builtin == Builtin::Open
-                        && artifactize_tools::builtin::is_url(&tool.args[0]))
-                    && !tool.args[0].starts_with('{')
+                        && artifactize_tools::builtin::is_url(target))
                 {
-                    artifactize_tools::scope::logical_path(&tool.args[0])
+                    artifactize_tools::scope::logical_path(target)
                         .map_err(|error| error.to_string())?;
                 }
                 if tool.builtin == Builtin::Help
-                    && tool.args.iter().any(|arg| arg.contains(['{', '}']))
+                    && tool
+                        .args
+                        .iter()
+                        .any(|arg| matches!(arg, crate::scope::Argument::Reference { .. }))
                 {
                     return Err(
                         "Help args are literal program/subcommand names, not path placeholders."
@@ -318,7 +322,7 @@ impl Serialize for HumanBuiltinTool {
             builtin: Builtin,
             description: &'a str,
             kind: HumanToolKind,
-            args: &'a [String],
+            args: &'a [crate::scope::Argument],
         }
         Stored {
             builtin: self.builtin,

@@ -165,9 +165,9 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
     assert_eq!(
         eval.references,
         BTreeMap::from([
-            ("one".into(), "input".parse().unwrap()),
-            ("two".into(), "input".parse().unwrap()),
-            ("review".into(), "review".parse().unwrap()),
+            ("one".parse().unwrap(), "input".parse().unwrap()),
+            ("two".parse().unwrap(), "input".parse().unwrap()),
+            ("review".parse().unwrap(), "review".parse().unwrap()),
         ])
     );
     assert_eq!(eval.deps, ["input"]);
@@ -476,7 +476,7 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
         kind: RelationKind::Argument {
             eval_id: "review/check".parse().unwrap(),
             index: 0,
-            name: "input".into(),
+            name: "input".parse().unwrap(),
             path: "nested/file".into()
         },
     }));
