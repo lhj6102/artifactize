@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::config::{Artifact, ArtifactName, ConfigError, Eval, Fingerprint, Profile, RepoConfig};
 
 mod argument;
-pub use argument::{Argument, ArgumentPath, ArgumentSuffix};
+pub use argument::{Argument, LogicalSuffix, LogicalTarget};
 
 mod human;
 mod instruction;

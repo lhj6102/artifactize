@@ -2275,3 +2275,10 @@ pub fn stdin_waiter() -> tokio::process::Command {
         .stderr(std::process::Stdio::null());
     command
 }
+
+/// A Windows editor command with an argument of its own: copy this source over its operand.
+/// Only Windows has the cmd built-in used by this editor fixture.
+#[cfg(windows)]
+pub fn copy_editor_command(source: &Path) -> String {
+    format!("copy /y \"{}\"", source.display())
+}

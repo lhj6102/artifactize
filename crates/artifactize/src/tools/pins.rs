@@ -49,9 +49,7 @@ pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins,
             for (name, path, absolute) in resolved {
                 let digest = pin(&absolute)
                     .map_err(|e| format!("Tool {name} executionPaths {path}: {e}"))?;
-                pins.entry(name)
-                    .or_default()
-                    .insert(path, digest.parse().expect("SHA-256 pin digest"));
+                pins.entry(name).or_default().insert(path, digest);
             }
             Ok(pins)
         })
@@ -60,7 +58,7 @@ pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins,
     .map_err(|e| e.to_string())?
 }
 
-fn pin(path: &Path) -> Result<String, String> {
+fn pin(path: &Path) -> Result<crate::types::Sha256Digest, String> {
     let kind = platform::path_kind(path).map_err(|e| e.to_string())?;
     let mut bytes = 0;
     if kind == platform::FileKind::File {
@@ -155,6 +153,11 @@ fn hash_file(mut file: File, bytes: &mut u64) -> Result<crate::types::Sha256Byte
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+fn hex(bytes: &[u8]) -> crate::types::Sha256Digest {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+        .parse()
+        .expect("SHA-256 pin digest")
 }

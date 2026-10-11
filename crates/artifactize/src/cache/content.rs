@@ -19,6 +19,7 @@ use crate::{
     config::RepoConfig,
     platform::{self, FileKind},
     process, scope,
+    scope::LogicalTarget,
 };
 
 /// Bound input traversal and retained per-file digest metadata for one fingerprint.
@@ -37,7 +38,7 @@ const BUILTIN_IGNORES: [&str; 5] = [".git", "__pycache__/", "*.pyc", "target/", 
 /// Sorted owner-relative file paths with their SHA-256, and one digest over all of them.
 pub(super) struct Files {
     pub digest: crate::types::Sha256Digest,
-    pub files: BTreeMap<String, crate::types::Sha256Bytes>,
+    pub files: BTreeMap<LogicalTarget, crate::types::Sha256Bytes>,
 }
 
 /// Validate declared `fingerprint.ignore` globs, which always exclude like the built-ins.
@@ -98,17 +99,17 @@ struct Walk {
     root: PathBuf,
     owner: PathBuf,
     /// The owner folder relative to the repository root, where `.gitignore` bases start.
-    prefix: String,
-    inputs: Vec<String>,
+    prefix: LogicalTarget,
+    inputs: Vec<LogicalTarget>,
     file: bool,
     /// Child Artifact folders and declaration files, skipped while walking.
-    excluded: BTreeSet<String>,
+    excluded: BTreeSet<crate::config::ChildPrefix>,
     ignore: Gitignore,
 }
 
 #[derive(Default)]
 struct State {
-    files: BTreeMap<String, crate::types::Sha256Bytes>,
+    files: BTreeMap<LogicalTarget, crate::types::Sha256Bytes>,
     entries: usize,
     bytes: u64,
 }
@@ -128,18 +129,23 @@ impl Walk {
             .folder()
             .to_str()
             .ok_or("Artifact paths must be UTF-8.")?;
-        let prefix = platform::path_text(artifact.folder());
-        let excluded = artifact.children.keys().map(ToString::to_string).collect();
-        let inputs: Vec<_> = inputs
+        let prefix = platform::path_text(artifact.folder())
+            .parse::<LogicalTarget>()
+            .map_err(|error| error.to_string())?;
+        let excluded = artifact.children.keys().cloned().collect();
+        let inputs = inputs
             .iter()
             .map(|input| {
                 if input.as_str() == "." {
-                    String::new()
+                    Ok(LogicalTarget::Root)
                 } else {
-                    input.to_string()
+                    input
+                        .as_str()
+                        .parse::<LogicalTarget>()
+                        .map_err(|error| error.to_string())
                 }
             })
-            .collect();
+            .collect::<Result<Vec<_>, String>>()?;
         Ok(Self {
             root: config.root.clone(),
             owner,
@@ -154,7 +160,11 @@ impl Walk {
     fn digest(&self, cancellation: &CancellationToken) -> Result<Files, String> {
         let mut state = State::default();
         for input in &self.inputs {
-            let label = if input.is_empty() { "." } else { input };
+            let label = if input.is_empty() {
+                "."
+            } else {
+                input.as_str()
+            };
             let file =
                 scope::open_scoped(&self.owner, input).map_err(|e| format!("{label}: {e}"))?;
             if self.file && !file.metadata().map_err(|e| e.to_string())?.is_file() {
@@ -186,12 +196,12 @@ impl Walk {
     fn directory(
         &self,
         directory: &File,
-        path: &str,
-        gitignores: &mut Vec<(String, Gitignore)>,
+        path: &LogicalTarget,
+        gitignores: &mut Vec<(LogicalTarget, Gitignore)>,
         state: &mut State,
         cancellation: &CancellationToken,
     ) -> Result<(), String> {
-        let label = if path.is_empty() { "." } else { path };
+        let label = if path.is_empty() { "." } else { path.as_str() };
         // Enumerate the pinned directory, not a path that could have been replaced by a link.
         let mut entries = Vec::new();
         for entry in platform::read_dir(directory).map_err(|e| format!("{label}: {e}"))? {
@@ -204,19 +214,23 @@ impl Walk {
             entries.push((name, kind == FileKind::Directory));
         }
         entries.sort();
-        let gitignore =
-            read_gitignore(directory).map_err(|e| format!("{}: {e}", join(path, ".gitignore")))?;
+        let gitignore = read_gitignore(directory).map_err(|e| {
+            format!(
+                "{}: {e}",
+                join(path, ".gitignore").expect("a fixed name under a validated logical folder")
+            )
+        })?;
         let pushed = gitignore.is_some();
         if let Some(gitignore) = gitignore {
-            gitignores.push((join(&self.prefix, path), gitignore));
+            gitignores.push((join(&self.prefix, path)?, gitignore));
         }
         for (name, is_dir) in entries {
             if cancellation.is_cancelled() {
                 return Err(process::Error::Cancelled.to_string());
             }
-            let child = join(path, &name);
+            let child = join(path, &name)?;
             if (!is_dir && name.ends_with(".artf"))
-                || self.excluded.contains(&child)
+                || self.excluded.contains(child.as_str())
                 || self.ignored(&child, is_dir, gitignores)
             {
                 continue;
@@ -242,13 +256,22 @@ impl Walk {
     }
 
     /// `.gitignore` files from the repository root down to a walked input's parent folder.
-    fn ancestors(&self, input: &str) -> Result<Vec<(String, Gitignore)>, String> {
-        let full = join(&self.prefix, input);
+    fn ancestors(&self, input: &LogicalTarget) -> Result<Vec<(LogicalTarget, Gitignore)>, String> {
+        let full = join(&self.prefix, input)?;
         let parts: Vec<_> = full.split('/').filter(|part| !part.is_empty()).collect();
         let mut gitignores = Vec::new();
         for depth in 0..parts.len() {
-            let base = parts[..depth].join("/");
-            let label = |e: String| format!("{}: {e}", join(&base, ".gitignore"));
+            let base: LogicalTarget = parts[..depth]
+                .join("/")
+                .parse()
+                .expect("ancestors of a validated logical path");
+            let label = |e: String| {
+                format!(
+                    "{}: {e}",
+                    join(&base, ".gitignore")
+                        .expect("a fixed name under a validated logical folder")
+                )
+            };
             let directory =
                 scope::open_scoped(&self.root, &base).map_err(|e| label(e.to_string()))?;
             if let Some(gitignore) = read_gitignore(&directory).map_err(label)? {
@@ -260,14 +283,19 @@ impl Walk {
 
     /// Built-ins and declared globs always exclude; `.gitignore` files decide the rest,
     /// each relative to its own folder and the deepest match winning, as in git.
-    fn ignored(&self, path: &str, is_dir: bool, gitignores: &[(String, Gitignore)]) -> bool {
+    fn ignored(
+        &self,
+        path: &LogicalTarget,
+        is_dir: bool,
+        gitignores: &[(LogicalTarget, Gitignore)],
+    ) -> bool {
         if self.ignore.matched(path, is_dir).is_ignore() {
             return true;
         }
-        let full = join(&self.prefix, path);
+        let full = join(&self.prefix, path).expect("two validated logical paths");
         for (base, gitignore) in gitignores.iter().rev() {
             let relative = if base.is_empty() {
-                &full
+                full.as_str()
             } else {
                 &full[base.len() + 1..]
             };
@@ -309,7 +337,7 @@ fn read_gitignore(directory: &File) -> Result<Option<Gitignore>, String> {
     builder.build().map(Some).map_err(|e| e.to_string())
 }
 
-fn hash_file(mut file: File, path: &str, state: &mut State) -> Result<(), String> {
+fn hash_file(mut file: File, path: &LogicalTarget, state: &mut State) -> Result<(), String> {
     if !file.metadata().map_err(|e| e.to_string())?.is_file() {
         return Err(format!("{path}: Content input must be a regular file."));
     }
@@ -330,17 +358,23 @@ fn hash_file(mut file: File, path: &str, state: &mut State) -> Result<(), String
         digest.update(&buffer[..read]);
     }
     state.files.insert(
-        path.to_owned(),
+        path.clone(),
         crate::types::Sha256Bytes::from_digest(digest.finalize().into()),
     );
     Ok(())
 }
 
-fn join(base: &str, name: &str) -> String {
-    if base.is_empty() {
-        name.into()
+fn join(base: &LogicalTarget, name: &str) -> Result<LogicalTarget, String> {
+    if name.is_empty() {
+        Ok(base.clone())
     } else {
-        format!("{base}/{name}")
+        let path = if base.is_empty() {
+            name.to_owned()
+        } else {
+            format!("{base}/{name}")
+        };
+        path.parse::<LogicalTarget>()
+            .map_err(|error| error.to_string())
     }
 }
 

@@ -4,17 +4,17 @@ use super::{ScopeError, instruction, logical_path};
 use serde::Serialize;
 
 /// An Artifact root has no suffix; non-root suffixes are validated logical paths.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ArgumentPath {
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum LogicalTarget {
     Root,
-    Suffix(ArgumentSuffix),
+    Suffix(LogicalSuffix),
 }
 
 /// A nonempty relative logical path. Its private storage cannot bypass validation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ArgumentSuffix(String);
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LogicalSuffix(String);
 
-impl std::str::FromStr for ArgumentSuffix {
+impl std::str::FromStr for LogicalSuffix {
     type Err = ScopeError;
     fn from_str(path: &str) -> Result<Self, Self::Err> {
         logical_path(path)?;
@@ -27,7 +27,7 @@ impl std::str::FromStr for ArgumentSuffix {
     }
 }
 
-impl std::str::FromStr for ArgumentPath {
+impl std::str::FromStr for LogicalTarget {
     type Err = ScopeError;
     fn from_str(path: &str) -> Result<Self, Self::Err> {
         if path.is_empty() {
@@ -38,7 +38,7 @@ impl std::str::FromStr for ArgumentPath {
     }
 }
 
-impl std::ops::Deref for ArgumentPath {
+impl std::ops::Deref for LogicalTarget {
     type Target = str;
     fn deref(&self) -> &str {
         match self {
@@ -48,7 +48,19 @@ impl std::ops::Deref for ArgumentPath {
     }
 }
 
-impl std::fmt::Display for ArgumentPath {
+impl LogicalTarget {
+    pub fn as_str(&self) -> &str {
+        self
+    }
+}
+
+impl AsRef<std::path::Path> for LogicalTarget {
+    fn as_ref(&self) -> &std::path::Path {
+        std::path::Path::new(self.as_str())
+    }
+}
+
+impl std::fmt::Display for LogicalTarget {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str(self)
     }
@@ -66,7 +78,7 @@ pub enum Argument {
     Reference {
         prefix: String,
         name: crate::config::ReferenceName,
-        path: ArgumentPath,
+        path: LogicalTarget,
     },
 }
 
@@ -207,10 +219,10 @@ mod tests {
                 serde_json::json!(text)
             );
         }
-        let root: ArgumentPath = "".parse().unwrap();
-        assert_eq!(root, ArgumentPath::Root);
+        let root: LogicalTarget = "".parse().unwrap();
+        assert_eq!(root, LogicalTarget::Root);
         for invalid in ["", ".", "../outside", "a//b", "a/../b", "a\\b", "a\0b"] {
-            assert!(invalid.parse::<ArgumentSuffix>().is_err(), "{invalid:?}");
+            assert!(invalid.parse::<LogicalSuffix>().is_err(), "{invalid:?}");
         }
         for invalid in [
             "{owner}/",
