@@ -77,12 +77,25 @@ impl Monitor {
 
     /// Fold Artifacts whose evals are all done and unfold the rest, except the ones the user
     /// toggled. A new Run starts on the first in-progress or failed eval, else the first row.
+    #[cfg(test)]
     pub(super) fn sync_tree(&mut self, first: bool) {
+        let nodes = match &self.run {
+            Some((run, requests)) => {
+                Arc::new(model::tree(run, requests, OffsetDateTime::now_utc()))
+            }
+            None => Arc::default(),
+        };
+        self.sync_projected_tree(first, nodes);
+    }
+
+    pub(super) fn sync_projected_tree(&mut self, first: bool, nodes: Arc<Vec<Node>>) {
         if first {
             self.folds = Folds::default();
         }
-        self.folds.cache = None;
-        let nodes = self.nodes();
+        self.folds.cache = self
+            .run
+            .as_ref()
+            .map(|(run, _)| (run.run.id.clone(), nodes.clone()));
         for node in nodes.iter().filter(|node| !node.children.is_empty()) {
             if self.folds.touched.contains(&node.id) {
                 continue;

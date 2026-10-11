@@ -368,7 +368,10 @@ fn keys_page_older_runs_open_and_quit() {
     assert_eq!(monitor.key(key(KeyCode::Char('j'))), Action::Refresh);
     assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-b");
     assert_eq!(monitor.key(key(KeyCode::Down)), Action::Refresh);
-    assert_eq!(monitor.limit, 2 + PAGE);
+    assert_eq!(monitor.limit, 2);
+    assert_eq!(monitor.offset, 2);
+    assert!(monitor.runs.is_empty());
+    monitor.set_runs(vec![summary("run-b", 1)]);
     // A refresh keeps the selected Run even when newer Runs arrive above it.
     monitor.set_runs(vec![
         summary("run-new", 1),

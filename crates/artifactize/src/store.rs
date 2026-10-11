@@ -25,6 +25,7 @@ pub use snapshots::{ArtifactValidation, Blocker, ChildIdentity, HumanDefinition,
 mod wait_timeout;
 pub use catalog::{CatalogRun, Signoff, read_catalog};
 pub use runs::{RunSummary, read_runs, read_scoped_runs};
+pub(crate) mod reader;
 mod requests;
 pub use executions::{
     Capacity, Claim, Execution, ExecutionOptions, Origin, Producer, Provenance,
@@ -35,9 +36,10 @@ pub use receipts::{
     DATABASE, EARLIER_STATE, LastRequest, QueueReason, Receipts, Request, Run, RunView,
     StoppedBackend, read_latest_requests, read_run, read_state_id, schema_error, state_schema,
 };
+pub(crate) use requests::read_request_repo;
 pub use requests::{
-    RequestView, read_original, read_request, read_requests, read_session_request, read_waiting,
-    read_waiting_originals,
+    RequestView, read_original, read_request, read_requests, read_run_requests,
+    read_session_request, read_waiting, read_waiting_originals,
 };
 
 /// Let concurrent readers/writers finish short SQLite transactions without an

@@ -68,6 +68,10 @@ async fn watch(
     let mut spin = tokio::time::interval(SPIN);
     let mut pending: Option<Pin<Box<dyn Future<Output = review::Outcome>>>> = None;
     let mut action = Action::Refresh;
+    let mut snapshot_job = None;
+    let mut dirty = false;
+    let mut full = false;
+    let mut resync = false;
     let mut session_job: Option<
         tokio::task::JoinHandle<(super::session::Job, crate::agent::session::live::Window)>,
     > = None;
@@ -89,7 +93,8 @@ async fn watch(
                 return Ok(());
             }
             Action::Refresh | Action::Review(review::Action::Refresh) => {
-                monitor.refresh().await;
+                dirty = true;
+                full |= !std::mem::take(&mut monitor.navigation);
                 tick.reset();
             }
             Action::OpenDetail => monitor.open_detail().await,
@@ -103,6 +108,12 @@ async fn watch(
                 return Err("Monitor never invokes an external editor.".into());
             }
             _ => {}
+        }
+        if dirty && snapshot_job.is_none() {
+            snapshot_job = monitor.start_refresh(full, resync);
+            dirty = false;
+            full = false;
+            resync = false;
         }
         monitor.sync_peek().await;
         terminal
@@ -139,6 +150,17 @@ async fn watch(
                 Some(Err(error)) => return Err(error.to_string()),
                 None => Action::Quit,
             },
+            outcome = async { snapshot_job.as_mut().expect("active snapshot job").await },
+                if snapshot_job.is_some() =>
+            {
+                snapshot_job = None;
+                let completed = crate::task::joined(outcome).map_err(|error| error.to_string())?;
+                if !monitor.finish_refresh(completed).await {
+                    dirty = true;
+                    full = true;
+                }
+                Action::None
+            }
             outcome = async { session_job.as_mut().expect("active session job").await },
                 if session_job.is_some() =>
             {
@@ -179,8 +201,16 @@ async fn watch(
             _ = spin.tick(), if pending.is_some() => Action::None,
             _ = tick.tick() => Action::None,
             change = changes.next() => match change {
-                crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => {
-                    Action::Refresh
+                crate::changes::Change::StateInvalidated => {
+                    dirty = true;
+                    full = true;
+                    Action::None
+                }
+                crate::changes::Change::Resync => {
+                    dirty = true;
+                    full = true;
+                    resync = true;
+                    Action::None
                 }
                 crate::changes::Change::SessionInvalidated(id) => {
                     if let Some(live) = monitor.live_mut()

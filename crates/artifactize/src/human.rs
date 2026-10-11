@@ -31,11 +31,7 @@ pub fn default_reviewer() -> Result<crate::types::ReviewerId, String> {
 
 /// The saved request's Run repository and its receipts, where its Human actions are recorded.
 pub async fn open(state: &Path, request: &str) -> Result<(Receipts, PathBuf), String> {
-    let view = store::read_request(state, request).await?;
-    let repo = store::read_run(state, &view.request.run_id)
-        .await?
-        .run
-        .repo_path;
+    let (_, repo) = store::read_request_repo(state, request).await?;
     Ok((Receipts::open(state, &repo).await?, repo))
 }
 
