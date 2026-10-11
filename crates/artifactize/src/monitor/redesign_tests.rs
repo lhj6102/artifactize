@@ -22,6 +22,47 @@ fn render(monitor: &mut Monitor, width: u16, height: u16) {
 fn render_text(monitor: &mut Monitor, width: u16, height: u16) -> String {
     super::tests::sized(monitor, width, height)
 }
+#[test]
+fn rendered_panes_keep_neighbours_and_fill_the_body_at_every_breakpoint() {
+    use Pane::{Artifacts as Tree, Detail, Repositories as Scope, Runs};
+    let (view, requests) = super::tests::live();
+    let mut monitor = Monitor::new("/fixture-state".into(), None);
+    monitor.set_runs(vec![super::tests::summary("run-1", 1)]);
+    monitor.set_run(view, requests);
+    for (width, side, middle, end) in [
+        (80, 16, 48, 64),
+        (99, 16, 67, 83),
+        (100, 28, 44, 72),
+        (120, 28, 64, 92),
+        (139, 28, 83, 111),
+        (140, 36, 68, 104),
+        (160, 36, 88, 124),
+    ] {
+        for (focus, expected) in [
+            (Scope, vec![(Scope, end), (Runs, side)]),
+            (Runs, vec![(Scope, side), (Runs, middle), (Tree, side)]),
+            (Tree, vec![(Runs, side), (Tree, middle), (Detail, side)]),
+            (Detail, vec![(Tree, side), (Detail, end)]),
+        ] {
+            monitor.focus = focus;
+            render(&mut monitor, width, 30);
+            let actual: Vec<_> = monitor
+                .hits
+                .panes
+                .iter()
+                .map(|(pane, area)| (*pane, area.width))
+                .collect();
+            assert_eq!(actual, expected, "{width} {focus:?}");
+            let mut x = 0;
+            for (_, area) in &monitor.hits.panes {
+                assert_eq!((area.x, area.y, area.height), (x, 1, 28));
+                x += area.width;
+            }
+            assert_eq!(x, width, "panes fill the body");
+        }
+    }
+}
+
 fn saved_run(
     id: &str,
     repo: &Path,
@@ -739,11 +780,11 @@ async fn monitor_and_review_draw_the_same_human_review_component() {
         let mut monitor = human_detail(inside).await;
         let monitor_text = render_text(&mut monitor, 160, 40);
         let review_text = sized(&mut standalone, 160, 40);
-        // Both put a 30-column list or tree beside the same 130-column Detail.
-        let detail = region(&monitor_text, 30);
+        // Both put a 36-column list or tree beside the same 124-column Detail.
+        let detail = region(&monitor_text, 36);
         assert_eq!(
             detail,
-            region(&review_text, 30),
+            region(&review_text, 36),
             "{monitor_text}\n{review_text}"
         );
         let stage = if owner.is_some() {

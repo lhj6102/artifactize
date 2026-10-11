@@ -186,8 +186,10 @@ Artifact kinds and fingerprints are unchanged and says where each came from.
 ## Human review in the terminal
 
 `verify` waits by default while a Human eval needs a sign-off. The monitor drills
-down through Scope → Runs → Run tree → Detail. Its focused pane gets the space;
-context and previews appear when the terminal is wide enough. `j`/`k` selects an
+down through Scope → Runs → Run tree → Detail. Its immediate context and preview
+panes remain at every width, except at the ends of the drill-down. Side panes take
+16, 28 or 36 columns at widths below 100, 100–139 or 140 and above; the focused pane
+fills the rest, with sides clipped on extremely small terminals. `j`/`k` selects an
 eval and reveals its outcome in the peek; Enter or `o` opens Detail. Press `c` to
 claim a waiting Human request, run the tools its owner declared, choose GREEN or
 RED with `g`/`r`, and submit the schema-backed form with Ctrl-S. Standalone
@@ -202,8 +204,13 @@ Human tool first. The tree names what an eval waits for; `b` jumps upstream and
 Backspace returns. Validation stays **at Run
 end** in the headline; a dim `*` marks rows changed by later request updates.
 
-The monitor follows local state changes without a permanent daemon. Agent Detail
-shows live local sessions with scrolling and expandable tool activity groups;
+The monitor follows local state changes without a permanent daemon. Reads run in
+background jobs, so navigation and cancellation remain available during a refresh;
+unchanged selected evidence keeps its tree and Detail. The Run list holds one bounded
+page plus an older selected Run when newer entries push it off the page. `j`/`k` at
+a page edge moves to the next/previous page without retaining the earlier pages.
+Agent Detail shows live local sessions with scrolling and expandable tool activity
+groups;
 reused results keep their original evidence when it is available.
 
 <img src="https://raw.githubusercontent.com/lhj6102/artifactize/main/website/demo/media/human.gif" width="800"

@@ -5,6 +5,7 @@ mod evidence;
 mod fold;
 pub(crate) mod input;
 pub(crate) mod layout;
+mod loader;
 mod model;
 #[cfg(test)]
 mod pane_tests;
@@ -124,6 +125,13 @@ pub struct Monitor {
     pub focus: Pane,
     initialized: bool,
     limit: u32,
+    offset: u32,
+    page_tail: bool,
+    load_revision: u64,
+    navigation: bool,
+    reader: Option<store::reader::Reader>,
+    state_id: Option<crate::types::StateId>,
+    database: Option<crate::platform::FileIdentity>,
     runs: Vec<RunSummary>,
     repositories: TableState,
     list: TableState,
@@ -160,6 +168,13 @@ impl Monitor {
             focus: Pane::Runs,
             initialized: false,
             limit: PAGE,
+            offset: 0,
+            page_tail: false,
+            load_revision: 0,
+            navigation: false,
+            reader: Some(Default::default()),
+            state_id: None,
+            database: None,
             runs: Vec::new(),
             repositories: TableState::default(),
             list: TableState::default(),
@@ -184,79 +199,16 @@ impl Monitor {
     }
 
     pub async fn refresh(&mut self) {
-        let result = self.reload().await;
-        let now = OffsetDateTime::now_utc();
-        match result {
-            Ok(()) => {
-                self.refreshed = Some(now);
-                let unreadable = self
-                    .runs
-                    .iter()
-                    .flat_map(|run| &run.unreadable)
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>();
-                self.error = (!unreadable.is_empty()).then(|| unreadable.join("; "));
+        if let Some(job) = self.start_refresh(true, false) {
+            match crate::task::joined(job.await) {
+                Ok(completed) => {
+                    self.finish_refresh(completed).await;
+                }
+                Err(error) => self.error = Some(error.to_string()),
             }
-            Err(error) => self.error = Some(format!("read failed at {}: {error}", clock(now))),
         }
     }
-    async fn reload(&mut self) -> Result<(), String> {
-        let catalog = store::read_catalog(&self.state).await?;
-        // A selected fold row stays selected when its worktrees are shown or hidden.
-        let fold = self
-            .repositories
-            .selected()
-            .and_then(|index| self.catalog.rows.get(index))
-            .and_then(|row| row.fold.clone());
-        if self.initialized {
-            self.catalog.selected = Some(self.scope.clone());
-        }
-        self.catalog.update(&catalog, self.initial.as_deref());
-        if !self.initialized {
-            self.scope = self.catalog.initial(self.initial.as_deref());
-            self.initialized = true;
-            // The initial scope stays listed even when its worktree has no Runs yet.
-            self.catalog.selected = Some(self.scope.clone());
-            self.catalog.update(&catalog, self.initial.as_deref());
-        }
-        let selected = match fold {
-            Some(fold) => self
-                .catalog
-                .rows
-                .iter()
-                .position(|row| row.fold.as_ref() == Some(&fold)),
-            None => self.repositories.selected().filter(|index| {
-                self.catalog
-                    .rows
-                    .get(*index)
-                    .is_some_and(|row| row.fold.is_none() && row.scope == self.scope)
-            }),
-        };
-        self.repositories.select(selected.or_else(|| {
-            self.catalog
-                .rows
-                .iter()
-                .position(|row| row.fold.is_none() && row.scope == self.scope)
-        }));
-        let paths = self.catalog.paths(&self.scope);
-        let selected = self.selected_run().map(|run| run.id.clone());
-        let mut runs =
-            store::read_scoped_runs(&self.state, paths.as_deref(), self.limit, 0).await?;
-        // Newly inserted Runs may push a selected row out of its page; grow only as needed.
-        while selected
-            .as_ref()
-            .is_some_and(|id| !runs.iter().any(|run| &run.id == id))
-            && runs.len() as u32 == self.limit
-        {
-            self.limit = self.limit.saturating_add(PAGE);
-            runs = store::read_scoped_runs(&self.state, paths.as_deref(), self.limit, 0).await?;
-        }
-        self.set_runs(runs);
-        if let Some(id) = self.open.clone() {
-            let run = store::read_run(&self.state, &id).await?;
-            let requests = store::read_requests(&self.state, Some(&id)).await?;
-            self.set_run(run, requests);
-        }
+    async fn refresh_detail(&mut self, changed: bool) {
         // A peek without a session (unavailable or failed) resolves again after a refresh.
         self.peek = self.peek.take().filter(|peek| peek.live.is_some());
         if let Some(live) = self.peek.as_mut().and_then(|peek| peek.live.as_mut()) {
@@ -264,6 +216,7 @@ impl Monitor {
         }
         if let Some(pane) = &mut self.detail {
             if let Some((run, requests)) = &self.run
+                && changed
                 && run.run.id == pane.run_id
                 && pane
                     .request
@@ -279,21 +232,30 @@ impl Monitor {
                 {
                     let stamp = evidence::EvidenceStamp::new(view);
                     if pane.evidence_stamp.as_ref() != Some(&stamp)
-                        || view.request.profile.kind() == ProfileKind::Agent
+                        || pane.live.is_none() && view.request.profile.kind() == ProfileKind::Agent
                     {
-                        Self::load_evidence(&self.state, self.serial, pane, view).await;
+                        Self::load_evidence(
+                            &self.state,
+                            self.state_id.as_ref(),
+                            self.serial,
+                            pane,
+                            view,
+                        )
+                        .await;
                         pane.evidence_stamp = Some(stamp);
                     }
                 }
             }
-            if let Some(review) = &mut pane.review {
+            if changed && let Some(review) = &mut pane.review {
                 let _ = review.refresh().await;
             }
         }
-        Ok(())
     }
     fn set_runs(&mut self, runs: Vec<RunSummary>) {
-        let selected = self.selected_run().map(|run| run.id.clone());
+        let selected = self
+            .open
+            .clone()
+            .or_else(|| self.selected_run().map(|run| run.id.clone()));
         let index = selected
             .and_then(|id| runs.iter().position(|run| run.id == id))
             .or(self.list.selected());
@@ -312,6 +274,7 @@ impl Monitor {
             self.run = None;
         }
     }
+    #[cfg(test)]
     fn set_run(&mut self, run: RunView, requests: Vec<RequestView>) {
         let first = self
             .run
@@ -352,6 +315,10 @@ impl Monitor {
         }
         self.scope = row.scope.clone();
         self.limit = PAGE;
+        self.offset = 0;
+        self.page_tail = false;
+        self.load_revision += 1;
+        self.navigation = true;
         self.runs.clear();
         self.list.select(None);
         self.open = None;
@@ -363,6 +330,8 @@ impl Monitor {
             return Action::None;
         }
         self.list.select(Some(index));
+        self.load_revision += 1;
+        self.navigation = true;
         self.open = self
             .selected_run()
             .filter(|run| !run.unreadable.iter().any(|record| record.kind == "run"))
@@ -435,7 +404,14 @@ impl Monitor {
                     Err(error) => self.notice = Some(error),
                 }
             } else {
-                Self::load_evidence(&self.state, self.serial, &mut pane, &view).await;
+                Self::load_evidence(
+                    &self.state,
+                    self.state_id.as_ref(),
+                    self.serial,
+                    &mut pane,
+                    &view,
+                )
+                .await;
             }
         }
         self.detail = Some(pane);
@@ -443,6 +419,7 @@ impl Monitor {
     }
     async fn load_evidence(
         state: &std::path::Path,
+        identity: Option<&crate::types::StateId>,
         serial: u64,
         pane: &mut DetailPane,
         view: &RequestView,
@@ -453,7 +430,7 @@ impl Monitor {
             return;
         }
         pane.evidence.title = "Agent session".into();
-        match live::resolve(state, view).await {
+        match live::resolve_cached(state, view, identity).await {
             Ok(Resolution::Local(source)) => {
                 let same = pane
                     .live
@@ -496,7 +473,7 @@ impl Monitor {
         use crate::agent::session::live::{self, Resolution};
         let visible = self.focus == Pane::Artifacts
             && self.detail.is_none()
-            && layout::plan(self.size, self.focus, layout::Hints::default()).density(Pane::Detail)
+            && layout::plan(self.size, self.focus).density(Pane::Detail)
                 == layout::Density::Preview;
         let view = visible
             .then(|| self.selected_request())
@@ -524,24 +501,25 @@ impl Monitor {
             .take()
             .filter(|peek| peek.request == view.request.id)
             .and_then(|peek| peek.live);
-        let (live, text) = match live::resolve(&self.state, &view).await {
-            Ok(Resolution::Local(source)) => match kept {
-                Some(mut live) if live.source.reference == source.reference => {
-                    live.source = source;
-                    if let Some(reader) = &mut live.reader {
-                        reader.source = live.source.clone();
+        let (live, text) =
+            match live::resolve_cached(&self.state, &view, self.state_id.as_ref()).await {
+                Ok(Resolution::Local(source)) => match kept {
+                    Some(mut live) if live.source.reference == source.reference => {
+                        live.source = source;
+                        if let Some(reader) = &mut live.reader {
+                            reader.source = live.source.clone();
+                        }
+                        live.invalidate();
+                        (Some(live), String::new())
                     }
-                    live.invalidate();
-                    (Some(live), String::new())
-                }
-                _ => {
-                    self.serial += 1;
-                    (Some(session::Live::new(self.serial, source)), String::new())
-                }
-            },
-            Ok(Resolution::Unavailable(text)) => (None, text),
-            Err(error) => (None, format!("Conversation unavailable: {error}")),
-        };
+                    _ => {
+                        self.serial += 1;
+                        (Some(session::Live::new(self.serial, source)), String::new())
+                    }
+                },
+                Ok(Resolution::Unavailable(text)) => (None, text),
+                Err(error) => (None, format!("Conversation unavailable: {error}")),
+            };
         self.peek = Some(Peek {
             request: view.request.id.clone(),
             stamp,
@@ -657,12 +635,16 @@ impl Monitor {
                     // Keep the former Runs→Artifacts refresh without dispatching to the tree.
                     Pane::Runs => {
                         self.focus = Pane::Artifacts;
+                        self.navigation = true;
                         Action::Refresh
                     }
                     Pane::Artifacts | Pane::Detail => Action::OpenDetail,
                 };
             }
-            KeyCode::Char('r') => return Action::Refresh,
+            KeyCode::Char('r') => {
+                self.navigation = false;
+                return Action::Refresh;
+            }
             KeyCode::Tab => {
                 self.focus = match self.focus {
                     Pane::Repositories => Pane::Runs,
@@ -697,6 +679,8 @@ impl Monitor {
                         .and_then(|row| row.fold.clone());
                     if let Some(repository) = fold {
                         self.catalog.toggle(&repository);
+                        self.load_revision += 1;
+                        self.navigation = true;
                         return Action::Refresh;
                     }
                 }
@@ -709,16 +693,33 @@ impl Monitor {
                     if next < self.runs.len() {
                         return self.select_run(next);
                     }
-                    if self.runs.len() as u32 == self.limit {
-                        self.limit = self.limit.saturating_add(PAGE);
+                    if self.runs.len() as u32 >= self.limit {
+                        self.offset = self.offset.saturating_add(self.limit);
+                        self.page_tail = false;
+                        self.load_revision += 1;
+                        self.navigation = true;
+                        self.runs.clear();
+                        self.list.select(None);
+                        self.open = None;
                         return Action::Refresh;
                     }
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
+                    if self.list.selected().unwrap_or(0) == 0 && self.offset > 0 {
+                        self.offset = self.offset.saturating_sub(self.limit);
+                        self.page_tail = true;
+                        self.load_revision += 1;
+                        self.navigation = true;
+                        self.runs.clear();
+                        self.list.select(None);
+                        self.open = None;
+                        return Action::Refresh;
+                    }
                     return self.select_run(self.list.selected().unwrap_or(0).saturating_sub(1));
                 }
                 KeyCode::Enter => {
                     self.focus = Pane::Artifacts;
+                    self.navigation = true;
                     return Action::Refresh;
                 }
                 _ => {}

@@ -5,6 +5,7 @@ use ratatui::{Terminal, backend::TestBackend};
 use serde_json::{Value, json};
 use time::format_description::well_known::Rfc3339;
 
+use super::model::Status;
 use super::*;
 use crate::store::HumanClaim;
 
@@ -367,7 +368,10 @@ fn keys_page_older_runs_open_and_quit() {
     assert_eq!(monitor.key(key(KeyCode::Char('j'))), Action::Refresh);
     assert_eq!(monitor.selected_run().unwrap().id.as_str(), "run-b");
     assert_eq!(monitor.key(key(KeyCode::Down)), Action::Refresh);
-    assert_eq!(monitor.limit, 2 + PAGE);
+    assert_eq!(monitor.limit, 2);
+    assert_eq!(monitor.offset, 2);
+    assert!(monitor.runs.is_empty());
+    monitor.set_runs(vec![summary("run-b", 1)]);
     // A refresh keeps the selected Run even when newer Runs arrive above it.
     monitor.set_runs(vec![
         summary("run-new", 1),
@@ -430,6 +434,7 @@ fn run_screen_renders_progress_tree_and_detail() {
     let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
+    monitor.focus = Pane::Artifacts;
     let text = screen(&mut monitor);
     for expected in [
         "Run run-1",
@@ -512,15 +517,30 @@ fn run_headline_keeps_attention_lines_at_every_width_and_moves_usage_to_run_deta
             monitor.set_run(view, requests);
             monitor.focus = focus;
             let text = sized(&mut monitor, width, height);
-            if width < 100 && focus == Pane::Runs {
-                continue;
-            }
-            for expected in [
-                "tokens 7.9M",
-                "! p2/check  [SPAWN] spawn fa",
-                "? app/review  waiting Human",
-                "◐ app/check  running",
-            ] {
+            let expected = if focus == Pane::Artifacts {
+                vec![
+                    "tokens 7.9M",
+                    "! p2/check  [SPAWN] spawn fa",
+                    "? app/review  waiting Human",
+                    "◐ app/check  running",
+                ]
+            } else {
+                // Preview keeps all attention rows, clipped to the fixed side width.
+                match width {
+                    160 => vec![
+                        "! p2/check  [SPAWN] spawn failed",
+                        "? app/review  waiting Human · cla…",
+                        "◐ app/check  running",
+                    ],
+                    100 => vec![
+                        "! p2/check  [SPAWN] spawn…",
+                        "? app/review  waiting Hum…",
+                        "◐ app/check  running",
+                    ],
+                    _ => vec!["! p2/check  […", "? app/review …", "◐ app/check  …"],
+                }
+            };
+            for expected in expected {
                 assert!(
                     text.contains(expected),
                     "{width}x{height} {focus:?}: {expected}\n{text}"
@@ -665,14 +685,23 @@ fn header_names_the_selected_scope_and_counts_attention_globally() {
         .catalog
         .rows
         .iter()
-        .map(|row| (row.label.as_str(), row.badge.text()))
+        .map(|row| (row.label.as_str(), row.badge.parts()))
         .collect();
     assert_eq!(
         rows,
         [
-            ("ALL", "!1 ✗2 ◐1".to_owned()),
-            ("alpha", "!1 ✗2 ◐1".to_owned()),
-            ("alpha (non-Git)", "!1 ✗2 ◐1".to_owned()),
+            (
+                "ALL",
+                vec![(Status::Error, 1), (Status::Red, 2), (Status::Running, 1)]
+            ),
+            (
+                "alpha",
+                vec![(Status::Error, 1), (Status::Red, 2), (Status::Running, 1)]
+            ),
+            (
+                "alpha (non-Git)",
+                vec![(Status::Error, 1), (Status::Red, 2), (Status::Running, 1)]
+            ),
         ]
     );
 }
@@ -717,8 +746,9 @@ fn runs_pane_draws_counts_age_and_took_and_keeps_age_when_narrow() {
     assert!(text.contains("took 42s"), "{text}");
     let age = run_rows(&monitor.runs, at)[1].age.clone();
     let age = age.split(' ').next().unwrap();
-    let text = sized_at(&mut monitor, 22, 20, at);
-    // Narrow Runs keep the glyph, id and age; the status word and counts go first.
+    let text = sized_at(&mut monitor, 54, 20, at);
+    // A 22-column Full Runs pane between two 16-column sides keeps glyph, id and age;
+    // the status word and counts go first.
     assert!(text.contains(&format!("✗ run-done {age}")), "{text}");
     assert!(!text.contains("RED") && !text.contains("✓3"), "{text}");
 }
@@ -750,7 +780,7 @@ fn review_key_hands_off_only_waiting_human_requests() {
 }
 
 #[test]
-fn saved_texts_of_any_length_never_overflow_natural_widths() {
+fn saved_texts_of_any_length_never_overflow_pane_widths() {
     let long = "X".repeat(usize::from(u16::MAX));
     let (view, mut requests) = live();
     for view in &mut requests {
@@ -788,7 +818,7 @@ fn saved_texts_of_any_length_never_overflow_natural_widths() {
     for focus in [Pane::Repositories, Pane::Runs, Pane::Artifacts] {
         monitor.focus = focus;
         for (width, height) in [(160, 30), (100, 24), (80, 24)] {
-            // Natural widths of the scope label, the Run headline and the tree rows are capped.
+            // Long labels, headlines and tree rows stay inside their assigned panes.
             assert!(!sized(&mut monitor, width, height).is_empty());
         }
     }

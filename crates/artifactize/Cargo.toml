@@ -61,7 +61,7 @@ unicode-segmentation = "1.13"
 [target.'cfg(unix)'.dependencies]
 hostname = "0.4.2"
 libc = "0.2"
-process-wrap = { version = "10.0.1", default-features = false, features = ["tokio1", "process-group"] }
+process-wrap = { version = "=10.0.1", default-features = false, features = ["tokio1", "process-group"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
@@ -79,5 +79,7 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
+# Count executed snapshot statements at the SQLite boundary, without timing assertions.
+rusqlite = { version = "0.40.1", features = ["trace"] }
 rig-core = { version = "=0.43.0", default-features = false, features = ["test-utils"] }
 tokio = { version = "1", features = ["test-util"] }

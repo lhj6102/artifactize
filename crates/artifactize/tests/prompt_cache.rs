@@ -2,13 +2,7 @@
 
 mod support;
 
-use std::{
-    fs,
-    path::PathBuf,
-    process::Command,
-    sync::Mutex,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fs, path::PathBuf, process::Command, sync::Mutex};
 
 use serde_json::{Value, json};
 use support::{FakeProvider, Reply, Request, anthropic, codex, openai};
@@ -44,11 +38,7 @@ impl Project {
         let state = root.path().join("state");
         let auth = state.join("auth");
         support::os::create_private_dir_all(&auth);
-        let expires = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            + 3600;
+        let expires = codex::VALID_EXPIRY;
         let credentials = json!({"access_token":codex::jwt("account-1", expires),
             "refresh_token":"refresh","account_id":"account-1","expires_at":expires,"saved_at":1});
         support::os::write_private_file(&auth.join("codex.json"), credentials.to_string());

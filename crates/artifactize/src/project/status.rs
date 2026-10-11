@@ -107,6 +107,7 @@ pub async fn status(
     options: &VerifyOptions,
     cancellation: CancellationToken,
 ) -> Result<StatusView, String> {
+    let parallelism = super::fingerprint_parallelism(options)?;
     let config = read_workspace_config(repo).map_err(|error| error.to_string())?;
     let config = select_profiles(
         config,
@@ -154,7 +155,7 @@ pub async fn status(
         &config,
         cache::fingerprint_targets(&config, &required),
         &state,
-        &super::fingerprint_parallelism(options)?,
+        &parallelism,
         cancellation.clone(),
     )
     .await?;

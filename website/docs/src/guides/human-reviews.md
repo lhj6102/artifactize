@@ -122,10 +122,12 @@ original. It also runs on its own, for example in a second terminal or tmux pane
 
 The waiting list and Detail use the monitor's reactive layout. With the list
 focused, it is Full and the selected request has a read-only Preview. Enter or →
-opens Detail. With Detail focused, a 30-column Compact list sits beside it. Below
-100 columns only the focused pane shows, with the breadcrumb
-`artifactize review › scope › eval`. ↑/↓ or `j`/`k` selects a request; `r` refreshes
-the list. Tab opens the selected request with its Tools focused. Esc on the list
+opens Detail. With Detail focused, the Compact list sits beside it. Both panes
+remain at every terminal width: the side pane takes 16 columns below 100, 28 at
+100–139, and 36 at 140 or more, borders included; Full fills the rest. Extremely
+small terminals clip the side pane rather than dropping a level. The breadcrumb is `artifactize review › scope › eval`. ↑/↓ or `j`/`k` selects a
+request; `r` refreshes the list. Tab opens the selected request with its Tools
+focused. Esc on the list
 stays there, never quits. The standalone UI has no `?` help overlay or `!`
 attention navigation; those keys belong to the monitor.
 
@@ -239,15 +241,21 @@ The focused pane is **Full**. **Compact** gives narrow context from the level to
 its left. **Preview** shows the next level without moving focus. Hidden levels
 stay in the breadcrumb: `artifactize › scope › Run › eval`.
 
-| Terminal width | Visible panes |
-|---|---|
-| 140 columns or more | Up to Compact + Full + Preview |
-| 100–139 columns | Full + Preview, not Compact + Full |
-| Fewer than 100 columns | Full only, with the breadcrumb |
+At every terminal width, the focused pane fills the width between its immediate
+neighbours: **Compact + Full + Preview**. Both side panes have the same fixed
+width, borders included:
 
-With Detail focused, the layout shows Tree Compact + Detail Full at 100 columns
-or more, and Detail alone below 100. Compact widths are 20 for Scope, 18 for Runs
-and 30 for the tree. Full grows to its natural width; spare width goes to Preview.
+| Terminal width | Each side pane |
+|---|---|
+| Fewer than 100 columns | 16 columns |
+| 100–139 columns | 28 columns |
+| 140 columns or more | 36 columns |
+
+Full takes the remaining width after the side panes. Scope has no left neighbour,
+so it shows Full + Preview; Detail has no right neighbour, so it shows Tree
+Compact + Detail Full. No neighbour is hidden at narrower breakpoints. If the
+terminal cannot fit even the sides, they are clipped equally rather than dropping
+a level. Widen the terminal when the focused pane needs more room.
 
 - **Scope.** Git clones group by their common Git directory. `ALL` selects the
   entire state; each repository row selects all its worktrees, without a separate

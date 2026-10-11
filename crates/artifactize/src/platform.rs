@@ -5,8 +5,19 @@
 //! Unix uses modes, `openat` with `O_NOFOLLOW`, `/proc`, and process groups. Windows uses
 //! protected owner-only DACLs, handle-relative opens that refuse every reparse point, and
 //! kill-on-close Job Objects.
+//!
+//! Kept as is (#201): process-wrap 10.0.1 is used for Unix process groups, but its Windows
+//! JobObject assigns a job after spawning and waits for the whole job, not just the leader.
+//! It exposes neither creation-time job assignment nor our separately owned admission gate;
+//! keep the current suspended-spawn/assignment and detached-launch policy on Windows.
+//! rpassword 7.5.4 exposes blocking password reads, not a caller-owned mode guard that can
+//! restore the terminal when a pending read is cancelled. Keep the echo-only guard and the
+//! bounded stdin reader; its restoration contract is tested in `hidden_input`.
+//! Program lookup and desktop-opener crate choices are documented in artifactize-tools'
+//! platform module, where those implementations live.
 
 pub(crate) mod environment;
+mod hidden_input;
 pub(crate) mod path_serde;
 pub(crate) mod paths;
 pub(crate) mod program;

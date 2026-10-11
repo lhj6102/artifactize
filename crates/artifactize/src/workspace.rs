@@ -65,7 +65,20 @@ pub(crate) fn canonical_target(path: &Path) -> io::Result<PathBuf> {
 }
 
 pub(crate) fn outside_workspace(workspace: &Path, output: &Path) -> io::Result<()> {
-    if crate::platform::is_within(output, workspace) {
+    outside_workspaces(std::iter::once(workspace), output)
+}
+
+/// Validate a snapshot's repositories together: output-ancestor marker checks are identical
+/// for every saved Run and must not enumerate those directories once per Run.
+pub(crate) fn outside_workspaces<'a>(
+    workspaces: impl IntoIterator<Item = &'a Path>,
+    output: &Path,
+) -> io::Result<()> {
+    let mut workspaces = workspaces.into_iter().peekable();
+    if workspaces.peek().is_none() {
+        return Ok(());
+    }
+    if workspaces.any(|workspace| crate::platform::is_within(output, workspace)) {
         return Err(io::Error::other(
             "State and output directories must be outside the reviewed repository.",
         ));

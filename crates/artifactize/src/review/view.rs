@@ -13,10 +13,12 @@ use time::OffsetDateTime;
 use super::{Focus, Form, Input, Mode, Review, detail};
 use crate::monitor::{
     crumbs, duration, fit,
-    layout::{self, Density, Level},
+    layout::{self, Density},
     plain, width,
 };
 
+/// The standalone review drills from its waiting list into Detail.
+const LEVELS: usize = 2;
 /// Keep a transient notice inside the fixed four-line footer rather than covering review content.
 const MAX_NOTICE_LINES: usize = 4;
 /// Two opposing borders consume one cell each in either dimension.
@@ -25,14 +27,9 @@ const BORDER_CELLS: u16 = 2;
 const JSON_RESERVED_ROWS: u16 = BORDER_CELLS + 1;
 /// Keep one spare content column after the JSON caret, in addition to the border columns.
 const JSON_RESERVED_COLUMNS: u16 = BORDER_CELLS + 1;
-/// The Compact waiting list, borders included, beside a Full Detail.
-const LIST_COMPACT: u16 = 30;
 /// Fixed columns of the Full waiting list: claim and waiting time.
 const CLAIM_WIDTH: u16 = 16;
 const WAITING_WIDTH: u16 = 8;
-/// A long repository path counts only this far towards the Full list's width, so one deep
-/// checkout does not push the Preview off a wide terminal.
-const REPO_WIDTH: u16 = 40;
 /// A popup takes this share of the terminal's width, leaving the review visible around it.
 const POPUP_WIDTH: u16 = 80;
 /// The Full waiting list's column titles; a column is never narrower than its title.
@@ -111,19 +108,9 @@ impl Review {
         frame.render_widget(Paragraph::new(status), status_area);
         frame.render_widget(Line::from(self.help()).dark_gray(), keys);
         let rows = self.list_rows(now);
-        let levels = [
-            Level {
-                compact: LIST_COMPACT,
-                natural: list_width(&rows),
-            },
-            Level {
-                compact: 0,
-                natural: u16::MAX,
-            },
-        ];
         let focused = usize::from(self.focus == Focus::Detail);
         let mut hits = Hits::default();
-        for (level, area, density) in layout::columns(body, &levels, focused) {
+        for (level, area, density) in layout::columns(body, LEVELS, focused) {
             match (level, density) {
                 (0, density) => {
                     hits.list = area;
@@ -315,7 +302,7 @@ impl Review {
             frame.render_stateful_widget(table, area, &mut self.list);
             return self.row_hits(area, 0);
         }
-        let [eval, request, claim, waiting, _] = column_widths(&rows);
+        let [eval, request, claim, waiting] = column_widths(&rows);
         let table = Table::new(
             rows.into_iter().map(Row::new),
             [
@@ -391,25 +378,21 @@ impl Review {
     }
 }
 
-/// Widths of the Full list's columns; claim and waiting time keep fixed widths, and a long
-/// repository path counts only up to `REPO_WIDTH` towards the natural width.
-fn column_widths(rows: &[[String; 5]]) -> [u16; 5] {
-    let mut widths = HEADERS.map(text_width);
-    widths[2] = CLAIM_WIDTH;
-    widths[3] = WAITING_WIDTH;
+/// Widths of the Full list's non-flexible columns; claim and waiting time keep fixed widths.
+/// The repository column fills the remaining space rather than contributing a natural width.
+fn column_widths(rows: &[[String; 5]]) -> [u16; 4] {
+    let mut widths = [
+        text_width(HEADERS[0]),
+        text_width(HEADERS[1]),
+        CLAIM_WIDTH,
+        WAITING_WIDTH,
+    ];
     for row in rows {
-        for column in [0, 1, 4] {
+        for column in [0, 1] {
             widths[column] = widths[column].max(text_width(&row[column]));
         }
     }
-    widths[4] = widths[4].min(REPO_WIDTH);
     widths
-}
-
-/// The Full list grows to its columns, so the rest of a wide terminal previews the request.
-fn list_width(rows: &[[String; 5]]) -> u16 {
-    let widths = column_widths(rows);
-    widths.iter().sum::<u16>() + widths.len() as u16 - 1 + BORDER_CELLS
 }
 
 fn field_line(field: &super::Field, selected: bool) -> Line<'static> {

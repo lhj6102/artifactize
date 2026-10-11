@@ -52,13 +52,6 @@ impl Badge {
         parts.sort_by_key(|(status, _)| *status);
         parts
     }
-    pub fn text(&self) -> String {
-        self.parts()
-            .into_iter()
-            .map(|(status, count)| format!("{}{count}", status.glyph()))
-            .collect::<Vec<_>>()
-            .join(" ")
-    }
 }
 #[derive(Debug, Clone)]
 pub struct CatalogRow {
@@ -69,8 +62,10 @@ pub struct CatalogRow {
     /// A row standing for this repository's worktrees without Runs; Space shows or hides them.
     pub fold: Option<Repository>,
 }
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Catalog {
+    facts: std::sync::Arc<Vec<CatalogRun>>,
+    initial_path: Option<PathBuf>,
     identities: BTreeMap<PathBuf, Identity>,
     trees: BTreeMap<PathBuf, Vec<Worktree>>,
     pub rows: Vec<CatalogRow>,
@@ -131,6 +126,8 @@ impl Catalog {
     }
     /// Cached old-path discovery runs once per workspace, not once per refresh.
     pub fn update(&mut self, runs: &[CatalogRun], initial: Option<&Path>) {
+        self.facts = std::sync::Arc::new(runs.to_vec());
+        self.initial_path = initial.map(Path::to_path_buf);
         let mut badges: BTreeMap<Scope, Badge> = BTreeMap::new();
         let mut paths: BTreeMap<Scope, BTreeSet<PathBuf>> = BTreeMap::new();
         let mut branches: BTreeMap<Scope, Option<String>> = BTreeMap::new();
@@ -262,6 +259,12 @@ impl Catalog {
         }
         self.rows = rows;
         self.paths = paths;
+    }
+    /// Navigation/fold changes reuse the last accepted database facts, not a catalog query.
+    pub fn rebuild(&mut self) {
+        let facts = self.facts.clone();
+        let initial = self.initial_path.clone();
+        self.update(&facts, initial.as_deref());
     }
     /// Show or hide a repository's worktrees without Runs; applied on the next update.
     pub fn toggle(&mut self, repository: &Repository) {

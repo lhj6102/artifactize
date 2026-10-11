@@ -6,18 +6,10 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Output},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use serde_json::{Value, json};
 use support::{FakeProvider, Reply, Request, codex, openai};
-
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
-}
 
 struct Project {
     root: tempfile::TempDir,
@@ -155,7 +147,10 @@ fn reviewer(request: &Request) -> Reply {
             )],
             openai::usage(30, 5),
         ),
-        "/oauth/token" => codex::tokens(&codex::jwt("account-1", now() + 3600), "rotated-refresh"),
+        "/oauth/token" => codex::tokens(
+            &codex::jwt("account-1", codex::VALID_EXPIRY),
+            "rotated-refresh",
+        ),
         path => Reply::Json(
             404,
             json!({"error":{"message":format!("unexpected {path}")}}),
@@ -172,8 +167,8 @@ fn form(request: &Request) -> Vec<(String, String)> {
 #[test]
 fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
     let project = Project::new();
-    let access = codex::jwt("account-1", now() + 3600);
-    project.sign_in(&access, now() + 3600);
+    let access = codex::jwt("account-1", codex::VALID_EXPIRY);
+    project.sign_in(&access, codex::VALID_EXPIRY);
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
         project
@@ -239,9 +234,9 @@ fn a_review_calls_tools_with_codex_headers_and_exact_max_reasoning() {
 }
 
 #[test]
-fn an_expiring_sign_in_is_refreshed_and_rotated_before_the_review() {
+fn an_expired_sign_in_is_refreshed_and_rotated_before_the_review() {
     let project = Project::new();
-    project.sign_in(&codex::jwt("account-1", now() + 60), now() + 60);
+    project.sign_in(&codex::jwt("account-1", codex::EXPIRED), codex::EXPIRED);
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
         project
@@ -297,7 +292,10 @@ fn failed(project: &Project, provider: &FakeProvider) -> Value {
 #[test]
 fn provider_errors_explain_themselves_and_permanent_ones_are_not_retried() {
     let project = Project::new();
-    project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
+    project.sign_in(
+        &codex::jwt("account-1", codex::VALID_EXPIRY),
+        codex::VALID_EXPIRY,
+    );
 
     let expired = FakeProvider::start(|_| {
         Reply::Json(
@@ -317,7 +315,7 @@ fn provider_errors_explain_themselves_and_permanent_ones_are_not_retried() {
     assert_eq!(request["usage"].as_array().unwrap().len(), 1);
     assert_eq!(expired.requests().len(), 1);
 
-    let resets = now() + 90 * 60;
+    let resets = codex::EXPIRED;
     let limited = FakeProvider::start(move |_| {
         Reply::Json(
             429,
@@ -333,13 +331,11 @@ fn provider_errors_explain_themselves_and_permanent_ones_are_not_retried() {
     });
     let request = failed(&project, &limited);
     let error = request["error"].as_str().unwrap();
-    // How many minutes remain depends on the clock; the exact wording is checked in the
-    // Codex unit tests at fixed times.
+    // A fixed past reset yields zero; future-reset rounding uses injected unit clocks.
     assert!(
-        error.contains("You have hit your ChatGPT usage limit (plus plan). Try again in ~"),
+        error.contains("You have hit your ChatGPT usage limit (plus plan). Try again in ~0 min."),
         "{error}"
     );
-    assert!(error.contains(" min."), "{error}");
     assert_eq!(limited.requests().len(), 1);
 
     let broken = FakeProvider::start(|_| {
@@ -394,8 +390,11 @@ fn provider_errors_explain_themselves_and_permanent_ones_are_not_retried() {
 fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
     let project = Project::new();
     // artifactize's own sign-in is ignored while a file is set.
-    project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
-    let access = codex::jwt("claim-account", now() + 3600);
+    project.sign_in(
+        &codex::jwt("account-1", codex::VALID_EXPIRY),
+        codex::VALID_EXPIRY,
+    );
+    let access = codex::jwt("claim-account", codex::VALID_EXPIRY);
     let file = project.auth_file(&access);
     // A file that cannot be written fails any write; one replaced by a rename gets a new
     // identity; one rewritten in place gets new contents.
@@ -423,7 +422,7 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
     drop(read_only);
     assert_eq!(fs::read(project.credentials()).unwrap(), own);
 
-    let expired = project.auth_file(&codex::jwt("claim-account", now() - 10));
+    let expired = project.auth_file(&codex::jwt("claim-account", codex::EXPIRED));
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
         project
@@ -445,7 +444,10 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
 #[test]
 fn models_lists_the_accounts_picker_models_in_server_order() {
     let project = Project::new();
-    project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
+    project.sign_in(
+        &codex::jwt("account-1", codex::VALID_EXPIRY),
+        codex::VALID_EXPIRY,
+    );
     let provider = FakeProvider::start(|_| {
         Reply::Json(
             200,
@@ -505,8 +507,11 @@ fn models_lists_the_accounts_picker_models_in_server_order() {
 #[test]
 fn logout_revokes_and_removes_only_artifactizes_tokens() {
     let project = Project::new();
-    project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
-    let file = project.auth_file(&codex::jwt("claim-account", now() + 3600));
+    project.sign_in(
+        &codex::jwt("account-1", codex::VALID_EXPIRY),
+        codex::VALID_EXPIRY,
+    );
+    let file = project.auth_file(&codex::jwt("claim-account", codex::VALID_EXPIRY));
     let before = fs::read(&file).unwrap();
     let provider = FakeProvider::start(|request| match request.path.as_str() {
         "/oauth/revoke" => Reply::Json(200, json!({})),
@@ -554,14 +559,14 @@ fn doctor_reports_the_sign_in_offline() {
     assert_eq!(check(&report)["status"], "WARN");
     assert_eq!(check(&report)["details"]["source"], "none");
 
-    project.sign_in(&codex::jwt("account-1", now() - 10), now() - 10);
+    project.sign_in(&codex::jwt("account-1", codex::EXPIRED), codex::EXPIRED);
     let report = doctor(&mut project.command(&["doctor"]), 0);
     assert_eq!(check(&report)["status"], "PASS");
     assert_eq!(check(&report)["details"]["source"], "stored");
     assert_eq!(check(&report)["details"]["expired"], true);
     assert!(!report.to_string().contains("stored-refresh"));
 
-    let file = project.auth_file(&codex::jwt("claim-account", now() - 10));
+    let file = project.auth_file(&codex::jwt("claim-account", codex::EXPIRED));
     let report = doctor(
         project
             .command(&["doctor"])
@@ -636,7 +641,7 @@ fn sign_in_storage_inside_a_git_work_tree_is_refused_and_doctor_only_warns() {
     assert!(!project.state.join("auth").exists());
 
     // A read-only auth file needs no storage.
-    let file = project.auth_file(&codex::jwt("claim-account", now() + 3600));
+    let file = project.auth_file(&codex::jwt("claim-account", codex::VALID_EXPIRY));
     let report = doctor(
         project
             .command(&["doctor"])
@@ -647,7 +652,10 @@ fn sign_in_storage_inside_a_git_work_tree_is_refused_and_doctor_only_warns() {
     assert_eq!(check(&report)["details"]["source"], "file");
 
     // A sign-in stored there before the work tree appeared is at risk: a failure.
-    project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
+    project.sign_in(
+        &codex::jwt("account-1", codex::VALID_EXPIRY),
+        codex::VALID_EXPIRY,
+    );
     let report = doctor(&mut project.command(&["doctor"]), 1);
     assert_eq!(check(&report)["status"], "FAIL");
     assert_eq!(check(&report)["message"], message.as_str());
@@ -711,7 +719,10 @@ fn removed_backend_messages_name_codex_without_a_version() {
 #[test]
 fn codex_and_openai_results_for_the_same_key_reuse_each_other() {
     let project = Project::new();
-    project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
+    project.sign_in(
+        &codex::jwt("account-1", codex::VALID_EXPIRY),
+        codex::VALID_EXPIRY,
+    );
     let provider = FakeProvider::start(|request| {
         let pass = vec![openai::message(r#"{"verdict":"GREEN"}"#)];
         match request.path.as_str() {
