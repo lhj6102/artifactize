@@ -34,16 +34,26 @@ fn database_and_sidecars_require_regular_entries_even_for_dangling_links() {
     assert_eq!(std::fs::read_to_string(target).unwrap(), "outside");
 }
 
-/// Deleting a file while another handle still holds it open (with `FILE_SHARE_DELETE`, as
-/// `DeleteFile` requires) marks its name "pending delete": any new open, even attribute-only
-/// and even with compatible sharing, fails `ERROR_ACCESS_DENIED` until every handle, including
-/// the one that was already open, closes. This is the exact race a WAL sidecar's own close can
-/// leave behind. `regular_files` must retry past it rather than surface a flake.
+/// A handle opened with `FILE_FLAG_DELETE_ON_CLOSE` sets the file's delete disposition the
+/// instant it closes, not only once every handle does: with a second, plain handle still open
+/// (sharing `FILE_SHARE_DELETE`, as the first handle required), that close alone puts the name
+/// into "pending delete". Any new open of it, attribute-only included, fails
+/// `ERROR_ACCESS_DENIED` until the second handle closes too, even though nothing holds an
+/// incompatible lock on it. (A bare `DeleteFile`/`remove_file` does not reach this on current
+/// Windows, which deletes by POSIX semantics there and leaves the name immediately gone
+/// instead — confirmed the hard way by an earlier version of this test.) This is the exact
+/// race a WAL sidecar's own close can leave behind. `regular_files` must retry past it rather
+/// than surface a flake.
 #[cfg(windows)]
 #[test]
 fn regular_files_retries_past_a_windows_pending_delete_sidecar() {
     use std::os::windows::fs::OpenOptionsExt;
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
     const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+    const FILE_FLAG_DELETE_ON_CLOSE: u32 = 0x0400_0000;
+    // Granting only delete-sharing would make `holder`'s own read open below a sharing
+    // violation; both handles need to coexist for read while either is open.
+    const SHARED_READ_AND_DELETE: u32 = FILE_SHARE_READ | FILE_SHARE_DELETE;
 
     let root = crate::test_os::tempdir();
     let state = root.path().join("state");
@@ -52,12 +62,19 @@ fn regular_files_retries_past_a_windows_pending_delete_sidecar() {
         std::fs::write(state.join(format!("{DATABASE}{suffix}")), "regular").unwrap();
     }
     let wal = state.join(format!("{DATABASE}-wal"));
-    let holder = std::fs::OpenOptions::new()
+    let deleter = std::fs::OpenOptions::new()
         .read(true)
-        .share_mode(FILE_SHARE_DELETE)
+        .share_mode(SHARED_READ_AND_DELETE)
+        .custom_flags(FILE_FLAG_DELETE_ON_CLOSE)
         .open(&wal)
         .unwrap();
-    std::fs::remove_file(&wal).unwrap();
+    let holder = std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(SHARED_READ_AND_DELETE)
+        .open(&wal)
+        .unwrap();
+    // Closing `deleter` sets the pending delete; `holder` alone keeps the name from vanishing.
+    drop(deleter);
     // Confirm this test actually reproduces the race: a direct, non-retrying probe sees it.
     let direct = platform::path_kind(&wal).unwrap_err();
     assert!(platform::transient_file_access(&direct), "{direct}");
