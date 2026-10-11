@@ -75,7 +75,7 @@ async fn live_session_pty_fixture() {
     let saving = Saving {
         state: state.clone(),
         state_id: receipts.state_id().await.unwrap(),
-        producer: store::Producer::current().name,
+        producer: store::Producer::current().name.parse().unwrap(),
     };
     let mut recorder = Recorder::new(
         Some(&saving),

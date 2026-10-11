@@ -730,3 +730,27 @@ fn schema_diagnostics_are_bounded_without_limiting_valid_arrays() {
     assert!(!message.contains("secret\n\t"));
     assert!(message.lines().count() <= 6);
 }
+
+#[test]
+fn plain_templates_validate_at_declaration_and_keep_authored_serialization() {
+    let mut tool = command();
+    tool["protocol"] = json!("plain");
+    tool["input_schema"] = json!({"type":"object", "properties":{"query":{"type":"string"}}});
+    for invalid in ["{unknown}", "{query", "query}", "{}", "{q{query}"] {
+        tool["args"] = json!([invalid]);
+        assert!(
+            serde_json::from_value::<crate::config::CommandTool>(tool.clone()).is_err(),
+            "{invalid}"
+        );
+    }
+    let args = json!([
+        "literal",
+        "{query}",
+        "--query={query}",
+        "{{query}}",
+        "{{\"literal\":true}}"
+    ]);
+    tool["args"] = args.clone();
+    let parsed: crate::config::CommandTool = serde_json::from_value(tool).unwrap();
+    assert_eq!(serde_json::to_value(parsed).unwrap()["args"], args);
+}

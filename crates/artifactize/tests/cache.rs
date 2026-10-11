@@ -557,12 +557,16 @@ fn errors_are_audited_but_never_published() {
 #[test]
 fn force_executes_and_adds_a_newer_record_that_later_runs_reuse_but_dependencies_reuse() {
     let fixture = Fixture::new();
+    let (program, args) = support::os::script_file(Path::new("review.sh"));
+    let mut check = eval("check", "");
+    check["profile"]["command"] = json!(program);
+    check["profile"]["args"] = json!(args);
     let repo = fixture.repo(
         "repo",
         json!({
             "name":"test",
             "fingerprint":fingerprint("forced"),
-            "evals":[eval("check", "sh review.sh")],
+            "evals":[check],
         }),
     );
     fs::write(repo.join("review.sh"), "exit 7").unwrap();

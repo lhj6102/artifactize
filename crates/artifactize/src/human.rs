@@ -60,13 +60,13 @@ pub async fn run_human_tool(
     receipts: &Receipts,
     request: &str,
     reviewer: &crate::types::ReviewerId,
-    tool: &str,
+    tool: &crate::config::ToolName,
     cancellation: CancellationToken,
 ) -> Result<ToolResult, String> {
     let (mut request, _) = receipts.human_request(request, reviewer).await?;
     let config = reconnect(&request)?;
     let registry = Registry::new(&config, &request.eval_id)?;
-    if !registry.list().any(|entry| entry.name == tool) {
+    if !registry.list().any(|entry| &entry.name == tool) {
         return Err("Unknown registered Human tool.".into());
     }
     recheck(

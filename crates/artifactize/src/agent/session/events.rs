@@ -85,7 +85,7 @@ pub struct Header {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ToolDefinition>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub producer: Option<String>,
+    pub producer: Option<crate::types::ProducerId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<crate::types::StateId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

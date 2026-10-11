@@ -251,6 +251,106 @@ fn version_matches_package() {
     assert!(output.stderr.is_empty());
 }
 
+// Only Windows creates or suppresses a console for desktop launches.
+#[cfg(windows)]
+#[test]
+fn redirected_or_no_console_help_never_waits_for_input() {
+    for with_console in [true, false] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+        support::os::console_launch(&mut command, with_console);
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        // Keep the empty input pipe OPEN until the child has exited: an accidental read
+        // cannot succeed on EOF, so completion proves it did not pause. No clock involved.
+        let input = child.stdin.take().unwrap();
+        let output = child.wait_with_output().unwrap();
+        drop(input);
+        assert!(output.status.success(), "{output:?}");
+        assert!(output.stderr.is_empty());
+        let text = String::from_utf8(output.stdout).unwrap();
+        assert!(text.contains("Usage: artifactize"));
+        assert!(!text.contains("Press Enter"));
+    }
+}
+
+#[test]
+fn tools_facade_matches_the_standalone_cli() {
+    let root = support::os::tempdir();
+    fs::write(
+        root.path().join("notes.md"),
+        "# First\nalpha\n# Next\nomega\n",
+    )
+    .unwrap();
+    let standalone = support::os::tools_binary(env!("CARGO_BIN_EXE_artifactize"));
+    // Use the actual trusted program for the help tool, not clap help navigation.
+    let program = standalone.to_str().unwrap();
+    for (args, code) in [
+        (vec!["--version"], 0),
+        (vec!["read", "notes.md"], 0),
+        (vec!["list"], 0),
+        (vec!["glob", "*.md"], 0),
+        (vec!["grep", "--case-insensitive", "ALPHA"], 0),
+        (vec!["section", "notes.md", "First"], 0),
+        (vec!["help", program, "read"], 0),
+        // These repeated flags are target-program arguments, not facade globals.
+        (
+            vec![
+                "help", program, "--json", "--json", "--repo", "one", "--repo", "two",
+            ],
+            1,
+        ),
+        (vec!["read", "../escape"], 1),
+        (vec!["section", "notes.md", "Absent"], 1),
+        (vec!["read"], 2),
+        (vec!["unknown"], 2),
+    ] {
+        let direct = Command::new(standalone)
+            .current_dir(root.path())
+            .args(&args)
+            .output()
+            .unwrap();
+        let facade = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .current_dir(root.path())
+            .arg("tools")
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(direct.status.code(), Some(code), "{args:?}: {direct:?}");
+        assert_eq!(
+            facade.status.code(),
+            direct.status.code(),
+            "{args:?}: {facade:?}"
+        );
+        assert_eq!(facade.stdout, direct.stdout, "{args:?}");
+        if code != 2 {
+            assert_eq!(facade.stderr, direct.stderr, "{args:?}");
+        }
+    }
+    let help = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+        .args(["tools", "--help"])
+        .output()
+        .unwrap();
+    assert!(help.status.success());
+    let text = String::from_utf8(help.stdout).unwrap();
+    for name in [
+        "check", "read", "list", "glob", "grep", "section", "help", "open",
+    ] {
+        assert!(
+            text.lines().any(|line| line.trim_start().starts_with(name)),
+            "{text}"
+        );
+        let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
+            .args(["tools", name, "--help"])
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{name}: {output:?}");
+    }
+}
+
 #[test]
 fn help_is_displayed_without_arguments() {
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))

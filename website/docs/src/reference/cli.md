@@ -9,6 +9,9 @@ Every command accepts the common options `--repo PATH` (default: the current
 directory), `--state-dir PATH` (default: the state home below) and `--json`, before
 or after the subcommand, at most once each; commands that do not read a repository
 or state ignore them, except `monitor` and `review` (which reject `--json`).
+Current-directory tool output is unchanged by `--json`; it is already text or JSON
+as listed below. After the program operand of `tools help`, trailing flags belong
+to that program, not artifactize.
 `SELECTOR` is exactly one of positional `ARTIFACT` or qualified `ARTIFACT/EVAL`,
 `--eval ID`, `--evals CSV`,
 `--artifacts CSV`, `--evals-file PATH`, `--artifacts-file PATH` or `--all`.
@@ -34,6 +37,13 @@ or state ignore them, except `monitor` and `review` (which reject `--json`).
 | `cache show KEY` | `--history` | JSON | 0; 4 missing |
 | `cache rm KEY` | | JSON | 0 |
 | `tools check [EVAL]` | `--eval ID`, `--artifact ID`, `--audience agent\|human`, `--tool NAME`, `--execute`, `--args JSON` | JSON | 0 ready, 1 not |
+| `tools read PATH` | — | UTF-8 text | 0 success, 1 tool error, 2 usage |
+| `tools list [PATH]` | — | JSON | 0 success, 1 tool error, 2 usage |
+| `tools glob PATTERN [PATH]` | — | JSON | 0 success, 1 tool error, 2 usage |
+| `tools grep PATTERN [PATH]` | `--glob GLOB`, `--case-insensitive` | JSON | 0 success, 1 tool error, 2 usage |
+| `tools section PATH HEADING` | — | Markdown text | 0 success, 1 tool error, 2 usage |
+| `tools help PROGRAM [SUBCOMMAND...]` | trailing arguments passed to PROGRAM before `--help` | text | 0 success, 1 tool error, 2 usage |
+| `tools open TARGET` | — | opens default application | 0 success, 1 tool error, 2 usage |
 | `login codex` | sign-in URL on stderr; may read a pasted redirect URL from terminal stdin | text or JSON | 0 |
 | `logout codex` | revokes and removes artifactize's stored tokens; leaves read-only auth files alone | text or JSON | 0 |
 | `remote login URL` | `--share summary\|full` (summary); token on stdin | text or JSON | 0 |
@@ -235,3 +245,13 @@ such as cached upstream evidence in a partial Run. It is not the latest global
 verdict. See [Runs](../concepts/runs-and-status.md#verify-and-runs).
 For the terminal keys and layout, see [Monitor](../guides/human-reviews.md#monitor)
 and [Human reviews](../guides/human-reviews.md#review).
+
+## Current-directory tools
+
+`artifactize tools` also exposes the [standalone scoped tools](builtin-tools.md#artifactize-tools-cli),
+using the same CLI definition and runner as `artifactize-tools`. Paths are relative
+to the current directory (not `--repo`), with `.` the default for `list`, `glob`
+and `grep`; absolute paths, `..` and symlinks are refused. Only `open` accepts
+HTTP(S) URLs. `artifactize tools --help` lists both `check` and these tools, and
+`artifactize tools SUBCOMMAND --help` documents each one. The `help` subcommand
+runs a trusted program with `--help`; it is not help navigation.

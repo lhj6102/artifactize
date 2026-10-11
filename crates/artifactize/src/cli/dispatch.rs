@@ -29,6 +29,9 @@ pub(super) async fn execute(cli: Cli) -> Result<u8, String> {
         Some(Command::Tools {
             command: ToolsCommand::Check(options),
         }) => maintenance::tools(context, options).await,
+        Some(Command::Tools {
+            command: ToolsCommand::Builtin(tool),
+        }) => Ok(artifactize_tools::cli::run(tool).await),
         Some(Command::Login {
             provider: AuthProvider::Codex,
         }) => maintenance::login(context).await,

@@ -308,7 +308,7 @@ impl Scheduler<'_, '_> {
             Some(crate::agent::session::Saving {
                 state: self.run.state_dir.clone(),
                 state_id: self.receipts.state_id().await?,
-                producer: producer.name.clone(),
+                producer: producer.name.parse()?,
             })
         } else {
             None

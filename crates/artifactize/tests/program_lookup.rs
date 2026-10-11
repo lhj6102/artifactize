@@ -186,7 +186,7 @@ fn batch_argument_refusal_is_clear_for_runtime_agent_human_output_and_launch() {
 
 #[test]
 fn standalone_shell_preserves_quoted_argument_fields_including_empty_arguments() {
-    let output = Command::new(support::os::stand_in_bin("sh"))
+    let output = Command::new(support::os::stand_in_shell())
         .args([
             "-c",
             "printf '<%s>\\n' \"$@\"",
@@ -200,7 +200,7 @@ fn standalone_shell_preserves_quoted_argument_fields_including_empty_arguments()
         .unwrap();
     assert!(output.status.success(), "{output:?}");
     assert_eq!(output.stdout, b"<a b>\n<say \"hello\">\n<a&b>\n<>\n");
-    let output = Command::new(support::os::stand_in_bin("sh"))
+    let output = Command::new(support::os::stand_in_shell())
         .args([
             "-c",
             "python3 -c 'import sys; print(len(sys.argv)-1)' \"$@\"",

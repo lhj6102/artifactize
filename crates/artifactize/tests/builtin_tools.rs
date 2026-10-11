@@ -266,8 +266,10 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
     support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
     let config = read_workspace_config(&repo).unwrap();
     let registry = tools::human::Registry::new(&config, "a/review").unwrap();
-    registry.preflight("reference_a").unwrap();
-    let result = registry.call("reference_a", CancellationToken::new()).await;
+    registry.preflight(&"reference_a".parse().unwrap()).unwrap();
+    let result = registry
+        .call(&"reference_a".parse().unwrap(), CancellationToken::new())
+        .await;
     assert!(!result.is_error(), "{result:?}");
     assert_eq!(
         result.content(),
@@ -277,7 +279,7 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
     );
     let outside = tools::human::Registry::for_artifact(&config, "a")
         .unwrap()
-        .call("reference_a", CancellationToken::new())
+        .call(&"reference_a".parse().unwrap(), CancellationToken::new())
         .await;
     assert!(outside.is_error(), "{outside:?}");
 }
@@ -437,7 +439,9 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
     }).to_string()).unwrap();
     let config = read_workspace_config(root.path()).unwrap();
     let registry = tools::human::Registry::new(&config, "notes/review").unwrap();
-    let read = registry.call("read_notes", CancellationToken::new()).await;
+    let read = registry
+        .call(&"read_notes".parse().unwrap(), CancellationToken::new())
+        .await;
     assert!(!read.is_error(), "{read:?}");
     assert_eq!(
         read.content(),
@@ -446,7 +450,7 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
         }]
     );
     let section = registry
-        .call("section_notes", CancellationToken::new())
+        .call(&"section_notes".parse().unwrap(), CancellationToken::new())
         .await;
     assert!(!section.is_error(), "{section:?}");
     assert_eq!(

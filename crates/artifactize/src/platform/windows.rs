@@ -230,7 +230,7 @@ mod tests {
         let edited = directory.path().join("edited.json");
         std::fs::write(&edited, r#"{"approved":true}"#).unwrap();
         // An editor command line with arguments of its own, which copies over what it opens.
-        let command_line = format!("copy /y \"{}\"", edited.display());
+        let command_line = crate::test_os::copy_editor_command(&edited);
         let status = editor(&command_line, &file)
             .stdout(Stdio::null())
             .status()

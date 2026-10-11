@@ -206,6 +206,11 @@ identity!(DefinitionHash, sha256_hex);
 // State UUIDs and legacy session state identifiers share the saved segment domain.
 identity!(StateId, segment);
 identity!(Sha256Digest, sha256_hex);
+// Session locators use the bounded printable user@host label, not a filesystem segment;
+// a producer may contain a slash because locators split their four IDs from the right.
+identity!(ProducerId, |value: &str| (1..=MAX_ID_BYTES)
+    .contains(&value.len())
+    && !value.chars().any(char::is_control));
 
 /// A raw SHA-256 digest: 32 bytes, kept binary for streaming hash composition and byte
 /// slicing. Hex-encode into a [`Sha256Digest`] or [`DigestPrefix`] to store or show it.

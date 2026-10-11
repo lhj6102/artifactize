@@ -34,10 +34,10 @@ pub(crate) fn validate_human_argument(argument: &Argument) -> Result<(), ScopeEr
 
 fn reference_target_or_owner<'a>(
     config: &'a RepoConfig,
-    owner: &str,
-    name: &str,
+    owner: &crate::config::ArtifactName,
+    name: &crate::config::ReferenceName,
 ) -> Result<&'a crate::config::ArtifactName, ScopeError> {
-    if name == "artifactPath" {
+    if name.as_str() == "artifactPath" {
         Ok(&config.artifacts[owner].name)
     } else {
         reference_target(config, owner, name)
@@ -102,7 +102,7 @@ pub(super) fn validate_references(config: &RepoConfig) -> Result<(), super::Conf
 pub(crate) fn resolve_human_argv(
     config: &RepoConfig,
     scope: &Scope<'_>,
-    owner: &str,
+    owner: &crate::config::ArtifactName,
     args: &[Argument],
 ) -> Result<Vec<String>, ScopeError> {
     args.iter()
@@ -126,15 +126,15 @@ pub(crate) fn resolve_human_argv(
 pub(crate) fn builtin_args(
     config: &RepoConfig,
     scope: &Scope<'_>,
-    owner: &str,
+    owner: &crate::config::ArtifactName,
     tool: &crate::config::HumanBuiltinTool,
-) -> Result<(String, Vec<String>), ScopeError> {
+) -> Result<(crate::config::ArtifactName, Vec<String>), ScopeError> {
     let mut args: Vec<String> = tool.args.iter().map(ToString::to_string).collect();
     if tool.builtin == crate::config::Builtin::Help
         || tool.builtin == crate::config::Builtin::Open
             && matches!(&tool.args[0], Argument::Literal(text) if artifactize_tools::builtin::is_url(text))
     {
-        return Ok((owner.into(), args));
+        return Ok((owner.clone(), args));
     }
     let id = if let Argument::Reference { prefix, name, path } = &tool.args[0] {
         if !prefix.is_empty() {
@@ -144,8 +144,8 @@ pub(crate) fn builtin_args(
         }
         let target = reference_target_or_owner(config, owner, name)?;
         super::reference_path(config, target, path)?;
-        args[0] = path.clone();
-        target.as_str()
+        args[0] = path.to_string();
+        target
     } else {
         owner
     };
@@ -154,8 +154,8 @@ pub(crate) fn builtin_args(
         &args,
         &config.root,
         &scope.tool_scope(),
-        &super::ArtifactId::new(id)?,
+        &super::tool_id(id),
     )
     .map_err(ScopeError)?;
-    Ok((id.into(), args))
+    Ok((id.clone(), args))
 }

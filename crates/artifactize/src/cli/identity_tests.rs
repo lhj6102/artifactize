@@ -160,3 +160,27 @@ fn selection_files_validate_ids_before_entering_the_project() {
         ["app", "lib"]
     );
 }
+
+#[test]
+fn human_tool_names_validate_at_the_cli_boundary() {
+    for name in ["", "../escape", "bad/name", "spaces here", "한글"] {
+        let error = Cli::try_parse_from(["artifactize", "request", "tool", "request-valid", name])
+            .unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::ValueValidation);
+    }
+    let Some(Command::Request {
+        command: RequestCommand::Tool { tool, .. },
+    }) = Cli::try_parse_from([
+        "artifactize",
+        "request",
+        "tool",
+        "request-valid",
+        "inspect_owner",
+    ])
+    .unwrap()
+    .command
+    else {
+        panic!("request tool");
+    };
+    assert_eq!(tool.as_str(), "inspect_owner");
+}

@@ -64,7 +64,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Check declared tools, optionally invoking exactly one without a review.
+    /// Run scoped tools or check declared review tools.
+    #[command(disable_help_subcommand = true, version)]
     Tools {
         #[command(subcommand)]
         command: ToolsCommand,
@@ -376,6 +377,8 @@ pub enum CacheCommand {
 pub enum ToolsCommand {
     /// Static preflight by default; --execute opts in to one tool call.
     Check(crate::diagnostics::ToolCheckOptions),
+    #[command(flatten)]
+    Builtin(artifactize_tools::cli::Tool),
 }
 
 fn cancellation_listener() -> Result<
@@ -422,8 +425,23 @@ fn repeated_global(options: &[&str]) -> Option<&'static str> {
 
 pub fn run() -> ExitCode {
     let args: Vec<_> = std::env::args_os().collect();
+    let has_args = args.len() > 1;
+    let parsed = Cli::try_parse_from(&args);
+    // The help tool's trailing arguments belong to the target program, even if they
+    // happen to share names with artifactize's global flags.
+    let tool_args = match &parsed {
+        Ok(Cli {
+            command:
+                Some(Command::Tools {
+                    command: ToolsCommand::Builtin(artifactize_tools::cli::Tool::Help { args }),
+                }),
+            ..
+        }) => args.len(),
+        _ => 0,
+    };
     let options: Vec<_> = args
         .iter()
+        .take(args.len() - tool_args)
         .skip(1)
         .take_while(|arg| *arg != "--")
         .filter_map(|arg| arg.to_str())
@@ -432,7 +450,7 @@ pub fn run() -> ExitCode {
     if let Some(name) = repeated_global(&options) {
         return failure(&format!("{name} cannot be used multiple times."), json);
     }
-    let cli = match Cli::try_parse_from(args) {
+    let cli = match parsed {
         Ok(cli) => cli,
         Err(error) if json && error.use_stderr() => {
             let message = error.to_string();
@@ -476,7 +494,10 @@ pub fn run() -> ExitCode {
         Err(error) => Err(error.to_string()),
     };
     match result {
-        Ok(code) => ExitCode::from(code),
+        Ok(code) => match crate::platform::pause_after_help(has_args) {
+            Ok(()) => ExitCode::from(code),
+            Err(error) => failure(&error.to_string(), json),
+        },
         Err(error) => failure(&error, json),
     }
 }

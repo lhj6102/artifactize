@@ -88,14 +88,28 @@ def generate(args):
             (output / f"{PACKAGE}{suffix}.yaml").write_text(header + json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
+
+def channel_result(channel, reason, *, skipped=False):
+    """Keep existing logs; make expected skips and actual publishes visible in Actions."""
+    message = f"{channel}: {reason}".replace("\r", " ").replace("\n", " ")
+    print(message)
+    if skipped:
+        # Workflow commands escape these characters; do not let API status text inject one.
+        annotation = reason.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::warning title={channel} not published::{annotation}")
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+            summary.write(f"- {message}\n")
+
+
 def channel_enabled(channel, version, env):
     # A normal Homebrew formula follows stable releases, not --HEAD/prereleases.
     if "-" in version:
-        print(f"{channel}: skipped prerelease {version}")
+        channel_result(channel, f"skipped prerelease {version}", skipped=True)
         return False
     missing = [name for name in SECRETS[channel] if not env.get(name)]
     if missing:
-        print(f"{channel}: skipped; missing {', '.join(missing)}")
+        channel_result(channel, f"skipped; missing {', '.join(missing)}", skipped=True)
         return False
     return True
 
@@ -104,10 +118,10 @@ def store_pending(application, status):
     pending = application.get("pendingApplicationSubmission")
     if pending:
         # Never delete someone else's draft, failed submission or certification.
-        print(f"store: skipped pending submission {pending['id']} ({status.get('status', 'unknown')}); certification/draft must finish first")
+        channel_result("store", f"skipped pending submission {pending['id']} ({status.get('status', 'unknown')}); certification/draft must finish first", skipped=True)
         return True
     if not application.get("lastPublishedApplicationSubmission"):
-        print("store: skipped; first submission must be published manually in Partner Center")
+        channel_result("store", "skipped; first submission must be published manually in Partner Center", skipped=True)
         return True
     return False
 
@@ -167,7 +181,7 @@ def submit_store(package, env, api=request_json, upload=None):
                 # HTTPError's usual traceback prints the SAS-bearing upload URL.
                 raise RuntimeError("Store package upload failed; check the pending submission") from None
     api(f"{base}/submissions/{submission_id}/commit", method="POST", token=token)
-    print(f"store: committed submission {submission_id}; certification is asynchronous")
+    channel_result("store", f"committed submission {submission_id}; certification is asynchronous")
 
 
 def publish(args):
@@ -179,7 +193,7 @@ def publish(args):
                 "application": {"lastPublishedApplicationSubmission": {"id": "published"}}, "status": {}}
             if store_pending(fixture["application"], fixture["status"]):
                 return
-        print(f"{args.channel}: dry-run would publish {args.version}; no network or writes")
+        channel_result(args.channel, f"dry-run would publish {args.version}; no network or writes")
         return
     if args.channel == "store":
         submit_store(Path(args.package), os.environ)
@@ -196,19 +210,23 @@ def publish(args):
                             ["add", "Formula/artifactize.rb"]):
                 subprocess.run(["git", "-C", tmp, *command], check=True)
             if subprocess.run(["git", "-C", tmp, "diff", "--cached", "--quiet"]).returncode == 0:
-                print("homebrew: formula already current")
+                channel_result("homebrew", "formula already current", skipped=True)
                 return
             subprocess.run(["git", "-C", tmp, "commit", "-m", f"artifactize {args.version}"], check=True)
             # gh supplies credentials without putting the PAT in git URLs/logs/config.
             subprocess.run(["gh", "auth", "setup-git"], env=env, check=True)
             subprocess.run(["git", "-C", tmp, "push"], env=env, check=True)
+            channel_result("homebrew", f"published formula {args.version} to lhj6102/homebrew-tap")
     else:
         # Submit the generated set, not `update`: archive-root names change per version.
         result = subprocess.run(["wingetcreate", "submit", "--no-open", "--token", os.environ["WINGET_TOKEN"],
-                                 str(Path(args.manifests).resolve())])
+                                 str(Path(args.manifests).resolve())], capture_output=True, text=True)
         if result.returncode:
             # CalledProcessError would include argv, including the credential.
             raise RuntimeError(f"wingetcreate submission failed: exit {result.returncode}")
+        # Never echo creator output wholesale: the command was passed a credential.
+        pull = re.search(r"https://github\.com/microsoft/winget-pkgs/pull/[0-9]+", result.stdout)
+        channel_result("winget", f"PR {pull.group()}" if pull else f"submitted {args.version} through wingetcreate")
 
 
 def main():

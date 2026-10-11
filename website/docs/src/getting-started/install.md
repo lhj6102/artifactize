@@ -1,7 +1,8 @@
 # Install artifactize
 
-artifactize installs two commands: `artifactize` and `artifactize-tools`, its
-[built-in tools](../reference/builtin-tools.md#artifactize-tools-cli) as a standalone CLI.
+Every install provides `artifactize`, with its [built-in tools](../reference/builtin-tools.md#artifactize-tools-cli)
+available as `artifactize tools`. Non-Store channels also provide those tools as the
+standalone `artifactize-tools` command.
 Every [GitHub release](https://github.com/lhj6102/artifactize/releases) attaches
 prebuilt binaries for Linux (statically linked, x86_64 and aarch64), macOS (Apple
 silicon and Intel) and Windows (x64), each archive with a SHA-256 checksum. Stable
@@ -27,7 +28,8 @@ Only `cargo install` needs a Rust toolchain: Rust 1.95 or later, from
 
 ## Install
 
-Pick your OS. Each channel installs both commands; install from one channel only.
+Pick your OS. Install from one channel only; the Store uses the `artifactize tools`
+facade, while other channels also install the standalone tools command.
 
 ### Linux
 
@@ -119,9 +121,14 @@ or from a terminal:
 winget install 9PB6W4LL165D --source msstore
 ```
 
-Microsoft signs the Store version, and the Store keeps it up to date. Both commands
-work from any terminal as app execution aliases. It uses the same state directory,
-`%LOCALAPPDATA%\artifactize`, as the other Windows installs.
+Microsoft signs the Store version, and the Store keeps it up to date. The Store
+package provides `artifactize` as an app execution alias; run its tools as
+`artifactize tools read FILE`, `artifactize tools list`, and so on. Other channels
+also provide the standalone `artifactize-tools` command. There is one Start menu
+entry, **Artifactize**. Launching it without arguments shows help and a hint to open
+Windows Terminal or PowerShell, then waits for Enter when it owns the console
+alone; terminal launches and redirected input/output never pause. The Store uses
+the same state directory, `%LOCALAPPDATA%\artifactize`, as the other Windows installs.
 
 **Install script.** In PowerShell (Windows PowerShell 5.1 or PowerShell 7), without
 administrator rights:
@@ -275,7 +282,7 @@ artifactize logout codex              # if you signed in with Codex
 artifactize remote logout             # if you signed in to a review store
 ```
 
-Then remove both commands the way you installed them:
+Then remove the commands the way you installed them:
 
 ```sh
 rm ~/.local/bin/artifactize ~/.local/bin/artifactize-tools   # install.sh (or your ARTIFACTIZE_INSTALL_DIR)

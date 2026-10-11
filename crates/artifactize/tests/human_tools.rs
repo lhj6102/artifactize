@@ -44,7 +44,7 @@ async fn call(repo: &Path) -> ToolResult {
     let config = read_workspace_config(repo).unwrap();
     Registry::new(&config, "a/review")
         .unwrap()
-        .call("inspect_a", CancellationToken::new())
+        .call(&"inspect_a".parse().unwrap(), CancellationToken::new())
         .await
 }
 
@@ -89,8 +89,10 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
         assert!(parse(invalid.clone()).is_err(), "{invalid}");
     }
     assert!(
-        parse(json!({"metadata":{"description":"Old"},"script":{"command":"true","args":[]}}))
-            .is_err()
+        parse(
+            json!({"metadata":{"description":"Old"},"script":{"command":"noop-fixture","args":[]}})
+        )
+        .is_err()
     );
     let repo = support::os::tempdir();
     write_artifact(
@@ -167,7 +169,7 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
     for unknown in ["read_a", "inspect_c"] {
         assert!(
             registry
-                .call(unknown, CancellationToken::new())
+                .call(&unknown.parse().unwrap(), CancellationToken::new())
                 .await
                 .is_error()
         );
@@ -238,7 +240,7 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     support::os::link_dir(&support::os::temp_root(), &input);
     assert!(
         registry
-            .call("inspect_a", CancellationToken::new())
+            .call(&"inspect_a".parse().unwrap(), CancellationToken::new())
             .await
             .is_error()
     );
@@ -356,7 +358,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     assert!(
         Registry::new(&config, "a/review")
             .unwrap()
-            .call("inspect_a", cancellation)
+            .call(&"inspect_a".parse().unwrap(), cancellation)
             .await
             .is_error()
     );
@@ -390,6 +392,8 @@ impl Drop for Launched {
 #[test]
 fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
     let repo = support::os::tempdir();
+    // The parent owns the release: exiting the launcher probe must not end its child.
+    let _release = support::os::Release(repo.path().to_path_buf());
     // Build the Windows stand-ins before the probe needs them.
     support::os::shell();
     let mut command = Command::new(std::env::current_exe().unwrap());
@@ -486,8 +490,6 @@ async fn human_environment_and_launch_probe() {
             ),
         ],
     );
-    // The launched program stays up until the test ends.
-    let _release = support::os::Release(repo.to_path_buf());
     support::declaration::write(repo.join("index.artf"), declaration.to_string()).unwrap();
     let config = read_workspace_config(repo).unwrap();
     assert!(Registry::new(&config, "a/agent").is_err());

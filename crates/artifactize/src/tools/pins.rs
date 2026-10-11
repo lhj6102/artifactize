@@ -11,9 +11,9 @@ use crate::{
     platform, scope,
 };
 
-/// Bound traversal and retained digest metadata for a tool's executable directory pin.
+/// Bound retained file/link digest metadata, not directory visits, for an executable pin.
 const MAX_ENTRIES: usize = 10_000;
-/// Bound total pinning I/O independently of entry count, as for content fingerprints.
+/// Bound file-content hashing I/O independently of retained entry count.
 const MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Pins by registered tool name, then by declared workspace-relative path.
@@ -23,10 +23,11 @@ pub type Pins = BTreeMap<
 >;
 
 /// Hash every `executionPaths` entry of the Agent eval's command tools, off the async runtime.
-/// A file pins to the SHA-256 of its bytes; a directory to the SHA-256 over each entry's
+/// A file pins to the SHA-256 of its bytes; a directory to the SHA-256 over each file/link's
 /// relative path and digest, in path order, where a symlink inside it contributes its target
-/// without being followed. A missing or unreadable path, a special file or a directory over
-/// 10,000 entries or 1 GiB is an error.
+/// without being followed. Missing/unreadable paths, special files, more than 1 GiB
+/// of file bytes, or any further entry after 10,000 retained files/links are errors.
+/// Directories are traversed but do not increment the counter or contribute a digest.
 pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins, String> {
     let registry = Registry::new(config, eval_id)?;
     let mut resolved = Vec::new();
@@ -49,9 +50,7 @@ pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins,
             for (name, path, absolute) in resolved {
                 let digest = pin(&absolute)
                     .map_err(|e| format!("Tool {name} executionPaths {path}: {e}"))?;
-                pins.entry(name)
-                    .or_default()
-                    .insert(path, digest.parse().expect("SHA-256 pin digest"));
+                pins.entry(name).or_default().insert(path, digest);
             }
             Ok(pins)
         })
@@ -60,7 +59,7 @@ pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins,
     .map_err(|e| e.to_string())?
 }
 
-fn pin(path: &Path) -> Result<String, String> {
+fn pin(path: &Path) -> Result<crate::types::Sha256Digest, String> {
     let kind = platform::path_kind(path).map_err(|e| e.to_string())?;
     let mut bytes = 0;
     if kind == platform::FileKind::File {
@@ -155,6 +154,11 @@ fn hash_file(mut file: File, bytes: &mut u64) -> Result<crate::types::Sha256Byte
     }
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+fn hex(bytes: &[u8]) -> crate::types::Sha256Digest {
+    bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()
+        .parse()
+        .expect("SHA-256 pin digest")
 }

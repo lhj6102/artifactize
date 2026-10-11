@@ -9,9 +9,11 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import zipfile
+import xml.etree.ElementTree as ET
 
 sys.dont_write_bytecode = True
 SCRIPT = Path(__file__).with_name("channels.py")
@@ -21,6 +23,25 @@ spec.loader.exec_module(channels)
 
 
 class ChannelsTest(unittest.TestCase):
+    def test_store_manifest_has_one_visible_facade_application(self):
+        manifest = ET.parse(SCRIPT.parent.parent / "packaging/AppxManifest.xml")
+        ns = {"f": "http://schemas.microsoft.com/appx/manifest/foundation/windows10",
+              "uap": "http://schemas.microsoft.com/appx/manifest/uap/windows10",
+              "uap5": "http://schemas.microsoft.com/appx/manifest/uap/windows10/5",
+              "desktop4": "http://schemas.microsoft.com/appx/manifest/desktop/windows10/4"}
+        applications = manifest.findall("f:Applications/f:Application", ns)
+        self.assertEqual(len(applications), 1)
+        app = applications[0]
+        self.assertEqual((app.get("Id"), app.get("Executable")), ("Artifactize", "artifactize.exe"))
+        self.assertNotEqual(app.find("uap:VisualElements", ns).get("AppListEntry"), "none")
+        extensions = app.findall("f:Extensions/uap5:Extension", ns)
+        self.assertEqual(len(extensions), 1)
+        self.assertEqual(extensions[0].get("Category"), "windows.appExecutionAlias")
+        self.assertEqual(extensions[0].get("Executable"), "artifactize.exe")
+        alias = extensions[0].find("uap5:AppExecutionAlias", ns)
+        self.assertEqual(alias.get("{" + ns["desktop4"] + "}Subsystem"), "console")
+        self.assertEqual([item.get("Alias") for item in alias], ["artifactize.exe"])
+
     def dry_run(self, channel, version, env, fixture=None):
         command = [sys.executable, "-I", str(SCRIPT), "publish", channel, "--version", version, "--dry-run"]
         with tempfile.TemporaryDirectory() as tmp:
@@ -29,8 +50,80 @@ class ChannelsTest(unittest.TestCase):
                 path.write_text(json.dumps(fixture))
                 command += ["--store-status", str(path)]
             result = subprocess.run(command, env={**os.environ, **env}, text=True, capture_output=True, check=True)
-        print(result.stdout, end="")
+        # Assert fixture annotations, but do not turn them into warnings on the test job.
+        print("\n".join(line for line in result.stdout.splitlines() if not line.startswith("::")))
         return result.stdout
+
+    def test_every_skip_is_annotated_and_summarized_without_changing_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = Path(tmp) / "summary"
+            with patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary)}):
+                for channel, names in channels.SECRETS.items():
+                    empty = {name: "" for name in names}
+                    for version, reason in [("1.2.3-alpha", "skipped prerelease"), ("1.2.3", "missing")]:
+                        output = self.dry_run(channel, version, empty)
+                        self.assertIn(f"::warning title={channel} not published::", output)
+                        self.assertIn(reason, output)
+                enabled = {name: "fixture-not-a-credential" for name in channels.SECRETS["store"]}
+                for application in [{}, {"pendingApplicationSubmission": {"id": "draft"}}]:
+                    output = self.dry_run("store", "1.2.3", enabled,
+                                          {"application": application, "status": {"status": "PendingCommit"}})
+                    self.assertIn("::warning title=store not published::", output)
+                lines = summary.read_text().splitlines()
+                self.assertEqual(len(lines), 8)
+                self.assertTrue(all("skipped" in line for line in lines))
+                self.assertNotIn("fixture-not-a-credential", summary.read_text())
+
+    def test_homebrew_current_skip_and_publish_have_distinct_run_page_results(self):
+        args = SimpleNamespace(channel="homebrew", version="1.2.3", dry_run=False)
+        with tempfile.TemporaryDirectory() as tmp:
+            args.formula = str(Path(tmp) / "artifactize.rb")
+            Path(args.formula).write_text("fixture formula")
+            summary = Path(tmp) / "summary"
+            for current in [True, False]:
+                def command(argv, **kwargs):
+                    return SimpleNamespace(returncode=0 if current or "diff" not in argv else 1)
+                with patch.dict(os.environ, {"HOMEBREW_TAP_TOKEN": "fixture-secret",
+                                             "GITHUB_STEP_SUMMARY": str(summary)}):
+                    with patch("subprocess.run", side_effect=command):
+                        with contextlib.redirect_stdout(io.StringIO()) as output:
+                            channels.publish(args)
+                text = output.getvalue()
+                if current:
+                    self.assertIn("homebrew: formula already current", text)
+                    self.assertIn("::warning title=homebrew not published::", text)
+                else:
+                    self.assertIn("homebrew: published formula 1.2.3", text)
+                    self.assertNotIn("::warning", text)
+                self.assertNotIn("fixture-secret", text)
+            self.assertEqual(len(summary.read_text().splitlines()), 2)
+            self.assertIn("formula already current", summary.read_text())
+            self.assertIn("published formula 1.2.3", summary.read_text())
+
+    def test_winget_success_summarizes_only_the_pr_url_not_creator_credentials(self):
+        args = SimpleNamespace(channel="winget", version="1.2.3", dry_run=False, manifests="fixture")
+        pull = "https://github.com/microsoft/winget-pkgs/pull/123"
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = Path(tmp) / "summary"
+            with patch.dict(os.environ, {"WINGET_TOKEN": "fixture-secret", "GITHUB_STEP_SUMMARY": str(summary)}):
+                with patch("subprocess.run", return_value=SimpleNamespace(returncode=0, stdout=f"fixture-secret {pull}")):
+                    with contextlib.redirect_stdout(io.StringIO()) as output:
+                        channels.publish(args)
+            self.assertIn(f"winget: PR {pull}", output.getvalue())
+            self.assertNotIn("::warning", output.getvalue())
+            self.assertNotIn("fixture-secret", output.getvalue())
+            self.assertEqual(summary.read_text(), f"- winget: PR {pull}\n")
+
+    def test_api_status_text_cannot_inject_a_workflow_command_or_summary_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            summary = Path(tmp) / "summary"
+            with patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary)}):
+                with contextlib.redirect_stdout(io.StringIO()) as output:
+                    channels.store_pending({"pendingApplicationSubmission": {"id": "draft"}},
+                                           {"status": "Pending%Commit\r\n::notice::fixture"})
+            self.assertIn("Pending%25Commit%0D%0A::notice::fixture", output.getvalue())
+            self.assertFalse(any(line.startswith("::notice") for line in output.getvalue().splitlines()))
+            self.assertEqual(len(summary.read_text().splitlines()), 1)
 
     def test_prereleases_and_missing_secrets_skip(self):
         for channel, names in channels.SECRETS.items():
@@ -109,8 +202,12 @@ class ChannelsTest(unittest.TestCase):
             package = Path(tmp) / "new.msix"
             package.write_bytes(b"test msix")
             env = {name: "fixture" for name in channels.SECRETS["store"]}
-            with patch("urllib.request.urlopen", return_value=io.BytesIO(b'{"access_token":"fixture"}')):
-                channels.submit_store(package, env, api=api, upload=upload)
+            summary = Path(tmp) / "summary"
+            with patch.dict(os.environ, {"GITHUB_STEP_SUMMARY": str(summary)}):
+                with patch("urllib.request.urlopen", return_value=io.BytesIO(b'{"access_token":"fixture"}')):
+                    channels.submit_store(package, env, api=api, upload=upload)
+            self.assertIn("store: committed submission new", summary.read_text())
+            self.assertNotIn("https://upload.invalid", summary.read_text())
         self.assertEqual([call[1] for call in calls], ["GET", "POST", "PUT", "PUT", "POST"])
         update = calls[2][2]
         self.assertEqual(update["listings"], {"en-us": {"description": "published listing"}})

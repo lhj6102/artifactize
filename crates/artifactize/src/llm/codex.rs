@@ -78,7 +78,7 @@ pub fn user_agent() -> String {
 }
 
 pub struct Codex {
-    model: String,
+    model: crate::config::ModelId,
     base: String,
     state: PathBuf,
     repo: PathBuf,
@@ -87,13 +87,13 @@ pub struct Codex {
 
 impl Codex {
     pub(super) fn new(
-        model: &str,
+        model: &crate::config::ModelId,
         base: String,
         state: &Path,
         repo: &Path,
     ) -> Result<Self, String> {
         Ok(Self {
-            model: model.into(),
+            model: model.clone(),
             base,
             state: state.into(),
             repo: repo.into(),
@@ -124,7 +124,7 @@ impl Codex {
         });
         Ok(config
             .connect(super::delivery::Tap::new(self.http.clone()))
-            .responses(&self.model))
+            .responses(self.model.as_str()))
     }
 }
 

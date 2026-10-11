@@ -96,7 +96,9 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
                 .query_map([history], |row| {
                     let id: crate::types::ExecutionId = row.get(2)?;
                     let data: String = row.get(15)?;
-                    if super::unreadable::evidence::<Execution>("execution", &data).is_none() { return Ok(None); }
+                    if super::unreadable::evidence::<Execution>("execution", &data).is_none() {
+                        return Ok(None);
+                    }
                     Ok(Some(Entry {
                         key: row.get(0)?,
                         eval_def_hash: row.get(1)?,

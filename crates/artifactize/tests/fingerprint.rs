@@ -511,7 +511,7 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
             json!({
                 "name":name,
                 "fingerprint":{
-                    "script":{"command":shell(),"args":["-c",script,"sh",name,markers]},
+                    "script":{"command":shell(),"args":["-c",script,"fingerprint",name,markers]},
                 },
                 "evals":[eval("check", "exit 0")],
             }),
@@ -623,9 +623,12 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
         // Would run long; it comes after alpha's failure, so it is cancelled.
         (
             "beta",
-            "echo $$ > pid; while [ ! -e release ]; do sleep 0.01; done; echo beta",
+            "echo $$ > pid; touch ready; while [ ! -e release ]; do sleep 0.01; done; echo beta",
         ),
-        ("gamma", "touch finished; exit 4"),
+        (
+            "gamma",
+            "while [ ! -e ../beta/ready ]; do sleep 0.01; done; touch finished; exit 4",
+        ),
     ] {
         fixture.write(
             &format!("{name}/index.artf"),
@@ -659,10 +662,13 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
         support::os::gone(pid),
         "later fingerprint was not cancelled"
     );
-    // All three started at once.
+    // Gamma releases alpha only after beta has published its PID/start barrier.
     for name in ["alpha", "beta", "gamma"] {
         assert!(Path::new(&format!("{}.{name}", started.display())).exists());
     }
+    // Repeat the same handshake for verify instead of inheriting status's markers.
+    fs::remove_file(fixture.repo.join("beta/ready")).unwrap();
+    fs::remove_file(fixture.repo.join("gamma/finished")).unwrap();
     let run = fixture
         .command()
         .args(["verify", "--all"])

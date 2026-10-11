@@ -118,9 +118,10 @@ impl<'a> Registry<'a> {
     }
 
     pub fn for_artifact(config: &'a RepoConfig, artifact_id: &str) -> Result<Self, String> {
+        let artifact_id: crate::config::ArtifactName = artifact_id.parse()?;
         Self::with_scope(
             config,
-            scope::artifact_scope(config, &[artifact_id]).map_err(|e| e.to_string())?,
+            scope::artifact_scope(config, &[&artifact_id]).map_err(|e| e.to_string())?,
         )
     }
 
@@ -289,7 +290,12 @@ impl<'a> Registry<'a> {
         .unwrap_or_else(|_| ToolResult::error("Agent tool execution failed."))
     }
 
-    fn prepare(&self, owner: &str, tool: &CommandTool, args: &Value) -> Result<Invocation, ()> {
+    fn prepare(
+        &self,
+        owner: &crate::config::ArtifactName,
+        tool: &CommandTool,
+        args: &Value,
+    ) -> Result<Invocation, ()> {
         let cwd = scope::scoped_path(&self.config.root, self.config.artifacts[owner].folder())
             .map_err(|_| ())?;
         let program = executable(&self.config.root, &self.scope, owner, &tool.command)?;
@@ -298,10 +304,10 @@ impl<'a> Registry<'a> {
                 scope::resolve_argv(self.config, &self.scope, owner, &tool.args).map_err(|_| ())?
             }
             ToolProtocol::Plain => tool
-                .args
+                .plain_args
                 .iter()
                 .map(|arg| {
-                    plain_argument(&arg.to_string(), |name| {
+                    arg.expand(|name| {
                         if tool.input_schema["properties"].get(name).is_none() {
                             return Err("Undeclared plain tool placeholder.".into());
                         }
@@ -365,14 +371,19 @@ impl<'a> Registry<'a> {
     }
 }
 
-fn executable(root: &Path, scope: &Scope<'_>, owner: &str, command: &str) -> Result<OsString, ()> {
+fn executable(
+    root: &Path,
+    scope: &Scope<'_>,
+    owner: &crate::config::ArtifactName,
+    command: &str,
+) -> Result<OsString, ()> {
     scope::executable(root, scope, owner, command).map_err(|_| ())
 }
 
 fn preflight_executable(
     root: &Path,
     scope: &Scope<'_>,
-    owner: &str,
+    owner: &crate::config::ArtifactName,
     command: &str,
 ) -> Result<(), String> {
     let program = executable(root, scope, owner, command)
@@ -458,39 +469,6 @@ async fn invoke(
         return ToolResult::error("Agent tool cleanup failed.");
     }
     result.unwrap_or_else(ToolResult::error)
-}
-
-/// Single-pass expansion: substituted values are never interpreted as templates.
-/// Doubled braces represent literal braces in a plain argv template.
-pub(crate) fn plain_argument(
-    template: &str,
-    mut value: impl FnMut(&str) -> Result<String, String>,
-) -> Result<String, String> {
-    let mut result = String::new();
-    let mut rest = template;
-    while !rest.is_empty() {
-        if rest.starts_with("{{") || rest.starts_with("}}") {
-            result.push(rest.chars().next().unwrap());
-            rest = &rest[2..];
-        } else if let Some(tail) = rest.strip_prefix('{') {
-            let (name, tail) = tail
-                .split_once('}')
-                .ok_or("Unclosed plain tool placeholder.")?;
-            if name.is_empty() || name.contains('{') {
-                return Err("Invalid plain tool placeholder.".into());
-            }
-            result.push_str(&value(name)?);
-            rest = tail;
-        } else {
-            let character = rest.chars().next().unwrap();
-            if character == '}' {
-                return Err("Unmatched plain tool closing brace.".into());
-            }
-            result.push(character);
-            rest = &rest[character.len_utf8()..];
-        }
-    }
-    Ok(result)
 }
 
 #[cfg(test)]

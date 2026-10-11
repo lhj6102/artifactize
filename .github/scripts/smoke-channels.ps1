@@ -70,14 +70,25 @@ try {
         $installed = Get-AppxPackage -Name $packageName
         if ($installed.PackageFamilyName -ne 'lhj6102.Artifactize_ayfzfzbsv48sg') { throw 'Wrong package family' }
         $aliases = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'
-        foreach ($command in @('artifactize', 'artifactize-tools')) {
-            $alias = Join-Path $aliases "$command.exe"
-            for ($i = 0; -not (Test-Path $alias); $i++) {
-                if ($i -ge 50) { throw "MSIX alias $command missing" }; Start-Sleep -Milliseconds 200
-            }
-            $out = & $alias --version
-            if ($LASTEXITCODE -ne 0 -or $out -ne "$command $Version") { throw "MSIX alias $command failed: $out" }
+        $alias = Join-Path $aliases 'artifactize.exe'
+        for ($i = 0; -not (Test-Path $alias); $i++) {
+            if ($i -ge 50) { throw 'MSIX artifactize alias missing' }; Start-Sleep -Milliseconds 200
         }
+        $out = & $alias --version
+        if ($LASTEXITCODE -ne 0 -or $out -ne "artifactize $Version") { throw "MSIX alias failed: $out" }
+        $manifest = Get-AppxPackageManifest -Package $installed
+        $applications = @($manifest.Package.Applications.Application)
+        if ($applications.Count -ne 1 -or $applications[0].Id -ne 'Artifactize') { throw 'MSIX must have one visible application' }
+        if (Test-Path (Join-Path $installed.InstallLocation 'artifactize-tools.exe')) { throw 'MSIX must use the facade, not a standalone tools executable' }
+        $sample = Join-Path $root 'sample.txt'
+        [IO.File]::WriteAllText($sample, 'artifactize MSIX tools seam')
+        Push-Location $root
+        try {
+            $out = & $alias tools read sample.txt
+            if ($LASTEXITCODE -ne 0 -or $out -ne 'artifactize MSIX tools seam') { throw "MSIX tools facade failed: $out" }
+            & $alias tools read ../escape
+            if ($LASTEXITCODE -ne 1) { throw 'MSIX tools facade must refuse scope escapes' }
+        } finally { Pop-Location }
         # The un-packaged shell inspects the real directory after a packaged alias writes.
         # Clear overrides, not LOCALAPPDATA: test the actual Windows known folder.
         Remove-Item Env:ARTIFACTIZE_STATE_HOME, Env:XDG_STATE_HOME -ErrorAction SilentlyContinue
@@ -91,7 +102,7 @@ try {
         $private = Join-Path $env:LOCALAPPDATA "Packages\$($installed.PackageFamilyName)"
         $redirected = Get-ChildItem $private -Recurse -Filter '*.sqlite' -ErrorAction SilentlyContinue
         if ($redirected) { throw "State was virtualized: $($redirected.FullName)" }
-        Write-Host 'MSIX aliases and unvirtualized state passed'
+        Write-Host 'MSIX alias, tools facade and unvirtualized state passed'
     }
 } finally {
     if ($Channel -eq 'msix') { Get-AppxPackage -Name $packageName | Remove-AppxPackage }

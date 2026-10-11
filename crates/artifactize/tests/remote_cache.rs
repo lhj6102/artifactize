@@ -95,6 +95,27 @@ impl Server {
             .collect()
     }
 
+    /// Seed completion ordering, not elapsed wall-clock time, for a stored fixture.
+    fn completed_at(&self, execution: &str, at: &str) {
+        let db = Connection::open(self.state.join("review-store.sqlite")).unwrap();
+        let data: String = db
+            .query_row(
+                "SELECT data FROM entries WHERE execution_id=?",
+                [execution],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let data = completion_fixture(&data, at);
+        assert_eq!(
+            db.execute(
+                "UPDATE entries SET completed_at=?,bytes=?,data=? WHERE execution_id=?",
+                rusqlite::params![at, data.len() as i64, data, execution]
+            )
+            .unwrap(),
+            1
+        );
+    }
+
     fn stop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -154,6 +175,27 @@ impl Machine {
         serde_json::from_str(&stdout).unwrap()
     }
 
+    /// Keep cache metadata and its saved execution wire timestamp in agreement.
+    fn completed_at(&self, execution: &str, at: &str) {
+        let db = Connection::open(self.state.join("state.sqlite")).unwrap();
+        let data: String = db
+            .query_row(
+                "SELECT data FROM executions WHERE id=?",
+                [execution],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let data = completion_fixture(&data, at);
+        assert_eq!(
+            db.execute(
+                "UPDATE executions SET completed_at=?,bytes=?,data=? WHERE id=?",
+                rusqlite::params![at, data.len() as i64, data, execution]
+            )
+            .unwrap(),
+            1
+        );
+    }
+
     /// Claim and submit the Human request that `run` recorded; returns stderr.
     fn sign(&self, repo: &Path, run: &Value) -> String {
         let id = run["requests"][0]["id"].as_str().unwrap();
@@ -169,6 +211,26 @@ impl Machine {
         ];
         self.run(repo, &[&submit[..], &["--json"]].concat(), 0).1
     }
+}
+
+/// Deterministic runtime fixture times; no verdict, approval or execution content changes.
+fn completion_fixture(data: &str, at: &str) -> String {
+    fn stamp(record: &mut Value, at: &str) {
+        record["startedAt"] = json!("2000-01-01T00:00:00.000000000Z");
+        record["completedAt"] = json!(at);
+        if let Some(provenance) = record.get_mut("provenance") {
+            provenance["completedAt"] = json!(at);
+        }
+        if let Some(execution) = record
+            .get_mut("execution")
+            .filter(|value| value.is_object())
+        {
+            stamp(execution, at);
+        }
+    }
+    let mut record: Value = serde_json::from_str(data).unwrap();
+    stamp(&mut record, at);
+    serde_json::to_string(&record).unwrap()
 }
 
 /// Text stdout and stderr, without verify's `Started RUN_ID` announcement.
@@ -535,6 +597,10 @@ fn remote_push_publishes_results_produced_offline_once() {
 
 #[test]
 fn the_newer_record_wins_across_local_history_and_the_store() {
+    // Explicitly ordered fixture timestamps make clock resolution and scheduling irrelevant.
+    const FIRST: &str = "2000-01-01T00:00:01.000000000Z";
+    const SECOND: &str = "2000-01-01T00:00:02.000000000Z";
+    const THIRD: &str = "2000-01-01T00:00:03.000000000Z";
     let root = support::os::tempdir();
     let server = Server::start(root.path());
     let alice_token = server.token("alice-laptop", "read,publish");
@@ -579,6 +645,9 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     };
     let (repo_a, repo_b, repo_c) = (repo("a"), repo("b"), repo("c"));
     let first = alice.json(&repo_a, &["verify", "--all"], 0);
+    let alice_record = first["requests"][0]["executionId"].as_str().unwrap();
+    alice.completed_at(alice_record, FIRST);
+    server.completed_at(alice_record, FIRST);
     let key = first["requests"][0]["key"].as_str().unwrap().to_owned();
     assert_eq!(server.entries().len(), 1);
     let used = server.last_used();
@@ -587,12 +656,14 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     // changes, and its RED is published as a newer record without `remote push`.
     fs::write(repo_b.join("broken"), "").unwrap();
     let forced = bob.json(&repo_b, &["verify", "--all", "--force"], 1);
+    let bob_record = forced["requests"][0]["executionId"].as_str().unwrap();
+    bob.completed_at(bob_record, SECOND);
+    server.completed_at(bob_record, SECOND);
     assert_eq!(forced["requests"][0]["key"], key.as_str());
     let entries = server.entries();
     assert_eq!(entries.len(), 2);
     assert_eq!(entries[1].0, "bob-laptop");
     assert_eq!(entries[1].1["verdict"], "RED");
-    let alice_record = first["requests"][0]["executionId"].as_str().unwrap();
     let last_use = |used: &[(String, String)]| {
         used.iter()
             .find(|(id, _)| id == alice_record)
@@ -631,6 +702,7 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
 
     // A newer local record beats an older store one: alice reviews again offline.
     let local = offline.json(&repo_a, &["verify", "--all", "--force"], 0);
+    offline.completed_at(local["requests"][0]["executionId"].as_str().unwrap(), THIRD);
     assert_eq!(server.entries().len(), 2);
     let status = alice.json(&repo_a, &["status"], 0);
     assert_eq!(status["evals"][0]["state"], "PASS");

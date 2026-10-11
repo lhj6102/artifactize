@@ -18,6 +18,7 @@ mod discovery;
 mod location;
 pub use discovery::read_workspace_config;
 use discovery::{logical_join, read_regular_text};
+mod plain;
 mod stored;
 mod tools;
 pub(crate) mod validation;

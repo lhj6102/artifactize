@@ -26,6 +26,8 @@ use time::OffsetDateTime;
 const EXPANDED: u16 = 70;
 /// A bordered box never shrinks below one line of text between its borders.
 const MIN_BOX: u16 = 3;
+/// Reserve at least half of the tools pane for the selected tool's output.
+const TOOL_LIST_HEIGHT_DIVISOR: u16 = 2;
 /// Instruction rows kept above the tools and fields once the review is claimed or completed.
 const FOLDED: u16 = 2;
 /// Width shares of the tools column with and without focus.
@@ -713,7 +715,8 @@ impl Review {
                 rows.push((name, index));
             }
         }
-        let height = (rows.len().max(1) as u16 + 2).min((area.height / 2).max(MIN_BOX));
+        let height = (rows.len().max(1) as u16 + 2)
+            .min((area.height / TOOL_LIST_HEIGHT_DIVISOR).max(MIN_BOX));
         let [list, output] =
             Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);
         let block = Block::bordered()

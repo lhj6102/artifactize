@@ -209,7 +209,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             &receipts,
             id,
             &"bob".parse().unwrap(),
-            "inspect_review",
+            &"inspect_review".parse().unwrap(),
             CancellationToken::new()
         )
         .await
@@ -231,7 +231,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             &receipts,
             id,
             &"alice".parse().unwrap(),
-            "read_review",
+            &"read_review".parse().unwrap(),
             CancellationToken::new()
         )
         .await
@@ -241,7 +241,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         &receipts,
         id,
         &"alice".parse().unwrap(),
-        "inspect_review",
+        &"inspect_review".parse().unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -251,7 +251,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
         &receipts,
         id,
         &"alice".parse().unwrap(),
-        "fail_review",
+        &"fail_review".parse().unwrap(),
         CancellationToken::new(),
     )
     .await
@@ -316,7 +316,7 @@ async fn claimant_only_tools_and_correctable_schema_errors_then_exactly_once_sub
             &receipts,
             id,
             &"alice".parse().unwrap(),
-            "inspect_review",
+            &"inspect_review".parse().unwrap(),
             CancellationToken::new()
         )
         .await
@@ -362,7 +362,7 @@ async fn fingerprint_change_before_submit_or_tool_settles_error_without_publishi
                 &receipts,
                 id,
                 &"alice".parse().unwrap(),
-                "inspect_review",
+                &"inspect_review".parse().unwrap(),
                 CancellationToken::new(),
             )
             .await
@@ -430,7 +430,7 @@ async fn scoped_declaration_changes_and_new_children_refuse_reconnection() {
             &receipts,
             id,
             &"alice".parse().unwrap(),
-            "inspect_review",
+            &"inspect_review".parse().unwrap(),
             CancellationToken::new()
         )
         .await
@@ -556,7 +556,7 @@ async fn cross_repo_waiters_share_claim_tools_and_one_published_result() {
         &receipts,
         follower,
         &"alice".parse().unwrap(),
-        "inspect_review",
+        &"inspect_review".parse().unwrap(),
         CancellationToken::new(),
     )
     .await

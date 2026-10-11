@@ -29,7 +29,12 @@ fn conversation(fixture: &Fixture) -> (Conversation, Recorder) {
 }
 async fn run(
     fixture: &Fixture,
-    factory: impl FnOnce(crate::config::Backend, &str, &Path, &Path) -> Result<Client, Failure>,
+    factory: impl FnOnce(
+        crate::config::Backend,
+        &crate::config::ModelId,
+        &Path,
+        &Path,
+    ) -> Result<Client, Failure>,
     cancellation: CancellationToken,
 ) -> (FollowUp, Conversation) {
     let (conversation, mut recorder) = conversation(fixture);

@@ -72,9 +72,9 @@ re-reviews only that Artifact.
 
 ## Install
 
-Every installer puts two commands on your `PATH`: `artifactize` and
-`artifactize-tools`, its built-in tools as a standalone CLI. No Rust toolchain is
-needed.
+Every install provides `artifactize`, including its current-directory tools as
+`artifactize tools`. Non-Store channels also put `artifactize-tools`, the same
+built-in tools as a standalone CLI, on your `PATH`. No Rust toolchain is needed.
 
 **Linux** (x86_64 or aarch64): the script installs the static binaries from the latest
 GitHub release into `~/.local/bin`. It checks their SHA-256 and needs no `sudo`:

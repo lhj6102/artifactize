@@ -4,7 +4,7 @@ artifactize ships a set of tools written in Rust that behave the same on Linux, 
 and Windows. Declare one by name with `builtin` instead of writing a script or calling
 an OS program such as `cat` or `xdg-open`. Built-in tools run inside artifactize, so
 they do not need the [`artifactize-tools`](#artifactize-tools-cli) command on `PATH`;
-that command offers the same tools to scripts and runtime evals.
+that command and `artifactize tools` offer the same tools to scripts and runtime evals.
 
 ```toml
 [views.agent_tools]
@@ -107,11 +107,16 @@ fingerprint; the default artifactsum covers the Artifact's own files.
 
 ## `artifactize-tools` CLI
 
-Every installer puts `artifactize-tools` next to `artifactize`. It offers the same
-tools as subcommands, for runtime evals, fingerprint scripts and your own scripts:
+`artifactize tools` exposes the same current-directory tools on every install,
+including the Microsoft Store. Non-Store channels also put `artifactize-tools`
+next to `artifactize`; either spelling uses the same parser and runner, output and
+exit codes, including `artifactize tools --version`. The existing `artifactize tools check` checks declared review tools
+rather than running a current-directory tool.
+
+For runtime evals, fingerprint scripts and your own scripts:
 
 ```sh
-artifactize-tools read STYLE.md
+artifactize tools read STYLE.md             # also: artifactize-tools read STYLE.md
 artifactize-tools list [PATH]
 artifactize-tools glob PATTERN [PATH]
 artifactize-tools grep [--glob GLOB] [--case-insensitive] PATTERN [PATH]
@@ -129,4 +134,6 @@ and only `http://` or `https://`.
 `read`, `section` and `help` print text with the limits above; `list`, `glob` and
 `grep` print the JSON result of the Agent tool. A tool error goes to stderr with exit
 1; invalid usage exits 2. `artifactize-tools --help` and `artifactize-tools
-SUBCOMMAND --help` describe each subcommand.
+SUBCOMMAND --help` describe each subcommand. The facade uses `artifactize tools
+--help` and `artifactize tools SUBCOMMAND --help`. `artifactize tools help PROGRAM
+SUBCOMMAND...` is the built-in help tool, not clap's help-navigation command.

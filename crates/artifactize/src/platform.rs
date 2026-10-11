@@ -198,6 +198,9 @@ mod state_directory_tests {
     }
 }
 
+mod console;
+pub(crate) use console::pause_after_help;
+
 mod interaction;
 pub(crate) use interaction::{
     is_within, label, paths_equal, private_anonymous_file, private_temp_file, run_editor,

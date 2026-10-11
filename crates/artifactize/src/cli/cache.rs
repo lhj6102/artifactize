@@ -6,6 +6,10 @@ use std::io::{self, Write};
 
 use super::CacheCommand;
 
+/// Cache show has historically returned 4 for a missing key/history, distinct from usage
+/// or storage errors; keep that public code for scripts that probe reusable records.
+const MISSING_RECORD_EXIT: u8 = 4;
+
 pub(super) async fn execute(context: Context, command: CacheCommand) -> Result<u8, String> {
     let state = crate::store::state_dir(context.state_dir.as_deref())?;
     match command {
@@ -52,7 +56,7 @@ pub(super) async fn execute(context: Context, command: CacheCommand) -> Result<u
             } else {
                 print_json(&records.pop())?;
             }
-            return Ok(if found { 0 } else { 4 });
+            return Ok(if found { 0 } else { MISSING_RECORD_EXIT });
         }
         CacheCommand::Rm { key } => {
             print_json(&json!({"removed": crate::cache::remove(&state, &key).await?}))?;

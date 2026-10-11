@@ -433,7 +433,7 @@ async fn content(
                 .iter()
                 .map(|(path, file)| {
                     (
-                        path.clone(),
+                        path.to_string(),
                         content::hex(&file.as_bytes()[..MANIFEST_DIGEST_PREFIX_BYTES])
                             .parse()
                             .expect("eight-byte SHA-256 prefix"),
@@ -571,11 +571,10 @@ async fn script(
     for input in files {
         scope::scoped_path(&cwd, Path::new(input)).map_err(|e| e.to_string())?;
     }
-    let scope = scope::argv_scope(config, artifact_id.as_str(), args).map_err(|e| e.to_string())?;
-    let program = scope::executable(&config.root, &scope, artifact_id.as_str(), command)
+    let scope = scope::argv_scope(config, artifact_id, args).map_err(|e| e.to_string())?;
+    let program = scope::executable(&config.root, &scope, artifact_id, command)
         .map_err(|error| format!("Fingerprint executable could not be spawned: {error}"))?;
-    let args = scope::resolve_argv(config, &scope, artifact_id.as_str(), args)
-        .map_err(|e| e.to_string())?;
+    let args = scope::resolve_argv(config, &scope, artifact_id, args).map_err(|e| e.to_string())?;
     let input = json!({"version":FINGERPRINT_INPUT_VERSION,"artifactId":artifact_id});
     let output_root =
         workspace::prepare_directory(output_root, &config.root).map_err(|e| e.to_string())?;

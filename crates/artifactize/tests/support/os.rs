@@ -8,6 +8,26 @@ use serde_json::{Value, json};
 use std::fs;
 use std::{path::Path, process::Command};
 
+/// Build the sibling standalone tools CLI once, including when testing only this crate.
+pub fn tools_binary(artifactize: &str) -> &'static Path {
+    static BINARY: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    BINARY.get_or_init(|| {
+        let directory = Path::new(artifactize).parent().unwrap();
+        let mut command = Command::new(env!("CARGO"));
+        command
+            .args(["build", "--quiet", "--locked", "--bin", "artifactize-tools"])
+            .arg("--manifest-path")
+            .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("../artifactize-tools/Cargo.toml"))
+            .arg("--target-dir")
+            .arg(directory.parent().unwrap());
+        if directory.file_name().unwrap() == "release" {
+            command.arg("--release");
+        }
+        assert!(command.status().unwrap().success());
+        directory.join(format!("artifactize-tools{}", std::env::consts::EXE_SUFFIX))
+    })
+}
+
 /// A temporary fixture below the physical OS temp root, not macOS /var or Windows 8.3
 /// aliases. Scoped file reads intentionally refuse symlink traversal.
 pub fn tempdir() -> tempfile::TempDir {
@@ -634,6 +654,20 @@ pub fn grant_everyone_read(path: &Path) {
             .unwrap();
         assert!(output.status.success(), "{output:?}");
     }
+}
+
+/// Launch with a fresh console or no console, independent of the test runner's terminal.
+/// Only Windows has this desktop console attachment distinction.
+#[cfg(windows)]
+pub fn console_launch(command: &mut Command, with_console: bool) -> &mut Command {
+    use std::os::windows::process::CommandExt;
+    use windows_sys::Win32::System::Threading::{CREATE_NEW_CONSOLE, CREATE_NO_WINDOW};
+
+    command.creation_flags(if with_console {
+        CREATE_NEW_CONSOLE
+    } else {
+        CREATE_NO_WINDOW
+    })
 }
 
 /// Start `command` where `interrupt` can reach it alone: on Windows, its own console process
@@ -2240,4 +2274,29 @@ pub fn stdin_waiter() -> tokio::process::Command {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
     command
+}
+
+/// A Windows editor command with an argument of its own: copy this source over its operand.
+/// Only Windows has the cmd built-in used by this editor fixture.
+#[cfg(windows)]
+pub fn copy_editor_command(source: &Path) -> String {
+    format!("copy /y \"{}\"", source.display())
+}
+
+/// Run a relative script file through the platform's shared shell fixture, as argv.
+pub fn script_file(path: &Path) -> (String, Vec<String>) {
+    (shell(), vec![path.to_str().unwrap().to_owned()])
+}
+
+/// The native Windows Ctrl-C termination status is an ordinary signed process exit code.
+/// Only Windows has this status code and distinguishes it from Unix signal termination.
+#[cfg(windows)]
+pub fn control_c_exit() -> (String, Vec<String>, i32) {
+    let code = windows_sys::Win32::Foundation::STATUS_CONTROL_C_EXIT;
+    (shell(), vec!["-c".into(), format!("exit {code}")], code)
+}
+
+/// The standalone shell fixture, even on hosts where the real shell is available.
+pub fn stand_in_shell() -> std::path::PathBuf {
+    stand_in_bin("sh")
 }

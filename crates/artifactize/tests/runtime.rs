@@ -125,12 +125,11 @@ async fn signal_is_an_operational_error() {
 #[tokio::test]
 async fn windows_exit_statuses_are_verdicts_not_signals() {
     let scratch = Scratch::new();
-    // STATUS_CONTROL_C_EXIT, as a process ended by Ctrl-C reports it.
-    let result = completed(
-        execute(scratch.command(&support::os::shell(), &["-c", "exit -1073741510"], None)).await,
-    );
+    let (program, args, expected) = support::os::control_c_exit();
+    let args: Vec<_> = args.iter().map(String::as_str).collect();
+    let result = completed(execute(scratch.command(&program, &args, None)).await);
     assert_eq!(result.verdict, Verdict::Red);
-    assert_eq!(result.exit_code, -1073741510);
+    assert_eq!(result.exit_code, expected);
 }
 
 // The held child keeps the paused clock still until registration has handed over its PID;

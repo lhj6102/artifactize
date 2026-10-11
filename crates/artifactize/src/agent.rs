@@ -527,7 +527,12 @@ async fn continue_conversation(
     message: &str,
     recorder: &mut Recorder,
     cancellation: &CancellationToken,
-    client: impl FnOnce(crate::config::Backend, &str, &Path, &Path) -> Result<Client, Failure>,
+    client: impl FnOnce(
+        crate::config::Backend,
+        &crate::config::ModelId,
+        &Path,
+        &Path,
+    ) -> Result<Client, Failure>,
 ) -> Result<StartedFollowUp, Failure> {
     let header = continuation.conversation.header();
     let invalid = || {
@@ -537,7 +542,7 @@ async fn continue_conversation(
         )
     };
     let backend = header.backend.ok_or_else(invalid)?;
-    let model = header.model.as_deref().ok_or_else(invalid)?;
+    let model = header.model.as_ref().ok_or_else(invalid)?;
     let reasoning = header.reasoning.map(crate::config::Reasoning::as_str);
     let defaults = session::Budgets::default();
     let budgets = header.budgets.as_ref().unwrap_or(&defaults);

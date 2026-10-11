@@ -2,6 +2,13 @@
 
 use std::io::{self, Write};
 
+/// Public exit 3 means the wait deadline elapsed without cancelling a Run; preserve the
+/// established code so existing automation can distinguish waiting from an execution error.
+pub(super) const WAIT_TIMEOUT_EXIT: u8 = 3;
+/// Public exit 4 means validation is incomplete, rather than RED or an operational error;
+/// retain the existing Run-outcome protocol used by verify and run show --wait.
+const INCOMPLETE_EXIT: u8 = 4;
+
 pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<(), String> {
     if json_output {
         print_json(&crate::query::run_output(
@@ -352,12 +359,12 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
 /// Run outcome exit codes shared by `verify` and `run show --wait`.
 pub(super) fn outcome_code(run: &crate::store::Run) -> u8 {
     if run.wait_timed_out {
-        return 3;
+        return WAIT_TIMEOUT_EXIT;
     }
     match run.status() {
         crate::types::RunStatus::Green => 0,
         crate::types::RunStatus::Red => 1,
-        crate::types::RunStatus::Incomplete => 4,
+        crate::types::RunStatus::Incomplete => INCOMPLETE_EXIT,
         crate::types::RunStatus::Running | crate::types::RunStatus::Error => 2,
     }
 }
