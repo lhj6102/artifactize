@@ -225,7 +225,8 @@ See [Dependency evals](declarations.md#dependency-evals).
 
 ## Saved Run evidence and terminal views
 
-`run show RUN_ID --json` and `verify --json` include `run.evidence` when nonempty.
+`run show RUN_ID --json` and `verify --json` include top-level `evidence` when
+nonempty. Run fields are flattened into the output object, without a `run` wrapper.
 It maps qualified eval IDs to saved verdicts used without a request in this Run,
 such as cached upstream evidence in a partial Run. It is not the latest global
 verdict. See [Runs](../concepts/runs-and-status.md#verify-and-runs).

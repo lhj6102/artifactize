@@ -101,10 +101,11 @@ it, such as an upstream eval outside the execution selection. The Run records
 those verdicts in `evidence`, a map from qualified eval IDs to saved states:
 
 ```json
-{"run": {"evidence": {"code-style/approved": "GREEN"}}}
+{"evidence": {"code-style/approved": "GREEN"}}
 ```
 
-`run show RUN_ID --json` and `verify --json` expose it as `run.evidence`; the field
+`run show RUN_ID --json` and `verify --json` flatten the saved Run's fields into
+the output object: `evidence` is a top-level field, not nested under `run`, and
 is omitted when empty. It is the evidence this Run used, not a lookup of the
 latest result. Saved definitions, `evidence` and the Run's request states let the
 monitor judge gates without reading current declarations or recomputing fingerprints.
