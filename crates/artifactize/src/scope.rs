@@ -7,6 +7,9 @@ use serde::Serialize;
 
 use crate::config::{Artifact, ArtifactName, ConfigError, Eval, Fingerprint, Profile, RepoConfig};
 
+mod argument;
+pub use argument::{Argument, ArgumentPath, ArgumentSuffix};
+
 mod human;
 mod instruction;
 pub(crate) use human::{
@@ -288,142 +291,6 @@ pub fn parse_artifact_instruction(
         parts.push(InstructionPart::Text(source[start..].into()));
     }
     parts
-}
-
-/// A declared argument, parsed once when its declaration loads: either a plain literal, or a
-/// `{name}[/path]` / `--flag={name}[/path]` Artifact reference. Parsing here only checks shape
-/// (a single well-formed reference, a valid path suffix); whether `name` names a real Artifact
-/// is a separate, config-wide check ([`reference_target`]) run once every declaration is loaded.
-/// [`std::fmt::Display`] reconstructs the exact original text, so round-tripping through the
-/// saved `Vec<String>` forms (`StoredProfile`, Views) changes no byte and no reuse key.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Argument {
-    Literal(String),
-    Reference {
-        prefix: String,
-        name: crate::config::ReferenceName,
-        path: String,
-    },
-}
-
-impl std::str::FromStr for Argument {
-    type Err = ScopeError;
-    fn from_str(argument: &str) -> Result<Self, Self::Err> {
-        let references = instruction::references(argument);
-        let Some(reference) = references.first() else {
-            return Ok(Self::Literal(argument.to_owned()));
-        };
-        let prefix = &argument[..reference.start];
-        let flag = prefix
-            .strip_prefix("--")
-            .and_then(|flag| flag.strip_suffix('='))
-            .is_some_and(|flag| {
-                !flag.is_empty()
-                    && flag
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-            });
-        if references.len() != 1 || (!prefix.is_empty() && !flag) {
-            return Err(ScopeError(
-                "Artifact arguments must be {name}[/path] or --flag={name}[/path].".into(),
-            ));
-        }
-        let suffix = &argument[reference.end..];
-        let path = if suffix.is_empty() {
-            ""
-        } else {
-            suffix
-                .strip_prefix('/')
-                .filter(|path| !path.is_empty())
-                .ok_or_else(|| {
-                    ScopeError("Artifact argument suffix must be a nonempty /path.".into())
-                })?
-        };
-        logical_path(path)?;
-        Ok(Self::Reference {
-            prefix: prefix.to_owned(),
-            name: reference.name.clone(),
-            path: path.to_owned(),
-        })
-    }
-}
-
-impl std::fmt::Display for Argument {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Literal(text) => f.write_str(text),
-            Self::Reference { prefix, name, path } => {
-                write!(f, "{prefix}{{{name}}}")?;
-                if !path.is_empty() {
-                    write!(f, "/{path}")?;
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-impl TryFrom<String> for Argument {
-    type Error = ScopeError;
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        value.parse()
-    }
-}
-
-impl From<Argument> for String {
-    fn from(argument: Argument) -> Self {
-        argument.to_string()
-    }
-}
-
-impl Serialize for Argument {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(&self.to_string())
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for Argument {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de::Error;
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(|failure: ScopeError| D::Error::custom(failure.0))
-    }
-}
-
-/// For fixtures: a trusted literal string, as declarations and test tables already spell it.
-impl From<&str> for Argument {
-    fn from(value: &str) -> Self {
-        value.parse().expect("a valid declared argument")
-    }
-}
-
-/// Equal iff `other`, spelled as a declared argument, is the same literal or reference: not a
-/// mere prefix/suffix match, and never panics on a malformed `other` (it is just unequal).
-impl PartialEq<str> for Argument {
-    fn eq(&self, other: &str) -> bool {
-        other.parse::<Self>().is_ok_and(|parsed| *self == parsed)
-    }
-}
-impl PartialEq<&str> for Argument {
-    fn eq(&self, other: &&str) -> bool {
-        self == *other
-    }
-}
-impl PartialEq<Argument> for str {
-    fn eq(&self, other: &Argument) -> bool {
-        other == self
-    }
-}
-impl PartialEq<Argument> for String {
-    fn eq(&self, other: &Argument) -> bool {
-        other == self.as_str()
-    }
-}
-impl PartialEq<String> for Argument {
-    fn eq(&self, other: &String) -> bool {
-        self == other.as_str()
-    }
 }
 
 fn reference_target<'a>(
@@ -725,7 +592,7 @@ pub(crate) fn resolve_config(config: &mut RepoConfig) -> Result<(), ConfigError>
                             eval_id: eval.id.clone(),
                             index,
                             name: ref_name.clone(),
-                            path: path.clone(),
+                            path: path.to_string(),
                         },
                     });
                 }

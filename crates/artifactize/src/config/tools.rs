@@ -31,7 +31,8 @@ impl<'de> Deserialize<'de> for AgentTool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(
     rename_all(serialize = "camelCase", deserialize = "snake_case"),
-    deny_unknown_fields
+    deny_unknown_fields,
+    try_from = "CommandToolInput"
 )]
 pub struct CommandTool {
     pub description: String,
@@ -49,6 +50,58 @@ pub struct CommandTool {
     pub timeout_ms: Option<std::time::Duration>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub execution_paths: Vec<super::LogicalPath>,
+    #[serde(skip)]
+    pub(crate) plain_args: Vec<super::plain::PlainArgument>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(
+    rename_all(serialize = "camelCase", deserialize = "snake_case"),
+    deny_unknown_fields
+)]
+struct CommandToolInput {
+    pub description: String,
+    #[serde(default = "empty_schema")]
+    pub input_schema: Value,
+    pub protocol: ToolProtocol,
+    pub command: String,
+    pub args: Vec<crate::scope::Argument>,
+    #[serde(
+        default,
+        deserialize_with = "timeout",
+        serialize_with = "super::validation::milliseconds::serialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub timeout_ms: Option<std::time::Duration>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub execution_paths: Vec<super::LogicalPath>,
+}
+
+impl TryFrom<CommandToolInput> for CommandTool {
+    type Error = String;
+    fn try_from(input: CommandToolInput) -> Result<Self, Self::Error> {
+        let plain_args = if input.protocol == ToolProtocol::Plain {
+            input
+                .args
+                .iter()
+                .map(|arg| {
+                    super::plain::PlainArgument::parse(&arg.to_string(), &input.input_schema)
+                })
+                .collect::<Result<_, _>>()?
+        } else {
+            Vec::new()
+        };
+        Ok(Self {
+            description: input.description,
+            input_schema: input.input_schema,
+            protocol: input.protocol,
+            command: input.command,
+            args: input.args,
+            timeout_ms: input.timeout_ms,
+            execution_paths: input.execution_paths,
+            plain_args,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -92,16 +145,6 @@ impl AgentTool {
                 }
                 paths(&tool.execution_paths, "execution_paths")?;
                 crate::tools::schema::compile(&tool.input_schema)?;
-                if tool.protocol == ToolProtocol::Plain {
-                    for arg in &tool.args {
-                        crate::tools::plain_argument(&arg.to_string(), |name| {
-                            if tool.input_schema["properties"].get(name).is_none() {
-                                return Err(format!("Unknown plain tool placeholder: {name}"));
-                            }
-                            Ok(String::new())
-                        })?;
-                    }
-                }
                 Ok(())
             }
             Self::Builtin(tool) => {

@@ -298,10 +298,10 @@ impl<'a> Registry<'a> {
                 scope::resolve_argv(self.config, &self.scope, owner, &tool.args).map_err(|_| ())?
             }
             ToolProtocol::Plain => tool
-                .args
+                .plain_args
                 .iter()
                 .map(|arg| {
-                    plain_argument(&arg.to_string(), |name| {
+                    arg.expand(|name| {
                         if tool.input_schema["properties"].get(name).is_none() {
                             return Err("Undeclared plain tool placeholder.".into());
                         }
@@ -458,39 +458,6 @@ async fn invoke(
         return ToolResult::error("Agent tool cleanup failed.");
     }
     result.unwrap_or_else(ToolResult::error)
-}
-
-/// Single-pass expansion: substituted values are never interpreted as templates.
-/// Doubled braces represent literal braces in a plain argv template.
-pub(crate) fn plain_argument(
-    template: &str,
-    mut value: impl FnMut(&str) -> Result<String, String>,
-) -> Result<String, String> {
-    let mut result = String::new();
-    let mut rest = template;
-    while !rest.is_empty() {
-        if rest.starts_with("{{") || rest.starts_with("}}") {
-            result.push(rest.chars().next().unwrap());
-            rest = &rest[2..];
-        } else if let Some(tail) = rest.strip_prefix('{') {
-            let (name, tail) = tail
-                .split_once('}')
-                .ok_or("Unclosed plain tool placeholder.")?;
-            if name.is_empty() || name.contains('{') {
-                return Err("Invalid plain tool placeholder.".into());
-            }
-            result.push_str(&value(name)?);
-            rest = tail;
-        } else {
-            let character = rest.chars().next().unwrap();
-            if character == '}' {
-                return Err("Unmatched plain tool closing brace.".into());
-            }
-            result.push(character);
-            rest = &rest[character.len_utf8()..];
-        }
-    }
-    Ok(result)
 }
 
 #[cfg(test)]

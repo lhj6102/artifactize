@@ -144,7 +144,7 @@ pub(crate) fn builtin_args(
         }
         let target = reference_target_or_owner(config, owner, name)?;
         super::reference_path(config, target, path)?;
-        args[0] = path.clone();
+        args[0] = path.to_string();
         target.as_str()
     } else {
         owner
