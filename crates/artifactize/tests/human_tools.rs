@@ -392,6 +392,8 @@ impl Drop for Launched {
 #[test]
 fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
     let repo = support::os::tempdir();
+    // The parent owns the release: exiting the launcher probe must not end its child.
+    let _release = support::os::Release(repo.path().to_path_buf());
     // Build the Windows stand-ins before the probe needs them.
     support::os::shell();
     let mut command = Command::new(std::env::current_exe().unwrap());
@@ -488,8 +490,6 @@ async fn human_environment_and_launch_probe() {
             ),
         ],
     );
-    // The launched program stays up until the test ends.
-    let _release = support::os::Release(repo.to_path_buf());
     support::declaration::write(repo.join("index.artf"), declaration.to_string()).unwrap();
     let config = read_workspace_config(repo).unwrap();
     assert!(Registry::new(&config, "a/agent").is_err());
