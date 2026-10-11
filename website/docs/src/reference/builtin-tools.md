@@ -59,9 +59,9 @@ Without `args`, an Agent tool takes the model's input; the input, result and lim
   When no heading matches, the error lists the headings the file has. The file may
   be up to 8 MiB; the printed section, up to 64 KiB.
 - **`help`** runs `program subcommand... --help` and prints its output. The program is
-  a literal name, found on `PATH` (with `PATHEXT` on Windows; see
-  [Program lookup](platforms.md#program-lookup)), and runs in the declaring
-  Artifact's folder with empty stdin. It must finish within 10 seconds, exit 0 and
+  a literal program or path. Bare names use `PATH` (with `PATHEXT` on Windows);
+  relative program paths start at the declaring Artifact's folder and absolute
+  paths run as given. The program runs in that folder with empty stdin. It must finish within 10 seconds, exit 0 and
   print at most 64 KiB, stdout and stderr together. It runs a real program, so name
   only programs you trust.
 - **`open`** (Human only) opens one file, folder or `http://`/`https://` URL in the
@@ -73,19 +73,29 @@ Without `args`, an Agent tool takes the model's input; the input, result and lim
 
 ### Paths in `args`
 
-`args` names a target inside the declaring Artifact's scope, never outside it:
+Filesystem targets must stay inside the scope admitted to the actual review:
 
-- **Agent tools** use logical paths, as the model does: relative to the declaring
-  Artifact, with a mount alias or child folder as the first component
-  (`reqs/requirements.md`).
+- **Fixed Agent tools** use logical paths relative to the declaring Artifact,
+  with a mount alias or child folder as the first component
+  (`reqs/requirements.md`). Discovery and `config check` validate these targets
+  against that Artifact's child/mount scope, rejecting missing or out-of-scope
+  targets. Calls check them again.
 - **Human tools** accept the same logical paths, and also `{artifactPath}` or
   `{artifactPath}/path` and `{name}` or `{name}/path`, where `name` is an Artifact
   or a mount alias of the declaring Artifact, as in
   [Human tools](human-tools.md#human-tools). A `--flag=` prefix is not accepted.
+  Discovery and `config check` validate reference names and target existence
+  against the workspace, not the narrower review scope. An existing `{other}/file`
+  can therefore pass configuration validation without being a child or mount.
+  Preflight and calls require that `other` is admitted to the actual Human eval
+  scope; an Artifact-only tool check uses just that Artifact's child/mount scope.
+  Tool operands never add dependencies or expand that scope.
 
-Absolute paths, `..`, symlinks and special files are refused. `config check` reports a
-missing or out-of-scope target, and every call checks it again. `help` arguments are
-literal names, not paths, and accept no placeholders.
+Filesystem targets refuse absolute paths, `..`, symlinks and special files at
+configuration validation and on every call. `open` additionally accepts HTTP(S)
+URLs. `help` takes a literal program or path plus subcommand arguments, without
+placeholders; those are program arguments, not filesystem targets for these
+scope checks.
 
 ### Reuse
 
