@@ -6,7 +6,7 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::{echo_program, false_program, true_program};
 
 mod support;
 
@@ -50,7 +50,7 @@ fn counts(run: &Value) -> Value {
 
 #[test]
 fn saved_definitions_and_paged_runs_survive_repository_removal() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let first = root.path().join("first");
     let second = root.path().join("second");
     let state = root.path().join("state");
@@ -78,11 +78,11 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
                     {
                         "id":"review",
                         "title":title,
-                        "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+                        "profile":{"kind":"runtime","command":false_program(),"args":[]},
                         "profile_variants":{
                             "brief":{
                                 "kind":"runtime",
-                                "command":bin("/bin/echo"),
+                                "command":echo_program(),
                                 "args":["saved result"],
                             },
                         },
@@ -103,13 +103,13 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
                 {
                     "id":"pass",
                     "title":"Pass",
-                    "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
+                    "profile":{"kind":"runtime","command":true_program(),"args":[]},
                     "payload":{"instruction":"Pass."},
                 },
                 {
                     "id":"fail",
                     "title":"Fail",
-                    "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+                    "profile":{"kind":"runtime","command":false_program(),"args":[]},
                     "payload":{"instruction":"Fail."},
                 },
                 {
@@ -179,7 +179,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
     assert_eq!(definitions["evals"][0]["declaration"]["title"], "Checkout");
     assert_eq!(
         definitions["evals"][0]["declaration"]["profile"]["command"],
-        bin("/bin/echo")
+        echo_program()
     );
     assert_eq!(
         definitions["evals"][0]["declaration"]["passSchema"],
@@ -255,11 +255,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
         json!([all[0], all[2]])
     );
     let alias = root.path().join("alias");
-    #[cfg(unix)]
-    support::os::symlink_dir(&second, &alias).unwrap();
-    // A junction needs no privilege and aliases the folder just the same.
-    #[cfg(windows)]
-    support::os::junction(&second, &alias);
+    support::os::link_dir(&second, &alias);
     assert_eq!(query(&alias, &state, &["run", "list"], 0), json!([all[1]]));
     let current = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .current_dir(&second)
@@ -313,7 +309,7 @@ fn saved_definitions_and_paged_runs_survive_repository_removal() {
 
 #[test]
 fn listing_missing_state_is_inert_and_flags_are_validated() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("missing-repo");
     let state = root.path().join("missing-state");
     assert_eq!(query(&repo, &state, &["run", "list"], 0), json!([]));

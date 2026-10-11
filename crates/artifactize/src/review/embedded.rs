@@ -22,7 +22,6 @@ impl Review {
     pub(crate) fn load_single(&mut self, view: RequestView) {
         self.standalone = false;
         self.open = Some(view.request.id.clone());
-        self.invalid_open = None;
         self.show(view);
     }
 
@@ -49,7 +48,7 @@ impl Review {
     pub(crate) fn settled(&self) -> bool {
         self.request
             .as_ref()
-            .is_some_and(|view| view.request.status != RequestStatus::WaitingHuman)
+            .is_some_and(|view| view.request.status() != RequestStatus::WaitingHuman)
     }
     /// A form takes the keys only while the request can still be reviewed.
     pub(crate) fn editing(&self) -> bool {
@@ -121,9 +120,9 @@ impl Review {
         match control {
             Control::Green | Control::Red => {
                 let verdict = if control == Control::Green {
-                    "GREEN"
+                    crate::runtime::Verdict::Green
                 } else {
-                    "RED"
+                    crate::runtime::Verdict::Red
                 };
                 // Typing goes to the form, so the fields take focus.
                 self.area = Area::Fields;
@@ -147,10 +146,22 @@ impl Review {
                         true,
                     );
                 };
-                let schema = definition["eval"]["declaration"].get(key);
+                let schema = definition
+                    .eval
+                    .declaration
+                    .value()
+                    .and_then(|declaration| {
+                        if key == "passSchema" {
+                            declaration.pass_schema.value()
+                        } else {
+                            declaration.fail_schema.value()
+                        }
+                    })
+                    .map(|schema| serde_json::Value::Object(schema.clone()));
+                let schema = schema.as_ref();
                 let form = self
                     .drafts
-                    .remove(verdict)
+                    .remove(&verdict)
                     .unwrap_or_else(|| Form::new(verdict, schema));
                 if let Mode::Form(previous) = &self.mode {
                     self.drafts.insert(previous.verdict, previous.clone());

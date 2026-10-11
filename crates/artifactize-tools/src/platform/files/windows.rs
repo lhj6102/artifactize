@@ -45,8 +45,9 @@ const NAME_SURROGATE: u32 = 0x2000_0000;
 /// Open without following a reparse point in the last component. Windows opens the reparse
 /// point itself instead of failing, so it is refused after the open.
 pub fn open_no_follow(options: &mut OpenOptions, path: &Path) -> io::Result<File> {
+    // Backup semantics let the same open reach a directory, as an ordinary Unix open does.
     let file = options
-        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
         .open(path)?;
     if file.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
         return Err(reparse_point());
@@ -162,7 +163,7 @@ impl EntryName {
         let dots = |count| name.len() == count && name.iter().all(|&unit| unit == u16::from(b'.'));
         // UNICODE_STRING stores its byte length in u16; every UTF-16 unit takes two bytes.
         let valid = !name.is_empty()
-            && name.len() <= usize::from(u16::MAX / 2)
+            && name.len() <= usize::from(u16::MAX) / WIDE_UNIT_BYTES
             && !dots(1)
             && !dots(2)
             && !name
@@ -301,6 +302,10 @@ pub fn is_link_refusal(error: &io::Error) -> bool {
 /// Batch directory records in 64 KiB without unbounded allocation; u64 storage
 /// gives the Windows record structs their required eight-byte alignment.
 const DIRECTORY_BUFFER_WORDS: usize = 8 * 1024;
+/// FileIdBothDirectoryInfo records start on an eight-byte boundary.
+const DIRECTORY_RECORD_ALIGNMENT: usize = 8;
+/// Windows names are UTF-16; both UNICODE_STRING and directory records count bytes.
+const WIDE_UNIT_BYTES: usize = mem::size_of::<u16>();
 
 /// The entries of a pinned directory, read from its handle rather than a path that could
 /// have been replaced by a link.
@@ -379,7 +384,7 @@ impl ReadDir<'_> {
     fn record(&mut self, offset: usize) -> io::Result<Option<DirEntry>> {
         let size = mem::size_of_val(self.buffer.as_slice());
         let header = mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName);
-        if !offset.is_multiple_of(8) || offset + header > size {
+        if !offset.is_multiple_of(DIRECTORY_RECORD_ALIGNMENT) || offset + header > size {
             self.scan.finish();
             self.next = None;
             return Err(io::Error::other("malformed directory listing"));
@@ -411,7 +416,10 @@ impl ReadDir<'_> {
         // SAFETY: the name's bytes were checked to lie inside the buffer, and UTF-16 units
         // are 2-byte aligned after the 8-byte-aligned header.
         let name = unsafe {
-            slice::from_raw_parts((&raw const (*info).FileName).cast::<u16>(), length / 2)
+            slice::from_raw_parts(
+                (&raw const (*info).FileName).cast::<u16>(),
+                length / WIDE_UNIT_BYTES,
+            )
         };
         self.next = (next != 0).then_some(offset + next);
         let dot = u16::from(b'.');
@@ -465,7 +473,7 @@ mod tests {
     #[test]
     fn directory_records_drain_then_continue_and_malformed_record_ends_iteration() {
         use super::super::directory_scan::{DirectoryScan, Query};
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::test_os::tempdir();
         let handle = open_directory(directory.path()).unwrap();
         let mut reader = ReadDir {
             directory: &handle,
@@ -475,7 +483,7 @@ mod tests {
         };
         assert_eq!(reader.scan.query(), Some(Query::Restart));
         let header = mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName);
-        let next_offset = (header + 2).next_multiple_of(8);
+        let next_offset = (header + WIDE_UNIT_BYTES).next_multiple_of(DIRECTORY_RECORD_ALIGNMENT);
         for (offset, next, character) in [(0, next_offset, b'a'), (next_offset, 0, b'b')] {
             // SAFETY: test records fit inside the u64-aligned buffer, just as OS records do.
             let info = unsafe {
@@ -489,7 +497,7 @@ mod tests {
             // SAFETY: the fixed header and one UTF-16 name unit fit at the checked offsets.
             unsafe {
                 (*info).NextEntryOffset = next as u32;
-                (*info).FileNameLength = 2;
+                (*info).FileNameLength = WIDE_UNIT_BYTES as u32;
                 (*info).FileAttributes = 0;
                 (*info).FileName[0] = u16::from(character);
             }

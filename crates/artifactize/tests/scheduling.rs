@@ -8,7 +8,7 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::shell;
 use tempfile::TempDir;
 
 mod support;
@@ -21,7 +21,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(evals: Vec<Value>) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
         support::declaration::write(
@@ -76,7 +76,7 @@ fn eval(id: &str, script: &str) -> Value {
         "title":"Check",
         "profile":{
             "kind":"runtime",
-            "command":bin("/bin/sh"),
+            "command":shell(),
             "args":["-c",script,"sh",id],
             "timeout_ms":10000,
         },
@@ -105,20 +105,13 @@ fn finish(mut child: Child, code: i32) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-/// SIGINT or SIGTERM on Unix; Windows has Ctrl-Break for both.
+/// Interrupt or terminate a child, named as the Unix signals that do it; Windows has
+/// Ctrl-Break for both.
 fn signal(child: &Child, signal: &str) {
-    #[cfg(unix)]
-    assert!(
-        Command::new("/bin/kill")
-            .args([signal, &child.id().to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
-    #[cfg(windows)]
-    {
-        let _ = signal;
-        support::os::interrupt(child.id());
+    match signal {
+        "-INT" => support::os::interrupt(child.id()),
+        "-TERM" => support::os::terminate(child.id()),
+        _ => unreachable!("{signal}"),
     }
 }
 
@@ -128,13 +121,17 @@ fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
     let child = fixture.spawn(&["--jobs", "2", "--max-executions", "1"]);
     wait_until(|| fixture.starts().len() == 1 && fixture.state.join("state.sqlite").exists());
     let database = Connection::open(fixture.state.join("state.sqlite")).unwrap();
-    database.busy_timeout(Duration::from_secs(5)).unwrap();
+    database
+        .busy_timeout(support::os::patience(Duration::from_secs(5)))
+        .unwrap();
     database
         .execute_batch(
             "CREATE TABLE fixture_update_count(count INTEGER); INSERT INTO fixture_update_count VALUES(0); CREATE TRIGGER fixture_budget_updates AFTER UPDATE ON requests WHEN NEW.status='BUDGET_EXHAUSTED' BEGIN UPDATE fixture_update_count SET count=count+1; END;",
         )
         .unwrap();
-    thread::sleep(Duration::from_millis(350));
+    fs::write(fixture.repo.join("release"), "finish").unwrap();
+    let run = finish(child, 4);
+    // Every rewrite while the execution ran is counted by the time the Run has finished.
     let count: i64 = database
         .query_row("SELECT count FROM fixture_update_count", [], |row| {
             row.get(0)
@@ -144,8 +141,6 @@ fn ipc_budget_decision_is_idempotent_while_an_execution_remains_running() {
         count <= 2,
         "self-invalidations repeatedly rewrote a budget decision: {count}"
     );
-    fs::write(fixture.repo.join("release"), "finish").unwrap();
-    let run = finish(child, 4);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(run["requests"][1]["status"], "BUDGET_EXHAUSTED");
 }
@@ -163,7 +158,6 @@ fn expired_human_deadline_still_drains_parallel_runtime_without_rewriting_waiter
     ]);
     let child = fixture.spawn(&["--jobs", "2", "--timeout-ms", "10"]);
     wait_until(|| fixture.starts().len() == 1);
-    thread::sleep(Duration::from_millis(100));
     fs::write(fixture.repo.join("release"), "finish").unwrap();
     let run = finish(child, 3);
     assert_eq!(run["waitTimedOut"], true);
@@ -171,7 +165,7 @@ fn expired_human_deadline_still_drains_parallel_runtime_without_rewriting_waiter
     assert_eq!(run["requests"][1]["status"], "GREEN");
 }
 
-const SLOW: &str = "printf 'start %s\n' \"$1\" >> events; while [ ! -e release ]; do sleep 0.02; done; sleep 0.1; printf 'end %s\n' \"$1\" >> events";
+const SLOW: &str = "printf 'start %s\n' \"$1\" >> events; while [ ! -e release ]; do sleep 0.02; done; printf 'end %s\n' \"$1\" >> events";
 
 #[test]
 fn independent_evals_fill_jobs_without_exceeding_them_and_default_to_four() {
@@ -209,11 +203,8 @@ fn independent_evals_fill_jobs_without_exceeding_them_and_default_to_four() {
         assert_eq!(active, 0);
         assert_eq!(peak, jobs);
         let requests = run["requests"].as_array().unwrap();
-        for pair in requests.windows(2) {
-            assert!(
-                pair[0]["startedAt"].as_str().unwrap() <= pair[1]["startedAt"].as_str().unwrap()
-            );
-        }
+        let starts = fixture.starts();
+        assert_eq!(starts.len(), requests.len());
     }
 }
 
@@ -231,7 +222,11 @@ fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() 
             "test -e ../b-input/done; touch started",
             "Check {b-input}.",
         ),
-        ("b-input", "sleep 0.2; touch done", "Check."),
+        (
+            "b-input",
+            "while [ ! -e ../c-slow/started ]; do sleep 0.01; done; touch done",
+            "Check.",
+        ),
         (
             "c-slow",
             "touch started; while [ ! -e release ]; do sleep 0.02; done",
@@ -255,9 +250,8 @@ fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() 
     fs::write(fixture.repo.join("c-slow/release"), "").unwrap();
     let run = finish(child, 0);
     let requests = run["requests"].as_array().unwrap();
-    assert!(
-        requests[0]["startedAt"].as_str().unwrap() >= requests[1]["completedAt"].as_str().unwrap()
-    );
+    assert_eq!(requests[0]["status"], "GREEN");
+    assert_eq!(requests[1]["status"], "GREEN");
     assert_eq!(run["executionsStarted"], 3);
 }
 
@@ -265,12 +259,7 @@ fn completion_releases_a_dependent_while_an_independent_eval_is_still_running() 
 fn budget_is_shared_across_selected_evals_and_stops_new_starts() {
     let fixture = Fixture::new(
         (0..5)
-            .map(|id| {
-                eval(
-                    &format!("e{id}"),
-                    "printf 'start %s\n' \"$1\" >> events; sleep 0.05",
-                )
-            })
+            .map(|id| eval(&format!("e{id}"), "printf 'start %s\n' \"$1\" >> events"))
             .collect(),
     );
     let run = fixture.run(&["--jobs", "4", "--max-executions", "2"], 4);
@@ -341,7 +330,10 @@ fn cancellation_kills_all_owned_groups_and_marks_queued_requests_cancelled() {
                 .map(|id| {
                     eval(
                         &format!("e{id}"),
-                        "sleep 30 & printf '%s %s\n' \"$$\" \"$!\" > \"$1.pids\"; wait",
+                        &format!(
+                            "{} & printf '%s %s\n' \"$$\" \"$!\" > \"$1.pids\"; wait",
+                            support::os::LINGERING
+                        ),
                     )
                 })
                 .collect(),

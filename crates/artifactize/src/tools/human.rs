@@ -19,8 +19,8 @@ const TEXT_LIMIT: usize = 64 * 1024;
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolDefinition {
-    pub name: String,
-    pub artifact_id: String,
+    pub name: crate::config::ToolName,
+    pub artifact_id: crate::config::ArtifactName,
     pub description: String,
     pub kind: HumanToolKind,
 }
@@ -32,20 +32,96 @@ pub enum Content {
     Launch { launched: bool },
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ToolResult {
-    pub content: Vec<Content>,
-    pub is_error: bool,
+/// Human failures retain separate stdout and stderr blocks in saved results,
+/// but cannot carry launch acknowledgements, empty content, or blank text.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ErrorText(artifactize_tools::result::ContentBlocks<Content>);
+
+impl ErrorText {
+    fn new(content: Vec<Content>) -> Result<Self, String> {
+        for block in &content {
+            let Content::Text { text } = block else {
+                return Err("Human tool error must contain only text blocks".into());
+            };
+            artifactize_tools::result::ErrorMessage::new(text.clone())
+                .map_err(|error| error.to_string())?;
+        }
+        artifactize_tools::result::ContentBlocks::new(content)
+            .map(Self)
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ToolResult {
+    Success(artifactize_tools::result::ContentBlocks<Content>),
+    Error(ErrorText),
 }
 
 impl ToolResult {
-    fn error(message: impl Into<String>) -> Self {
-        Self {
-            content: vec![Content::Text {
-                text: message.into(),
-            }],
-            is_error: true,
+    pub fn success(content: Content) -> Self {
+        Self::success_blocks(vec![content])
+    }
+
+    fn success_blocks(content: Vec<Content>) -> Self {
+        Self::Success(
+            artifactize_tools::result::ContentBlocks::new(content)
+                .expect("Human output always has one or two blocks"),
+        )
+    }
+
+    /// Blank diagnostics become "Tool failed."; nonblank text is unchanged.
+    pub fn error(message: impl Into<String>) -> Self {
+        let message = artifactize_tools::result::ErrorMessage::diagnostic(message);
+        Self::error_blocks(vec![Content::Text {
+            text: message.as_str().to_owned(),
+        }])
+    }
+
+    fn error_blocks(content: Vec<Content>) -> Self {
+        Self::Error(ErrorText::new(content).expect("Human failures contain nonblank text"))
+    }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::Error(_))
+    }
+
+    pub fn content(&self) -> &[Content] {
+        match self {
+            Self::Success(content) => content.as_slice(),
+            Self::Error(content) => content.0.as_slice(),
+        }
+    }
+}
+
+impl Serialize for ToolResult {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        // Human results historically include isError:false, unlike Agent results.
+        let mut result = serializer.serialize_struct("ToolResult", 2)?;
+        result.serialize_field("content", self.content())?;
+        result.serialize_field("isError", &self.is_error())?;
+        result.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for ToolResult {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct SavedResult {
+            content: Vec<Content>,
+            is_error: bool,
+        }
+        let saved = SavedResult::deserialize(deserializer)?;
+        if saved.is_error {
+            ErrorText::new(saved.content)
+                .map(Self::Error)
+                .map_err(serde::de::Error::custom)
+        } else {
+            artifactize_tools::result::ContentBlocks::new(saved.content)
+                .map(Self::Success)
+                .map_err(serde::de::Error::custom)
         }
     }
 }
@@ -69,7 +145,7 @@ struct RegisteredTool<'a> {
 pub struct Registry<'a> {
     config: &'a RepoConfig,
     scope: Scope<'a>,
-    tools: BTreeMap<String, RegisteredTool<'a>>,
+    tools: BTreeMap<crate::config::ToolName, RegisteredTool<'a>>,
 }
 
 impl<'a> Registry<'a> {
@@ -79,7 +155,7 @@ impl<'a> Registry<'a> {
             .iter()
             .find(|eval| eval.id == eval_id)
             .ok_or_else(|| format!("Unknown eval: {eval_id}"))?;
-        if !matches!(eval.declaration.profile, Profile::Human {}) {
+        if !matches!(eval.declaration.profile(), Profile::Human {}) {
             return Err("Human tools require a Human eval.".into());
         }
         Self::with_scope(
@@ -99,11 +175,13 @@ impl<'a> Registry<'a> {
         let mut tools = BTreeMap::new();
         for (id, artifact) in &scope.artifacts {
             for (operation, declaration) in &artifact.views.human_tools {
-                let name = format!("{operation}_{id}");
+                let name: crate::config::ToolName = format!("{operation}_{id}")
+                    .parse()
+                    .expect("validated tool and Artifact names");
                 let entry = RegisteredTool {
                     definition: ToolDefinition {
                         name: name.clone(),
-                        artifact_id: (*id).into(),
+                        artifact_id: artifact.name.clone(),
                         description: declaration.description().replace("{artifactName}", id),
                         kind: declaration.kind(),
                     },
@@ -214,10 +292,7 @@ impl<'a> Registry<'a> {
         }
         match declaration.kind {
             HumanToolKind::Launch => match process::launch_detached(&program, &args, &cwd) {
-                Ok(()) => ToolResult {
-                    content: vec![Content::Launch { launched: true }],
-                    is_error: false,
-                },
+                Ok(()) => ToolResult::success(Content::Launch { launched: true }),
                 Err(error) => ToolResult::error(
                     error
                         .argument_refusal()
@@ -229,7 +304,7 @@ impl<'a> Registry<'a> {
                     program,
                     args: args.into_iter().map(Into::into).collect(),
                     cwd,
-                    env: std::env::vars_os().collect(),
+                    env: crate::platform::environment::snapshot(),
                     timeout: declaration.timeout_ms.unwrap_or(DEFAULT_TIMEOUT),
                 };
                 match process::run(command, cancellation, |_| async { Ok(()) }).await {
@@ -270,33 +345,43 @@ impl<'a> Registry<'a> {
         let tool_scope = self.scope.tool_scope();
         if declaration.builtin == crate::config::Builtin::Open {
             let target = if artifactize_tools::builtin::is_url(&args[0]) {
-                args[0].clone()
+                std::ffi::OsString::from(&args[0])
             } else {
                 match tool_scope.resolve_input(&self.config.root, &owner, &args[0]) {
-                    Ok(path) => path.to_string_lossy().into_owned(),
+                    Ok(path) => path.into_os_string(),
                     Err(error) => return ToolResult::error(error.to_string()),
                 }
             };
             return tokio::select! {
                 _ = cancellation.cancelled() => ToolResult::error("Human tool call was cancelled."),
-                result = artifactize_tools::opener::open(std::ffi::OsStr::new(&target)) => match result {
-                    Ok(()) => ToolResult { content: vec![Content::Launch { launched: true }], is_error: false },
+                result = crate::platform::program::open_desktop(std::ffi::OsStr::new(&target)) => match result {
+                    Ok(()) => ToolResult::success(Content::Launch { launched: true }),
                     Err(error) => ToolResult::error(error.to_string()),
                 }
             };
         }
+        // A Human tool runs as the reviewer, with the reviewer's environment, as output
+        // tools do.
+        let launcher = process::Launcher {
+            env: crate::platform::environment::snapshot(),
+        };
+        let context = artifactize_tools::builtin::Context {
+            root: &self.config.root,
+            scope: &tool_scope,
+            owner: &owner,
+            launcher: &launcher,
+        };
         let result = artifactize_tools::builtin::call_fixed(
             declaration.builtin,
             &args,
             serde_json::json!({}),
-            &self.config.root,
-            &tool_scope,
-            &owner,
+            context,
             &cancellation,
         )
         .await;
+        let failed = result.is_error();
         let output = result
-            .content
+            .into_content()
             .into_iter()
             .map(|content| match content {
                 artifactize_tools::Content::Text { text } => text,
@@ -309,11 +394,11 @@ impl<'a> Registry<'a> {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        ToolResult {
-            content: vec![Content::Text {
-                text: text(output.as_bytes(), String::new(), false),
-            }],
-            is_error: result.is_error,
+        let text = text(output.as_bytes(), String::new(), false);
+        if failed {
+            ToolResult::error(text)
+        } else {
+            ToolResult::success(Content::Text { text })
         }
     }
 }
@@ -321,7 +406,10 @@ impl<'a> Registry<'a> {
 fn output_result(output: &process::Output) -> ToolResult {
     let failed = !output.status.success();
     let stdout = if failed {
-        format!("Human tool exited unsuccessfully ({}).\n", output.status)
+        format!(
+            "Human tool exited unsuccessfully ({}).\n",
+            crate::platform::exit_description(&output.status)
+        )
     } else {
         String::new()
     };
@@ -333,9 +421,10 @@ fn output_result(output: &process::Output) -> ToolResult {
             text: text(&output.stderr, "stderr:\n".into(), output.truncated),
         });
     }
-    ToolResult {
-        content,
-        is_error: failed,
+    if failed {
+        ToolResult::error_blocks(content)
+    } else {
+        ToolResult::success_blocks(content)
     }
 }
 

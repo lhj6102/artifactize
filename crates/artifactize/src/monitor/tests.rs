@@ -19,13 +19,16 @@ pub(crate) fn request(eval: &str, status: &str, extra: Value) -> RequestView {
         "evalId":eval,
         "target":eval.split('/').next(),
         "title":"Title",
-        "profile":{"kind":"runtime","command":"true","args":[]},
-        "requestedProfile":{"kind":"runtime","command":"true","args":[]},
-        "evalDefHash":"hash",
+        "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
+        "requestedProfile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
+        "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "payload":{"instruction":"Check."},
         "references":{},
         "deps":[],
         "status":status,
+        "result": if matches!(status, "GREEN" | "RED") { json!({"verdict":status}) } else { Value::Null },
+        "error": if status == "ERROR" { json!("fixture error") } else { Value::Null },
+        "completedAt": if matches!(status, "GREEN" | "RED" | "ERROR") { json!("2026-01-01T00:00:01Z") } else { Value::Null },
         "createdAt":"2026-01-01T00:00:00Z",
         "cwd":"/repo",
     });
@@ -63,6 +66,7 @@ fn run(definitions: Value) -> RunView {
         }))
         .unwrap(),
         requests: Vec::new(),
+        unreadable: Vec::new(),
     }
 }
 
@@ -108,8 +112,8 @@ pub(super) fn live() -> (RunView, Vec<RequestView>) {
     );
     waiting.claim = Some(HumanClaim {
         request_id: waiting.request.id.clone(),
-        reviewer: "alice".into(),
-        claimed_at: "2026-01-01T00:00:30Z".into(),
+        reviewer: "alice".parse().unwrap(),
+        claimed_at: "2026-01-01T00:00:30Z".parse().unwrap(),
     });
     let requests = vec![
         request(
@@ -162,7 +166,7 @@ fn live_progress_tree_and_details_are_pure_projections() {
         progress.waiting,
         [(
             "app/review".into(),
-            "claimed by alice at 2026-01-01T00:00:30Z".into()
+            "claimed by alice at 2026-01-01T00:00:30.000000000Z".into()
         )]
     );
     assert_eq!(
@@ -194,16 +198,19 @@ fn live_progress_tree_and_details_are_pure_projections() {
     assert_eq!(
         lines,
         [
-            "◇ lib  basis",
-            "- dep  not in this Run  0/1",
-            "- check  not in this Run",
-            "✓ p1  1/1",
-            "✓ check  GREEN  3s",
-            "! p2  ERROR: check  0/1",
-            "! check  ERROR · [SPAWN] spawn failed  2s",
-            "◐ app  in progress: check, review  0/2",
-            "◐ check  running · runtime true  1m 05s",
-            "? review  Human sign-off · claimed by alice  1m 05s",
+            "◇ lib  basis".to_owned(),
+            "- dep  not in this Run  0/1".to_owned(),
+            "- check  not in this Run".to_owned(),
+            "✓ p1  1/1".to_owned(),
+            "✓ check  GREEN  3s".to_owned(),
+            "! p2  ERROR: check  0/1".to_owned(),
+            "! check  ERROR · [SPAWN] spawn failed  2s".to_owned(),
+            "◐ app  in progress: check, review  0/2".to_owned(),
+            format!(
+                "◐ check  running · runtime {}  1m 05s",
+                crate::test_os::true_program()
+            ),
+            "? review  Human sign-off · claimed by alice  1m 05s".to_owned(),
         ]
     );
     // One row per eval: no relation rows, no `← deps`.
@@ -220,7 +227,12 @@ fn live_progress_tree_and_details_are_pure_projections() {
         ]
     );
 
-    let absent = detail(&view, &requests, &Target::Eval("dep/check".into()), now());
+    let absent = detail(
+        &view,
+        &requests,
+        &Target::Eval("dep/check".parse().unwrap()),
+        now(),
+    );
     assert!(
         absent
             .field("Status")
@@ -231,7 +243,12 @@ fn live_progress_tree_and_details_are_pure_projections() {
         absent.field("Profile"),
         Some("agent openai gpt-x reasoning high")
     );
-    let human = detail(&view, &requests, &Target::Eval("app/review".into()), now());
+    let human = detail(
+        &view,
+        &requests,
+        &Target::Eval("app/review".parse().unwrap()),
+        now(),
+    );
     assert_eq!(
         human.field("Status"),
         Some("WAITING_HUMAN — waiting for a Human submission")
@@ -244,9 +261,19 @@ fn live_progress_tree_and_details_are_pure_projections() {
     );
     assert_eq!(human.field("Fingerprint"), Some("none"));
     assert_eq!(human.field("Key"), Some("none (no reuse)"));
-    let failed = detail(&view, &requests, &Target::Eval("p2/check".into()), now());
+    let failed = detail(
+        &view,
+        &requests,
+        &Target::Eval("p2/check".parse().unwrap()),
+        now(),
+    );
     assert_eq!(failed.field("Error"), Some("[SPAWN] spawn failed"));
-    let app = detail(&view, &requests, &Target::Artifact("app".into()), now());
+    let app = detail(
+        &view,
+        &requests,
+        &Target::Artifact("app".parse().unwrap()),
+        now(),
+    );
     assert_eq!(app.field("Gates"), Some("- dep/check not in Run"));
     assert_eq!(
         app.field("Inputs"),
@@ -269,7 +296,7 @@ fn run_rows_and_durations() {
         ["5s", "1m 05s", "1h 01m", "1d 1h", "0s"]
     );
     let mut finished = summary("run-b", 0);
-    finished.completed_at = Some("2026-01-01T00:00:42Z".into());
+    finished.completed_at = Some("2026-01-01T00:00:42Z".parse().unwrap());
     let rows = run_rows(&[summary("run-a", 2), finished], now());
     assert_eq!(rows[0].age, "1m 05s");
     // Runs show the same glyphs as the tree, most urgent first and without zero counts.
@@ -280,9 +307,10 @@ fn run_rows_and_durations() {
 
 pub(super) fn summary(id: &str, green: u64) -> RunSummary {
     RunSummary {
+        unreadable: Vec::new(),
         id: id.parse().unwrap(),
         repo_path: "/repo".into(),
-        created_at: "2026-01-01T00:00:00Z".into(),
+        created_at: "2026-01-01T00:00:00Z".parse().unwrap(),
         completed_at: None,
         status: crate::types::RunStatus::Red,
         counts: BTreeMap::from([
@@ -297,8 +325,13 @@ fn screen(monitor: &mut Monitor) -> String {
 }
 
 pub(super) fn sized(monitor: &mut Monitor, width: u16, height: u16) -> String {
+    sized_at(monitor, width, height, OffsetDateTime::now_utc())
+}
+
+/// `sized`, with ages and elapsed times measured at `now`.
+fn sized_at(monitor: &mut Monitor, width: u16, height: u16, now: OffsetDateTime) -> String {
     let mut terminal = Terminal::new(TestBackend::new(width, height)).unwrap();
-    terminal.draw(|frame| monitor.draw(frame)).unwrap();
+    terminal.draw(|frame| monitor.draw_at(frame, now)).unwrap();
     let buffer = terminal.backend().buffer();
     let rows = buffer.content().chunks(buffer.area.width as usize);
     let rows = rows.map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>());
@@ -307,7 +340,7 @@ pub(super) fn sized(monitor: &mut Monitor, width: u16, height: u16) -> String {
 
 #[tokio::test]
 async fn refresh_errors_keep_last_known_data() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let mut monitor = Monitor::new(root.path().join("missing"), None);
     monitor.refresh().await;
     assert!(screen(&mut monitor).contains("No saved Runs."));
@@ -366,18 +399,20 @@ async fn artifact_details_display_saved_tags_and_tolerate_untagged_snapshots() {
         "old":{"path":"old"},
         "empty":{"path":"empty","tags":[]}
     }}));
-    let app = detail(&view, &[], &Target::Artifact("app".into()), now());
+    let app = detail(&view, &[], &Target::Artifact("app".parse().unwrap()), now());
     assert_eq!(app.field("Tags"), Some("type:image, scope:combat"));
     for id in ["old", "empty"] {
         assert_eq!(
-            detail(&view, &[], &Target::Artifact(id.into()), now()).field("Tags"),
+            detail(&view, &[], &Target::Artifact(id.parse().unwrap()), now()).field("Tags"),
             None
         );
     }
     let mut monitor = Monitor::new("/state".into(), Some("/repo".into()));
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, Vec::new());
-    monitor.tree.select(vec!["a:app".into()]);
+    monitor.tree.select(vec![
+        "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
+    ]);
     monitor.open_detail().await;
     assert_eq!(monitor.focus, Pane::Detail);
     // Tags are Technical: folded, but named, until `t` shows them.
@@ -414,7 +449,10 @@ fn run_screen_renders_progress_tree_and_detail() {
     }
     // All-done Artifacts start folded; the cursor starts on the first failed or running eval.
     assert!(!text.contains("GREEN  3s"), "{text}");
-    assert_eq!(monitor.target(), Some(Target::Eval("p2/check".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Eval("p2/check".parse().unwrap()))
+    );
 }
 
 /// Usage, budgets and errors that used to push the Run summary's last lines off.
@@ -443,7 +481,7 @@ fn heavy() -> (RunView, Vec<RequestView>) {
         request.provenance = Some(
             serde_json::from_value(
                 json!({"repoPath":"/repo","runId":"run-1","requestId":request.id,
-                "evalId":eval,"evalDefHash":"hash","completedAt":"2026-01-01T00:00:04Z"}),
+                "evalId":eval,"evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","completedAt":"2026-01-01T00:00:04Z"}),
             )
             .unwrap(),
         );
@@ -549,9 +587,12 @@ async fn tree_peek_follows_selection_and_detail_orders_sections_verdict_first() 
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
     monitor.focus = Pane::Artifacts;
-    monitor
-        .tree
-        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    monitor.tree.select(vec![
+        "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:p2/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     let text = sized(&mut monitor, 160, 40);
     assert!(text.contains("Error: [SPAWN] spawn failed"), "{text}");
     // The peek is the outcome only; provenance and hashes wait for Enter.
@@ -559,9 +600,12 @@ async fn tree_peek_follows_selection_and_detail_orders_sections_verdict_first() 
         !text.contains("Fingerprint") && !text.contains("Timing"),
         "{text}"
     );
-    monitor
-        .tree
-        .select(vec!["a:p1".into(), "e:p1/review".into()]);
+    monitor.tree.select(vec![
+        "a:p1".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:p1/review"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     let text = sized(&mut monitor, 160, 40);
     assert!(text.contains("Result: verdict RED"), "{text}");
     assert!(text.contains("reason two mismatches …"), "{text}");
@@ -664,17 +708,16 @@ fn breadcrumb_shortens_earlier_segments_then_drops_the_program_name() {
 fn runs_pane_draws_counts_age_and_took_and_keeps_age_when_narrow() {
     let mut monitor = Monitor::new("/state".into(), None);
     let mut finished = summary("run-done", 3);
-    finished.completed_at = Some("2026-01-01T00:00:42Z".into());
+    finished.completed_at = Some("2026-01-01T00:00:42Z".parse().unwrap());
     monitor.set_runs(vec![summary("run-a", 2), finished]);
-    let text = sized(&mut monitor, 160, 20);
+    let at = now();
+    let text = sized_at(&mut monitor, 160, 20, at);
     assert!(text.contains("✗ RED run-a "), "{text}");
     assert!(text.contains("✗1 ✓2"), "{text}");
     assert!(text.contains("took 42s"), "{text}");
-    let age = run_rows(&monitor.runs, OffsetDateTime::now_utc())[1]
-        .age
-        .clone();
+    let age = run_rows(&monitor.runs, at)[1].age.clone();
     let age = age.split(' ').next().unwrap();
-    let text = sized(&mut monitor, 22, 20);
+    let text = sized_at(&mut monitor, 22, 20, at);
     // Narrow Runs keep the glyph, id and age; the status word and counts go first.
     assert!(text.contains(&format!("✗ run-done {age}")), "{text}");
     assert!(!text.contains("RED") && !text.contains("✓3"), "{text}");
@@ -696,7 +739,7 @@ fn review_key_hands_off_only_waiting_human_requests() {
     ] {
         monitor
             .tree
-            .select(path.iter().map(|id| (*id).to_owned()).collect());
+            .select(path.iter().map(|id| id.parse().unwrap()).collect());
         assert_eq!(monitor.key(review), action, "{path:?}");
     }
     assert!(screen(&mut monitor).contains("Enter open"));
@@ -712,7 +755,11 @@ fn saved_texts_of_any_length_never_overflow_natural_widths() {
     let (view, mut requests) = live();
     for view in &mut requests {
         if view.request.eval_id == "p2/check" {
-            view.request.error = Some(long.clone());
+            view.request.state = crate::store::RequestState::failed(
+                long.clone(),
+                view.request.error_code(),
+                crate::broker::now(),
+            );
         }
         if view.request.eval_id == "app/check" {
             view.request.profile = serde_json::from_value(
@@ -746,9 +793,12 @@ fn saved_texts_of_any_length_never_overflow_natural_widths() {
         }
     }
     monitor.focus = Pane::Artifacts;
-    monitor
-        .tree
-        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    monitor.tree.select(vec![
+        "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:p2/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     let text = sized(&mut monitor, 160, 30);
     assert!(text.contains("! p2/check  [SPAWN] XXX"), "{text}");
 }
@@ -767,7 +817,11 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
     let (view, mut requests) = live();
     for view in &mut requests {
         if view.request.eval_id == "p2/check" {
-            view.request.error = Some(messy.into());
+            view.request.state = crate::store::RequestState::failed(
+                messy.into(),
+                view.request.error_code(),
+                crate::broker::now(),
+            );
         }
         if view.request.eval_id == "app/check" {
             view.request.profile = serde_json::from_value(
@@ -794,9 +848,12 @@ async fn control_characters_in_saved_texts_never_reach_cell_widths() {
     monitor.set_runs(vec![row]);
     monitor.open = Some("run-1".parse().unwrap());
     monitor.set_run(view, requests);
-    monitor
-        .tree
-        .select(vec!["a:p2".into(), "e:p2/check".into()]);
+    monitor.tree.select(vec![
+        "a:p2".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:p2/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     for (focus, expected) in [
         (Pane::Repositories, "line break name (non-Git)"),
         (Pane::Runs, "line break name"),

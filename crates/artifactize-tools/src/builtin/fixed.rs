@@ -1,13 +1,20 @@
 //! Fixed declarations shared by the Agent/Human registries and standalone CLI.
-use std::{ffi::OsStr, io::Read, path::Path, process::Stdio, time::Duration};
+use std::{
+    ffi::{OsStr, OsString},
+    io::Read,
+    path::Path,
+    time::Duration,
+};
 
 use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    Builtin, Content, ToolResult, program,
+    Builtin, Content, ToolResult,
+    launch::{Launch, LaunchError, Launcher},
+    program,
     scope::{self, ArtifactId, Scope},
 };
 
@@ -109,24 +116,38 @@ pub fn validate_target(
         .map_err(|error| error.to_string())
 }
 
+/// Where a fixed built-in runs: the workspace root, the scope it may read, the Artifact
+/// that declares it, and the launcher that starts a `help` program.
+pub struct Context<'a> {
+    pub root: &'a Path,
+    pub scope: &'a Scope,
+    pub owner: &'a ArtifactId,
+    pub launcher: &'a dyn Launcher,
+}
+
 pub async fn call_fixed(
     builtin: Builtin,
     args: &[String],
     input: Value,
-    root: &Path,
-    scope: &Scope,
-    owner: &ArtifactId,
+    context: Context<'_>,
     cancellation: &CancellationToken,
 ) -> ToolResult {
     if cancellation.is_cancelled() {
         return ToolResult::error("Tool call was cancelled.");
     }
-    if let Err(error) = validate_args(builtin, Some(args), false) {
-        return ToolResult::error(error);
-    }
-    if builtin == Builtin::Help {
+    let input = match FixedInput::parse(builtin, args, input) {
+        Ok(input) => input,
+        Err(error) => return ToolResult::error(error),
+    };
+    let Context {
+        root,
+        scope,
+        owner,
+        launcher,
+    } = context;
+    if let FixedInput::Help(args) = input {
         let cwd = root.join(scope.artifacts[owner].folder());
-        return match help(args, &cwd, cancellation).await {
+        return match help(&args, &cwd, launcher, cancellation).await {
             Ok(text) => text_result(text),
             Err(error) => ToolResult::error(bounded(&error)),
         };
@@ -136,46 +157,87 @@ pub async fn call_fixed(
         artifacts: scope.artifacts.clone(),
     };
     let owner = owner.clone();
-    let args = args.to_vec();
     let cancellation = cancellation.child_token();
     let _cancel_on_drop = cancellation.clone().drop_guard();
-    tokio::task::spawn_blocking(move || {
-        call_text(builtin, &args, input, &root, &scope, &owner, &cancellation)
-    })
-    .await
-    .unwrap_or_else(|_| ToolResult::error("Built-in tool execution failed."))
+    tokio::task::spawn_blocking(move || call_text(input, &root, &scope, &owner, &cancellation))
+        .await
+        .unwrap_or_else(|error| {
+            if error.is_panic() {
+                std::panic::resume_unwind(error.into_panic());
+            }
+            ToolResult::error("Built-in tool execution failed.")
+        })
+}
+
+/// The model's input to a fixed `section` tool: the heading, when the declaration leaves
+/// it open.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SectionInput {
+    heading: Option<String>,
+}
+
+/// Parsed fixed declarations and model input. Execution cannot index an absent argument
+/// or combine a heading with a tool that does not accept one.
+enum FixedInput {
+    Read { path: String },
+    List(super::input::List),
+    Section { path: String, heading: String },
+    Help(Vec<String>),
+}
+
+impl FixedInput {
+    fn parse(builtin: Builtin, args: &[String], value: Value) -> Result<Self, String> {
+        validate_args(builtin, Some(args), false)?;
+        let validator = crate::schema::compile(&fixed_schema(builtin, args))?;
+        crate::schema::validate(&validator, &value)?;
+        match builtin {
+            Builtin::Read => Ok(Self::Read {
+                path: args[0].clone(),
+            }),
+            Builtin::List => Ok(Self::List(super::input::List {
+                path: args[0].clone(),
+                offset: 0,
+                limit: super::MAX_RESULTS,
+            })),
+            Builtin::Section => {
+                let input: SectionInput = serde_json::from_value(value)
+                    .map_err(|_| "Tool arguments cannot be read as the declared builtin input.")?;
+                let heading = args
+                    .get(1)
+                    .cloned()
+                    .or(input.heading)
+                    .ok_or("Section requires heading.")?;
+                Ok(Self::Section {
+                    path: args[0].clone(),
+                    heading,
+                })
+            }
+            Builtin::Help => Ok(Self::Help(args.to_vec())),
+            _ => Err("This builtin cannot run as a fixed Agent tool.".into()),
+        }
+    }
 }
 
 fn call_text(
-    builtin: Builtin,
-    args: &[String],
-    input: Value,
+    input: FixedInput,
     root: &Path,
     scope: &Scope,
     owner: &ArtifactId,
     cancellation: &CancellationToken,
 ) -> ToolResult {
-    let result = match builtin {
-        Builtin::Read => {
-            read_text(root, scope, owner, &args[0], TEXT_BYTES).map(|text| bounded(&text))
+    let result = match input {
+        FixedInput::Read { path } => {
+            read_text(root, scope, owner, &path, TEXT_BYTES).map(|text| bounded(&text))
         }
-        Builtin::Section => {
-            let heading = args
-                .get(1)
-                .map(String::as_str)
-                .or_else(|| input["heading"].as_str());
-            match heading {
-                Some(heading) => read_text(root, scope, owner, &args[0], DOCUMENT_BYTES)
-                    .and_then(|text| section(&text, heading)),
-                None => Err("Section requires heading.".into()),
-            }
+        FixedInput::Section { path, heading } => {
+            read_text(root, scope, owner, &path, DOCUMENT_BYTES)
+                .and_then(|text| section(&text, &heading))
         }
-        Builtin::List => {
-            let input = super::Input::parse(Builtin::List, json!({"path":args[0]}))
-                .expect("fixed list input");
-            return super::call(input, root, scope, owner, cancellation);
+        FixedInput::List(input) => {
+            return super::call(super::Input::List(input), root, scope, owner, cancellation);
         }
-        _ => Err("This builtin cannot run as a fixed Agent tool.".into()),
+        FixedInput::Help(_) => unreachable!("help executes asynchronously at the process edge"),
     };
     if cancellation.is_cancelled() {
         return ToolResult::error("Tool call was cancelled.");
@@ -187,10 +249,7 @@ fn call_text(
 }
 
 fn text_result(text: String) -> ToolResult {
-    ToolResult {
-        content: vec![Content::Text { text }],
-        is_error: false,
-    }
+    ToolResult::success(Content::Text { text })
 }
 
 fn read_text(
@@ -298,63 +357,70 @@ fn section(text: &str, wanted: &str) -> Result<String, String> {
     Ok(bounded(&text[*start..end]))
 }
 
-async fn capture(reader: impl AsyncRead + Unpin) -> Result<Vec<u8>, String> {
-    let mut bytes = Vec::new();
-    reader
-        .take((TEXT_BYTES + 1) as u64)
-        .read_to_end(&mut bytes)
-        .await
-        .map_err(|error| error.to_string())?;
-    if bytes.len() > TEXT_BYTES {
-        return Err("Help output exceeds 64 KiB.".into());
-    }
-    Ok(bytes)
-}
-
 async fn help(
     args: &[String],
     cwd: &Path,
+    launcher: &dyn Launcher,
     cancellation: &CancellationToken,
 ) -> Result<String, String> {
     let program = program::resolve(OsStr::new(&args[0]), cwd).map_err(|error| error.to_string())?;
-    let mut child = tokio::process::Command::new(program)
-        .args(&args[1..])
-        .arg("--help")
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|error| error.to_string())?;
-    let stdout = child.stdout.take().expect("piped stdout");
-    let stderr = child.stderr.take().expect("piped stderr");
-    let execution = async {
-        let (stdout, stderr, status) = tokio::try_join!(capture(stdout), capture(stderr), async {
-            child.wait().await.map_err(|error| error.to_string())
-        })?;
-        if !status.success() {
-            return Err(format!(
-                "Help exited unsuccessfully ({status}).\n{}",
-                String::from_utf8_lossy(&stderr)
-            ));
-        }
-        let mut bytes = stdout;
-        bytes.extend(stderr);
-        if bytes.len() > TEXT_BYTES {
-            return Err("Help output exceeds 64 KiB.".into());
-        }
-        Ok(String::from_utf8(crate::result::clean_output(&bytes)).expect("clean output is UTF-8"))
+    let launch = Launch {
+        program,
+        args: args[1..]
+            .iter()
+            .map(OsString::from)
+            .chain([OsString::from("--help")])
+            .collect(),
+        cwd: cwd.to_owned(),
+        timeout: HELP_TIMEOUT,
+        output_limit: TEXT_BYTES,
     };
-    tokio::select! {
-        _ = cancellation.cancelled() => Err("Tool call was cancelled.".into()),
-        result = tokio::time::timeout(HELP_TIMEOUT, execution) => result.map_err(|_| "Help timed out.".to_owned())?,
+    let finished = launcher
+        .run(launch, cancellation)
+        .await
+        .map_err(|error| match error {
+            LaunchError::TimedOut => "Help timed out.".to_owned(),
+            error => error.to_string(),
+        })?;
+    if !finished.status.success() {
+        return Err(format!(
+            "Help exited unsuccessfully ({}).\n{}",
+            crate::platform::exit_description(&finished.status),
+            String::from_utf8_lossy(&finished.stderr)
+        ));
     }
+    let mut bytes = finished.stdout;
+    bytes.extend(finished.stderr);
+    if finished.truncated || bytes.len() > TEXT_BYTES {
+        return Err("Help output exceeds 64 KiB.".into());
+    }
+    Ok(String::from_utf8(crate::result::clean_output(&bytes)).expect("clean output is UTF-8"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fixed_inputs_reject_missing_declarations_and_unexpected_model_fields() {
+        for (builtin, args, input) in [
+            (Builtin::Read, vec![], json!({})),
+            (Builtin::Read, vec!["notes".into()], json!({"path":"other"})),
+            (Builtin::Help, vec!["program".into()], json!({"extra":true})),
+            (Builtin::Section, vec!["notes".into()], json!({})),
+            (
+                Builtin::Section,
+                vec!["notes".into(), "Title".into()],
+                json!({"heading":"Other"}),
+            ),
+        ] {
+            assert!(FixedInput::parse(builtin, &args, input).is_err());
+        }
+        assert!(matches!(
+            FixedInput::parse(Builtin::Section, &["notes".into()], json!({"heading":"Title"})),
+            Ok(FixedInput::Section { heading, .. }) if heading == "Title"
+        ));
+    }
+
     #[test]
     fn sections_follow_markdown_headings_not_code_blocks() {
         let text = "# Top\nintro\n## Exact\nbody\n### Child\nchild\n```md\n## Fake\n```\n## Next\nnext\n\nSetext\n======\nlast\n";

@@ -2,7 +2,7 @@
 
 use std::{
     io,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 /// Legacy markers remain safety boundaries even though discovery refuses their format.
@@ -12,16 +12,25 @@ pub(crate) const ARTIFACT_MARKERS: [&str; 3] = [
     ".artifactizeignore",
 ];
 
+fn has_marker(path: &Path) -> io::Result<bool> {
+    match crate::platform::marker_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(error),
+    }
+}
+
 pub(crate) fn has_artifact_marker(path: &Path) -> io::Result<bool> {
     for marker in ARTIFACT_MARKERS {
-        match path.join(marker).symlink_metadata() {
-            Ok(_) => return Ok(true),
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
-                ) => {}
-            Err(error) => return Err(error),
+        if has_marker(&path.join(marker))? {
+            return Ok(true);
         }
     }
     let entries = match std::fs::read_dir(path) {
@@ -39,11 +48,7 @@ pub(crate) fn has_artifact_marker(path: &Path) -> io::Result<bool> {
         // Unknown sidecars cannot be detected here, but discovery also cannot enumerate
         // this directory, so artifactize cannot run it as a discovered workspace.
         Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
-            return match path.join(".git").symlink_metadata() {
-                Ok(_) => Ok(true),
-                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
-                Err(error) => Err(error),
-            };
+            return has_marker(&path.join(".git"));
         }
         Err(error) => return Err(error),
     };
@@ -56,30 +61,11 @@ pub(crate) fn has_artifact_marker(path: &Path) -> io::Result<bool> {
 }
 
 pub(crate) fn canonical_target(path: &Path) -> io::Result<PathBuf> {
-    let mut resolved = PathBuf::new();
-    for component in std::path::absolute(path)?.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                resolved.pop();
-            }
-            // A Windows prefix alone, such as `\\?\C:`, names the volume device, not a folder.
-            Component::Prefix(_) | Component::RootDir => resolved.push(component),
-            Component::Normal(_) => {
-                resolved.push(component);
-                match resolved.symlink_metadata() {
-                    Ok(_) => resolved = crate::platform::canonicalize(&resolved)?,
-                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-                    Err(error) => return Err(error),
-                }
-            }
-        }
-    }
-    Ok(resolved)
+    crate::platform::paths::canonical_target(path)
 }
 
 pub(crate) fn outside_workspace(workspace: &Path, output: &Path) -> io::Result<()> {
-    if output.starts_with(workspace) {
+    if crate::platform::is_within(output, workspace) {
         return Err(io::Error::other(
             "State and output directories must be outside the reviewed repository.",
         ));
@@ -119,7 +105,7 @@ mod tests {
             ".artifactizeignore",
             "file.txt.artf",
         ] {
-            let root = tempfile::tempdir().unwrap();
+            let root = crate::test_os::tempdir();
             let reviewed = root.path().join("reviewed");
             let other = root.path().join("other");
             std::fs::create_dir(&reviewed).unwrap();

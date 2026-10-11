@@ -15,7 +15,7 @@ use crate::{
     config::ProfileKind,
     graph::EvalStatus,
     store::RequestView,
-    types::{RequestStatus, RunStatus},
+    types::{ArtifactName, EvalId, RequestStatus, RunStatus},
 };
 
 /// Where a done eval's GREEN came from.
@@ -34,7 +34,7 @@ pub enum Queue {
     /// Waiting for one of the Run's `--jobs`.
     Jobs,
     /// Waiting for a backend slot (limits.json); holds the backend name.
-    Slot(String),
+    Slot(crate::config::Backend),
     /// Waiting for the running execution of the same reuse key.
     Joined,
 }
@@ -43,7 +43,7 @@ pub enum Queue {
 pub enum Activity {
     Running,
     /// The claimant, when someone has claimed it.
-    Human(Option<String>),
+    Human(Option<crate::types::ReviewerId>),
     Queued(Queue),
 }
 
@@ -51,8 +51,8 @@ pub enum Activity {
 /// every one of them is itself waiting: `(via, root)` reads "via waits for root".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Waits {
-    pub x: Vec<String>,
-    pub root: Option<(String, String)>,
+    pub artifacts: Vec<crate::types::ArtifactName>,
+    pub root: Option<(crate::types::ArtifactName, crate::types::ArtifactName)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -77,20 +77,30 @@ pub enum EvalView {
     /// Only while the Run is running.
     WaitingOn(Waits),
     /// Upstream failed with a RED verdict or is itself blocked.
-    BlockedBy(Vec<String>),
+    BlockedBy(Vec<crate::types::ArtifactName>),
     NotRun(NotRun),
 }
 
+/// Roll-up urgency, ordered from failed to done for eval rows and Artifact completions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Rank {
+    Failed,
+    InProgress,
+    Blocked,
+    Waiting,
+    NotRun,
+    Done,
+}
+
 impl EvalView {
-    /// Roll-up rank, most urgent first: failed, in progress, blocked, waiting, not run, done.
-    pub fn rank(&self) -> u8 {
+    pub fn rank(&self) -> Rank {
         match self {
-            Self::Failed { .. } => 0,
-            Self::InProgress(_) => 1,
-            Self::BlockedBy(_) => 2,
-            Self::WaitingOn(_) => 3,
-            Self::NotRun(_) => 4,
-            Self::Done(_) => 5,
+            Self::Failed { .. } => Rank::Failed,
+            Self::InProgress(_) => Rank::InProgress,
+            Self::BlockedBy(_) => Rank::Blocked,
+            Self::WaitingOn(_) => Rank::Waiting,
+            Self::NotRun(_) => Rank::NotRun,
+            Self::Done(_) => Rank::Done,
         }
     }
 }
@@ -120,13 +130,13 @@ pub enum Completion {
 }
 
 impl Completion {
-    /// Order of X: failed, in progress, waiting.
-    fn rank(self) -> u8 {
+    /// Order of X: failed, in progress, waiting, complete; blocked completions still wait.
+    fn rank(self) -> Rank {
         match self {
-            Self::Failed { .. } => 0,
-            Self::InProgress(_) => 1,
-            Self::Waiting { .. } => 2,
-            Self::Complete => 3,
+            Self::Failed { .. } => Rank::Failed,
+            Self::InProgress(_) => Rank::InProgress,
+            Self::Waiting { .. } => Rank::Waiting,
+            Self::Complete => Rank::Done,
         }
     }
 }
@@ -134,35 +144,29 @@ impl Completion {
 /// One Artifact an eval depends on, with its current completion.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Upstream {
-    pub artifact: String,
+    pub artifact: crate::types::ArtifactName,
     pub completion: Completion,
 }
 
 /// Per-Run index from saved definitions: display order, evals per Artifact and the
 /// Artifacts each eval depends on. Built in one pass over the definitions and requests.
 pub(super) struct Index<'a> {
-    pub order: Vec<&'a str>,
-    position: HashMap<&'a str, usize>,
-    requests: HashMap<&'a str, &'a RequestView>,
-    pub evals: BTreeMap<&'a str, Vec<&'a str>>,
+    pub order: Vec<&'a ArtifactName>,
+    position: HashMap<&'a ArtifactName, usize>,
+    requests: HashMap<&'a EvalId, &'a RequestView>,
+    pub evals: BTreeMap<&'a ArtifactName, Vec<&'a EvalId>>,
     /// Eval → direct dependency Artifacts, in display order.
-    pub upstream: BTreeMap<&'a str, Vec<&'a str>>,
-    pub dependency: BTreeSet<&'a str>,
+    pub upstream: BTreeMap<&'a EvalId, Vec<&'a ArtifactName>>,
+    pub dependency: BTreeSet<&'a EvalId>,
     /// Artifact → its cycle peers (same component), by name.
-    pub peers: BTreeMap<&'a str, Vec<&'a str>>,
-    pub cyclic: BTreeSet<&'a str>,
+    pub peers: BTreeMap<&'a ArtifactName, Vec<&'a ArtifactName>>,
+    pub cyclic: BTreeSet<&'a ArtifactName>,
 }
 
 type Component = crate::store::definitions::Component;
 
-fn members(component: &Component) -> Vec<&str> {
-    component
-        .artifacts
-        .value()
-        .into_iter()
-        .flatten()
-        .map(String::as_str)
-        .collect()
+fn members(component: &Component) -> Vec<&ArtifactName> {
+    component.artifacts.value().into_iter().flatten().collect()
 }
 
 impl<'a> Index<'a> {
@@ -175,36 +179,31 @@ impl<'a> Index<'a> {
             .collect();
         let mut requests = HashMap::new();
         for view in saved.requests {
-            requests
-                .entry(view.request.eval_id.as_str())
-                .or_insert(view);
+            requests.entry(&view.request.eval_id).or_insert(view);
         }
         let definitions: HashMap<_, _> = saved
             .eval_definitions()
             .iter()
-            .map(|eval| (eval.id.as_str(), eval))
+            .map(|eval| (&eval.id, eval))
             .collect();
         // Saved Eval definitions targeting each Artifact, then requests without one.
-        let mut targets: HashMap<&str, Vec<&str>> = HashMap::new();
+        let mut targets: HashMap<&ArtifactName, Vec<&EvalId>> = HashMap::new();
         for eval in saved.eval_definitions() {
-            targets
-                .entry(eval.target.as_str())
-                .or_default()
-                .push(eval.id.as_str());
+            targets.entry(&eval.target).or_default().push(&eval.id);
         }
         for view in saved.requests {
             let request = &view.request;
-            if !definitions.contains_key(request.eval_id.as_str()) {
-                let evals = targets.entry(request.target.as_str()).or_default();
-                if !evals.contains(&request.eval_id.as_str()) {
-                    evals.push(request.eval_id.as_str());
+            if !definitions.contains_key(&request.eval_id) {
+                let evals = targets.entry(&request.target).or_default();
+                if !evals.contains(&&request.eval_id) {
+                    evals.push(&request.eval_id);
                 }
             }
         }
         let mut dependency = BTreeSet::new();
         let mut evals = BTreeMap::new();
         for &artifact in &order {
-            let mut ids: Vec<(bool, &str)> = targets
+            let mut ids: Vec<(bool, &EvalId)> = targets
                 .remove(artifact)
                 .unwrap_or_default()
                 .into_iter()
@@ -228,12 +227,19 @@ impl<'a> Index<'a> {
             evals.insert(artifact, ids.into_iter().map(|(_, id)| id).collect());
         }
         let components = saved.components();
-        let by_id: HashMap<usize, &Component> = components
+        let by_id: HashMap<crate::graph::ComponentId, &Component> = components
             .iter()
             .enumerate()
-            .map(|(index, component)| (*component.id.value().unwrap_or(&index), component))
+            .map(|(index, component)| {
+                let id = component
+                    .id
+                    .value()
+                    .copied()
+                    .unwrap_or_else(|| crate::graph::ComponentId::from_position(index));
+                (id, component)
+            })
             .collect();
-        let mut component_of: HashMap<&str, &Component> = HashMap::new();
+        let mut component_of: HashMap<&ArtifactName, &Component> = HashMap::new();
         let mut peers = BTreeMap::new();
         let mut cyclic = BTreeSet::new();
         for component in components {
@@ -254,7 +260,7 @@ impl<'a> Index<'a> {
         for (&artifact, ids) in &evals {
             let component = component_of.get(artifact).copied();
             let own = component.map(members).unwrap_or_else(|| vec![artifact]);
-            let gates: Option<Vec<&str>> = component.map(|component| {
+            let gates: Option<Vec<&ArtifactName>> = component.map(|component| {
                 match component.dependencies.value() {
                     Some(dependencies) => dependencies
                         .iter()
@@ -267,38 +273,37 @@ impl<'a> Index<'a> {
                         .into_iter()
                         .flat_map(|graph| graph.relations())
                         .filter(|relation| {
-                            own.contains(&relation.target.as_str())
-                                && !own.contains(&relation.source.as_str())
+                            own.contains(&&relation.target) && !own.contains(&&relation.source)
                         })
                         .flat_map(|relation| {
                             component_of
-                                .get(relation.source.as_str())
+                                .get(&relation.source)
                                 .map(|component| members(component))
-                                .unwrap_or_else(|| vec![relation.source.as_str()])
+                                .unwrap_or_else(|| vec![&relation.source])
                         })
                         .collect(),
                 }
             });
             for &eval in ids {
                 let request = requests.get(eval).map(|view| &view.request);
-                let deps: Vec<&str> = if dependency.contains(eval) {
+                let deps: Vec<&ArtifactName> = if dependency.contains(eval) {
                     let definition = definitions
                         .get(eval)
                         .and_then(|definition| definition.deps.value());
                     match (definition, request) {
-                        (Some(deps), _) => deps.iter().map(String::as_str).collect(),
-                        (None, Some(request)) => request.deps.iter().map(String::as_str).collect(),
+                        (Some(deps), _) => deps.iter().collect(),
+                        (None, Some(request)) => request.deps.iter().collect(),
                         (None, None) => Vec::new(),
                     }
                 } else {
                     match (&gates, request) {
                         (Some(gates), _) => gates.clone(),
                         // Runs saved without definitions: the request's referenced Artifacts.
-                        (None, Some(request)) => request.deps.iter().map(String::as_str).collect(),
+                        (None, Some(request)) => request.deps.iter().collect(),
                         (None, None) => Vec::new(),
                     }
                 };
-                let mut deps: Vec<&str> = deps
+                let mut deps: Vec<&ArtifactName> = deps
                     .into_iter()
                     .filter(|id| *id != artifact)
                     .filter(|id| dependency.contains(eval) || !own.contains(id))
@@ -325,13 +330,15 @@ impl<'a> Index<'a> {
 /// Lazily derived views over one Run; dependency evals may read peers in any order.
 pub(super) struct States<'a> {
     run: &'a crate::store::Run,
+    #[cfg(test)]
+    pub derivations: std::cell::Cell<usize>,
     pub index: Index<'a>,
     pub running: bool,
     ignore_gates: bool,
-    views: RefCell<HashMap<&'a str, Option<EvalView>>>,
-    effective: RefCell<HashMap<&'a str, Option<EvalStatus>>>,
-    completions: RefCell<HashMap<&'a str, Completion>>,
-    waits: RefCell<HashMap<&'a str, Vec<String>>>,
+    views: RefCell<HashMap<&'a EvalId, Option<EvalView>>>,
+    effective: RefCell<HashMap<&'a EvalId, Option<EvalStatus>>>,
+    completions: RefCell<HashMap<&'a ArtifactName, Completion>>,
+    waits: RefCell<HashMap<&'a ArtifactName, Vec<ArtifactName>>>,
 }
 
 impl<'a> States<'a> {
@@ -341,8 +348,10 @@ impl<'a> States<'a> {
         let run = &saved.run.run;
         let states = Self {
             run,
+            #[cfg(test)]
+            derivations: std::cell::Cell::new(0),
             index: Index::new(saved),
-            running: run.status == RunStatus::Running,
+            running: run.status() == RunStatus::Running,
             ignore_gates: run.ignore_gates,
             views: RefCell::new(HashMap::new()),
             effective: RefCell::new(HashMap::new()),
@@ -361,7 +370,7 @@ impl<'a> States<'a> {
 
     /// Every Artifact after the Artifacts its evals depend on (an iterative depth-first
     /// post-order; a dependency eval naming a cycle peer may come either way).
-    fn upstream_first(&self) -> Vec<&'a str> {
+    fn upstream_first(&self) -> Vec<&'a ArtifactName> {
         let mut done = HashSet::new();
         let mut seen = HashSet::new();
         let mut ordered = Vec::with_capacity(self.index.order.len());
@@ -388,8 +397,8 @@ impl<'a> States<'a> {
         ordered
     }
 
-    fn dependencies(&self, artifact: &str) -> Vec<&'a str> {
-        let mut dependencies: Vec<&'a str> = Vec::new();
+    fn dependencies(&self, artifact: &ArtifactName) -> Vec<&'a ArtifactName> {
+        let mut dependencies: Vec<&'a ArtifactName> = Vec::new();
         for eval in self.evals(artifact) {
             for &upstream in self.upstream(eval) {
                 if !dependencies.contains(&upstream) {
@@ -401,26 +410,29 @@ impl<'a> States<'a> {
     }
 
     /// The Artifact id as borrowed from the index, for memo keys.
-    fn key(&self, artifact: &str) -> Option<&'a str> {
+    fn key(&self, artifact: &ArtifactName) -> Option<&'a ArtifactName> {
         self.index
             .position
             .get_key_value(artifact)
             .map(|(&id, _)| id)
     }
 
-    pub fn request(&self, eval: &str) -> Option<&'a RequestView> {
+    pub fn request(&self, eval: &EvalId) -> Option<&'a RequestView> {
         self.index.requests.get(eval).copied()
     }
 
     /// Evidence the graph used for an eval without a request in this Run: the Run's
     /// record of saved results, or for older Runs the validation saved at their end.
-    fn outside(&self, eval: &str) -> Option<RequestStatus> {
+    fn outside(&self, eval: &EvalId) -> Option<RequestStatus> {
         if let Some(status) = self.run.evidence.get(eval) {
             return Some(*status);
         }
-        let saved = self.run.validation["evals"].as_array()?;
-        let status = saved.iter().find(|saved| saved["id"] == eval)?["status"].as_str()?;
-        let status: RequestStatus = status.parse().ok()?;
+        let saved = self.run.validation.snapshot()?.evals.value()?;
+        let status = *saved
+            .iter()
+            .find(|saved| &saved.id == eval)?
+            .status
+            .value()?;
         matches!(
             status,
             RequestStatus::Green | RequestStatus::Red | RequestStatus::Error | RequestStatus::Stale
@@ -428,15 +440,15 @@ impl<'a> States<'a> {
         .then_some(status)
     }
 
-    pub fn evals(&self, artifact: &str) -> &[&'a str] {
+    pub fn evals(&self, artifact: &ArtifactName) -> &[&'a EvalId] {
         self.index.evals.get(artifact).map_or(&[], Vec::as_slice)
     }
 
-    pub fn upstream(&self, eval: &str) -> &[&'a str] {
+    pub fn upstream(&self, eval: &EvalId) -> &[&'a ArtifactName] {
         self.index.upstream.get(eval).map_or(&[], Vec::as_slice)
     }
 
-    fn position(&self, artifact: &str) -> usize {
+    fn position(&self, artifact: &ArtifactName) -> usize {
         self.index
             .position
             .get(artifact)
@@ -444,12 +456,14 @@ impl<'a> States<'a> {
             .unwrap_or(usize::MAX)
     }
 
-    pub fn view(&self, eval: &'a str) -> EvalView {
+    pub fn view(&self, eval: &'a EvalId) -> EvalView {
         if let Some(view) = self.views.borrow().get(eval) {
             // A wait cycle among dependency evals (rejected by graph.rs) reads as not run.
             return view.clone().unwrap_or(EvalView::NotRun(NotRun::Unreviewed));
         }
         self.views.borrow_mut().insert(eval, None);
+        #[cfg(test)]
+        self.derivations.set(self.derivations.get() + 1);
         let view = self.derive(eval);
         self.views.borrow_mut().insert(eval, Some(view.clone()));
         view
@@ -457,12 +471,14 @@ impl<'a> States<'a> {
 
     /// The eval's status as `graph.rs` evaluates it for gates: a GREEN result whose own
     /// gates are unmet still waits or is blocked, and never fulfils a downstream gate.
-    pub fn effective(&self, eval: &'a str) -> EvalStatus {
+    pub fn effective(&self, eval: &'a EvalId) -> EvalStatus {
         if let Some(status) = self.effective.borrow().get(eval) {
             // Dependency evals cannot wait on each other (graph.rs rejects it).
             return status.unwrap_or(EvalStatus::Wait);
         }
         self.effective.borrow_mut().insert(eval, None);
+        #[cfg(test)]
+        self.derivations.set(self.derivations.get() + 1);
         let status = self.evaluate(eval);
         self.effective.borrow_mut().insert(eval, Some(status));
         status
@@ -470,10 +486,10 @@ impl<'a> States<'a> {
 
     /// `Graph::evaluate_with_policy` over the saved snapshot: gate readiness first, then
     /// the eval's own evidence.
-    fn evaluate(&self, eval: &'a str) -> EvalStatus {
+    fn evaluate(&self, eval: &'a EvalId) -> EvalStatus {
         let request = self.request(eval).map(|view| &view.request);
         let status = request
-            .map(|request| request.status)
+            .map(|request| request.status())
             .or_else(|| self.outside(eval));
         let derived = self.index.dependency.contains(eval);
         if derived && status == Some(RequestStatus::Error) {
@@ -512,13 +528,13 @@ impl<'a> States<'a> {
     }
 
     /// Every eval of the Artifact is effectively GREEN: it fulfils downstream gates.
-    fn met(&self, artifact: &str) -> bool {
+    fn met(&self, artifact: &ArtifactName) -> bool {
         self.evals(artifact)
             .iter()
             .all(|eval| self.effective(eval) == EvalStatus::Green)
     }
 
-    fn derive(&self, eval: &'a str) -> EvalView {
+    fn derive(&self, eval: &'a EvalId) -> EvalView {
         let Some(view) = self.request(eval) else {
             // A saved result the Run used without a request of its own.
             return match self.outside(eval) {
@@ -531,7 +547,7 @@ impl<'a> States<'a> {
         };
         let request = &view.request;
         let dependency = request.profile.kind() == ProfileKind::Dependency;
-        match request.status {
+        match request.status() {
             RequestStatus::Green => EvalView::Done(if dependency {
                 Source::Derived
             } else if crate::query::reused(request) {
@@ -567,7 +583,7 @@ impl<'a> States<'a> {
                 if !unmet.is_empty() {
                     let waits = Waits {
                         root: self.root(&unmet),
-                        x: unmet,
+                        artifacts: unmet,
                     };
                     return if self.running {
                         EvalView::WaitingOn(waits)
@@ -586,26 +602,22 @@ impl<'a> States<'a> {
     /// Nothing upstream holds the eval.
     fn ready(&self, view: &RequestView) -> EvalView {
         let request = &view.request;
-        if !self.running || request.status != RequestStatus::Queued {
+        if !self.running || request.status() != RequestStatus::Queued {
             return EvalView::NotRun(NotRun::Unreviewed);
         }
-        let slot = request
-            .blocked_reason
-            .as_deref()
-            .and_then(|reason| reason.strip_prefix("Waiting for a free "))
-            .and_then(|rest| rest.split_once(" slot"))
-            .map(|(backend, _)| backend.to_owned());
-        EvalView::InProgress(Activity::Queued(if let Some(backend) = slot {
-            Queue::Slot(backend)
-        } else if request.execution_id.is_some() {
-            Queue::Joined
-        } else {
-            Queue::Jobs
-        }))
+        EvalView::InProgress(Activity::Queued(
+            if let Some(crate::store::QueueReason::Slot { backend }) = request.queue {
+                Queue::Slot(backend)
+            } else if request.execution_id.is_some() {
+                Queue::Joined
+            } else {
+                Queue::Jobs
+            },
+        ))
     }
 
     /// Dependency Artifacts whose gates are not met, most actionable first.
-    pub fn unmet(&self, artifacts: &[&'a str]) -> Vec<String> {
+    pub fn unmet(&self, artifacts: &[&'a ArtifactName]) -> Vec<crate::types::ArtifactName> {
         let mut unmet: Vec<_> = artifacts
             .iter()
             .filter(|artifact| !self.met(artifact))
@@ -614,11 +626,11 @@ impl<'a> States<'a> {
         unmet.sort_by_key(|(artifact, completion)| (completion.rank(), self.position(artifact)));
         unmet
             .into_iter()
-            .map(|(artifact, _)| artifact.to_owned())
+            .map(|(artifact, _)| artifact.clone())
             .collect()
     }
 
-    fn views_of(&self, artifact: &str) -> Vec<EvalView> {
+    fn views_of(&self, artifact: &ArtifactName) -> Vec<EvalView> {
         self.evals(artifact)
             .iter()
             .map(|eval| self.view(eval))
@@ -627,7 +639,7 @@ impl<'a> States<'a> {
 
     /// The Artifact's completion from its eval rows; done rows whose own gates are unmet
     /// do not complete it.
-    pub fn completion(&self, artifact: &str) -> Completion {
+    pub fn completion(&self, artifact: &ArtifactName) -> Completion {
         if let Some(completion) = self.completions.borrow().get(artifact) {
             return *completion;
         }
@@ -669,15 +681,15 @@ impl<'a> States<'a> {
     }
 
     /// The graph's Blocked readiness downstream: an effective RED or blocked eval.
-    fn blocks(&self, artifact: &str) -> bool {
+    fn blocks(&self, artifact: &ArtifactName) -> bool {
         self.evals(artifact)
             .iter()
             .any(|eval| matches!(self.effective(eval), EvalStatus::Red | EvalStatus::Blocked))
     }
 
     /// Done evals whose own gates are unmet: the Artifacts holding them back.
-    fn held(&self, artifact: &str, blocked: bool) -> Vec<String> {
-        let mut x: Vec<String> = Vec::new();
+    fn held(&self, artifact: &ArtifactName, blocked: bool) -> Vec<crate::types::ArtifactName> {
+        let mut x: Vec<crate::types::ArtifactName> = Vec::new();
         for &eval in self.evals(artifact) {
             let wanted = if blocked {
                 EvalStatus::Blocked
@@ -696,14 +708,14 @@ impl<'a> States<'a> {
     }
 
     /// The Artifacts this Artifact's evals wait for, as one X list.
-    pub fn waits_of(&self, artifact: &str) -> Vec<String> {
+    pub fn waits_of(&self, artifact: &ArtifactName) -> Vec<crate::types::ArtifactName> {
         if let Some(x) = self.waits.borrow().get(artifact) {
             return x.clone();
         }
         let mut x = self.held(artifact, false);
         for view in self.views_of(artifact) {
             if let EvalView::WaitingOn(waits) | EvalView::NotRun(NotRun::Dependency(waits)) = view {
-                for id in waits.x {
+                for id in waits.artifacts {
                     if !x.contains(&id) {
                         x.push(id);
                     }
@@ -718,7 +730,7 @@ impl<'a> States<'a> {
     }
 
     /// The Artifacts this Artifact's blocked evals are blocked by.
-    pub fn blockers_of(&self, artifact: &str) -> Vec<String> {
+    pub fn blockers_of(&self, artifact: &ArtifactName) -> Vec<crate::types::ArtifactName> {
         let mut x = self.held(artifact, true);
         for view in self.views_of(artifact) {
             if let EvalView::BlockedBy(blockers) = view {
@@ -733,7 +745,10 @@ impl<'a> States<'a> {
     }
 
     /// When every X is itself waiting, exactly one level of cause: what the first X waits for.
-    fn root(&self, x: &[String]) -> Option<(String, String)> {
+    fn root(
+        &self,
+        x: &[crate::types::ArtifactName],
+    ) -> Option<(crate::types::ArtifactName, crate::types::ArtifactName)> {
         if x.iter()
             .any(|id| !matches!(self.completion(id), Completion::Waiting { blocked: false }))
         {
@@ -745,12 +760,12 @@ impl<'a> States<'a> {
     }
 
     /// Every dependency Artifact of the eval, unmet ones first in X order.
-    pub fn upstream_states(&self, eval: &str) -> Vec<Upstream> {
+    pub fn upstream_states(&self, eval: &EvalId) -> Vec<Upstream> {
         let mut upstream: Vec<_> = self
             .upstream(eval)
             .iter()
             .map(|artifact| Upstream {
-                artifact: (*artifact).to_owned(),
+                artifact: (*artifact).clone(),
                 completion: self.completion(artifact),
             })
             .collect();

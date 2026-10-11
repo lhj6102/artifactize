@@ -4,9 +4,9 @@ use std::{
     borrow::Borrow,
     collections::BTreeMap,
     fmt,
-    fs::{self, File},
+    fs::File,
     io,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 use serde::{Deserialize, Serialize};
@@ -87,6 +87,58 @@ impl PartialEq<String> for ArtifactId {
     }
 }
 
+/// A safe relative logical path below an Artifact: `/`-separated plain names, such as a
+/// child Artifact's folder prefix. It holds no empty, `.` or `..` component.
+macro_rules! logical_name {
+    ($name:ident, $what:literal, $valid:expr) => {
+        #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+        #[serde(transparent)]
+        pub struct $name(String);
+
+        impl $name {
+            pub fn new(value: impl Into<String>) -> Result<Self, ScopeError> {
+                let value = value.into();
+                if !value.is_empty() && logical_path(&value).is_ok() && ($valid)(&value) {
+                    Ok(Self(value))
+                } else {
+                    Err(ScopeError(format!(
+                        concat!("Invalid ", $what, ": {:?}"),
+                        value
+                    )))
+                }
+            }
+
+            pub fn as_str(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl Borrow<str> for $name {
+            fn borrow(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl std::ops::Deref for $name {
+            type Target = str;
+            fn deref(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl fmt::Display for $name {
+            fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str(&self.0)
+            }
+        }
+    };
+}
+
+logical_name!(ChildPrefix, "child folder prefix", |_: &str| true);
+// A mount alias is one name: the first component of the paths it serves.
+logical_name!(MountAlias, "mount alias", |value: &str| !value
+    .contains('/'));
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ArtifactKind {
@@ -101,9 +153,9 @@ pub struct Artifact {
     pub kind: ArtifactKind,
     pub name: String,
     /// Logical path prefix to the child Artifact that owns it.
-    pub children: BTreeMap<String, ArtifactId>,
+    pub children: BTreeMap<ChildPrefix, ArtifactId>,
     /// Mount alias to the mounted Artifact.
-    pub mounts: BTreeMap<String, ArtifactId>,
+    pub mounts: BTreeMap<MountAlias, ArtifactId>,
 }
 
 impl Artifact {
@@ -192,8 +244,13 @@ impl Scope {
             &location.path
         };
         let resolved = scoped_path(&owner, Path::new(path))?;
-        open_input(root, artifact, path).map_err(|error| ScopeError(error.to_string()))?;
-        if artifact.file_name().is_some() && !resolved.is_file() {
+        let file =
+            open_input(root, artifact, path).map_err(|error| ScopeError(error.to_string()))?;
+        let regular = file
+            .metadata()
+            .map_err(|error| ScopeError(error.to_string()))?
+            .is_file();
+        if artifact.file_name().is_some() && !regular {
             return Err(ScopeError(
                 "File Artifact target must remain a regular file.".into(),
             ));
@@ -208,6 +265,9 @@ impl Scope {
 pub enum OpenError {
     #[error("No such file or directory.")]
     NotFound,
+    /// A component is a link, which scoped access never follows.
+    #[error("Cannot open Artifact input without symlink traversal.")]
+    Link,
     #[error(transparent)]
     Refused(#[from] ScopeError),
 }
@@ -215,7 +275,7 @@ pub enum OpenError {
 /// Open each component relative to its pinned parent, so replacement cannot redirect a read
 /// through a link.
 pub fn open_input(root: &Path, artifact: &Artifact, path: &str) -> Result<File, OpenError> {
-    if !root.is_absolute() || artifact.path.is_absolute() {
+    if !platform::is_absolute(root) || platform::is_absolute(&artifact.path) {
         return Err(
             ScopeError("Artifact roots must be absolute and owner paths relative.".into()).into(),
         );
@@ -281,26 +341,24 @@ fn file_input(artifact: &Artifact, path: &str) -> Result<(), ScopeError> {
 /// Open a relative path below an absolute root without following any symlink components.
 pub fn open_scoped(root: &Path, path: &str) -> Result<File, OpenError> {
     logical_path(path)?;
-    if !root.is_absolute() {
+    if !platform::is_absolute(root) {
         return Err(ScopeError("Scoped roots must be absolute.".into()).into());
     }
-    let target = root.join(path);
-    // `/`, or on Windows the volume or share root such as `C:\`.
-    let filesystem_root = target.ancestors().last().unwrap_or(&target);
+    let (filesystem_root, names) = platform::split_root(root)
+        .ok_or_else(|| ScopeError("Artifact path must not traverse parent directories.".into()))?;
     let mut directory =
         platform::open_directory(filesystem_root).map_err(|e| ScopeError(e.to_string()))?;
-    // Host-selected roots may use system aliases (Windows TEMP commonly uses 8.3 names).
-    // Logical components below that trusted root must use exact entry spellings. Both
-    // walks stay descriptor-relative and refuse links in every component.
-    let components = root.components().map(|component| (component, false)).chain(
-        Path::new(path)
-            .components()
-            .map(|component| (component, true)),
+    // Host-selected roots may use system aliases, such as short names. Logical components
+    // below that trusted root must use exact entry spellings. Both walks stay
+    // descriptor-relative and refuse links in every component.
+    let components = names.into_iter().map(|name| (name, false)).chain(
+        path.split('/')
+            .filter(|part| !part.is_empty())
+            .map(|part| (std::ffi::OsStr::new(part), true)),
     );
-    for (component, exact) in components {
-        directory = match component {
-            Component::Prefix(_) | Component::RootDir => continue,
-            Component::Normal(name) => open_named(&directory, name, exact)?,
+    for (name, exact) in components {
+        directory = match name {
+            name if name != ".." && name != "." => open_named(&directory, name, exact)?,
             _ => {
                 return Err(ScopeError(
                     "Artifact path must not traverse parent directories.".into(),
@@ -324,7 +382,7 @@ fn open_named(directory: &File, name: &std::ffi::OsStr, exact: bool) -> Result<F
         if error.kind() == io::ErrorKind::NotFound {
             OpenError::NotFound
         } else if platform::is_link_refusal(&error) {
-            ScopeError("Cannot open Artifact input without symlink traversal.".into()).into()
+            OpenError::Link
         } else {
             ScopeError(format!("Cannot open Artifact input: {error}")).into()
         }
@@ -360,45 +418,27 @@ pub fn logical_path(path: &str) -> Result<(), ScopeError> {
     Ok(())
 }
 
+/// The logical form of a native relative path: its components joined with `/`, whatever
+/// separator the platform uses. `None` when a component is not UTF-8 or not a plain name.
+pub fn logical_from_native(path: &Path) -> Option<String> {
+    platform::logical_from_native(path)
+}
+
 /// Resolve a physical input below a canonical root. No component may be a symlink.
 pub fn scoped_path(root: &Path, path: &Path) -> Result<PathBuf, ScopeError> {
-    let path = path
-        .to_str()
-        .ok_or_else(|| ScopeError("Artifact paths must be UTF-8.".into()))?;
-    if path.contains(['\0', '\\'])
-        || Path::new(path).is_absolute()
-        || path.split('/').any(|part| part == "." || part == "..")
-    {
-        return Err(ScopeError(
-            "Artifact path must be relative to its declared root.".into(),
-        ));
+    let relative =
+        platform::scoped_relative(path).map_err(|error| ScopeError(error.to_string()))?;
+    // The pinned, no-follow walk decides: it refuses links, special files and spellings
+    // other than the directory entry's own, so the returned path names what it opened.
+    match open_scoped(root, &relative) {
+        Ok(_) => Ok(relative
+            .split('/')
+            .filter(|part| !part.is_empty())
+            .fold(root.to_owned(), |path, part| path.join(part))),
+        Err(OpenError::NotFound) => Err(ScopeError(format!(
+            "Artifact input does not exist: {relative}"
+        ))),
+        Err(OpenError::Link) => Err(ScopeError("Artifact symlinks are not supported.".into())),
+        Err(OpenError::Refused(error)) => Err(error),
     }
-    let mut target = root.to_owned();
-    for component in path.split('/').filter(|part| !part.is_empty()) {
-        target.push(component);
-        let metadata = fs::symlink_metadata(&target)
-            .map_err(|error| ScopeError(format!("{}: {error}", target.display())))?;
-        if metadata.is_symlink() {
-            return Err(ScopeError("Artifact symlinks are not supported.".into()));
-        }
-    }
-    // The path-returning interface must enforce the same exact spelling as pinned reads;
-    // otherwise a Human tool or explicit fingerprint input could bypass logical ownership.
-    #[cfg(any(windows, target_os = "macos"))]
-    open_scoped(root, path).map_err(|error| ScopeError(error.to_string()))?;
-    let actual = platform::canonicalize(&target)
-        .map_err(|error| ScopeError(format!("{}: {error}", target.display())))?;
-    if !actual.starts_with(root) {
-        return Err(ScopeError(
-            "Artifact path escapes its declared root.".into(),
-        ));
-    }
-    let metadata = fs::metadata(&actual)
-        .map_err(|error| ScopeError(format!("{}: {error}", actual.display())))?;
-    if !metadata.is_file() && !metadata.is_dir() {
-        return Err(ScopeError(
-            "Artifact input must be a file or directory.".into(),
-        ));
-    }
-    Ok(actual)
 }

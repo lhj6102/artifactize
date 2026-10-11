@@ -3,7 +3,6 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::{
     Receipts, Request, history,
@@ -33,12 +32,13 @@ pub struct Capacity {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Provenance {
+    #[serde(with = "crate::platform::path_serde")]
     pub repo_path: PathBuf,
     pub run_id: RunId,
     pub request_id: RequestId,
-    pub eval_id: String,
-    pub eval_def_hash: String,
-    pub completed_at: Option<String>,
+    pub eval_id: crate::types::EvalId,
+    pub eval_def_hash: crate::types::DefinitionHash,
+    pub completed_at: Option<crate::types::Timestamp>,
     /// For Agent results: the SHA-256 of each tool's `executionPaths` when the review started,
     /// by tool name and declared path.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -48,8 +48,39 @@ pub struct Provenance {
 /// One execution and, once GREEN or RED with a key, one record of its key's history. A local
 /// Agent execution holds one of its backend's machine-wide slots while RUNNING.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(try_from = "ExecutionWire", into = "ExecutionWire")]
 pub struct Execution {
+    pub state: super::ExecutionState,
+    pub id: crate::types::ExecutionId,
+    /// The reuse key; absent without a fingerprint on every Artifact the eval depends on.
+    pub key: Option<ReuseKey>,
+    /// The target Artifact's fingerprint.
+    pub fingerprint: Option<Fingerprint>,
+    /// Each Artifact the key covers, the target included, with its fingerprint.
+    pub fingerprints: BTreeMap<crate::types::ArtifactName, Fingerprint>,
+    /// Kinds of exactly the Artifacts covered by a new-format reuse key.
+    pub artifact_kinds: BTreeMap<crate::types::ArtifactName, crate::config::ArtifactKind>,
+    pub eval_def_hash: crate::types::DefinitionHash,
+    /// The local process running this execution; absent for one mirrored from a remote
+    /// review store, which no local process owns.
+    pub owner: Option<process::ChildIdentity>,
+    pub profile: crate::config::StoredProfile,
+    /// How this result was produced; never part of the key.
+    pub options: ExecutionOptions,
+    pub usage: Option<Vec<crate::llm::Attempt>>,
+    pub provenance: Provenance,
+    pub started_at: crate::types::Timestamp,
+    pub producer: Option<Producer>,
+    /// The Human claimant who submitted this result.
+    pub reviewer: Option<crate::types::ReviewerId>,
+    /// Set only on executions mirrored from a remote review store.
+    pub origin: Option<Origin>,
+    pub manifest: Option<crate::cache::Manifest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExecutionWire {
     pub id: crate::types::ExecutionId,
     /// The reuse key; absent without a fingerprint on every Artifact the eval depends on.
     #[serde(default)]
@@ -58,35 +89,127 @@ pub struct Execution {
     pub fingerprint: Option<Fingerprint>,
     /// Each Artifact the key covers, the target included, with its fingerprint.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub fingerprints: BTreeMap<String, Fingerprint>,
+    pub fingerprints: BTreeMap<crate::types::ArtifactName, Fingerprint>,
     /// Kinds of exactly the Artifacts covered by a new-format reuse key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub artifact_kinds: BTreeMap<String, crate::config::ArtifactKind>,
-    pub eval_def_hash: String,
+    pub artifact_kinds: BTreeMap<crate::types::ArtifactName, crate::config::ArtifactKind>,
+    pub eval_def_hash: crate::types::DefinitionHash,
     pub owner_pid: u32,
     pub owner_start_time: u64,
     pub status: ExecutionStatus,
-    pub result: Option<Value>,
+    pub result: Option<super::ExecutionResult>,
     pub error: Option<String>,
-    pub error_code: Option<String>,
+    pub error_code: Option<crate::types::FailureCode>,
     pub profile: crate::config::StoredProfile,
     /// How this result was produced; never part of the key.
     #[serde(default)]
     pub options: ExecutionOptions,
     pub usage: Option<Vec<crate::llm::Attempt>>,
     pub provenance: Provenance,
-    pub started_at: String,
-    pub completed_at: Option<String>,
+    pub started_at: crate::types::Timestamp,
+    pub completed_at: Option<crate::types::Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub producer: Option<Producer>,
     /// The Human claimant who submitted this result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reviewer: Option<String>,
+    pub reviewer: Option<crate::types::ReviewerId>,
     /// Set only on executions mirrored from a remote review store.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Origin>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub manifest: Option<crate::cache::Manifest>,
+}
+
+impl TryFrom<ExecutionWire> for Execution {
+    type Error = String;
+    fn try_from(wire: ExecutionWire) -> Result<Self, Self::Error> {
+        let state = super::ExecutionState::from_parts(
+            wire.status,
+            wire.result,
+            wire.error,
+            wire.error_code,
+            wire.completed_at,
+        )?;
+        Ok(Self {
+            state,
+            id: wire.id,
+            key: wire.key,
+            fingerprint: wire.fingerprint,
+            fingerprints: wire.fingerprints,
+            artifact_kinds: wire.artifact_kinds,
+            eval_def_hash: wire.eval_def_hash,
+            owner: std::num::NonZeroU32::new(wire.owner_pid).map(|pid| process::ChildIdentity {
+                pid: process::ProcessId::from(pid),
+                start_time: wire.owner_start_time,
+            }),
+            profile: wire.profile,
+            options: wire.options,
+            usage: wire.usage,
+            provenance: wire.provenance,
+            started_at: wire.started_at,
+            producer: wire.producer,
+            reviewer: wire.reviewer,
+            origin: wire.origin,
+            manifest: wire.manifest,
+        })
+    }
+}
+impl From<Execution> for ExecutionWire {
+    fn from(record: Execution) -> Self {
+        let owner_pid = record.owner_pid();
+        let owner_start_time = record.owner_start_time();
+        Self {
+            status: record.status(),
+            result: record.result().cloned(),
+            error: record.error().map(str::to_owned),
+            error_code: record.error_code(),
+            completed_at: record.completed_at(),
+            id: record.id,
+            key: record.key,
+            fingerprint: record.fingerprint,
+            fingerprints: record.fingerprints,
+            artifact_kinds: record.artifact_kinds,
+            eval_def_hash: record.eval_def_hash,
+            owner_pid,
+            owner_start_time,
+            profile: record.profile,
+            options: record.options,
+            usage: record.usage,
+            provenance: record.provenance,
+            started_at: record.started_at,
+            producer: record.producer,
+            reviewer: record.reviewer,
+            origin: record.origin,
+            manifest: record.manifest,
+        }
+    }
+}
+impl Execution {
+    pub fn status(&self) -> crate::types::ExecutionStatus {
+        self.state.status()
+    }
+    pub fn result(&self) -> Option<&super::ExecutionResult> {
+        self.state.result()
+    }
+    pub fn error(&self) -> Option<&str> {
+        self.state.error()
+    }
+    pub fn error_code(&self) -> Option<crate::types::FailureCode> {
+        self.state.error_code()
+    }
+    pub fn completed_at(&self) -> Option<crate::types::Timestamp> {
+        self.state.completed_at()
+    }
+    /// The owning process's pid, or 0 for a remote-mirrored execution with no local owner:
+    /// the `owner_pid` SQL column and wire field's sentinel for "no owner", confined to
+    /// this persistence boundary.
+    pub fn owner_pid(&self) -> u32 {
+        self.owner.map_or(0, |owner| owner.pid.get())
+    }
+    /// The owning process's start time, or 0 alongside [`Self::owner_pid`]'s sentinel.
+    pub fn owner_start_time(&self) -> u64 {
+        self.owner.map_or(0, |owner| owner.start_time)
+    }
 }
 
 /// The execution options of a result: stored next to it, never part of its key, so results
@@ -95,11 +218,11 @@ pub struct Execution {
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub backend: Option<String>,
+    pub backend: Option<crate::config::Backend>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
+    pub model: Option<crate::config::ModelId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reasoning: Option<String>,
+    pub reasoning: Option<crate::config::Reasoning>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(with = "crate::config::validation::milliseconds")]
     pub timeout_ms: Option<std::time::Duration>,
@@ -109,14 +232,14 @@ pub struct ExecutionOptions {
     pub max_tokens: Option<u64>,
     /// The selected `profileVariants` entry; absent for the declared profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub variant: Option<String>,
+    pub variant: Option<crate::config::ProfileVariantName>,
 }
 
 impl ExecutionOptions {
     /// The declared options of an effective profile, as declared (absent means the default).
-    pub fn new(profile: &Profile, variant: Option<&str>) -> Self {
+    pub fn new(profile: &Profile, variant: Option<&crate::config::ProfileVariantName>) -> Self {
         let mut options = Self {
-            variant: variant.map(str::to_owned),
+            variant: variant.cloned(),
             ..Self::default()
         };
         match profile {
@@ -128,11 +251,9 @@ impl ExecutionOptions {
                 max_tool_calls,
                 max_tokens,
             } => {
-                options.backend = serde_json::to_value(backend)
-                    .ok()
-                    .and_then(|value| value.as_str().map(str::to_owned));
+                options.backend = Some(*backend);
                 options.model = Some(model.clone());
-                options.reasoning = reasoning.clone();
+                options.reasoning = *reasoning;
                 options.timeout_ms = *timeout_ms;
                 options.max_tool_calls = *max_tool_calls;
                 options.max_tokens = *max_tokens;
@@ -162,11 +283,7 @@ const MAX_PRODUCER_CHARS: usize = 200;
 
 impl Producer {
     pub fn current() -> Self {
-        // Windows sets neither, only USERNAME.
-        let user = ["USER", "LOGNAME", "USERNAME"]
-            .into_iter()
-            .take(if cfg!(windows) { 3 } else { 2 })
-            .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()));
+        let user = crate::platform::user_name();
         let host = crate::platform::host_name();
         let name = format!(
             "{}@{}",
@@ -192,9 +309,9 @@ impl Producer {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Origin {
-    pub store: String,
-    pub publisher: String,
-    pub published_at: String,
+    pub store: crate::types::StoreUrl,
+    pub publisher: crate::types::TokenName,
+    pub published_at: crate::types::Timestamp,
 }
 
 impl Execution {
@@ -203,23 +320,18 @@ impl Execution {
     fn backend(&self) -> Option<&str> {
         self.options
             .backend
-            .as_deref()
+            .as_ref()
+            .map(|backend| backend.as_str())
             .filter(|_| self.origin.is_none())
     }
 
     /// Whether this record completed after `other`, comparing `completedAt` as instants.
     pub fn completed_after(&self, other: &Execution) -> bool {
-        let at = |execution: &Execution| {
-            execution
-                .completed_at
-                .as_deref()
-                .and_then(crate::broker::sortable)
-        };
-        at(self) > at(other)
+        self.completed_at() > other.completed_at()
     }
 
     pub fn verdict(&self) -> Option<Verdict> {
-        match self.status {
+        match self.status() {
             ExecutionStatus::Green => Some(Verdict::Green),
             ExecutionStatus::Red => Some(Verdict::Red),
             _ => None,
@@ -243,19 +355,17 @@ pub(super) fn lookup(
             |row| row.get(0),
         )
         .optional()?;
-    data.map(|data| serde_json::from_str(&data))
-        .transpose()
-        .map_err(Into::into)
+    Ok(data.and_then(|data| super::unreadable::evidence("execution", &data)))
 }
 
 /// End a RUNNING execution whose owner process is gone, which frees its key and its slot.
 fn owner_died(
     db: &rusqlite::Connection,
     id: &crate::types::ExecutionId,
-    at: &str,
+    at: crate::types::Timestamp,
 ) -> Result<(), Error> {
     db.execute(
-        "UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Execution owner died.','$.errorCode','OWNER_DIED','$.completedAt',?1,'$.provenance.completedAt',?1) WHERE id=?2 AND status='RUNNING'",
+        "UPDATE executions SET status='ERROR',data=json_set(data,'$.status','ERROR','$.error','Execution owner died.','$.errorCode','OWNER_DIED','$.result',NULL,'$.completedAt',?1,'$.provenance.completedAt',?1) WHERE id=?2 AND status='RUNNING'",
         params![at, id],
     )?;
     Ok(())
@@ -263,7 +373,11 @@ fn owner_died(
 
 /// How many slots of `backend` the RUNNING executions of live owners hold; the executions of
 /// dead owners end, freeing theirs.
-fn held_slots(db: &rusqlite::Connection, backend: &str, at: &str) -> Result<u32, Error> {
+fn held_slots(
+    db: &rusqlite::Connection,
+    backend: &str,
+    at: crate::types::Timestamp,
+) -> Result<u32, Error> {
     let owners = {
         let mut statement = db.prepare(
             "SELECT id,owner_pid,owner_start_time FROM executions WHERE backend=? AND status='RUNNING'",
@@ -282,13 +396,45 @@ fn held_slots(db: &rusqlite::Connection, backend: &str, at: &str) -> Result<u32,
     };
     let mut held = 0;
     for (id, owner) in owners {
-        if process::is_alive(owner).map_err(|e| Error::Invalid(e.to_string()))? {
+        if process::is_alive(Some(owner)).map_err(|e| Error::Invalid(e.to_string()))? {
             held += 1;
         } else {
             owner_died(db, &id, at)?;
         }
     }
     Ok(held)
+}
+
+/// Corruption must not reserve a reuse key or machine-wide slot forever. Preserve its
+/// original JSON for the unreadable audit, but retire the invalid active index entry.
+fn retire_unreadable(
+    db: &rusqlite::Connection,
+    key: Option<&ReuseKey>,
+    backend: Option<&str>,
+) -> Result<(), Error> {
+    let records = {
+        let mut statement = db.prepare("SELECT id,data FROM executions WHERE status IN ('RUNNING','WAITING_HUMAN') AND ((?1 IS NOT NULL AND key=?1) OR (?2 IS NOT NULL AND backend=?2))")?;
+        statement
+            .query_map(params![key, backend], |row| {
+                Ok((
+                    row.get::<_, crate::types::ExecutionId>(0)?,
+                    row.get::<_, String>(1)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    for (id, data) in records {
+        if let Err(error) = super::unreadable::decode::<Execution>("execution", id.as_str(), &data)
+        {
+            use std::io::Write;
+            let _ = writeln!(std::io::stderr().lock(), "{error}");
+            db.execute(
+                "UPDATE executions SET status='ERROR',backend=NULL WHERE id=?",
+                [id],
+            )?;
+        }
+    }
+    Ok(())
 }
 
 fn active_owner(
@@ -302,22 +448,26 @@ fn active_owner(
     )>,
     Error,
 > {
-    db.query_row(
-        "SELECT id,owner_pid,owner_start_time,status FROM executions WHERE key=? AND status IN ('RUNNING','WAITING_HUMAN')",
-        [key],
-        |row| {
-            Ok((
-                row.get(0)?,
-                process::ChildIdentity {
-                    pid: row.get(1)?,
-                    start_time: row.get::<_, i64>(2)? as u64,
-                },
-                row.get(3)?,
-            ))
-        },
-    )
-    .optional()
-    .map_err(Into::into)
+    let row = db
+        .query_row(
+            "SELECT id,owner_pid,owner_start_time,status,data FROM executions WHERE key=? AND status IN ('RUNNING','WAITING_HUMAN')",
+            [key],
+            |row| {
+                Ok((
+                    row.get::<_, crate::types::ExecutionId>(0)?,
+                    process::ChildIdentity {
+                        pid: row.get(1)?,
+                        start_time: row.get::<_, i64>(2)? as u64,
+                    },
+                    row.get::<_, ExecutionStatus>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            },
+        )
+        .optional()?;
+    Ok(row.and_then(|(id, owner, status, data)| {
+        super::unreadable::evidence::<Execution>("execution", &data).map(|_| (id, owner, status))
+    }))
 }
 
 fn available_to_waiter(
@@ -333,8 +483,10 @@ fn available_to_waiter(
                 |row| row.get(0),
             )
             .optional()?;
-        if let Some(data) = data {
-            return Ok(Some(Claim::Reuse(Box::new(serde_json::from_str(&data)?))));
+        if let Some(data) = data
+            && let Some(execution) = super::unreadable::evidence("execution", &data)
+        {
+            return Ok(Some(Claim::Reuse(Box::new(execution))));
         }
     }
     available(db, key)
@@ -348,7 +500,7 @@ fn available(db: &rusqlite::Connection, key: &ReuseKey) -> Result<Option<Claim>,
         if status == ExecutionStatus::WaitingHuman {
             return Ok(Some(Claim::WaitHuman(id)));
         }
-        if process::is_alive(owner).map_err(|e| Error::Invalid(e.to_string()))? {
+        if process::is_alive(Some(owner)).map_err(|e| Error::Invalid(e.to_string()))? {
             return Ok(Some(Claim::Wait(id)));
         }
     }
@@ -413,8 +565,11 @@ pub async fn read_keyed_executions(
 /// changed key is explained against.
 pub async fn read_latest_cached(
     state: &std::path::Path,
-    keys: &[(String, String)],
-) -> Result<std::collections::BTreeMap<(String, String), Execution>, String> {
+    keys: &[(crate::types::EvalId, crate::types::DefinitionHash)],
+) -> Result<
+    std::collections::BTreeMap<(crate::types::EvalId, crate::types::DefinitionHash), Execution>,
+    String,
+> {
     if keys.is_empty() {
         return Ok(Default::default());
     }
@@ -440,8 +595,10 @@ pub async fn read_latest_cached(
                     let data: Option<String> = statement
                         .query_row(params![eval_def_hash, eval_id], |row| row.get(0))
                         .optional()?;
-                    if let Some(data) = data {
-                        latest.insert((eval_id, eval_def_hash), serde_json::from_str(&data)?);
+                    if let Some(data) = data
+                        && let Some(execution) = super::unreadable::evidence("execution", &data)
+                    {
+                        latest.insert((eval_id, eval_def_hash), execution);
                     }
                 }
             }
@@ -460,7 +617,7 @@ impl Receipts {
             .call(move |db| -> Result<_, Error> {
                 let execution = lookup(db, &key)?;
                 if let Some(execution) = &execution {
-                    history::touch(db, &execution.id, &crate::broker::now())?;
+                    history::touch(db, &execution.id, crate::broker::now())?;
                 }
                 Ok(execution)
             })
@@ -487,8 +644,7 @@ impl Receipts {
                     )
                     .optional()?;
                 Ok(data
-                    .map(|data| serde_json::from_str::<Execution>(&data))
-                    .transpose()?
+                    .and_then(|data| super::unreadable::evidence::<Execution>("execution", &data))
                     .filter(|execution| execution.origin.is_none()))
             })
             .await
@@ -509,7 +665,6 @@ impl Receipts {
         allow_start: bool,
         capacity: Option<Capacity>,
     ) -> Result<Claim, String> {
-        execution.validate()?;
         let execution = execution.clone();
         let waiting_for = waiting_for.cloned();
         self.connection
@@ -544,11 +699,12 @@ impl Receipts {
                 if !allow_start {
                     return Ok(Claim::BudgetExhausted);
                 }
+                retire_unreadable(&transaction, key, capacity.as_ref().map(|(_, backend)| *backend))?;
                 if let Some((capacity, backend)) = capacity {
                     if (capacity.stopped)() {
                         return Ok(Claim::BudgetExhausted);
                     }
-                    if held_slots(&transaction, backend, &execution.started_at)? >= capacity.limit {
+                    if held_slots(&transaction, backend, execution.started_at)? >= capacity.limit {
                         transaction.commit()?;
                         return Ok(Claim::Full);
                     }
@@ -556,7 +712,7 @@ impl Receipts {
                 if let Some(key) = key
                     && let Some((id, _, _)) = active_owner(&transaction, key)?
                 {
-                    owner_died(&transaction, &id, &execution.started_at)?;
+                    owner_died(&transaction, &id, execution.started_at)?;
                 }
                 let inserted = transaction.execute(
                     "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,backend,data) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(key) WHERE key IS NOT NULL AND status IN ('RUNNING','WAITING_HUMAN') DO NOTHING",
@@ -564,9 +720,9 @@ impl Receipts {
                         execution.id,
                         key,
                         execution.eval_def_hash,
-                        execution.status,
-                        execution.owner_pid,
-                        execution.owner_start_time as i64,
+                        execution.status(),
+                        execution.owner_pid(),
+                        execution.owner_start_time() as i64,
                         execution.backend(),
                         serde_json::to_string(&execution)?
                     ],
@@ -592,7 +748,7 @@ impl Receipts {
             .call(move |db| -> Result<(), Error> {
                 let transaction = db.transaction()?;
                 update_request(&transaction, &request)?;
-                if let (Some(execution), Some(at)) = (&request.execution_id, &request.completed_at)
+                if let (Some(execution), Some(at)) = (&request.execution_id, request.completed_at())
                 {
                     history::touch(&transaction, execution, at)?;
                 }
@@ -633,7 +789,6 @@ impl Receipts {
         &self,
         execution: &Execution,
     ) -> Result<Option<Execution>, String> {
-        execution.validate()?;
         let execution = execution.clone();
         self.connection
             .call(move |db| -> Result<Option<Execution>, Error> {
@@ -665,16 +820,16 @@ impl Receipts {
                         execution.id,
                         key,
                         execution.eval_def_hash,
-                        execution.status,
-                        execution.owner_pid,
-                        execution.owner_start_time as i64,
+                        execution.status(),
+                        execution.owner_pid(),
+                        execution.owner_start_time() as i64,
                         data
                     ],
                 )?;
                 let data: String = transaction
                     .query_row(
                         "SELECT data FROM executions WHERE id=? AND key=? AND status=?",
-                        params![execution.id, key, execution.status],
+                        params![execution.id, key, execution.status()],
                         |row| row.get(0),
                     )
                     .optional()?
@@ -683,7 +838,10 @@ impl Receipts {
                             "Mirrored execution ID conflicts with another execution.".into(),
                         )
                     })?;
-                let mirrored: Execution = serde_json::from_str(&data)?;
+                let Some(mirrored) = super::unreadable::evidence::<Execution>("execution", &data) else {
+                    transaction.commit()?;
+                    return Ok(None);
+                };
                 if let Some((completed_at, bytes)) = history::columns(&mirrored, data.len())? {
                     transaction.execute(
                         "UPDATE executions SET completed_at=?,bytes=?,last_used=? WHERE id=? AND completed_at IS NULL",
@@ -708,13 +866,11 @@ pub(super) fn settle(
     execution: &Execution,
     request: &Request,
 ) -> Result<bool, Error> {
-    execution.validate().map_err(Error::Invalid)?;
-    request.validate().map_err(Error::Invalid)?;
-    if request.status != execution.status.into()
+    if request.status() != execution.status().into()
         || request.execution_id.as_ref() != Some(&execution.id)
-        || request.result != execution.result
-        || request.error != execution.error
-        || request.error_code != execution.error_code
+        || request.result() != execution.result()
+        || request.error() != execution.error()
+        || request.error_code() != execution.error_code()
     {
         return Err(Error::Invalid(
             "Execution and request settlement disagree.".into(),
@@ -722,22 +878,22 @@ pub(super) fn settle(
     }
     let data = serde_json::to_string(execution)?;
     let record = history::columns(execution, data.len())?;
-    let last_used = record.as_ref().and(execution.completed_at.as_deref());
-    let (completed_at, bytes) = record.clone().unzip();
+    let last_used = record.as_ref().and(execution.completed_at());
+    let (completed_at, bytes) = record.unzip();
     let claimed = execution.key.is_some() && !request.force;
     if claimed || request.human_definition.is_some() {
         if db.execute(
             "UPDATE executions SET key=?,status=?,completed_at=?,bytes=?,last_used=?,data=? WHERE id=? AND owner_pid=? AND owner_start_time=? AND status IN ('RUNNING','WAITING_HUMAN')",
             params![
                 execution.key,
-                execution.status,
+                execution.status(),
                 completed_at,
                 bytes,
                 last_used,
                 data,
                 execution.id,
-                execution.owner_pid,
-                execution.owner_start_time as i64
+                execution.owner_pid(),
+                execution.owner_start_time() as i64
             ],
         )? != 1
         {
@@ -751,9 +907,9 @@ pub(super) fn settle(
                 execution.id,
                 execution.key,
                 execution.eval_def_hash,
-                execution.status,
-                execution.owner_pid,
-                execution.owner_start_time as i64,
+                execution.status(),
+                execution.owner_pid(),
+                execution.owner_start_time() as i64,
                 execution.backend(),
                 completed_at,
                 bytes,

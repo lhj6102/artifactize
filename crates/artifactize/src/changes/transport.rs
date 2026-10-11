@@ -1,19 +1,13 @@
 //! Small, deterministic endpoints scoped by canonical state path and the current OS user.
 //! Existing paths are validated, never repaired with chmod or a replacement DACL.
-use crate::platform;
+use crate::platform::{self, ipc as os};
+pub(super) use os::{Listener, Stream, validate_peer};
 use sha2::{Digest, Sha256};
 use std::{
     fs::File,
     io,
     path::{Path, PathBuf},
 };
-#[cfg(unix)]
-#[path = "transport/unix.rs"]
-mod os;
-#[cfg(windows)]
-#[path = "transport/windows.rs"]
-mod os;
-pub(super) use os::{Listener, Stream, validate_peer};
 
 /// Use 24 SHA-256 hex characters (96 bits) for the shared runtime-directory namespace,
 /// keeping Unix socket paths short. This is not authentication: owner/peer checks and
@@ -22,7 +16,7 @@ const RUNTIME_ID_PREFIX_HEX_CHARS: usize = 24;
 
 #[derive(Clone)]
 pub(super) struct Endpoint {
-    pub identity: String,
+    pub identity: crate::config::EndpointId,
     directory: PathBuf,
     pub(super) address: PathBuf,
 }
@@ -34,12 +28,14 @@ impl Endpoint {
         digest.update(user.as_bytes());
         digest.update([0]);
         digest.update(state.as_os_str().as_encoded_bytes());
-        let identity = digest
+        let identity: crate::config::EndpointId = digest
             .finalize()
             .iter()
             .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-        let directory = os::directory(&identity, &user)?;
+            .collect::<String>()
+            .parse()
+            .expect("SHA-256 endpoint identity");
+        let directory = os::directory(&identity[..RUNTIME_ID_PREFIX_HEX_CHARS], &user)?;
         let address = os::address(&directory, &identity);
         let endpoint = Self {
             identity,
@@ -48,6 +44,11 @@ impl Endpoint {
         };
         endpoint.validate()?;
         Ok(endpoint)
+    }
+    /// The private directory that holds the election lock.
+    #[cfg(test)]
+    pub(super) fn directory(&self) -> &Path {
+        &self.directory
     }
     fn validate(&self) -> io::Result<()> {
         os::validate_directory(&self.directory)

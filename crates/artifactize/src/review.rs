@@ -17,6 +17,7 @@ pub(crate) use embedded::Control;
 pub use form::{Field, Form, Input, template};
 pub use runs::Runs;
 
+use crate::config::ToolName;
 use std::{
     future::Future,
     io::Read,
@@ -84,7 +85,7 @@ pub enum Job {
     /// Claim first when `claim`, then run the tool.
     Run {
         id: RequestId,
-        tool: String,
+        tool: ToolName,
         claim: bool,
     },
     /// Claim first when `claim`, then submit and publish like `request submit`.
@@ -108,7 +109,7 @@ pub enum Outcome {
         error: String,
     },
     Ran {
-        tool: String,
+        tool: ToolName,
         claimed: Option<HumanClaim>,
         result: Result<ToolResult, String>,
     },
@@ -140,7 +141,7 @@ pub enum Action {
 /// A declared Human tool as the saved definition records it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tool {
-    pub name: String,
+    pub name: ToolName,
     pub kind: HumanToolKind,
     pub description: String,
     pub declared: Runs,
@@ -168,13 +169,13 @@ impl Drop for Busy {
 }
 
 /// Resolved command lines by tool name; a tool that cannot be resolved carries its error.
-type Commands = std::collections::BTreeMap<String, Result<CommandLine, String>>;
+type Commands = std::collections::BTreeMap<ToolName, Result<CommandLine, String>>;
 
 /// Screen state over saved data; only jobs write, through the `human` lifecycle API.
 pub struct Review {
     state: PathBuf,
     repo: Option<PathBuf>,
-    reviewer: String,
+    reviewer: crate::types::ReviewerId,
     mode: Mode,
     /// The standalone level with focus; monitor keeps its own panes.
     focus: Focus,
@@ -188,7 +189,6 @@ pub struct Review {
     /// The open request, if any, and its last successfully loaded view.
     open: Option<RequestId>,
     /// An invalid compatibility constructor ID never enters state reads or jobs.
-    invalid_open: Option<String>,
     request: Option<RequestView>,
     tool: usize,
     output: Option<Output>,
@@ -206,7 +206,7 @@ pub struct Review {
     /// Leave once nothing else waits after a submission.
     submitted: bool,
     /// Embedded mode keeps GREEN and RED drafts separate across verdict switches.
-    drafts: std::collections::BTreeMap<&'static str, Form>,
+    drafts: std::collections::BTreeMap<crate::runtime::Verdict, Form>,
     field_scroll: u16,
     instruction_scroll: u16,
     /// Standalone mouse capture, on by default like monitor; F2 toggles it.
@@ -220,19 +220,15 @@ impl Review {
     pub fn new(
         state: PathBuf,
         repo: Option<PathBuf>,
-        reviewer: String,
-        open: Option<String>,
+        reviewer: crate::types::ReviewerId,
+        open: Option<RequestId>,
     ) -> Self {
-        let (open, invalid_open) = match open.map(|id| id.parse::<RequestId>()).transpose() {
-            Ok(open) => (open, None),
-            Err(error) => (None, Some(error)),
-        };
         Self {
             state,
             repo,
             reviewer,
             mode: Mode::Request,
-            focus: if open.is_some() || invalid_open.is_some() {
+            focus: if open.is_some() {
                 Focus::Detail
             } else {
                 Focus::List
@@ -243,7 +239,6 @@ impl Review {
             waiting: Vec::new(),
             list: TableState::default(),
             open,
-            invalid_open,
             request: None,
             tool: 0,
             output: None,
@@ -281,10 +276,6 @@ impl Review {
 
     /// Reload the visible screen read-only; on failure keep the last-known data.
     pub async fn refresh(&mut self) -> Action {
-        if let Some(error) = &self.invalid_open {
-            self.error = Some(error.clone());
-            return Action::None;
-        }
         // The standalone list stays beside the open request; monitor reads only the request.
         // Followers of later Runs collapse onto the original request, which records the Human
         // definition (tools and owner schemas) and receives every action, as in monitor.
@@ -296,7 +287,7 @@ impl Review {
         }
         if let (Ok(()), Some(id)) = (&result, self.open.clone()) {
             result = match store::read_request(&self.state, &id).await {
-                Ok(view) if view.request.status == crate::types::RequestStatus::WaitingHuman => {
+                Ok(view) if view.request.status() == crate::types::RequestStatus::WaitingHuman => {
                     store::read_original(&self.state, &view).await
                 }
                 other => other,
@@ -338,7 +329,7 @@ impl Review {
             return;
         };
         let id = view.request.id.clone();
-        if view.request.status != crate::types::RequestStatus::WaitingHuman
+        if view.request.status() != crate::types::RequestStatus::WaitingHuman
             || view.request.human_definition.is_none()
             || self.commands.as_ref().is_some_and(|(seen, _)| seen == &id)
         {
@@ -398,10 +389,10 @@ impl Review {
             .request
             .as_ref()
             .ok_or("The request is still loading.")?;
-        if view.request.status != crate::types::RequestStatus::WaitingHuman {
+        if view.request.status() != crate::types::RequestStatus::WaitingHuman {
             return Err(format!(
                 "The request is {}; there is nothing to review.",
-                view.request.status
+                view.request.status()
             ));
         }
         match &view.claim {
@@ -621,7 +612,6 @@ impl Review {
             self.drafts.clear();
         }
         self.open = Some(view.request.id.clone());
-        self.invalid_open = None;
         self.request = Some(view);
         self.focus = Focus::Detail;
         Action::Refresh
@@ -663,7 +653,7 @@ impl Review {
         }
     }
 
-    fn run(&mut self, tool: String) -> Action {
+    fn run(&mut self, tool: ToolName) -> Action {
         match self.owned_request() {
             Ok(id) => Action::Start(Job::Run {
                 id,
@@ -766,11 +756,11 @@ impl Review {
                 self.commands = None;
                 let launched = Content::Launch { launched: true };
                 self.notice = Some(match &result {
-                    Ok(result) if result.is_error => (
+                    Ok(result) if result.is_error() => (
                         format!("{tool} failed; a tool error is not a verdict."),
                         true,
                     ),
-                    Ok(result) if result.content.contains(&launched) => {
+                    Ok(result) if result.content().contains(&launched) => {
                         (format!("{tool} launched."), false)
                     }
                     Ok(_) => (format!("{tool} finished."), false),
@@ -792,7 +782,9 @@ impl Review {
                         self.notice = Some((
                             format!(
                                 "Submitted {} for {} ({}).",
-                                request.status, request.eval_id, request.id
+                                request.status(),
+                                request.eval_id,
+                                request.id
                             ),
                             false,
                         ));
@@ -860,7 +852,12 @@ impl Review {
 }
 
 impl Job {
-    async fn run(self, state: PathBuf, reviewer: String, cancel: CancellationToken) -> Outcome {
+    async fn run(
+        self,
+        state: PathBuf,
+        reviewer: crate::types::ReviewerId,
+        cancel: CancellationToken,
+    ) -> Outcome {
         let mut claimed = None;
         match self {
             Job::Claim { id } => {
@@ -908,7 +905,7 @@ impl Job {
                 if let Err(error) = &result
                     && let Ok(view) = store::read_request(&state, &id).await
                     && matches!(
-                        view.request.status,
+                        view.request.status(),
                         crate::types::RequestStatus::Green | crate::types::RequestStatus::Red
                     )
                     && view.execution.as_ref().is_some_and(|execution| {
@@ -950,36 +947,46 @@ impl Job {
 
 /// Declared Human tools in the eval scope, named like the registry.
 pub fn tools(request: &Request) -> Vec<Tool> {
-    let definition = request.human_definition.as_ref();
-    let Some(artifacts) = definition.and_then(|definition| definition["artifacts"].as_object())
+    use crate::store::definitions::HumanTool;
+    let Some(artifacts) = request
+        .human_definition
+        .as_ref()
+        .and_then(|definition| definition.artifacts.value())
     else {
         return Vec::new();
     };
     let mut tools: Vec<_> = artifacts
         .iter()
         .flat_map(|(id, artifact)| {
-            let declared = artifact["views"]["humanTools"]
-                .as_object()
+            artifact
+                .views
+                .value()
+                .and_then(|views| views.human_tools.value())
                 .into_iter()
-                .flatten();
-            declared.filter_map(move |(operation, tool)| {
-                Some(Tool {
-                    name: format!("{operation}_{id}"),
-                    kind: serde_json::from_value(tool["kind"].clone()).ok()?,
-                    description: tool["description"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .replace("{artifactName}", id),
-                    declared: Runs::parse(artifacts, id, tool),
+                .flatten()
+                // A saved name that is not a valid tool name has no tool to run; the
+                // registry, built from the same declarations, refuses it as well.
+                .filter_map(move |(operation, tool)| {
+                    let (kind, description) = match tool {
+                        HumanTool::Command(tool) => (tool.kind, &tool.description),
+                        HumanTool::Builtin(tool) => (tool.kind, &tool.description),
+                    };
+                    Some(Tool {
+                        name: format!("{operation}_{id}").parse().ok()?,
+                        kind,
+                        description: description.replace("{artifactName}", id.as_str()),
+                        declared: Runs::parse(artifacts, id, tool),
+                    })
                 })
-            })
         })
         .collect();
     tools.sort_by(|a, b| a.name.cmp(&b.name));
     tools
 }
 
-/// Words joined for display, single-quoted when the shell would split or expand them.
+/// Words joined for an on-screen preview, double-quoted when a word has whitespace or a
+/// quote of its own. This is a reading aid, not a shell command: it claims no single
+/// shell's escaping rules, which differ between Unix shells and Windows's.
 pub fn shell<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
     let quote = |word: &str| {
         let plain = !word.is_empty()
@@ -989,7 +996,7 @@ pub fn shell<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
         if plain {
             word.to_owned()
         } else {
-            format!("'{}'", word.replace('\'', r"'\''"))
+            format!("\"{}\"", word.replace('"', "\"\""))
         }
     };
     words.into_iter().map(quote).collect::<Vec<_>>().join(" ")
@@ -998,13 +1005,13 @@ pub fn shell<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
 fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
     match result {
         Ok(result) => Output {
-            title: if result.is_error {
+            title: if result.is_error() {
                 format!("{tool} · tool error")
             } else {
                 tool.to_owned()
             },
             text: result
-                .content
+                .content()
                 .iter()
                 .map(|content| match content {
                     Content::Text { text } => text.trim_end().to_owned(),
@@ -1013,7 +1020,7 @@ fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
                 })
                 .collect::<Vec<_>>()
                 .join("\n"),
-            error: result.is_error,
+            error: result.is_error(),
         },
         Err(error) => Output {
             title: format!("{tool} · failed"),
@@ -1026,31 +1033,14 @@ fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
 /// Edit text in `$VISUAL`, then `$EDITOR` (default `vi`, Notepad on Windows); bounded
 /// like `--fields-file`.
 async fn edit(text: String) -> Result<String, String> {
-    let file = tempfile::Builder::new()
-        .prefix("artifactize-fields-")
-        .suffix(".json")
-        .tempfile()
-        .map_err(|e| e.to_string())?;
+    let file =
+        crate::platform::private_temp_file("artifactize-fields-").map_err(|e| e.to_string())?;
     std::fs::write(file.path(), text).map_err(|e| e.to_string())?;
-    let editor = ["VISUAL", "EDITOR"]
-        .into_iter()
-        .find_map(|variable| {
-            std::env::var(variable)
-                .ok()
-                .filter(|editor| !editor.trim().is_empty())
-        })
-        .unwrap_or_else(|| crate::platform::DEFAULT_EDITOR.into());
-    let status = crate::platform::editor(&editor, file.path())
-        .status()
+    crate::platform::run_editor(&crate::platform::selected_editor(), file.path())
         .await
-        .map_err(|e| format!("cannot start the editor: {e}"))?;
-    if !status.success() {
-        return Err(format!(
-            "The editor exited unsuccessfully ({status}); nothing was submitted."
-        ));
-    }
+        .map_err(|e| format!("cannot run the editor: {e}"))?;
     let mut bytes = Vec::new();
-    std::fs::File::open(file.path())
+    crate::platform::open_regular(file.path())
         .and_then(|file| {
             file.take(crate::human::FIELDS_READ_BYTES)
                 .read_to_end(&mut bytes)
@@ -1069,8 +1059,8 @@ async fn edit(text: String) -> Result<String, String> {
 pub async fn run(
     state: PathBuf,
     repo: Option<PathBuf>,
-    reviewer: String,
-    open: Option<String>,
+    reviewer: crate::types::ReviewerId,
+    open: Option<RequestId>,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
     // ratatui's panic hook restores the terminal before a panic message is printed.

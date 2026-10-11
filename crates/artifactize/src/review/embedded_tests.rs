@@ -5,7 +5,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use serde_json::json;
 
 fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
@@ -19,7 +19,7 @@ fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
                     "inspect":{
                         "kind":"output",
                         "description":"Inspect",
-                        "command":crate::test_os::bin("true"),
+                        "command":crate::test_os::true_program(),
                         "args":[],
                     },
                 },
@@ -71,8 +71,8 @@ fn opened(state: &std::path::Path, view: RequestView, reviewer: &str) -> Review 
     let mut review = Review::new(
         state.to_path_buf(),
         None,
-        reviewer.into(),
-        Some(view.request.id.to_string()),
+        reviewer.parse().unwrap(),
+        Some(view.request.id.clone()),
     );
     review.load_single(view);
     review
@@ -152,7 +152,7 @@ async fn explicit_claim_race_follower_dedup_and_release_use_original_request() {
             .await
             .unwrap()
             .request
-            .status,
+            .status(),
         crate::types::RequestStatus::Green
     );
     assert_eq!(
@@ -160,7 +160,7 @@ async fn explicit_claim_race_follower_dedup_and_release_use_original_request() {
             .await
             .unwrap()
             .request
-            .status,
+            .status(),
         crate::types::RequestStatus::Green
     );
 }
@@ -174,7 +174,7 @@ fn nested_json_is_utf8_editable_and_enter_is_not_submit() {
             "list":{"type":"array","items":{"type":"string"}},
         },
     });
-    let mut form = Form::new("RED", Some(&schema));
+    let mut form = Form::new(crate::runtime::Verdict::Red, Some(&schema));
     form.json = Some(String::new());
     form.cursor = 0;
     form.paste("{\"nested\":{\"name\":\"한글\"},\"list\":[\"é\"]}");
@@ -231,10 +231,10 @@ async fn embedded_drafts_survive_refresh_verdict_switch_and_ownership_loss() {
         "qrg한글"
     );
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    human::unclaim(&receipts, &view.request.id, "alice")
+    human::unclaim(&receipts, &view.request.id, &"alice".parse().unwrap())
         .await
         .unwrap();
-    human::claim(&receipts, &view.request.id, "bob")
+    human::claim(&receipts, &view.request.id, &"bob".parse().unwrap())
         .await
         .unwrap();
     assert!(
@@ -283,13 +283,11 @@ async fn remote_failure_after_local_submit_leaves_completed_modal_not_resubmissi
     )
     .unwrap();
     let credentials = state.join("auth");
-    crate::platform::create_private_dir_all(&credentials).unwrap();
-    let file = crate::platform::private_options()
-        .write(true)
-        .create_new(true)
-        .open(credentials.join("remote-token.json"))
-        .unwrap();
-    serde_json::to_writer(file, &json!({"url":url,"token":"fixture-token-never-real"})).unwrap();
+    crate::test_os::create_private_dir_all(&credentials);
+    crate::test_os::write_private_file(
+        &credentials.join("remote-token.json"),
+        json!({"url":url,"token":"fixture-token-never-real"}).to_string(),
+    );
     let server = tokio::spawn(async move {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let (mut connection, _) = listener.accept().await.unwrap();
@@ -333,7 +331,7 @@ async fn a_tool_runs_at_once_and_keeps_the_open_draft() {
     // No confirmation step: the run job starts at once, and the form stays open meanwhile.
     let outcome = perform(&mut review, Control::RunTool).await;
     assert!(
-        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error),
+        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error()),
         "{outcome:?}"
     );
     review.finish_single(outcome);
@@ -366,7 +364,7 @@ async fn an_external_submission_ends_editing_and_frees_the_detail_keys() {
     human::submit_and_publish(
         &state,
         view.request.id.as_str(),
-        "alice",
+        &"alice".parse().unwrap(),
         &json!({"verdict":"GREEN","approved":true}),
         CancellationToken::new(),
     )
@@ -400,7 +398,9 @@ async fn a_run_after_an_outside_release_neither_claims_nor_runs() {
     // Another terminal releases the claim before this review has refreshed: the job checks
     // ownership atomically, so the stale view neither claims nor runs.
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    human::unclaim(&receipts, &id, "alice").await.unwrap();
+    human::unclaim(&receipts, &id, &"alice".parse().unwrap())
+        .await
+        .unwrap();
     let Action::Start(job) = review.control(Control::RunTool) else {
         panic!("the stale view still starts the job");
     };
@@ -440,7 +440,7 @@ async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
     human::submit_and_publish(
         &state,
         id.as_str(),
-        "alice",
+        &"alice".parse().unwrap(),
         &json!({"verdict":"GREEN","approved":true}),
         CancellationToken::new(),
     )
@@ -460,7 +460,10 @@ async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
     assert!(review.settled());
     assert_eq!(review.control(Control::RunTool), Action::None);
     assert_eq!(review.mode(), &Mode::Request);
-    assert_eq!(review.drafts["RED"].fields[0].display(), "draft with 한글");
+    assert_eq!(
+        review.drafts[&crate::runtime::Verdict::Red].fields[0].display(),
+        "draft with 한글"
+    );
 }
 
 #[tokio::test]
@@ -468,7 +471,12 @@ async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     let (_root, repo, state) = fixture();
     let view = waiting(&repo, &state).await;
     let id = view.request.id.clone();
-    let mut review = Review::new(state.clone(), None, "alice".into(), Some(id.to_string()));
+    let mut review = Review::new(
+        state.clone(),
+        None,
+        "alice".parse().unwrap(),
+        Some(id.clone()),
+    );
     review.refresh().await;
     let Action::Start(job) = review.key(KeyEvent::from(KeyCode::Char('c'))) else {
         panic!("claim job");
@@ -480,7 +488,7 @@ async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     human::submit_and_publish(
         &state,
         id.as_str(),
-        "alice",
+        &"alice".parse().unwrap(),
         &json!({"verdict":"GREEN","approved":true}),
         CancellationToken::new(),
     )
@@ -530,7 +538,7 @@ async fn keyboard_reclaim_restores_the_release_draft() {
 #[test]
 fn wrapped_flat_fields_share_their_actual_rendered_hit_rows() {
     let form = Form::new(
-        "RED",
+        crate::runtime::Verdict::Red,
         Some(&json!({
             "type":"object",
             "properties":{
@@ -567,26 +575,29 @@ fn wrapped_flat_fields_share_their_actual_rendered_hit_rows() {
 #[test]
 fn long_json_line_keeps_unicode_cursor_visible() {
     let mut form = Form::new(
-        "RED",
+        crate::runtime::Verdict::Red,
         Some(&json!({"type":"object","properties":{"nested":{"type":"object"}}})),
     );
     form.json = Some(format!("{}한글", "x".repeat(140)));
     form.cursor = form.json.as_ref().unwrap().len();
-    let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(32, 8)).unwrap();
-    terminal
-        .draw(|frame| view::draw_inline_form(frame, frame.area(), &form, 0, true))
-        .unwrap();
-    let text: String = terminal
-        .backend()
-        .buffer()
-        .content()
-        .iter()
-        .map(|cell| cell.symbol())
-        .collect();
-    assert!(
-        text.contains('한') && text.contains('글') && text.contains('▏'),
-        "{text}"
-    );
+    for (width, height) in [(12, 5), (32, 8), (80, 24)] {
+        let mut terminal =
+            ratatui::Terminal::new(ratatui::backend::TestBackend::new(width, height)).unwrap();
+        terminal
+            .draw(|frame| view::draw_inline_form(frame, frame.area(), &form, 0, true))
+            .unwrap();
+        let text: String = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect();
+        assert!(
+            text.contains('한') && text.contains('글') && text.contains('▏'),
+            "{width}x{height}: {text}"
+        );
+    }
 }
 
 #[test]
@@ -642,7 +653,7 @@ fn keyboard_pages_flat_fields_without_mouse_capture() {
         .map(|n| (format!("field-{n:02}"), json!({"type":"string"})))
         .collect();
     review.mode = Mode::Form(Form::new(
-        "RED",
+        crate::runtime::Verdict::Red,
         Some(&json!({"type":"object","properties":properties})),
     ));
     press(&mut review, KeyEvent::from(KeyCode::PageDown));
@@ -668,13 +679,13 @@ fn keyboard_pages_flat_fields_without_mouse_capture() {
 /// The owner's file Artifact sign-off: a FILE Artifact whose launch tool opens the file, and a
 /// GREEN schema whose only required property is a `const` without `type`.
 fn file_signoff() -> (tempfile::TempDir, PathBuf, PathBuf) {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     let brand = repo.join("assets/brand");
     std::fs::create_dir_all(&brand).unwrap();
     std::fs::write(brand.join("artifactize-icon.svg"), "<svg/>\n").unwrap();
-    let command = serde_json::to_string(&crate::test_os::bin("true")).unwrap();
+    let command = serde_json::to_string(&crate::test_os::true_program()).unwrap();
     let declaration = format!(
         r#"name = "brand-icon"
 
@@ -739,7 +750,7 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
         review
             .tools()
             .into_iter()
-            .map(|tool| (tool.name, tool.kind))
+            .map(|tool| (tool.name.to_string(), tool.kind))
             .collect::<Vec<_>>()
     };
     let expected = vec![(
@@ -755,7 +766,12 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     assert_eq!(tool(&opened(&state, monitor, "alice")), expected);
 
     // The standalone list holds one entry per waiting sign-off, not one per joined Run.
-    let mut review = Review::new(state.clone(), Some(repo.clone()), "alice".into(), None);
+    let mut review = Review::new(
+        state.clone(),
+        Some(repo.clone()),
+        "alice".parse().unwrap(),
+        None,
+    );
     review.refresh().await;
     let listed: Vec<_> = review
         .waiting
@@ -769,8 +785,8 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     let mut review = Review::new(
         state.clone(),
         Some(repo.clone()),
-        "alice".into(),
-        Some(followers[0].request.id.to_string()),
+        "alice".parse().unwrap(),
+        Some(followers[0].request.id.clone()),
     );
     review.refresh().await;
     assert_eq!(review.open.as_ref(), Some(&original.request.id));
@@ -789,15 +805,18 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     };
     let root = crate::test_os::canonical(&repo);
     let file = crate::test_os::canonical(&root.join("assets/brand/artifactize-icon.svg"));
-    assert_eq!(command.args, vec![file.to_str().unwrap().to_owned()]);
+    assert_eq!(command.args, vec![crate::test_os::path_text(&file)]);
     assert_eq!(command.cwd, root.join("assets/brand"));
     press(&mut review, KeyEvent::from(KeyCode::Tab));
     let screen = drawn(&mut review);
-    assert!(screen.contains(file.to_str().unwrap()), "{screen}");
+    assert!(
+        screen.contains(&crate::test_os::path_text(&file)),
+        "{screen}"
+    );
     let action = press(&mut review, KeyEvent::from(KeyCode::Enter));
     let outcome = job(&mut review, action).await;
     assert!(
-        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error),
+        matches!(&outcome, Outcome::Ran { result: Ok(result), .. } if !result.is_error()),
         "{outcome:?}"
     );
     review.finish(outcome);
@@ -835,8 +854,11 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     review.finish(outcome);
     for view in std::iter::once(&original).chain(&followers) {
         let view = store::read_request(&state, &view.request.id).await.unwrap();
-        assert_eq!(view.request.status, crate::types::RequestStatus::Green);
-        assert_eq!(view.request.result.unwrap()["approved"], json!(true));
+        assert_eq!(view.request.status(), crate::types::RequestStatus::Green);
+        assert_eq!(
+            view.request.result().unwrap().owner_fields()["approved"],
+            json!(true)
+        );
     }
 }
 
@@ -866,7 +888,7 @@ fn const_properties_are_fixed_fields_with_or_without_a_type() {
             "required":["approved"],
             "additionalProperties":false,
         });
-        let form = Form::new("GREEN", Some(&schema));
+        let form = Form::new(crate::runtime::Verdict::Green, Some(&schema));
         assert!(form.json.is_none(), "{schema}");
         assert_eq!(form.fields[0].input, Input::Fixed(json!(true)));
         assert_eq!(form.fields[0].display(), "true (fixed)");

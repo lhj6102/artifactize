@@ -47,7 +47,7 @@ impl Fixture {
     /// Repository alpha has a cycle, a child, a mount, and fingerprint-cached GREEN/RED results;
     /// beta has a long-running eval gated on a release file and a Human eval.
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let alpha = root.path().join("alpha");
         let beta = root.path().join("beta");
         let release = root.path().join("release");
@@ -59,27 +59,27 @@ impl Fixture {
             declare(
                 &alpha.join("scenarios").join(name),
                 json!({"name":name,
-                    "evals":[eval("review", runtime("true", &[]), "Inspect {input}.")]}),
+                    "evals":[eval("review", runtime(&support::os::true_program(), &[]), "Inspect {input}.")]}),
             );
         }
         declare(
             &alpha.join("cycle-a"),
-            json!({"name":"cycle-a","fingerprint":{"script":{"command":"echo","args":["a-v1"]}},
-                "evals":[eval("check", runtime("true", &[]), "Check {cycle-b}.")]}),
+            json!({"name":"cycle-a","fingerprint":{"script":{"command":support::os::echo_program(),"args":["a-v1"]}},
+                "evals":[eval("check", runtime(&support::os::true_program(), &[]), "Check {cycle-b}.")]}),
         );
         declare(
             &alpha.join("cycle-b"),
             json!({"name":"cycle-b","mounts":{"base":"input"},
-                "fingerprint":{"script":{"command":"echo","args":["b-v1"]}},
-                "evals":[eval("check", runtime("true", &[]), "Check {cycle-a}.")]}),
+                "fingerprint":{"script":{"command":support::os::echo_program(),"args":["b-v1"]}},
+                "evals":[eval("check", runtime(&support::os::true_program(), &[]), "Check {cycle-a}.")]}),
         );
         declare(
             &alpha.join("red"),
             json!({
                 "name":"red",
-                "fingerprint":{"script":{"command":"echo","args":["red-v1"]}},
+                "fingerprint":{"script":{"command":support::os::echo_program(),"args":["red-v1"]}},
                 "evals":[
-                    eval("check", runtime("sh", &["-c", "echo finding; exit 7"]), "Check {input}."),
+                    eval("check", runtime(&support::os::shell(), &["-c", "echo finding; exit 7"]), "Check {input}."),
                 ],
             }),
         );
@@ -93,7 +93,7 @@ impl Fixture {
         );
         declare(
             &beta.join("slow"),
-            json!({"name":"slow","evals":[eval("wait", runtime("sh", &["-c", &wait]), "Wait.")]}),
+            json!({"name":"slow","evals":[eval("wait", runtime(&support::os::shell(), &["-c", &wait]), "Wait.")]}),
         );
         declare(
             &beta.join("human"),
@@ -384,7 +384,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     for (id, _) in view.run.definitions.graph().unwrap().artifacts() {
         assert_eq!(
             all.iter()
-                .filter(|node| node.id == format!("a:{id}"))
+                .filter(|node| node.id.as_str() == format!("a:{id}"))
                 .count(),
             1,
             "{id}"
@@ -423,17 +423,27 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert_eq!(
         node("e:checkout/review").upstream,
         [Upstream {
-            artifact: "input".into(),
+            artifact: "input".parse().unwrap(),
             completion: Completion::Complete
         }]
     );
-    let waits = monitor::detail(&view, &requests, &Target::Eval("cycle-a/check".into()), now);
+    let waits = monitor::detail(
+        &view,
+        &requests,
+        &Target::Eval("cycle-a/check".parse().unwrap()),
+        now,
+    );
     assert_eq!(
         waits.field("Waits for"),
         Some("↑ input ✓ complete · mount base → cycle-b")
     );
 
-    let red = monitor::detail(&view, &requests, &Target::Eval("red/check".into()), now);
+    let red = monitor::detail(
+        &view,
+        &requests,
+        &Target::Eval("red/check".parse().unwrap()),
+        now,
+    );
     assert_eq!(red.field("Status"), Some("RED — criteria not met"));
     assert_eq!(red.field("Fingerprint"), Some("red-v1"));
     let covers = red.field("Key covers").unwrap();
@@ -462,14 +472,19 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert_eq!(result["stdout"], "finding\n");
     assert_eq!(
         red.field("Profile"),
-        Some("runtime sh -c echo finding; exit 7")
+        Some(format!("runtime {} -c echo finding; exit 7", support::os::shell()).as_str())
     );
     assert!(
         red.field("Usage")
             .unwrap()
             .starts_with("reused: spent none")
     );
-    let reused = monitor::detail(&view, &requests, &Target::Eval("cycle-a/check".into()), now);
+    let reused = monitor::detail(
+        &view,
+        &requests,
+        &Target::Eval("cycle-a/check".parse().unwrap()),
+        now,
+    );
     assert_eq!(reused.field("Status"), Some("GREEN — criteria met"));
     assert!(
         reused
@@ -477,7 +492,12 @@ async fn saved_tree_details_without_repository_or_writes() {
             .unwrap()
             .starts_with("reused from Run")
     );
-    let artifact = monitor::detail(&view, &requests, &Target::Artifact("cycle-b".into()), now);
+    let artifact = monitor::detail(
+        &view,
+        &requests,
+        &Target::Artifact("cycle-b".parse().unwrap()),
+        now,
+    );
     assert_eq!(artifact.field("Cycle"), Some("↻ cycle-a, cycle-b"));
     assert!(
         artifact
@@ -492,7 +512,12 @@ async fn saved_tree_details_without_repository_or_writes() {
             .contains("cycle-a — {cycle-b}")
     );
     let (old, old_requests) = fixture.load(&first).await;
-    let original = monitor::detail(&old, &old_requests, &Target::Eval("red/check".into()), now);
+    let original = monitor::detail(
+        &old,
+        &old_requests,
+        &Target::Eval("red/check".parse().unwrap()),
+        now,
+    );
     assert_eq!(original.field("Source"), Some("executed in this Run"));
 
     let mut monitor = Monitor::new(fixture.state.clone(), None);
@@ -514,14 +539,17 @@ async fn saved_tree_details_without_repository_or_writes() {
         Some("NOT SATISFIED at Run end (unmet: red)")
     );
     // The cursor starts on the RED eval.
-    assert_eq!(monitor.target(), Some(Target::Eval("red/check".into())));
+    assert_eq!(
+        monitor.target(),
+        Some(Target::Eval("red/check".parse().unwrap()))
+    );
     // Folded Artifacts stay reachable: unfold an Artifact to select its eval.
     for _ in 0..40 {
         press(&mut monitor, KeyCode::Up);
         screen(&mut monitor);
     }
     let mut steps = 0;
-    while monitor.target() != Some(Target::Artifact("checkout".into())) {
+    while monitor.target() != Some(Target::Artifact("checkout".parse().unwrap())) {
         press(&mut monitor, KeyCode::Down);
         screen(&mut monitor);
         steps += 1;
@@ -535,7 +563,7 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert!(expanded.contains("✓ review "), "{expanded}");
     assert_eq!(
         monitor.target(),
-        Some(Target::Eval("checkout/review".into()))
+        Some(Target::Eval("checkout/review".parse().unwrap()))
     );
     for _ in 0..3 {
         monitor.refresh().await;
@@ -550,28 +578,27 @@ async fn saved_tree_details_without_repository_or_writes() {
 /// saved results outside a partial Run, and GREEN results masked behind a RED upstream.
 #[tokio::test]
 async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     let flag = root.path().join("fail");
     let check = format!("test ! -e '{}'", flag.display());
-    let fingerprint =
-        |name: &str| json!({"script":{"command":"echo","args":[format!("{name}-v1")]}});
+    let fingerprint = |name: &str| json!({"script":{"command":support::os::echo_program(),"args":[format!("{name}-v1")]}});
     declare(
         &repo.join("a"),
         json!({"name":"a","fingerprint":fingerprint("a"),
-            "evals":[eval("x", runtime("sh", &["-c", &check]), "Check.")]}),
+            "evals":[eval("x", runtime(&support::os::shell(), &["-c", &check]), "Check.")]}),
     );
     declare(
         &repo.join("b"),
         json!({"name":"b","fingerprint":fingerprint("b"),
-            "evals":[eval("x", runtime("true", &[]), "Check {a}.")]}),
+            "evals":[eval("x", runtime(&support::os::true_program(), &[]), "Check {a}.")]}),
     );
     declare(
         &repo.join("c"),
         json!({"name":"c","fingerprint":fingerprint("c"),"evals":[
-            eval("x", runtime("true", &[]), "Check {b}."),
-            eval("y", runtime("true", &[]), "Check {b}.")]}),
+            eval("x", runtime(&support::os::true_program(), &[]), "Check {b}."),
+            eval("y", runtime(&support::os::true_program(), &[]), "Check {b}.")]}),
     );
     let verify = |args: &[&str], code: i32| -> String {
         let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
@@ -613,8 +640,14 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     assert_eq!(
         view.run.evidence,
         [
-            ("a/x".to_owned(), artifactize::types::RequestStatus::Green),
-            ("b/x".to_owned(), artifactize::types::RequestStatus::Green),
+            (
+                "a/x".parse().unwrap(),
+                artifactize::types::RequestStatus::Green
+            ),
+            (
+                "b/x".parse().unwrap(),
+                artifactize::types::RequestStatus::Green
+            ),
         ]
         .into()
     );
@@ -640,7 +673,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     ))
     .await;
     let saved = |id: &str| {
-        view.run.validation["artifacts"]
+        serde_json::to_value(&view.run.validation).unwrap()["artifacts"]
             .as_array()
             .unwrap()
             .iter()
@@ -667,7 +700,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     assert_eq!(node("a:b").line(), "⊘ b  done, but blocked by a  0/1");
     assert_eq!(
         node("e:c/x").kind,
-        Kind::Eval(EvalView::BlockedBy(vec!["b".into()]))
+        Kind::Eval(EvalView::BlockedBy(vec!["b".parse().unwrap()]))
     );
     assert_eq!(node("a:c").line(), "⊘ c  not run: blocked by b  0/2");
     assert!(
@@ -676,56 +709,35 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     );
 }
 
-/// Needs a pseudo-terminal from script(1); Windows has ConPTY, but no such tool to drive it.
-#[cfg(unix)]
 #[test]
 fn pty_session_restores_the_terminal_on_quit() {
-    use std::{
-        io::{Read, Write},
-        sync::mpsc,
-    };
-
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let both = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .args(["--repo", ".", "monitor", "--all"])
         .output()
         .unwrap();
     assert_eq!(both.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&both.stderr).contains("--repo or --all"));
-    let command = format!(
-        "stty cols 100 rows 30; exec '{}' --state-dir '{}' monitor --all",
-        env!("CARGO_BIN_EXE_artifactize"),
-        root.path().join("state").display()
+    let state = root.path().join("state");
+    let (mut terminal, receiver) = support::os::PseudoTerminal::start(
+        Path::new(env!("CARGO_BIN_EXE_artifactize")),
+        &["--state-dir", state.to_str().unwrap(), "monitor", "--all"],
+        &[],
+        100,
+        30,
     );
-    let mut child = support::os::pty_command(&command)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut stdout = child.stdout.take().unwrap();
-    let (sender, receiver) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut buffer = [0; 4096];
-        while let Ok(read @ 1..) = stdout.read(&mut buffer) {
-            if sender.send(buffer[..read].to_vec()).is_err() {
-                break;
-            }
-        }
-    });
+    let wait = support::os::patience(Duration::from_secs(10));
     let mut output = Vec::new();
     // Ratatui skips unchanged blank cells, so wait for one word of the refreshed empty list.
-    while !String::from_utf8_lossy(&output).contains("verify`.") {
-        let chunk = receiver.recv_timeout(Duration::from_secs(10));
-        output.extend(chunk.expect("monitor did not draw"));
+    let frame = "verify`.";
+    while !String::from_utf8_lossy(&output).contains(frame) {
+        output.extend(receiver.recv_timeout(wait).expect("monitor did not draw"));
     }
-    child.stdin.take().unwrap().write_all(b"q").unwrap();
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while let Ok(chunk) = receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()))
-    {
+    terminal.type_text(b"q");
+    assert!(terminal.finish());
+    // The output ends once the terminal has closed.
+    while let Ok(chunk) = receiver.recv_timeout(wait) {
         output.extend(chunk);
     }
-    assert!(finish(child).status.success());
-    let output = String::from_utf8_lossy(&output);
-    assert!(output.starts_with("\x1b[?1049h"), "{output:?}");
-    assert!(output.ends_with("\x1b[?25h\x1b[?1049l"), "{output:?}");
+    support::os::assert_restored(&String::from_utf8_lossy(&output), frame);
 }

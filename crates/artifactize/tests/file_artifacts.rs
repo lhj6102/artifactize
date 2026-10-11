@@ -13,7 +13,6 @@ use artifactize::{
     tools::{Content, Registry},
 };
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
 mod support;
@@ -26,7 +25,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let base = support::os::canonical(root.path());
         let repo = base.join("repo");
         fs::create_dir(&repo).unwrap();
@@ -88,7 +87,7 @@ fn runtime(name: &str, args: &[&str]) -> Value {
             {
                 "id":"check",
                 "title":"Check",
-                "profile":{"kind":"runtime","command":support::os::bin("/bin/sh"),"args":args},
+                "profile":{"kind":"runtime","command":support::os::shell(),"args":args},
                 "payload":{"instruction":"Check."},
             },
         ],
@@ -115,7 +114,10 @@ fn root_and_nested_sidecars_coexist_without_changing_folder_ownership() {
     );
     assert_eq!(
         config.artifacts["folder"].children,
-        std::collections::BTreeMap::from([("nested/deep".into(), "deep".into())])
+        std::collections::BTreeMap::from([(
+            "nested/deep".parse().unwrap(),
+            "deep".parse().unwrap()
+        )])
     );
     assert!(config.artifacts["hero"].children.is_empty());
     assert!(config.artifacts["build"].children.is_empty());
@@ -199,17 +201,17 @@ fn symlink_targets_and_declarations_are_rejected() {
     fixture.error("actual.artf", "declaration must be a regular file");
 }
 
+// Sockets and FIFOs are Unix entries; Windows has no special files to declare.
 #[cfg(unix)]
 #[test]
 fn special_targets_and_declarations_are_rejected() {
-    use std::os::unix::net::UnixListener;
     let fixture = Fixture::new();
-    let _socket = UnixListener::bind(fixture.repo.join("socket")).unwrap();
+    let _socket = support::os::socket(&fixture.repo.join("socket"));
     fixture.declare("socket.artf", json!({"name":"file"}));
     fixture.error("socket.artf", "special file");
     fs::remove_file(fixture.repo.join("socket.artf")).unwrap();
     fixture.write("input", "input");
-    let _declaration = UnixListener::bind(fixture.repo.join("input.artf")).unwrap();
+    let _declaration = support::os::socket(&fixture.repo.join("input.artf"));
     fixture.error("input.artf", "declaration must be a regular file");
 }
 
@@ -264,10 +266,10 @@ fn explicit_file_fingerprints_allow_only_the_target_and_reject_ignore_even_if_em
 async fn fingerprints(
     config: &RepoConfig,
     output: &Path,
-) -> std::collections::BTreeMap<String, cache::PreparedFingerprint> {
+) -> std::collections::BTreeMap<artifactize::types::ArtifactName, cache::PreparedFingerprint> {
     cache::prepare(
         config,
-        config.artifacts.keys().map(String::as_str),
+        config.artifacts.keys(),
         output,
         &Parallelism::new(2),
         CancellationToken::new(),
@@ -287,19 +289,10 @@ async fn file_artifactsum_hashes_only_owner_relative_target_bytes_while_folder_s
     fixture.declare("nested/input.txt.artf", json!({"name":"file"}));
     fixture.write("nested/sibling", "sibling");
     let first = fingerprints(&fixture.config(), &fixture.state).await;
-    let mut digest = Sha256::new();
-    digest.update(b"input.txt\0");
-    digest.update(Sha256::digest(b"original"));
+    // Fixed wire-format golden, independent of the production digest implementation.
     assert_eq!(
         first["file"].value.to_string(),
-        format!(
-            "artifactsum:{}",
-            digest
-                .finalize()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-        )
+        "artifactsum:6f987753e034e0a93c2498dd75777512502d3bdb2b6cd8d3a9d03b4b48aaf579"
     );
     assert_eq!(
         first["file"]
@@ -334,8 +327,8 @@ async fn call(registry: &Registry<'_>, name: &str, args: Value, state: &Path) ->
     let result = registry
         .call(name, args, state, CancellationToken::new())
         .await;
-    assert!(!result.is_error, "{result:?}");
-    let [Content::Json { data }] = result.content.as_slice() else {
+    assert!(!result.is_error(), "{result:?}");
+    let [Content::Json { data }] = result.content() else {
         panic!("{result:?}")
     };
     data.clone()
@@ -461,7 +454,7 @@ async fn builtins_expose_only_the_target_mounts_and_explicit_references() {
             registry
                 .call(tool, args, &fixture.state, CancellationToken::new())
                 .await
-                .is_error
+                .is_error()
         );
     }
 }
@@ -495,10 +488,9 @@ fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
         &["{file}".into(), "--input={file}".into()],
     )
     .unwrap();
-    let file = support::os::canonical(&config.root.join("files/input.txt"))
-        .to_str()
-        .unwrap()
-        .to_owned();
+    let file = support::os::path_text(&support::os::canonical(
+        &config.root.join("files/input.txt"),
+    ));
     assert_eq!(args, [file.clone(), format!("--input={file}")]);
     for args in [["{file}/sub"], ["{file}/input.txt"]] {
         fixture.declare("files/input.txt.artf", runtime("file", &args));
@@ -521,7 +513,7 @@ fn argv_and_instruction_references_resolve_to_files_and_reject_file_suffixes() {
     fixture.error("files/input.txt.artf", "cannot have a /path suffix");
     fixture.declare(
         "files/input.txt.artf",
-        json!({"name":"file","fingerprint":{"script":{"command":"echo","args":["{file}/sub"]}}}),
+        json!({"name":"file","fingerprint":{"script":{"command":support::os::echo_program(),"args":["{file}/sub"]}}}),
     );
     fixture.error("files/input.txt.artf", "cannot have a /path suffix");
 }
@@ -539,7 +531,7 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
                     "open":{
                         "description":"Open",
                         "kind":"output",
-                        "command":support::os::bin("/bin/cat"),
+                        "command":support::os::cat_program(),
                         "args":["{artifactPath}","{file}"],
                     },
                 },
@@ -553,9 +545,9 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
     assert_eq!(
         command.args,
         vec![
-            support::os::canonical(&config.root.join("files/input.txt"))
-                .to_str()
-                .unwrap();
+            support::os::path_text(&support::os::canonical(
+                &config.root.join("files/input.txt")
+            ));
             2
         ]
     );
@@ -568,7 +560,7 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
                     "open":{
                         "description":"Open",
                         "kind":"output",
-                        "command":"cat",
+                        "command":support::os::cat_program(),
                         "args":["{artifactPath}/sibling"],
                     },
                 },
@@ -592,7 +584,7 @@ async fn fingerprint_scripts_run_in_containing_folder_with_file_arguments_and_re
             "name":"file",
             "fingerprint":{
                 "script":{
-                    "command":support::os::bin("/bin/sh"),
+                    "command":support::os::shell(),
                     "args":["hash.sh","{file}"],
                     "files":["hash.sh"],
                 },
@@ -624,7 +616,7 @@ async fn runtime_verify_reuses_after_sibling_changes_but_not_target_changes_and_
     assert_eq!(first["requests"][0]["result"]["verdict"], "GREEN");
     assert_eq!(
         first["requests"][0]["cwd"],
-        fixture.config().root.join("files").to_str().unwrap()
+        support::os::path_text(&fixture.config().root.join("files"))
     );
     fixture.write("files/sibling", "unrelated");
     let second = fixture.json(&["verify", "--all"], 0);
@@ -660,7 +652,7 @@ async fn runtime_verify_reuses_after_sibling_changes_but_not_target_changes_and_
     let detail = monitor::detail(
         &saved,
         &[],
-        &Target::Artifact("file".into()),
+        &Target::Artifact("file".parse().unwrap()),
         time::OffsetDateTime::now_utc(),
     );
     let nodes = monitor::tree(&saved, &[], time::OffsetDateTime::now_utc());
@@ -741,7 +733,7 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
                     "inspect":{
                         "description":"Inspect",
                         "protocol":"json",
-                        "command":"python3",
+                        "command":support::os::python_program(),
                         "args":["tool.py","{file}"],
                     },
                 },
@@ -752,26 +744,13 @@ async fn command_tools_run_in_the_containing_folder_and_preserve_file_scope_meta
     let registry = Registry::for_artifact(&config, "file").unwrap();
     registry.preflight("inspect_file").unwrap();
     let data = call(&registry, "inspect_file", json!({}), &fixture.state).await;
-    assert_eq!(data["cwd"], config.root.join("files").to_str().unwrap());
-    assert_eq!(
-        data["argv"][0],
-        support::os::canonical(&config.root.join("files/input.txt"))
-            .to_str()
-            .unwrap()
-    );
-    assert_eq!(
-        data["artifactPath"],
-        support::os::canonical(&config.root.join("files/input.txt"))
-            .to_str()
-            .unwrap()
-    );
+    let path = |value: &Value| PathBuf::from(value.as_str().unwrap());
+    let input = support::os::canonical(&config.root.join("files/input.txt"));
+    assert_eq!(path(&data["cwd"]), config.root.join("files"));
+    assert_eq!(path(&data["argv"][0]), input);
+    assert_eq!(path(&data["artifactPath"]), input);
     assert_eq!(data["scope"]["file"]["kind"], "file");
-    assert_eq!(
-        data["scope"]["file"]["path"],
-        support::os::canonical(&config.root.join("files/input.txt"))
-            .to_str()
-            .unwrap()
-    );
+    assert_eq!(path(&data["scope"]["file"]["path"]), input);
 }
 
 #[tokio::test]
@@ -793,7 +772,7 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
     assert!(
         cache::prepare(
             &config,
-            ["file"],
+            [&config.artifacts["file"].name],
             &fixture.state,
             &Parallelism::new(1),
             CancellationToken::new()
@@ -811,7 +790,7 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
             registry
                 .call(tool, args, &fixture.state, CancellationToken::new())
                 .await
-                .is_error
+                .is_error()
         );
     }
     fs::remove_dir_all(fixture.repo.join("input.txt")).unwrap();
@@ -833,7 +812,7 @@ async fn changed_targets_cannot_be_replaced_by_directories_or_symlinks_after_dis
                 CancellationToken::new()
             )
             .await
-            .is_error
+            .is_error()
     );
 }
 
@@ -850,7 +829,7 @@ fn json_tool_file_references_reject_suffixes_at_the_declaration() {
                     "inspect":{
                         "description":"Inspect",
                         "protocol":"json",
-                        "command":"cat",
+                        "command":support::os::cat_program(),
                         "args":["{file}/sibling"],
                     },
                 },
@@ -873,9 +852,10 @@ fn artfignore_skips_sidecars_in_excluded_folders() {
 async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
     let fixture = Fixture::new();
     fixture.write("files/input.txt", "input");
-    fixture.write(
-        "files/inspect",
-        "#!/bin/sh\ntest -f input.txt && printf files\n",
+    fs::create_dir_all(fixture.repo.join("files")).unwrap();
+    support::os::write_script(
+        &fixture.repo.join("files/inspect"),
+        "test -f input.txt && printf files\n",
     );
     support::os::make_executable(&fixture.repo.join("files/inspect"));
     fixture.declare(
@@ -905,14 +885,15 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
             CancellationToken::new(),
         )
         .await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     assert_eq!(
-        result.content,
+        result.content(),
         vec![Content::Text {
             text: "files".into()
         }]
     );
-    fixture.write("tools/inspect", "#!/bin/sh\nprintf mounted\n");
+    fs::create_dir_all(fixture.repo.join("tools")).unwrap();
+    support::os::write_script(&fixture.repo.join("tools/inspect"), "printf mounted\n");
     support::os::make_executable(&fixture.repo.join("tools/inspect"));
     fixture.declare("tools/index.artf", json!({"name":"tools","basis":true}));
     fixture.declare(
@@ -943,9 +924,9 @@ async fn relative_and_mounted_tool_executables_work_on_file_artifacts() {
             CancellationToken::new(),
         )
         .await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     assert_eq!(
-        result.content,
+        result.content(),
         vec![Content::Text {
             text: "mounted".into()
         }]
@@ -963,7 +944,7 @@ fn sidecar_checks_keep_s2_source_locations_and_literal_owner_data() {
     assert_eq!(
         fixture.config().evals[0]
             .declaration
-            .payload
+            .payload()
             .as_ref()
             .unwrap()
             .extra["owner"]["$__toml_private_datetime"],
@@ -1022,7 +1003,7 @@ fn reuse_key_covers_kinds_of_target_mount_child_and_reference_but_never_paths_or
                 {
                     "id":"check",
                     "title":"Check",
-                    "profile":{"kind":"runtime","command":"true","args":[]},
+                    "profile":{"kind":"runtime","command":support::os::true_program(),"args":[]},
                     "payload":{"instruction":"Check {reference}."},
                 },
             ],
@@ -1038,8 +1019,12 @@ fn reuse_key_covers_kinds_of_target_mount_child_and_reference_but_never_paths_or
         json!({"name":"reference","basis":true}),
     );
     let mut config = fixture.config();
-    let fingerprints = ["owner", "mount", "child", "reference"]
+    let names: Vec<artifactize::types::ArtifactName> = ["owner", "mount", "child", "reference"]
         .into_iter()
+        .map(|id| id.parse().unwrap())
+        .collect();
+    let fingerprints = names
+        .iter()
         .map(|id| {
             (
                 id,
@@ -1079,7 +1064,7 @@ fn runtime_target_replacements_fail_even_with_constant_or_disabled_fingerprints(
     for script in ["rm input.txt; mkdir input.txt", "rm input.txt"] {
         for fingerprint in [
             json!(false),
-            json!({"script":{"command":support::os::bin("/bin/echo"),"args":["constant"]}}),
+            json!({"script":{"command":support::os::echo_program(),"args":["constant"]}}),
         ] {
             let fixture = Fixture::new();
             fixture.write("input.txt", "input");
@@ -1100,7 +1085,7 @@ async fn script_fingerprint_preparation_and_recheck_reject_every_invalid_target_
         fixture.write("input.txt", "input");
         let mut declaration = runtime("file", &["-c", "exit 0"]);
         declaration["fingerprint"] =
-            json!({"script":{"command":support::os::bin("/bin/echo"),"args":["constant"]}});
+            json!({"script":{"command":support::os::echo_program(),"args":["constant"]}});
         fixture.declare("input.txt.artf", declaration);
         let config = fixture.config();
         fs::remove_file(fixture.repo.join("input.txt")).unwrap();
@@ -1121,7 +1106,7 @@ async fn script_fingerprint_preparation_and_recheck_reject_every_invalid_target_
         assert!(
             cache::prepare(
                 &config,
-                ["file"],
+                [&config.artifacts["file"].name],
                 &fixture.state,
                 &Parallelism::new(1),
                 CancellationToken::new()
@@ -1160,7 +1145,7 @@ fn disabled_fingerprint_target_deleted_by_dependency_script_is_not_executed() {
             "basis":true,
             "fingerprint":{
                 "script":{
-                    "command":support::os::bin("/bin/sh"),
+                    "command":support::os::shell(),
                     "args":["-c","rm ../files/input.txt; printf constant"],
                 },
             },
@@ -1216,7 +1201,7 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
                         "inspect":{
                             "description":"Inspect",
                             "protocol":"json",
-                            "command":"python3",
+                            "command":support::os::python_program(),
                             "args":["-c","open('started','w').write('yes');print('{}')"],
                         },
                     },
@@ -1224,7 +1209,7 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
                         "inspect":{
                             "description":"Inspect",
                             "kind":"output",
-                            "command":support::os::bin("/bin/sh"),
+                            "command":support::os::shell(),
                             "args":["-c","touch started"],
                         },
                     },
@@ -1258,13 +1243,13 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
                     CancellationToken::new()
                 )
                 .await
-                .is_error
+                .is_error()
         );
         assert!(
             human
                 .call("inspect_file", CancellationToken::new())
                 .await
-                .is_error
+                .is_error()
         );
         assert!(!fixture.repo.join("started").exists());
     }
@@ -1282,6 +1267,7 @@ fn artfignore_applies_to_individual_sidecars_and_declaration_target_prechecks() 
     fixture.error("nested/draft.artf.artf", "must not be a declaration");
 }
 
+// Windows file names cannot contain ':' at all.
 #[cfg(unix)]
 #[test]
 fn colon_targets_are_rejected_before_scoped_tools_can_be_declared() {
@@ -1291,16 +1277,16 @@ fn colon_targets_are_rejected_before_scoped_tools_can_be_declared() {
     fixture.error("a:b.artf", "must not contain ':'");
 }
 
+// Search-only (execute without read) directories are a Unix permission.
 #[cfg(unix)]
 #[test]
 fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_markers() {
-    use std::os::unix::fs::PermissionsExt;
     let fixture = Fixture::new();
     fixture.declare("index.artf", runtime("folder", &["-c", "exit 0"]));
     let ancestor = fixture._root.path().join("search-only");
     let parent = ancestor.join("writable");
     fs::create_dir_all(&parent).unwrap();
-    fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o111)).unwrap();
+    support::os::set_mode(&ancestor, 0o111);
     let state = parent.join("state");
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .arg("--repo")
@@ -1310,10 +1296,10 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
         .args(["verify", "--all", "--json"])
         .output()
         .unwrap();
-    fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o700)).unwrap();
+    support::os::set_mode(&ancestor, 0o700);
     assert!(output.status.success(), "{output:?}");
     fs::write(ancestor.join("artifactize.json"), "legacy marker").unwrap();
-    fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o111)).unwrap();
+    support::os::set_mode(&ancestor, 0o111);
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .arg("--repo")
         .arg(&fixture.repo)
@@ -1322,7 +1308,7 @@ fn verify_accepts_state_below_search_only_ancestors_but_still_probes_fixed_marke
         .args(["verify", "--all", "--json"])
         .output()
         .unwrap();
-    fs::set_permissions(&ancestor, fs::Permissions::from_mode(0o700)).unwrap();
+    support::os::set_mode(&ancestor, 0o700);
     assert!(!output.status.success());
     assert!(!parent.join("blocked-state").exists());
 }
@@ -1346,7 +1332,7 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
         assert_eq!(wire["artifactKinds"]["file"], "file");
         record
             .artifact_kinds
-            .insert("file".into(), ArtifactKind::Folder);
+            .insert("file".parse().unwrap(), ArtifactKind::Folder);
         assert!(record.validate().is_err());
         record.artifact_kinds.clear();
         assert!(
@@ -1354,9 +1340,9 @@ async fn remote_records_roundtrip_file_kinds_and_cannot_match_legacy_or_tampered
             "legacy key inputs must never match a kind-aware key"
         );
         let mut record = artifactize::remote::Record::new(&execution, full).unwrap();
-        record.publisher = Some("fixture".into());
-        record.published_at = Some("2026-10-09T00:00:00Z".into());
-        let mirrored = record.mirror("fixture").unwrap();
+        record.publisher = Some("fixture".parse().unwrap());
+        record.published_at = Some("2026-10-09T00:00:00Z".parse().unwrap());
+        let mirrored = record.mirror("https://reviews.example/").unwrap();
         assert_eq!(mirrored.artifact_kinds, execution.artifact_kinds);
         assert_eq!(mirrored.key, execution.key);
     }
@@ -1402,7 +1388,7 @@ fn removed_file_target_cannot_reuse_green_evidence_after_preparation() {
             "name":"dep",
             "basis":true,
             "fingerprint":{
-                "script":{"command":support::os::bin("/bin/sh"),"args":["-c","printf constant"]},
+                "script":{"command":support::os::shell(),"args":["-c","printf constant"]},
             },
         }),
     );
@@ -1414,7 +1400,7 @@ fn removed_file_target_cannot_reuse_green_evidence_after_preparation() {
             "basis":true,
             "fingerprint":{
                 "script":{
-                    "command":support::os::bin("/bin/sh"),
+                    "command":support::os::shell(),
                     "args":["-c","rm ../files/input.txt; printf constant"],
                 },
             },

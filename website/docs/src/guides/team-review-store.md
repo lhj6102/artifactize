@@ -51,17 +51,22 @@ See [Remote review store client](../reference/review-store.md#remote-review-stor
 - the reuse key, the Eval definition hash and the fingerprint of each Artifact
   the key covers, including each covered Artifact's `folder`/`file` kind
   (`artifactKinds` in the record);
-- the profile, its execution options (backend, model, reasoning, limits, variant)
-  and usage counters;
+- the profile, its execution options (backend, model, reasoning, limits, variant),
+  usage counters and an Agent result's workspace-relative `executionPaths` pins;
 - the producer (`user@host`), the Human reviewer and timestamps;
 - for an Agent result, the [reference](agent-evals.md#saved-conversations) to its
   saved conversation (`producer.session`: the producer, its state id, and the Run,
   request and session ids).
 
-It never sends argv, stdout/stderr, repository paths or an Agent conversation.
-`full` (`remote login --share full` or `ARTIFACTIZE_REMOTE_SHARE=full`) also sends the saved execution as is,
-including captured output. Owner fields are free text at both levels, so keep
-secrets out of the fields that `pass_schema` and `fail_schema` allow.
+`summary` omits captured stdout/stderr, the separate invocation audit, local
+repository provenance and the Agent conversation itself. It still sends the
+complete declared runtime profile, including its command and arguments: any paths
+or sensitive literals authored there are shared, not redacted. The
+`executionPaths` pins also name workspace-relative paths.
+`full` (`remote login --share full` or `ARTIFACTIZE_REMOTE_SHARE=full`) additionally
+sends the saved execution as is, including captured output. Owner fields are free
+text at both levels, so keep secrets out of shared declarations and the fields
+that `pass_schema` and `fail_schema` allow.
 
 **Trust.**
 

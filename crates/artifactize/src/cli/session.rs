@@ -67,7 +67,7 @@ pub(super) async fn execute(
             } else if json {
                 print_json(&json!({
                     "reference": located.reference.as_ref().map(ToString::to_string),
-                    "file": conversation.path,
+                    "file": crate::platform::path_text(&conversation.path),
                     "events": conversation.wire_events,
                 }))?;
             } else {
@@ -77,7 +77,7 @@ pub(super) async fn execute(
         SessionCommand::Send { reference, message } => {
             let located = locate(state, &reference).await?;
             if matches!(
-                located.request.request.status.as_str(),
+                located.request.request.status().as_str(),
                 "QUEUED" | "RUNNING"
             ) {
                 return Err(format!(
@@ -169,7 +169,9 @@ impl Located {
 fn here(state: &Path, reference: &SessionRef) -> Result<(), String> {
     let producer = Producer::current().name;
     let state_id = store::read_state_id(state)?;
-    if reference.producer == producer && Some(&reference.state) == state_id.as_ref() {
+    if reference.producer == producer
+        && Some(reference.state.as_str()) == state_id.as_ref().map(crate::types::StateId::as_str)
+    {
         return Ok(());
     }
     Err(format!(
@@ -203,7 +205,7 @@ async fn locate(state: &Path, text: &str) -> Result<Located, String> {
                 .ok_or_else(|| {
                     format!(
                         "No Agent request or session {text} in this state ({}).",
-                        state.display()
+                        crate::platform::path_text(state)
                     )
                 })?,
         }
@@ -268,7 +270,7 @@ async fn send(
     let config = read_workspace_config(&repo).map_err(|error| {
         format!(
             "Cannot resolve the review's tools in {}: {error}",
-            repo.display()
+            crate::platform::path_text(&repo)
         )
     })?;
     let eval = config
@@ -279,7 +281,7 @@ async fn send(
             format!(
                 "Eval {} is no longer declared in {}; its tools cannot be resolved.",
                 request.eval_id,
-                repo.display()
+                crate::platform::path_text(&repo)
             )
         })?;
     let output = workspace::prepare_directory(
@@ -302,12 +304,9 @@ async fn send(
                     .to_owned())
                 .unwrap_or_else(|| "?".into()),
             header.model.as_deref().unwrap_or("?"),
-            header
-                .reasoning
-                .as_deref()
-                .map_or(String::new(), |reasoning| format!(
-                    " (reasoning {reasoning})"
-                ))
+            header.reasoning.map_or(String::new(), |reasoning| format!(
+                " (reasoning {reasoning})"
+            ))
         ),
         files_changed,
     };
@@ -349,18 +348,19 @@ async fn files_changed(
     }
     let current = cache::prepare(
         config,
-        request.fingerprints.keys().map(String::as_str),
+        request.fingerprints.keys(),
         output,
         &cache::Parallelism::new(cache::Parallelism::available()),
         cancellation,
     )
     .await
     .ok()?;
-    Some(request.fingerprints.iter().any(|(id, fingerprint)| {
-        current
-            .get(id.as_str())
-            .is_none_or(|now| &now.value != fingerprint)
-    }))
+    Some(
+        request
+            .fingerprints
+            .iter()
+            .any(|(id, fingerprint)| current.get(id).is_none_or(|now| &now.value != fingerprint)),
+    )
 }
 
 /// Keep text session transcripts readable with bounded tool excerpts;
@@ -400,7 +400,10 @@ fn heading(out: &mut impl Write, located: &Located, header: &serde_json::Value) 
     writeln!(
         out,
         "Request {} (Run {}), eval {}: {}",
-        request.id, request.run_id, request.eval_id, request.status
+        request.id,
+        request.run_id,
+        request.eval_id,
+        request.status()
     )?;
     if let Some(reused_by) = &located.reused_by {
         writeln!(out, "Request {reused_by} reused this review's result.")?;
@@ -415,8 +418,8 @@ fn show_summary(located: &Located, summary: &Summary) -> io::Result<()> {
     });
     heading(&mut out, located, &header)?;
     if let (Some(start), Some(end)) = (&summary.started_at, &summary.ended_at) {
-        let took = summary.duration_ms.map_or(String::new(), |ms| {
-            format!(" ({:.1} s)", ms as f64 / 1000.0)
+        let took = summary.duration_ms.map_or(String::new(), |duration| {
+            format!(" ({:.1} s)", duration.as_secs_f64())
         });
         writeln!(out, "Time: {start} to {end}{took}")?;
     }
@@ -497,32 +500,44 @@ fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
                     writeln!(out, "{line}")?;
                 }
             }
-            session::Kind::End(end) => match &end.result {
-                Some(result) => writeln!(out, "\n── Result: {result}")?,
+            session::Kind::End(end) => match end.result() {
+                Some(result) => writeln!(out, "\n── Result: {}", result.to_json())?,
                 None => writeln!(
                     out,
                     "\n── Review failed: {} {}",
-                    end.error_code.as_deref().unwrap_or_default(),
-                    end.error.as_deref().unwrap_or_default()
+                    end.failure()
+                        .and_then(|(code, _)| code)
+                        .map(crate::agent::error::Code::as_str)
+                        .unwrap_or_default(),
+                    end.failure()
+                        .map(|(_, message)| message)
+                        .unwrap_or_default()
                 )?,
             },
             session::Kind::Send(sent) => writeln!(
                 out,
                 "\n══ Follow-up {} ({}){}",
                 event.send.unwrap_or_default(),
-                event.at.as_deref().unwrap_or_default(),
+                event.at.map(|at| at.to_string()).unwrap_or_default(),
                 if sent.files_changed == Some(true) {
                     " · files changed since this review"
                 } else {
                     ""
                 }
             )?,
-            session::Kind::Answer(answer) if answer.error.is_some() => writeln!(
+            session::Kind::Answer(answer) if answer.failure().is_some() => writeln!(
                 out,
                 "\n── Follow-up {} failed: {} {}",
                 event.send.unwrap_or_default(),
-                answer.error_code.as_deref().unwrap_or_default(),
-                answer.error.as_deref().unwrap_or_default()
+                answer
+                    .failure()
+                    .and_then(|(code, _)| code)
+                    .map(crate::agent::error::Code::as_str)
+                    .unwrap_or_default(),
+                answer
+                    .failure()
+                    .map(|(_, message)| message)
+                    .unwrap_or_default()
             )?,
             _ => {}
         }

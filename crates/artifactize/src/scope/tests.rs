@@ -1,25 +1,22 @@
 use crate::config::CONFIG_FILE;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
+use std::fs;
 
 use super::*;
 use crate::config::read_workspace_config;
 use crate::test_os::{symlink_dir, symlink_file};
 
-struct Fixture(PathBuf);
+/// A repository in a temporary directory, at its physical path; removed on drop.
+struct Fixture(
+    PathBuf,
+    #[expect(dead_code, reason = "owns the directory")] tempfile::TempDir,
+);
 
 impl Fixture {
     fn new() -> Self {
-        let nonce = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target/test-fixtures")
-            .join(format!("scope-{}-{nonce}", std::process::id()));
-        fs::create_dir_all(&root).unwrap();
-        Self(crate::platform::canonicalize(&root).unwrap())
+        let directory = crate::test_os::tempdir();
+        Self(directory.path().to_owned(), directory)
     }
 
     fn write(&self, path: &str, contents: &str) {
@@ -34,12 +31,6 @@ impl Fixture {
 
     fn config(&self) -> RepoConfig {
         read_workspace_config(&self.0).unwrap()
-    }
-}
-
-impl Drop for Fixture {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
     }
 }
 
@@ -96,13 +87,16 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
     assert_eq!(
         config.artifacts["parent"].children,
         BTreeMap::from([
-            ("unmarked/deep".into(), "child".into()),
-            ("unmarked/deeper".into(), "neighbor".into()),
+            ("unmarked/deep".parse().unwrap(), "child".parse().unwrap()),
+            (
+                "unmarked/deeper".parse().unwrap(),
+                "neighbor".parse().unwrap()
+            ),
         ])
     );
     assert_eq!(
         config.artifacts["child"].children,
-        BTreeMap::from([("leaf".into(), "leaf".into())])
+        BTreeMap::from([("leaf".parse().unwrap(), "leaf".parse().unwrap())])
     );
     assert_eq!(config.artifacts["parent"].views.agent_tools.len(), 1);
     assert!(config.artifacts["child"].views.agent_tools.is_empty());
@@ -142,10 +136,10 @@ fn ownership_is_nearest_marked_ancestor_without_inherited_declarations() {
         "leaf"
     );
     assert!(config.relations.contains(&Relation {
-        source: "child".into(),
-        target: "parent".into(),
+        source: "child".parse().unwrap(),
+        target: "parent".parse().unwrap(),
         kind: RelationKind::Child {
-            path: "unmarked/deep".into()
+            path: "unmarked/deep".parse().unwrap()
         },
     }));
     assert!(
@@ -171,9 +165,9 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
     assert_eq!(
         eval.references,
         BTreeMap::from([
-            ("one".into(), "input".into()),
-            ("two".into(), "input".into()),
-            ("review".into(), "review".into()),
+            ("one".parse().unwrap(), "input".parse().unwrap()),
+            ("two".parse().unwrap(), "input".parse().unwrap()),
+            ("review".parse().unwrap(), "review".parse().unwrap()),
         ])
     );
     assert_eq!(eval.deps, ["input"]);
@@ -193,21 +187,21 @@ fn aliases_keep_canonical_ids_and_cycles_consume_components() {
             .unwrap(),
         fixture.0.join("data/file")
     );
-    let source = &eval.declaration.payload.as_ref().unwrap().instruction;
+    let source = &eval.declaration.payload().as_ref().unwrap().instruction;
     assert_eq!(
         parse_artifact_instruction(source, &scope, &eval.references),
         vec![
             InstructionPart::Text("Read ".into()),
-            InstructionPart::Artifact("input".into()),
+            InstructionPart::Artifact("input".parse().unwrap()),
             InstructionPart::Text("/file, ".into()),
-            InstructionPart::Artifact("input".into()),
+            InstructionPart::Artifact("input".parse().unwrap()),
             InstructionPart::Text(", ".into()),
-            InstructionPart::Artifact("review".into()),
+            InstructionPart::Artifact("review".parse().unwrap()),
             InstructionPart::Text("; \\{literal} {{literal}}.".into()),
         ]
     );
     assert_eq!(
-        eval.declaration.payload.as_ref().unwrap().extra["ownerField"]["unchanged"],
+        eval.declaration.payload().as_ref().unwrap().extra["ownerField"]["unchanged"],
         "{unknown}"
     );
     assert!(!source.contains("not instruction text"));
@@ -236,7 +230,11 @@ fn observation_scope_never_follows_other_evals_instructions() {
         .unwrap();
     let scope = eval_scope(&config, eval).unwrap();
     assert_eq!(
-        scope.artifacts.keys().copied().collect::<Vec<_>>(),
+        scope
+            .artifacts
+            .keys()
+            .map(ArtifactName::as_str)
+            .collect::<Vec<_>>(),
         ["child", "input", "review", "support"]
     );
     assert!(
@@ -250,7 +248,7 @@ fn observation_scope_never_follows_other_evals_instructions() {
         parse_artifact_instruction("{hidden} {input}", &scope, &BTreeMap::new()),
         vec![
             InstructionPart::Text("{hidden} ".into()),
-            InstructionPart::Artifact("input".into()),
+            InstructionPart::Artifact("input".parse().unwrap()),
         ]
     );
 }
@@ -302,6 +300,7 @@ fn mount_validation_rejects_unknown_ambiguous_and_physical_aliases() {
                 .contains("physical entry")
         );
     }
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
         let _ = fs::remove_file(fixture.0.join("review/input"));
@@ -332,7 +331,7 @@ fn logical_paths_reject_traversal_and_noncanonical_components() {
         "a/",
         "//",
         "a\\b",
-        "C:/file",
+        &crate::test_os::windows_drive("file"),
         "a:b",
         "a\0b",
         "a\nb",
@@ -378,6 +377,7 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
         }
     }
     // Junctions redirect a path as directory symlinks do, and need no privilege.
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
         crate::test_os::junction(
@@ -413,7 +413,8 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
     assert!(scoped_path(&fixture.0, Path::new("../outside")).is_err());
     assert!(scoped_path(&fixture.0, &outside.0).is_err());
     fs::rename(fixture.0.join("owner"), fixture.0.join("old-owner")).unwrap();
-    if symlink_dir("old-owner", fixture.0.join("owner")).is_some() {
+    let symlinked = symlink_dir("old-owner", fixture.0.join("owner")).is_some();
+    if symlinked {
         assert!(
             scope
                 .resolve_input(&config.root, "owner", "directory/file")
@@ -422,10 +423,14 @@ fn scoped_inputs_reject_internal_external_dangling_and_owner_symlinks() {
                 .contains("symlinks")
         );
     }
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
-        // A directory symlink is removed as a directory on Windows.
-        let _ = fs::remove_dir(fixture.0.join("owner"));
+        // A directory symlink is removed as a directory on Windows; without one (lacking
+        // the privilege to create it), there is nothing at "owner" yet to remove.
+        if symlinked {
+            crate::test_os::remove_link_dir(&fixture.0.join("owner"));
+        }
         crate::test_os::junction(&fixture.0.join("old-owner"), &fixture.0.join("owner"));
         assert!(
             scope
@@ -452,7 +457,8 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
         "${missing}"
     ]);
     let mut declared = eval("No instruction dependencies.");
-    declared["profile"] = json!({"kind":"runtime","command":"echo","args":args});
+    declared["profile"] =
+        json!({"kind":"runtime","command":crate::test_os::echo_program(),"args":args});
     fixture.artifact(
         "review",
         json!({"name":"review","mounts":{"source":"input"},"evals":[declared]}),
@@ -465,33 +471,33 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
     assert!(eval.references.is_empty());
     assert_eq!(eval.deps, ["input"]);
     assert!(config.relations.contains(&Relation {
-        source: "input".into(),
-        target: "review".into(),
+        source: "input".parse().unwrap(),
+        target: "review".parse().unwrap(),
         kind: RelationKind::Argument {
-            eval_id: "review/check".into(),
+            eval_id: "review/check".parse().unwrap(),
             index: 0,
-            name: "input".into(),
+            name: "input".parse().unwrap(),
             path: "nested/file".into()
         },
     }));
     let scope = eval_scope(&config, eval).unwrap();
-    let Profile::Runtime { args, command, .. } = &eval.declaration.profile else {
+    let Profile::Runtime { args, command, .. } = eval.declaration.profile() else {
         panic!()
     };
     let resolved = resolve_argv(&config, &scope, "review", args).unwrap();
     let file = fixture.0.join("data").join("nested").join("file");
-    let file = file.display().to_string();
+    let file = crate::platform::path_text(&file);
     assert_eq!(
         &resolved[..4],
         [
             file.clone(),
             format!("--data={file}"),
             file,
-            fixture.0.join("data").display().to_string()
+            crate::platform::path_text(&fixture.0.join("data"))
         ]
     );
     assert_eq!(&resolved[4..], &args[4..]);
-    assert_eq!(command, "echo");
+    assert_eq!(*command, crate::test_os::echo_program());
     let restricted = artifact_scope(&config, &["child"]).unwrap();
     assert!(resolve_argv(&config, &restricted, "review", args).is_err());
 }
@@ -500,7 +506,8 @@ fn argument_only_references_add_dependencies_and_resolve_without_shell_expansion
 fn argument_only_global_reference_is_an_edge_even_without_a_mount() {
     let fixture = Fixture::new();
     let mut declared = eval("Inspect.");
-    declared["profile"] = json!({"kind":"runtime","command":"cat","args":["{input}/file"]});
+    declared["profile"] =
+        json!({"kind":"runtime","command":crate::test_os::cat_program(),"args":["{input}/file"]});
     fixture.artifact("review", json!({"name":"review","evals":[declared]}));
     fixture.artifact("data", json!({"name":"input"}));
     let config = fixture.config();
@@ -526,7 +533,8 @@ fn invalid_runtime_references_fail_statically_but_literals_stay_literal() {
         "--input={review}/a\\b",
     ] {
         let mut declared = eval("Inspect.");
-        declared["profile"] = json!({"kind":"runtime","command":"echo","args":[argument]});
+        declared["profile"] =
+            json!({"kind":"runtime","command":crate::test_os::echo_program(),"args":[argument]});
         fixture.artifact("review", json!({"name":"review","evals":[declared]}));
         assert!(read_workspace_config(&fixture.0).is_err(), "{argument}");
     }

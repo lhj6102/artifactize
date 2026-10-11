@@ -2,29 +2,34 @@
 
 use serde::{Deserialize, Serialize};
 use std::{
+    ffi::OsStr,
     path::{Path, PathBuf},
-    process::Command,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::platform::path_serde::option"
+    )]
     pub common_dir: Option<PathBuf>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::platform::path_serde::option"
+    )]
     pub worktree_path: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
 }
 
 fn git(path: &Path, args: &[&str]) -> Option<Vec<u8>> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(path)
-        .args(args)
-        .output()
-        .ok()?;
-    output.status.success().then_some(output.stdout)
+    let args = [OsStr::new("-C"), path.as_os_str()]
+        .into_iter()
+        .chain(args.iter().map(OsStr::new));
+    crate::process::tool_output("git", args)
 }
 
 fn git_path(path: &Path, arg: &str) -> Option<PathBuf> {
@@ -64,28 +69,19 @@ pub struct Worktree {
 
 /// NUL-delimited porcelain does not quote spaces, tabs or newlines in paths.
 pub fn worktrees(common_dir: &Path) -> Vec<Worktree> {
-    let output = Command::new("git")
-        .arg("--git-dir")
-        .arg(common_dir)
-        .args(["worktree", "list", "--porcelain", "-z"])
-        .output();
-    match output {
-        Ok(output) if output.status.success() => parse_worktrees(&output.stdout),
-        _ => Vec::new(),
-    }
+    let args = [OsStr::new("--git-dir"), common_dir.as_os_str()]
+        .into_iter()
+        .chain(["worktree", "list", "--porcelain", "-z"].map(OsStr::new));
+    crate::process::tool_output("git", args)
+        .map(|output| parse_worktrees(&output))
+        .unwrap_or_default()
 }
 
 fn parse_worktrees(bytes: &[u8]) -> Vec<Worktree> {
     let mut trees: Vec<Worktree> = Vec::new();
     for field in bytes.split(|byte| *byte == 0) {
         if let Some(path) = field.strip_prefix(b"worktree ") {
-            #[cfg(unix)]
-            let path = {
-                use std::os::unix::ffi::OsStringExt;
-                PathBuf::from(std::ffi::OsString::from_vec(path.to_vec()))
-            };
-            #[cfg(not(unix))]
-            let path = PathBuf::from(String::from_utf8_lossy(path).into_owned());
+            let path = crate::platform::path_from_bytes(path);
             trees.push(Worktree { path, branch: None });
         } else if let Some(branch) = field.strip_prefix(b"branch refs/heads/")
             && let Some(tree) = trees.last_mut()

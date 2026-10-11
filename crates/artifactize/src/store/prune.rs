@@ -1,26 +1,28 @@
 use std::{
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
     time::Duration,
 };
 
 use rusqlite::OpenFlags;
 use serde::Serialize;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 use super::{DATABASE, STATE_SCHEMA_VERSION, receipts::check_files};
-use crate::{process, workspace};
+use crate::{platform, process, workspace};
 
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PruneReport {
+    #[serde(serialize_with = "crate::platform::serialize_paths")]
     pub removed: Vec<PathBuf>,
+    #[serde(serialize_with = "crate::platform::serialize_paths")]
     pub would_remove: Vec<PathBuf>,
-    pub skipped_runs: Vec<String>,
+    pub skipped_runs: Vec<crate::types::RunId>,
     /// Agent sessions the size-bound collection deleted, oldest first.
-    pub removed_sessions: Vec<String>,
+    pub removed_sessions: Vec<crate::types::SessionId>,
     /// With `--dry-run`, the Agent sessions it would delete.
-    pub would_remove_sessions: Vec<String>,
+    pub would_remove_sessions: Vec<crate::types::SessionId>,
 }
 
 // `--older-than` units in seconds, each built from the one below it. A day is a fixed
@@ -66,11 +68,9 @@ pub fn prune(
 ) -> Result<PruneReport, String> {
     // Canonical like the repositories it is compared with: on Windows, a state path typed in
     // another case, or with 8.3 short names, would otherwise slip past `outside_workspace`.
-    #[cfg(target_os = "macos")]
-    let state = macos_state_root(state)?;
-    #[cfg(target_os = "macos")]
-    let state = state.as_path();
-    let state = workspace::canonical_target(&real_path(state)?).map_err(|e| e.to_string())?;
+    // System aliases such as macOS /tmp are OS-owned boundaries, not operator-made links.
+    let state = platform::resolve_system_aliases(state).map_err(|e| e.to_string())?;
+    let state = workspace::canonical_target(&real_path(&state)?).map_err(|e| e.to_string())?;
     let mut report = PruneReport::default();
     let mut repositories = Vec::new();
     if let Some(repo) = repo {
@@ -84,9 +84,9 @@ pub fn prune(
     let bounds = crate::limits::Limits::read(&state)?.agent_sessions();
     let sessions = crate::agent::session::collect(&state, bounds, dry_run)?;
     if dry_run {
-        report.would_remove_sessions = sessions.removed;
+        report.would_remove_sessions = sessions.removed.into_iter().collect();
     } else {
-        report.removed_sessions = sessions.removed;
+        report.removed_sessions = sessions.removed.into_iter().collect();
     }
     if !state
         .join(DATABASE)
@@ -119,17 +119,15 @@ pub fn prune(
         .transpose()?;
     let runs = {
         let mut statement = transaction
-            .prepare(
-                "SELECT id,repo,status,json_extract(data,'$.completedAt') FROM runs ORDER BY id",
-            )
+            .prepare("SELECT id,repo,data,status FROM runs ORDER BY id")
             .map_err(|e| e.to_string())?;
         statement
             .query_map([], |row| {
                 Ok((
-                    row.get::<_, String>(0)?,
+                    row.get::<_, crate::types::RunId>(0)?,
                     row.get::<_, String>(1)?,
                     row.get::<_, String>(2)?,
-                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, crate::types::RunStatus>(3)?,
                 ))
             })
             .map_err(|e| e.to_string())?
@@ -137,13 +135,15 @@ pub fn prune(
             .map_err(|e| e.to_string())?
     };
     let mut eligible = Vec::new();
-    for (id, repo, status, completed) in runs {
+    for (id, repo, data, status) in runs {
         let repo = workspace::canonical_target(Path::new(&repo)).map_err(|e| e.to_string())?;
         workspace::outside_workspace(&repo, &state).map_err(|e| e.to_string())?;
         repositories.push(repo);
-        let finished = completed
-            .as_deref()
-            .and_then(|date| OffsetDateTime::parse(date, &Rfc3339).ok());
+        let Some(run) = super::unreadable::evidence::<super::Run>("run", &data) else {
+            report.skipped_runs.push(id);
+            continue;
+        };
+        let finished = run.completed_at().map(crate::types::Timestamp::time);
         let requests_terminal: bool = transaction
             .query_row(
                 "SELECT NOT EXISTS(SELECT 1 FROM requests WHERE run_id=? AND status NOT IN ('GREEN','RED','ERROR','INCOMPLETE','BLOCKED','BUDGET_EXHAUSTED'))",
@@ -159,13 +159,14 @@ pub fn prune(
                 .map_err(|e| e.to_string())?;
             statement
                 .query_map([&id], |row| {
-                    Ok((
-                        process::ChildIdentity {
-                            pid: row.get(0)?,
-                            start_time: row.get::<_, i64>(1)? as u64,
-                        },
-                        row.get::<_, String>(2)?,
-                    ))
+                    // A mirrored remote result has no local owner: a saved pid of 0.
+                    let pid: u32 = row.get(0)?;
+                    let start_time = row.get::<_, i64>(1)? as u64;
+                    let owner = std::num::NonZeroU32::new(pid).map(|pid| process::ChildIdentity {
+                        pid: process::ProcessId::from(pid),
+                        start_time,
+                    });
+                    Ok((owner, row.get::<_, crate::types::ExecutionStatus>(2)?))
                 })
                 .map_err(|e| e.to_string())?
                 .collect::<Result<Vec<_>, _>>()
@@ -173,12 +174,20 @@ pub fn prune(
         };
         let mut owned = false;
         for (owner, status) in owners {
-            owned |= !matches!(status.as_str(), "GREEN" | "RED" | "ERROR")
-                || process::is_alive(owner).map_err(|e| e.to_string())?;
+            owned |= !matches!(
+                status,
+                crate::types::ExecutionStatus::Green
+                    | crate::types::ExecutionStatus::Red
+                    | crate::types::ExecutionStatus::Error
+            ) || process::is_alive(owner).map_err(|e| e.to_string())?;
         }
-        if !segment(&id)
-            || !matches!(status.as_str(), "GREEN" | "RED" | "ERROR" | "INCOMPLETE")
-            || finished.is_none()
+        if !matches!(
+            status,
+            crate::types::RunStatus::Green
+                | crate::types::RunStatus::Red
+                | crate::types::RunStatus::Error
+                | crate::types::RunStatus::Incomplete
+        ) || finished.is_none()
             || cutoff.is_some_and(|cutoff| finished.is_some_and(|date| date > cutoff))
             || !requests_terminal
             || owned
@@ -197,7 +206,7 @@ pub fn prune(
     }
     let mut targets = Vec::new();
     for id in eligible {
-        let path = runs.join(id);
+        let path = runs.join(id.as_str());
         if directory(&path)? {
             collect(&path, &mut targets)?;
         }
@@ -213,7 +222,7 @@ pub fn prune(
             real_path(&path)?;
             validate_tree(&path, &runs, &repositories)?;
             fs::remove_dir_all(&path)
-                .map_err(|e| format!("Cannot prune {}: {e}", path.display()))?;
+                .map_err(|e| format!("Cannot prune {}: {e}", crate::platform::path_text(&path)))?;
             report.removed.push(path);
         }
     }
@@ -232,7 +241,8 @@ fn prefixed(name: &str, prefix: &str) -> bool {
 }
 
 fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
-    let mut entries = fs::read_dir(parent)
+    let parent_handle = platform::open_directory(parent).map_err(|e| e.to_string())?;
+    let mut entries = platform::read_dir(&parent_handle)
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -240,7 +250,7 @@ fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
     for entry in entries {
         let name = entry.file_name();
         let Some(name) = name.to_str() else { continue };
-        let path = entry.path();
+        let path = parent.join(entry.file_name());
         if matches!(name, "output" | "tmp" | "home" | "cache" | "human-tools")
             || ["tool-output-", "tool-"]
                 .iter()
@@ -261,95 +271,43 @@ fn collect(parent: &Path, targets: &mut Vec<PathBuf>) -> Result<(), String> {
 }
 
 fn directory(path: &Path) -> Result<bool, String> {
-    match path.symlink_metadata() {
-        Ok(metadata) if metadata.is_dir() => {
+    match platform::path_kind(path) {
+        Ok(platform::FileKind::Directory) => {
             reject_repository(path)?;
             Ok(true)
         }
         Ok(_) => Err(format!(
             "Prune requires a real directory, not a symlink or file: {}",
-            path.display()
+            crate::platform::path_text(path)
         )),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.to_string()),
     }
 }
 
-/// macOS standard aliases are OS-owned root boundaries, not operator-made symlinks.
-/// Resolve only the fixed, verified prefix; all state descendants still pass real_path.
-#[cfg(target_os = "macos")]
-fn macos_state_root(path: &Path) -> Result<PathBuf, String> {
-    use std::os::unix::fs::MetadataExt;
-    let absolute = std::path::absolute(path).map_err(|error| error.to_string())?;
-    for name in ["tmp", "var", "etc"] {
-        let alias = Path::new("/").join(name);
-        if let Ok(suffix) = absolute.strip_prefix(&alias) {
-            let metadata = alias
-                .symlink_metadata()
-                .map_err(|error| error.to_string())?;
-            let target = Path::new("/private").join(name);
-            let link = fs::read_link(&alias).map_err(|error| error.to_string())?;
-            let link = if link.is_absolute() {
-                link
-            } else {
-                Path::new("/").join(link)
-            };
-            if !metadata.is_symlink() || metadata.uid() != 0 || link != target {
-                return Err(format!(
-                    "Prune refuses untrusted system alias: {}",
-                    alias.display()
-                ));
-            }
-            for parent in [Path::new("/"), Path::new("/private")] {
-                let metadata = parent
-                    .symlink_metadata()
-                    .map_err(|error| error.to_string())?;
-                if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & 0o022 != 0 {
-                    return Err("Prune requires non-replaceable system parents.".into());
-                }
-            }
-            return Ok(target.join(suffix));
-        }
-    }
-    Ok(absolute)
-}
-
 fn real_path(path: &Path) -> Result<PathBuf, String> {
-    let absolute = std::path::absolute(path).map_err(|e| e.to_string())?;
-    let mut current = PathBuf::new();
-    for component in absolute.components() {
-        if component == Component::ParentDir {
-            return Err("Prune paths must not contain parent traversal.".into());
+    platform::paths::absolute_without_links(path).map_err(|refusal| match refusal {
+        platform::paths::LinkedPath::ParentTraversal => {
+            "Prune paths must not contain parent traversal.".to_owned()
         }
-        current.push(component);
-        // A Windows prefix alone, such as `\\?\C:`, names the volume device, not a folder.
-        if matches!(component, Component::Prefix(_) | Component::RootDir) {
-            continue;
+        platform::paths::LinkedPath::Link(path) => {
+            format!("Prune refuses symlinks: {}", platform::path_text(&path))
         }
-        match current.symlink_metadata() {
-            Ok(metadata) if metadata.file_type().is_symlink() => {
-                return Err(format!("Prune refuses symlinks: {}", current.display()));
-            }
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
-                return Err(error.to_string());
-            }
-            _ => {}
-        }
-    }
-    Ok(current)
+        platform::paths::LinkedPath::Io(error) => error.to_string(),
+    })
 }
 
 fn reject_repository(path: &Path) -> Result<(), String> {
     if workspace::has_artifact_marker(path).map_err(|error| error.to_string())? {
         return Err(format!(
             "Prune refuses repository content: {}",
-            path.display()
+            crate::platform::path_text(path)
         ));
     }
-    match path.join(".git").symlink_metadata() {
+    match platform::path_kind(&path.join(".git")) {
         Ok(_) => Err(format!(
             "Prune refuses repository content: {}",
-            path.display()
+            crate::platform::path_text(path)
         )),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.to_string()),
@@ -357,26 +315,34 @@ fn reject_repository(path: &Path) -> Result<(), String> {
 }
 
 fn validate_tree(path: &Path, runs: &Path, repositories: &[PathBuf]) -> Result<(), String> {
-    if !path.starts_with(runs)
-        || path == runs
+    // A link is refused first: the identity checks below would see where it leads.
+    let kind = platform::path_kind(path).map_err(|e| e.to_string())?;
+    if matches!(
+        kind,
+        platform::FileKind::Symlink | platform::FileKind::Other
+    ) {
+        return Err(format!(
+            "Prune refuses symlinks: {}",
+            crate::platform::path_text(path)
+        ));
+    }
+    if !platform::is_within(path, runs)
+        || platform::paths_equal(path, runs)
         || repositories
             .iter()
-            .any(|repo| path.starts_with(repo) || repo.starts_with(path))
+            .any(|repo| platform::is_within(path, repo) || platform::is_within(repo, path))
     {
         return Err(format!(
             "Prune target is outside Run output or overlaps a repository: {}",
-            path.display()
+            crate::platform::path_text(path)
         ));
     }
-    let metadata = path.symlink_metadata().map_err(|e| e.to_string())?;
-    if metadata.file_type().is_symlink() {
-        return Err(format!("Prune refuses symlinks: {}", path.display()));
-    }
-    if metadata.is_dir() {
+    if kind == platform::FileKind::Directory {
         reject_repository(path)?;
-        for entry in fs::read_dir(path).map_err(|e| e.to_string())? {
+        let directory = platform::open_directory(path).map_err(|e| e.to_string())?;
+        for entry in platform::read_dir(&directory).map_err(|e| e.to_string())? {
             validate_tree(
-                &entry.map_err(|e| e.to_string())?.path(),
+                &path.join(entry.map_err(|e| e.to_string())?.file_name()),
                 runs,
                 repositories,
             )?;

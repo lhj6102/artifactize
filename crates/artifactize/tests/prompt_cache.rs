@@ -22,7 +22,7 @@ struct Project {
 
 impl Project {
     fn new(evals: &[(&str, &str)]) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         for (name, backend) in evals {
             let folder = repo.join(name);

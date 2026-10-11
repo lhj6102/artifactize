@@ -214,6 +214,11 @@ fn process_info(pid: i32, include_zombies: u64) -> io::Result<libc::proc_bsdinfo
     Ok(info)
 }
 
+/// The one byte the parent writes on the gate socket to admit the held child past
+/// `pre_exec`. Its value carries no meaning beyond "admitted"; the handshake only checks
+/// that this exact byte, not some other write, arrived.
+const GATE_ADMIT: u8 = 1;
+
 pub(crate) struct Gate(Arc<AsyncFd<UnixStream>>);
 
 impl Gate {
@@ -233,7 +238,7 @@ impl Gate {
     }
 
     pub fn admit(&self) -> io::Result<()> {
-        self.0.get_ref().write_all(&[1])
+        self.0.get_ref().write_all(&[GATE_ADMIT])
     }
 }
 
@@ -275,7 +280,7 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
             let mut admission = 0_u8;
             loop {
                 match libc::read(fd, (&mut admission as *mut u8).cast(), 1) {
-                    1 if admission == 1 => return Ok(()),
+                    1 if admission == GATE_ADMIT => return Ok(()),
                     -1 => {
                         let error = io::Error::last_os_error();
                         if error.raw_os_error() != Some(libc::EINTR) {
@@ -316,7 +321,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[tokio::test]
     async fn killing_a_zombie_only_group_succeeds_without_reaping_it_first() {
-        let mut command = Command::new(crate::test_os::bin("/bin/true"));
+        let mut command = Command::new(crate::test_os::true_program());
         command.env_clear().stdin(Stdio::null());
         let (gate, spawning) = spawn_gated(command).unwrap();
         let pid = gate.pid().await.unwrap();
@@ -324,22 +329,9 @@ mod tests {
         gate.admit().unwrap();
         drop(gate);
         let mut child = spawning.await.unwrap().unwrap();
-        tokio::task::spawn_blocking(move || {
-            let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::uninit();
-            // SAFETY: waitid writes a full siginfo_t for our child; WNOWAIT
-            // synchronizes on exit while deliberately keeping the zombie unreaped.
-            let result = unsafe {
-                libc::waitid(
-                    libc::P_PID,
-                    pid,
-                    info.as_mut_ptr(),
-                    libc::WEXITED | libc::WNOWAIT,
-                )
-            };
-            assert_eq!(result, 0, "{}", io::Error::last_os_error());
-        })
-        .await
-        .unwrap();
+        tokio::task::spawn_blocking(move || crate::test_os::wait_for_zombie(pid))
+            .await
+            .unwrap();
         assert!(process_group_exited(pid).unwrap());
         // Exercise the real EPERM path, not an injected error or a delay.
         assert_eq!(
@@ -354,7 +346,7 @@ mod tests {
 
     #[tokio::test]
     async fn parent_disconnect_before_admission_prevents_exec_and_reaps() {
-        let mut command = CommandWrap::with_new("/bin/true", |command| {
+        let mut command = CommandWrap::with_new(crate::test_os::true_program(), |command| {
             command.env_clear().stdin(Stdio::null());
         });
         command.wrap(ProcessGroup::leader());

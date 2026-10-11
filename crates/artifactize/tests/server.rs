@@ -1,3 +1,5 @@
+mod support;
+
 use std::{
     fs,
     io::{BufRead, BufReader},
@@ -45,7 +47,7 @@ impl Server {
 
     /// Start on a state directory that `prepare` may populate first.
     fn start_with(prepare: impl FnOnce(&Path)) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let state = root.path().join("server");
         prepare(&state);
         let mut child = Command::new(env!("CARGO_BIN_EXE_artifactize"))
@@ -473,4 +475,40 @@ async fn older_review_stores_upgrade_in_place_and_keep_their_tokens() {
         let (_, found) = server.lookup(token, &[&app]).await;
         assert_eq!(found["entries"][0]["key"], app.as_str());
     }
+}
+
+#[test]
+fn token_names_are_rejected_at_the_cli_edge_before_opening_state() {
+    let root = support::os::tempdir();
+    let state = root.path().join("state");
+    for name in [
+        "".to_owned(),
+        "bad/name".into(),
+        "two words".into(),
+        "한글".into(),
+        "a".repeat(65),
+    ] {
+        for command in ["add", "revoke"] {
+            let mut invocation = Command::new(env!("CARGO_BIN_EXE_artifactize"));
+            invocation
+                .arg("--state-dir")
+                .arg(&state)
+                .args(["server", "token", command, &name]);
+            if command == "add" {
+                invocation.args(["--scopes", "read"]);
+            }
+            let output = invocation.output().unwrap();
+            assert_eq!(output.status.code(), Some(2), "{output:?}");
+            assert!(
+                !state.exists(),
+                "invalid input must not open the token store"
+            );
+        }
+    }
+    // The inclusive name bound and all punctuation survive the CLI and stored JSON.
+    let name = format!("A._-{}", "a".repeat(60));
+    let added = admin(&state, &["token", "add", &name, "--scopes", "read"]);
+    assert_eq!(added["name"], name);
+    assert_eq!(admin(&state, &["token", "list"])[0]["name"], name);
+    assert_eq!(admin(&state, &["token", "revoke", &name])["name"], name);
 }

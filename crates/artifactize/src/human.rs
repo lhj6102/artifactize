@@ -15,38 +15,18 @@ use crate::{
     tools::human::{CommandLine, Registry, ToolResult},
 };
 
-/// Keep reviewer labels bounded in audit records and terminal layouts while allowing
-/// printable Unicode user names rather than restricting them to path identities.
-const MAX_REVIEWER_BYTES: usize = 200;
 /// Bound owner fields and serialized Human results consistently across CLI, editor
 /// and submission so untrusted JSON cannot grow the review audit without limit.
 pub(crate) const MAX_RESULT_BYTES: usize = 256_000;
 /// Read one sentinel byte beyond the bound to detect oversized files without loading them.
 pub(crate) const FIELDS_READ_BYTES: u64 = MAX_RESULT_BYTES as u64 + 1;
 
-pub fn default_reviewer() -> Result<String, String> {
-    // Windows names the signed-in user in USERNAME and sets no USER.
-    let reviewer = std::env::var("USER")
-        .or_else(|error| {
-            if cfg!(windows) {
-                std::env::var("USERNAME")
-            } else {
-                Err(error)
-            }
-        })
-        .map_err(|_| "Set USER or provide a reviewer id.")?;
-    validate_reviewer(&reviewer)?;
-    Ok(reviewer)
-}
-
-pub(crate) fn validate_reviewer(reviewer: &str) -> Result<(), String> {
-    if reviewer.trim().is_empty()
-        || reviewer.len() > MAX_REVIEWER_BYTES
-        || reviewer.chars().any(char::is_control)
-    {
-        return Err("A reviewer id of 1–200 bytes without control characters is required.".into());
-    }
-    Ok(())
+pub fn default_reviewer() -> Result<crate::types::ReviewerId, String> {
+    crate::platform::USER_VARIABLES
+        .iter()
+        .find_map(|name| crate::platform::environment::var_text(name))
+        .ok_or("Set USER or provide a reviewer id.")?
+        .parse()
 }
 
 /// The saved request's Run repository and its receipts, where its Human actions are recorded.
@@ -62,9 +42,8 @@ pub async fn open(state: &Path, request: &str) -> Result<(Receipts, PathBuf), St
 pub async fn claim(
     receipts: &Receipts,
     request: &str,
-    reviewer: &str,
+    reviewer: &crate::types::ReviewerId,
 ) -> Result<HumanClaim, String> {
-    validate_reviewer(reviewer)?;
     receipts.claim_human(request, reviewer).await
 }
 
@@ -72,20 +51,18 @@ pub async fn claim(
 pub async fn unclaim(
     receipts: &Receipts,
     request: &str,
-    reviewer: &str,
+    reviewer: &crate::types::ReviewerId,
 ) -> Result<HumanClaim, String> {
-    validate_reviewer(reviewer)?;
     receipts.release_human(request, reviewer).await
 }
 
 pub async fn run_human_tool(
     receipts: &Receipts,
     request: &str,
-    reviewer: &str,
+    reviewer: &crate::types::ReviewerId,
     tool: &str,
     cancellation: CancellationToken,
 ) -> Result<ToolResult, String> {
-    validate_reviewer(reviewer)?;
     let (mut request, _) = receipts.human_request(request, reviewer).await?;
     let config = reconnect(&request)?;
     let registry = Registry::new(&config, &request.eval_id)?;
@@ -109,7 +86,8 @@ pub async fn run_human_tool(
 pub async fn tool_commands(
     receipts: &Receipts,
     request: &str,
-) -> Result<std::collections::BTreeMap<String, Result<CommandLine, String>>, String> {
+) -> Result<std::collections::BTreeMap<crate::config::ToolName, Result<CommandLine, String>>, String>
+{
     let request = receipts.waiting_human(request).await?;
     let config = reconnect(&request)?;
     let registry = Registry::new(&config, &request.eval_id)?;
@@ -125,11 +103,10 @@ pub async fn tool_commands(
 pub async fn submit(
     receipts: &Receipts,
     request: &str,
-    reviewer: &str,
+    reviewer: &crate::types::ReviewerId,
     result: &Value,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
-    validate_reviewer(reviewer)?;
     let (mut request, _) = receipts.human_request(request, reviewer).await?;
     let config = reconnect(&request)?;
     let eval = config
@@ -142,11 +119,7 @@ pub async fn submit(
     }
     let result = validate_result(&eval.declaration, result)?;
     recheck(receipts, &mut request, reviewer, &config, cancellation).await?;
-    request.status = result["verdict"]
-        .as_str()
-        .ok_or("Validated result has no verdict.")?
-        .parse()?;
-    request.result = Some(result);
+    request.state = crate::store::RequestState::completed(result.into(), crate::broker::now());
     receipts.settle_human(&request, reviewer).await
 }
 
@@ -154,7 +127,7 @@ pub async fn submit(
 pub async fn submit_and_publish(
     state: &Path,
     request: &str,
-    reviewer: &str,
+    reviewer: &crate::types::ReviewerId,
     result: &Value,
     cancellation: CancellationToken,
 ) -> Result<Request, String> {
@@ -172,9 +145,12 @@ pub async fn submit_and_publish(
     Ok(request)
 }
 
-pub(crate) fn definition(config: &RepoConfig, eval: &Eval) -> Result<Value, String> {
+pub(crate) fn definition(
+    config: &RepoConfig,
+    eval: &Eval,
+) -> Result<crate::store::HumanDefinition, String> {
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
-    Ok(json!({"repo":config.root,"eval":eval,"artifacts":scope.artifacts}))
+    serde_json::from_value(json!({"repo":crate::platform::path_text(&config.root),"eval":eval,"artifacts":scope.artifacts})).map_err(|e| e.to_string())
 }
 
 fn reconnect(request: &Request) -> Result<RepoConfig, String> {
@@ -201,7 +177,7 @@ fn reconnect(request: &Request) -> Result<RepoConfig, String> {
 async fn recheck(
     receipts: &Receipts,
     request: &mut Request,
-    reviewer: &str,
+    reviewer: &crate::types::ReviewerId,
     config: &RepoConfig,
     cancellation: CancellationToken,
 ) -> Result<(), String> {
@@ -224,14 +200,15 @@ async fn recheck(
     let (code, error) =
         match cache::recheck(config, eval, output, &parallelism, cancellation.clone()).await {
             Ok(Some(actual)) if &actual == expected => return Ok(()),
-            Ok(_) => ("INPUT_CHANGED", "Fingerprint changed during review.".into()),
+            Ok(_) => (
+                crate::types::FailureCode::InputChanged,
+                "Fingerprint changed during review.".into(),
+            ),
             Err(error) if cancellation.is_cancelled() => return Err(error),
-            Err(error) => ("FINGERPRINT_RECHECK_FAILED", error),
+            Err(error) => (crate::types::FailureCode::FingerprintRecheckFailed, error),
         };
-    request.status = crate::types::RequestStatus::Error;
-    request.error = Some(error.clone());
-    request.error_code = Some(code.into());
-    request.result = None;
+    request.state =
+        crate::store::RequestState::failed(error.clone(), Some(code), crate::broker::now());
     receipts.settle_human(request, reviewer).await?;
     Err(error)
 }

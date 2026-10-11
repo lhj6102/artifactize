@@ -8,6 +8,9 @@ use tokio_rusqlite::Connection;
 
 use crate::broker::now;
 
+/// Random bytes in a bearer token: 256 bits, beyond guessing for the token's whole life.
+const TOKEN_SECRET_BYTES: usize = 32;
+
 pub const DATABASE: &str = "review-store.sqlite";
 const SCHEMA_VERSION: u32 = 3;
 /// Bound retained shared-review history, including small records that would not
@@ -15,9 +18,6 @@ const SCHEMA_VERSION: u32 = 3;
 pub const MAX_ENTRIES: i64 = 100_000;
 /// Bound JSON payload storage in the shared review database independently of record count.
 pub const MAX_BYTES: i64 = 4 * 1024 * 1024 * 1024;
-/// Keep persistent principal labels and token-admin output bounded; token names
-/// are printable ASCII identifiers, not the opaque bearer secrets themselves.
-const MAX_TOKEN_NAME_BYTES: usize = 64;
 
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, clap::ValueEnum,
@@ -45,17 +45,17 @@ impl Scope {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
-    pub name: String,
+    pub name: crate::types::TokenName,
     pub scopes: Vec<Scope>,
-    pub created_at: String,
-    pub revoked_at: Option<String>,
+    pub created_at: crate::types::Timestamp,
+    pub revoked_at: Option<crate::types::Timestamp>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Revocation {
-    pub name: String,
-    pub revoked_at: String,
+    pub name: crate::types::TokenName,
+    pub revoked_at: crate::types::Timestamp,
     pub purged_entries: usize,
 }
 
@@ -74,11 +74,13 @@ pub struct Store {
     connection: Connection,
 }
 
-fn digest(token: &str) -> String {
+fn digest(token: &str) -> crate::types::Sha256Digest {
     Sha256::digest(token.as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
-        .collect()
+        .collect::<String>()
+        .parse()
+        .expect("SHA-256 token digest")
 }
 
 /// Version 3 keeps every record of a 0.5 reuse key. Records of versions 1 and 2, keyed by
@@ -96,14 +98,16 @@ impl Store {
         crate::platform::create_private_dir_all(&state).map_err(|e| e.to_string())?;
         for suffix in ["", "-wal", "-shm"] {
             let path = state.join(format!("{DATABASE}{suffix}"));
-            if path
-                .symlink_metadata()
-                .is_ok_and(|metadata| !metadata.is_file())
-            {
-                return Err(format!(
-                    "Review store files must be regular files: {}",
-                    path.display()
-                ));
+            match crate::platform::path_kind(&path) {
+                Ok(crate::platform::FileKind::File) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Ok(_) => {
+                    return Err(format!(
+                        "Review store files must be regular files: {}",
+                        crate::platform::path_text(&path)
+                    ));
+                }
+                Err(error) => return Err(error.to_string()),
             }
         }
         let connection = Connection::open(state.join(DATABASE))
@@ -145,28 +149,25 @@ impl Store {
     }
 
     /// Create a token; only its SHA-256 is stored, so the caller prints it once.
-    pub async fn add_token(&self, name: &str, scopes: &[Scope]) -> Result<String, String> {
-        if !(1..=MAX_TOKEN_NAME_BYTES).contains(&name.len())
-            || !name
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-        {
-            return Err("Token names need 1–64 characters from [A-Za-z0-9._-].".into());
-        }
+    pub async fn add_token(
+        &self,
+        name: &crate::types::TokenName,
+        scopes: &[Scope],
+    ) -> Result<String, String> {
         let mut scopes = scopes.to_vec();
         scopes.sort();
         scopes.dedup();
         if scopes.is_empty() {
             return Err("A token needs at least one scope.".into());
         }
-        let mut secret = [0; 32];
+        let mut secret = [0; TOKEN_SECRET_BYTES];
         getrandom::fill(&mut secret).map_err(|_| "Cannot obtain secure randomness.".to_owned())?;
         let token = format!(
             "azt_{}",
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(secret)
         );
         let (name, hash, scopes) = (
-            name.to_owned(),
+            name.clone(),
             digest(&token),
             serde_json::to_string(&scopes).map_err(|e| e.to_string())?,
         );
@@ -197,7 +198,7 @@ impl Store {
                 let rows = statement
                     .query_map([], |row| {
                         Ok((
-                            row.get::<_, String>(0)?,
+                            row.get::<_, crate::types::TokenName>(0)?,
                             row.get::<_, String>(1)?,
                             row.get(2)?,
                             row.get(3)?,
@@ -220,8 +221,12 @@ impl Store {
     }
 
     /// Revoke immediately; `purge` also deletes every entry that token published.
-    pub async fn revoke(&self, name: &str, purge: bool) -> Result<Revocation, String> {
-        let name = name.to_owned();
+    pub async fn revoke(
+        &self,
+        name: &crate::types::TokenName,
+        purge: bool,
+    ) -> Result<Revocation, String> {
+        let name = name.clone();
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let transaction = db.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -229,7 +234,7 @@ impl Store {
                     "UPDATE tokens SET revoked_at=? WHERE name=? AND revoked_at IS NULL",
                     params![now(), name],
                 )?;
-                let revoked_at: String = transaction
+                let revoked_at: crate::types::Timestamp = transaction
                     .query_row(
                         "SELECT revoked_at FROM tokens WHERE name=?",
                         [&name],
@@ -254,8 +259,8 @@ impl Store {
     }
 
     /// Remove every record of a key.
-    pub async fn remove(&self, key: &str) -> Result<bool, String> {
-        let key = key.to_owned();
+    pub async fn remove(&self, key: &crate::types::ReuseKey) -> Result<bool, String> {
+        let key = key.clone();
         self.connection
             .call(move |db| -> Result<_, Error> {
                 Ok(db.execute("DELETE FROM entries WHERE key=?", [key])? != 0)
@@ -268,11 +273,11 @@ impl Store {
     pub(super) async fn authenticate(
         &self,
         token: &str,
-    ) -> Result<Option<(String, Vec<Scope>)>, String> {
+    ) -> Result<Option<(crate::types::TokenName, Vec<Scope>)>, String> {
         let hash = digest(token);
         self.connection
             .call(move |db| -> Result<_, Error> {
-                let row: Option<(String, String)> = db
+                let row: Option<(crate::types::TokenName, String)> = db
                     .query_row(
                         "SELECT name,scopes FROM tokens WHERE hash=? AND revoked_at IS NULL",
                         [hash],
@@ -316,17 +321,17 @@ impl Store {
     /// Append a record to its key's history; `false` when this execution is already stored.
     pub(super) async fn insert(
         &self,
-        key: &str,
-        execution_id: &str,
-        publisher: &str,
-        completed_at: &str,
+        key: &crate::types::ReuseKey,
+        execution_id: &crate::types::ExecutionId,
+        publisher: &crate::types::TokenName,
+        completed_at: crate::types::Timestamp,
         data: String,
     ) -> Result<bool, String> {
         let record = (
-            key.to_owned(),
-            execution_id.to_owned(),
-            publisher.to_owned(),
-            completed_at.to_owned(),
+            key.clone(),
+            execution_id.clone(),
+            publisher.clone(),
+            completed_at,
         );
         self.connection
             .call(move |db| -> Result<_, Error> {

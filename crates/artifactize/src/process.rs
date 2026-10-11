@@ -37,10 +37,60 @@ pub struct Command {
     pub timeout: Duration,
 }
 
+/// A process id, guaranteed nonzero: every OS reserves 0 for the kernel or an idle
+/// process, never one artifactize spawns or supervises. `#[serde(transparent)]` keeps
+/// the saved and wire representation the same plain integer.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct ProcessId(std::num::NonZeroU32);
+
+impl ProcessId {
+    /// `pid` is a real, just-observed OS process id, so it is never 0.
+    pub fn new(pid: u32) -> Self {
+        Self(std::num::NonZeroU32::new(pid).expect("a real process id is never 0"))
+    }
+
+    pub fn get(self) -> u32 {
+        self.0.get()
+    }
+}
+
+impl From<std::num::NonZeroU32> for ProcessId {
+    fn from(pid: std::num::NonZeroU32) -> Self {
+        Self(pid)
+    }
+}
+
+impl std::fmt::Display for ProcessId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl rusqlite::types::ToSql for ProcessId {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(rusqlite::types::ToSqlOutput::from(i64::from(self.0.get())))
+    }
+}
+
+impl rusqlite::types::FromSql for ProcessId {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        let pid = u32::try_from(value.as_i64()?)
+            .map_err(|error| rusqlite::types::FromSqlError::Other(error.into()))?;
+        std::num::NonZeroU32::new(pid).map(Self).ok_or_else(|| {
+            rusqlite::types::FromSqlError::Other(
+                "a saved owner_pid of 0 is not a process id".into(),
+            )
+        })
+    }
+}
+
 /// Process id and start time, captured while the group leader is still inert.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChildIdentity {
-    pub pid: u32,
+    pub pid: ProcessId,
     /// Linux: clock ticks since boot (procfs field 22). macOS: microseconds since the
     /// epoch (kernel birth timestamp). Windows: 100 ns intervals since 1601.
     pub start_time: u64,
@@ -53,6 +103,66 @@ pub struct Output {
     pub stderr: Vec<u8>,
     pub truncated: bool,
     pub duration: Duration,
+}
+
+/// Run a program artifactize itself uses, such as git, found through the shared program
+/// lookup, and return its standard output when it succeeds. `None` when it is missing or
+/// fails.
+pub(crate) fn tool_output<'a>(
+    program: &str,
+    args: impl IntoIterator<Item = &'a std::ffi::OsStr>,
+) -> Option<Vec<u8>> {
+    platform::program::tool_output(program, args)
+}
+
+/// Starts a built-in's program, such as `help`'s, through this process layer: admitted
+/// before it runs, kept in one process group or Job Object and cleaned up with its children,
+/// with exactly the environment given here.
+pub(crate) struct Launcher {
+    pub env: BTreeMap<OsString, OsString>,
+}
+
+impl artifactize_tools::launch::Launcher for Launcher {
+    fn run<'a>(
+        &'a self,
+        launch: artifactize_tools::launch::Launch,
+        cancellation: &'a CancellationToken,
+    ) -> artifactize_tools::launch::Running<'a> {
+        use artifactize_tools::launch::{Finished, LaunchError};
+        Box::pin(async move {
+            let command = Command {
+                program: launch.program.into(),
+                args: launch.args,
+                cwd: launch.cwd,
+                env: self.env.clone(),
+                timeout: launch.timeout,
+            };
+            let ready = |_| async { Ok(()) };
+            match run_with_input_limit(
+                command,
+                None,
+                launch.output_limit,
+                cancellation.clone(),
+                ready,
+            )
+            .await
+            {
+                Ok(output) => Ok(Finished {
+                    status: output.status,
+                    stdout: output.stdout,
+                    stderr: output.stderr,
+                    truncated: output.truncated,
+                }),
+                Err(Error::Timeout) => Err(LaunchError::TimedOut),
+                Err(Error::Cancelled) => Err(LaunchError::Cancelled),
+                Err(error) => Err(LaunchError::Failed(
+                    error
+                        .argument_refusal()
+                        .unwrap_or_else(|| error.to_string()),
+                )),
+            }
+        })
+    }
 }
 
 #[derive(Debug, Error)]
@@ -125,14 +235,16 @@ where
 {
     let cancellation = cancellation.child_token();
     let _cancel_on_drop = cancellation.clone().drop_guard();
-    tokio::spawn(run_inner(
-        command,
-        input,
-        output_limit,
-        cancellation,
-        register,
-    ))
-    .await?
+    crate::task::joined(
+        tokio::spawn(run_inner(
+            command,
+            input,
+            output_limit,
+            cancellation,
+            register,
+        ))
+        .await,
+    )?
 }
 
 async fn run_inner<F, R>(
@@ -155,12 +267,9 @@ where
         return Err(Error::Timeout);
     }
 
-    let program = artifactize_tools::program::resolve_with(
-        &command.program,
-        &command.cwd,
-        environment_value(&command.env, "PATH"),
-        environment_value(&command.env, "PATHEXT"),
-    )
+    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
+        environment_value(&command.env, name).map(ToOwned::to_owned)
+    })
     .map_err(Error::Spawn)?;
     let mut child = tokio::process::Command::new(&program);
     child
@@ -199,7 +308,7 @@ where
         }
     });
     drop(gate);
-    let spawned = (&mut spawning).await?;
+    let spawned = crate::task::joined((&mut spawning).await)?;
     let mut child = match spawned {
         Ok(child) => child,
         Err(error) => {
@@ -278,25 +387,11 @@ where
     })
 }
 
-/// Windows environment names are case-insensitive even though the typed map is not.
 fn environment_value<'a>(
     environment: &'a BTreeMap<OsString, OsString>,
     name: &str,
 ) -> Option<&'a std::ffi::OsStr> {
-    #[cfg(windows)]
-    {
-        environment.iter().find_map(|(key, value)| {
-            key.to_str()
-                .is_some_and(|key| key.eq_ignore_ascii_case(name))
-                .then_some(value.as_os_str())
-        })
-    }
-    #[cfg(not(windows))]
-    {
-        environment
-            .get(std::ffi::OsStr::new(name))
-            .map(OsString::as_os_str)
-    }
+    crate::platform::environment::lookup(environment, name)
 }
 
 /// Intentional desktop handoff: no owned process group, pipes, or kill-on-drop policy.
@@ -305,7 +400,7 @@ pub(crate) fn launch_detached(
     args: &[String],
     cwd: &std::path::Path,
 ) -> Result<(), Error> {
-    let program = artifactize_tools::program::resolve(program, cwd).map_err(Error::Spawn)?;
+    let program = platform::program::resolve(program, cwd).map_err(Error::Spawn)?;
     let mut command = tokio::process::Command::new(program);
     command
         .args(args)
@@ -323,11 +418,19 @@ pub(crate) fn launch_detached(
 
 pub(crate) fn child_identity(pid: u32) -> io::Result<ChildIdentity> {
     let start_time = platform::process_start_time(pid)?;
-    Ok(ChildIdentity { pid, start_time })
+    Ok(ChildIdentity {
+        pid: ProcessId::new(pid),
+        start_time,
+    })
 }
 
-pub(crate) fn is_alive(owner: ChildIdentity) -> io::Result<bool> {
-    match child_identity(owner.pid) {
+/// Whether `owner` is both present and still the process it was: absent (no local
+/// owner, such as a result mirrored from a remote review store) is never alive.
+pub(crate) fn is_alive(owner: Option<ChildIdentity>) -> io::Result<bool> {
+    let Some(owner) = owner else {
+        return Ok(false);
+    };
+    match child_identity(owner.pid.get()) {
         Ok(current) => Ok(current == owner),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),

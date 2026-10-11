@@ -14,14 +14,19 @@ const CHUNK: usize = 256 * 1024;
 /// Bound each layout job even for empty events, which spend no byte budget, so input stays
 /// responsive.
 const LAYOUT_EVENTS: usize = 128;
-/// Each disk row stores three u64s: source byte offset, rendered byte offset and rendered length.
-/// Keep these offsets on disk instead of retaining a heap Range for every terminal row.
-const ENTRY: u64 = 24;
+/// Each disk row stores three little-endian u64s: source byte offset, rendered byte offset
+/// and rendered length. Keep these offsets on disk instead of retaining a heap Range for
+/// every terminal row.
+const FIELD: usize = size_of::<u64>();
+/// One row record: its three fields.
+const ENTRY: u64 = 3 * FIELD as u64;
+/// Where the rendered offset starts in a row record, after the source offset.
+const RENDERED_OFFSET: u64 = FIELD as u64;
+/// The rendered offset and rendered length, read together.
+const RENDERED_FIELDS: usize = 2 * FIELD;
 
 fn temporary() -> Result<File, String> {
-    let file = tempfile::tempfile().map_err(|error| error.to_string())?;
-    crate::platform::restrict_file(&file).map_err(|error| error.to_string())?;
-    Ok(file)
+    crate::platform::private_anonymous_file().map_err(|error| error.to_string())
 }
 
 struct Text {
@@ -35,13 +40,14 @@ struct Rows {
     rendered_end: u64,
 }
 fn rendered_row(file: &mut File, rendered: &mut File, row: usize) -> Result<String, String> {
-    file.seek(SeekFrom::Start(row as u64 * ENTRY + 8))
+    file.seek(SeekFrom::Start(row as u64 * ENTRY + RENDERED_OFFSET))
         .map_err(|error| error.to_string())?;
-    let mut entry = [0; 16];
+    let mut entry = [0; RENDERED_FIELDS];
     file.read_exact(&mut entry)
         .map_err(|error| error.to_string())?;
-    let offset = u64::from_le_bytes(entry[..8].try_into().expect("rendered offset"));
-    let size = u64::from_le_bytes(entry[8..].try_into().expect("rendered length")) as usize;
+    let (offset, size) = entry.split_at(FIELD);
+    let offset = u64::from_le_bytes(offset.try_into().expect("rendered offset"));
+    let size = u64::from_le_bytes(size.try_into().expect("rendered length")) as usize;
     rendered
         .seek(SeekFrom::Start(offset))
         .map_err(|error| error.to_string())?;
@@ -127,7 +133,7 @@ impl Index {
                 .file
                 .seek(SeekFrom::Start(row as u64 * ENTRY))
                 .map_err(|error| error.to_string())?;
-            let mut bytes = [0; 8];
+            let mut bytes = [0; FIELD];
             segment
                 .file
                 .read_exact(&mut bytes)
@@ -138,14 +144,13 @@ impl Index {
         self.file
             .seek(SeekFrom::Start(row as u64 * ENTRY))
             .map_err(|error| error.to_string())?;
-        let mut bytes = [0; ENTRY as usize];
+        // The source offset, the first field of the row record.
+        let mut bytes = [0; FIELD];
         self.file
             .read_exact(&mut bytes)
             .map_err(|error| error.to_string())?;
-        Ok(
-            u64::from_le_bytes(bytes[..8].try_into().expect("first offset")) as usize
-                ..u64::from_le_bytes(bytes[..8].try_into().expect("first offset")) as usize,
-        )
+        let start = u64::from_le_bytes(bytes) as usize;
+        Ok(start..start)
     }
     fn rendered(&mut self, row: usize) -> Result<String, String> {
         if let Some(segment) = self
@@ -155,23 +160,7 @@ impl Index {
         {
             return rendered_row(&mut segment.file, &mut segment.rendered, row);
         }
-        self.file
-            .seek(SeekFrom::Start(row as u64 * ENTRY + 8))
-            .map_err(|error| error.to_string())?;
-        let mut entry = [0; 16];
-        self.file
-            .read_exact(&mut entry)
-            .map_err(|error| error.to_string())?;
-        let offset = u64::from_le_bytes(entry[..8].try_into().expect("rendered offset"));
-        let size = u64::from_le_bytes(entry[8..].try_into().expect("rendered length")) as usize;
-        self.rendered
-            .seek(SeekFrom::Start(offset))
-            .map_err(|error| error.to_string())?;
-        let mut bytes = vec![0; size];
-        self.rendered
-            .read_exact(&mut bytes)
-            .map_err(|error| error.to_string())?;
-        String::from_utf8(bytes).map_err(|error| error.to_string())
+        rendered_row(&mut self.file, &mut self.rendered, row)
     }
     fn anchor(&mut self, row: usize) -> Result<Anchor, String> {
         let visible = self
@@ -417,16 +406,7 @@ impl Pages {
     }
     #[cfg(test)]
     pub(super) fn private(&self) -> bool {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            self.text.metadata().unwrap().mode() & 0o777 == 0o600
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::io::AsRawHandle;
-            crate::platform::is_owner_only(self.text.as_raw_handle()).unwrap()
-        }
+        crate::platform::is_owner_only(&self.text).unwrap()
     }
     pub(super) fn layout_chunk(&mut self, chunk: usize) -> Result<bool, String> {
         let mut budget = chunk;

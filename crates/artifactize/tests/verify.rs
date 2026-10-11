@@ -8,7 +8,6 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::bin;
 use tempfile::TempDir;
 
 mod support;
@@ -22,7 +21,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         // The long, plain path artifactize reports, whatever form TEMP takes.
         let base = support::os::canonical(root.path());
         let repo = base.join("repo");
@@ -84,7 +83,7 @@ impl Fixture {
                     {
                         "id":"check",
                         "title":"Check",
-                        "profile":{"kind":"runtime","command":bin(program),"args":args},
+                        "profile":{"kind":"runtime","command":program,"args":args},
                         "payload":{"instruction":"Check runtime."},
                     },
                 ],
@@ -154,16 +153,11 @@ fn verify_then_fresh_read_only_show_retains_audit_without_the_repository() {
     assert_eq!(green["payload"]["instruction"], "Check runtime.");
     assert_eq!(
         green["cwd"],
-        fixture.repo.join("review").to_string_lossy().as_ref()
+        support::os::path_text(&fixture.repo.join("review"))
     );
     assert_eq!(
         green["argv"][2],
-        fixture
-            .repo
-            .join("input")
-            .join("data.txt")
-            .to_string_lossy()
-            .as_ref()
+        support::os::path_text(&fixture.repo.join("input/data.txt"))
     );
     let output_dir = Path::new(green["runDir"].as_str().unwrap());
     assert!(output_dir.starts_with(&fixture.state));
@@ -261,12 +255,12 @@ fn foreground_exit_codes_selection_and_missing_evidence() {
 #[test]
 fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     let fixture = Fixture::new();
-    fixture.runtime("/bin/echo", &["$HOME", "a; echo injected", "a b"]);
+    fixture.runtime(
+        &support::os::echo_program(),
+        &["$HOME", "a; echo injected", "a b"],
+    );
     let alias = fixture._root.path().join("alias");
-    #[cfg(unix)]
-    support::os::symlink_dir(&fixture.repo, &alias).unwrap();
-    #[cfg(windows)]
-    support::os::junction(&fixture.repo, &alias);
+    support::os::link_dir(&fixture.repo, &alias);
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
         .arg("--repo")
@@ -282,7 +276,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
     );
     let state = PathBuf::from(first["stateDir"].as_str().unwrap());
     assert_eq!(state, fixture.home);
-    assert_eq!(first["repoPath"], fixture.repo.to_string_lossy().as_ref());
+    assert_eq!(first["repoPath"], support::os::path_text(&fixture.repo));
     assert!(state.join("state.sqlite").is_file());
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_STATE_HOME", &fixture.home)
@@ -292,14 +286,8 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
         .unwrap();
     assert!(output.status.success());
     assert_eq!(json_output(&output), first);
-    for (program, args, code) in [
-        ("/artifactize/missing-command", vec![], "SPAWN_FAILED"),
-        // Windows has no signals; its exit statuses are all verdicts.
-        #[cfg(unix)]
-        ("/bin/sh", vec!["-c", "kill -TERM $$"], "ABNORMAL_EXIT"),
-        ("/bin/cat", vec!["{test}/missing"], "PREPARATION_FAILED"),
-    ] {
-        fixture.runtime(program, &args);
+    for (program, args, code) in support::os::runtime_failures() {
+        fixture.runtime(&program, &args);
         let output = fixture
             .command()
             .args(["verify", "--all", "--json"])
@@ -310,7 +298,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
         assert_eq!(run["requests"][0]["errorCode"], code);
         assert!(run["requests"][0]["result"].is_null());
     }
-    fixture.runtime("/bin/true", &[]);
+    fixture.runtime(&support::os::true_program(), &[]);
     let second = json_output(
         &fixture
             .command()
@@ -335,7 +323,7 @@ fn default_state_uses_one_database_and_errors_do_not_invent_results() {
 #[test]
 fn human_waiting_does_not_prevent_runtime_execution() {
     let fixture = Fixture::new();
-    fixture.runtime("/bin/true", &[]);
+    fixture.runtime(&support::os::true_program(), &[]);
     let path = fixture.repo.join("index.artf");
     let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     declaration["evals"].as_array_mut().unwrap().push(json!({
@@ -358,10 +346,10 @@ fn reuse_only_starts_nothing_for_a_listed_kind_and_reuses_cached_results() {
     // app/check appends a line to a marker outside the repository each time it executes;
     // docs/report names app, so it waits for app's GREEN result.
     let marker = fixture._root.path().join("executed");
-    let fingerprint = json!({"script":{"command":bin("cat"),"args":["version"]}});
-    let check = json!({"kind":"runtime","command":bin("/bin/sh"),
+    let fingerprint = json!({"script":{"command":support::os::cat_program(),"args":["version"]}});
+    let check = json!({"kind":"runtime","command":support::os::shell(),
         "args":["-c","echo run >> \"$1\"","sh",marker.to_str().unwrap()]});
-    let report = json!({"kind":"runtime","command":bin("/bin/true"),"args":[]});
+    let report = json!({"kind":"runtime","command":support::os::true_program(),"args":[]});
     support::declaration::write(
         fixture.repo.join("index.artf"),
         r#"{"name":"root","basis":true}"#,
@@ -423,14 +411,10 @@ fn wait_for(mut child: Child) -> Output {
 fn ctrl_c_cleans_the_group_persists_cancelled_and_does_not_hold_a_writer_lock() {
     let fixture = Fixture::new();
     let marker = fixture._root.path().join("started");
+    let script = format!("{} & echo $! > \"$1\"; wait", support::os::LINGERING);
     fixture.runtime(
-        "/bin/sh",
-        &[
-            "-c",
-            "sleep 30 & echo $! > \"$1\"; wait",
-            "sh",
-            marker.to_str().unwrap(),
-        ],
+        &support::os::shell(),
+        &["-c", &script, "sh", marker.to_str().unwrap()],
     );
     let child = fixture
         .command()
@@ -519,7 +503,7 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
     declaration["evals"][0]["profile_variants"] = json!({
         "brief": {
             "kind":"runtime",
-            "command":bin("/bin/echo"),
+            "command":support::os::echo_program(),
             "args":["variant", "{input}/data.txt"],
             "timeout_ms":support::os::slow(1000),
         },
@@ -544,12 +528,15 @@ fn verify_file_and_csv_selectors_preserve_order_and_profiles_execute_without_pat
         run["selection"],
         json!({"kind":"eval","evalId":"green/check"})
     );
-    assert_eq!(run["requests"][0]["profile"]["command"], bin("/bin/echo"));
+    assert_eq!(
+        run["requests"][0]["profile"]["command"],
+        support::os::echo_program()
+    );
     assert_eq!(
         run["requests"][0]["result"]["stdout"],
         format!(
             "variant {}\n",
-            fixture.repo.join("input").join("data.txt").display()
+            support::os::path_text(&fixture.repo.join("input").join("data.txt"))
         )
     );
     assert_eq!(fs::read(&source).unwrap(), original);
@@ -773,7 +760,7 @@ async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
         &fixture.repo,
         Some(&fixture.state),
         &Selection::Artifact {
-            artifact_id: "blocked".into(),
+            artifact_id: "blocked".parse().unwrap(),
         },
         &VerifyOptions {
             ignore_gates: Some(false),
@@ -784,8 +771,8 @@ async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
     .await
     .unwrap();
     assert!(!enforced.run.ignore_gates);
-    assert_eq!(enforced.run.status.as_str(), "INCOMPLETE");
-    assert_eq!(enforced.requests[0].status.as_str(), "WAIT_DEPENDENCY");
+    assert_eq!(enforced.run.status().as_str(), "INCOMPLETE");
+    assert_eq!(enforced.requests[0].status().as_str(), "WAIT_DEPENDENCY");
     let saved = read_run(&fixture.state, &enforced.run.id).await.unwrap();
     assert!(!saved.run.ignore_gates);
 
@@ -801,7 +788,7 @@ async fn root_gate_policy_is_honored_and_explicit_sdk_false_overrides_ignore() {
 #[test]
 fn basis_and_all_keep_no_eval_dependency_obligations() {
     let fixture = Fixture::new();
-    fixture.runtime("/bin/true", &[]);
+    fixture.runtime(&support::os::true_program(), &[]);
     fs::create_dir(fixture.repo.join("input")).unwrap();
     support::declaration::write(fixture.repo.join("input/index.artf"), r#"{"name":"input"}"#)
         .unwrap();
@@ -840,8 +827,7 @@ fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
     for folder in ["blocked", "red"] {
         let path = fixture.repo.join(folder).join("index.artf");
         let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
-        declaration["evals"][0]["profile_variants"] =
-            json!({"pass":{"kind":"runtime","command":bin("/bin/echo"),"args":["{input}"]}});
+        declaration["evals"][0]["profile_variants"] = json!({"pass":{"kind":"runtime","command":support::os::echo_program(),"args":["{input}"]}});
         support::declaration::write(path, declaration.to_string()).unwrap();
     }
     let recursive = fixture.verify(&["blocked", "--recursive", "--profile", "pass"], 0);
@@ -851,7 +837,7 @@ fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
             .as_array()
             .unwrap()
             .iter()
-            .all(|r| r["profile"]["command"] == bin("/bin/echo"))
+            .all(|r| r["profile"]["command"] == support::os::echo_program())
     );
     assert_eq!(
         recursive["validation"]["artifacts"]
@@ -875,7 +861,7 @@ fn recursive_profile_selection_includes_dependencies_and_rebuilds_scope() {
 #[test]
 fn recursive_eval_selection_includes_sibling_evals_on_the_same_artifact() {
     let fixture = Fixture::new();
-    fixture.runtime("/bin/true", &[]);
+    fixture.runtime(&support::os::true_program(), &[]);
     let path = fixture.repo.join("index.artf");
     let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     let mut sibling = declaration["evals"][0].clone();
@@ -897,7 +883,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
         ("anthropic", "ANTHROPIC_API_KEY"),
     ] {
         let fixture = Fixture::new();
-        fixture.runtime("/bin/true", &[]);
+        fixture.runtime(&support::os::true_program(), &[]);
         let path = fixture.repo.join("index.artf");
         let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
         declaration["evals"].as_array_mut().unwrap().push(json!({
@@ -944,7 +930,7 @@ fn agent_errors_run_alongside_runtime_and_survive_fresh_audit_reads() {
 #[test]
 fn runtime_and_agent_starts_share_the_run_budget() {
     let fixture = Fixture::new();
-    fixture.runtime("/bin/true", &[]);
+    fixture.runtime(&support::os::true_program(), &[]);
     let path = fixture.repo.join("index.artf");
     let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     declaration["evals"].as_array_mut().unwrap().push(json!({
@@ -976,7 +962,7 @@ fn verify_announces_the_run_id_on_stderr_before_its_evals_finish() {
     let fixture = Fixture::new();
     let release = fixture._root.path().join("release");
     fixture.runtime(
-        "/bin/sh",
+        &support::os::shell(),
         &[
             "-c",
             "while [ ! -e \"$1\" ]; do sleep 0.05; done",

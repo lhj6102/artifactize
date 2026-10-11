@@ -5,5 +5,6 @@
   {"source":"file","authFile":"fixture-auth.json","expiresAt":2000000000,"expired":false},
   {"source":"file","authFile":"fixture-auth.json","expiresAt":null,"expired":true},
   {"source":"stored","expiresAt":2000000000,"expired":false},
+  {"source":"file","authFile":"fixture/codex/auth.json","expiresAt":null,"expired":false},
   {"source":"stored","expiresAt":1000000000,"expired":true}
 ]

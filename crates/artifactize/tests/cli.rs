@@ -18,13 +18,13 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         let runtime = |command: &str| json!({"kind": "runtime", "command": command, "args": []});
         for (name, profile) in [
-            ("green", runtime("true")),
-            ("red", runtime("false")),
-            ("broken", runtime("/artifactize/missing")),
+            ("green", runtime(&support::os::true_program())),
+            ("red", runtime(&support::os::false_program())),
+            ("broken", runtime("artifactize-missing-program")),
             ("human", json!({"kind": "human"})),
         ] {
             let mut declaration = json!({
@@ -41,7 +41,7 @@ impl Fixture {
             });
             if name == "green" {
                 declaration["fingerprint"] =
-                    json!({"script":{"command": "printf", "args": ["v1"]}});
+                    json!({"script":{"command": support::os::printf_program(), "args": ["v1"]}});
             }
             fs::create_dir_all(repo.join(name)).unwrap();
             support::declaration::write(

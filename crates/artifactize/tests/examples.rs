@@ -27,7 +27,7 @@ struct Session(TempDir);
 
 impl Session {
     fn new() -> Self {
-        Self(tempfile::tempdir().unwrap())
+        Self(support::os::tempdir())
     }
 
     fn command(&self, repo: &Path, args: &[&str]) -> Command {
@@ -293,9 +293,11 @@ fn file_posts_reuse_independently_and_track_the_shared_style() {
             request["argv"],
             json!([
                 "python3",
-                support::os::canonical(&repo.join("house-style/check.py")),
-                support::os::canonical(&repo.join(format!("{name}.md"))),
-                support::os::canonical(&repo.join("house-style/banned.txt")),
+                support::os::path_text(&support::os::canonical(&repo.join("house-style/check.py"))),
+                support::os::path_text(&support::os::canonical(&repo.join(format!("{name}.md")))),
+                support::os::path_text(&support::os::canonical(
+                    &repo.join("house-style/banned.txt")
+                )),
                 limit
             ])
         );

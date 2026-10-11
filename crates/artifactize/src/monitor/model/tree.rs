@@ -1,11 +1,12 @@
 //! The Artifacts and evals tree: one row per eval, Artifact rows rolled up from them.
+use crate::types::{ArtifactName, EvalId};
 use serde_json::Value;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 use super::{
     Saved,
     states::{
-        Activity, Busy, Completion, EvalView, NotRun, Queue, Source, States, Upstream, Waits,
+        Activity, Busy, Completion, EvalView, NotRun, Queue, Rank, Source, States, Upstream, Waits,
     },
 };
 use crate::store::{RequestView, RunView};
@@ -66,7 +67,7 @@ pub enum Kind {
 #[derive(Debug, Clone)]
 pub struct Node {
     /// Stable tree identifier: `a:<artifact>` or `e:<eval>`.
-    pub id: String,
+    pub id: super::NodeId,
     pub kind: Kind,
     pub glyph: &'static str,
     pub tone: Tone,
@@ -191,7 +192,7 @@ const SHOWN: usize = 2;
 const SHOWN_TEXT: usize = 24;
 
 /// `cli ◐ in progress`, or `a ◐, b ? +1`; an ERROR-failed X asks for a retry.
-fn tokens(states: &States, x: &[String], glyphs: bool) -> Vec<Segment> {
+fn tokens(states: &States, x: &[crate::types::ArtifactName], glyphs: bool) -> Vec<Segment> {
     let mut segments = Vec::new();
     for (index, id) in x.iter().take(SHOWN).enumerate() {
         if index > 0 {
@@ -199,7 +200,7 @@ fn tokens(states: &States, x: &[String], glyphs: bool) -> Vec<Segment> {
         }
         let (glyph, tone, word) = completion(states.completion(id));
         let text = match (glyphs, x.len()) {
-            (false, _) => id.clone(),
+            (false, _) => id.to_string(),
             (true, 1) => format!("{id} {glyph} {word}"),
             (true, _) => format!("{id} {glyph}"),
         };
@@ -220,7 +221,7 @@ fn tokens(states: &States, x: &[String], glyphs: bool) -> Vec<Segment> {
 
 fn waits(states: &States, prefix: &str, waits: &Waits) -> Vec<Segment> {
     let mut segments = vec![Segment::plain(prefix)];
-    segments.extend(tokens(states, &waits.x, true));
+    segments.extend(tokens(states, &waits.artifacts, true));
     if let Some((via, root)) = &waits.root {
         segments.push(Segment::plain(format!(" ({via} waits for ")));
         let (_, tone, _) = completion(states.completion(root));
@@ -231,8 +232,13 @@ fn waits(states: &States, prefix: &str, waits: &Waits) -> Vec<Segment> {
 }
 
 /// The top-level Result keys behind a RED verdict, such as `violations 3`.
-fn findings(result: Option<&Value>) -> String {
-    let fields = result.and_then(Value::as_object).into_iter().flatten();
+fn findings(result: Option<&crate::store::ExecutionResult>) -> String {
+    let result = result.map(crate::store::ExecutionResult::to_json);
+    let fields = result
+        .as_ref()
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten();
     let fields = fields.filter(|(key, _)| {
         !matches!(
             key.as_str(),
@@ -282,7 +288,7 @@ fn text(states: &States, view: &EvalView, request: Option<&RequestView>) -> Vec<
         EvalView::Done(Source::Derived) => plain("GREEN · derived"),
         EvalView::Done(Source::Saved) => plain("GREEN · saved result, not in this Run"),
         EvalView::Failed { verdict: true } => {
-            let findings = findings(request.and_then(|view| view.request.result.as_ref()));
+            let findings = findings(request.and_then(|view| view.request.result()));
             if request.is_none() {
                 plain("RED · saved result, not in this Run")
             } else if findings.is_empty() {
@@ -341,18 +347,16 @@ fn clock(view: &EvalView, request: Option<&RequestView>) -> Option<Clock> {
             | EvalView::InProgress(Activity::Running | Activity::Human(_))
     );
     let request = &request.filter(|_| timed)?.request;
-    let parse = |time: &str| OffsetDateTime::parse(time, &Rfc3339).ok();
-    let start = parse(request.started_at.as_deref().unwrap_or(&request.created_at))?;
-    let end = match request.completed_at.as_deref() {
-        Some(end) => Some(parse(end)?),
-        None => None,
-    };
+    let start = request.started_at.unwrap_or(request.created_at).time();
+    let end = request.completed_at().map(crate::types::Timestamp::time);
     Some(Clock { start, end })
 }
 
 fn compact(view: &EvalView, right: &str) -> String {
     let x = match view {
-        EvalView::WaitingOn(waits) | EvalView::NotRun(NotRun::Dependency(waits)) => &waits.x,
+        EvalView::WaitingOn(waits) | EvalView::NotRun(NotRun::Dependency(waits)) => {
+            &waits.artifacts
+        }
         EvalView::BlockedBy(x) => x,
         _ => return right.to_owned(),
     };
@@ -362,11 +366,12 @@ fn compact(view: &EvalView, right: &str) -> String {
     }
 }
 
-fn local(eval: &str) -> &str {
-    eval.rsplit_once('/').map_or(eval, |(_, local)| local)
+fn local(eval: &EvalId) -> &str {
+    eval.rsplit_once('/')
+        .map_or(eval.as_str(), |(_, local)| local)
 }
 
-fn eval_node<'a>(states: &States<'a>, eval: &'a str, now: OffsetDateTime) -> Node {
+fn eval_node<'a>(states: &States<'a>, eval: &'a EvalId, now: OffsetDateTime) -> Node {
     let view = states.view(eval);
     let request = states.request(eval);
     let (glyph, tone, weight) = style(&view);
@@ -374,7 +379,7 @@ fn eval_node<'a>(states: &States<'a>, eval: &'a str, now: OffsetDateTime) -> Nod
     let right = clock.map_or_else(String::new, |clock| clock.elapsed(now));
     Node {
         clock,
-        id: format!("e:{eval}"),
+        id: super::NodeId::eval(eval.clone()),
         glyph,
         tone,
         weight,
@@ -409,7 +414,7 @@ fn names(nodes: &[&Node]) -> String {
 }
 
 /// One clause for the most urgent class of eval rows, plus in-progress ones after a failure.
-fn summary(states: &States, id: &str, children: &[Node]) -> Vec<Segment> {
+fn summary(states: &States, id: &ArtifactName, children: &[Node]) -> Vec<Segment> {
     let view = |node: &Node| match &node.kind {
         Kind::Eval(view) => Some(view.clone()),
         Kind::Artifact { .. } => None,
@@ -422,16 +427,16 @@ fn summary(states: &States, id: &str, children: &[Node]) -> Vec<Segment> {
     else {
         return Vec::new();
     };
-    let class = |rank: u8| -> Vec<&Node> {
+    let class = |rank: Rank| -> Vec<&Node> {
         children
             .iter()
             .filter(|node| view(node).is_some_and(|view| view.rank() == rank))
             .collect()
     };
-    let x = |ids: Vec<String>| tokens(states, &ids, false);
+    let x = |ids: Vec<crate::types::ArtifactName>| tokens(states, &ids, false);
     let mut segments = match top {
-        0 => {
-            let failed = class(0);
+        Rank::Failed => {
+            let failed = class(Rank::Failed);
             let errors: Vec<_> = failed
                 .iter()
                 .copied()
@@ -444,8 +449,11 @@ fn summary(states: &States, id: &str, children: &[Node]) -> Vec<Segment> {
             };
             vec![Segment::plain(format!("{label}: {}", names(&nodes)))]
         }
-        1 => vec![Segment::plain(format!("in progress: {}", names(&class(1))))],
-        2 => {
+        Rank::InProgress => vec![Segment::plain(format!(
+            "in progress: {}",
+            names(&class(Rank::InProgress))
+        ))],
+        Rank::Blocked => {
             let mut segments = vec![Segment::plain(if states.running {
                 "blocked by "
             } else {
@@ -454,13 +462,13 @@ fn summary(states: &States, id: &str, children: &[Node]) -> Vec<Segment> {
             segments.extend(x(states.blockers_of(id)));
             segments
         }
-        3 => {
+        Rank::Waiting => {
             let mut segments = vec![Segment::plain("waits for ")];
             segments.extend(x(states.waits_of(id)));
             segments
         }
-        4 => {
-            let first = class(4)[0];
+        Rank::NotRun => {
+            let first = class(Rank::NotRun)[0];
             match &first.kind {
                 Kind::Eval(EvalView::NotRun(NotRun::Dependency(_))) => {
                     let mut segments = vec![Segment::plain("not run: waited for ")];
@@ -471,7 +479,7 @@ fn summary(states: &States, id: &str, children: &[Node]) -> Vec<Segment> {
             }
         }
         // Every eval row is done, but graph.rs still holds them on their own gates.
-        _ => match states.completion(id) {
+        Rank::Done => match states.completion(id) {
             Completion::Waiting { blocked: true } => {
                 let mut segments = vec![Segment::plain("done, but blocked by ")];
                 segments.extend(x(states.blockers_of(id)));
@@ -485,8 +493,8 @@ fn summary(states: &States, id: &str, children: &[Node]) -> Vec<Segment> {
             _ => Vec::new(),
         },
     };
-    if top == 0 {
-        let busy = class(1);
+    if top == Rank::Failed {
+        let busy = class(Rank::InProgress);
         if !busy.is_empty() {
             segments.push(Segment::plain(format!(" · in progress: {}", names(&busy))));
         }
@@ -497,7 +505,7 @@ fn summary(states: &States, id: &str, children: &[Node]) -> Vec<Segment> {
 fn artifact_node<'a>(
     states: &States<'a>,
     saved: &Saved<'a>,
-    id: &str,
+    id: &ArtifactName,
     now: OffsetDateTime,
 ) -> Node {
     let artifact = saved.artifact(id);
@@ -547,9 +555,9 @@ fn artifact_node<'a>(
         let top = children
             .iter()
             .min_by_key(|node| match &node.kind {
-                Kind::Eval(EvalView::Failed { verdict: false }) => (0, 0),
-                Kind::Eval(view) => (view.rank(), 1),
-                Kind::Artifact { .. } => (u8::MAX, 0),
+                Kind::Eval(EvalView::Failed { verdict: false }) => (Rank::Failed, false),
+                Kind::Eval(view) => (view.rank(), true),
+                Kind::Artifact { .. } => (Rank::Done, true),
             })
             .expect("children");
         let (glyph, tone, weight) = match (&top.kind, completion) {
@@ -568,13 +576,13 @@ fn artifact_node<'a>(
         (glyph, tone, weight, summary(states, id, &children))
     };
     Node {
-        id: format!("a:{id}"),
+        id: super::NodeId::artifact(id.clone()),
         clock: None,
         kind: Kind::Artifact { completion, basis },
         glyph,
         tone,
         weight,
-        name: id.to_owned(),
+        name: id.to_string(),
         marks,
         text,
         compact: right.clone(),
@@ -612,32 +620,26 @@ fn build(run: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Vec<No
 /// (or the Run has not ended). A request that completed later goes back to waiting for its
 /// Human (or running), and a later claim is dropped; the Run's recorded evidence is fixed.
 fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
-    let parse = |time: &str| OffsetDateTime::parse(time, &Rfc3339).ok();
-    let end = parse(run.run.completed_at.as_deref()?)?;
-    let late = |time: Option<&str>| time.and_then(parse).is_some_and(|time| time > end);
+    let end = run.run.completed_at()?;
+    let late = |time: Option<crate::types::Timestamp>| time.is_some_and(|time| time > end);
     let changed = requests.iter().any(|view| {
-        late(view.request.completed_at.as_deref())
-            || late(view.claim.as_ref().map(|claim| claim.claimed_at.as_str()))
+        late(view.request.completed_at()) || late(view.claim.as_ref().map(|claim| claim.claimed_at))
     });
     if !changed {
         return None;
     }
     let mut ended = requests.to_vec();
     for view in &mut ended {
-        if late(view.claim.as_ref().map(|claim| claim.claimed_at.as_str())) {
+        if late(view.claim.as_ref().map(|claim| claim.claimed_at)) {
             view.claim = None;
         }
         let request = &mut view.request;
-        if late(request.completed_at.as_deref()) {
-            request.status = if request.profile.kind() == crate::config::ProfileKind::Human {
-                crate::types::RequestStatus::WaitingHuman
+        if late(request.completed_at()) {
+            request.state = if request.profile.kind() == crate::config::ProfileKind::Human {
+                crate::store::RequestState::WaitingHuman
             } else {
-                crate::types::RequestStatus::Running
+                crate::store::RequestState::Running
             };
-            request.completed_at = None;
-            request.result = None;
-            request.error = None;
-            request.error_code = None;
         }
     }
     Some(ended)
@@ -647,12 +649,12 @@ fn at_end(run: &RunView, requests: &[RequestView]) -> Option<Vec<RequestView>> {
 fn state(node: &Node) -> (Kind, &'static str, String) {
     let kind = match &node.kind {
         Kind::Eval(EvalView::WaitingOn(waits)) => Kind::Eval(EvalView::WaitingOn(Waits {
-            x: waits.x.clone(),
+            artifacts: waits.artifacts.clone(),
             root: None,
         })),
         Kind::Eval(EvalView::NotRun(NotRun::Dependency(waits))) => {
             Kind::Eval(EvalView::NotRun(NotRun::Dependency(Waits {
-                x: waits.x.clone(),
+                artifacts: waits.artifacts.clone(),
                 root: None,
             })))
         }
@@ -670,21 +672,21 @@ fn state(node: &Node) -> (Kind, &'static str, String) {
 fn mark(nodes: &mut [Node], ended: &[Node]) {
     let mut before = std::collections::HashMap::new();
     for node in ended {
-        before.insert(node.id.as_str(), state(node));
+        before.insert(&node.id, state(node));
         for child in &node.children {
-            before.insert(child.id.as_str(), state(child));
+            before.insert(&child.id, state(child));
         }
     }
     for node in nodes {
-        node.changed = before.get(node.id.as_str()) != Some(&state(node));
+        node.changed = before.get(&node.id) != Some(&state(node));
         for child in &mut node.children {
-            child.changed = before.get(child.id.as_str()) != Some(&state(child));
+            child.changed = before.get(&child.id) != Some(&state(child));
         }
     }
 }
 
 /// Every eval's direct dependency Artifacts, from the Run's saved definitions.
-pub fn upstream_index(run: &RunView, requests: &[RequestView]) -> Vec<(String, Vec<String>)> {
+pub fn upstream_index(run: &RunView, requests: &[RequestView]) -> Vec<(EvalId, Vec<ArtifactName>)> {
     let saved = Saved { run, requests };
     let index = super::states::Index::new(&saved);
     index
@@ -692,15 +694,15 @@ pub fn upstream_index(run: &RunView, requests: &[RequestView]) -> Vec<(String, V
         .iter()
         .map(|(eval, artifacts)| {
             (
-                (*eval).to_owned(),
-                artifacts.iter().map(|id| (*id).to_owned()).collect(),
+                (*eval).clone(),
+                artifacts.iter().map(|id| (*id).clone()).collect(),
             )
         })
         .collect()
 }
 
 /// The Artifact detail's current status, rolled up like its tree row.
-pub(super) fn artifact_status(saved: &Saved, id: &str, now: OffsetDateTime) -> String {
+pub(super) fn artifact_status(saved: &Saved, id: &ArtifactName, now: OffsetDateTime) -> String {
     let states = States::new(saved);
     let node = artifact_node(&states, saved, id, now);
     let (_, _, word) = completion(states.completion(id));
@@ -719,7 +721,7 @@ pub(super) fn artifact_status(saved: &Saved, id: &str, now: OffsetDateTime) -> S
 
 /// The eval detail's `Waits for`: every dependency Artifact in the tree's order, with its
 /// completion and why the eval depends on it, then its evals that are not done yet.
-pub(super) fn waits_for(saved: &Saved, eval: &str, now: OffsetDateTime) -> String {
+pub(super) fn waits_for(saved: &Saved, eval: &EvalId, now: OffsetDateTime) -> String {
     let states = States::new(saved);
     let Some((&target, _)) = states
         .index
@@ -729,20 +731,20 @@ pub(super) fn waits_for(saved: &Saved, eval: &str, now: OffsetDateTime) -> Strin
     else {
         return String::new();
     };
-    let peers = |id: &str| states.index.peers.get(id).cloned().unwrap_or_default();
+    let peers = |id: &ArtifactName| states.index.peers.get(id).cloned().unwrap_or_default();
     let mut own = peers(target);
     own.push(target);
     let mut lines = Vec::new();
     for upstream in states.upstream_states(eval) {
         let (glyph, _, word) = completion(upstream.completion);
-        let id = upstream.artifact.as_str();
+        let id = &upstream.artifact;
         let mut origins: Vec<String> = saved
             .relations(id, false)
             .into_iter()
-            .filter(|relation| own.contains(&relation.target.as_str()))
+            .filter(|relation| own.contains(&&relation.target))
             .map(|relation| {
                 let kind = super::relation_kind(relation);
-                if relation.target == target {
+                if &relation.target == target {
                     kind
                 } else {
                     format!("{kind} → {}", relation.target)
@@ -750,7 +752,7 @@ pub(super) fn waits_for(saved: &Saved, eval: &str, now: OffsetDateTime) -> Strin
             })
             .collect();
         if origins.is_empty() && !peers(id).is_empty() {
-            origins.push(format!("↻ peer of {}", peers(id).join(", ")));
+            origins.push(format!("↻ peer of {}", super::join(peers(id), ", ")));
         }
         let origins = if origins.is_empty() {
             String::new()

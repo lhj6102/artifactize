@@ -8,7 +8,7 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::{cat_program, echo_program, false_program, shell, true_program};
 use tempfile::TempDir;
 
 mod support;
@@ -20,7 +20,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         Self {
             state: root.path().join("state"),
             root,
@@ -116,7 +116,7 @@ impl Fixture {
                         "title":"Review",
                         "profile":{
                             "kind":"runtime",
-                            "command":bin("/bin/sh"),
+                            "command":shell(),
                             "args":[
                                 "review.sh",
                                 self.root.path().join("starts"),
@@ -133,9 +133,10 @@ impl Fixture {
         repo
     }
 
-    /// The owner's review in `repo` ends with `ERROR_SCRIPT` after the release. On Windows its
-    /// deadline has to fall after the waiter starts waiting, and early enough that the owner
-    /// has stopped within `finish`'s five seconds of the release.
+    /// The owner's review in `repo` ends with `ERROR_SCRIPT` after the release. On Windows
+    /// `erroring` scales its deadline the same way `patience` does, so it reliably outlasts
+    /// the waiter's attachment (started and checked before `release`) without racing a slow
+    /// CI host, while `finish`'s own, equally scaled deadline still catches it.
     fn erroring_owner(&self, repo: &Path) {
         let path = repo.join("index.artf");
         let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
@@ -234,27 +235,10 @@ impl Fixture {
     }
 }
 
-/// A review that ends in an operational error rather than a verdict: killed by a signal on
-/// Unix. Windows has no signals, so there it outlives the deadline `erroring` sets.
-#[cfg(unix)]
-const ERROR_SCRIPT: &str = "kill -TERM $$";
-#[cfg(windows)]
-const ERROR_SCRIPT: &str = "sleep 30";
-#[cfg(unix)]
-const ERROR_CODE: &str = "ABNORMAL_EXIT";
-#[cfg(windows)]
-const ERROR_CODE: &str = "TIMEOUT";
+use support::os::{ERROR_CODE, ERROR_SCRIPT, erroring};
 
-/// Give an eval the deadline its `ERROR_SCRIPT` needs on Windows; a deadline is an execution
-/// option, so the eval keeps its key.
-fn erroring(mut eval: Value, timeout_ms: u64) -> Value {
-    if cfg!(windows) {
-        eval["profile"]["timeout_ms"] = json!(timeout_ms);
-    }
-    eval
-}
-
-const WAIT_SCRIPT: &str = "echo $$ >> \"$1\"; i=0; while [ ! -e \"$2\" ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i+1)); done; printf original";
+const WAIT_SCRIPT: &str =
+    "echo $$ >> \"$1\"; while [ ! -e \"$2\" ]; do sleep 0.05; done; printf original";
 
 fn wait_until(mut condition: impl FnMut() -> bool) {
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(5));
@@ -280,18 +264,8 @@ fn output(output: Output, code: i32) -> Value {
     serde_json::from_slice(&output.stdout).unwrap()
 }
 
-/// SIGINT, SIGSTOP or SIGCONT on Unix; on Windows Ctrl-Break and suspending or resuming
-/// every thread.
+/// Interrupt, freeze or resume a process, named as the Unix signals that do it.
 fn signal(pid: u32, signal: &str) {
-    #[cfg(unix)]
-    assert!(
-        Command::new("/bin/kill")
-            .args([signal, &pid.to_string()])
-            .status()
-            .unwrap()
-            .success()
-    );
-    #[cfg(windows)]
     match signal {
         "-INT" => support::os::interrupt(pid),
         "-STOP" => support::os::suspend(pid),
@@ -300,23 +274,10 @@ fn signal(pid: u32, signal: &str) {
     }
 }
 
-/// SIGKILL cannot run foreground cleanup; stop the killed owner's orphaned review group. On
-/// Windows the owner's Job Object closed with it and took the review along.
+/// A killed owner cannot run foreground cleanup; stop its orphaned review and children. On
+/// Windows the owner's Job Object closed with it and took the review along already.
 fn kill_orphans(starts: &str) {
-    #[cfg(unix)]
-    assert!(
-        Command::new("/bin/kill")
-            .args([
-                "-KILL",
-                "--",
-                &format!("-{}", starts.lines().next().unwrap())
-            ])
-            .status()
-            .unwrap()
-            .success()
-    );
-    #[cfg(windows)]
-    let _ = starts;
+    support::os::kill_tree(starts.lines().next().unwrap().parse().unwrap());
 }
 
 fn write(repo: &Path, path: &str, value: Value) {
@@ -329,13 +290,13 @@ fn eval(id: &str, script: &str) -> Value {
     json!({
         "id":id,
         "title":"Review",
-        "profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script]},
+        "profile":{"kind":"runtime","command":shell(),"args":["-c",script]},
         "payload":{"instruction":"Review."},
     })
 }
 
 fn fingerprint(key: &str) -> Value {
-    json!({"script":{"command":bin("/bin/echo"),"args":[key]}})
+    json!({"script":{"command":echo_program(),"args":[key]}})
 }
 
 /// The reuse key of a Run's request.
@@ -416,7 +377,7 @@ fn cross_repo_red_reuse_keeps_original_audit_and_blocks_gates_after_source_delet
     assert_eq!(hit["requestedProfile"], hit["profile"]);
     assert_eq!(
         hit["provenance"]["repoPath"],
-        source_path.to_string_lossy().as_ref()
+        support::os::path_text(&source_path)
     );
     assert_eq!(hit["provenance"]["evalId"], "dependency/first");
     assert_eq!(
@@ -460,13 +421,13 @@ fn distinct_evals_on_one_fingerprint_execute_and_status_reuses_each_definition()
                 {
                     "id":"pass",
                     "title":"Pass",
-                    "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
+                    "profile":{"kind":"runtime","command":true_program(),"args":[]},
                     "payload":{"instruction":"Review."},
                 },
                 {
                     "id":"fail",
                     "title":"Fail",
-                    "profile":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+                    "profile":{"kind":"runtime","command":false_program(),"args":[]},
                     "payload":{"instruction":"Review."},
                 },
             ],
@@ -711,7 +672,7 @@ fn status_uses_current_fingerprint_and_only_prepares_the_selected_closure() {
         "repo",
         json!({
             "name":"test",
-            "fingerprint":{"script":{"command":bin("/bin/cat"),"args":["key"]}},
+            "fingerprint":{"script":{"command":cat_program(),"args":["key"]}},
             "evals":[eval("check", "touch executed")],
         }),
     );
@@ -881,10 +842,7 @@ fn waiter_ctrl_c_leaves_owner_running_and_owner_ctrl_c_releases_the_claim() {
     assert_eq!(recovered["requests"][0]["result"]["stdout"], "retried");
     assert_eq!(fixture.count("executions"), 2);
     let pid = cancelled["requests"][0]["child"]["pid"].as_u64().unwrap();
-    #[cfg(unix)]
-    assert!(!support::os::exists(pid as u32));
-    #[cfg(windows)]
-    assert!(!support::os::running(pid as u32));
+    assert!(support::os::gone(pid as u32));
 }
 
 #[test]
@@ -945,16 +903,16 @@ fn a_single_start_serves_concurrent_siblings_and_zero_budget_cache_hits() {
     let repo = fixture.repo(
         "repo",
         json!({"name":"test","fingerprint":fingerprint("one-start"),"evals":[
-            eval("first", "echo first >> starts; sleep 0.1"),
-            eval("second", "echo first >> starts; sleep 0.1"),
-            eval("third", "echo first >> starts; sleep 0.1")
+            eval("first", "echo first >> starts; while [ ! -e release ]; do sleep 0.01; done"),
+            eval("second", "echo first >> starts; while [ ! -e release ]; do sleep 0.01; done"),
+            eval("third", "echo first >> starts; while [ ! -e release ]; do sleep 0.01; done")
         ]}),
     );
-    let run = fixture.command(
-        &repo,
-        &["verify", "--all", "--jobs", "3", "--max-executions", "1"],
-        0,
-    );
+    let child = fixture.spawn(&repo, &["--jobs", "3", "--max-executions", "1"]);
+    wait_until(|| repo.join("starts").exists());
+    wait_until(|| fixture.count("requests WHERE execution_id IS NOT NULL") == 3);
+    fs::write(repo.join("release"), "").unwrap();
+    let run = finish(child, 0);
     assert_eq!(run["executionsStarted"], 1);
     assert_eq!(fixture.count("executions"), 1);
     for request in run["requests"].as_array().unwrap() {
@@ -978,12 +936,16 @@ fn source_names_the_execution_a_result_came_from_and_how() {
     let repo = fixture.repo(
         "repo",
         json!({"name":"test","fingerprint":fingerprint("sources"),"evals":[
-            eval("first", "sleep 0.2"),
-            eval("second", "sleep 0.2")
+            eval("first", "touch started; while [ ! -e release ]; do sleep 0.01; done"),
+            eval("second", "touch started; while [ ! -e release ]; do sleep 0.01; done")
         ]}),
     );
     // Siblings share a reuse key: the second joins the first's live execution.
-    let run = fixture.command(&repo, &["verify", "--all", "--jobs", "2"], 0);
+    let child = fixture.spawn(&repo, &["--jobs", "2"]);
+    wait_until(|| repo.join("started").exists());
+    fixture.waiting_request();
+    fs::write(repo.join("release"), "").unwrap();
+    let run = finish(child, 0);
     let (owner, joined) = (&run["requests"][0], &run["requests"][1]);
     assert!(owner["source"].is_null(), "{run}");
     let source = |kind| json!({"runId":run["id"],"requestId":owner["id"],"kind":kind});
@@ -1060,7 +1022,6 @@ fn a_fingerprint_waiter_occupies_a_job_slot_without_consuming_execution_budget()
         &["--jobs", "1", "--max-executions", "1", "--ignore-gates"],
     );
     fixture.waiting_request();
-    thread::sleep(Duration::from_millis(250));
     assert!(!target.join("independent/ran").exists());
     fixture.release();
     finish(owner, 0);
@@ -1409,7 +1370,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     )
     .unwrap();
     db.execute(
-        "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT 'replacement',key,eval_def_hash,status,owner_pid,owner_start_time,'2999-01-01T00:00:00.000000000Z',1,'2000-01-01T00:00:00Z',json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?",
+        "INSERT INTO executions(id,key,eval_def_hash,status,owner_pid,owner_start_time,completed_at,bytes,last_used,data) SELECT 'replacement',key,eval_def_hash,status,owner_pid,owner_start_time,'2999-01-01T00:00:00.000000000Z',1,'2000-01-01T00:00:00.000000000Z',json_set(data,'$.id','replacement','$.result.stdout','replacement') FROM executions WHERE id=?",
         [waiting["executionId"].as_str().unwrap()],
     )
     .unwrap();
@@ -1423,7 +1384,7 @@ fn waiter_receives_its_original_execution_after_entry_eviction_and_replacement()
     assert_eq!(fixture.starts(), 1);
     assert_eq!(
         fixture.command(&target, &["cache", "list"], 0)[0]["lastUsed"],
-        "2000-01-01T00:00:00Z"
+        "2000-01-01T00:00:00.000000000Z"
     );
 }
 
@@ -1455,13 +1416,14 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
     // would make that snapshot legitimately exhaust its zero execution budget.
     signal(owner.id(), "-STOP");
     let receipts = Receipts::open(&fixture.state, &source).await.unwrap();
-    execution.status = artifactize::types::ExecutionStatus::Green;
-    execution.result = Some(json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)}));
-    execution.completed_at = Some("2026-10-04T00:00:00Z".into());
-    execution.provenance.completed_at = execution.completed_at.clone();
-    request.status = execution.status.into();
-    request.result = execution.result.clone();
-    request.completed_at = execution.completed_at.clone();
+    execution.state = artifactize::store::ExecutionState::Completed {
+        result: json!({"verdict":"GREEN", "large":"x".repeat(16 * 1024 * 1024)})
+            .try_into()
+            .unwrap(),
+        at: "2026-10-04T00:00:00Z".parse().unwrap(),
+    };
+    execution.provenance.completed_at = execution.completed_at();
+    request.state = execution.state.clone().into();
     request.provenance = Some(execution.provenance.clone());
     receipts
         .complete_execution(&execution, &request)
@@ -1473,15 +1435,15 @@ async fn oversized_completion_is_delivered_to_owner_and_waiter_but_not_retained(
             .await
             .unwrap()
             .requests[0]
-            .result,
-        request.result
+            .result(),
+        request.result()
     );
     signal(waiter.id(), "-CONT");
     // Drain stdout while the large result is written, rather than waiting on a full pipe.
     let joined = output(waiter.wait_with_output().unwrap(), 0);
     assert_eq!(
         joined["requests"][0]["result"],
-        serde_json::to_value(execution.result).unwrap()
+        serde_json::to_value(execution.result()).unwrap()
     );
     assert_eq!(joined["requests"][0]["executionId"], execution.id.as_str());
     assert_eq!(joined["executionsStarted"], 0);
@@ -1557,7 +1519,7 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
     let base = json!({
         "id":"check",
         "title":"Review",
-        "profile":{"kind":"runtime","command":bin("/bin/true"),"args":[]},
+        "profile":{"kind":"runtime","command":true_program(),"args":[]},
         "payload":{"instruction":"Review."},
     });
     let repo = fixture.repo(
@@ -1601,7 +1563,7 @@ fn changed_strategy_requires_a_new_execution_but_execution_options_reuse() {
             json!({"type":"object","properties":{"reason":{"type":"string"}}}),
             0,
         ),
-        ("/profile/command", json!(bin("/bin/false")), 1),
+        ("/profile/command", json!(false_program()), 1),
         ("/profile/args", json!(["unused"]), 0),
         ("/payload/instruction", json!("Different criteria."), 0),
         ("/payload/extra", json!({"criteria":[1,2]}), 0),
@@ -1632,10 +1594,10 @@ fn profile_variants_share_a_result_unless_they_change_the_strategy() {
     let mut declaration = eval("check", "exit 0");
     declaration["profile"]["timeout_ms"] = json!(5000);
     declaration["profile_variants"] = json!({
-        "fail":{"kind":"runtime","command":bin("/bin/false"),"args":[]},
+        "fail":{"kind":"runtime","command":false_program(),"args":[]},
         "patient":{
             "kind":"runtime",
-            "command":bin("/bin/sh"),
+            "command":shell(),
             "args":["-c","exit 0"],
             "timeout_ms":60000,
         },
@@ -1767,8 +1729,9 @@ fn canonical_definition_hash_covers_the_strategy_but_no_agent_setting_or_name() 
         changed["profile"][key] = value;
         assert_eq!(hash, eval_definition_hash(&parse(changed)), "{key}");
     }
-    let mut human = first.clone();
-    human.profile = artifactize::config::Profile::Human {};
+    let mut human_value = first_value.clone();
+    human_value["profile"] = json!({"kind":"human"});
+    let human = parse(human_value);
     assert_ne!(hash, eval_definition_hash(&human));
     let mut nested = first_value;
     nested["payload"]["nested"]["a"] = json!(3);

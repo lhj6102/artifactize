@@ -1,9 +1,10 @@
 //! Pin accepted backend names, previous diagnostics and lexicographic JSON/display order.
 use super::*;
+use std::fs;
 
 #[test]
 fn limits_keep_typed_backend_keys_and_existing_wire_order() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_os::tempdir();
     fs::write(
         directory.path().join(FILE),
         r#"{"backends":{"openai":8,"codex":4,"anthropic":2}}"#,
@@ -32,7 +33,7 @@ fn limits_keep_typed_backend_keys_and_existing_wire_order() {
 
 #[test]
 fn backend_errors_keep_previously_emitted_messages() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_os::tempdir();
     let path = directory.path().join(FILE);
     for (wire, expected) in [
         (
@@ -55,7 +56,7 @@ fn backend_errors_keep_previously_emitted_messages() {
         fs::write(&path, wire).unwrap();
         assert_eq!(
             Limits::read(directory.path()).unwrap_err(),
-            format!("{}: {expected}", path.display())
+            format!("{}: {expected}", crate::platform::path_text(&path))
         );
     }
     for wire in [
@@ -73,7 +74,7 @@ fn backend_errors_keep_previously_emitted_messages() {
         Limits::read(directory.path()).unwrap_err(),
         format!(
             "{}: backends.anthropic must be between 1 and 100000.",
-            path.display()
+            crate::platform::path_text(&path)
         )
     );
 }

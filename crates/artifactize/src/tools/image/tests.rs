@@ -232,29 +232,32 @@ fn output_paths_reject_traversal_symlinks_and_nonregular_files() {
     {
         paths.push("escape");
     }
+    // Only Unix has FIFOs.
+    // Unix-only special-file or filesystem permission behavior.
     #[cfg(unix)]
     {
-        let fifo = std::ffi::CString::new(output.join("fifo").to_str().unwrap()).unwrap();
-        // SAFETY: CString supplies a live NUL-terminated path in this test's private
-        // temporary directory; mkfifo retains no pointer and 0600 is a valid mode.
-        assert_eq!(unsafe { libc::mkfifo(fifo.as_ptr(), 0o600) }, 0);
+        crate::test_os::fifo(&output.join("fifo"));
         paths.push("fifo");
     }
-    #[cfg(windows)]
-    {
-        crate::test_os::junction(&output.join("nested"), &output.join("joined"));
-        paths.push("joined/image");
-    }
+    crate::test_os::link_dir(&output.join("nested"), &output.join("joined"));
+    paths.push("joined/image");
     for path in paths {
         assert!(from_output(&output, path, "image/png").is_err(), "{path}");
     }
     fs::rename(&output, directory.path().join("old-output")).unwrap();
-    if symlink_dir("old-output", &output).is_some() {
+    let symlinked = symlink_dir("old-output", &output).is_some();
+    if symlinked {
         assert!(from_output(&output, "image", "image/png").is_err());
     }
+    // A junction needs no privilege and redirects the output root just the same.
+    // Windows-only junction/reparse behavior or unprivileged link fallback.
     #[cfg(windows)]
     {
-        let _ = fs::remove_dir(&output);
+        // Without the privilege to create the symlink above, there is nothing at the
+        // output root yet to remove.
+        if symlinked {
+            crate::test_os::remove_link_dir(&output);
+        }
         crate::test_os::junction(&directory.path().join("old-output"), &output);
         assert!(from_output(&output, "image", "image/png").is_err());
     }

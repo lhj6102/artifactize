@@ -27,9 +27,15 @@ pub(super) async fn execute(context: Context, command: CacheCommand) -> Result<u
                         entry.key,
                         entry.eval_id,
                         entry.verdict,
-                        entry.completed_at.as_deref().unwrap_or("-"),
+                        entry
+                            .completed_at
+                            .map_or_else(|| "-".to_owned(), |time| time.to_string()),
                         entry.producer.as_deref().unwrap_or("-"),
-                        entry.origin.as_ref().unwrap_or(&entry.repo_path),
+                        entry
+                            .origin
+                            .as_ref()
+                            .map(ToString::to_string)
+                            .unwrap_or_else(|| crate::platform::path_text(&entry.repo_path)),
                         entry.records,
                         entry.bytes,
                         entry.last_used

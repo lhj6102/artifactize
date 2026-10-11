@@ -33,15 +33,16 @@ impl Location {
             crate::workspace::canonical_target(&directory).map_err(|e| e.to_string())?;
         let mut marked = None;
         for ancestor in directory.ancestors() {
-            let kind = if ancestor.join(".git").symlink_metadata().is_ok() {
-                Some("git work tree")
-            } else if crate::workspace::has_artifact_marker(ancestor)
-                .map_err(|error| error.to_string())?
-            {
-                Some("artifactize workspace")
-            } else {
-                None
-            };
+            let kind =
+                if platform::entry_exists(&ancestor.join(".git")).map_err(|e| e.to_string())? {
+                    Some("git work tree")
+                } else if crate::workspace::has_artifact_marker(ancestor)
+                    .map_err(|error| error.to_string())?
+                {
+                    Some("artifactize workspace")
+                } else {
+                    None
+                };
             if let Some(kind) = kind {
                 marked = Some((kind, ancestor.to_owned()));
                 break;
@@ -55,9 +56,7 @@ impl Location {
                     Some(parent) if repo.is_file() => parent.to_owned(),
                     _ => repo,
                 };
-                directory
-                    .starts_with(&repo)
-                    .then_some(("reviewed repository", repo))
+                platform::is_within(&directory, &repo).then_some(("reviewed repository", repo))
             }
             (None, None) => None,
         };
@@ -76,8 +75,8 @@ impl Location {
         };
         Some(format!(
             "{storage} {} is inside the {kind} {}; artifactize keeps tokens outside repositories. Use a state directory outside it, or set {variable}.",
-            self.directory.display(),
-            path.display()
+            crate::platform::path_text(&self.directory),
+            crate::platform::path_text(path)
         ))
     }
 }
@@ -124,7 +123,10 @@ impl Storage {
         };
         // This is an application-owned directory, not the user's state root.
         if !private {
-            return Err("Auth directory must have owner-only permissions (0700).".into());
+            return Err(format!(
+                "Auth directory must be {}.",
+                platform::PRIVATE_DIRECTORY
+            ));
         }
         Ok(Self { directory })
     }
@@ -209,7 +211,10 @@ impl Storage {
 
 fn check_private_file(file: &File) -> Result<(), String> {
     if !platform::is_private_file(file).map_err(|e| e.to_string())? {
-        return Err("Auth files must be regular, single-link, owner-only files (0600).".into());
+        return Err(format!(
+            "Auth files must be regular, single-link files {}.",
+            platform::PRIVATE_FILE
+        ));
     }
     Ok(())
 }

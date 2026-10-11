@@ -20,6 +20,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::remote::{MAX_FULL_BYTES, MAX_SUMMARY_BYTES, SCHEMA, valid_hash};
 
+/// Loopback only by default: a review store is reachable from other machines only when its
+/// owner says so with `--listen`. 8417 is an unassigned port, fixed so that clients and docs
+/// agree on one default URL.
 pub const DEFAULT_LISTEN: &str = "127.0.0.1:8417";
 /// Bound one lookup's SQL work and response fan-out; clients batch larger key sets.
 pub(crate) const MAX_LOOKUP_KEYS: usize = 1000;
@@ -60,7 +63,9 @@ impl ApiError {
 
     fn internal(error: String) -> Self {
         // Store errors never contain tokens; only their SHA-256 reaches SQLite.
-        eprintln!("Review store error: {error}");
+        // Logging is best effort: a failing stderr must not turn this error into a panic.
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr().lock(), "Review store error: {error}");
         Self::new(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Internal review store error.",
@@ -81,7 +86,7 @@ impl IntoResponse for ApiError {
 }
 
 struct Principal {
-    name: String,
+    name: crate::types::TokenName,
     scopes: Vec<Scope>,
 }
 
@@ -290,7 +295,7 @@ async fn publish(
     } else {
         MAX_SUMMARY_BYTES
     };
-    let completed_at = crate::broker::sortable(&record.completed_at);
+    let completed_at = record.completed_at.parse::<crate::types::Timestamp>().ok();
     let (true, Some(completed_at)) = (
         record.schema == SCHEMA
             && record.key.as_str() == key
@@ -331,10 +336,10 @@ async fn publish(
         .insert("publishedAt".into(), json!(crate::broker::now()));
     let created = store
         .insert(
-            &key,
+            &record.key,
             &record.execution_id,
             &principal.name,
-            &completed_at,
+            completed_at,
             serde_json::to_string(&record)
                 .map_err(|error| ApiError::internal(error.to_string()))?,
         )

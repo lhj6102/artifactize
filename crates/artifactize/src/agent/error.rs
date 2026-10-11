@@ -3,7 +3,8 @@
 use std::fmt;
 
 /// The `errorCode` of a request whose Agent review failed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Code {
     /// Credentials are missing, expired or rejected (HTTP 401 or 403).
     Authentication,
@@ -28,8 +29,23 @@ pub enum Code {
     AgentError,
 }
 
-/// The `errorCode` of a review a Run did not start because its backend stopped.
-pub const BACKEND_STOPPED: &str = "BACKEND_STOPPED";
+/// An Agent failure's code as its saved `errorCode`.
+impl From<Code> for crate::types::FailureCode {
+    fn from(code: Code) -> Self {
+        match code {
+            Code::Authentication => Self::Authentication,
+            Code::Quota => Self::Quota,
+            Code::RateLimit => Self::RateLimit,
+            Code::Transient => Self::Transient,
+            Code::Timeout => Self::Timeout,
+            Code::Cancelled => Self::Cancelled,
+            Code::ProviderBudgetExceeded => Self::ProviderBudgetExceeded,
+            Code::InvalidResult => Self::InvalidResult,
+            Code::ProviderError => Self::ProviderError,
+            Code::AgentError => Self::AgentError,
+        }
+    }
+}
 
 impl Code {
     pub fn as_str(self) -> &'static str {

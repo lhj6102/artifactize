@@ -170,7 +170,7 @@ async fn public_summary_and_text_arrive_before_end_and_private_reasoning_never_e
             .connect(delivery::Tap::new(http_client().unwrap()))
             .responses("fixture-model"),
     ));
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let mut recorder = Recorder::test(root.path(), "stream-fixture");
     recorder.start(Header::default());
     let cancellation = CancellationToken::new();

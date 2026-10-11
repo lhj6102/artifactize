@@ -36,7 +36,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(240);
 pub const FOLLOW_UP: &str = "Follow-up question from a person about the review above. This is not a new review: the verdict stays as recorded, and the instruction to return one JSON object applied only to the review. Answer in plain text, not JSON. You may use the tools again.";
 
 pub struct Review {
-    pub result: Result<Value, Failure>,
+    pub result: Result<verdict::ValidatedResult, Failure>,
     pub attempts: Vec<Attempt>,
 }
 
@@ -46,22 +46,38 @@ pub fn session_id() -> Result<crate::types::SessionId, String> {
     uuid()?.parse()
 }
 
+/// A UUID has 128 bits (RFC 9562, section 4).
+const UUID_BYTES: usize = 16;
+/// The byte whose high nibble holds the version (RFC 9562, section 4.2).
+const UUID_VERSION_BYTE: usize = 6;
+/// Keep the low nibble of the version byte; the high nibble becomes the version.
+const UUID_VERSION_KEEP: u8 = 0x0f;
+/// Version 4: random bits (RFC 9562, section 5.4).
+const UUID_VERSION_4: u8 = 0x40;
+/// The byte whose two high bits hold the variant (RFC 9562, section 4.1).
+const UUID_VARIANT_BYTE: usize = 8;
+/// Keep the low six bits of the variant byte; the high two become the variant.
+const UUID_VARIANT_KEEP: u8 = 0x3f;
+/// The RFC 9562 variant, binary 10.
+const UUID_VARIANT_RFC: u8 = 0x80;
+/// Where the hyphens fall in the 32 hexadecimal digits: the 8-4-4-4-12 groups of the
+/// textual form (RFC 9562, section 4).
+const UUID_GROUP_ENDS: [usize; 4] = [8, 12, 16, 20];
+
 /// A random version 4 UUID in its lowercase hyphenated form.
 pub(crate) fn uuid() -> Result<String, String> {
-    let mut bytes = [0_u8; 16];
+    let mut bytes = [0_u8; UUID_BYTES];
     getrandom::fill(&mut bytes).map_err(|_| "Cannot obtain secure randomness.".to_owned())?;
-    // Version 4, RFC 9562 variant.
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
-    Ok(format!(
-        "{}-{}-{}-{}-{}",
-        &hex[..8],
-        &hex[8..12],
-        &hex[12..16],
-        &hex[16..20],
-        &hex[20..]
-    ))
+    bytes[UUID_VERSION_BYTE] = (bytes[UUID_VERSION_BYTE] & UUID_VERSION_KEEP) | UUID_VERSION_4;
+    bytes[UUID_VARIANT_BYTE] = (bytes[UUID_VARIANT_BYTE] & UUID_VARIANT_KEEP) | UUID_VARIANT_RFC;
+    let mut text = String::with_capacity(UUID_BYTES * 2 + UUID_GROUP_ENDS.len());
+    for (index, byte) in bytes.iter().enumerate() {
+        if UUID_GROUP_ENDS.contains(&(index * 2)) {
+            text.push('-');
+        }
+        text.push_str(&format!("{byte:02x}"));
+    }
+    Ok(text)
 }
 
 /// `state` holds Codex credentials; the API-key backends read only the environment.
@@ -74,7 +90,7 @@ pub async fn execute(
     recorder: &mut Recorder,
     cancellation: CancellationToken,
 ) -> Review {
-    let Profile::Agent { backend, model, .. } = &eval.declaration.profile else {
+    let Profile::Agent { backend, model, .. } = eval.declaration.profile() else {
         unreachable!("Agent executor requires an Agent profile")
     };
     match Client::new(*backend, model, state, &config.root) {
@@ -112,14 +128,10 @@ async fn review(
     )
     .await;
     recorder.event(match &review.result {
-        Ok(result) => session::Kind::End(session::End {
-            result: Some(result.clone()),
-            ..session::End::default()
-        }),
-        Err(failure) => session::Kind::End(session::End {
-            error_code: Some(failure.code.as_str().into()),
-            error: Some(failure.message.clone()),
-            ..session::End::default()
+        Ok(result) => session::Kind::End(session::End::Completed(result.clone())),
+        Err(failure) => session::Kind::End(session::End::Failed {
+            code: Some(failure.code),
+            message: Some(failure.message.clone()),
         }),
     });
     review
@@ -139,7 +151,7 @@ struct Turns<'a> {
     turn: usize,
     tokens_used: u64,
     calls_issued: u64,
-    call_ids: HashSet<String>,
+    call_ids: HashSet<rig_core::message::CallId>,
     recorder: &'a mut Recorder,
 }
 
@@ -175,7 +187,11 @@ impl Turns<'_> {
             self.recorder.event(session::Kind::Attempt(attempt.clone()));
         }
         let response = response?;
-        check_deadline(self.cancellation, self.deadline)?;
+        check_deadline(
+            self.cancellation.is_cancelled(),
+            self.deadline,
+            Instant::now(),
+        )?;
         llm::validate_response(&response, self.model)
             .map_err(|message| Failure::new(Code::ProviderError, message))?;
         self.recorder.message(
@@ -221,7 +237,11 @@ impl Turns<'_> {
                     break;
                 }
             }
-            if let Err(failure) = check_deadline(self.cancellation, self.deadline) {
+            if let Err(failure) = check_deadline(
+                self.cancellation.is_cancelled(),
+                self.deadline,
+                Instant::now(),
+            ) {
                 stopped = Some(failure);
                 break;
             }
@@ -242,7 +262,7 @@ impl Turns<'_> {
         call: &ToolCall,
     ) -> Result<(rig_core::message::ToolResult, bool), Failure> {
         let (cancellation, deadline) = (self.cancellation, self.deadline);
-        check_deadline(cancellation, deadline)?;
+        check_deadline(cancellation.is_cancelled(), deadline, Instant::now())?;
         self.calls_issued = self.calls_issued.saturating_add(1);
         if self
             .max_tool_calls
@@ -253,7 +273,16 @@ impl Turns<'_> {
                 "PROVIDER_BUDGET_EXCEEDED: review exceeded its maxToolCalls budget.",
             ));
         }
-        if !self.call_ids.insert(call.id.wire().into_owned()) {
+        // Responses has an output-item ID as well as its correlation ID. Uniqueness
+        // concerns the correlation ID across turns, not the changing output item.
+        let identity = match &call.id {
+            rig_core::message::CallId::Provider(provider) => rig_core::message::CallId::from(
+                rig_core::message::ProviderCallId::new(provider.call_id.clone())
+                    .expect("validated call ID"),
+            ),
+            rig_core::message::CallId::Local(local) => rig_core::message::CallId::from(*local),
+        };
+        if !self.call_ids.insert(identity) {
             return Err(Failure::new(
                 Code::ProviderError,
                 "Provider repeated a tool-call ID; no further tools were executed.",
@@ -270,7 +299,7 @@ impl Turns<'_> {
                 cancellation.clone(),
             ) => result,
         };
-        let failed = result.is_error;
+        let failed = result.is_error();
         Ok((call.result(tool_content(result)?), failed))
     }
 }
@@ -305,7 +334,7 @@ async fn run(
     recorder: &mut Recorder,
     cancellation: &CancellationToken,
     attempts: &mut Vec<Attempt>,
-) -> Result<Value, Failure> {
+) -> Result<verdict::ValidatedResult, Failure> {
     let Profile::Agent {
         backend,
         model,
@@ -313,7 +342,7 @@ async fn run(
         timeout_ms,
         max_tokens,
         max_tool_calls,
-    } = &eval.declaration.profile
+    } = eval.declaration.profile()
     else {
         unreachable!()
     };
@@ -321,19 +350,19 @@ async fn run(
     let deadline = Instant::now() + timeout_ms;
     let registry = Registry::new(config, &eval.id)?;
     let verdict = verdict::VerdictSchema::new(
-        eval.declaration.pass_schema.as_ref(),
-        eval.declaration.fail_schema.as_ref(),
+        eval.declaration.pass_schema(),
+        eval.declaration.fail_schema(),
     )?;
     let mut request = prompt(config, eval, &registry, &verdict.schema)?;
     request.additional_params = Some(Client::parameters(
         *backend,
-        reasoning.as_deref(),
+        reasoning.map(crate::config::Reasoning::as_str),
         recorder.id(),
     )?);
     recorder.start(session::Header {
         backend: Some(*backend),
         model: Some(model.clone()),
-        reasoning: reasoning.clone(),
+        reasoning: *reasoning,
         parameters: json!(request.additional_params),
         budgets: Some(session::Budgets {
             timeout_ms: Some(timeout_ms),
@@ -374,7 +403,7 @@ async fn run(
             }
             let text = text_of(&response);
             let result = verdict.parse(&text);
-            check_deadline(cancellation, deadline)?;
+            check_deadline(cancellation.is_cancelled(), deadline, Instant::now())?;
             // A schema failure earns the one repair turn.
             let repair = match result {
                 Ok(value) => return Ok(value),
@@ -479,14 +508,10 @@ fn complete_follow_up(
         Err(failure) => return FollowUp::NotStarted(failure),
     };
     recorder.event(match &started.answer {
-        Ok(text) => session::Kind::Answer(session::Answer {
-            text: Some(text.clone()),
-            ..session::Answer::default()
-        }),
-        Err(failure) => session::Kind::Answer(session::Answer {
-            error_code: Some(failure.code.as_str().into()),
-            error: Some(failure.message.clone()),
-            ..session::Answer::default()
+        Ok(text) => session::Kind::Answer(session::Answer::Completed(text.clone())),
+        Err(failure) => session::Kind::Answer(session::Answer::Failed {
+            code: Some(failure.code),
+            message: Some(failure.message.clone()),
         }),
     });
     FollowUp::Started {
@@ -513,7 +538,7 @@ async fn continue_conversation(
     };
     let backend = header.backend.ok_or_else(invalid)?;
     let model = header.model.as_deref().ok_or_else(invalid)?;
-    let reasoning = header.reasoning.as_deref();
+    let reasoning = header.reasoning.map(crate::config::Reasoning::as_str);
     let defaults = session::Budgets::default();
     let budgets = header.budgets.as_ref().unwrap_or(&defaults);
     let deadline = Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
@@ -605,7 +630,7 @@ fn definitions(registry: &Registry<'_>) -> Vec<ToolDefinition> {
     registry
         .list()
         .map(|tool| ToolDefinition {
-            name: tool.name.clone(),
+            name: tool.name.to_string(),
             description: tool.description.clone(),
             parameters: tool.input_schema.clone(),
         })
@@ -614,7 +639,7 @@ fn definitions(registry: &Registry<'_>) -> Vec<ToolDefinition> {
 
 fn tool_content(result: ToolResult) -> Result<Vec<ToolResultContent>, String> {
     result
-        .content
+        .into_content()
         .into_iter()
         .map(|block| match block {
             Content::Text { text } => Ok(ToolResultContent::text(text)),
@@ -645,8 +670,8 @@ fn prompt(
     let scope = scope::eval_scope(config, eval).map_err(|e| e.to_string())?;
     let mut payload = eval
         .declaration
-        .payload
-        .clone()
+        .payload()
+        .cloned()
         .expect("Agent payload is validated");
     let instruction: String =
         scope::parse_artifact_instruction(&payload.instruction, &scope, &eval.references)
@@ -662,7 +687,7 @@ fn prompt(
                     if config.artifacts[&id].file_name().is_some() {
                         format!(
                             "Artifact {id} (path: {}; tools: {})",
-                            config.artifacts[&id].path.display(),
+                            crate::platform::path_text(&config.artifacts[&id].path),
                             tools.join(", ")
                         )
                     } else {
@@ -690,7 +715,8 @@ fn prompt(
                 "dependency"
             };
             json!({
-                "id":id, "path":artifact.path, "kind":artifact.kind, "role":role,
+                "id":id, "path":artifactize_tools::scope::logical_from_native(&artifact.path),
+                "kind":artifact.kind, "role":role,
                 "includedFolders":artifact.children, "mounts":artifact.mounts,
             })
         })
@@ -708,18 +734,18 @@ fn prompt(
         eval.target,
         json!(eval.deps),
         json!(artifacts),
-        json!(eval.declaration.pass_schema),
-        json!(eval.declaration.fail_schema),
+        json!(eval.declaration.pass_schema()),
+        json!(eval.declaration.fail_schema()),
     );
     let mut request = CompletionRequest::new(text).preamble(system);
     request.tools = definitions(registry);
     Ok(request)
 }
 
-fn check_deadline(cancellation: &CancellationToken, deadline: Instant) -> Result<(), Failure> {
-    if cancellation.is_cancelled() {
+fn check_deadline(cancelled: bool, deadline: Instant, now: Instant) -> Result<(), Failure> {
+    if cancelled {
         Err(Failure::cancelled())
-    } else if Instant::now() >= deadline {
+    } else if now >= deadline {
         Err(Failure::timeout())
     } else {
         Ok(())

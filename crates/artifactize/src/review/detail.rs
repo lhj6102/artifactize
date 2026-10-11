@@ -20,7 +20,7 @@ use ratatui::{
     widgets::{Block, Paragraph, Wrap},
 };
 use serde_json::Value;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 /// The expanded instruction (or Technical section) takes this share of the body height.
 const EXPANDED: u16 = 70;
@@ -31,6 +31,8 @@ const FOLDED: u16 = 2;
 /// Width shares of the tools column with and without focus.
 const TOOLS_FOCUSED: u16 = 60;
 const TOOLS_UNFOCUSED: u16 = 40;
+/// One blank column between buttons: the narrowest gap that still reads as two buttons,
+/// so a full row of them fits narrow terminals.
 const BUTTON_GAP: u16 = 1;
 /// A wrapped builtin action continues two columns deeper than its first row.
 const WRAP_INDENT: u16 = 4;
@@ -119,11 +121,11 @@ fn title(view: &RequestView) -> String {
 /// Status, claim and waiting time in one row; errors keep their first line.
 pub(super) fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> String {
     let request = &view.request;
-    let waiting = request.status == RequestStatus::WaitingHuman;
-    let mut parts = vec![request.status.to_string()];
-    if let Some(error) = &request.error {
+    let waiting = request.status() == RequestStatus::WaitingHuman;
+    let mut parts = vec![request.status().to_string()];
+    if let Some(error) = &request.error() {
         let first = error.lines().next().unwrap_or_default();
-        parts.push(match &request.error_code {
+        parts.push(match &request.error_code() {
             Some(code) => format!("[{code}] {first}"),
             None => first.to_owned(),
         });
@@ -136,10 +138,10 @@ pub(super) fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> S
         }
         Some(claim) => parts.push(format!("claimed by {} · read-only", claim.reviewer)),
     }
-    if waiting && let Ok(created) = OffsetDateTime::parse(&request.created_at, &Rfc3339) {
+    if waiting {
         parts.push(format!(
             "waiting {}",
-            duration((now - created).whole_seconds())
+            duration((now - request.created_at.time()).whole_seconds())
         ));
     }
     plain(&parts.join(" · ")).into_owned()
@@ -155,7 +157,7 @@ pub(super) fn shared(view: &RequestView) -> Option<String> {
         let text = format!(
             "actions go to {} in {}",
             source.request_id,
-            source.repo_path.display()
+            crate::platform::path_text(&source.repo_path)
         );
         plain(&text).into_owned()
     })
@@ -171,14 +173,16 @@ fn schema(schema: Option<&Value>) -> String {
 pub(super) fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
     let request = &view.request;
     let definition = request.human_definition.as_ref();
-    let declaration = definition.map(|definition| &definition["eval"]["declaration"]);
-    let status = match (&request.error, &request.error_code) {
-        (Some(error), Some(code)) => format!("{} [{code}] {error}", request.status),
-        (Some(error), None) => format!("{} {error}", request.status),
-        _ => request.status.to_string(),
+    let declaration = definition
+        .and_then(|definition| definition.eval.declaration.value())
+        .map(|declaration| serde_json::to_value(declaration).expect("saved declaration is JSON"));
+    let status = match (&request.error(), &request.error_code()) {
+        (Some(error), Some(code)) => format!("{} [{code}] {error}", request.status()),
+        (Some(error), None) => format!("{} {error}", request.status()),
+        _ => request.status().to_string(),
     };
     let claim = match &view.claim {
-        None if request.status == RequestStatus::WaitingHuman => {
+        None if request.status() == RequestStatus::WaitingHuman => {
             format!("unclaimed; c claims it for {reviewer}")
         }
         None => "none".into(),
@@ -196,9 +200,9 @@ pub(super) fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str
         (
             "Repository",
             definition
-                .and_then(|definition| definition["repo"].as_str())
-                .unwrap_or("-")
-                .to_owned(),
+                .and_then(|definition| definition.repo.value())
+                .map(|repo| crate::platform::path_text(repo))
+                .unwrap_or_else(|| "-".into()),
         ),
         ("Status", status),
         ("Claim", claim),
@@ -206,8 +210,14 @@ pub(super) fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str
     if let Some(shared) = shared(view) {
         fields.push(("Shared", shared));
     }
-    fields.push(("Created", request.created_at.clone()));
-    let owner = |key| schema(declaration.and_then(|declaration| declaration.get(key)));
+    fields.push(("Created", request.created_at.to_string()));
+    let owner = |key| {
+        schema(
+            declaration
+                .as_ref()
+                .and_then(|declaration| declaration.get(key)),
+        )
+    };
     fields.push(("GREEN fields", owner("passSchema")));
     fields.push(("RED fields", owner("failSchema")));
     fields
@@ -667,10 +677,11 @@ impl Review {
                     // a builtin's action on its logical target.
                     match (&tool.declared, self.command(&tool.name)) {
                         (Runs::Command(_), Some(Ok(command))) => {
-                            let words =
-                                std::iter::once(command.program.to_string_lossy().into_owned())
-                                    .chain(command.args.iter().cloned())
-                                    .collect::<Vec<_>>();
+                            let words = std::iter::once(crate::platform::path_text(
+                                std::path::Path::new(&command.program),
+                            ))
+                            .chain(command.args.iter().cloned())
+                            .collect::<Vec<_>>();
                             let command = super::shell(words.iter().map(String::as_str));
                             rows.push((Line::from(format!("  $ {}", plain(&command))), index));
                         }
@@ -765,12 +776,12 @@ impl Review {
         };
         if self.settled() {
             let request = &view.request;
-            let result = request.result.as_ref().map_or_else(
-                || request.error.clone().unwrap_or_default(),
+            let result = request.result().map_or_else(
+                || request.error().map(str::to_owned).unwrap_or_default(),
                 |result| serde_json::to_string_pretty(result).unwrap_or_default(),
             );
             frame.render_widget(
-                Paragraph::new(format!("{}\n{result}", request.status))
+                Paragraph::new(format!("{}\n{result}", request.status()))
                     .wrap(Wrap { trim: false })
                     .scroll((self.field_scroll, 0))
                     .block(block("Completed result")),

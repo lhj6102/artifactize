@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ffi::OsStr, path::PathBuf};
+use std::{collections::BTreeMap, io::Write, path::PathBuf};
 
 use artifactize_tools::{
     Builtin, Content, builtin,
@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
     disable_help_subcommand = true,
     version,
     about = "Portable scoped tools for artifactize",
-    long_about = "Portable scoped tools for artifactize. Filesystem targets must be relative to the current directory and stay below it. Parent components, absolute paths, and symlinks are refused. Use '.' for the current directory. Only open accepts HTTP(S) URLs. help resolves a literal program through PATH (PATHEXT on Windows)."
+    long_about = "Portable scoped tools for artifactize. Filesystem targets must be relative to the current directory and stay below it. Parent components, absolute paths, and symlinks are refused. Use '.' for the current directory. Only open accepts HTTP(S) URLs. help resolves a literal program through the system's program search path."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -61,7 +61,7 @@ async fn main() -> std::process::ExitCode {
     match run(Cli::parse()).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("{error}");
+            let _ = writeln!(std::io::stderr(), "{error}");
             std::process::ExitCode::FAILURE
         }
     }
@@ -72,10 +72,7 @@ fn logical(path: String) -> String {
 }
 
 async fn run(cli: Cli) -> Result<(), String> {
-    let root = artifactize_tools::files::canonicalize(
-        &std::env::current_dir().map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| error.to_string())?;
+    let root = artifactize_tools::files::current_directory().map_err(|error| error.to_string())?;
     let owner = ArtifactId::new("cwd").expect("static identifier");
     let scope = Scope {
         artifacts: BTreeMap::from([(
@@ -119,22 +116,26 @@ async fn run(cli: Cli) -> Result<(), String> {
         }
         Tool::Open { target } => {
             let target = if builtin::is_url(&target) {
-                target
+                target.into()
             } else {
                 scope
                     .resolve_input(&root, &owner, &logical(target))
                     .map_err(|error| error.to_string())?
-                    .to_str()
-                    .ok_or("Paths must be UTF-8.")?
-                    .to_owned()
+                    .into_os_string()
             };
-            return artifactize_tools::opener::open(OsStr::new(&target))
+            return artifactize_tools::opener::open(&target)
                 .await
                 .map_err(|error| error.to_string());
         }
     };
     let result = if let Some(args) = args {
-        builtin::call_fixed(tool, &args, input, &root, &scope, &owner, &cancellation).await
+        let context = builtin::Context {
+            root: &root,
+            scope: &scope,
+            owner: &owner,
+            launcher: &artifactize_tools::launch::Standalone,
+        };
+        builtin::call_fixed(tool, &args, input, context, &cancellation).await
     } else {
         let validator = artifactize_tools::schema::compile(&builtin::input_schema(tool))?;
         artifactize_tools::schema::validate(&validator, &input)?;
@@ -146,18 +147,21 @@ async fn run(cli: Cli) -> Result<(), String> {
             &cancellation,
         )
     };
-    for content in result.content {
+    let (mut stdout, mut stderr) = (std::io::stdout().lock(), std::io::stderr().lock());
+    for content in result.content() {
         match content {
-            Content::Text { text } if result.is_error => eprintln!("{text}"),
-            Content::Text { text } => print!("{text}"),
-            Content::Json { data } => println!(
+            Content::Text { text } if result.is_error() => writeln!(stderr, "{text}"),
+            Content::Text { text } => write!(stdout, "{text}"),
+            Content::Json { data } => writeln!(
+                stdout,
                 "{}",
                 serde_json::to_string_pretty(&data).expect("builtin JSON")
             ),
             Content::Image { .. } => unreachable!("CLI tools produce no images"),
         }
+        .map_err(|error| error.to_string())?;
     }
-    if result.is_error {
+    if result.is_error() {
         Err("Tool failed.".into())
     } else {
         Ok(())

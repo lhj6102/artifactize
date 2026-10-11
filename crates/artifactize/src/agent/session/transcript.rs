@@ -4,7 +4,6 @@ use super::{Delivery, DeliveryKind, DeliveryState, Event, Kind};
 use rig_core::message::{
     AssistantContent, Message, ToolCall, ToolResult, ToolResultContent, UserContent,
 };
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Activity labels must stay small even when a custom tool or error has very large text.
@@ -145,18 +144,38 @@ struct LiveBlock {
     text: String,
 }
 
+/// The id a tool call and its result share on the wire, which links the two: built only
+/// from a recorded call identity.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Correlation(String);
+
+impl Correlation {
+    fn of(id: &rig_core::message::CallId) -> Self {
+        Self(id.wire().into_owned())
+    }
+}
+
 #[derive(Default)]
 pub struct Transcript {
     blocks: usize,
     groups: BTreeMap<BlockId, Group>,
-    calls: BTreeMap<(Option<usize>, String), (BlockId, usize)>,
+    calls: BTreeMap<(Option<usize>, Correlation), (BlockId, usize)>,
     active: Option<BlockId>,
     expanded: BTreeSet<BlockId>,
-    assistant: Option<[u8; 32]>,
-    question: Option<(Option<usize>, [u8; 32])>,
+    assistant: Option<crate::types::Sha256Bytes>,
+    question: Option<(Option<usize>, crate::types::Sha256Bytes)>,
     /// A JSON-looking assistant message is unchanged until an identical authoritative End arrives.
-    result_candidate: Option<(BlockId, [u8; 32])>,
-    deliveries: BTreeMap<(Option<usize>, usize, usize, DeliveryKind, String), LiveBlock>,
+    result_candidate: Option<(BlockId, crate::types::Sha256Bytes)>,
+    deliveries: BTreeMap<
+        (
+            Option<usize>,
+            usize,
+            usize,
+            DeliveryKind,
+            crate::types::DeliveryBlock,
+        ),
+        LiveBlock,
+    >,
     delivered_turns: BTreeSet<(Option<usize>, usize)>,
     thinking: BTreeSet<BlockId>,
 }
@@ -180,13 +199,13 @@ impl Transcript {
                         .and_then(serde_json::Value::as_str)
                         .is_some_and(|verdict| matches!(verdict, "GREEN" | "RED"))
                 })
-                .map(|value| Sha256::digest(value.to_string().as_bytes()).into())
+                .map(|value| crate::types::Sha256Bytes::of(value.to_string().as_bytes()))
         } else {
             None
         };
         let text = markdown(text);
         if !user {
-            self.assistant = Some(Sha256::digest(text.trim().as_bytes()).into());
+            self.assistant = Some(crate::types::Sha256Bytes::of(text.trim().as_bytes()));
         }
         let id = self.slot();
         self.result_candidate = candidate.map(|digest| (id, digest));
@@ -205,7 +224,7 @@ impl Transcript {
         id
     }
     fn call(&mut self, send: Option<usize>, call: &ToolCall, dirty: &mut BTreeSet<BlockId>) {
-        let key = (send, call.id.wire().into_owned());
+        let key = (send, Correlation::of(&call.id));
         // Repeated recorded IDs do not invent another execution or attach to a later call.
         if self.calls.contains_key(&key) {
             return;
@@ -229,7 +248,7 @@ impl Transcript {
         failed: Option<bool>,
         dirty: &mut BTreeSet<BlockId>,
     ) {
-        let key = (send, result.call.wire().into_owned());
+        let key = (send, Correlation::of(&result.call));
         let state = match failed {
             Some(true) => State::Failed(failure_reason(result)),
             Some(false) => State::Succeeded,
@@ -271,7 +290,7 @@ impl Transcript {
     }
     fn delivery(&mut self, send: Option<usize>, delivery: &Delivery) -> Vec<Patch> {
         let mut patches = Vec::new();
-        if delivery.block == "attempt" && delivery.state == DeliveryState::Interrupted {
+        if delivery.block.is_attempt() && delivery.state == DeliveryState::Interrupted {
             for ((follow, turn, attempt, kind, _), block) in &self.deliveries {
                 if (*follow, *turn, *attempt) == (send, delivery.turn, delivery.attempt)
                     && !block.text.is_empty()
@@ -336,9 +355,15 @@ impl Transcript {
                         .and_then(serde_json::Value::as_str)
                         .is_some_and(|verdict| matches!(verdict, "GREEN" | "RED"))
                 });
-            self.result_candidate =
-                value.map(|value| (id, Sha256::digest(value.to_string().as_bytes()).into()));
-            self.assistant = Some(Sha256::digest(markdown(&text).trim().as_bytes()).into());
+            self.result_candidate = value.map(|value| {
+                (
+                    id,
+                    crate::types::Sha256Bytes::of(value.to_string().as_bytes()),
+                )
+            });
+            self.assistant = Some(crate::types::Sha256Bytes::of(
+                markdown(&text).trim().as_bytes(),
+            ));
         }
         if delivery.state == DeliveryState::Complete {
             self.deliveries
@@ -380,15 +405,17 @@ impl Transcript {
                 self.assistant = None;
                 if let Some(text) = &send.text {
                     self.prose(text, true, &mut patches);
-                    self.question =
-                        Some((event.send, Sha256::digest(text.trim().as_bytes()).into()));
+                    self.question = Some((
+                        event.send,
+                        crate::types::Sha256Bytes::of(text.trim().as_bytes()),
+                    ));
                 }
             }
             Kind::Message(message) => {
                 if let Some(question) = &message.question {
                     let identity = (
                         event.send,
-                        Sha256::digest(question.trim().as_bytes()).into(),
+                        crate::types::Sha256Bytes::of(question.trim().as_bytes()),
                     );
                     if self.question.as_ref() != Some(&identity) {
                         self.prose(question, true, &mut patches);
@@ -441,9 +468,10 @@ impl Transcript {
             }
             Kind::End(end) => {
                 self.stopped(&mut dirty);
-                if let Some(result) = &end.result {
-                    let digest: [u8; 32] = Sha256::digest(result.to_string().as_bytes()).into();
-                    let text = result_text(result);
+                if let Some(result) = end.result() {
+                    let result = result.to_json();
+                    let digest = crate::types::Sha256Bytes::of(result.to_string().as_bytes());
+                    let text = result_text(&result);
                     if let Some((id, candidate)) = self.result_candidate.take()
                         && candidate == digest
                     {
@@ -455,11 +483,12 @@ impl Transcript {
                         self.prose(&text, false, &mut patches);
                     }
                 }
-                if let Some(error) = &end.error {
+                if let Some((code, error)) = end.failure() {
                     self.prose(
                         &format!(
                             "Review failed: {}\n{error}",
-                            end.error_code.as_deref().unwrap_or_default()
+                            code.map(crate::agent::error::Code::as_str)
+                                .unwrap_or_default()
                         ),
                         false,
                         &mut patches,
@@ -467,18 +496,19 @@ impl Transcript {
                 }
             }
             Kind::Answer(answer) => {
-                if let Some(text) = &answer.text {
-                    let digest: [u8; 32] = Sha256::digest(markdown(text).trim().as_bytes()).into();
+                if let Some(text) = answer.text() {
+                    let digest = crate::types::Sha256Bytes::of(markdown(text).trim().as_bytes());
                     if self.assistant != Some(digest) {
                         self.prose(text, false, &mut patches);
                     }
                 }
-                if let Some(error) = &answer.error {
+                if let Some((code, error)) = answer.failure() {
                     self.stopped(&mut dirty);
                     self.prose(
                         &format!(
                             "Follow-up failed: {}\n{error}",
-                            answer.error_code.as_deref().unwrap_or_default()
+                            code.map(crate::agent::error::Code::as_str)
+                                .unwrap_or_default()
                         ),
                         false,
                         &mut patches,

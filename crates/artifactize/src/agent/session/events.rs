@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub at: Option<String>,
+    pub at: Option<crate::types::Timestamp>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub send: Option<usize>,
     #[serde(flatten)]
@@ -56,7 +56,7 @@ pub enum DeliveryState {
 pub struct Delivery {
     pub turn: usize,
     pub attempt: usize,
-    pub block: String,
+    pub block: crate::types::DeliveryBlock,
     #[serde(rename = "contentKind")]
     pub kind: DeliveryKind,
     pub text: String,
@@ -77,9 +77,9 @@ pub struct Header {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backend: Option<Backend>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub model: Option<String>,
+    pub model: Option<crate::config::ModelId>,
     #[serde(default)]
-    pub reasoning: Option<String>,
+    pub reasoning: Option<crate::config::Reasoning>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budgets: Option<Budgets>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -87,11 +87,11 @@ pub struct Header {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub producer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state: Option<String>,
+    pub state: Option<crate::types::StateId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub eval_id: Option<String>,
+    pub eval_id: Option<crate::types::EvalId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub target: Option<String>,
+    pub target: Option<crate::types::ArtifactName>,
     /// Provider-specific parameters remain dynamic.
     #[serde(default)]
     pub parameters: Value,
@@ -124,16 +124,6 @@ pub struct MessageEvent {
 }
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct End {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub result: Option<Value>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_code: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Send {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -144,13 +134,4 @@ pub struct Send {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<String>>,
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Answer {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error_code: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
+pub use super::outcome::{Answer, End};

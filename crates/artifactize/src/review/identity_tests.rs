@@ -3,19 +3,17 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 #[tokio::test]
 async fn compatibility_constructor_parses_open_id_once_and_invalid_input_never_reads_state() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let state = root.path().join("absent-state");
-    let mut review = Review::new(
-        state.clone(),
-        None,
-        "fixture".into(),
-        Some("../escape".into()),
-    );
-    assert!(review.open.is_none());
-    assert_eq!(review.refresh().await, Action::None);
-    assert!(review.error.as_ref().unwrap().contains("Invalid RequestId"));
+    // Invalid IDs cannot be supplied to the core constructor.
+    assert!("../escape".parse::<RequestId>().is_err());
     assert!(!state.exists());
-    let valid = Review::new(state, None, "fixture".into(), Some("run-legacy_1.3".into()));
+    let valid = Review::new(
+        state,
+        None,
+        "fixture".parse().unwrap(),
+        Some("run-legacy_1.3".parse().unwrap()),
+    );
     assert_eq!(valid.open.as_ref().unwrap().as_str(), "run-legacy_1.3");
 }
 
@@ -40,7 +38,7 @@ fn request_jobs_and_outcomes_retain_typed_ids_while_idle_and_busy_page_steps_sta
     assert_eq!(review.scroll, u16::MAX);
     drop(review.start(Job::Run {
         id: id.clone(),
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claim: false,
     }));
     review.scroll = 5;

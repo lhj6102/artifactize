@@ -712,10 +712,20 @@ p {
   margin-top: 16px;
 }
 
-.install-note {
+/* The other channels for this OS, under the default command. */
+.install-alt {
   margin: 0;
-  padding: 22px 24px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line);
   color: var(--dim);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.install-alt code {
+  color: var(--ice);
+  font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 /* Copy button, top right of an install panel. Without JS it stays hidden, and the
@@ -867,6 +877,9 @@ p {
   .code {
     padding: 14px 14px;
     font-size: 12.5px;
+  }
+  .install-alt {
+    padding: 12px 14px 14px;
   }
   .btn {
     flex: 1 1 auto;

@@ -5,7 +5,7 @@ use artifactize::config::{Profile, read_workspace_config};
 use artifactize::runtime::{self, Command, Outcome, Verdict};
 use artifactize::scope::{eval_scope, resolve_argv, scoped_path};
 use serde_json::json;
-use support::os::bin;
+use support::os::cat_program;
 use tokio_util::sync::CancellationToken;
 
 mod support;
@@ -20,7 +20,7 @@ impl Drop for Fixture {
 
 #[tokio::test]
 async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
-    let scratch = tempfile::tempdir().unwrap();
+    let scratch = support::os::tempdir();
     let root = scratch.path().join("repo");
     fs::create_dir_all(root.join("review/nested")).unwrap();
     fs::create_dir_all(root.join("data")).unwrap();
@@ -38,7 +38,7 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
                     "payload":{"instruction":"Inspect inputs."},
                     "profile":{
                         "kind":"runtime",
-                        "command":bin("/bin/cat"),
+                        "command":cat_program(),
                         "args":[
                             "local",
                             "{review}/nested/file",
@@ -62,7 +62,7 @@ async fn resolved_child_mount_and_global_inputs_reach_the_runtime_executor() {
     let config = read_workspace_config(root).unwrap();
     let eval = &config.evals[0];
     let scope = eval_scope(&config, eval).unwrap();
-    let Profile::Runtime { command, args, .. } = &eval.declaration.profile else {
+    let Profile::Runtime { command, args, .. } = &eval.declaration.profile() else {
         panic!()
     };
     let args = resolve_argv(&config, &scope, &eval.target, args).unwrap();

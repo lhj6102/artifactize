@@ -41,14 +41,14 @@ fn runtime(command: &str) -> Value {
     json!({
         "id":"check",
         "title":"Check input",
-        "profile":{"kind":"runtime","command":support::os::bin(command),"args":[]},
+        "profile":{"kind":"runtime","command":command,"args":[]},
         "payload":{"instruction":"Check the input."},
     })
 }
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         Self {
             repo: root.path().join("repo"),
             state: root.path().join("state"),
@@ -84,7 +84,7 @@ impl Fixture {
 
     fn selection() -> Selection {
         Selection::Eval {
-            eval_id: "player/ready".into(),
+            eval_id: "player/ready".parse().unwrap(),
         }
     }
 
@@ -117,7 +117,7 @@ impl Fixture {
 fn dependency_declarations_are_strict_and_other_profiles_still_require_payload() {
     let valid = json!({"name":"player","evals":[dependency(&["movement", "art"])]});
     let declaration = parse(&valid).unwrap();
-    assert!(declaration.evals[0].payload.is_none());
+    assert!(declaration.evals[0].payload().is_none());
     for targets in [
         json!([]),
         json!(["art", "art"]),
@@ -163,7 +163,7 @@ fn dependency_declarations_are_strict_and_other_profiles_still_require_payload()
 #[test]
 fn dependency_targets_resolve_mount_aliases_and_reject_unknown_self_and_duplicate_targets() {
     let fixture = Fixture::new();
-    fixture.declare("art", vec![runtime("/bin/true")]);
+    fixture.declare("art", vec![runtime(&support::os::true_program())]);
     fixture.write(
         "player",
         json!({"name":"player","mounts":{"sprite":"art"},"evals":[dependency(&["sprite"])]}),
@@ -210,8 +210,8 @@ fn dependency_targets_resolve_mount_aliases_and_reject_unknown_self_and_duplicat
 #[test]
 fn dependency_verdicts_are_derived_even_when_gates_are_ignored() {
     let fixture = Fixture::new();
-    fixture.declare("art", vec![runtime("/bin/true")]);
-    fixture.declare("movement", vec![runtime("/bin/true")]);
+    fixture.declare("art", vec![runtime(&support::os::true_program())]);
+    fixture.declare("movement", vec![runtime(&support::os::true_program())]);
     fixture.declare("player", vec![dependency(&["art", "movement"])]);
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
@@ -224,18 +224,28 @@ fn dependency_verdicts_are_derived_even_when_gates_are_ignored() {
             (Some(Evidence::Current(Verdict::Green)), EvalStatus::Green),
         ] {
             let mut evidence_map = std::collections::BTreeMap::from([
-                ("movement/check".into(), Evidence::Current(Verdict::Green)),
-                ("player/ready".into(), Evidence::Current(Verdict::Green)),
+                (
+                    "movement/check".parse().unwrap(),
+                    Evidence::Current(Verdict::Green),
+                ),
+                (
+                    "player/ready".parse().unwrap(),
+                    Evidence::Current(Verdict::Green),
+                ),
             ]);
             if let Some(evidence) = evidence {
-                evidence_map.insert("art/check".into(), evidence);
+                evidence_map.insert("art/check".parse().unwrap(), evidence);
             }
             let result = graph.evaluate_with_policy(&evidence_map, ignore);
             let derived = &result.evals["player/ready"];
             assert_eq!(derived.status, status);
             assert!(!derived.can_execute());
             assert_eq!(
-                derived.blocked_by,
+                derived
+                    .blocked_by
+                    .iter()
+                    .map(|id| id.as_str())
+                    .collect::<Vec<_>>(),
                 if status == EvalStatus::Green {
                     vec![]
                 } else {
@@ -280,7 +290,7 @@ fn dependency_cycles_fail_config_check_but_ordinary_sccs_keep_working() {
             .contains("Dependency Eval cycle: a/ready, b/ready, c/ready.")
     );
     for (name, target) in [("a", "b"), ("b", "c"), ("c", "a")] {
-        let mut eval = runtime("/bin/true");
+        let mut eval = runtime(&support::os::true_program());
         eval["payload"]["instruction"] = json!(format!("Check {{{target}}}."));
         fixture.declare(name, vec![eval]);
     }
@@ -291,14 +301,17 @@ fn dependency_cycles_fail_config_check_but_ordinary_sccs_keep_working() {
 #[test]
 fn selecting_dependency_eval_includes_required_evals_and_their_graph_closure() {
     let fixture = Fixture::new();
-    let mut movement = runtime("/bin/true");
+    let mut movement = runtime(&support::os::true_program());
     movement["payload"]["instruction"] = json!("Check {source}.");
-    fixture.declare("source", vec![runtime("/bin/true")]);
+    fixture.declare("source", vec![runtime(&support::os::true_program())]);
     fixture.declare("movement", vec![movement]);
-    fixture.declare("other", vec![runtime("/bin/false")]);
+    fixture.declare("other", vec![runtime(&support::os::false_program())]);
     fixture.declare(
         "player",
-        vec![dependency(&["movement"]), runtime("/bin/false")],
+        vec![
+            dependency(&["movement"]),
+            runtime(&support::os::false_program()),
+        ],
     );
     let config = fixture.config();
     let included: Vec<_> = Fixture::selection()
@@ -326,7 +339,7 @@ fn selecting_dependency_eval_includes_required_evals_and_their_graph_closure() {
 #[tokio::test]
 async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entry() {
     let fixture = Fixture::new();
-    fixture.declare("art", vec![runtime("/bin/true")]);
+    fixture.declare("art", vec![runtime(&support::os::true_program())]);
     fixture.declare("player", vec![dependency(&["art"])]);
     let options = VerifyOptions::default();
     let before = fixture.status(&options).await;
@@ -337,17 +350,24 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
         .unwrap();
     assert_eq!(ready.state, project::EvalCondition::WaitDependency);
     assert_eq!(ready.action, project::VerifyAction::Derive);
-    assert_eq!(ready.blocked_by, vec!["art", "art/check"]);
+    assert_eq!(
+        ready
+            .blocked_by
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec!["art", "art/check"]
+    );
     assert!(ready.key.is_none());
     let first = fixture.verify(&options).await;
-    assert_eq!(first.run.status.as_str(), "GREEN");
+    assert_eq!(first.run.status().as_str(), "GREEN");
     assert_eq!(first.run.executions_started, 1);
     let derived = first
         .requests
         .iter()
         .find(|request| request.eval_id == "player/ready")
         .unwrap();
-    assert_eq!(derived.status.as_str(), "GREEN");
+    assert_eq!(derived.status().as_str(), "GREEN");
     assert!(derived.execution_id.is_none());
     assert!(derived.key.is_none());
     assert!(derived.started_at.is_none());
@@ -391,10 +411,10 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
         ..options
     };
     let second = fixture.verify(&reuse).await;
-    assert_eq!(second.run.status.as_str(), "GREEN");
+    assert_eq!(second.run.status().as_str(), "GREEN");
     assert_eq!(second.run.executions_started, 0);
     assert!(!second.requests[0].force);
-    assert_eq!(second.requests[0].status.as_str(), "GREEN");
+    assert_eq!(second.requests[0].status().as_str(), "GREEN");
     assert_eq!(
         db.query_row("SELECT COUNT(*) FROM executions", [], |row| row
             .get::<_, i64>(0))
@@ -413,11 +433,11 @@ async fn dependency_verify_is_a_derived_request_never_an_execution_or_cache_entr
 #[tokio::test]
 async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_evals() {
     for (command, reuse_only, expected) in [
-        ("/bin/false", false, "BLOCKED"),
-        ("/bin/true", true, "WAIT_DEPENDENCY"),
+        (support::os::false_program(), false, "BLOCKED"),
+        (support::os::true_program(), true, "WAIT_DEPENDENCY"),
     ] {
         let fixture = Fixture::new();
-        fixture.declare("art", vec![runtime(command)]);
+        fixture.declare("art", vec![runtime(&command)]);
         fixture.declare("player", vec![dependency(&["art"])]);
         let options = VerifyOptions {
             ignore_gates: Some(true),
@@ -430,8 +450,15 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
         };
         let run = fixture.verify(&options).await;
         let request = &run.requests[0];
-        assert_eq!(request.status.as_str(), expected);
-        assert_eq!(request.blocked_by, vec!["art", "art/check"]);
+        assert_eq!(request.status().as_str(), expected);
+        assert_eq!(
+            request
+                .blocked_by
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            vec!["art", "art/check"]
+        );
         assert!(request.execution_id.is_none());
         let output = artifactize::query::run_output(&run, OffsetDateTime::now_utc());
         assert_eq!(
@@ -457,7 +484,7 @@ async fn dependency_red_and_missing_reuse_evidence_show_blocked_artifacts_and_ev
         let detail = monitor::detail(
             &run,
             &requests,
-            &Target::Eval("player/ready".into()),
+            &Target::Eval("player/ready".parse().unwrap()),
             OffsetDateTime::now_utc(),
         );
         assert_eq!(detail.field("Source"), Some("derived (no execution)"));
@@ -493,10 +520,17 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
         ..Default::default()
     };
     let run = fixture.verify(&options).await;
-    assert_eq!(run.run.status.as_str(), "INCOMPLETE");
-    assert_eq!(run.requests[0].status.as_str(), "WAIT_DEPENDENCY");
-    assert_eq!(run.requests[0].blocked_by, vec!["art", "art/approve"]);
-    assert_eq!(run.requests[1].status.as_str(), "WAITING_HUMAN");
+    assert_eq!(run.run.status().as_str(), "INCOMPLETE");
+    assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
+    assert_eq!(
+        run.requests[0]
+            .blocked_by
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec!["art", "art/approve"]
+    );
+    assert_eq!(run.requests[1].status().as_str(), "WAITING_HUMAN");
     let waiting = store::read_waiting(&fixture.state, None).await.unwrap();
     assert_eq!(waiting.len(), 1);
     assert_eq!(waiting[0].request.eval_id, "art/approve");
@@ -510,17 +544,25 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
         .await
         .unwrap();
     assert!(
-        artifactize::human::claim(&receipts, run.requests[0].id.as_str(), "tester")
-            .await
-            .is_err()
-    );
-    artifactize::human::claim(&receipts, run.requests[1].id.as_str(), "tester")
+        artifactize::human::claim(
+            &receipts,
+            run.requests[0].id.as_str(),
+            &"tester".parse().unwrap()
+        )
         .await
-        .unwrap();
+        .is_err()
+    );
+    artifactize::human::claim(
+        &receipts,
+        run.requests[1].id.as_str(),
+        &"tester".parse().unwrap(),
+    )
+    .await
+    .unwrap();
     artifactize::human::submit(
         &receipts,
         run.requests[1].id.as_str(),
-        "tester",
+        &"tester".parse().unwrap(),
         &json!({"verdict":"GREEN"}),
         CancellationToken::new(),
     )
@@ -537,14 +579,14 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
         project::EvalCondition::Pass
     );
     let next = fixture.verify(&VerifyOptions::default()).await;
-    assert_eq!(next.requests[0].status.as_str(), "GREEN");
+    assert_eq!(next.requests[0].status().as_str(), "GREEN");
     // The original Run is historical; it is not rewritten by the later derivation.
     assert_eq!(
         store::read_run(&fixture.state, &run.run.id)
             .await
             .unwrap()
             .requests[0]
-            .status
+            .status()
             .as_str(),
         "WAIT_DEPENDENCY"
     );
@@ -563,13 +605,13 @@ async fn dependency_chains_derive_without_job_or_execution_budget() {
         ..Default::default()
     };
     let run = fixture.verify(&options).await;
-    assert_eq!(run.run.status.as_str(), "GREEN");
+    assert_eq!(run.run.status().as_str(), "GREEN");
     assert_eq!(run.run.executions_started, 0);
     assert_eq!(run.requests.len(), 2);
     assert!(
         run.requests
             .iter()
-            .all(|request| request.execution_id.is_none() && request.status.as_str() == "GREEN")
+            .all(|request| request.execution_id.is_none() && request.status().as_str() == "GREEN")
     );
 }
 
@@ -641,20 +683,29 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
     fixture.declare("art", vec![runtime("missing-runtime-command")]);
     fixture.declare("player", vec![dependency(&["art"])]);
     let run = fixture.verify(&VerifyOptions::default()).await;
-    assert_eq!(run.run.status.as_str(), "ERROR");
-    assert_eq!(run.requests[0].status.as_str(), "WAIT_DEPENDENCY");
-    assert_eq!(run.requests[0].blocked_by, vec!["art", "art/check"]);
-    assert_eq!(run.requests[1].status.as_str(), "ERROR");
+    assert_eq!(run.run.status().as_str(), "ERROR");
+    assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
+    assert_eq!(
+        run.requests[0]
+            .blocked_by
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec!["art", "art/check"]
+    );
+    assert_eq!(run.requests[1].status().as_str(), "ERROR");
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
-    let cancelled =
-        std::collections::BTreeMap::from([("art/check".into(), Evidence::OperationalError)]);
+    let cancelled = std::collections::BTreeMap::from([(
+        "art/check".parse().unwrap(),
+        Evidence::OperationalError,
+    )]);
     assert_eq!(
         graph.evaluate(&cancelled).evals["player/ready"].status,
         EvalStatus::Wait
     );
-    let mut slow = runtime("/bin/sh");
-    slow["profile"]["args"] = json!(["-c", "touch started; sleep 30"]);
+    let mut slow = runtime(&support::os::shell());
+    slow["profile"]["args"] = json!(["-c", format!("touch started; {}", support::os::LINGERING)]);
     fixture.write(
         "art",
         json!({"name":"art","fingerprint":false,"evals":[slow]}),
@@ -663,7 +714,7 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
     let cancel = token.clone();
     let started = fixture.repo.join("art/started");
     let cancellation = async move {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(support::os::patience(Duration::from_secs(10)), async {
             while !started.exists() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
@@ -685,9 +736,16 @@ async fn dependency_operational_error_and_cancellation_never_turn_into_a_red_ver
         cancellation
     );
     let run = run.unwrap();
-    assert_eq!(run.requests[1].error_code.as_deref(), Some("CANCELLED"));
-    assert_eq!(run.requests[0].status.as_str(), "WAIT_DEPENDENCY");
-    assert_eq!(run.requests[0].blocked_by, vec!["art", "art/check"]);
+    assert_eq!(run.requests[1].error_code().as_deref(), Some("CANCELLED"));
+    assert_eq!(run.requests[0].status().as_str(), "WAIT_DEPENDENCY");
+    assert_eq!(
+        run.requests[0]
+            .blocked_by
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>(),
+        vec!["art", "art/check"]
+    );
 }
 
 #[tokio::test]
@@ -700,14 +758,17 @@ async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations()
             .to_string(),
     )
     .unwrap();
-    fixture.declare("art", vec![runtime("/bin/false")]);
+    fixture.declare("art", vec![runtime(&support::os::false_program())]);
     fixture.declare("player", vec![dependency(&["art"])]);
     let run = fixture.verify(&VerifyOptions::default()).await;
     assert!(run.run.ignore_gates);
-    assert_eq!(run.requests[0].status.as_str(), "BLOCKED");
-    assert_eq!(run.run.validation["satisfied"], false);
+    assert_eq!(run.requests[0].status().as_str(), "BLOCKED");
+    assert_eq!(
+        serde_json::to_value(&run.run.validation).unwrap()["satisfied"],
+        false
+    );
     assert!(
-        run.run.validation["obligations"]
+        serde_json::to_value(&run.run.validation).unwrap()["obligations"]
             .as_array()
             .unwrap()
             .contains(&json!("player"))
@@ -725,15 +786,17 @@ async fn root_ignore_policy_preserves_dependency_verdict_and_final_obligations()
 #[test]
 fn dependency_eval_inside_an_ordinary_scc_uses_current_peer_evidence() {
     let fixture = Fixture::new();
-    let mut art = runtime("/bin/true");
+    let mut art = runtime(&support::os::true_program());
     art["payload"]["instruction"] = json!("Check {player}.");
     fixture.declare("art", vec![art]);
     fixture.declare("player", vec![dependency(&["art"])]);
     let config = fixture.config();
     let graph = Graph::new(&config).unwrap();
     assert_eq!(graph.components().len(), 1);
-    let evidence =
-        std::collections::BTreeMap::from([("art/check".into(), Evidence::Current(Verdict::Green))]);
+    let evidence = std::collections::BTreeMap::from([(
+        "art/check".parse().unwrap(),
+        Evidence::Current(Verdict::Green),
+    )]);
     assert_eq!(
         graph.evaluate(&evidence).evals["player/ready"].status,
         EvalStatus::Green
@@ -774,7 +837,7 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
         json!({
             "name":"player",
             "mounts":{"basis":"basis"},
-            "evals":[dependency(&["basis"]), runtime("/bin/true")],
+            "evals":[dependency(&["basis"]), runtime(&support::os::true_program())],
         }),
     );
     let output = fixture
@@ -801,9 +864,9 @@ fn dependency_only_transitive_basis_inputs_never_run_fingerprints() {
 #[test]
 fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
     let fixture = Fixture::new();
-    let mut eval = runtime("/bin/false");
+    let mut eval = runtime(&support::os::false_program());
     eval["profile_variants"] =
-        json!({"fast":{"kind":"runtime","command":support::os::bin("/bin/true"),"args":[]}});
+        json!({"fast":{"kind":"runtime","command":support::os::true_program(),"args":[]}});
     fixture.declare("art", vec![eval]);
     for derived in [false, true] {
         if derived {
@@ -877,8 +940,8 @@ fn named_profile_skips_derived_evals_but_still_validates_ordinary_variants() {
     }
     let mapping =
         project::selection::ProfileSelection::Evals(std::collections::BTreeMap::from([(
-            "player/ready".into(),
-            "fast".into(),
+            "player/ready".parse().unwrap(),
+            "fast".parse().unwrap(),
         )]));
     let error = project::selection::select_profiles(
         fixture.config(),

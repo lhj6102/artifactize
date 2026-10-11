@@ -2,7 +2,7 @@ use std::path::Path;
 
 use rusqlite::params;
 use serde::Serialize;
-use serde_json::{Value, json};
+
 use tokio_rusqlite::Connection;
 
 use super::{
@@ -17,7 +17,13 @@ pub struct RequestView {
     pub request: Request,
     pub claim: Option<HumanClaim>,
     pub execution: Option<Execution>,
-    pub definition: Option<Value>,
+    pub definition: Option<RequestDefinition>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RequestDefinition {
+    pub eval: super::definitions::Eval,
+    pub artifact: super::definitions::Artifact,
 }
 
 #[derive(Default)]
@@ -110,7 +116,9 @@ pub async fn read_waiting_originals(
         };
         // A follower whose original is gone or no longer waits stays listed as itself.
         let original = original
-            .filter(|original| original.request.status == crate::types::RequestStatus::WaitingHuman)
+            .filter(|original| {
+                original.request.status() == crate::types::RequestStatus::WaitingHuman
+            })
             .unwrap_or_else(|| view.clone());
         if !originals
             .iter()
@@ -167,7 +175,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
         .id
         .map(str::parse::<crate::types::RequestId>)
         .transpose()?;
-    let repo = repo.map(|repo| repo.to_string_lossy().into_owned());
+    let repo = repo.map(|repo| crate::platform::path_text(&repo));
     let waiting = filter.waiting;
     let session = filter
         .session
@@ -185,7 +193,7 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                 let mut statement = transaction.prepare(
                     "SELECT q.data,r.repo,e.data,h.id,h.claimed_by,h.claimed_at,
                 json_extract(r.data,'$.definitions.artifacts'),
-                (SELECT value FROM json_each(r.data,'$.definitions.evals') WHERE json_extract(value,'$.id')=q.eval_id)
+                (SELECT value FROM json_each(r.data,'$.definitions.evals') WHERE json_extract(value,'$.id')=q.eval_id),r.data
                 FROM requests q JOIN runs r ON r.id=q.run_id
                 LEFT JOIN executions e ON e.id=q.execution_id
                 LEFT JOIN requests h ON h.id=json_extract(e.data,'$.provenance.requestId') AND h.claimed_by IS NOT NULL
@@ -201,10 +209,11 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                             row.get::<_, String>(1)?,
                             row.get::<_, Option<String>>(2)?,
                             row.get::<_, Option<crate::types::RequestId>>(3)?,
-                            row.get::<_, Option<String>>(4)?,
-                            row.get::<_, Option<String>>(5)?,
+                            row.get::<_, Option<crate::types::ReviewerId>>(4)?,
+                            row.get::<_, Option<crate::types::Timestamp>>(5)?,
                             row.get::<_, Option<String>>(6)?,
                             row.get::<_, Option<String>>(7)?,
+                            row.get::<_, String>(8)?,
                         ))
                     })?
                     .map(|row| {
@@ -217,23 +226,29 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                             claimed_at,
                             artifacts,
                             eval,
+                            run_data,
                         ) = row?;
+                        if super::unreadable::evidence::<super::Run>("run", &run_data).is_none() {
+                            return Ok(None);
+                        }
                         outside_workspace(Path::new(&repo), &state)
                             .map_err(|e| Error::Invalid(e.to_string()))?;
-                        let request: Request = serde_json::from_str(&data)?;
-                        let artifacts: Option<Value> = artifacts
+                        let Some(request) = super::unreadable::evidence::<Request>("request", &data) else {
+                            return Ok(None);
+                        };
+                        let artifacts: Option<std::collections::BTreeMap<crate::types::ArtifactName, super::definitions::Artifact>> = artifacts
                             .map(|data| serde_json::from_str(&data))
                             .transpose()?;
-                        let eval: Option<Value> =
+                        let eval: Option<super::definitions::Eval> =
                             eval.map(|data| serde_json::from_str(&data)).transpose()?;
                         let definition = eval
                             .zip(
                                 artifacts
                                     .as_ref()
-                                    .and_then(|artifacts| artifacts.get(&request.target)),
+                                    .and_then(|artifacts| artifacts.get(request.target.as_str())),
                             )
-                            .map(|(eval, artifact)| json!({"eval":eval,"artifact":artifact}));
-                        Ok(RequestView {
+                            .map(|(eval, artifact)| RequestDefinition { eval, artifact: artifact.clone() });
+                        Ok(Some(RequestView {
                             request,
                             definition,
                             claim: request_id.zip(reviewer).zip(claimed_at).map(
@@ -243,11 +258,10 @@ async fn read(state: &Path, filter: Filter<'_>) -> Result<Vec<RequestView>, Stri
                                     claimed_at,
                                 },
                             ),
-                            execution: execution
-                                .map(|data| serde_json::from_str(&data))
-                                .transpose()?,
-                        })
+                            execution: execution.and_then(|data| super::unreadable::evidence("execution", &data)),
+                        }))
                     })
+                    .filter_map(|result| result.transpose())
                     .collect::<Result<Vec<_>, Error>>()?
             };
             transaction.commit()?;

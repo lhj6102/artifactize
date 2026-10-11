@@ -6,23 +6,23 @@ use std::{
 
 use artifactize::store;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::echo_program;
 
 mod support;
 
-/// The owner's tool script. Windows runs a script by path only through the `.exe` stand-in
-/// beside it, which a `.sh` extension would bypass.
-const TOOL: &str = if cfg!(windows) { "env-tool" } else { "env.sh" };
+use support::os::TOOL;
 
 fn fixture(repo: &Path) {
     fs::create_dir_all(repo.join("a")).unwrap();
     fs::create_dir_all(repo.join("b")).unwrap();
     let tool = repo.join("a").join(TOOL);
-    fs::write(
+    support::os::write_script(
         &tool,
-        "#!/bin/sh\nprintf '%s|%s|%s' \"$HOME\" \"${TOOL_CHECK_SECRET-unset}\" \"$PWD\"\nprintf invoked > touched\n",
-    )
-    .unwrap();
+        &format!(
+            "printf '%s|%s|%s' \"{}\" \"${{TOOL_CHECK_SECRET-unset}}\" \"$PWD\"\nprintf invoked > touched\n",
+            support::os::home_expression()
+        ),
+    );
     support::os::make_executable(&tool);
     let command = format!("./{TOOL}");
     let profile = json!({"kind":"agent","backend":"openai","model":"test"});
@@ -43,14 +43,14 @@ fn fixture(repo: &Path) {
                     },
                     "data":{
                         "description":"JSON",
-                        "command":bin("/bin/echo"),
+                        "command":echo_program(),
                         "args":["{\"content\":[{\"type\":\"json\",\"data\":{\"answer\":42}}]}"],
                         "protocol":"json",
                         "input_schema":{"type":"object"},
                     },
                     "error":{
                         "description":"Authored error",
-                        "command":bin("/bin/echo"),
+                        "command":echo_program(),
                         "args":[
                             "{\"content\":[{\"type\":\"text\",\"text\":\"Owner error\"}],\"isError\":true}",
                         ],
@@ -98,7 +98,7 @@ fn check(repo: &Path, state: &Path, args: &[&str]) -> Output {
         .args(["tools", "check"])
         .args(args)
         .env("TOOL_CHECK_SECRET", "real-environment")
-        .env("HOME", "/reviewer-home")
+        .env(support::os::home_env(), support::os::human_tool_home())
         .output()
         .unwrap()
 }
@@ -116,12 +116,19 @@ fn parsed(output: &Output, code: i32) -> Value {
 
 #[test]
 fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fixture(&repo);
     let report = parsed(&check(&repo, &state, &[]), 0);
     assert_eq!(report["scopes"].as_array().unwrap().len(), 2);
+    assert!(
+        report["checks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|check| check["stage"] == "preflight")
+    );
     assert!(report["scopes"].as_array().unwrap().iter().all(|scope| {
         scope["tools"]
             .as_array()
@@ -149,10 +156,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
             .all(|t| t["artifactId"] == "a")
     );
     // Windows has no execute bit to take away.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o600)).unwrap();
+    if support::os::revoke_execution(&repo.join("a").join(TOOL)) {
         assert_eq!(
             parsed(
                 &check(
@@ -165,7 +169,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
             false
         );
         assert!(!repo.join("a/touched").exists());
-        fs::set_permissions(repo.join("a/env.sh"), fs::Permissions::from_mode(0o700)).unwrap();
+        support::os::make_executable(&repo.join("a").join(TOOL));
     }
     let agent = parsed(
         &check(
@@ -183,8 +187,12 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
         ),
         0,
     );
+    assert_eq!(
+        agent["checks"].as_array().unwrap().last().unwrap()["stage"],
+        "execute"
+    );
     let text = agent["result"]["content"][0]["text"].as_str().unwrap();
-    let home = format!("{}home|unset|", std::path::MAIN_SEPARATOR);
+    let home = format!("{}|unset|", support::os::native("/home"));
     assert!(text.contains(&home), "{text}");
     assert!(!text.contains("reviewer-home"));
     let human = parsed(
@@ -207,7 +215,7 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
         human["result"]["content"][0]["text"]
             .as_str()
             .unwrap()
-            .starts_with("/reviewer-home|real-environment|")
+            .starts_with(support::os::human_tool_prefix())
     );
     let error = parsed(
         &check(
@@ -247,4 +255,17 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
     ] {
         assert_eq!(check(&repo, &state, &args).status.code(), Some(2));
     }
+}
+
+#[test]
+fn declaration_failure_keeps_the_public_stage_label() {
+    let root = support::os::tempdir();
+    let repo = root.path().join("repo");
+    let state = root.path().join("state");
+    fixture(&repo);
+    fs::write(repo.join("a/index.artf"), "invalid declaration").unwrap();
+    let report = parsed(&check(&repo, &state, &[]), 1);
+    assert_eq!(report["ok"], false);
+    assert_eq!(report["checks"][0]["stage"], "declarations");
+    assert!(!state.exists());
 }

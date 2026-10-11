@@ -39,7 +39,7 @@ pub struct CommandTool {
     pub input_schema: Value,
     pub protocol: ToolProtocol,
     pub command: String,
-    pub args: Vec<String>,
+    pub args: Vec<crate::scope::Argument>,
     #[serde(
         default,
         deserialize_with = "timeout",
@@ -48,7 +48,7 @@ pub struct CommandTool {
     )]
     pub timeout_ms: Option<std::time::Duration>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub execution_paths: Vec<String>,
+    pub execution_paths: Vec<super::LogicalPath>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -94,7 +94,7 @@ impl AgentTool {
                 crate::tools::schema::compile(&tool.input_schema)?;
                 if tool.protocol == ToolProtocol::Plain {
                     for arg in &tool.args {
-                        crate::tools::plain_argument(arg, |name| {
+                        crate::tools::plain_argument(&arg.to_string(), |name| {
                             if tool.input_schema["properties"].get(name).is_none() {
                                 return Err(format!("Unknown plain tool placeholder: {name}"));
                             }
@@ -160,7 +160,8 @@ pub struct HumanCommandTool {
     pub description: String,
     pub kind: HumanToolKind,
     pub command: String,
-    pub args: Vec<String>,
+    #[serde(deserialize_with = "crate::scope::human_arguments")]
+    pub args: Vec<crate::scope::Argument>,
     #[serde(
         default,
         deserialize_with = "timeout",
@@ -170,12 +171,11 @@ pub struct HumanCommandTool {
     pub timeout_ms: Option<std::time::Duration>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone)]
 pub struct HumanBuiltinTool {
     pub builtin: Builtin,
     pub description: String,
-    pub kind: HumanToolKind,
-    pub args: Vec<String>,
+    pub args: Vec<crate::scope::Argument>,
 }
 
 impl<'de> Deserialize<'de> for HumanBuiltinTool {
@@ -189,15 +189,13 @@ impl<'de> Deserialize<'de> for HumanBuiltinTool {
             description: Option<String>,
             #[serde(default, deserialize_with = "present")]
             kind: Option<HumanToolKind>,
-            args: Vec<String>,
+            #[serde(deserialize_with = "crate::scope::human_arguments")]
+            args: Vec<crate::scope::Argument>,
         }
         let declaration = Declaration::deserialize(deserializer)?;
-        artifactize_tools::builtin::validate_args(
-            declaration.builtin,
-            Some(&declaration.args),
-            true,
-        )
-        .map_err(D::Error::custom)?;
+        let args: Vec<String> = declaration.args.iter().map(ToString::to_string).collect();
+        artifactize_tools::builtin::validate_args(declaration.builtin, Some(&args), true)
+            .map_err(D::Error::custom)?;
         let kind = if declaration.builtin == Builtin::Open {
             HumanToolKind::Launch
         } else {
@@ -211,10 +209,8 @@ impl<'de> Deserialize<'de> for HumanBuiltinTool {
         Ok(Self {
             builtin: declaration.builtin,
             description: declaration.description.unwrap_or_else(|| {
-                crate::tools::builtin::fixed_description(declaration.builtin, &declaration.args)
-                    .into()
+                crate::tools::builtin::fixed_description(declaration.builtin, &args).into()
             }),
-            kind,
             args: declaration.args,
         })
     }
@@ -237,38 +233,46 @@ impl HumanTool {
     pub fn kind(&self) -> HumanToolKind {
         match self {
             Self::Command(tool) => tool.kind,
-            Self::Builtin(tool) => tool.kind,
-        }
-    }
-    pub fn args(&self) -> &[String] {
-        match self {
-            Self::Command(tool) => &tool.args,
-            Self::Builtin(tool) => &tool.args,
+            Self::Builtin(tool) => tool.kind(),
         }
     }
     pub(super) fn validate(&self) -> Result<(), String> {
         description(self.description())?;
-        if let Self::Command(tool) = self {
-            script(&tool.command, &tool.args)?;
-            if tool.command.contains(['{', '}']) {
-                return Err("Tool command must not contain placeholders.".into());
+        match self {
+            Self::Command(tool) => {
+                script(&tool.command, &tool.args)?;
+                if tool.command.contains(['{', '}']) {
+                    return Err("Tool command must not contain placeholders.".into());
+                }
+                for argument in &tool.args {
+                    crate::scope::validate_human_argument(argument)
+                        .map_err(|error| error.to_string())?;
+                }
             }
-        }
-        crate::scope::validate_human_args(self.args()).map_err(|error| error.to_string())?;
-        if let Self::Builtin(tool) = self {
-            if tool.builtin != Builtin::Help
-                && !(tool.builtin == Builtin::Open
-                    && artifactize_tools::builtin::is_url(&tool.args[0]))
-                && !tool.args[0].starts_with('{')
-            {
-                artifactize_tools::scope::logical_path(&tool.args[0])
-                    .map_err(|error| error.to_string())?;
-            }
-            if tool.builtin == Builtin::Help && tool.args.iter().any(|arg| arg.contains(['{', '}']))
-            {
-                return Err(
-                    "Help args are literal program/subcommand names, not path placeholders.".into(),
-                );
+            Self::Builtin(tool) => {
+                for argument in &tool.args {
+                    crate::scope::validate_human_argument(argument)
+                        .map_err(|error| error.to_string())?;
+                }
+                if tool.builtin != Builtin::Help
+                    && let crate::scope::Argument::Literal(target) = &tool.args[0]
+                    && !(tool.builtin == Builtin::Open
+                        && artifactize_tools::builtin::is_url(target))
+                {
+                    artifactize_tools::scope::logical_path(target)
+                        .map_err(|error| error.to_string())?;
+                }
+                if tool.builtin == Builtin::Help
+                    && tool
+                        .args
+                        .iter()
+                        .any(|arg| matches!(arg, crate::scope::Argument::Reference { .. }))
+                {
+                    return Err(
+                        "Help args are literal program/subcommand names, not path placeholders."
+                            .into(),
+                    );
+                }
             }
         }
         Ok(())
@@ -300,4 +304,32 @@ pub(super) fn description(value: &str) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+impl HumanBuiltinTool {
+    pub fn kind(&self) -> HumanToolKind {
+        if self.builtin == Builtin::Open {
+            HumanToolKind::Launch
+        } else {
+            HumanToolKind::Output
+        }
+    }
+}
+impl Serialize for HumanBuiltinTool {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        struct Stored<'a> {
+            builtin: Builtin,
+            description: &'a str,
+            kind: HumanToolKind,
+            args: &'a [crate::scope::Argument],
+        }
+        Stored {
+            builtin: self.builtin,
+            description: &self.description,
+            kind: self.kind(),
+            args: &self.args,
+        }
+        .serialize(serializer)
+    }
 }

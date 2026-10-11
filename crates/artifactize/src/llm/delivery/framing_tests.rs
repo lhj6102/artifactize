@@ -28,11 +28,11 @@ async fn task_local_sinks_are_isolated_and_overflow_only_degrades_observer() {
     let second = Sink::default();
     tokio::join!(
         first.scope(async {
-            ACTIVE.with(|sink| sink.push(DeliveryKind::Text, "one".into(), "first"));
+            ACTIVE.with(|sink| sink.push(DeliveryKind::Text, "one".parse().unwrap(), "first"));
             tokio::task::yield_now().await;
         }),
         second.scope(async {
-            ACTIVE.with(|sink| sink.push(DeliveryKind::Text, "two".into(), "second"));
+            ACTIVE.with(|sink| sink.push(DeliveryKind::Text, "two".parse().unwrap(), "second"));
             tokio::task::yield_now().await;
         })
     );

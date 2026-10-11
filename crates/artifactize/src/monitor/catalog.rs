@@ -1,6 +1,7 @@
 //! Repository/worktree selection and cached Git discovery; no artifact config is read here.
 #[cfg(test)]
 mod tests;
+use super::model::Status;
 use crate::{
     repository::{self, Identity, Worktree},
     store::{CatalogRun, Signoff},
@@ -38,23 +39,23 @@ impl Badge {
     }
     /// Status glyphs and counts in the urgency order of the header, Runs and the tree:
     /// `!1 ✗2 ◐1 ?1`.
-    pub fn parts(&self) -> Vec<(&'static str, u64)> {
+    pub fn parts(&self) -> Vec<(Status, u64)> {
         let mut parts: Vec<_> = [
-            ("WAITING_HUMAN", self.waiting.len() as u64),
-            ("RED", self.red),
-            ("ERROR", self.error),
-            ("RUNNING", self.running),
+            (Status::WaitingHuman, self.waiting.len() as u64),
+            (Status::Red, self.red),
+            (Status::Error, self.error),
+            (Status::Running, self.running),
         ]
         .into_iter()
         .filter(|(_, count)| *count > 0)
         .collect();
-        parts.sort_by_key(|(status, _)| super::model::urgency(status));
+        parts.sort_by_key(|(status, _)| *status);
         parts
     }
     pub fn text(&self) -> String {
         self.parts()
             .into_iter()
-            .map(|(status, count)| format!("{}{count}", super::model::glyph(Some(status))))
+            .map(|(status, count)| format!("{}{count}", status.glyph()))
             .collect::<Vec<_>>()
             .join(" ")
     }
@@ -99,7 +100,7 @@ impl Catalog {
     }
     fn initial_path(&mut self, path: &Path, paths: &BTreeMap<Scope, BTreeSet<PathBuf>>) -> Scope {
         if let Some((scope, _)) = paths.iter().find(|(scope, workspaces)| {
-            matches!(scope, Scope::Worktree(_, tree) if tree == path || workspaces.contains(path))
+            matches!(scope, Scope::Worktree(_, tree) if crate::platform::paths_equal(tree, path) || workspaces.iter().any(|workspace| crate::platform::paths_equal(workspace, path)))
         }) {
             return scope.clone();
         }
@@ -114,7 +115,7 @@ impl Catalog {
             .filter_map(|(scope, workspaces)| match scope {
                 Scope::Worktree(Repository::Workspace(_), _) => workspaces
                     .iter()
-                    .filter(|workspace| path.starts_with(workspace))
+                    .filter(|workspace| crate::platform::is_within(path, workspace))
                     .map(|workspace| (workspace.components().count(), scope))
                     .max_by_key(|(depth, _)| *depth),
                 _ => None,
@@ -194,11 +195,10 @@ impl Catalog {
                 Repository::Git(path) => path.parent().unwrap_or(path),
                 Repository::Workspace(path) => path.as_path(),
             };
-            let label = root
-                .file_name()
-                .unwrap_or(root.as_os_str())
-                .to_string_lossy()
-                .into_owned();
+            let label = root.file_name().map_or_else(
+                || crate::platform::path_text(root),
+                |name| name.to_string_lossy().into_owned(),
+            );
             // The repository row is the whole repository; there is no separate `ALL` row.
             let scope = Scope::Repository(repository.clone());
             rows.push(CatalogRow {
@@ -221,10 +221,10 @@ impl Catalog {
                     continue;
                 }
                 let branch = branches.get(scope).and_then(Option::as_deref);
-                let name = tree
-                    .file_name()
-                    .unwrap_or(tree.as_os_str())
-                    .to_string_lossy();
+                let name = tree.file_name().map_or_else(
+                    || crate::platform::path_text(tree),
+                    |name| name.to_string_lossy().into_owned(),
+                );
                 let label = match (branch, &repository) {
                     (Some(branch), _) if branch == name => branch.to_owned(),
                     (Some(branch), _) => format!("{branch} · {name}"),

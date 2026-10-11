@@ -1,6 +1,5 @@
 //! Text/JSON projections and Run outcome exit codes.
 
-use serde_json::json;
 use std::io::{self, Write};
 
 pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<(), String> {
@@ -15,11 +14,11 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
             stdout,
             "Run: {}\nExecution: {}\nState: {}",
             view.run.id,
-            view.run.status,
-            view.run.state_dir.display()
+            view.run.status(),
+            crate::platform::path_text(&view.run.state_dir)
         )
         .map_err(|e| e.to_string())?;
-        if let Some(error) = &view.run.error {
+        if let Some(error) = view.run.error() {
             writeln!(stdout, "Reason: {error}").map_err(|e| e.to_string())?;
         }
         for request in &view.requests {
@@ -28,22 +27,24 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
                 "  {} [{}]: {}{}{}",
                 request.eval_id,
                 request.id,
-                request.status,
+                request.status(),
                 reuse_marker(request),
                 request
-                    .error
-                    .as_ref()
-                    .or(request.blocked_reason.as_ref())
+                    .error()
+                    .or(request.blocked_reason.as_deref())
                     .map_or(String::new(), |reason| format!(" — {reason}"))
             )
             .map_err(|e| e.to_string())?;
+        }
+        for unreadable in &view.unreadable {
+            writeln!(stdout, "  {unreadable}").map_err(|error| error.to_string())?;
         }
         for stopped in &view.run.stopped_backends {
             let skipped = view
                 .requests
                 .iter()
                 .filter(|request| {
-                    request.error_code.as_deref() == Some(crate::agent::error::BACKEND_STOPPED)
+                    request.error_code() == Some(crate::types::FailureCode::BackendStopped)
                         && request.options.backend.as_ref() == Some(&stopped.backend)
                 })
                 .count();
@@ -57,45 +58,56 @@ pub(super) fn verify(view: &crate::store::RunView, json_output: bool) -> Result<
             )
             .map_err(|e| e.to_string())?;
         }
-        let output = crate::query::run_output(view, time::OffsetDateTime::now_utc());
-        let summary = &output["summary"];
+        let (summary, saved) = crate::query::run_summary(view, time::OffsetDateTime::now_utc());
         writeln!(
             stdout,
             "Summary: executed {}, reused {}{}",
-            kinds(&summary["executed"]),
-            kinds(&summary["reused"]),
-            match summary["reused"]["otherProfile"].as_u64() {
-                Some(0) | None => String::new(),
-                Some(count) => format!("; {count} produced by another profile"),
+            kinds(&summary.executed),
+            kinds(&summary.reused.kinds),
+            match summary.reused.other_profile {
+                0 => String::new(),
+                count => format!("; {count} produced by another profile"),
             }
         )
         .map_err(|e| e.to_string())?;
-        if let Some(count) = summary["derived"].as_u64().filter(|count| *count > 0) {
+        if summary.derived > 0 {
+            let count = summary.derived;
             writeln!(stdout, "Derived: {count} dependency evals (no execution).")
                 .map_err(|e| e.to_string())?;
         }
-        let usage = &output["usage"];
-        if *usage != json!({"spent":{},"saved":{}}) {
+        let spent = &summary.usage.usage;
+        if !spent.is_empty() || !saved.is_empty() {
             writeln!(
                 stdout,
                 "Usage: spent {}; saved {}",
-                counters(&usage["spent"]),
-                counters(&usage["saved"])
+                counters(spent),
+                counters(&saved)
             )
             .map_err(|e| e.to_string())?;
         }
         writeln!(
             stdout,
             "Validation: {}",
-            if view.run.validation["satisfied"] == true {
+            if view
+                .run
+                .validation
+                .snapshot()
+                .and_then(|v| v.satisfied.value())
+                == Some(&true)
+            {
                 "SATISFIED"
             } else {
                 "NOT SATISFIED"
             }
         )
         .map_err(|e| e.to_string())?;
-        if let Some(obligations) = view.run.validation["obligations"].as_array() {
-            for artifact in obligations.iter().filter_map(serde_json::Value::as_str) {
+        if let Some(obligations) = view
+            .run
+            .validation
+            .snapshot()
+            .and_then(|v| v.obligations.value())
+        {
+            for artifact in obligations {
                 writeln!(stdout, "  Unmet obligation: {artifact}").map_err(|e| e.to_string())?;
             }
         }
@@ -140,18 +152,16 @@ fn reuse_marker(request: &crate::store::Request) -> String {
 }
 
 /// `N (runtime R, agent A, human H)` from a summary tally.
-fn kinds(tally: &serde_json::Value) -> String {
+fn kinds(tally: &crate::query::Kinds) -> String {
     format!(
         "{} (runtime {}, agent {}, human {})",
-        tally["total"], tally["runtime"], tally["agent"], tally["human"]
+        tally.total, tally.runtime, tally.agent, tally.human
     )
 }
 
-fn counters(totals: &serde_json::Value) -> String {
+fn counters(totals: &std::collections::BTreeMap<String, u64>) -> String {
     let pairs: Vec<_> = totals
-        .as_object()
-        .into_iter()
-        .flatten()
+        .iter()
         .map(|(key, value)| format!("{key} {value}"))
         .collect();
     if pairs.is_empty() {
@@ -180,6 +190,9 @@ pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
             "NOT SATISFIED"
         }
     )?;
+    for unreadable in &view.unreadable {
+        writeln!(out, "  {unreadable}")?;
+    }
     for artifact in &view.artifacts {
         writeln!(
             out,
@@ -187,7 +200,7 @@ pub(super) fn status(view: &crate::project::StatusView) -> io::Result<()> {
             artifact.id,
             tags(&artifact.tags),
             if artifact.kind == crate::config::ArtifactKind::File {
-                format!(" [file: {}]", artifact.path.display())
+                format!(" [file: {}]", crate::platform::path_text(&artifact.path))
             } else {
                 String::new()
             },
@@ -263,7 +276,12 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
             "  Component {}{}: {}",
             component.id,
             if component.cyclic { " [cycle]" } else { "" },
-            component.artifacts.join(", ")
+            component
+                .artifacts
+                .iter()
+                .map(|id| id.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
         )?;
         for id in &component.artifacts {
             let artifact = view.artifacts[id];
@@ -284,10 +302,10 @@ pub(super) fn graph(view: &crate::query::GraphView<'_>) -> io::Result<()> {
                 if artifact.path.as_os_str().is_empty() {
                     ".".into()
                 } else {
-                    artifact.path.display().to_string()
+                    crate::platform::path_text(&artifact.path)
                 }
             )?;
-            for eval in view.evals.iter().filter(|eval| eval.target == *id) {
+            for eval in view.evals.iter().filter(|eval| eval.target == **id) {
                 writeln!(
                     out,
                     "      {}: {} -> {}",
@@ -336,11 +354,11 @@ pub(super) fn outcome_code(run: &crate::store::Run) -> u8 {
     if run.wait_timed_out {
         return 3;
     }
-    match run.status.as_str() {
-        "GREEN" => 0,
-        "RED" => 1,
-        "INCOMPLETE" => 4,
-        _ => 2,
+    match run.status() {
+        crate::types::RunStatus::Green => 0,
+        crate::types::RunStatus::Red => 1,
+        crate::types::RunStatus::Incomplete => 4,
+        crate::types::RunStatus::Running | crate::types::RunStatus::Error => 2,
     }
 }
 

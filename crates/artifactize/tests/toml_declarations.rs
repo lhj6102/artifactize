@@ -55,21 +55,21 @@ fn every_declaration_feature_is_standard_toml_with_owner_data_untouched() {
         ["a-agent", "h-human", "z-runtime"]
     );
     assert!(matches!(
-        declaration.evals[0].profile,
+        declaration.evals[0].profile(),
         Profile::Agent { .. }
     ));
-    assert!(matches!(declaration.evals[1].profile, Profile::Human {}));
+    assert!(matches!(declaration.evals[1].profile(), Profile::Human {}));
     assert!(matches!(
-        declaration.evals[2].profile,
+        declaration.evals[2].profile(),
         Profile::Runtime { .. }
     ));
-    assert_eq!(declaration.evals[0].profile_variants.len(), 1);
+    assert_eq!(declaration.evals[0].profile_variants().len(), 1);
     assert_eq!(
-        declaration.evals[0].payload.as_ref().unwrap().extra["ownerData"]["camelCase"],
+        declaration.evals[0].payload().as_ref().unwrap().extra["ownerData"]["camelCase"],
         true
     );
     assert_eq!(
-        declaration.evals[0].pass_schema.as_ref().unwrap()["properties"]["summary"]["minLength"],
+        declaration.evals[0].pass_schema().as_ref().unwrap()["properties"]["summary"]["minLength"],
         1
     );
     assert!(
@@ -197,7 +197,7 @@ fn datetimes_are_rejected_anywhere_with_the_full_owner_key_path() {
     let quoted = "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }\npayload = { instruction = 'Check.', date = '1979-05-27' }";
     assert_eq!(
         parse_declaration(quoted).unwrap().evals[0]
-            .payload
+            .payload()
             .as_ref()
             .unwrap()
             .extra["date"],
@@ -213,7 +213,7 @@ fn write(root: &Path, path: &str, source: &str) {
 
 #[test]
 fn errors_name_the_declaration_and_parser_or_serde_positions() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     for (source, detail, position) in [
         ("name = 'a'\nbroken = [", "unclosed", "line 2"),
         (
@@ -242,7 +242,7 @@ fn errors_name_the_declaration_and_parser_or_serde_positions() {
 
 #[test]
 fn legacy_files_fail_but_ignored_files_and_non_declarations_are_not_read() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     write(root.path(), "index.artf", "name = 'a'");
     write(root.path(), "nested/artifactize.json", "not JSON");
     let error = read_workspace_config(root.path()).unwrap_err().to_string();
@@ -270,7 +270,7 @@ fn legacy_files_fail_but_ignored_files_and_non_declarations_are_not_read() {
 #[test]
 fn serialized_and_saved_definitions_keep_camel_case_output_names() {
     let declaration = parse_declaration(FEATURES).unwrap();
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     write(root.path(), "index.artf", FEATURES);
     write(
         root.path(),
@@ -318,7 +318,7 @@ fn serialized_and_saved_definitions_keep_camel_case_output_names() {
     assert_eq!(eval["profile"]["timeoutMs"], 3000);
     assert_eq!(eval["profile"]["maxToolCalls"], 10);
     assert_eq!(eval["profile"]["maxTokens"], 1000);
-    let stored = artifactize::config::StoredProfile::from(&declaration.evals[0].profile);
+    let stored = artifactize::config::StoredProfile::from(declaration.evals[0].profile());
     let value = serde_json::to_value(stored).unwrap();
     assert_eq!(value["timeoutMs"], 3000);
     assert_eq!(
@@ -346,7 +346,7 @@ fn non_finite_numbers_are_not_silently_converted_to_json_null() {
 
 #[test]
 fn individually_ignored_legacy_markers_do_not_fail_discovery() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     write(root.path(), "index.artf", "name = 'a'");
     write(root.path(), "nested/index.artf", "name = 'b'");
     write(root.path(), "nested/artifactize.json", "not JSON");
@@ -362,17 +362,17 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
     let source = "name = 'release'\n[evals.ready]\ntitle = 'Inputs are ready'\nprofile = { kind = 'dependency', depends_on = ['input'] }";
     let declaration = parse_declaration(source).unwrap();
     assert_eq!(declaration.evals[0].id, "ready");
-    assert!(declaration.evals[0].payload.is_none());
+    assert!(declaration.evals[0].payload().is_none());
     assert!(matches!(
-        &declaration.evals[0].profile,
+        &declaration.evals[0].profile(),
         Profile::Dependency { depends_on } if depends_on == &["input"]
     ));
     let expected = json!({"kind":"dependency","dependsOn":["input"]});
     assert_eq!(
-        serde_json::to_value(&declaration.evals[0].profile).unwrap(),
+        serde_json::to_value(declaration.evals[0].profile()).unwrap(),
         expected
     );
-    let stored = artifactize::config::StoredProfile::from(&declaration.evals[0].profile);
+    let stored = artifactize::config::StoredProfile::from(declaration.evals[0].profile());
     let stored_value = serde_json::to_value(&stored).unwrap();
     assert_eq!(stored_value, expected);
     assert_eq!(
@@ -393,7 +393,7 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
         let error = parse_declaration(&format!("{source}\n{extra}")).unwrap_err();
         assert!(error.contains("Dependency Evals cannot declare"), "{error}");
     }
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     write(root.path(), "index.artf", source);
     write(
         root.path(),
@@ -423,7 +423,7 @@ fn dependency_eval_uses_toml_depends_on_and_keeps_saved_and_cli_depends_on_camel
 
 #[test]
 fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     write(root.path(), "index.artf", "name = 'root'");
     write(
         root.path(),
@@ -456,7 +456,7 @@ fn legacy_named_directories_follow_directory_ignore_and_discovery_rules() {
 
 #[test]
 fn unsupported_toml_values_report_the_value_position_and_full_key_path() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     for (source, path, line, column) in [
         ("name = 'a'\n# Comment\nstamp = 1979-05-27\n", "stamp", 3, 9),
         (
@@ -502,7 +502,7 @@ fn unsupported_toml_values_report_the_value_position_and_full_key_path() {
 
 #[test]
 fn semantic_errors_include_the_typed_key_path_and_source_position() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     for (source, path, line) in [
         ("name = '_bad'", "name", 1),
         ("name = 'a'\ntags = ['same', 'same']", "tags", 2),
@@ -624,7 +624,7 @@ fn null_syntax_is_rejected_by_the_production_toml_parser_at_every_boundary() {
 fn owner_payload_keys_do_not_collide_with_toml_datetime_serde_internals() {
     let source = "name = 'a'\n[evals.check]\ntitle = 'Check'\nprofile = { kind = 'human' }\n[evals.check.payload]\ninstruction = 'Check.'\n'$__toml_private_datetime' = '1979-05-27'\nowner = { '$__toml_private_datetime' = '07:32:00', other = true }";
     let declaration = parse_declaration(source).unwrap();
-    let extra = &declaration.evals[0].payload.as_ref().unwrap().extra;
+    let extra = &declaration.evals[0].payload().as_ref().unwrap().extra;
     assert_eq!(extra["$__toml_private_datetime"], "1979-05-27");
     assert_eq!(
         extra["owner"],
@@ -634,7 +634,7 @@ fn owner_payload_keys_do_not_collide_with_toml_datetime_serde_internals() {
 
 #[test]
 fn cross_artifact_validation_errors_keep_the_referencing_field_position() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     for (source, path, line) in [
         (
             "name = 'a'\nmounts = { input = 'missing' }",
@@ -729,7 +729,7 @@ fn json_backed_tool_and_fingerprint_fields_report_the_offending_field_span() {
 
 #[test]
 fn explicitly_listed_artf_files_are_rejected_before_opening_for_artifactsum() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     for input in ["index.artf", "missing.png.artf", "existing.png.artf"] {
         write(root.path(), "existing.png", "pixels");
         write(root.path(), "existing.png.artf", "name = 'image'");

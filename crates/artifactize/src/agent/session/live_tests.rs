@@ -3,18 +3,18 @@ use super::{
     live::{self, Reader, Resolution, Source},
     *,
 };
-use crate::{platform, store};
+use crate::store;
 use serde_json::json;
 use std::{fs, io::Write};
 
 pub(crate) fn fixture() -> (tempfile::TempDir, Source) {
-    let root = tempfile::tempdir().unwrap();
-    platform::create_private_dir_all(&directory(root.path())).unwrap();
+    let root = crate::test_os::tempdir();
+    crate::test_os::create_private_dir_all(&directory(root.path()));
     let source = Source {
         state: root.path().into(),
         reference: SessionRef {
             producer: store::Producer::current().name,
-            state: "state".into(),
+            state: "state".parse().unwrap(),
             run_id: "run".parse().unwrap(),
             request_id: "request".parse().unwrap(),
             session_id: "session".parse().unwrap(),
@@ -41,14 +41,7 @@ fn header(source: &Source) -> String {
 }
 pub(crate) fn write(source: &Source, text: &str) {
     let path = path(&source.state, &source.reference.session_id).unwrap();
-    let mut file = platform::private_options()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(path)
-        .unwrap();
-    file.write_all(text.as_bytes()).unwrap();
-    platform::restrict_file(&file).unwrap();
+    crate::test_os::rewrite_private_file(&path, text);
 }
 pub(crate) fn append(source: &Source, text: &str) {
     fs::OpenOptions::new()
@@ -292,8 +285,7 @@ fn truncate_replacement_same_size_and_gc_reset_even_when_paused() {
     assert!(finish(&mut reader, 80, 10, Position::Row(5)).reset);
     let path = path(&source.state, "session").unwrap();
     let replacement = path.with_extension("new");
-    fs::write(&replacement, header(&source) + &answer("replacement")).unwrap();
-    platform::restrict_file(&fs::File::open(&replacement).unwrap()).unwrap();
+    crate::test_os::write_private_file(&replacement, header(&source) + &answer("replacement"));
     fs::rename(replacement, &path).unwrap();
     assert!(finish(&mut reader, 80, 20, Position::Bottom).reset);
     fs::remove_file(path).unwrap();
@@ -303,16 +295,13 @@ fn truncate_replacement_same_size_and_gc_reset_even_when_paused() {
     assert!(removed.status.unwrap().contains("session GC"));
 }
 
+// Unix modes, FIFOs and symlinks; the Windows counterpart below checks DACLs and junctions.
 #[cfg(unix)]
 #[test]
 fn links_fifo_permissions_and_directory_links_are_refused() {
-    use std::os::unix::{
-        ffi::OsStrExt,
-        fs::{PermissionsExt, symlink},
-    };
     let (root, source) = fixture();
     let file = path(&source.state, "session").unwrap();
-    fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+    crate::test_os::set_mode(&file, 0o644);
     assert!(
         Reader::new(source.clone())
             .step(80, 20, Position::Bottom)
@@ -321,7 +310,9 @@ fn links_fifo_permissions_and_directory_links_are_refused() {
             .contains("private")
     );
     fs::remove_file(&file).unwrap();
-    symlink("/etc/passwd", &file).unwrap();
+    let outside = root.path().join("outside");
+    fs::write(&outside, "not a session").unwrap();
+    crate::test_os::symlink_file(&outside, &file).unwrap();
     assert!(
         Reader::new(source.clone())
             .step(80, 20, Position::Bottom)
@@ -329,9 +320,7 @@ fn links_fifo_permissions_and_directory_links_are_refused() {
             .is_some()
     );
     fs::remove_file(&file).unwrap();
-    let name = std::ffi::CString::new(file.as_os_str().as_bytes()).unwrap();
-    // SAFETY: name is a valid NUL-terminated fixture path and mode is a valid permission mask.
-    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    crate::test_os::fifo(&file);
     assert!(
         Reader::new(source.clone())
             .step(80, 20, Position::Bottom)
@@ -342,8 +331,34 @@ fn links_fifo_permissions_and_directory_links_are_refused() {
     fs::remove_file(file).unwrap();
     fs::remove_dir(directory(root.path())).unwrap();
     let elsewhere = root.path().join("elsewhere");
-    platform::create_private_dir_all(&elsewhere).unwrap();
-    symlink(elsewhere, directory(root.path())).unwrap();
+    crate::test_os::create_private_dir_all(&elsewhere);
+    crate::test_os::symlink_dir(elsewhere, directory(root.path())).unwrap();
+    assert!(
+        Reader::new(source)
+            .step(80, 20, Position::Bottom)
+            .status
+            .is_some()
+    );
+}
+
+// The Windows counterpart of the Unix check above: a shared DACL and a junction.
+#[cfg(windows)]
+#[test]
+fn shared_sessions_and_directory_junctions_are_refused() {
+    let (root, source) = fixture();
+    let file = path(&source.state, "session").unwrap();
+    crate::test_os::grant_everyone_read(&file);
+    assert!(
+        Reader::new(source.clone())
+            .step(80, 20, Position::Bottom)
+            .status
+            .is_some()
+    );
+    fs::remove_file(file).unwrap();
+    fs::remove_dir(directory(root.path())).unwrap();
+    let elsewhere = root.path().join("elsewhere");
+    crate::test_os::create_private_dir_all(&elsewhere);
+    crate::test_os::junction(&elsewhere, &directory(root.path()));
     assert!(
         Reader::new(source)
             .step(80, 20, Position::Bottom)
@@ -417,7 +432,7 @@ fn controller_empty_exact_viewport_and_more_than_u16_rows() {
 
 #[tokio::test]
 async fn resolution_running_foreign_and_remote_never_uses_remote_path() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
@@ -440,7 +455,7 @@ async fn resolution_running_foreign_and_remote_never_uses_remote_path() {
         live::resolve(&state, &view).await.unwrap(),
         Resolution::Local(Source { saved: true, .. })
     ));
-    view.request.session.as_mut().unwrap().state = "foreign-state".into();
+    view.request.session.as_mut().unwrap().state = "foreign-state".parse().unwrap();
     assert!(matches!(
         live::resolve(&state, &view).await.unwrap(),
         Resolution::Unavailable(_)
@@ -460,7 +475,7 @@ async fn resolution_running_foreign_and_remote_never_uses_remote_path() {
 
 #[tokio::test]
 async fn reused_original_and_execution_reference_resolve_the_original_identity() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let state = root.path().join("state");
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
@@ -485,7 +500,7 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
         "runId":"run-1",
         "requestId":original.request.id,
         "evalId":"app/original",
-        "evalDefHash":"hash",
+        "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
         "completedAt":null,
     }))
     .unwrap();
@@ -520,7 +535,7 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
             "id":"execution-fixture",
             "key":null,
             "fingerprint":null,
-            "evalDefHash":"hash",
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
             "ownerPid":0,
             "ownerStartTime":0,
             "status":"RUNNING",
@@ -543,7 +558,7 @@ async fn reused_original_and_execution_reference_resolve_the_original_identity()
     assert_eq!(execution_source.reference, source.reference);
     assert!(execution_source.saved);
     follower.request.session = Some(SessionRef {
-        state: "remote-state".into(),
+        state: "remote-state".parse().unwrap(),
         producer: "remote@host".into(),
         ..source.reference
     });

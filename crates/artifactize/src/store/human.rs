@@ -10,8 +10,8 @@ use super::{
 #[serde(rename_all = "camelCase")]
 pub struct HumanClaim {
     pub request_id: crate::types::RequestId,
-    pub reviewer: String,
-    pub claimed_at: String,
+    pub reviewer: crate::types::ReviewerId,
+    pub claimed_at: crate::types::Timestamp,
 }
 
 fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), Error> {
@@ -22,15 +22,18 @@ fn waiting(db: &rusqlite::Connection, id: &str) -> Result<(Request, Execution), 
             |row| row.get(0),
         )
         .optional()?;
-    let execution: Execution = serde_json::from_str(
-        &data.ok_or_else(|| Error::Invalid("Request is not waiting for a Human review.".into()))?,
-    )?;
+    let data =
+        data.ok_or_else(|| Error::Invalid("Request is not waiting for a Human review.".into()))?;
+    let execution: Execution = super::unreadable::evidence("execution", &data)
+        .ok_or_else(|| Error::Invalid(format!("Request {id} has an unreadable execution.")))?;
     let data: String = db.query_row(
         "SELECT data FROM requests WHERE id=? AND status='WAITING_HUMAN'",
         [&execution.provenance.request_id],
         |row| row.get(0),
     )?;
-    let request: Request = serde_json::from_str(&data)?;
+    let request: Request =
+        super::unreadable::decode("request", execution.provenance.request_id.as_str(), &data)
+            .map_err(|error| Error::Invalid(error.to_string()))?;
     if request.profile.kind() != crate::config::ProfileKind::Human
         || request.human_definition.is_none()
     {
@@ -64,8 +67,12 @@ fn unclaim(db: &rusqlite::Connection, request: &str) -> Result<(), Error> {
     Ok(())
 }
 
-fn claimant(db: &rusqlite::Connection, request: &str, reviewer: &str) -> Result<(), Error> {
-    let owner: Option<String> = db
+fn claimant(
+    db: &rusqlite::Connection,
+    request: &str,
+    reviewer: &crate::types::ReviewerId,
+) -> Result<(), Error> {
+    let owner: Option<crate::types::ReviewerId> = db
         .query_row(
             "SELECT claimed_by FROM requests WHERE id=?",
             [request],
@@ -73,7 +80,7 @@ fn claimant(db: &rusqlite::Connection, request: &str, reviewer: &str) -> Result<
         )
         .optional()?
         .flatten();
-    if owner.as_deref() != Some(reviewer) {
+    if owner.as_ref() != Some(reviewer) {
         return Err(Error::Invalid(
             "Only the Human claimant may perform this action.".into(),
         ));
@@ -91,12 +98,14 @@ impl Receipts {
                 let mut statement = db.prepare(
                     "SELECT data FROM requests WHERE id IN (SELECT value FROM json_each(?)) AND status!='WAITING_HUMAN'",
                 )?;
-                statement
-                    .query_map([serde_json::to_string(&ids)?], |row| {
-                        row.get::<_, String>(0)
-                    })?
-                    .map(|row| Ok(serde_json::from_str(&row?)?))
-                    .collect()
+                let rows = statement.query_map([serde_json::to_string(&ids)?], |row| {
+                    row.get::<_, String>(0)
+                })?;
+                rows.filter_map(|row| match row {
+                    Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
+                    Err(error) => Some(Err(Error::Sql(error))),
+                })
+                .collect()
             })
             .await
             .map_err(|e| e.to_string())
@@ -107,8 +116,6 @@ impl Receipts {
         execution: &Execution,
         request: &Request,
     ) -> Result<(), String> {
-        execution.validate()?;
-        request.validate()?;
         let execution = execution.clone();
         let request = request.clone();
         self.connection
@@ -122,8 +129,8 @@ impl Receipts {
                         params![
                             data,
                             execution.id,
-                            execution.owner_pid,
-                            execution.owner_start_time as i64
+                            execution.owner_pid(),
+                            execution.owner_start_time() as i64
                         ],
                     )? != 1
                     {
@@ -136,8 +143,8 @@ impl Receipts {
                         params![
                             execution.id,
                             execution.eval_def_hash,
-                            execution.owner_pid,
-                            execution.owner_start_time as i64,
+                            execution.owner_pid(),
+                            execution.owner_start_time() as i64,
                             data
                         ],
                     )?;
@@ -161,8 +168,17 @@ impl Receipts {
                     params![request.execution_id, request.key],
                     |row| row.get(0),
                 )?;
-                let execution: Execution = serde_json::from_str(&data)?;
-                if execution.status != crate::types::ExecutionStatus::WaitingHuman {
+                let Some(execution) = super::unreadable::evidence::<Execution>("execution", &data)
+                else {
+                    request.execution_id = None;
+                    request.state =
+                        super::RequestState::pending(crate::types::RequestStatus::Queued, None)
+                            .expect("queued state");
+                    update_request(&transaction, &request)?;
+                    transaction.commit()?;
+                    return Ok(request);
+                };
+                if execution.status() != crate::types::ExecutionStatus::WaitingHuman {
                     receive(&mut request, &execution);
                 }
                 update_request(&transaction, &request)?;
@@ -173,7 +189,11 @@ impl Receipts {
             .map_err(|e| e.to_string())
     }
 
-    pub(crate) async fn claim_human(&self, id: &str, reviewer: &str) -> Result<HumanClaim, String> {
+    pub(crate) async fn claim_human(
+        &self,
+        id: &str,
+        reviewer: &crate::types::ReviewerId,
+    ) -> Result<HumanClaim, String> {
         let id: crate::types::RequestId = id.parse()?;
         let reviewer = reviewer.to_owned();
         self.connection
@@ -198,7 +218,7 @@ impl Receipts {
     pub(crate) async fn release_human(
         &self,
         id: &str,
-        reviewer: &str,
+        reviewer: &crate::types::ReviewerId,
     ) -> Result<HumanClaim, String> {
         let id: crate::types::RequestId = id.parse()?;
         let reviewer = reviewer.to_owned();
@@ -234,7 +254,7 @@ impl Receipts {
     pub(crate) async fn human_request(
         &self,
         id: &str,
-        reviewer: &str,
+        reviewer: &crate::types::ReviewerId,
     ) -> Result<(Request, Execution), String> {
         let id: crate::types::RequestId = id.parse()?;
         let reviewer = reviewer.to_owned();
@@ -253,7 +273,7 @@ impl Receipts {
     pub(crate) async fn settle_human(
         &self,
         request: &Request,
-        reviewer: &str,
+        reviewer: &crate::types::ReviewerId,
     ) -> Result<Request, String> {
         let mut request = request.clone();
         let reviewer = reviewer.to_owned();
@@ -263,15 +283,24 @@ impl Receipts {
                     db.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
                 let (current, mut execution) = waiting(&transaction, &request.id)?;
                 claimant(&transaction, &current.id, &reviewer)?;
-                request.completed_at = Some(crate::broker::now());
+                request.state = match request.state {
+                    super::RequestState::Completed { result, .. } => {
+                        super::RequestState::completed(result, crate::broker::now())
+                    }
+                    super::RequestState::Failed { error, code, .. } => {
+                        super::RequestState::failed(error, code, crate::broker::now())
+                    }
+                    _ => {
+                        return Err(Error::Invalid(
+                            "A Human submission needs a result or error.".into(),
+                        ));
+                    }
+                };
+                request.queue = None;
                 request.blocked_reason = None;
-                execution.status = request.status.try_into().map_err(Error::Invalid)?;
-                execution.result = request.result.clone();
-                execution.error = request.error.clone();
-                execution.error_code = request.error_code.clone();
+                execution.state = request.state.clone().try_into().map_err(Error::Invalid)?;
                 execution.reviewer = Some(reviewer.clone());
-                execution.completed_at = request.completed_at.clone();
-                execution.provenance.completed_at = request.completed_at.clone();
+                execution.provenance.completed_at = request.completed_at();
                 request.provenance = Some(execution.provenance.clone());
                 let published = executions::settle(&transaction, &execution, &request)?;
                 let followers = {
@@ -280,7 +309,10 @@ impl Receipts {
                     )?;
                     statement
                         .query_map([&execution.id], |row| row.get::<_, String>(0))?
-                        .map(|row| Ok(serde_json::from_str(&row?)?))
+                        .filter_map(|row| match row {
+                            Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
+                            Err(error) => Some(Err(Error::Sql(error))),
+                        })
                         .collect::<Result<Vec<Request>, Error>>()?
                 };
                 for mut follower in followers {
@@ -312,15 +344,19 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
     let Some(waiting) = waiting else {
         return Ok(());
     };
-    let mut execution: Execution = serde_json::from_str(&waiting)?;
+    let Some(mut execution) = super::unreadable::evidence::<Execution>("execution", &waiting)
+    else {
+        return Ok(());
+    };
     let now = crate::broker::now();
-    execution.status = crate::types::ExecutionStatus::Error;
-    execution.error = Some(format!(
-        "Superseded by the completed result {} for this key.",
-        entry.id
-    ));
-    execution.error_code = Some("SUPERSEDED".into());
-    execution.completed_at = Some(now.clone());
+    execution.state = super::ExecutionState::Failed {
+        error: format!(
+            "Superseded by the completed result {} for this key.",
+            entry.id
+        ),
+        code: Some(crate::types::FailureCode::Superseded),
+        at: now,
+    };
     execution.provenance.completed_at = Some(now);
     db.execute(
         "UPDATE executions SET status='ERROR',data=? WHERE id=? AND status='WAITING_HUMAN'",
@@ -331,7 +367,10 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
             .prepare("SELECT data FROM requests WHERE execution_id=? AND status='WAITING_HUMAN'")?;
         statement
             .query_map([&execution.id], |row| row.get::<_, String>(0))?
-            .map(|row| Ok(serde_json::from_str(&row?)?))
+            .filter_map(|row| match row {
+                Ok(data) => super::unreadable::evidence("request", &data).map(Ok),
+                Err(error) => Some(Err(Error::Sql(error))),
+            })
             .collect::<Result<Vec<Request>, Error>>()?
     };
     for mut follower in followers {
@@ -344,6 +383,4 @@ pub(super) fn settle_waiting(db: &rusqlite::Connection, entry: &Execution) -> Re
 
 fn receive(request: &mut Request, execution: &Execution) {
     crate::cache::reuse(request, execution, crate::broker::now());
-    request.error = execution.error.clone();
-    request.error_code = execution.error_code.clone();
 }

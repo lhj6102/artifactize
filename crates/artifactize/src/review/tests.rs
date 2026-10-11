@@ -8,29 +8,20 @@ const ID: &str = "run-1-3";
 
 #[tokio::test]
 async fn visual_precedes_editor_and_reads_the_saved_review() {
-    use std::{fs, process::Command};
-    if std::env::var_os("ARTIFACTIZE_EDITOR_SEAM").is_some() {
+    if crate::platform::environment::var("ARTIFACTIZE_EDITOR_SEAM").is_some() {
         assert_eq!(edit("original".into()).await.unwrap(), "edited by visual");
         return;
     }
-    let root = tempfile::tempdir().unwrap();
-    let script = root.path().join("editor.py");
-    fs::write(
-        &script,
-        "import pathlib,sys\npathlib.Path(sys.argv[1]).write_text('edited by visual')\n",
-    )
-    .unwrap();
-    let output = Command::new(std::env::current_exe().unwrap())
-        .args([
-            "--exact",
-            "review::tests::visual_precedes_editor_and_reads_the_saved_review",
-            "--nocapture",
-        ])
-        .env("ARTIFACTIZE_EDITOR_SEAM", "1")
-        .env("VISUAL", format!("python3 \"{}\"", script.display()))
-        .env("EDITOR", "artifactize-editor-that-must-not-run")
-        .output()
-        .unwrap();
+    let root = crate::test_os::tempdir();
+    let editor = crate::test_os::editor_command(root.path(), "edited by visual");
+    let output = crate::test_os::run_test(
+        "review::tests::visual_precedes_editor_and_reads_the_saved_review",
+        &[
+            ("ARTIFACTIZE_EDITOR_SEAM", "1".into()),
+            ("VISUAL", editor.into()),
+            ("EDITOR", "artifactize-editor-that-must-not-run".into()),
+        ],
+    );
     assert!(
         output.status.success(),
         "{}{}",
@@ -46,12 +37,9 @@ fn spinner_frames_keep_the_existing_hundred_millisecond_cadence_and_cast_order()
     assert_eq!(view::spinner(Duration::from_millis(100)), "⠙");
     assert_eq!(view::spinner(Duration::from_millis(999)), "⠏");
     assert_eq!(view::spinner(Duration::from_millis(1000)), "⠋");
-    let previous_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let large = Duration::MAX;
-    assert_eq!(
-        view::spinner(large),
-        previous_frames[(large.as_millis() / 100) as usize % previous_frames.len()]
-    );
+    // The cast truncates to the pointer width before indexing; pin both contracts.
+    let expected = "⠴";
+    assert_eq!(view::spinner(Duration::MAX), expected);
 }
 
 fn definition(pass: Value, fail: Value) -> Value {
@@ -86,7 +74,7 @@ fn definition(pass: Value, fail: Value) -> Value {
                         "open":{
                             "description":"Open {artifactName}.",
                             "kind":"launch",
-                            "command":"xdg-open",
+                            "command":"show-release",
                             "args":["{artifactPath}"],
                         },
                     },
@@ -175,8 +163,8 @@ pub(crate) fn builtins() -> Value {
 pub(crate) fn claim(reviewer: &str) -> HumanClaim {
     HumanClaim {
         request_id: ID.parse().unwrap(),
-        reviewer: reviewer.into(),
-        claimed_at: "2026-01-01T00:00:30Z".into(),
+        reviewer: reviewer.parse().unwrap(),
+        claimed_at: "2026-01-01T00:00:30Z".parse().unwrap(),
     }
 }
 
@@ -190,11 +178,14 @@ fn view(status: &str, reviewer: Option<&str>, definition: Value) -> RequestView 
             "title":"Approve",
             "profile":{"kind":"human"},
             "requestedProfile":{"kind":"human"},
-            "evalDefHash":"hash",
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
             "payload":{"instruction":"Approve the notes."},
             "references":{},
             "deps":[],
             "status":status,
+            "result": if matches!(status, "GREEN" | "RED") { json!({"verdict":status}) } else { Value::Null },
+            "error": if status == "ERROR" { json!("fixture error") } else { Value::Null },
+            "completedAt": if matches!(status, "GREEN" | "RED" | "ERROR") { json!("2026-01-01T00:00:01Z") } else { Value::Null },
             "createdAt":"2026-01-01T00:00:00Z",
             "cwd":"/repo",
             "humanDefinition":definition,
@@ -210,8 +201,8 @@ pub(crate) fn opened(reviewer: Option<&str>, definition: Value) -> Review {
     let mut review = Review::new(
         "/state".into(),
         Some("/repo".into()),
-        "alice".into(),
-        Some(ID.into()),
+        "alice".parse().unwrap(),
+        Some(ID.parse().unwrap()),
     );
     review.request = Some(view("WAITING_HUMAN", reviewer, definition));
     review
@@ -261,9 +252,10 @@ fn command(args: &[&str]) -> CommandLine {
 }
 
 fn printed(text: &str, is_error: bool) -> Result<ToolResult, String> {
-    Ok(ToolResult {
-        content: vec![Content::Text { text: text.into() }],
-        is_error,
+    Ok(if is_error {
+        ToolResult::error(text)
+    } else {
+        ToolResult::success(Content::Text { text: text.into() })
     })
 }
 
@@ -322,14 +314,14 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
             (
                 "open_release",
                 HumanToolKind::Launch,
-                &Runs::Command("xdg-open {artifactPath}".into())
+                &Runs::Command("show-release {artifactPath}".into())
             ),
         ]
     );
     assert_eq!(tools[0].description, "Print the notes of release.");
     assert_eq!(
-        shell(["sh", "-c", "echo 'hi' $HOME", ""]),
-        r#"sh -c 'echo '\''hi'\'' $HOME' ''"#
+        shell(["tool", "-c", "echo 'hi' $THING", ""]),
+        r#"tool -c "echo 'hi' $THING" """#
     );
     let text = screen(&mut review);
     for expected in [
@@ -380,7 +372,7 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
     ] {
         assert!(text.contains(expected), "{expected}\n{text}");
     }
-    assert!(!text.contains("xdg-open"), "{text}");
+    assert!(!text.contains("show-release"), "{text}");
 }
 
 #[test]
@@ -388,10 +380,10 @@ fn shared_requests_name_where_actions_go_in_the_metadata() {
     let mut review = opened(None, demo());
     let execution = |request: &str| {
         let provenance = json!({"repoPath":"/origin","runId":"run-0","requestId":request,
-            "evalId":"release/signoff","evalDefHash":"hash","completedAt":null});
+            "evalId":"release/signoff","evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","completedAt":null});
         serde_json::from_value(
             json!({"id":"execution-fixture","key":null,"fingerprint":null,
-            "evalDefHash":"hash","ownerPid":0,"ownerStartTime":0,"status":"WAITING_HUMAN",
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","ownerPid":0,"ownerStartTime":0,"status":"WAITING_HUMAN",
             "result":null,"error":null,"errorCode":null,"profile":{"kind":"human"},"usage":null,
             "provenance":provenance,"startedAt":"2026-01-01T00:00:00Z","completedAt":null}),
         )
@@ -420,11 +412,11 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
             ID.parse().unwrap(),
             [
                 (
-                    "notes_release".to_owned(),
+                    "notes_release".parse().unwrap(),
                     Ok(command(&["/repo/release/notes.md"])),
                 ),
                 (
-                    "open_release".to_owned(),
+                    "open_release".parse().unwrap(),
                     Err("Tool executable path is unavailable.".into()),
                 ),
             ]
@@ -439,14 +431,14 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     let run = |tool: &str| {
         Action::Start(Job::Run {
             id: ID.parse().unwrap(),
-            tool: tool.into(),
+            tool: tool.parse().unwrap(),
             claim: false,
         })
     };
     // No confirmation: Enter starts the run job every time.
     assert_eq!(press(&mut review, KeyCode::Enter), run("notes_release"));
     let ran = review.finish(Outcome::Ran {
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claimed: None,
         result: printed("# Release notes\n", false),
     });
@@ -462,13 +454,13 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     press(&mut review, KeyCode::Down);
     let text = screen(&mut review);
     assert!(
-        text.contains("$ xdg-open {artifactPath}")
+        text.contains("$ show-release {artifactPath}")
             && text.contains("Tool executable path is unavailable."),
         "{text}"
     );
 
     review.finish(Outcome::Ran {
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claimed: None,
         result: printed("Human tool exited unsuccessfully (exit status: 1).\n", true),
     });
@@ -483,16 +475,13 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
         "{text}"
     );
     review.finish(Outcome::Ran {
-        tool: "open_release".into(),
+        tool: "open_release".parse().unwrap(),
         claimed: None,
-        result: Ok(ToolResult {
-            content: vec![Content::Launch { launched: true }],
-            is_error: false,
-        }),
+        result: Ok(ToolResult::success(Content::Launch { launched: true })),
     });
     assert!(screen(&mut review).contains("open_release launched."));
     review.finish(Outcome::Ran {
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claimed: None,
         result: Err("Human Artifact scope or eval declarations changed.".into()),
     });
@@ -533,7 +522,7 @@ fn requests_claimed_by_others_or_settled_are_read_only() {
 #[test]
 fn review_keys_need_detail_focus_and_an_owned_request() {
     // On the list, review letters do nothing; c never claims there.
-    let mut review = Review::new("/state".into(), None, "alice".into(), None);
+    let mut review = Review::new("/state".into(), None, "alice".parse().unwrap(), None);
     review.set_waiting(vec![view("WAITING_HUMAN", None, demo())]);
     for key in ['c', 'g', 'u', 'i', 't'] {
         assert_eq!(
@@ -654,12 +643,12 @@ fn i_expands_the_instruction_and_tools_focus_widens_the_tools() {
 
 #[tokio::test]
 async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
-    let state = tempfile::tempdir().unwrap();
+    let state = crate::test_os::tempdir();
     let mut review = Review::new(
         state.path().join("state"),
         None,
-        "alice".into(),
-        Some(ID.into()),
+        "alice".parse().unwrap(),
+        Some(ID.parse().unwrap()),
     );
     review.request = Some(view("WAITING_HUMAN", None, demo()));
     claimed(&mut review);
@@ -834,7 +823,7 @@ fn flat_forms_cover_booleans_choices_numbers_and_optional_fields() {
             "seen":{"type":"boolean"},
         },
     });
-    let mut form = Form::new("GREEN", Some(&schema));
+    let mut form = Form::new(crate::runtime::Verdict::Green, Some(&schema));
     assert!(form.json.is_none());
     let names: Vec<_> = form
         .fields
@@ -914,12 +903,14 @@ fn flat_forms_cover_booleans_choices_numbers_and_optional_fields() {
         (json!({}), true),
     ] {
         assert_eq!(
-            Form::new("RED", Some(&schema)).json.is_none(),
+            Form::new(crate::runtime::Verdict::Red, Some(&schema))
+                .json
+                .is_none(),
             flat,
             "{schema}"
         );
     }
-    let empty = Form::new("GREEN", None);
+    let empty = Form::new(crate::runtime::Verdict::Green, None);
     assert_eq!(empty.result().unwrap(), json!({"verdict":"GREEN"}));
     assert_eq!(
         template(&json!({
@@ -1009,7 +1000,7 @@ fn a_running_job_only_scrolls_or_cancels() {
     let mut review = opened(Some("alice"), demo());
     drop(review.start(Job::Run {
         id: ID.parse().unwrap(),
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claim: false,
     }));
     assert!(review.busy());
@@ -1039,7 +1030,7 @@ fn a_running_job_only_scrolls_or_cancels() {
         "Esc cancels before stepping back"
     );
     review.finish(Outcome::Ran {
-        tool: "notes_release".into(),
+        tool: "notes_release".parse().unwrap(),
         claimed: None,
         result: printed("Human tool call was cancelled.", true),
     });
@@ -1047,10 +1038,10 @@ fn a_running_job_only_scrolls_or_cancels() {
 }
 
 fn listed() -> Review {
-    let mut review = Review::new("/state".into(), None, "alice".into(), None);
+    let mut review = Review::new("/state".into(), None, "alice".parse().unwrap(), None);
     let mut other = view("WAITING_HUMAN", Some("bob"), demo());
     other.request.id = "run-2-1".parse().unwrap();
-    other.request.eval_id = "docs/check".into();
+    other.request.eval_id = "docs/check".parse().unwrap();
     review.set_waiting(vec![other, view("WAITING_HUMAN", Some("alice"), demo())]);
     review.refreshed = Some(OffsetDateTime::now_utc());
     review
@@ -1169,7 +1160,7 @@ fn a_bracketed_paste_reaches_only_the_focused_field() {
     assert_eq!(review.focus(), Focus::List);
     review.paste("ignored");
     assert_eq!(
-        review.drafts["RED"].fields[0].display(),
+        review.drafts[&crate::runtime::Verdict::Red].fields[0].display(),
         "needs 한글\nwork q\u{1b}"
     );
 }
@@ -1240,14 +1231,18 @@ fn json_cursors_stay_on_utf8_boundaries_when_the_text_is_replaced() {
 fn control_characters_never_break_one_row_texts() {
     let mut review = listed();
     for view in &mut review.waiting {
-        view.request.eval_id = format!("{}\n\tx", view.request.eval_id);
+        assert!(
+            format!("{}\n\tx", view.request.eval_id)
+                .parse::<crate::types::EvalId>()
+                .is_err()
+        );
         view.request.title = "Ap\nprove\u{1b}[31m".into();
     }
     let rows = |text: &str| text.lines().map(str::to_owned).collect::<Vec<_>>();
     // The list cells and the Preview title stay on their rows.
     let text = screen(&mut review);
-    assert!(text.contains("docs/check  x"), "{text}");
-    assert!(text.contains("docs/check  x · Ap prove[31m"), "{text}");
+    assert!(text.contains("docs/check"), "{text}");
+    assert!(text.contains("docs/check · Ap prove[31m"), "{text}");
     assert!(!text.contains('\u{1b}'));
     for row in rows(&text) {
         assert_eq!(row.chars().count(), 140, "{text}");
@@ -1255,11 +1250,8 @@ fn control_characters_never_break_one_row_texts() {
     // So do the Detail's title and the Compact list.
     press(&mut review, KeyCode::Enter);
     let text = screen(&mut review);
-    assert!(
-        text.contains("docs/check  x · Ap prove[31m · CLAIM"),
-        "{text}"
-    );
-    assert!(text.contains("? docs/check  x"), "{text}");
+    assert!(text.contains("docs/check · Ap prove[31m · CLAIM"), "{text}");
+    assert!(text.contains("? docs/check"), "{text}");
     for row in rows(&text) {
         assert_eq!(row.chars().count(), 140, "{text}");
     }
@@ -1407,7 +1399,7 @@ fn clicks_focus_select_and_run_tools_and_f2_turns_the_mouse_off() {
         click(&mut review, row),
         Action::Start(Job::Run {
             id: ID.parse().unwrap(),
-            tool: "open_release".into(),
+            tool: "open_release".parse().unwrap(),
             claim: false,
         })
     );

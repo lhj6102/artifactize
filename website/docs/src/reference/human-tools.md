@@ -1,6 +1,9 @@
 # Human tools
 
 [Human reviews](../guides/human-reviews.md#human-tools) shows a Human tool declaration.
+A Human tool is a command or a [built-in tool](builtin-tools.md) (`read`, `list`,
+`section`, `help` or `open`). Built-ins use the same placeholders and scope checks
+for their target and run inside artifactize; the rest of this page is about commands.
 
 Arguments are fixed literal argv, with scope placeholders only: `{artifactPath}`
 is the declaring Artifact's canonical target path (a folder or file); `{name}`
@@ -16,7 +19,8 @@ metadata is checked at each call. File-target regularity/existence and no-symlin
 checks happen at discovery and on every tool call too, even with
 `fingerprint = false`; a failed check runs no command.
 
-Executable resolution is identical to Agent tools: bare names use PATH, relative
+Executable resolution is identical to Agent tools: bare names use PATH (with
+PATHEXT on Windows), relative
 names containing `/` are owner-relative scoped paths (`./tool` is accepted), and
 absolute executables run as given. No shell is added; the cwd is the declaring
 Artifact's working directory (the containing folder for a file Artifact).
@@ -61,7 +65,8 @@ The internal library exposes asynchronous operations with an open `store::Receip
 
 - `human::claim(receipts, request_id, reviewer)` acquires one reviewer lock.
   Repeating the same reviewer is idempotent; another reviewer is refused.
-  `human::default_reviewer()` reads `$USER`. There are no reservations, renewals,
+  `human::default_reviewer()` reads `$USER` (`USERNAME` is the Windows fallback).
+  There are no reservations, renewals,
   expiry timers, preparation phases, readiness hooks or alarms.
 - `human::unclaim(receipts, request_id, reviewer)` releases that lock without a
   verdict, so another reviewer can claim the request. Only the claimant can release,
@@ -71,17 +76,24 @@ The internal library exposes asynchronous operations with an open `store::Receip
   and, only when the request has a reuse key, checks the fingerprint before invoking a
   registered Human tool; requests without a reuse key skip the fingerprint-value
   check, not the file-target validation on each tool call. The tool takes
-  no free arguments and uses the reviewer's real environment. Ordinary tool errors
+  no free arguments and uses the reviewer's real environment. Changed scope or
+  declarations (including a tool command) refuse reconnection rather than running
+  an updated declaration. Ordinary tool errors
   are correctable actions, not verdicts. Human tool runs are not recorded.
-- `human::tool_command(receipts, request_id, tool)` resolves what that tool would
-  run (repository, program, argv and directory) without claiming or running it.
+- `human::tool_commands(receipts, request_id)` reloads the recorded scope and
+  returns a map from command-tool names to resolved command lines (repository,
+  program, argv and directory) or per-tool errors, without claiming or running
+  anything. Built-ins have no command line and are omitted.
 - `human::submit(receipts, request_id, reviewer, result, cancellation)` accepts
   GREEN/RED with fields matching `pass_schema`/`fail_schema`, using the Agent result
   validator without repair. Invalid or oversized results (over 256000 JSON bytes)
   leave the request waiting for correction; schema errors list up to five failing
   instance paths. A valid submission recomputes the fingerprint only when the request
-  has a reuse key; requests without one skip the recheck. A changed value settles
-  ERROR/INPUT_CHANGED instead of the verdict.
+  has a reuse key; requests without one skip the fingerprint-value recheck, not
+  discovery or reconnection. Missing/invalid file targets or changed recorded
+  scope/declarations cause reconnection to fail before submission and leave the
+  request waiting. After successful reconnection, a changed fingerprint value
+  settles ERROR/INPUT_CHANGED instead of the verdict.
   Settlement rechecks the claimant and waiting state transactionally, so a second
   submission fails. It releases the reviewer lock, completes saved followers, and
   publishes only GREEN/RED results with a fingerprint to the cache.

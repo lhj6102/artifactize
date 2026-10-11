@@ -1,7 +1,7 @@
 # Quick start (5 minutes, no model needed)
 
-The tour uses the example projects in the repository. If you installed with the
-install script, `cargo binstall` or `cargo install`, clone it first:
+The tour uses the example projects in the repository. Unless you built from a
+checkout, clone it first:
 
 ```sh
 git clone https://github.com/lhj6102/artifactize
@@ -21,6 +21,10 @@ artifactize run show RUN_ID # the saved Run as JSON: argv, stdout, fingerprint
 artifactize verify --all    # exit 0 and nothing executes: all three results are reused
 artifactize status          # exit 0: every eval shows "PASS — reuse"
 ```
+
+In PowerShell, set the state directory with
+`$env:ARTIFACTIZE_STATE_HOME = (New-Item -ItemType Directory (Join-Path $env:TEMP (New-Guid))).FullName`
+instead; the `artifactize` commands are the same.
 
 The [runtime-relations README](https://github.com/lhj6102/artifactize/tree/main/examples/runtime-relations) also shows how to make a check RED. Each folder declares itself in
 TOML `index.artf`; omission of `fingerprint` uses artifactsum. To disable reuse, set

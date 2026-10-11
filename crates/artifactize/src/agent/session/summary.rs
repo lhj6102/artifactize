@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 
 use rig_core::message::{AssistantContent, Message, UserContent};
 use serde::Serialize;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 use super::Conversation;
 
@@ -13,13 +12,14 @@ use super::Conversation;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Summary {
-    pub backend: Option<String>,
-    pub model: Option<String>,
-    pub reasoning: Option<String>,
+    pub backend: Option<crate::config::Backend>,
+    pub model: Option<crate::config::ModelId>,
+    pub reasoning: Option<crate::config::Reasoning>,
     /// The first and last event's time.
-    pub started_at: Option<String>,
-    pub ended_at: Option<String>,
-    pub duration_ms: Option<u64>,
+    pub started_at: Option<crate::types::Timestamp>,
+    pub ended_at: Option<crate::types::Timestamp>,
+    #[serde(serialize_with = "crate::config::validation::milliseconds::serialize")]
+    pub duration_ms: Option<std::time::Duration>,
     pub follow_ups: usize,
     /// Every provider turn in order: the review's, then each follow-up's.
     pub turns: Vec<Turn>,
@@ -55,32 +55,18 @@ impl Summary {
         let header = conversation.header();
 
         let (started_at, ended_at) = (
-            conversation
-                .events
-                .first()
-                .and_then(|event| event.at.as_deref()),
-            conversation
-                .events
-                .last()
-                .and_then(|event| event.at.as_deref()),
+            conversation.events.first().and_then(|event| event.at),
+            conversation.events.last().and_then(|event| event.at),
         );
-        let instant = |text: &str| OffsetDateTime::parse(text, &Rfc3339).ok();
         let duration_ms = started_at
-            .and_then(instant)
-            .zip(ended_at.and_then(instant))
-            .map(|(start, end)| (end - start).whole_milliseconds().max(0) as u64);
+            .zip(ended_at)
+            .map(|(start, end)| end.since(start));
         let mut summary = Self {
-            backend: header.backend.map(|backend| {
-                serde_json::to_value(backend)
-                    .expect("backend is JSON")
-                    .as_str()
-                    .expect("backend is text")
-                    .to_owned()
-            }),
+            backend: header.backend,
             model: header.model.clone(),
-            reasoning: header.reasoning.clone(),
-            started_at: started_at.map(str::to_owned),
-            ended_at: ended_at.map(str::to_owned),
+            reasoning: header.reasoning,
+            started_at,
+            ended_at,
             duration_ms,
             follow_ups: conversation.sends(),
             turns: Vec::new(),
@@ -143,12 +129,10 @@ impl Summary {
         }
         let current = self.turns.last_mut().expect("the attempt's turn");
         current.attempts += 1;
-        for (name, value) in &attempt.usage {
-            if let Some(value) = value.as_u64() {
-                for tokens in [&mut current.tokens, &mut self.tokens] {
-                    let total = tokens.entry(name.clone()).or_default();
-                    *total = total.saturating_add(value);
-                }
+        for (name, value) in attempt.usage.iter() {
+            for tokens in [&mut current.tokens, &mut self.tokens] {
+                let total = tokens.entry(name.clone()).or_default();
+                *total = total.saturating_add(*value);
             }
         }
     }
@@ -239,8 +223,11 @@ mod tests {
                 .map(|event| serde_json::from_value(event).unwrap())
                 .collect(),
         });
-        assert_eq!(summary.backend.as_deref(), Some("openai"));
-        assert_eq!(summary.duration_ms, Some(2500));
+        assert_eq!(summary.backend, Some(crate::config::Backend::Openai));
+        assert_eq!(
+            summary.duration_ms,
+            Some(std::time::Duration::from_millis(2500))
+        );
         assert_eq!(summary.follow_ups, 1);
         let turns: Vec<_> = summary
             .turns

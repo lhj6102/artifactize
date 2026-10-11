@@ -1,12 +1,13 @@
 //! Dependency edges, strongly connected components, gates, and obligations.
 
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 
 use petgraph::{algo::kosaraju_scc, graph::DiGraph};
 use thiserror::Error;
 
 use crate::{
-    config::{Profile, RepoConfig},
+    config::{ArtifactName, EvalId, Profile, RepoConfig},
     runtime::Verdict,
 };
 
@@ -14,50 +15,77 @@ use crate::{
 #[error("{0}")]
 pub struct GraphError(pub String);
 
+/// A strongly-connected component's position in `Graph::components`, guarding it from
+/// arbitrary `usize` arithmetic: dependency-first, so a lower id is never a later
+/// component's dependency.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct ComponentId(usize);
+
+impl ComponentId {
+    /// Live graph and legacy saved components derive their identity from a list position.
+    /// Saved explicit IDs deserialize as the same unsigned integer, never arithmetic indices.
+    pub(crate) fn from_position(index: usize) -> Self {
+        Self(index)
+    }
+
+    pub(crate) fn index(self) -> usize {
+        self.0
+    }
+}
+
+impl std::fmt::Display for ComponentId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArtifactNode<'a> {
     pub basis: bool,
-    pub evals: Vec<&'a str>,
-    pub component: usize,
+    pub evals: Vec<&'a EvalId>,
+    pub component: ComponentId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Component<'a> {
-    pub artifacts: Vec<&'a str>,
+    pub artifacts: Vec<&'a ArtifactName>,
     /// Direct condensation dependencies, always earlier in the component list.
-    pub dependencies: Vec<usize>,
+    pub dependencies: Vec<ComponentId>,
     /// External Eval gates shared by every member; never includes SCC peers.
-    pub gates: Vec<&'a str>,
+    pub gates: Vec<&'a EvalId>,
 }
 
 #[derive(Debug)]
 pub struct Graph<'a> {
-    artifacts: BTreeMap<&'a str, ArtifactNode<'a>>,
-    evals: BTreeMap<&'a str, &'a str>,
+    artifacts: BTreeMap<ArtifactName, ArtifactNode<'a>>,
+    evals: BTreeMap<EvalId, &'a ArtifactName>,
     components: Vec<Component<'a>>,
-    derived: BTreeMap<&'a str, Vec<&'a str>>,
-    derived_order: Vec<&'a str>,
+    derived: BTreeMap<EvalId, Vec<&'a ArtifactName>>,
+    derived_order: Vec<&'a EvalId>,
 }
 
 impl<'a> Graph<'a> {
     /// Build from scope's resolved relations without reading files or running code.
     pub fn new(config: &'a RepoConfig) -> Result<Self, GraphError> {
-        let mut graph = DiGraph::<&str, ()>::new();
+        let mut graph = DiGraph::<&ArtifactName, ()>::new();
         let nodes: BTreeMap<_, _> = config
             .artifacts
             .keys()
-            .map(|id| (id.as_str(), graph.add_node(id.as_str())))
+            .map(|id| (id, graph.add_node(id)))
             .collect();
         let mut artifacts: BTreeMap<_, _> = config
             .artifacts
             .iter()
             .map(|(id, artifact)| {
                 (
-                    id.as_str(),
+                    id.clone(),
                     ArtifactNode {
                         basis: artifact.basis == Some(true),
                         evals: Vec::new(),
-                        component: 0,
+                        component: ComponentId(0),
                     },
                 )
             })
@@ -65,7 +93,7 @@ impl<'a> Graph<'a> {
         let mut evals = BTreeMap::new();
         for eval in &config.evals {
             let artifact = artifacts
-                .get_mut(eval.target.as_str())
+                .get_mut(&eval.target)
                 .ok_or_else(|| GraphError(format!("Unknown Eval target: {}", eval.target)))?;
             if artifact.basis {
                 return Err(GraphError(format!(
@@ -73,13 +101,10 @@ impl<'a> Graph<'a> {
                     eval.target
                 )));
             }
-            if evals
-                .insert(eval.id.as_str(), eval.target.as_str())
-                .is_some()
-            {
+            if evals.insert(eval.id.clone(), &eval.target).is_some() {
                 return Err(GraphError(format!("Duplicate Eval: {}", eval.id)));
             }
-            artifact.evals.push(eval.id.as_str());
+            artifact.evals.push(&eval.id);
         }
         for artifact in artifacts.values_mut() {
             artifact.evals.sort_unstable();
@@ -87,11 +112,11 @@ impl<'a> Graph<'a> {
         let mut edges = BTreeSet::new();
         for relation in &config.relations {
             for id in [&relation.source, &relation.target] {
-                if !nodes.contains_key(id.as_str()) {
+                if !nodes.contains_key(id) {
                     return Err(GraphError(format!("Unknown relation Artifact: {id}")));
                 }
             }
-            edges.insert((relation.target.as_str(), relation.source.as_str()));
+            edges.insert((&relation.target, &relation.source));
         }
         // Consumer -> input makes iterative SCC traversal dependency-first.
         for &(consumer, dependency) in &edges {
@@ -111,23 +136,23 @@ impl<'a> Graph<'a> {
             .collect();
         for (index, component) in components.iter().enumerate() {
             for id in &component.artifacts {
-                artifacts.get_mut(id).unwrap().component = index;
+                artifacts.get_mut(id.as_str()).unwrap().component = ComponentId(index);
             }
         }
         let mut dependencies = vec![BTreeSet::new(); components.len()];
         for (consumer, dependency) in edges {
-            let consumer = artifacts[consumer].component;
-            let dependency = artifacts[dependency].component;
+            let consumer = artifacts[consumer.as_str()].component;
+            let dependency = artifacts[dependency.as_str()].component;
             if consumer != dependency {
                 debug_assert!(dependency < consumer);
-                dependencies[consumer].insert(dependency);
+                dependencies[consumer.index()].insert(dependency);
             }
         }
         for (index, dependencies) in dependencies.into_iter().enumerate() {
             let mut gates: Vec<_> = dependencies
                 .iter()
-                .flat_map(|&dependency| &components[dependency].artifacts)
-                .flat_map(|id| &artifacts[id].evals)
+                .flat_map(|&dependency| &components[dependency.index()].artifacts)
+                .flat_map(|id| &artifacts[id.as_str()].evals)
                 .copied()
                 .collect();
             gates.sort_unstable();
@@ -137,19 +162,14 @@ impl<'a> Graph<'a> {
         let derived: BTreeMap<_, _> = config
             .evals
             .iter()
-            .filter(|eval| matches!(eval.declaration.profile, Profile::Dependency { .. }))
-            .map(|eval| {
-                (
-                    eval.id.as_str(),
-                    eval.deps.iter().map(String::as_str).collect::<Vec<_>>(),
-                )
-            })
+            .filter(|eval| matches!(eval.declaration.profile(), Profile::Dependency { .. }))
+            .map(|eval| (eval.id.clone(), eval.deps.iter().collect::<Vec<_>>()))
             .collect();
-        let mut waits = DiGraph::<&str, ()>::new();
-        let waiting: BTreeMap<_, _> = derived.keys().map(|&id| (id, waits.add_node(id))).collect();
-        for (&id, targets) in &derived {
+        let mut waits = DiGraph::<&EvalId, ()>::new();
+        let waiting: BTreeMap<_, _> = derived.keys().map(|id| (id, waits.add_node(id))).collect();
+        for (id, targets) in &derived {
             for target in targets {
-                for dependency in &artifacts[target].evals {
+                for dependency in &artifacts[target.as_str()].evals {
                     if let Some(&node) = waiting.get(dependency) {
                         waits.add_edge(waiting[id], node, ());
                     }
@@ -167,12 +187,24 @@ impl<'a> Graph<'a> {
                 cycles.sort_unstable();
                 GraphError(format!(
                     "Dependency Eval cycle: {}. Dependency Evals cannot wait on each other.",
-                    cycles.join(", ")
+                    cycles
+                        .iter()
+                        .map(|id| id.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ))
             })?
             .into_iter()
             .rev()
-            .map(|node| waits[node])
+            .map(|node| {
+                config
+                    .evals
+                    .iter()
+                    .find(|eval| eval.id == *waits[node])
+                    .expect("derived Eval exists")
+                    .id
+                    .borrow()
+            })
             .collect();
         Ok(Self {
             artifacts,
@@ -183,7 +215,7 @@ impl<'a> Graph<'a> {
         })
     }
 
-    pub fn artifacts(&self) -> &BTreeMap<&'a str, ArtifactNode<'a>> {
+    pub fn artifacts(&self) -> &BTreeMap<ArtifactName, ArtifactNode<'a>> {
         &self.artifacts
     }
 
@@ -193,12 +225,15 @@ impl<'a> Graph<'a> {
     }
 
     /// Required material and verification, including roots and all cycle peers.
-    pub fn dependency_closure(&self, roots: &[&str]) -> Result<Vec<&'a str>, GraphError> {
+    pub fn dependency_closure(
+        &self,
+        roots: &[&ArtifactName],
+    ) -> Result<Vec<&'a ArtifactName>, GraphError> {
         let mut pending = Vec::new();
         for root in roots {
             let artifact = self
                 .artifacts
-                .get(root)
+                .get(*root)
                 .ok_or_else(|| GraphError(format!("Unknown Artifact: {root}")))?;
             pending.push(artifact.component);
         }
@@ -208,7 +243,7 @@ impl<'a> Graph<'a> {
             if !visited.insert(index) {
                 continue;
             }
-            let component = &self.components[index];
+            let component = &self.components[index.index()];
             required.extend(component.artifacts.iter().copied());
             pending.extend(&component.dependencies);
         }
@@ -217,28 +252,30 @@ impl<'a> Graph<'a> {
 
     /// Evaluate the whole graph. Evidence freshness is supplied by the caller;
     /// absent entries are unreviewed, and unrelated entries are ignored.
-    pub fn evaluate(&self, evidence: &BTreeMap<String, Evidence>) -> Evaluation<'a> {
+    pub fn evaluate(&self, evidence: &BTreeMap<EvalId, Evidence>) -> Evaluation<'_> {
         self.evaluate_with_policy(evidence, false)
     }
 
     /// Gate bypass changes readiness, never the required final obligations.
     pub fn evaluate_with_policy(
         &self,
-        evidence: &BTreeMap<String, Evidence>,
+        evidence: &BTreeMap<EvalId, Evidence>,
         ignore_gates: bool,
-    ) -> Evaluation<'a> {
-        let mut evals: BTreeMap<&str, EvalEvaluation<'_>> = BTreeMap::new();
+    ) -> Evaluation<'_> {
+        let mut evals: BTreeMap<EvalId, EvalEvaluation<'_>> = BTreeMap::new();
         for component in &self.components {
             let unmet_gates: Vec<_> = component
                 .gates
                 .iter()
                 .copied()
-                .filter(|id| !ignore_gates && evals[id].status != EvalStatus::Green)
+                .filter(|id| !ignore_gates && evals[id.as_str()].status != EvalStatus::Green)
                 .collect();
-            let readiness = if unmet_gates
-                .iter()
-                .any(|id| matches!(evals[id].status, EvalStatus::Red | EvalStatus::Blocked))
-            {
+            let readiness = if unmet_gates.iter().any(|id| {
+                matches!(
+                    evals[id.as_str()].status,
+                    EvalStatus::Red | EvalStatus::Blocked
+                )
+            }) {
                 Readiness::Blocked
             } else if unmet_gates.is_empty() {
                 Readiness::Ready
@@ -248,19 +285,19 @@ impl<'a> Graph<'a> {
             let ordinary = component
                 .artifacts
                 .iter()
-                .flat_map(|id| &self.artifacts[id].evals)
+                .flat_map(|id| &self.artifacts[id.as_str()].evals)
                 .copied()
-                .filter(|id| !self.derived.contains_key(id));
+                .filter(|id| !self.derived.contains_key(id.as_str()));
             let derived = self
                 .derived_order
                 .iter()
                 .copied()
-                .filter(|id| component.artifacts.contains(&self.evals[id]));
+                .filter(|id| component.artifacts.contains(&self.evals[id.as_str()]));
             for id in ordinary.chain(derived) {
-                if let Some(targets) = self.derived.get(id) {
-                    if evidence.get(id) == Some(&Evidence::OperationalError) {
+                if let Some(targets) = self.derived.get(id.as_str()) {
+                    if evidence.get(id.as_str()) == Some(&Evidence::OperationalError) {
                         evals.insert(
-                            id,
+                            id.clone(),
                             EvalEvaluation {
                                 status: EvalStatus::Error,
                                 readiness: Readiness::Ready,
@@ -274,27 +311,29 @@ impl<'a> Graph<'a> {
                     }
                     let unmet: Vec<_> = targets
                         .iter()
-                        .flat_map(|target| &self.artifacts[target].evals)
+                        .flat_map(|target| &self.artifacts[target.as_str()].evals)
                         .copied()
-                        .filter(|id| evals[id].status != EvalStatus::Green)
+                        .filter(|id| evals[id.as_str()].status != EvalStatus::Green)
                         .collect();
                     let mut blocked_by = Vec::new();
                     for target in targets {
-                        let pending: Vec<_> = self.artifacts[target]
+                        let pending: Vec<_> = self.artifacts[target.as_str()]
                             .evals
                             .iter()
                             .copied()
-                            .filter(|id| evals[id].status != EvalStatus::Green)
+                            .filter(|id| evals[id.as_str()].status != EvalStatus::Green)
                             .collect();
                         if !pending.is_empty() {
-                            blocked_by.push(*target);
-                            blocked_by.extend(pending);
+                            blocked_by.push(BlockedReference::Artifact(target));
+                            blocked_by.extend(pending.into_iter().map(BlockedReference::Eval));
                         }
                     }
-                    let readiness = if unmet
-                        .iter()
-                        .any(|id| matches!(evals[id].status, EvalStatus::Red | EvalStatus::Blocked))
-                    {
+                    let readiness = if unmet.iter().any(|id| {
+                        matches!(
+                            evals[id.as_str()].status,
+                            EvalStatus::Red | EvalStatus::Blocked
+                        )
+                    }) {
                         Readiness::Blocked
                     } else if unmet.is_empty() {
                         Readiness::Ready
@@ -302,7 +341,7 @@ impl<'a> Graph<'a> {
                         Readiness::Wait
                     };
                     evals.insert(
-                        id,
+                        id.clone(),
                         EvalEvaluation {
                             status: match readiness {
                                 Readiness::Ready => EvalStatus::Green,
@@ -318,7 +357,7 @@ impl<'a> Graph<'a> {
                     );
                     continue;
                 }
-                let evidence = evidence.get(id).copied();
+                let evidence = evidence.get(id.as_str()).copied();
                 let status = match readiness {
                     Readiness::Blocked => EvalStatus::Blocked,
                     Readiness::Wait => EvalStatus::Wait,
@@ -331,13 +370,17 @@ impl<'a> Graph<'a> {
                     },
                 };
                 evals.insert(
-                    id,
+                    id.clone(),
                     EvalEvaluation {
                         readiness,
                         status,
                         evidence,
                         unmet_gates: unmet_gates.clone(),
-                        blocked_by: unmet_gates.clone(),
+                        blocked_by: unmet_gates
+                            .iter()
+                            .copied()
+                            .map(BlockedReference::Eval)
+                            .collect(),
                         derived: false,
                     },
                 );
@@ -346,26 +389,29 @@ impl<'a> Graph<'a> {
         let own_satisfied: BTreeMap<_, _> = self
             .artifacts
             .iter()
-            .map(|(&id, artifact)| {
+            .map(|(id, artifact)| {
                 let satisfied = artifact.basis
                     || (!artifact.evals.is_empty()
                         && artifact
                             .evals
                             .iter()
-                            .all(|id| evals[id].status == EvalStatus::Green));
+                            .all(|id| evals[id.as_str()].status == EvalStatus::Green));
                 (id, satisfied)
             })
             .collect();
         let mut satisfied = vec![false; self.components.len()];
         for (index, component) in self.components.iter().enumerate() {
             satisfied[index] = component.artifacts.iter().all(|id| own_satisfied[id])
-                && component.dependencies.iter().all(|&index| satisfied[index]);
+                && component
+                    .dependencies
+                    .iter()
+                    .all(|&dependency| satisfied[dependency.index()]);
         }
         let artifacts = self
             .artifacts
             .iter()
-            .map(|(&id, artifact)| {
-                let satisfied = satisfied[artifact.component];
+            .map(|(id, artifact)| {
+                let satisfied = satisfied[artifact.component.index()];
                 let status = if satisfied {
                     if artifact.basis {
                         ArtifactStatus::Basis
@@ -386,7 +432,7 @@ impl<'a> Graph<'a> {
                         artifact
                             .evals
                             .iter()
-                            .any(|id| evals[id].status == eval_status)
+                            .any(|id| evals[id.as_str()].status == eval_status)
                             .then_some(artifact_status)
                     })
                     .unwrap_or(if own_satisfied[id] {
@@ -396,7 +442,7 @@ impl<'a> Graph<'a> {
                     })
                 };
                 (
-                    id,
+                    id.clone(),
                     ArtifactEvaluation {
                         status,
                         own_satisfied: own_satisfied[id],
@@ -404,7 +450,7 @@ impl<'a> Graph<'a> {
                         passed: artifact
                             .evals
                             .iter()
-                            .filter(|id| evals[*id].status == EvalStatus::Green)
+                            .filter(|id| evals[id.as_str()].status == EvalStatus::Green)
                             .count(),
                         total: artifact.evals.len(),
                     },
@@ -432,7 +478,7 @@ impl<'a> Graph<'a> {
         }
     }
 
-    pub fn eval_target(&self, id: &str) -> Option<&'a str> {
+    pub fn eval_target(&self, id: &str) -> Option<&'a ArtifactName> {
         self.evals.get(id).copied()
     }
 }
@@ -471,9 +517,29 @@ pub struct EvalEvaluation<'a> {
     pub status: EvalStatus,
     /// Retained for audit even when gates mask its effective status.
     pub evidence: Option<Evidence>,
-    pub unmet_gates: Vec<&'a str>,
-    pub blocked_by: Vec<&'a str>,
+    pub unmet_gates: Vec<&'a EvalId>,
+    pub blocked_by: Vec<BlockedReference<'a>>,
     pub derived: bool,
+}
+
+/// A blocked dependency names either material or an Eval, never an unclassified string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockedReference<'a> {
+    Artifact(&'a ArtifactName),
+    Eval(&'a EvalId),
+}
+impl BlockedReference<'_> {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Artifact(id) => id.as_str(),
+            Self::Eval(id) => id.as_str(),
+        }
+    }
+}
+impl std::fmt::Display for BlockedReference<'_> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 impl EvalEvaluation<'_> {
@@ -519,12 +585,27 @@ pub enum FinalStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Evaluation<'a> {
-    pub evals: BTreeMap<&'a str, EvalEvaluation<'a>>,
-    pub artifacts: BTreeMap<&'a str, ArtifactEvaluation>,
+    pub evals: BTreeMap<EvalId, EvalEvaluation<'a>>,
+    pub artifacts: BTreeMap<ArtifactName, ArtifactEvaluation>,
     /// Artifacts whose own obligations are unmet, not execution gates.
-    pub obligations: Vec<&'a str>,
+    pub obligations: Vec<&'a ArtifactName>,
     pub status: FinalStatus,
 }
 
 #[cfg(test)]
 mod tests;
+
+impl serde::Serialize for BlockedReference<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl From<BlockedReference<'_>> for crate::store::Blocker {
+    fn from(reference: BlockedReference<'_>) -> Self {
+        match reference {
+            BlockedReference::Artifact(id) => Self::Artifact(id.clone()),
+            BlockedReference::Eval(id) => Self::Eval(id.clone()),
+        }
+    }
+}

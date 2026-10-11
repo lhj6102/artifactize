@@ -9,7 +9,6 @@ pub use session::Session;
 use std::{collections::BTreeMap, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
 
 use crate::store::{Execution, ExecutionOptions, Origin, Producer, Provenance};
 
@@ -31,13 +30,13 @@ pub const MAX_FULL_BYTES: usize = crate::store::history::MAX_ENTRY_BYTES;
 pub struct Record {
     pub schema: u32,
     pub key: crate::types::ReuseKey,
-    pub eval_def_hash: String,
+    pub eval_def_hash: crate::types::DefinitionHash,
     /// Each Artifact the key covers, with its fingerprint.
-    pub fingerprints: BTreeMap<String, crate::types::Fingerprint>,
+    pub fingerprints: BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub artifact_kinds: BTreeMap<String, crate::config::ArtifactKind>,
+    pub artifact_kinds: BTreeMap<crate::types::ArtifactName, crate::config::ArtifactKind>,
     pub verdict: crate::types::ExecutionStatus,
-    pub eval_id: String,
+    pub eval_id: crate::types::EvalId,
     pub run_id: crate::types::RunId,
     pub request_id: crate::types::RequestId,
     pub execution_id: crate::types::ExecutionId,
@@ -47,20 +46,20 @@ pub struct Record {
     /// An Agent result's tool `executionPaths` pins.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub execution_paths: crate::tools::pins::Pins,
-    pub result: Value,
+    pub result: crate::store::ExecutionResult,
     pub usage: Option<Vec<crate::llm::Attempt>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reviewer: Option<String>,
+    pub reviewer: Option<crate::types::ReviewerId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub producer: Option<Producer>,
-    pub started_at: String,
-    pub completed_at: String,
+    pub started_at: crate::types::Timestamp,
+    pub completed_at: crate::types::Timestamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution: Option<Box<Execution>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub publisher: Option<String>,
+    pub publisher: Option<crate::types::TokenName>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub published_at: Option<String>,
+    pub published_at: Option<crate::types::Timestamp>,
 }
 
 impl Record {
@@ -69,8 +68,8 @@ impl Record {
         let (Some(key), Some(_), Some(completed_at), Some(result)) = (
             &execution.key,
             execution.verdict(),
-            &execution.completed_at,
-            &execution.result,
+            &execution.completed_at(),
+            execution.result(),
         ) else {
             return Err("Only completed GREEN/RED results with a reuse key are shared.".into());
         };
@@ -91,7 +90,7 @@ impl Record {
             eval_def_hash: execution.eval_def_hash.clone(),
             fingerprints: execution.fingerprints.clone(),
             artifact_kinds: execution.artifact_kinds.clone(),
-            verdict: execution.status,
+            verdict: execution.status(),
             eval_id: execution.provenance.eval_id.clone(),
             run_id: execution.provenance.run_id.clone(),
             request_id: execution.provenance.request_id.clone(),
@@ -103,8 +102,8 @@ impl Record {
             usage,
             reviewer: execution.reviewer.clone(),
             producer: execution.producer.clone(),
-            started_at: execution.started_at.clone(),
-            completed_at: completed_at.clone(),
+            started_at: execution.started_at,
+            completed_at: *completed_at,
             execution: full.then(|| Box::new(execution.clone())),
             publisher: None,
             published_at: None,
@@ -131,10 +130,12 @@ impl Record {
                 &self.fingerprints,
                 &self.artifact_kinds,
             ) == self.key
-            && matches!(self.verdict.as_str(), "GREEN" | "RED")
-            && self.result["verdict"] == self.verdict.as_str()
+            && matches!(
+                self.verdict,
+                crate::types::ExecutionStatus::Green | crate::types::ExecutionStatus::Red
+            )
+            && self.result.verdict().as_str() == self.verdict.as_str()
             && self.execution_id.valid_wire()
-            && crate::broker::sortable(&self.completed_at).is_some()
             && valid_session(self.producer.as_ref())
             && self.execution.as_ref().is_none_or(|execution| {
                 valid_session(execution.producer.as_ref())
@@ -142,7 +143,7 @@ impl Record {
                     && execution.eval_def_hash == self.eval_def_hash
                     && execution.fingerprints == self.fingerprints
                     && execution.artifact_kinds == self.artifact_kinds
-                    && execution.status == self.verdict
+                    && execution.status() == self.verdict
                     && execution.profile == self.profile
                     && execution.origin.is_none()
             });
@@ -181,12 +182,11 @@ impl Record {
                 fingerprints: self.fingerprints,
                 artifact_kinds: self.artifact_kinds,
                 eval_def_hash: self.eval_def_hash.clone(),
-                owner_pid: 0,
-                owner_start_time: 0,
-                status: self.verdict,
-                result: Some(self.result),
-                error: None,
-                error_code: None,
+                owner: None,
+                state: crate::store::ExecutionState::Completed {
+                    result: self.result,
+                    at: self.completed_at,
+                },
                 profile: self.profile,
                 options: self.options,
                 usage: self.usage,
@@ -196,11 +196,10 @@ impl Record {
                     request_id: self.request_id,
                     eval_id: self.eval_id,
                     eval_def_hash: self.eval_def_hash,
-                    completed_at: Some(self.completed_at.clone()),
+                    completed_at: Some(self.completed_at),
                     execution_paths: self.execution_paths,
                 },
                 started_at: self.started_at,
-                completed_at: Some(self.completed_at),
                 producer: self.producer,
                 reviewer: self.reviewer,
                 origin: None,
@@ -209,7 +208,7 @@ impl Record {
         };
         execution.id = id;
         execution.origin = Some(Origin {
-            store: store.into(),
+            store: store.parse()?,
             publisher,
             published_at,
         });
@@ -217,17 +216,16 @@ impl Record {
     }
 }
 
-fn summary_result(profile: &crate::config::StoredProfile, result: &Value) -> Value {
-    if profile.kind() != crate::config::ProfileKind::Runtime {
-        // Agent and Human results are the schema-validated owner fields.
-        return result.clone();
+fn summary_result(
+    profile: &crate::config::StoredProfile,
+    result: &crate::store::ExecutionResult,
+) -> crate::store::ExecutionResult {
+    if profile.kind() == crate::config::ProfileKind::Runtime
+        && let crate::store::ExecutionResult::Runtime(runtime) = result
+    {
+        return crate::store::ExecutionResult::Runtime(runtime.summary());
     }
-    json!({
-        "verdict": result["verdict"],
-        "exitCode": result["exitCode"],
-        "durationMs": result["durationMs"],
-        "truncated": result["truncated"],
-    })
+    result.clone()
 }
 
 fn summary_usage(usage: Option<&Vec<crate::llm::Attempt>>) -> Option<Vec<crate::llm::Attempt>> {

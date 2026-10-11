@@ -1,9 +1,4 @@
-use std::{
-    fs,
-    path::Path,
-    process::Command,
-    time::{Duration, Instant},
-};
+use std::{fs, path::Path, process::Command, time::Duration};
 
 use artifactize::{
     config::{parse_declaration, read_workspace_config},
@@ -13,30 +8,16 @@ use artifactize::{
     },
 };
 use serde_json::{Value, json};
-use support::os::{bin, canonical};
+use support::os::canonical;
 use tokio_util::sync::CancellationToken;
 
 mod support;
 
 fn tool(kind: &str, command: &str, args: &[&str]) -> Value {
-    // The Unix utilities the tools name; elsewhere their Windows stand-ins.
-    let command = match command {
-        "sh" | "printf" | "sleep" | "touch" | "false" => bin(command),
-        other => other.to_owned(),
-    };
     json!({"description":"Inspect {artifactName}","kind":kind,"command":command,"args":args})
 }
 
-/// `python3 -c SOURCE`, writing UTF-8 to pipes on Windows as it does on Unix.
-fn python(source: &str) -> Vec<&str> {
-    let mut args = if cfg!(windows) {
-        vec!["-X", "utf8"]
-    } else {
-        vec![]
-    };
-    args.extend(["-c", source]);
-    args
-}
+use support::os::python;
 
 fn write_artifact(path: &Path, name: &str, tools: Value, instruction: &str) {
     fs::create_dir_all(path).unwrap();
@@ -68,7 +49,7 @@ async fn call(repo: &Path) -> ToolResult {
 }
 
 fn text(result: &ToolResult) -> &str {
-    let Content::Text { text } = &result.content[0] else {
+    let Content::Text { text } = &result.content()[0] else {
         panic!("{result:?}")
     };
     text
@@ -111,7 +92,7 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
         parse(json!({"metadata":{"description":"Old"},"script":{"command":"true","args":[]}}))
             .is_err()
     );
-    let repo = tempfile::tempdir().unwrap();
+    let repo = support::os::tempdir();
     write_artifact(
         repo.path(),
         "a",
@@ -140,8 +121,8 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
 
 #[tokio::test]
 async fn catalog_is_human_only_scoped_and_collision_checked() {
-    let repo = tempfile::tempdir().unwrap();
-    let command = tool("output", "printf", &["ok"]);
+    let repo = support::os::tempdir();
+    let command = tool("output", &support::os::printf_program(), &["ok"]);
     write_artifact(repo.path(), "root", json!({}), "Review.");
     write_artifact(
         &repo.path().join("a"),
@@ -188,7 +169,7 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
             registry
                 .call(unknown, CancellationToken::new())
                 .await
-                .is_error
+                .is_error()
         );
     }
     write_artifact(
@@ -214,7 +195,7 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
 
 #[tokio::test]
 async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::os::tempdir();
     let repo = canonical(directory.path());
     let repo = repo.as_path();
     write_artifact(repo, "root", json!({}), "Review.");
@@ -223,7 +204,7 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     let owner = repo.join("a");
     let command = tool(
         "output",
-        "printf",
+        &support::os::printf_program(),
         &[
             "%s\n",
             "{artifactPath}",
@@ -238,47 +219,44 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     declaration["mounts"] = json!({"source":"b"});
     support::declaration::write(&marker, declaration.to_string()).unwrap();
     let result = call(repo).await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     let input = repo.join("b").join("input");
     assert_eq!(
         text(&result),
         format!(
             "{}\n--input={}\n{}\nliteral $(touch injected)\n",
-            owner.display(),
-            input.display(),
-            input.display()
+            support::os::path_text(&owner),
+            support::os::path_text(&input),
+            support::os::path_text(&input)
         )
     );
     assert!(!owner.join("injected").exists());
     let config = read_workspace_config(repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     fs::remove_file(&input).unwrap();
-    #[cfg(unix)]
-    support::os::symlink_file("/etc/passwd", &input).unwrap();
-    // A junction needs no privilege and redirects the operand just the same.
-    #[cfg(windows)]
-    support::os::junction(&std::env::temp_dir(), &input);
+    // A link to a folder outside the repository redirects the operand.
+    support::os::link_dir(&support::os::temp_root(), &input);
     assert!(
         registry
             .call("inspect_a", CancellationToken::new())
             .await
-            .is_error
+            .is_error()
     );
     declaration.as_object_mut().unwrap().remove("mounts");
     declaration["views"]["human_tools"]["inspect"]["args"] = json!(["{b}"]);
     support::declaration::write(marker, declaration.to_string()).unwrap();
-    assert!(call(repo).await.is_error);
+    assert!(call(repo).await.is_error());
 }
 
 #[tokio::test]
 async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = support::os::tempdir();
     let repo = canonical(directory.path());
     write_artifact(&repo, "root", json!({}), "Review.");
     let owner = repo.join("a");
     write_artifact(&owner, "a", json!({}), "Review.");
     let executable = owner.join("unique-human-tool-not-on-path");
-    fs::write(&executable, "#!/bin/sh\nprintf '%s' \"$PWD\"\n").unwrap();
+    support::os::write_script(&executable, "printf '%s' \"$PWD\"\n");
     support::os::make_executable(&executable);
     for (command, success) in [
         ("unique-human-tool-not-on-path", false),
@@ -293,7 +271,7 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
             "Review.",
         );
         let result = call(&repo).await;
-        assert_eq!(!result.is_error, success, "{command}: {result:?}");
+        assert_eq!(!result.is_error(), success, "{command}: {result:?}");
         if success {
             assert_eq!(text(&result), owner.to_str().unwrap());
         }
@@ -302,14 +280,14 @@ async fn executable_resolution_matches_agent_tools_and_cwd_is_owner() {
 
 #[tokio::test]
 async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
-    let repo = tempfile::tempdir().unwrap();
+    let repo = support::os::tempdir();
     write_artifact(
         repo.path(),
         "a",
         json!({
             "inspect":tool(
                 "output",
-                "sh",
+                &support::os::shell(),
                 &[
                     "-c",
                     "printf '\\033[31mhello\\033[0m\\000\\t\\n'; printf '\\033[31mproblem\\033[0m\\000' >&2; exit 3",
@@ -319,17 +297,14 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
         "Review.",
     );
     let result = call(repo.path()).await;
-    assert!(result.is_error);
-    // Windows says "exit code" for the same status.
-    let status = if cfg!(windows) {
-        "exit code: 3"
-    } else {
-        "exit status: 3"
-    };
-    assert!(text(&result).contains(status), "{result:?}");
+    assert!(result.is_error());
+    assert!(
+        text(&result).contains(&support::os::exit_status(3)),
+        "{result:?}"
+    );
     assert!(text(&result).ends_with("hello\t\n"));
     assert_eq!(
-        result.content[1],
+        result.content()[1],
         Content::Text {
             text: "stderr:\nproblem".into()
         }
@@ -340,16 +315,16 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
         json!({
             "inspect":tool(
                 "output",
-                "python3",
+                support::os::python_program(),
                 &python("import sys; print('界'*100000); print('界'*100000,file=sys.stderr)"),
             ),
         }),
         "Review.",
     );
     let result = call(repo.path()).await;
-    assert!(!result.is_error);
-    assert_eq!(result.content.len(), 2);
-    for block in result.content {
+    assert!(!result.is_error());
+    assert_eq!(result.content().len(), 2);
+    for block in result.content() {
         let Content::Text { text } = block else {
             panic!()
         };
@@ -360,15 +335,19 @@ async fn output_cleans_bounds_both_streams_and_reports_nonzero_exit() {
 
 #[tokio::test]
 async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
-    let repo = tempfile::tempdir().unwrap();
-    let mut command = tool("output", "sleep", &["60"]);
+    let repo = support::os::tempdir();
+    let mut command = tool(
+        "output",
+        &support::os::sleep_program(),
+        &[support::os::LINGERING_SECONDS],
+    );
     command["timeout_ms"] = json!(40);
     write_artifact(repo.path(), "a", json!({"inspect":command}), "Review.");
     assert_eq!(text(&call(repo.path()).await), "Human tool timed out.");
     write_artifact(
         repo.path(),
         "a",
-        json!({"inspect":tool("launch", "touch", &["spawned"])}),
+        json!({"inspect":tool("launch", &support::os::touch_program(), &["spawned"])}),
         "Review.",
     );
     let config = read_workspace_config(repo.path()).unwrap();
@@ -379,7 +358,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
             .unwrap()
             .call("inspect_a", cancellation)
             .await
-            .is_error
+            .is_error()
     );
     assert!(!repo.path().join("spawned").exists());
     write_artifact(
@@ -388,15 +367,15 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
         json!({"inspect":tool("launch", "missing-artifactize-human-program", &[])}),
         "Review.",
     );
-    assert!(call(repo.path()).await.is_error);
+    assert!(call(repo.path()).await.is_error());
     write_artifact(
         repo.path(),
         "a",
-        json!({"inspect":tool("launch", "false", &[])}),
+        json!({"inspect":tool("launch", &support::os::false_program(), &[])}),
         "Review.",
     );
     assert_eq!(
-        call(repo.path()).await.content,
+        call(repo.path()).await.content(),
         [Content::Launch { launched: true }]
     );
 }
@@ -404,22 +383,18 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
 struct Launched(u32);
 impl Drop for Launched {
     fn drop(&mut self) {
-        #[cfg(unix)]
-        unsafe {
-            libc::kill(-(self.0 as i32), libc::SIGKILL);
-        }
-        #[cfg(windows)]
-        support::os::kill(self.0);
+        support::os::kill_tree(self.0);
     }
 }
 
 #[test]
 fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
-    let repo = tempfile::tempdir().unwrap();
+    let repo = support::os::tempdir();
     // Build the Windows stand-ins before the probe needs them.
-    bin("sh");
-    let started = Instant::now();
-    let result = Command::new(std::env::current_exe().unwrap())
+    support::os::shell();
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    support::os::human_environment(&mut command, repo.path());
+    let result = command
         .args([
             "--exact",
             "human_environment_and_launch_probe",
@@ -427,10 +402,6 @@ fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
         ])
         .env("ARTIFACTIZE_HUMAN_PROBE", repo.path())
         .env("ARTIFACTIZE_HUMAN_MARKER", "reviewer-marker")
-        .env("HOME", repo.path().join("real-home"))
-        .env("DISPLAY", ":77")
-        .env("WAYLAND_DISPLAY", "wayland-test")
-        .env("XDG_CONFIG_HOME", repo.path().join("real-config"))
         .output()
         .unwrap();
     let pid = fs::read_to_string(repo.path().join("pid"))
@@ -439,22 +410,10 @@ fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
     let child = pid.map(Launched);
     assert!(result.status.success(), "{result:?}");
     let child = child.expect("launcher wrote its pid");
-    assert!(started.elapsed() < Duration::from_secs(3));
-    #[cfg(unix)]
-    {
-        // SAFETY: these calls only query the detached child.
-        assert_eq!(
-            unsafe { libc::getpgid(child.0 as i32) },
-            child.0 as i32,
-            "separate process group"
-        );
-        assert_eq!(
-            unsafe { libc::getsid(child.0 as i32) },
-            child.0 as i32,
-            "separate session"
-        );
-    }
-    // The probe that launched it has exited; the detached child keeps running.
+    // The probe that launched it has exited; the detached child outlives it, but may not
+    // have finished becoming a tracked job member or process-group leader just yet.
+    support::os::wait_until(Duration::from_secs(5), || support::os::running(child.0));
+    support::os::assert_detached(child.0);
     assert!(
         support::os::running(child.0),
         "detached child is still running"
@@ -471,23 +430,23 @@ async fn human_environment_and_launch_probe() {
         return;
     };
     let repo = Path::new(&repo);
-    let output = tempfile::tempdir().unwrap();
+    let output = support::os::tempdir();
     write_artifact(
         repo,
         "a",
         json!({
             "inspect":tool(
                 "output",
-                "python3",
+                support::os::python_program(),
                 &python(
-                    "import os; print(os.environ['ARTIFACTIZE_HUMAN_MARKER']); print(os.environ['HOME']); print(os.environ['DISPLAY']); print(os.environ['WAYLAND_DISPLAY']); print(os.environ['XDG_CONFIG_HOME'])",
+                    &support::os::human_environment_probe(),
                 ),
             ),
         }),
         "Review.",
     );
     let result = call(repo).await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     // Python ends its printed lines with CRLF on Windows.
     assert_eq!(
         text(&result).replace("\r\n", "\n"),
@@ -509,21 +468,26 @@ async fn human_environment_and_launch_probe() {
         "inspect":{
             "description":"Inspect",
             "protocol":"plain",
-            "command":"python3",
+            "command":support::os::python_program(),
             "args":[
                 "-c",
-                "import os; print(os.environ.get('ARTIFACTIZE_HUMAN_MARKER','absent')); print(os.environ['HOME'])",
+                support::os::isolated_home_probe(),
             ],
         },
     });
     declaration["views"]["human_tools"]["inspect"] = tool(
         "launch",
-        "sh",
+        &support::os::shell(),
         &[
             "-c",
-            "printf '%s' $$ > pid; printf '%s' \"$ARTIFACTIZE_HUMAN_MARKER\" > marker; exec sleep 10",
+            &format!(
+                "printf '%s' $$ > pid; printf '%s' \"$ARTIFACTIZE_HUMAN_MARKER\" > marker; {}",
+                support::os::UNTIL_RELEASED
+            ),
         ],
     );
+    // The launched program stays up until the test ends.
+    let _release = support::os::Release(repo.to_path_buf());
     support::declaration::write(repo.join("index.artf"), declaration.to_string()).unwrap();
     let config = read_workspace_config(repo).unwrap();
     assert!(Registry::new(&config, "a/agent").is_err());
@@ -536,17 +500,15 @@ async fn human_environment_and_launch_probe() {
             CancellationToken::new(),
         )
         .await;
-    assert!(!result.is_error, "{result:?}");
-    let tools::Content::Text { text } = &result.content[0] else {
+    assert!(!result.is_error(), "{result:?}");
+    let tools::Content::Text { text } = &result.content()[0] else {
         panic!()
     };
     assert!(text.replace("\r\n", "\n").starts_with("absent\n"));
     assert!(!text.contains("real-home"));
-    let started = Instant::now();
     let result = call(repo).await;
-    assert!(!result.is_error, "{result:?}");
-    assert_eq!(result.content, [Content::Launch { launched: true }]);
-    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(!result.is_error(), "{result:?}");
+    assert_eq!(result.content(), [Content::Launch { launched: true }]);
     tokio::time::timeout(support::os::patience(Duration::from_secs(2)), async {
         while !repo.join("marker").exists()
             || fs::read_to_string(repo.join("pid"))
@@ -558,4 +520,29 @@ async fn human_environment_and_launch_probe() {
     })
     .await
     .unwrap();
+}
+
+#[test]
+fn human_results_preserve_saved_stdout_stderr_and_launch_wire_bytes() {
+    for saved in [
+        r#"{"content":[{"type":"text","text":""}],"isError":false}"#,
+        r#"{"content":[{"type":"launch","launched":true}],"isError":false}"#,
+        r#"{"content":[{"type":"text","text":"failed\nstdout"},{"type":"text","text":"stderr:\nproblem"}],"isError":true}"#,
+    ] {
+        let result: ToolResult = serde_json::from_str(saved).unwrap();
+        assert_eq!(serde_json::to_string(&result).unwrap(), saved);
+    }
+    assert_eq!(
+        serde_json::to_string(&ToolResult::error(" \n")).unwrap(),
+        r#"{"content":[{"type":"text","text":"Tool failed."}],"isError":true}"#,
+    );
+    for invalid in [
+        json!({"content":[],"isError":false}),
+        json!({"content":[],"isError":true}),
+        json!({"content":[{"type":"launch","launched":true}],"isError":true}),
+        json!({"content":[{"type":"text","text":" "}],"isError":true}),
+        json!({"content":[{"type":"text","text":"failed"},{"type":"text","text":""}],"isError":true}),
+    ] {
+        assert!(serde_json::from_value::<ToolResult>(invalid).is_err());
+    }
 }

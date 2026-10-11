@@ -24,7 +24,7 @@ pub struct Collection {
     /// Its size after it, or with a dry run, after the deletions it reports.
     pub remaining: u64,
     /// The sessions deleted, or with a dry run those that would be, oldest first.
-    pub removed: Vec<String>,
+    pub removed: Vec<SessionId>,
 }
 
 /// The session store's size.
@@ -43,11 +43,17 @@ struct Entry {
 /// The saved conversations, read without following links; a missing store is empty.
 fn entries(state: &Path) -> Result<Vec<Entry>, String> {
     let directory = directory(state);
-    let listing = match fs::read_dir(&directory) {
-        Ok(listing) => listing,
+    let handle = match crate::platform::open_no_follow(File::options().read(true), &directory) {
+        Ok(handle) => handle,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(format!("{}: {error}", directory.display())),
+        Err(error) => {
+            return Err(format!(
+                "{}: {error}",
+                crate::platform::path_text(&directory)
+            ));
+        }
     };
+    let listing = crate::platform::read_dir(&handle).map_err(|e| e.to_string())?;
     let mut entries = Vec::new();
     for entry in listing {
         let entry = entry.map_err(|e| e.to_string())?;
@@ -59,7 +65,14 @@ fn entries(state: &Path) -> Result<Vec<Entry>, String> {
             // Not a session path; never collect arbitrary files in this directory.
             continue;
         };
-        let metadata = entry.metadata().map_err(|e| e.to_string())?;
+        if crate::platform::entry_kind(&handle, &name).map_err(|e| e.to_string())?
+            != crate::platform::FileKind::File
+        {
+            continue;
+        }
+        let name = crate::platform::EntryName::new(&name).ok_or("Invalid session entry name.")?;
+        let file = crate::platform::open_entry(&handle, &name).map_err(|e| e.to_string())?;
+        let metadata = file.metadata().map_err(|e| e.to_string())?;
         if !metadata.is_file() {
             continue;
         }
@@ -70,6 +83,11 @@ fn entries(state: &Path) -> Result<Vec<Entry>, String> {
         });
     }
     Ok(entries)
+}
+
+/// Pure ordering shared by collection and the explicit-time contract test.
+fn order(entries: &mut [Entry]) {
+    entries.sort_by(|a, b| a.written.cmp(&b.written).then_with(|| a.id.cmp(&b.id)));
 }
 
 /// How many conversations the store holds and their bytes.
@@ -83,6 +101,7 @@ pub fn usage(state: &Path) -> Result<Usage, String> {
 
 /// The sessions of requests that are still RUNNING, read without a writer lock.
 fn running(state: &Path) -> Result<BTreeSet<SessionId>, String> {
+    crate::store::check_probe_files(state)?;
     let database = state.join(DATABASE);
     if !database.try_exists().map_err(|e| e.to_string())? {
         return Ok(BTreeSet::new());
@@ -129,7 +148,7 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
         return Ok(collection);
     }
     let running = running(state)?;
-    entries.sort_by(|a, b| a.written.cmp(&b.written).then_with(|| a.id.cmp(&b.id)));
+    order(&mut entries);
     let directory = directory(state);
     for entry in entries {
         if collection.remaining <= bounds.target_bytes {
@@ -141,7 +160,10 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
         if !dry_run {
             let lock = directory.join(format!("{}.lock", entry.id));
             // A session a send holds stays; its lock goes with it.
-            let held = match File::options().read(true).write(true).open(&lock) {
+            let held = match crate::platform::open_no_follow(
+                File::options().read(true).write(true),
+                &lock,
+            ) {
                 Ok(file) => match file.try_lock() {
                     Ok(()) => Some(file),
                     Err(std::fs::TryLockError::WouldBlock) => continue,
@@ -164,7 +186,7 @@ pub fn collect(state: &Path, bounds: AgentSessions, dry_run: bool) -> Result<Col
             }
         }
         collection.remaining = collection.remaining.saturating_sub(entry.bytes);
-        collection.removed.push(entry.id.into());
+        collection.removed.push(entry.id);
     }
     Ok(collection)
 }
@@ -175,22 +197,29 @@ mod tests {
 
     use super::*;
 
-    /// Sessions of `bytes` each, written a second apart in order.
+    /// Sessions with equal explicit write times; identity provides deterministic tie order.
     fn store(sizes: &[(&str, usize)]) -> tempfile::TempDir {
-        let state = tempfile::tempdir().unwrap();
+        let state = crate::test_os::tempdir();
         let sessions = directory(state.path());
         fs::create_dir_all(&sessions).unwrap();
-        for (index, (id, bytes)) in sizes.iter().enumerate() {
+        for (id, bytes) in sizes {
             let path = sessions.join(format!("{id}.jsonl"));
             fs::write(&path, vec![b'x'; *bytes]).unwrap();
-            File::options()
-                .write(true)
-                .open(&path)
-                .unwrap()
-                .set_modified(UNIX_EPOCH + Duration::from_secs(1_000 + index as u64))
-                .unwrap();
+            crate::test_os::set_modified(&path, UNIX_EPOCH + Duration::from_secs(1_000));
         }
         state
+    }
+
+    #[test]
+    fn ordering_uses_explicit_times_then_identity() {
+        let entry = |id: &str, secs| Entry {
+            id: id.parse().unwrap(),
+            bytes: 1,
+            written: UNIX_EPOCH + Duration::from_secs(secs),
+        };
+        let mut entries = [entry("a", 20), entry("c", 10), entry("b", 10)];
+        order(&mut entries);
+        assert_eq!(entries.map(|entry| entry.id.to_string()), ["b", "c", "a"]);
     }
 
     fn bounds(max_bytes: u64, target_bytes: u64) -> AgentSessions {
@@ -206,11 +235,17 @@ mod tests {
         let state = store(&[("a", 100), ("b", 100), ("c", 100), ("d", 100)]);
         // At the maximum, nothing is collected.
         let collection = collect(state.path(), bounds(400, 150), false).unwrap();
-        assert_eq!(collection.removed, Vec::<String>::new());
+        assert!(collection.removed.is_empty());
         assert_eq!(usage(state.path()).unwrap().sessions, 4);
 
         let dry = collect(state.path(), bounds(399, 150), true).unwrap();
-        assert_eq!(dry.removed, ["a", "b", "c"]);
+        assert_eq!(
+            dry.removed
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["a", "b", "c"]
+        );
         assert_eq!((dry.bytes, dry.remaining), (400, 100));
         assert_eq!(usage(state.path()).unwrap().sessions, 4);
 
@@ -219,7 +254,14 @@ mod tests {
         let held = File::create(&lock).unwrap();
         held.lock().unwrap();
         let collection = collect(state.path(), bounds(399, 200), false).unwrap();
-        assert_eq!(collection.removed, ["a", "c"]);
+        assert_eq!(
+            collection
+                .removed
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["a", "c"]
+        );
         assert_eq!(collection.remaining, 200);
         drop(held);
         let left: BTreeSet<_> = fs::read_dir(directory(state.path()))
@@ -240,7 +282,14 @@ mod tests {
         let state = store(&[("valid", 100), ("..", 100), ("bad name", 100)]);
         assert_eq!(usage(state.path()).unwrap().sessions, 1);
         let collection = collect(state.path(), bounds(1, 0), false).unwrap();
-        assert_eq!(collection.removed, ["valid"]);
+        assert_eq!(
+            collection
+                .removed
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["valid"]
+        );
         assert!(directory(state.path()).join("...jsonl").is_file());
         assert!(directory(state.path()).join("bad name.jsonl").is_file());
     }
@@ -255,7 +304,14 @@ mod tests {
         )
         .unwrap();
         let collection = collect(state.path(), bounds(1, 0), false).unwrap();
-        assert_eq!(collection.removed, ["finished"]);
+        assert_eq!(
+            collection
+                .removed
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["finished"]
+        );
         db.execute_batch("UPDATE requests SET data='{\"sessionId\":\"../invalid\"}';")
             .unwrap();
         assert!(running(state.path()).is_err());
@@ -264,7 +320,7 @@ mod tests {
 
     #[test]
     fn a_missing_store_is_empty() {
-        let state = tempfile::tempdir().unwrap();
+        let state = crate::test_os::tempdir();
         let collection = collect(state.path(), bounds(1, 0), false).unwrap();
         assert_eq!((collection.bytes, collection.removed.len()), (0, 0));
     }

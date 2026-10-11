@@ -1,99 +1,168 @@
 # Install artifactize
 
-artifactize is one binary. From 0.5.2 on, every
-[GitHub release](https://github.com/lhj6102/artifactize/releases) attaches statically
-linked Linux binaries (x86_64 and aarch64), each with a SHA-256 checksum, and every
-stable release is published on [crates.io](https://crates.io/crates/artifactize). It is
-open source under the
+artifactize installs two commands: `artifactize` and `artifactize-tools`, its
+[built-in tools](../reference/builtin-tools.md#artifactize-tools-cli) as a standalone CLI.
+Every [GitHub release](https://github.com/lhj6102/artifactize/releases) attaches
+prebuilt binaries for Linux (statically linked, x86_64 and aarch64), macOS (Apple
+silicon and Intel) and Windows (x64), each archive with a SHA-256 checksum. Stable
+releases are also published on [crates.io](https://crates.io/crates/artifactize),
+Homebrew, winget and the Microsoft Store. It is open source under the
 [Apache License 2.0](https://github.com/lhj6102/artifactize/blob/main/LICENSE).
+
+Before v1, the Linux build gates a release; the macOS and Windows archives are attached
+as soon as they build.
 
 ## Prerequisites
 
-- Linux (x86_64 or aarch64) or WSL 2. Windows (x64) is experimental.
-- `python3` and `grep` for the example projects.
+- Linux (x86_64 or aarch64), macOS (Apple silicon or Intel) or Windows (x64). WSL 2
+  runs the Linux build.
+- `python3` and `grep` on `PATH` for the example projects. Projects run their declared
+  commands as given on every OS; see [Operating systems](../reference/platforms.md).
 - Optional, one per Agent backend you plan to use: `OPENAI_API_KEY`,
   `ANTHROPIC_API_KEY`, or a ChatGPT plan that includes Codex. Runtime, Human and dependency evals
   need none.
 
-The install script needs no Rust toolchain. `cargo install` needs Rust 1.95 or later,
-from [rustup](https://rustup.rs), and a C compiler (SQLite is built from source).
+Only `cargo install` needs a Rust toolchain: Rust 1.95 or later, from
+[rustup](https://rustup.rs), and a C compiler (SQLite is built from source).
 
 ## Install
 
-### Linux and WSL 2
+Pick your OS. Each channel installs both commands; install from one channel only.
+
+### Linux
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version
 ```
 
-The [script](https://artifactize.dev/install.sh) picks the static binary for your
+The [script](https://artifactize.dev/install.sh) picks the archive for your OS and
 CPU from the latest stable GitHub release, checks its SHA-256 against the release's
-checksum and refuses a mismatch, then installs it to `~/.local/bin`. It uses `curl` or
-`wget`, never `sudo`, and never edits your shell startup files: if `~/.local/bin` is
-not on `PATH`, it prints the line to add. Two environment variables change what it
-does; a prerelease installs only when `ARTIFACTIZE_VERSION` names it:
+checksum and refuses a mismatch. It runs both new binaries before replacing anything,
+then installs them to `~/.local/bin`. It uses `curl` or `wget`, never `sudo`, and
+never edits your shell startup files: if `~/.local/bin` is not on `PATH`, it prints
+the line to add. It also warns about another `artifactize` or `artifactize-tools` on
+`PATH` that would run instead. Two environment variables change what it does; a
+prerelease installs only when `ARTIFACTIZE_VERSION` names it:
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_VERSION=0.5.2 sh             # this release
 curl -fsSL https://artifactize.dev/install.sh | ARTIFACTIZE_INSTALL_DIR="$HOME/bin" sh   # this directory
 ```
 
-### cargo install
-
-Install the latest release from crates.io (releases are published there from
-0.5.0 on):
+With [cargo-binstall](https://github.com/cargo-bins/cargo-binstall), fetch the same
+prebuilt binaries into `~/.cargo/bin`:
 
 ```sh
-cargo install artifactize --locked
+cargo binstall artifactize artifactize-tools
 ```
 
-`--locked` builds with the dependency versions the release was tested with. To install
-a particular release, name its version:
+Or build the latest stable release from crates.io:
 
 ```sh
-cargo install artifactize --locked --version <version>
+cargo install artifactize artifactize-tools --locked
+cargo install artifactize@<version> artifactize-tools@<version> --locked   # a particular release
 ```
 
-Releases take their version from their tag, so a build from a git checkout or tag
-reports the placeholder version `0.0.0-dev`.
+`--locked` builds with the dependency versions the release was tested with. The
+binaries go to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs them
+under `DIR/bin` instead. Both cargo commands work on macOS and Windows too.
 
-To build from source instead, install from a checkout; its `rust-toolchain.toml`
-selects stable Rust. The example projects and the [Quick start](quick-start.md)
-use a checkout too:
+To build from source, install from a checkout; its `rust-toolchain.toml` selects
+stable Rust. The example projects and the [Quick start](quick-start.md) use a
+checkout too:
 
 ```sh
 git clone https://github.com/lhj6102/artifactize
 cd artifactize
 cargo install --path crates/artifactize --locked
+cargo install --path crates/artifactize-tools --locked
 ```
 
-The binary goes to `~/.cargo/bin`, which must be on `PATH`; `--root DIR` installs
-it under `DIR/bin` instead. With
-[cargo-binstall](https://github.com/cargo-bins/cargo-binstall), `cargo binstall
-artifactize` installs the prebuilt Linux binary there instead of compiling.
+Releases take their version from their tag, so a build from a checkout reports the
+placeholder version `0.0.0-dev`.
 
-### Windows (experimental)
+### macOS
 
-Releases also attach a Windows (x64) zip when its build succeeds. In PowerShell
-(Windows PowerShell 5.1 or PowerShell 7):
+```sh
+brew install lhj6102/tap/artifactize
+artifactize --version
+```
+
+The formula in the `lhj6102/tap` Homebrew tap installs both commands for your Mac's
+CPU and follows stable releases.
+
+The install script works on macOS as on Linux, with the same checks and environment
+variables. It installs to `~/.local/bin`, which a new Mac does not have on `PATH`;
+the script prints the line to add to your shell's startup file, such as `~/.zshrc`.
+
+```sh
+curl -fsSL https://artifactize.dev/install.sh | sh
+```
+
+### Windows
+
+```powershell
+winget install lhj6102.Artifactize
+artifactize --version   # in a new terminal
+```
+
+The [winget](https://learn.microsoft.com/windows/package-manager/winget/) package
+`lhj6102.Artifactize` installs both commands from the release zip and follows stable
+releases.
+
+**Microsoft Store.** Install
+[Artifactize from the Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D),
+or from a terminal:
+
+```powershell
+winget install 9PB6W4LL165D --source msstore
+```
+
+Microsoft signs the Store version, and the Store keeps it up to date. Both commands
+work from any terminal as app execution aliases. It uses the same state directory,
+`%LOCALAPPDATA%\artifactize`, as the other Windows installs.
+
+**Install script.** In PowerShell (Windows PowerShell 5.1 or PowerShell 7), without
+administrator rights:
 
 ```powershell
 irm https://artifactize.dev/install.ps1 | iex
 ```
 
-The [script](https://artifactize.dev/install.ps1) checks the zip's SHA-256, installs
-`artifactize.exe` to `%LOCALAPPDATA%\Programs\artifactize` and adds that directory to
-your user `Path`, without administrator rights; open a new terminal afterwards. It reads
-the same environment variables. The binary is not code-signed, so Windows blocks it
-where Smart App Control is on; use WSL 2 there.
+The [script](https://artifactize.dev/install.ps1) checks the zip's SHA-256, runs both
+new binaries, then installs `artifactize.exe` and `artifactize-tools.exe` to
+`%LOCALAPPDATA%\Programs\artifactize` and adds that directory to your user `Path`;
+open a new terminal afterwards. It reads the same environment variables as
+`install.sh`.
+
+**Smart App Control.** The release zip, which winget and the install script use, is
+not code-signed yet. On a machine with Smart App Control on, Windows may block a new
+release even when an earlier one ran. Use the Microsoft Store version there. If
+Windows blocks the new binaries, the install script stops before replacing anything:
+your previous `artifactize` and `artifactize-tools` stay installed and runnable, and
+`Path` is left unchanged.
+
+**WSL.** Inside WSL 2, artifactize is the Linux build: install it in the distribution
+with the [Linux](#linux) instructions. It is separate from a Windows install and keeps
+its own state. Built-in `open` and `login codex` use the distribution's `xdg-open`,
+never a Windows program; see
+[Opening files and the browser](../reference/platforms.md#opening-files-and-the-browser).
 
 ## Update
 
-Run the command you installed with again: an install script or `cargo binstall
-artifactize` replaces the binary with the latest stable release, and `cargo install
-artifactize --locked` rebuilds it (or run the `--git` command with the new release's
-tag, or `git pull` and repeat `cargo install --path`). Your state stays where it is.
+| Installed with | Update |
+|---|---|
+| `install.sh` or `install.ps1` | Run the same command again |
+| Homebrew | `brew upgrade artifactize` |
+| winget | `winget upgrade lhj6102.Artifactize` |
+| Microsoft Store | Automatic; or **Library → Get updates** in the Store app |
+| `cargo binstall` | `cargo binstall artifactize artifactize-tools` |
+| `cargo install` | `cargo install artifactize artifactize-tools --locked`; from a checkout, `git pull` and repeat `cargo install --path` |
+
+The install scripts and cargo get a release as soon as it is published. Homebrew,
+winget and the Store follow stable releases only; winget and the Store can lag
+behind while the update is reviewed. Updating keeps your state.
 
 ### Upgrading to 0.9
 
@@ -176,10 +245,13 @@ catalog and no fallback to another backend or model.
 | `anthropic` | `export ANTHROPIC_API_KEY=...` | `artifactize models anthropic` |
 | `codex` | `artifactize login codex` | `artifactize models codex` |
 
+In PowerShell, set a key with `$env:OPENAI_API_KEY = "..."`.
+
 `login codex` signs in to your ChatGPT account the way the Codex CLI does. It prints
-a sign-in URL and tries to open it with `xdg-open` or `wslview`. Finish in a browser
-on the same machine (on WSL 2, a Windows browser works): the browser returns to
-`localhost:1455`. On another machine, or while port 1455 is busy, paste the URL the
+a sign-in URL and opens it in the default browser (`xdg-open` on Linux and WSL, `open`
+on macOS, the default browser on Windows). Finish in a browser on the same machine:
+the browser returns to `localhost:1455`. On WSL 2, a Windows browser works too; copy
+the printed URL into it if nothing opens. On another machine, or while port 1455 is busy, paste the URL the
 browser ends on into the terminal instead. `logout codex` revokes and deletes
 artifactize's tokens. To use the tokens of an existing Codex sign-in instead, set
 `ARTIFACTIZE_CODEX_AUTH_FILE=~/.codex/auth.json`; artifactize only reads that file.
@@ -203,19 +275,25 @@ artifactize logout codex              # if you signed in with Codex
 artifactize remote logout             # if you signed in to a review store
 ```
 
-Then remove the binary the way you installed it:
+Then remove both commands the way you installed them:
 
 ```sh
-rm ~/.local/bin/artifactize           # install.sh (or your ARTIFACTIZE_INSTALL_DIR)
-cargo uninstall artifactize           # cargo install or cargo binstall
+rm ~/.local/bin/artifactize ~/.local/bin/artifactize-tools   # install.sh (or your ARTIFACTIZE_INSTALL_DIR)
+brew uninstall artifactize                                   # Homebrew
+cargo uninstall artifactize artifactize-tools                # cargo install or cargo binstall
 ```
 
-On Windows, delete the install directory, then remove it from your user `Path`
-(search the Start menu for "Edit environment variables for your account"):
+On Windows:
 
 ```powershell
-Remove-Item -Recurse "$env:LOCALAPPDATA\Programs\artifactize"
+winget uninstall lhj6102.Artifactize                       # winget
+Remove-Item -Recurse "$env:LOCALAPPDATA\Programs\artifactize"   # install.ps1
 ```
+
+Uninstall the Microsoft Store version from **Settings → Apps → Installed apps**, or
+right-click Artifactize in the Start menu. After removing an `install.ps1` install,
+also remove its directory from your user `Path` (search the Start menu for "Edit
+environment variables for your account").
 
 Uninstalling keeps the state directory, so a later install finds your Runs and saved
 results again. `prune` never touches active Runs, database rows or the repository. To

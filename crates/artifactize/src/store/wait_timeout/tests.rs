@@ -49,7 +49,7 @@ fn saved_duration_matches_schema5_integer_null_missing_boundaries() {
 
 #[tokio::test]
 async fn unrepresentable_duration_never_writes_an_unreadable_run() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();

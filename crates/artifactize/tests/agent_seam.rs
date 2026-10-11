@@ -20,7 +20,7 @@ struct Project {
 impl Project {
     /// One `spec` Artifact with a built-in `read` tool and one Agent eval.
     fn new(profile: Value) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
         fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
@@ -415,11 +415,7 @@ fn fixed_builtin_tools_have_closed_schemas_and_return_content_in_offline_agent_t
     )
     .unwrap();
     let stub = project.repo.join("spec/help-stub");
-    fs::write(
-        &stub,
-        "#!/bin/sh\nprintf 'stub documentation: %s\\n' \"$*\"\n",
-    )
-    .unwrap();
+    support::os::write_script(&stub, "printf 'stub documentation: %s\\n' \"$*\"\n");
     support::os::make_executable(&stub);
     let mut declaration =
         support::declaration::read(fs::read(project.repo.join("spec/index.artf")).unwrap())

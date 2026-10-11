@@ -130,8 +130,10 @@ Runtime or Agent invocation consumes one start, even when it fails to spawn or
 later returns ERROR. Human waiting, claim and tool actions and dependency
 derivation consume no starts. Fingerprint preparation/rechecks, cache hits, and
 joined waiters
-consume none. Preparation failures before invocation consume none. Zero permits
-reuse, joining, Human reviews and dependency derivation; a budgeted waiter replacing a failed/dead owner uses
+consume none. Failures in initial executor preparation consume no start. Agent
+`execution_paths` pinning happens after a start is charged: a pinning failure still
+consumes that start and records ERROR/PREPARATION_FAILED without calling the model.
+Zero permits reuse, joining, Human reviews and dependency derivation; a budgeted waiter replacing a failed/dead owner uses
 its own Run's remaining budget. Exhaustion never interrupts running evals, but
 leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an
@@ -153,15 +155,18 @@ never fall back to line parsing. Relative file paths resolve from the CLI's cwd,
 not `--repo`.
 
 `verify ... --profile NAME` selects a complete declared `profile_variants` entry
-for every included executable eval. Dependency evals are skipped; they have no
-variants. Explicit per-eval library mappings to a dependency eval are rejected.
+for every executable eval included by the selection and recursion policy before
+applying variants. Dependency evals are skipped; they have no variants. Explicit per-eval library mappings to a dependency eval are rejected.
 Each executable eval can declare up to 64 safely named variants,
 all retaining its default reviewer kind. Unknown variants fail before creating a
 Run, and source declarations are never rewritten. The library accepts
 `project::selection::ProfileSelection::Named` or `ProfileSelection::Evals` (a
-qualified-eval-to-name map); mappings outside the included scope fail. With
-`--recursive`, variants also apply to included executable dependencies. Runtime
-variant arguments rebuild scoped references and dependency gates. The selected
+qualified-eval-to-name map); mappings outside that pre-variant included scope fail.
+With `--recursive`, variants apply to executable dependencies already in that
+scope. Runtime variant arguments then rebuild scoped references and dependency
+gates, and the included scope is recomputed. Dependencies newly included through
+those variant arguments retain their default profiles; the named variant is not
+applied again to the expanded scope. The selected
 variant is an execution option: it is not part of the reuse key, so results of
 different variants (and of the declared profile) reuse each other unless a runtime
 variant changes the command or args. Stored request `profile` and `options`
@@ -223,7 +228,8 @@ See [Dependency evals](declarations.md#dependency-evals).
 
 ## Saved Run evidence and terminal views
 
-`run show RUN_ID --json` and `verify --json` include `run.evidence` when nonempty.
+`run show RUN_ID --json` and `verify --json` include top-level `evidence` when
+nonempty. Run fields are flattened into the output object, without a `run` wrapper.
 It maps qualified eval IDs to saved verdicts used without a request in this Run,
 such as cached upstream evidence in a partial Run. It is not the latest global
 verdict. See [Runs](../concepts/runs-and-status.md#verify-and-runs).

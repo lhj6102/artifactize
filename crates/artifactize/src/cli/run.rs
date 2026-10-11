@@ -41,13 +41,17 @@ pub(super) async fn list(
                 out,
                 "{}\t{}\t{}\t{}\t{}\t{}",
                 run.id,
-                run.repo_path.display(),
+                crate::platform::path_text(&run.repo_path),
                 run.created_at,
-                run.completed_at.as_deref().unwrap_or("-"),
+                run.completed_at
+                    .map_or_else(|| "-".to_owned(), |time| time.to_string()),
                 run.status,
                 counts
             )
             .map_err(|e| e.to_string())?;
+            for unreadable in &run.unreadable {
+                writeln!(out, "  {unreadable}").map_err(|error| error.to_string())?;
+            }
         }
     }
     Ok(0)
@@ -57,13 +61,12 @@ pub(super) async fn show(
     context: Context,
     run_id: crate::types::RunId,
     wait: bool,
-    timeout_ms: Option<u32>,
+    timeout_ms: Option<Duration>,
 ) -> Result<u8, String> {
     let state = crate::store::state_dir(context.state_dir.as_deref())?;
-    let deadline = tokio::time::Instant::now()
-        + timeout_ms.map_or(DEFAULT_RUN_WAIT, |ms| Duration::from_millis(ms.into()));
+    let deadline = tokio::time::Instant::now() + timeout_ms.unwrap_or(DEFAULT_RUN_WAIT);
     let mut view = crate::store::read_run(&state, &run_id).await?;
-    while wait && view.run.status == crate::types::RunStatus::Running {
+    while wait && view.run.status() == crate::types::RunStatus::Running {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
             break;
@@ -78,7 +81,7 @@ pub(super) async fn show(
     if !wait {
         return Ok(0);
     }
-    if view.run.status == crate::types::RunStatus::Running {
+    if view.run.status() == crate::types::RunStatus::Running {
         writeln!(
             io::stderr().lock(),
             "Waiting timed out; Run {run_id} is still RUNNING."

@@ -6,7 +6,7 @@
 mod lookup_tests;
 
 use std::{
-    env, fs,
+    fs,
     io::{Read, Write},
     net::IpAddr,
     path::Path,
@@ -81,8 +81,47 @@ pub struct Remote {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Principal {
-    pub principal: String,
-    pub scopes: Vec<String>,
+    pub principal: crate::types::TokenName,
+    pub scopes: Vec<Scope>,
+}
+
+/// A permission a remote token grants, as the server names it. A scope this version does
+/// not know is kept by its name, so it is still shown, but it grants nothing here.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "String", into = "String")]
+pub enum Scope {
+    Read,
+    Publish,
+    Human,
+    Other(String),
+}
+
+impl From<String> for Scope {
+    fn from(name: String) -> Self {
+        match name.as_str() {
+            "read" => Self::Read,
+            "publish" => Self::Publish,
+            "human" => Self::Human,
+            _ => Self::Other(name),
+        }
+    }
+}
+
+impl From<Scope> for String {
+    fn from(scope: Scope) -> Self {
+        scope.to_string()
+    }
+}
+
+impl std::fmt::Display for Scope {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Read => "read",
+            Self::Publish => "publish",
+            Self::Human => "human",
+            Self::Other(name) => name,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -95,7 +134,7 @@ pub struct Failure {
 }
 
 fn variable(name: &str) -> Option<String> {
-    env::var(name).ok().filter(|value| !value.is_empty())
+    crate::platform::environment::var_text(name).filter(|value| !value.is_empty())
 }
 
 /// Accept HTTPS, or plain HTTP only on loopback; never credentials, queries or fragments.
@@ -332,7 +371,10 @@ impl Remote {
     }
 
     /// Decode each record at the HTTP boundary; malformed entries remain individually skippable.
-    pub async fn lookup(&self, keys: &[String]) -> Result<Vec<Result<Record, String>>, Failure> {
+    pub async fn lookup(
+        &self,
+        keys: &[crate::types::ReuseKey],
+    ) -> Result<Vec<Result<Record, String>>, Failure> {
         #[derive(Deserialize)]
         struct Found {
             entries: Vec<Value>,

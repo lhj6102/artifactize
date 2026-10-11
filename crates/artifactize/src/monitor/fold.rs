@@ -16,7 +16,7 @@ use crate::types::RunId;
 #[derive(Debug, Default)]
 pub(super) struct Folds {
     /// Artifacts the user folded or unfolded; automatic folding leaves them alone.
-    touched: BTreeSet<String>,
+    touched: BTreeSet<model::NodeId>,
     blocker: Option<Blocker>,
     /// The open Run's tree, built once per state change and shared by every frame.
     cache: Option<(RunId, Arc<Vec<Node>>)>,
@@ -25,12 +25,12 @@ pub(super) struct Folds {
 /// A `b` jump: the row it started from and the Artifact row it reached.
 #[derive(Debug)]
 struct Blocker {
-    origin: Vec<String>,
-    at: Vec<String>,
+    origin: Vec<model::NodeId>,
+    at: Vec<model::NodeId>,
 }
 
 /// The Artifacts a row depends on: an eval's own, or the union over an Artifact's evals.
-pub(super) fn upstream(nodes: &[Node], path: &[String]) -> Vec<Upstream> {
+pub(super) fn upstream(nodes: &[Node], path: &[model::NodeId]) -> Vec<Upstream> {
     let Some(id) = path.last() else {
         return Vec::new();
     };
@@ -112,7 +112,7 @@ impl Monitor {
     }
 
     /// Remember Artifacts whose fold state the user changed since `before`.
-    pub(super) fn touched(&mut self, before: &HashSet<Vec<String>>) {
+    pub(super) fn touched(&mut self, before: &HashSet<Vec<model::NodeId>>) {
         let after = self.tree.opened();
         for path in before.symmetric_difference(after) {
             if let [id] = path.as_slice() {
@@ -123,7 +123,7 @@ impl Monitor {
 
     /// The row whose upstream is highlighted: a `b` cycle's origin while the cursor stays
     /// where the last jump left it, otherwise the selected row.
-    fn origin(&self) -> Vec<String> {
+    fn origin(&self) -> Vec<model::NodeId> {
         match &self.folds.blocker {
             Some(blocker) if blocker.at == self.tree.selected() => blocker.origin.clone(),
             _ => self.tree.selected().to_vec(),
@@ -146,11 +146,13 @@ impl Monitor {
         let next = match &self.folds.blocker {
             Some(blocker) if blocker.at == self.tree.selected() => targets
                 .iter()
-                .position(|up| Some(&format!("a:{}", up.artifact)) == blocker.at.first())
+                .position(|up| {
+                    Some(&model::NodeId::artifact(up.artifact.clone())) == blocker.at.first()
+                })
                 .map_or(0, |index| (index + 1) % targets.len()),
             _ => 0,
         };
-        let at = vec![format!("a:{}", targets[next].artifact)];
+        let at = vec![model::NodeId::artifact(targets[next].artifact.clone())];
         self.tree.select(at.clone());
         self.folds.blocker = Some(Blocker { origin, at });
     }

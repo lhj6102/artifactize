@@ -6,7 +6,7 @@
 //!
 //! `os` holds the operating-system fixtures, and `copy_fixture` the repositories under
 //! `tests/fixtures`.
-#![allow(
+#![expect(
     dead_code,
     reason = "each test binary uses a different part of the fake"
 )]
@@ -22,7 +22,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use serde_json::{Value, json};
@@ -58,74 +58,8 @@ fn copy(source: &Path, target: &Path, deadlines: bool) {
             copy(&entry.path(), &destination, deadlines);
         } else {
             fs::copy(entry.path(), &destination).unwrap();
-            if os::stand_ins() || cfg!(target_os = "macos") {
-                port(&destination, deadlines);
-            }
+            os::port_fixture(&destination, deadlines);
         }
-    }
-}
-
-/// Point a copied declaration's Unix commands at the stand-ins, and with `deadlines` give
-/// its deadlines of a second or more `os::slow` room. The runtime fixture's `check.sh`
-/// compares its working folder as a file rather than as text: Windows spells that folder
-/// with `\`, where the script appends `/review`.
-fn port(path: &Path, deadlines: bool) {
-    /// Whether anything changed.
-    fn commands(value: &mut Value, deadlines: bool) -> bool {
-        match value {
-            Value::Object(object) => {
-                let mut changed = false;
-                for (key, value) in object.iter_mut() {
-                    changed |= match value {
-                        Value::String(command)
-                            if key == "command"
-                                && (command.starts_with("/bin/")
-                                    || command.starts_with("/usr/bin/")
-                                    || command == "sh") =>
-                        {
-                            let resolved = os::bin(command);
-                            let changed = *command != resolved;
-                            *command = resolved;
-                            changed
-                        }
-                        Value::Number(deadline)
-                            if deadlines
-                                && key == "timeout_ms"
-                                && deadline.as_u64().is_some_and(|ms| ms >= 1000) =>
-                        {
-                            *value = json!(os::slow(deadline.as_u64().unwrap()));
-                            true
-                        }
-                        other => commands(other, deadlines),
-                    };
-                }
-                changed
-            }
-            Value::Array(items) => {
-                let mut changed = false;
-                for item in items {
-                    changed |= commands(item, deadlines);
-                }
-                changed
-            }
-            _ => false,
-        }
-    }
-    match path.file_name().and_then(|name| name.to_str()) {
-        // Rewritten only when needed: a declaration's bytes can be part of a fingerprint.
-        Some(name) if name.ends_with(".artf") => {
-            let mut declaration: Value =
-                toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-            if commands(&mut declaration, deadlines) {
-                fs::write(path, declaration::to_toml(declaration).unwrap()).unwrap();
-            }
-        }
-        Some("check.sh") => {
-            let script = fs::read_to_string(path).unwrap();
-            let script = script.replace(r#"test "$PWD" = "#, r#"test "$PWD" -ef "#);
-            fs::write(path, script).unwrap();
-        }
-        _ => {}
     }
 }
 
@@ -137,8 +71,6 @@ pub struct Request {
     pub headers: BTreeMap<String, String>,
     /// The JSON body, a form body as its raw text, or null when there is none.
     pub body: Value,
-    /// When the request arrived.
-    pub received: Instant,
 }
 
 pub enum Reply {
@@ -268,7 +200,6 @@ fn serve(stream: TcpStream, handler: &Handler, requests: &Mutex<Vec<Request>>) {
     let mut body = vec![0; length];
     reader.read_exact(&mut body).unwrap();
     let request = Request {
-        received: Instant::now(),
         method,
         path,
         headers,
@@ -469,5 +400,33 @@ pub mod codex {
                 "id_token":"id",
             }),
         )
+    }
+}
+
+/// A reusable explicit provider-response barrier. Deadlines bound failures, not ordering.
+#[derive(Clone, Default)]
+pub struct Gate(Arc<(Mutex<bool>, std::sync::Condvar)>);
+
+impl Gate {
+    pub fn close(&self) {
+        *self.0.0.lock().unwrap() = false;
+    }
+    pub fn open(&self) {
+        *self.0.0.lock().unwrap() = true;
+        self.0.1.notify_all();
+    }
+    pub fn wait(&self) {
+        let (lock, changed) = &*self.0;
+        let (open, expired) = changed
+            .wait_timeout_while(
+                lock.lock().unwrap(),
+                os::patience(Duration::from_secs(30)),
+                |open| !*open,
+            )
+            .unwrap();
+        assert!(
+            *open && !expired.timed_out(),
+            "response gate was never released"
+        );
     }
 }

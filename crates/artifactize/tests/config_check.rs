@@ -7,11 +7,6 @@ use serde_json::{Value, json};
 
 mod support;
 
-/// A declaration's path as errors print it, with the platform's separator.
-fn native(path: &str) -> String {
-    path.replace('/', std::path::MAIN_SEPARATOR_STR)
-}
-
 struct Fixture(
     PathBuf,
     #[expect(
@@ -26,10 +21,7 @@ impl Fixture {
         let parent = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/test-fixtures");
         fs::create_dir_all(&parent).unwrap();
         // Atomic unique creation, unlike clock-derived names on coarse Windows clocks.
-        let directory = tempfile::Builder::new()
-            .prefix("config-")
-            .tempdir_in(parent)
-            .unwrap();
+        let directory = support::os::tempdir_in(&parent, "config-");
         Self(support::os::canonical(directory.path()), directory)
     }
 
@@ -152,7 +144,7 @@ fn config_check_rejects_renamed_fingerprint_keys_with_the_new_shape() {
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-        assert!(error.contains(&native("app/index.artf")), "{error}");
+        assert!(error.contains("app/index.artf"), "{error}");
         assert!(error.ends_with(&format!(": {key} {shape}")), "{error}");
         let output = fixture
             .command()
@@ -185,7 +177,7 @@ fn config_check_rejects_removed_family_declarations_without_opening_instance_lis
             .unwrap();
         assert_eq!(output.status.code(), Some(2));
         let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-        assert!(error.contains(&native("app/index.artf")), "{error}");
+        assert!(error.contains("app/index.artf"), "{error}");
         assert!(error.ends_with(message), "{error}");
         let output = fixture
             .command()
@@ -222,11 +214,8 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     fixture.write(".git/ignored/index.artf", "not JSON");
     fixture.write("node_modules/ignored/index.artf", "not JSON");
     fixture.write("other.json", "other names are not configuration");
-    // Discovery never enters a linked folder; a junction needs no privilege on Windows.
-    #[cfg(unix)]
-    support::os::symlink_dir(fixture.0.join("review"), fixture.0.join("linked-review")).unwrap();
-    #[cfg(windows)]
-    support::os::junction(&fixture.0.join("review"), &fixture.0.join("linked-review"));
+    // Discovery never enters a linked folder.
+    support::os::link_dir(&fixture.0.join("review"), &fixture.0.join("linked-review"));
 
     let output = fixture
         .command()
@@ -286,7 +275,7 @@ fn config_check_is_static_strict_and_uses_the_supplied_workspace() {
     assert_eq!(
         config.evals[2]
             .declaration
-            .payload
+            .payload()
             .as_ref()
             .unwrap()
             .instruction,
@@ -400,7 +389,7 @@ fn config_check_names_the_replacements_for_removed_backends() {
                 .unwrap();
             assert_eq!(output.status.code(), Some(2));
             let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-            assert!(error.contains(&native("app/index.artf")), "{error}");
+            assert!(error.contains("app/index.artf"), "{error}");
             assert!(
                 error.contains(&format!(
                     r#"backend "{backend}" was removed in 0.5.0; use "openai" or "anthropic" with an API key, or "codex""#
@@ -420,7 +409,7 @@ fn config_check_names_the_removal_of_result_check() {
             "id":"review","title":"Review",
             "profile":{"kind":"agent","backend":"openai","model":"m"},
             "payload":{"instruction":"Review."},
-            "result_check":{"command":"python3","args":["check.py"]}
+            "result_check":{"command":support::os::python_program(),"args":["check.py"]}
         }]})
         .to_string(),
     );
@@ -431,7 +420,7 @@ fn config_check_names_the_removal_of_result_check() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     let error = json_output(&output)["error"].as_str().unwrap().to_owned();
-    assert!(error.contains(&native("app/index.artf")), "{error}");
+    assert!(error.contains("app/index.artf"), "{error}");
     assert!(
         error.contains("Eval review: result_check was removed in 0.6.0"),
         "{error}"

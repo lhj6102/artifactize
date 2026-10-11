@@ -1,4 +1,3 @@
-#!/bin/sh
 set -eu
 test "$(cat "$1")" = "scoped input"
 test -z "${ARTIFACTIZE_TEST_SECRET+x}"

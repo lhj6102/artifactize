@@ -36,8 +36,8 @@ const BUILTIN_IGNORES: [&str; 5] = [".git", "__pycache__/", "*.pyc", "target/", 
 
 /// Sorted owner-relative file paths with their SHA-256, and one digest over all of them.
 pub(super) struct Files {
-    pub digest: String,
-    pub files: BTreeMap<String, [u8; 32]>,
+    pub digest: crate::types::Sha256Digest,
+    pub files: BTreeMap<String, crate::types::Sha256Bytes>,
 }
 
 /// Validate declared `fingerprint.ignore` globs, which always exclude like the built-ins.
@@ -80,8 +80,8 @@ fn matcher(patterns: &[String]) -> Result<Gitignore, String> {
 /// Hash an Artifact's own inputs off the async runtime.
 pub(super) async fn files(
     config: &RepoConfig,
-    id: &str,
-    inputs: &[String],
+    id: &crate::types::ArtifactName,
+    inputs: &[crate::config::LogicalPath],
     ignore: &[String],
     cancellation: &CancellationToken,
 ) -> Result<Files, String> {
@@ -90,8 +90,7 @@ pub(super) async fn files(
     }
     let walk = Walk::new(config, id, inputs, ignore)?;
     let token = cancellation.clone();
-    tokio::task::spawn_blocking(move || walk.digest(&token))
-        .await
+    crate::task::joined(tokio::task::spawn_blocking(move || walk.digest(&token)).await)
         .map_err(|error| error.to_string())?
 }
 
@@ -109,7 +108,7 @@ struct Walk {
 
 #[derive(Default)]
 struct State {
-    files: BTreeMap<String, [u8; 32]>,
+    files: BTreeMap<String, crate::types::Sha256Bytes>,
     entries: usize,
     bytes: u64,
 }
@@ -117,26 +116,27 @@ struct State {
 impl Walk {
     fn new(
         config: &RepoConfig,
-        id: &str,
-        inputs: &[String],
+        id: &crate::types::ArtifactName,
+        inputs: &[crate::config::LogicalPath],
         ignore: &[String],
     ) -> Result<Self, String> {
         let artifact = &config.artifacts[id];
         let owner =
             scope::scoped_path(&config.root, artifact.folder()).map_err(|e| e.to_string())?;
-        let prefix = artifact
+        // Preserve the UTF-8 input contract before rendering portable separators.
+        artifact
             .folder()
             .to_str()
-            .ok_or("Artifact paths must be UTF-8.")?
-            .to_owned();
-        let excluded = artifact.children.keys().cloned().collect();
+            .ok_or("Artifact paths must be UTF-8.")?;
+        let prefix = platform::path_text(artifact.folder());
+        let excluded = artifact.children.keys().map(ToString::to_string).collect();
         let inputs: Vec<_> = inputs
             .iter()
             .map(|input| {
-                if input == "." {
+                if input.as_str() == "." {
                     String::new()
                 } else {
-                    input.clone()
+                    input.to_string()
                 }
             })
             .collect();
@@ -173,10 +173,12 @@ impl Walk {
         for (path, file) in &state.files {
             digest.update(path.as_bytes());
             digest.update([0]);
-            digest.update(file);
+            digest.update(file.as_bytes());
         }
         Ok(Files {
-            digest: hex(&digest.finalize()),
+            digest: hex(&digest.finalize())
+                .parse()
+                .expect("SHA-256 input digest"),
             files: state.files,
         })
     }
@@ -327,9 +329,10 @@ fn hash_file(mut file: File, path: &str, state: &mut State) -> Result<(), String
         }
         digest.update(&buffer[..read]);
     }
-    state
-        .files
-        .insert(path.to_owned(), digest.finalize().into());
+    state.files.insert(
+        path.to_owned(),
+        crate::types::Sha256Bytes::from_digest(digest.finalize().into()),
+    );
     Ok(())
 }
 

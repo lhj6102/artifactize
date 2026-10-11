@@ -1,7 +1,10 @@
 //! Read-only state queries and result projections.
 
 mod summary;
-pub use summary::{Source, SourceKind, profile_name, request_output, reused, run_output, source};
+pub use summary::{
+    Kinds, Source, SourceKind, profile_name, request_output, request_summary, reused, run_output,
+    run_summary, source,
+};
 
 use std::{collections::BTreeMap, path::Path};
 
@@ -14,13 +17,19 @@ use crate::{
     scope::Relation,
 };
 
+/// The format version of the printed graph: the shape of its Artifacts, evals, relations
+/// and components. It changes when a field is removed or changes meaning, so that scripts
+/// reading the output can refuse a shape they do not know.
+const GRAPH_FORMAT_VERSION: u32 = 1;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphView<'a> {
     pub version: u32,
+    #[serde(serialize_with = "crate::platform::path_serde::serialize")]
     pub repo_path: &'a Path,
     pub selection: &'a Selection,
-    pub artifacts: BTreeMap<&'a str, &'a Artifact>,
+    pub artifacts: BTreeMap<&'a crate::config::ArtifactName, &'a Artifact>,
     pub evals: Vec<&'a Eval>,
     pub relations: Vec<GraphRelation<'a>>,
     pub components: Vec<GraphComponent<'a>>,
@@ -35,10 +44,10 @@ pub struct GraphRelation<'a> {
 
 #[derive(Debug, Serialize)]
 pub struct GraphComponent<'a> {
-    pub id: usize,
-    pub artifacts: Vec<&'a str>,
-    pub dependencies: Vec<usize>,
-    pub gates: Vec<&'a str>,
+    pub id: crate::graph::ComponentId,
+    pub artifacts: Vec<&'a crate::config::ArtifactName>,
+    pub dependencies: Vec<crate::graph::ComponentId>,
+    pub gates: Vec<&'a crate::config::EvalId>,
     pub cyclic: bool,
 }
 
@@ -59,14 +68,13 @@ pub fn graph<'a>(
     let evals = config
         .evals
         .iter()
-        .filter(|eval| artifacts.contains_key(eval.target.as_str()))
+        .filter(|eval| artifacts.contains_key(&eval.target))
         .collect();
     let relations: Vec<_> = config
         .relations
         .iter()
         .filter(|relation| {
-            artifacts.contains_key(relation.source.as_str())
-                && artifacts.contains_key(relation.target.as_str())
+            artifacts.contains_key(&relation.source) && artifacts.contains_key(&relation.target)
         })
         .map(|relation| GraphRelation {
             relation,
@@ -80,18 +88,18 @@ pub fn graph<'a>(
         .enumerate()
         .filter(|(_, component)| artifacts.contains_key(component.artifacts[0]))
         .map(|(id, component)| GraphComponent {
-            id,
+            id: crate::graph::ComponentId::from_position(id),
             artifacts: component.artifacts.clone(),
             dependencies: component.dependencies.clone(),
             gates: component.gates.clone(),
             cyclic: component.artifacts.len() > 1
                 || relations.iter().any(|edge| {
-                    edge.cyclic && component.artifacts.contains(&edge.relation.source.as_str())
+                    edge.cyclic && component.artifacts.contains(&&edge.relation.source)
                 }),
         })
         .collect();
     Ok(GraphView {
-        version: 1,
+        version: GRAPH_FORMAT_VERSION,
         repo_path: &config.root,
         selection,
         artifacts,

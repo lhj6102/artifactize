@@ -1,4 +1,4 @@
-use std::{fs, path::Path, process::Command, sync::mpsc, thread};
+use std::{fs, process::Command, sync::mpsc, thread};
 
 use artifactize::store::{
     DATABASE, Receipts, STATE_SCHEMA_VERSION, read_keyed_executions, read_latest_requests,
@@ -8,18 +8,11 @@ use rusqlite::Connection;
 
 mod support;
 
-/// A link to a directory: a symlink on Unix, and on Windows a junction, which needs no
-/// privilege and which artifactize refuses just the same.
-fn link_dir(target: &Path, link: &Path) {
-    #[cfg(unix)]
-    support::os::symlink_dir(target, link).unwrap();
-    #[cfg(windows)]
-    support::os::junction(target, link);
-}
+use support::os::link_dir;
 
 #[tokio::test]
 async fn missing_read_is_inert_and_future_schemas_are_not_modified() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -108,7 +101,7 @@ async fn assert_empty_reads(state: &std::path::Path, repo: &std::path::Path) {
 
 #[tokio::test]
 async fn readers_observe_empty_state_until_schema_commits() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let template = root.path().join("template");
     let state = root.path().join("state");
@@ -163,7 +156,7 @@ async fn readers_observe_empty_state_until_schema_commits() {
 
 #[tokio::test]
 async fn repositories_share_one_state_database() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     // The long, plain paths artifactize records, whatever form TEMP takes.
     let base = support::os::canonical(root.path());
     let first = base.join("first");
@@ -202,8 +195,8 @@ async fn repositories_share_one_state_database() {
                 String::from_utf8_lossy(&output.stderr)
             );
             let run: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(run["repoPath"], repo.to_string_lossy().as_ref());
-            assert_eq!(run["stateDir"], state.to_string_lossy().as_ref());
+            assert_eq!(run["repoPath"], support::os::path_text(repo));
+            assert_eq!(run["stateDir"], support::os::path_text(&state));
             assert!(
                 state
                     .join("runs")
@@ -238,7 +231,7 @@ async fn repositories_share_one_state_database() {
 
 #[tokio::test]
 async fn schema_allows_only_one_active_execution_per_key() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -265,7 +258,7 @@ async fn schema_allows_only_one_active_execution_per_key() {
 
 #[test]
 fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     fs::create_dir(&repo).unwrap();
     support::declaration::write(repo.join("index.artf"), r#"{"name":"basis","basis":true}"#)
@@ -274,17 +267,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
     let inner = repo.join("inner");
     fs::create_dir(&inner).unwrap();
     link_dir(&inner, &root.path().join("nested-alias"));
-    for state in [
-        repo.join("state"),
-        // Windows opens a name in any case: this is the repository too.
-        #[cfg(windows)]
-        support::os::other_case(&repo).join("state"),
-        root.path().join("alias/state"),
-        // Windows drops `..` from a path before following any link, so there this names
-        // root/state, outside the repository.
-        #[cfg(unix)]
-        root.path().join("nested-alias/../state"),
-    ] {
+    for state in support::os::reviewed_state_paths(root.path(), &repo) {
         for explicit in [false, true] {
             let mut command = Command::new(env!("CARGO_BIN_EXE_artifactize"));
             command
@@ -319,11 +302,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&output.stderr).contains("outside the reviewed repository"));
-    // Windows removes a directory link as a directory.
-    #[cfg(unix)]
-    fs::remove_file(state.join("runs")).unwrap();
-    #[cfg(windows)]
-    fs::remove_dir(state.join("runs")).unwrap();
+    support::os::remove_link_dir(&state.join("runs"));
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .env("ARTIFACTIZE_STATE_HOME", repo.join("home"))
         .arg("--repo")
@@ -344,7 +323,7 @@ fn state_and_output_reject_reviewed_paths_and_symlink_ancestors() {
 
 #[tokio::test]
 async fn sqlite_files_cannot_redirect_writes_through_links() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -376,12 +355,9 @@ async fn sqlite_files_cannot_redirect_writes_through_links() {
 
 #[tokio::test]
 async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_writes_are_atomic() {
-    use artifactize::{
-        store::RunView,
-        types::{RequestStatus, RunStatus},
-    };
+    use artifactize::store::RunView;
     use serde_json::json;
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -423,7 +399,7 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
                     "maxToolCalls":null,
                     "maxTokens":null,
                 },
-                "evalDefHash":"fixture",
+                "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
                 "executionId":null,
                 "provenance":null,
                 "usage":null,
@@ -463,18 +439,22 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
             "maxTokens":null,
         })
     );
-    let mut bad = view.requests[0].clone();
-    bad.status = RequestStatus::Green;
-    bad.completed_at = Some("2026-01-01T00:00:01Z".into());
-    assert!(receipts.save_request(&bad).await.is_err());
-    bad.result = Some(json!({"verdict":"GREEN"}));
-    bad.error = Some("contradiction".into());
-    assert!(receipts.save_request(&bad).await.is_err());
-    bad.status = RequestStatus::Error;
-    assert!(receipts.save_request(&bad).await.is_err());
-    let mut run = view.run.clone();
-    run.status = RunStatus::Green;
-    assert!(receipts.save_run(&run).await.is_err());
+    let good = serde_json::to_value(&view.requests[0]).unwrap();
+    for (status, result, error) in [
+        ("GREEN", serde_json::Value::Null, serde_json::Value::Null),
+        ("GREEN", json!({"verdict":"GREEN"}), json!("contradiction")),
+        ("ERROR", json!({"verdict":"GREEN"}), json!("contradiction")),
+    ] {
+        let mut bad = good.clone();
+        bad["status"] = json!(status);
+        bad["result"] = result;
+        bad["error"] = error;
+        bad["completedAt"] = json!("2026-01-01T00:00:01Z");
+        assert!(serde_json::from_value::<artifactize::store::Request>(bad).is_err());
+    }
+    let mut wire = serde_json::to_value(&view.run).unwrap();
+    wire["status"] = json!("GREEN");
+    assert!(serde_json::from_value::<artifactize::store::Run>(wire).is_err());
     assert_eq!(
         serde_json::to_value(read_run(&state, "run-old").await.unwrap()).unwrap(),
         before
@@ -485,15 +465,15 @@ async fn schema_five_profiles_and_statuses_survive_typed_reads_and_invalid_write
             .unwrap(),
         STATE_SCHEMA_VERSION
     );
-    // Earlier schema-5 writes remain readable, even if their lifecycle fields contradict:
-    // validation gates new writes, not a migration of saved data.
+    // Valid older writes still read unchanged; contradictory lifecycle fields are
+    // corruption and fail only that record at the parse boundary.
     db.execute(
         "UPDATE requests SET status='GREEN',data=json_set(data,'$.status','GREEN')",
         [],
     )
     .unwrap();
-    assert_eq!(
-        read_run(&state, "run-old").await.unwrap().requests[0].status,
-        RequestStatus::Green
-    );
+    let saved = read_run(&state, "run-old").await.unwrap();
+    assert!(saved.requests.is_empty());
+    assert_eq!(saved.unreadable[0].id, "run-old-1");
+    assert!(saved.unreadable[0].reason.contains("matching result"));
 }

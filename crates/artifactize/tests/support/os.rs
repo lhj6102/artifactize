@@ -2,14 +2,43 @@
 //! the tests name, executable scripts, links and junctions, extra file permissions, and
 //! process control. Unix keeps the real utilities and signals; Windows gets the stand-ins
 //! described with each helper.
-#![allow(dead_code, reason = "each test binary uses a different part")]
+#![expect(dead_code, reason = "each test binary uses a different part")]
 
+use serde_json::{Value, json};
+use std::fs;
 use std::{path::Path, process::Command};
 
 /// A temporary fixture below the physical OS temp root, not macOS /var or Windows 8.3
 /// aliases. Scoped file reads intentionally refuse symlink traversal.
 pub fn tempdir() -> tempfile::TempDir {
-    tempfile::tempdir_in(std::fs::canonicalize(std::env::temp_dir()).unwrap()).unwrap()
+    tempfile::tempdir_in(temp_root()).unwrap()
+}
+
+/// Keep a file in Windows' pending-delete disposition until the returned handle closes.
+/// A delete-on-close handle establishes the disposition when it closes, while a second
+/// read/delete-sharing handle keeps the name present but inaccessible to new opens.
+/// `remove_file` alone instead unlinks by POSIX semantics on current Windows.
+#[cfg(windows)]
+pub fn pending_delete(path: &Path) -> fs::File {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    // Both opens must coexist for read and allow the delete-on-close disposition.
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+    const FILE_FLAG_DELETE_ON_CLOSE: u32 = 0x0400_0000;
+    let deleter = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_DELETE_ON_CLOSE)
+        .open(path)
+        .unwrap();
+    let holder = fs::OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_DELETE)
+        .open(path)
+        .unwrap();
+    drop(deleter);
+    holder
 }
 
 /// The program a test names a Unix utility by, such as `/bin/sh` or `cat`: unchanged on
@@ -33,6 +62,77 @@ pub fn bin(path: &str) -> String {
         .to_owned()
 }
 
+/// The POSIX shell, resolved through [`bin`] like any other named utility: a semantic call
+/// for test code that just needs a shell, so the shell's own path lives only here.
+pub fn shell() -> String {
+    bin("/bin/sh")
+}
+
+/// A program that exits 0 and does nothing else, resolved through [`bin`].
+pub fn true_program() -> String {
+    bin("/bin/true")
+}
+
+/// A program that exits 1 and does nothing else, resolved through [`bin`].
+pub fn false_program() -> String {
+    bin("/bin/false")
+}
+
+/// A program that prints its arguments, resolved through [`bin`].
+pub fn echo_program() -> String {
+    bin("/bin/echo")
+}
+
+/// A program that prints a file's contents, resolved through [`bin`].
+pub fn cat_program() -> String {
+    bin("/bin/cat")
+}
+
+/// A program that waits for the given duration and exits 0, resolved through [`bin`].
+pub fn sleep_program() -> String {
+    bin("/bin/sleep")
+}
+
+/// A program that runs another program with an adjusted environment, resolved through
+/// [`bin`].
+pub fn env_program() -> String {
+    bin("/usr/bin/env")
+}
+
+/// A program that formats and prints its arguments, resolved through [`bin`].
+pub fn printf_program() -> String {
+    bin("/usr/bin/printf")
+}
+
+/// A program that creates a file or updates its modified time, resolved through [`bin`].
+pub fn touch_program() -> String {
+    bin("/usr/bin/touch")
+}
+
+/// A Windows drive-letter absolute path naming `suffix`, rejected by the portable
+/// declaration path grammar on every platform: a sample value, never a real path this
+/// test opens.
+pub fn windows_drive(suffix: &str) -> String {
+    format!("C:/{suffix}")
+}
+
+/// The same drive-letter absolute path, with native Windows separators.
+pub fn windows_drive_native(suffix: &str) -> String {
+    format!("C:\\{suffix}")
+}
+
+/// A well-known Windows system file path, rejected the same way as any other escape
+/// attempt: a sample value, never a real path this test opens.
+pub fn windows_system_file() -> &'static str {
+    "C:/Windows/win.ini"
+}
+
+/// A well-known Unix system file path, rejected the same way as any other escape
+/// attempt: a sample value, never a real path this test opens.
+pub fn unix_system_file() -> &'static str {
+    "/etc/passwd"
+}
+
 /// Whether tests run the stand-ins `bin` names.
 pub fn stand_ins() -> bool {
     cfg!(windows) || std::env::var_os("ARTIFACTIZE_TEST_STAND_INS").is_some()
@@ -53,6 +153,20 @@ pub fn slow(milliseconds: u64) -> u64 {
 /// failing test waits that long.
 pub fn patience(duration: std::time::Duration) -> std::time::Duration {
     std::time::Duration::from_millis(slow(duration.as_millis() as u64))
+}
+
+/// Poll `condition` until it holds, or panic after `patience(limit)`: the shared "wait for
+/// an external process or file to reach a state" loop, scaled for a slower CI host rather
+/// than checking once or sleeping a fixed real-time span.
+pub fn wait_until(limit: std::time::Duration, mut condition: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + patience(limit);
+    while !condition() {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "condition was not reached"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
 }
 
 /// `PATH` for a spawned artifactize. With the stand-ins they come first, so that bare names
@@ -83,6 +197,250 @@ pub fn make_executable(path: &Path) {
     }
 }
 
+/// Give a script its execute bits (0755) on Unix, for a declaration that runs it by path
+/// through its `#!` line. Windows has no execute bit and runs a script by its extension.
+pub fn allow_execution(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    #[cfg(windows)]
+    let _ = path;
+}
+
+/// Take a file's execute bits away (0600). Only Unix has them.
+#[cfg(unix)]
+pub fn deny_execution(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+/// The program a Unix desktop opens files with: `open` on macOS, `xdg-open` elsewhere.
+/// Windows opens through ShellExecute and runs no program by name.
+#[cfg(unix)]
+pub const OPENER: &str = if cfg!(target_os = "macos") {
+    "open"
+} else {
+    "xdg-open"
+};
+
+/// The environment variable naming the file a recording program appends to.
+pub const RECORD: &str = "ARTIFACTIZE_OPENER_RECORD";
+
+/// Build a program named `name` in `directory` that appends its argument count and first
+/// argument, one per line, to the file named by `RECORD`. A compiled program needs no shell.
+pub fn recording_program(directory: &Path, name: &str) -> std::path::PathBuf {
+    let source = directory.join(format!("{name}-recorder.rs"));
+    std::fs::write(
+        &source,
+        r#"use std::io::Write;
+fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let record = std::env::var_os("ARTIFACTIZE_OPENER_RECORD").expect("record path");
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(record).unwrap();
+    writeln!(file, "{}", args.len()).unwrap();
+    writeln!(file, "{}", args.first().map(String::as_str).unwrap_or_default()).unwrap();
+}
+"#,
+    )
+    .unwrap();
+    let program = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let output = Command::new(rustc)
+        .args(["--edition", "2024", "-o"])
+        .arg(&program)
+        .arg(&source)
+        .output()
+        .expect("rustc builds the recording program");
+    assert!(
+        output.status.success(),
+        "building the recording program failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    program
+}
+
+/// Set a Unix permission mode, for checks of modes artifactize refuses or must tolerate.
+#[cfg(unix)]
+pub fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
+/// A Unix permission mode, without the file type bits.
+#[cfg(unix)]
+pub fn mode(path: &Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    path.metadata().unwrap().permissions().mode() & 0o7777
+}
+
+/// Let everyone list and enter a directory: mode 0755 on Unix, and on Windows an extra
+/// Everyone read ACE. Either way it is no longer private.
+pub fn share_dir(path: &Path) {
+    #[cfg(unix)]
+    set_mode(path, 0o755);
+    #[cfg(windows)]
+    grant_everyone_read(path);
+}
+
+/// The effective user ID of this process.
+#[cfg(unix)]
+pub fn current_uid() -> u32 {
+    // SAFETY: geteuid has no preconditions and does not change process state.
+    unsafe { libc::geteuid() }
+}
+
+/// A temporary directory below macOS's `/tmp`, the system alias of `/private/tmp`, as an
+/// operator's state path may name it.
+#[cfg(target_os = "macos")]
+pub fn tempdir_below_tmp_alias() -> tempfile::TempDir {
+    tempfile::tempdir_in("/tmp").unwrap()
+}
+
+/// A file name with whitespace in it: with a line break where the system allows one in a
+/// name, only a space on Windows, which forbids line breaks in names.
+pub fn whitespace_name() -> &'static str {
+    if cfg!(windows) {
+        "other space"
+    } else {
+        "other space\nline"
+    }
+}
+
+/// Whether the volume holding `directory` opens a name in any case, as Windows and default
+/// macOS volumes do.
+pub fn case_insensitive(directory: &Path) -> bool {
+    let probe = directory.join("case-probe");
+    std::fs::write(&probe, "").unwrap();
+    let insensitive = other_case(&probe).exists();
+    std::fs::remove_file(probe).unwrap();
+    insensitive
+}
+
+/// The null device: `/dev/null` on Unix, `NUL` on Windows.
+pub fn null_device() -> &'static Path {
+    Path::new(if cfg!(windows) { "NUL" } else { "/dev/null" })
+}
+
+/// A FIFO, an entry that is neither a file nor a directory. Windows has none.
+#[cfg(unix)]
+pub fn fifo(path: &Path) {
+    use std::os::unix::ffi::OsStrExt;
+    let name = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+    // SAFETY: a live NUL-terminated path; mkfifo retains no pointer and 0600 is a valid mode.
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+}
+
+/// A bound Unix socket at `path`, another special entry; it stays bound while held.
+#[cfg(unix)]
+pub fn socket(path: &Path) -> std::os::unix::net::UnixListener {
+    std::os::unix::net::UnixListener::bind(path).unwrap()
+}
+
+/// The error opening a path below a regular file reports on Unix.
+#[cfg(unix)]
+pub fn not_a_directory() -> std::io::Error {
+    std::io::Error::from_raw_os_error(libc::ENOTDIR)
+}
+
+/// The signal number of SIGTERM.
+#[cfg(unix)]
+pub const SIGTERM: i32 = libc::SIGTERM;
+
+/// A shell command whose own shell sends itself SIGTERM: meaningful only where a signal
+/// can end a process, so only Unix code reads this value.
+pub const SELF_TERMINATE: &str = "kill -TERM $$";
+
+/// End a process and everything in its tree at once: SIGKILL to its process group on Unix;
+/// on Windows the process, as its Job Object holds the rest.
+pub fn kill_tree(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: a plain signal to the group of a child this test started; one that has
+        // already gone is fine.
+        unsafe { libc::kill(-(pid as i32), libc::SIGKILL) };
+    }
+    #[cfg(windows)]
+    kill(pid);
+}
+
+/// Whether a Unix process leads its own process group.
+#[cfg(unix)]
+pub fn leads_group(pid: u32) -> bool {
+    // SAFETY: getpgid only queries a process.
+    unsafe { libc::getpgid(pid as i32) == pid as i32 }
+}
+
+/// Whether a Unix process leads its own session, detached from the caller's terminal.
+#[cfg(unix)]
+pub fn leads_session(pid: u32) -> bool {
+    // SAFETY: getsid only queries a process.
+    unsafe { libc::getsid(pid as i32) == pid as i32 }
+}
+
+/// Block until `pid` exits, without reaping it: `waitid` with `WNOWAIT`, so a caller can
+/// still probe the zombie afterward.
+#[cfg(target_os = "macos")]
+pub fn wait_for_zombie(pid: u32) {
+    let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::uninit();
+    // SAFETY: waitid writes a full siginfo_t for our child; WNOWAIT synchronizes on exit
+    // while deliberately keeping the zombie unreaped.
+    let result = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            pid,
+            info.as_mut_ptr(),
+            libc::WEXITED | libc::WNOWAIT,
+        )
+    };
+    assert_eq!(result, 0, "{}", std::io::Error::last_os_error());
+}
+
+/// A pipe named like the one Git Bash's mintty hands a program: the writer and the reader,
+/// which `is_terminal` takes for a terminal although it has no console.
+#[cfg(windows)]
+pub fn mintty_pipe() -> (std::fs::File, std::fs::File) {
+    use std::{os::windows::io::FromRawHandle, ptr};
+    use windows_sys::Win32::{
+        Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE},
+        Storage::FileSystem::{CreateFileW, OPEN_EXISTING, PIPE_ACCESS_OUTBOUND},
+        System::Pipes::{CreateNamedPipeW, PIPE_TYPE_BYTE, PIPE_WAIT},
+    };
+    let name: Vec<u16> = format!(r"\\.\pipe\msys-{}-pty0-from-master", std::process::id())
+        .encode_utf16()
+        .chain([0])
+        .collect();
+    // SAFETY: a NUL-terminated name; each handle is checked, then owned by one File.
+    unsafe {
+        let server_end = CreateNamedPipeW(
+            name.as_ptr(),
+            PIPE_ACCESS_OUTBOUND,
+            PIPE_TYPE_BYTE | PIPE_WAIT,
+            1,
+            4096,
+            4096,
+            0,
+            ptr::null(),
+        );
+        assert_ne!(server_end, INVALID_HANDLE_VALUE);
+        let client_end = CreateFileW(
+            name.as_ptr(),
+            GENERIC_READ,
+            0,
+            ptr::null(),
+            OPEN_EXISTING,
+            0,
+            ptr::null_mut(),
+        );
+        assert_ne!(client_end, INVALID_HANDLE_VALUE);
+        (
+            std::fs::File::from_raw_handle(server_end),
+            std::fs::File::from_raw_handle(client_end),
+        )
+    }
+}
+
 mod fixture {
     use std::{
         env::consts::EXE_SUFFIX,
@@ -106,7 +464,8 @@ mod fixture {
         static DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
         DIRECTORY.get_or_init(|| {
             let source = include_str!("fixture.rs");
-            let digest = Sha256::digest(source.as_bytes());
+            let digest =
+                Sha256::digest([source.as_bytes(), include_bytes!("os/stand_in.rs")].concat());
             let tag: String = digest[..8]
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
@@ -152,6 +511,49 @@ mod fixture {
             directory
         })
     }
+}
+
+/// A link to a directory that needs no privilege: a symlink on Unix, and on Windows a
+/// junction, which artifactize refuses and resolves just as it does a directory symlink.
+pub fn link_dir(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    symlink_dir(target, link).unwrap();
+    #[cfg(windows)]
+    junction(target, link);
+}
+
+/// Remove a link `link_dir` made, without touching its target: Windows removes a directory
+/// link as a directory.
+pub fn remove_link_dir(link: &Path) {
+    #[cfg(unix)]
+    std::fs::remove_file(link).unwrap();
+    #[cfg(windows)]
+    std::fs::remove_dir(link).unwrap();
+}
+
+/// Whether a process has exited for good: on Unix also reaped, so no zombie entry remains;
+/// on Windows no longer running.
+pub fn gone(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        !exists(pid)
+    }
+    #[cfg(windows)]
+    {
+        !running(pid)
+    }
+}
+
+/// Ask a process to terminate: SIGTERM on Unix, and on Windows Ctrl-Break to the group
+/// `new_group` gave it, the closest request it has.
+pub fn terminate(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: a plain signal to a child this test spawned.
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGTERM) }, 0);
+    }
+    #[cfg(windows)]
+    interrupt(pid);
 }
 
 /// A symbolic link to a file, which may not exist. On Windows this needs Developer Mode or
@@ -262,15 +664,25 @@ pub fn interrupt(pid: u32) {
     }
 }
 
-/// Freeze every thread of a process, as SIGSTOP does.
-#[cfg(windows)]
+/// Freeze a process: SIGSTOP on Unix, and on Windows every thread suspended.
 pub fn suspend(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: a plain signal to a process this test started.
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGSTOP) }, 0);
+    }
+    #[cfg(windows)]
     nt_process(pid, true);
 }
 
-/// Let a process frozen by `suspend` run again, as SIGCONT does.
-#[cfg(windows)]
+/// Let a process frozen by `suspend` run again: SIGCONT on Unix.
 pub fn resume(pid: u32) {
+    #[cfg(unix)]
+    {
+        // SAFETY: a plain signal to a process this test started.
+        assert_eq!(unsafe { libc::kill(pid as i32, libc::SIGCONT) }, 0);
+    }
+    #[cfg(windows)]
     nt_process(pid, false);
 }
 
@@ -388,15 +800,389 @@ fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
     (read == size).then(|| unsafe { info.assume_init() })
 }
 
-/// script(1)'s equivalent PTY invocation on util-linux and BSD/macOS.
-#[cfg(unix)]
-pub fn pty_command(command: &str) -> Command {
-    let mut pty = Command::new("script");
-    #[cfg(target_os = "macos")]
-    pty.args(["-q", "/dev/null", "/bin/sh", "-c", command]);
-    #[cfg(not(target_os = "macos"))]
-    pty.args(["-qec", command, "/dev/null"]);
-    pty
+/// A program running on a pseudo-terminal of its own: an openpty(3) pair on Unix, whose
+/// terminal becomes the program's controlling terminal, and a ConPTY on Windows. The program
+/// and its arguments are passed as they are, with no shell. What it draws arrives in chunks
+/// from `start`'s receiver, which ends once `finish` has closed the terminal.
+pub struct PseudoTerminal {
+    #[cfg(unix)]
+    child: std::process::Child,
+    /// The terminal's controlling side, which what is typed is written to.
+    #[cfg(unix)]
+    input: std::fs::File,
+    #[cfg(windows)]
+    console: conpty::Console,
+}
+
+impl PseudoTerminal {
+    /// Start `program` with `args` on a terminal `columns` wide and `rows` high, with the
+    /// test's environment except the variables named in `without`.
+    pub fn start(
+        program: &Path,
+        args: &[&str],
+        without: &[&str],
+        columns: u16,
+        rows: u16,
+    ) -> (Self, std::sync::mpsc::Receiver<Vec<u8>>) {
+        #[cfg(unix)]
+        let (terminal, output) = {
+            use std::os::{
+                fd::{FromRawFd, OwnedFd},
+                unix::process::CommandExt,
+            };
+            let mut size = libc::winsize {
+                ws_row: rows,
+                ws_col: columns,
+                ws_xpixel: 0,
+                ws_ypixel: 0,
+            };
+            let (mut master, mut slave) = (0, 0);
+            // SAFETY: openpty writes two new descriptors, owned below, and reads the size.
+            let opened = unsafe {
+                libc::openpty(
+                    &mut master,
+                    &mut slave,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    // Linux takes the size as const, macOS as mut; a raw pointer suits both.
+                    &raw mut size,
+                )
+            };
+            assert_eq!(opened, 0, "{}", std::io::Error::last_os_error());
+            // SAFETY: both descriptors were just opened and are owned exactly once.
+            let (master, slave) = unsafe {
+                (
+                    std::fs::File::from_raw_fd(master),
+                    OwnedFd::from_raw_fd(slave),
+                )
+            };
+            let mut command = Command::new(program);
+            command
+                .args(args)
+                .stdin(slave.try_clone().unwrap())
+                .stdout(slave.try_clone().unwrap())
+                .stderr(slave);
+            for name in without {
+                command.env_remove(name);
+            }
+            // SAFETY: the child calls only setsid and ioctl, which are async-signal-safe.
+            unsafe {
+                command.pre_exec(|| {
+                    // A new session whose controlling terminal is the pseudo-terminal.
+                    if libc::setsid() == -1
+                        || libc::ioctl(0, libc::TIOCSCTTY as libc::c_ulong, 0) == -1
+                    {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+            let child = command.spawn().unwrap();
+            // Only the program holds the terminal now, so its exit ends the output.
+            drop(command);
+            let input = master.try_clone().unwrap();
+            (Self { child, input }, master)
+        };
+        #[cfg(windows)]
+        let (terminal, output) = {
+            let (console, output) = conpty::Console::start(program, args, without, columns, rows);
+            (Self { console }, output)
+        };
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            use std::io::Read;
+            let mut output = output;
+            let mut buffer = [0; 4096];
+            while let Ok(read @ 1..) = output.read(&mut buffer) {
+                if sender.send(buffer[..read].to_vec()).is_err() {
+                    break;
+                }
+            }
+        });
+        (terminal, receiver)
+    }
+
+    /// Type `text` at the terminal.
+    pub fn type_text(&mut self, text: &[u8]) {
+        use std::io::Write;
+        #[cfg(unix)]
+        self.input.write_all(text).unwrap();
+        #[cfg(windows)]
+        self.console.input.write_all(text).unwrap();
+    }
+
+    /// Wait for the program to exit, then close the terminal so that its output ends.
+    /// Whether the program succeeded.
+    pub fn finish(mut self) -> bool {
+        let deadline = std::time::Instant::now() + patience(std::time::Duration::from_secs(10));
+        #[cfg(unix)]
+        {
+            loop {
+                if let Some(status) = self.child.try_wait().unwrap() {
+                    return status.success();
+                }
+                if std::time::Instant::now() > deadline {
+                    self.child.kill().unwrap();
+                    panic!("the terminal program did not exit");
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+        #[cfg(windows)]
+        {
+            let success = self
+                .console
+                .wait(deadline.saturating_duration_since(std::time::Instant::now()));
+            self.console.close();
+            success
+        }
+    }
+}
+
+/// Check that a full-screen program left the terminal as it found it, from what the
+/// terminal showed between its start and its close. On Unix script(1) passes the program's
+/// own sequences through: it enters the alternate screen first and leaves it, showing the
+/// cursor, last. A ConPTY renders the console instead and sends its own sequences: after the
+/// program's last frame the screen is redrawn without it, and the cursor shown.
+pub fn assert_restored(output: &str, frame: &str) {
+    #[cfg(unix)]
+    {
+        let _ = frame;
+        assert!(output.starts_with("\x1b[?1049h"), "{output:?}");
+        assert!(output.ends_with("\x1b[?25h\x1b[?1049l"), "{output:?}");
+    }
+    #[cfg(windows)]
+    {
+        let last = output.rfind(frame).expect("the program drew its frame");
+        let after = &output[last..];
+        assert!(
+            ["\x1b[?1049l", "\x1b[2J", "\x1b[J", "\x1b[0J"]
+                .iter()
+                .any(|erase| after.contains(erase)),
+            "the last frame is not erased: {after:?}"
+        );
+        assert!(
+            output.rfind("\x1b[?25h") > output.rfind("\x1b[?25l"),
+            "the cursor is not shown again: {after:?}"
+        );
+    }
+}
+
+/// A ConPTY driven through its pipes, the Windows pseudo-terminal.
+#[cfg(windows)]
+mod conpty {
+    use std::{
+        io::{PipeReader, PipeWriter},
+        os::windows::io::AsRawHandle,
+        path::Path,
+        time::Duration,
+    };
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0},
+        System::{
+            Console::{COORD, ClosePseudoConsole, CreatePseudoConsole, HPCON},
+            Threading::{
+                CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
+                EXTENDED_STARTUPINFO_PRESENT, GetExitCodeProcess,
+                InitializeProcThreadAttributeList, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
+                PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOEXW, TerminateProcess,
+                UpdateProcThreadAttribute, WaitForSingleObject,
+            },
+        },
+    };
+
+    pub struct Console {
+        pub input: PipeWriter,
+        console: Option<HPCON>,
+        process: HANDLE,
+    }
+
+    impl Console {
+        pub fn start(
+            program: &Path,
+            args: &[&str],
+            without: &[&str],
+            columns: u16,
+            rows: u16,
+        ) -> (Self, PipeReader) {
+            let (console_input, input) = std::io::pipe().unwrap();
+            let (output, console_output) = std::io::pipe().unwrap();
+            let size = COORD {
+                X: columns as i16,
+                Y: rows as i16,
+            };
+            let mut console = 0;
+            // SAFETY: both pipe ends are open handles; the console duplicates them.
+            let result = unsafe {
+                CreatePseudoConsole(
+                    size,
+                    console_input.as_raw_handle(),
+                    console_output.as_raw_handle(),
+                    0,
+                    &mut console,
+                )
+            };
+            assert!(result >= 0, "CreatePseudoConsole: HRESULT {result:#x}");
+            let mut bytes = 0;
+            // SAFETY: a null list asks for the size the list needs.
+            unsafe { InitializeProcThreadAttributeList(std::ptr::null_mut(), 1, 0, &mut bytes) };
+            let mut list = vec![0_usize; bytes.div_ceil(size_of::<usize>())];
+            let attributes = list.as_mut_ptr().cast();
+            // SAFETY: the buffer has the size asked for and is aligned for the list; the
+            // attribute value is the console handle itself, as the attribute requires.
+            unsafe {
+                assert_ne!(
+                    InitializeProcThreadAttributeList(attributes, 1, 0, &mut bytes),
+                    0,
+                    "{}",
+                    std::io::Error::last_os_error()
+                );
+                assert_ne!(
+                    UpdateProcThreadAttribute(
+                        attributes,
+                        0,
+                        PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE as usize,
+                        console as *const std::ffi::c_void,
+                        size_of::<HPCON>(),
+                        std::ptr::null_mut(),
+                        std::ptr::null(),
+                    ),
+                    0,
+                    "{}",
+                    std::io::Error::last_os_error()
+                );
+            }
+            // SAFETY: STARTUPINFOEXW is plain data; zero is its empty value.
+            let mut startup: STARTUPINFOEXW = unsafe { std::mem::zeroed() };
+            startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
+            // Without these the program would write to the test's own redirected handles
+            // instead of the console.
+            startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
+            startup.StartupInfo.hStdInput = INVALID_HANDLE_VALUE;
+            startup.StartupInfo.hStdOutput = INVALID_HANDLE_VALUE;
+            startup.StartupInfo.hStdError = INVALID_HANDLE_VALUE;
+            startup.lpAttributeList = attributes;
+            let mut command_line: Vec<u16> = std::iter::once(program.to_str().unwrap())
+                .chain(args.iter().copied())
+                .map(quote)
+                .collect::<Vec<_>>()
+                .join(" ")
+                .encode_utf16()
+                .chain([0])
+                .collect();
+            // The environment block: `name=value` entries, each ended by a NUL, then a NUL.
+            let mut variables: Vec<_> = std::env::vars_os()
+                .filter(|(name, _)| !without.iter().any(|left| name.eq_ignore_ascii_case(left)))
+                .collect();
+            variables.sort_by_key(|(name, _)| name.to_ascii_uppercase());
+            let mut environment: Vec<u16> = Vec::new();
+            for (name, value) in variables {
+                let mut entry = name;
+                entry.push("=");
+                entry.push(value);
+                environment.extend(std::os::windows::ffi::OsStrExt::encode_wide(
+                    entry.as_os_str(),
+                ));
+                environment.push(0);
+            }
+            environment.push(0);
+            // SAFETY: PROCESS_INFORMATION is plain data that CreateProcessW fills.
+            let mut process: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
+            // SAFETY: the command line is a writable NUL-terminated buffer, the environment a
+            // double-NUL-terminated UTF-16 block, and the startup information holds the
+            // initialized attribute list; all outlive the call.
+            let created = unsafe {
+                CreateProcessW(
+                    std::ptr::null(),
+                    command_line.as_mut_ptr(),
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    0,
+                    EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
+                    environment.as_ptr().cast(),
+                    std::ptr::null(),
+                    &startup.StartupInfo,
+                    &mut process,
+                )
+            };
+            let error = std::io::Error::last_os_error();
+            // SAFETY: the list was initialized above and is deleted once.
+            unsafe { DeleteProcThreadAttributeList(attributes) };
+            assert_ne!(created, 0, "CreateProcessW: {error}");
+            // SAFETY: the thread handle is open and not used again.
+            unsafe { CloseHandle(process.hThread) };
+            // The console holds its own copies of its pipe ends.
+            drop((console_input, console_output));
+            (
+                Self {
+                    input,
+                    console: Some(console),
+                    process: process.hProcess,
+                },
+                output,
+            )
+        }
+
+        /// Wait up to `limit` for the program to exit. Whether it exited with status 0.
+        pub fn wait(&mut self, limit: Duration) -> bool {
+            let milliseconds = u32::try_from(limit.as_millis()).unwrap_or(u32::MAX - 1);
+            // SAFETY: the process handle is open until drop.
+            let waited = unsafe { WaitForSingleObject(self.process, milliseconds) };
+            assert_eq!(waited, WAIT_OBJECT_0, "the terminal program did not exit");
+            let mut code = 0;
+            // SAFETY: as above; the exit code is written to a local.
+            assert_ne!(unsafe { GetExitCodeProcess(self.process, &mut code) }, 0);
+            code == 0
+        }
+
+        /// Close the console, ending its output.
+        pub fn close(&mut self) {
+            if let Some(console) = self.console.take() {
+                // SAFETY: the console is open and closed once.
+                unsafe { ClosePseudoConsole(console) };
+            }
+        }
+    }
+
+    impl Drop for Console {
+        fn drop(&mut self) {
+            // SAFETY: the process handle is open; a program that has exited is unaffected.
+            unsafe {
+                TerminateProcess(self.process, 1);
+                CloseHandle(self.process);
+            }
+            self.close();
+        }
+    }
+
+    /// One argument as the C runtime splits a command line: quoted when it holds a space,
+    /// tab or quote, with backslashes doubled before a quote and at its end.
+    fn quote(arg: &str) -> String {
+        if !arg.is_empty() && !arg.contains([' ', '\t', '"']) {
+            return arg.to_owned();
+        }
+        let mut quoted = String::from('"');
+        let mut backslashes = 0;
+        for c in arg.chars() {
+            match c {
+                '\\' => backslashes += 1,
+                '"' => {
+                    quoted.push_str(&"\\".repeat(backslashes * 2 + 1));
+                    backslashes = 0;
+                }
+                _ => {
+                    quoted.push_str(&"\\".repeat(backslashes));
+                    backslashes = 0;
+                }
+            }
+            if c != '\\' {
+                quoted.push(c);
+            }
+        }
+        quoted.push_str(&"\\".repeat(backslashes * 2));
+        quoted.push('"');
+        quoted
+    }
 }
 
 /// A process's start time as artifactize records it: field 22 of `/proc/PID/stat` on Linux,
@@ -538,6 +1324,12 @@ pub fn private_file(path: &Path) -> bool {
     }
 }
 
+/// Whether the object received any inherited ACE, rather than its own explicit DACL.
+#[cfg(windows)]
+pub fn has_inherited_aces(path: &Path) -> bool {
+    acl::has_inherited_aces(path)
+}
+
 #[cfg(windows)]
 mod acl {
     use std::{ffi::c_void, os::windows::ffi::OsStrExt, path::Path, ptr};
@@ -551,7 +1343,7 @@ mod acl {
                 GetNamedSecurityInfoW, SDDL_REVISION_1, SE_FILE_OBJECT, SetNamedSecurityInfoW,
             },
             DACL_SECURITY_INFORMATION, EqualSid, GetAce, GetAclInformation,
-            GetSecurityDescriptorDacl, GetTokenInformation, INHERIT_ONLY_ACE,
+            GetSecurityDescriptorDacl, GetTokenInformation, INHERIT_ONLY_ACE, INHERITED_ACE,
             PROTECTED_DACL_SECURITY_INFORMATION, TOKEN_QUERY, TOKEN_USER, TokenUser,
         },
         System::{
@@ -636,6 +1428,48 @@ mod acl {
         }
     }
 
+    /// Inspect the inheritance bit independently of which principals an ACE grants access.
+    pub(super) fn has_inherited_aces(path: &Path) -> bool {
+        // SAFETY: the OS allocates a descriptor; all ACE reads stay within its DACL and the
+        // descriptor is freed only after the last read.
+        unsafe {
+            let mut dacl: *mut ACL = ptr::null_mut();
+            let mut descriptor = ptr::null_mut();
+            assert_eq!(
+                GetNamedSecurityInfoW(
+                    wide(path).as_ptr(),
+                    SE_FILE_OBJECT,
+                    DACL_SECURITY_INFORMATION,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    &mut dacl,
+                    ptr::null_mut(),
+                    &mut descriptor,
+                ),
+                ERROR_SUCCESS
+            );
+            assert!(!dacl.is_null());
+            let mut size = ACL_SIZE_INFORMATION::default();
+            assert_ne!(
+                GetAclInformation(
+                    dacl,
+                    (&raw mut size).cast(),
+                    std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                    AclSizeInformation,
+                ),
+                0
+            );
+            let inherited = (0..size.AceCount).any(|index| {
+                let mut ace: *mut c_void = ptr::null_mut();
+                assert_ne!(GetAce(dacl, index, &mut ace), 0);
+                let header = ace.cast::<ACE_HEADER>().read_unaligned();
+                u32::from(header.AceFlags) & INHERITED_ACE != 0
+            });
+            LocalFree(descriptor);
+            inherited
+        }
+    }
+
     /// Whether every ACE that grants access to `path` names the current user.
     pub(super) fn owner_only(path: &Path) -> bool {
         let user = user();
@@ -680,4 +1514,730 @@ mod acl {
             owner_only
         }
     }
+}
+
+/// Run one test in a fresh process with a literal environment, without mutating the
+/// parallel test runner's environment.
+pub fn run_test(test: &str, environment: &[(&str, std::ffi::OsString)]) -> std::process::Output {
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command.args(["--exact", test, "--nocapture"]);
+    for (name, value) in environment {
+        command.env(name, value);
+    }
+    command.output().unwrap()
+}
+
+/// An external editor fixture, compiled rather than relying on a Python installation or
+/// shell shebang. The platform editor receives its quoted path as a command.
+pub fn editor_command(directory: &Path, text: &str) -> String {
+    let source = directory.join("draft-editor.rs");
+    std::fs::write(&source, format!("fn main() {{ std::fs::write(std::env::args_os().nth(1).unwrap(), {text:?}).unwrap(); }}")).unwrap();
+    let executable = directory.join(format!("draft-editor{}", std::env::consts::EXE_SUFFIX));
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let output = Command::new(rustc)
+        .args(["--edition", "2024", "-o"])
+        .arg(&executable)
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    // cmd, which runs the editor on Windows, cannot start a `\\?\` verbatim path.
+    format!("\"{}\"", canonical(&executable).to_string_lossy())
+}
+
+/// Create or replace an owner-only fixture file. Replacement keeps the inode for tests
+/// of same-sized rewrites; atomic replacement is set up explicitly by those tests.
+pub fn rewrite_private_file(path: &Path, contents: impl AsRef<[u8]>) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .unwrap();
+    }
+    #[cfg(windows)]
+    {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
+        acl::restrict(path);
+    }
+    std::fs::write(path, contents).unwrap();
+}
+
+/// Pin a fixture's last-write time independently of clock resolution and scheduling.
+pub fn set_modified(path: &Path, time: std::time::SystemTime) {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(time)
+        .unwrap();
+}
+
+/// Run Git against a fixture repository; no shell or process-status decoding in tests.
+pub fn git(path: &Path, arguments: &[&str]) {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(path)
+        .args(arguments)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Point a copied declaration's Unix commands at the stand-ins, and with `deadlines` give
+/// its deadlines of a second or more `os::slow` room. The runtime fixture's `check.sh`
+/// compares its working folder as a file rather than as text: Windows spells that folder
+/// with `\`, where the script appends `/review`.
+pub fn port_fixture(path: &Path, deadlines: bool) {
+    if !stand_ins() && !cfg!(target_os = "macos") {
+        return;
+    }
+    /// Whether anything changed.
+    fn commands(value: &mut Value, deadlines: bool) -> bool {
+        match value {
+            Value::Object(object) => {
+                let mut changed = false;
+                for (key, value) in object.iter_mut() {
+                    changed |= match value {
+                        Value::String(command)
+                            if key == "command"
+                                && (command.starts_with("/bin/")
+                                    || command.starts_with("/usr/bin/")
+                                    || command == "sh") =>
+                        {
+                            let resolved = bin(command);
+                            let changed = *command != resolved;
+                            *command = resolved;
+                            changed
+                        }
+                        Value::Number(deadline)
+                            if deadlines
+                                && key == "timeout_ms"
+                                && deadline.as_u64().is_some_and(|ms| ms >= 1000) =>
+                        {
+                            *value = json!(slow(deadline.as_u64().unwrap()));
+                            true
+                        }
+                        other => commands(other, deadlines),
+                    };
+                }
+                changed
+            }
+            Value::Array(items) => {
+                let mut changed = false;
+                for item in items {
+                    changed |= commands(item, deadlines);
+                }
+                changed
+            }
+            _ => false,
+        }
+    }
+    match path.file_name().and_then(|name| name.to_str()) {
+        // Rewritten only when needed: a declaration's bytes can be part of a fingerprint.
+        Some(name) if name.ends_with(".artf") => {
+            let mut declaration: Value =
+                toml::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+            if commands(&mut declaration, deadlines) {
+                fs::write(path, toml::to_string_pretty(&declaration).unwrap()).unwrap();
+            }
+        }
+        Some("check.sh") => {
+            let script = fs::read_to_string(path).unwrap();
+            let script = script.replace(r#"test "$PWD" = "#, r#"test "$PWD" -ef "#);
+            fs::write(path, script).unwrap();
+        }
+        _ => {}
+    }
+}
+
+/// A shell loop that runs until a file named `release` exists in its working directory, for
+/// a process that must outlive a test's checks and end with the test.
+pub const UNTIL_RELEASED: &str = "while [ ! -e release ]; do sleep 0.01; done";
+
+/// Ends the processes waiting in `directory` with [`UNTIL_RELEASED`] when dropped, however
+/// the test ends.
+pub struct Release(pub std::path::PathBuf);
+
+impl Drop for Release {
+    fn drop(&mut self) {
+        let _ = std::fs::write(self.0.join("release"), "");
+    }
+}
+
+/// A shell command that runs until it is killed: an hour outlasts any test.
+pub const LINGERING: &str = "sleep 3600";
+
+/// The duration `LINGERING` sleeps, as a bare argument for a test that calls
+/// `sleep_program()` directly instead of through a shell.
+pub const LINGERING_SECONDS: &str = "3600";
+
+/// A shell command whose leader ignores SIGTERM and waits for a child that, in the
+/// background, writes its PID and a newline to `$ARTIFACTIZE_OUTPUT_DIR/grandchild` and
+/// then runs until it is killed: an hour outlasts any test.
+pub const LINGERING_GRANDCHILD: &str = "trap '' TERM; sh -c 'sleep 3600 & echo $! > \"$ARTIFACTIZE_OUTPUT_DIR/grandchild\"; wait' & wait";
+
+/// Give the file at `original` a second name, `link`: a hard link on every system.
+pub fn hard_link(original: &Path, link: &Path) {
+    std::fs::hard_link(original, link).unwrap();
+}
+
+/// The identity of the file at `path` on its volume: the device and inode on Unix, the
+/// volume serial number and file index on Windows. A file replaced by a rename has a new one.
+pub fn file_identity(path: &Path) -> (u64, u64) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let metadata = std::fs::metadata(path).unwrap();
+        (metadata.dev(), metadata.ino())
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Storage::FileSystem::{
+            BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+        };
+        let file = std::fs::File::open(path).unwrap();
+        let mut information = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
+        // SAFETY: the handle is open for the call, and the record is read only once filled.
+        let information = unsafe {
+            assert_ne!(
+                GetFileInformationByHandle(file.as_raw_handle(), information.as_mut_ptr()),
+                0,
+                "{}",
+                std::io::Error::last_os_error()
+            );
+            information.assume_init()
+        };
+        (
+            u64::from(information.dwVolumeSerialNumber),
+            u64::from(information.nFileIndexHigh) << 32 | u64::from(information.nFileIndexLow),
+        )
+    }
+}
+
+/// A file made read-only until this drops, when its original permissions come back: the
+/// Unix mode, or the Windows read-only attribute.
+pub struct ReadOnly {
+    path: std::path::PathBuf,
+    original: std::fs::Permissions,
+}
+
+/// Make the file at `path` read-only while the result lives.
+pub fn read_only(path: &Path) -> ReadOnly {
+    let original = std::fs::metadata(path).unwrap().permissions();
+    let mut permissions = original.clone();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(path, permissions).unwrap();
+    ReadOnly {
+        path: path.to_owned(),
+        original,
+    }
+}
+
+impl Drop for ReadOnly {
+    fn drop(&mut self) {
+        let _ = std::fs::set_permissions(&self.path, self.original.clone());
+    }
+}
+
+/// Physical temporary root, without aliases that scoped reads intentionally reject.
+pub fn temp_root() -> std::path::PathBuf {
+    // Not `\\?\` on Windows: a verbatim path takes `/` literally, but test scripts join with it.
+    canonical(&std::env::temp_dir())
+}
+
+/// Atomically reserve a named fixture under an explicitly chosen physical parent.
+pub fn tempdir_in(parent: &Path, prefix: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir_in(canonical(parent))
+        .unwrap()
+}
+
+/// Write a directly runnable shell fixture with the platform's interpreter.
+pub fn write_script(path: &Path, body: &str) {
+    std::fs::write(path, format!("#!{}\n{body}", bin("/bin/sh"))).unwrap();
+    make_executable(path);
+}
+
+/// Native separators for assertions about OS error messages (not persisted path text).
+pub fn native(path: &str) -> String {
+    path.replace('/', std::path::MAIN_SEPARATOR_STR)
+}
+
+/// Set a spawned program's actual home rather than merely a Unix-only variable.
+pub fn home_env() -> &'static str {
+    "HOME"
+}
+
+/// A shell fixture reads this variable to observe its platform home.
+pub fn home_expression() -> &'static str {
+    "$HOME"
+}
+
+/// Error-producing review: Unix signal, Windows deadline expiration.
+pub const ERROR_SCRIPT: &str = if cfg!(windows) {
+    "sleep 30"
+} else {
+    "kill -TERM $$"
+};
+pub const ERROR_CODE: &str = if cfg!(windows) {
+    "TIMEOUT"
+} else {
+    "ABNORMAL_EXIT"
+};
+
+/// Configure the deadline required by the Windows operational-error fixture, scaled like
+/// other test patience so a caller coordinating it with a waiter's attachment does not
+/// race slower process startup under load.
+pub fn erroring(mut eval: Value, timeout_ms: u64) -> Value {
+    if cfg!(windows) {
+        eval["profile"]["timeout_ms"] =
+            json!(patience(std::time::Duration::from_millis(timeout_ms)).as_millis());
+    }
+    eval
+}
+
+/// A cancellation fixture keeps the registration PID as the long-lived process.
+pub fn cancellation_script() -> &'static str {
+    if cfg!(windows) {
+        "touch started; sleep 30"
+    } else {
+        "touch started; exec sleep 30"
+    }
+}
+
+/// Platform-independent assertion of the group containment established at registration.
+pub fn assert_group(pid: u32) {
+    #[cfg(unix)]
+    assert!(leads_group(pid), "separate process group");
+    #[cfg(windows)]
+    assert!(running(pid), "registered job member is alive");
+}
+
+/// Detached launches also leave the caller's terminal session on Unix.
+pub fn assert_detached(pid: u32) {
+    assert_group(pid);
+    #[cfg(unix)]
+    assert!(leads_session(pid), "separate session");
+}
+
+/// Missing executables may be reported as a missing component on Windows.
+pub fn missing_program(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::NotFound
+        || (cfg!(windows) && error.kind() == std::io::ErrorKind::NotADirectory)
+}
+
+/// Python's UTF-8 pipe mode is explicit on every platform.
+pub fn python(source: &str) -> Vec<&str> {
+    vec!["-X", "utf8", "-c", source]
+}
+
+/// A process status includes the platform's native description.
+pub fn exit_status(code: i32) -> String {
+    if cfg!(windows) {
+        format!("exit code: {code}")
+    } else {
+        format!("exit status: {code}")
+    }
+}
+
+/// Rejected states including system-specific name aliases and link traversal.
+pub fn reviewed_state_paths(root: &Path, repo: &Path) -> Vec<std::path::PathBuf> {
+    let mut paths = vec![repo.join("state"), root.join("alias/state")];
+    #[cfg(windows)]
+    paths.push(other_case(repo).join("state"));
+    #[cfg(unix)]
+    paths.push(root.join("nested-alias/../state"));
+    paths
+}
+
+/// Execute permissions can only be revoked on Unix.
+pub fn revoke_execution(path: &Path) -> bool {
+    #[cfg(unix)]
+    {
+        deny_execution(path);
+        true
+    }
+    #[cfg(windows)]
+    {
+        let _ = path;
+        false
+    }
+}
+
+/// Baseline runtime variables include system/profile entries on Windows.
+pub fn runtime_environment_len() -> usize {
+    if cfg!(windows) { 16 } else { 10 }
+}
+
+/// Every disposable environment folder, including platform home aliases.
+pub fn runtime_directories() -> Vec<(&'static str, &'static str)> {
+    let mut entries = vec![
+        ("ARTIFACTIZE_OUTPUT_DIR", "output"),
+        ("ARTIFACTIZE_TMP_DIR", "tmp"),
+        ("HOME", "home"),
+        ("XDG_CACHE_HOME", "cache"),
+        ("TMPDIR", "tmp"),
+        ("TMP", "tmp"),
+        ("TEMP", "tmp"),
+    ];
+    if cfg!(windows) {
+        entries.extend([
+            ("USERPROFILE", "home"),
+            ("LOCALAPPDATA", "cache"),
+            ("APPDATA", "home"),
+        ]);
+    }
+    entries
+}
+
+/// Portable executable fixture name; Windows uses its adjacent executable stand-in.
+pub const TOOL: &str = "env-tool";
+
+/// A search path for the explicit-environment probe, without its build tools.
+pub fn system_path() -> std::ffi::OsString {
+    if cfg!(windows) {
+        std::env::var_os("SystemRoot")
+            .map(|root| {
+                std::path::PathBuf::from(root)
+                    .join("System32")
+                    .into_os_string()
+            })
+            .unwrap()
+    } else {
+        "/usr/bin:/bin".into()
+    }
+}
+
+/// Zero streams used to test concurrent pipe drainage and truncation.
+pub fn zero_output(stdout: usize, stderr: usize) -> String {
+    format!("head -c {stdout} /dev/zero & head -c {stderr} /dev/zero >&2 & wait")
+}
+pub fn letter_output(stdout: usize, stderr: usize) -> String {
+    format!(
+        "head -c {stdout} /dev/zero | tr '\\000' x & head -c {stderr} /dev/zero | tr '\\000' y >&2 & wait"
+    )
+}
+pub fn capped_output(bytes: usize) -> String {
+    format!("head -c {bytes} /dev/zero; printf discarded")
+}
+
+/// HOME and desktop variables inherited by a human-facing child.
+pub fn human_environment<'a>(command: &'a mut Command, root: &Path) -> &'a mut Command {
+    command
+        .env(home_env(), root.join("real-home"))
+        .env("DISPLAY", ":77")
+        .env("WAYLAND_DISPLAY", "wayland-test")
+        .env("XDG_CONFIG_HOME", root.join("real-config"))
+}
+
+pub fn human_environment_probe() -> String {
+    format!(
+        "import os; print(os.environ['ARTIFACTIZE_HUMAN_MARKER']); print(os.environ['{}']); print(os.environ['DISPLAY']); print(os.environ['WAYLAND_DISPLAY']); print(os.environ['XDG_CONFIG_HOME'])",
+        home_env()
+    )
+}
+pub fn isolated_home_probe() -> String {
+    format!(
+        "import os; print(os.environ.get('ARTIFACTIZE_HUMAN_MARKER','absent')); print(os.environ['{}'])",
+        home_env()
+    )
+}
+
+/// A directly runnable Python script uses #! only where the OS supports it.
+pub fn python_script(path: &Path, source: &str) -> (String, Vec<Value>) {
+    std::fs::write(path, source).unwrap();
+    if cfg!(windows) {
+        (
+            "python3".into(),
+            vec![
+                json!("-X"),
+                json!("utf8"),
+                json!(path.file_name().unwrap().to_str().unwrap()),
+            ],
+        )
+    } else {
+        let python = Command::new("python3")
+            .args(["-c", "import sys; print(sys.executable)"])
+            .output()
+            .unwrap();
+        assert!(python.status.success());
+        std::fs::write(
+            path,
+            format!(
+                "#!{}\n{source}",
+                String::from_utf8(python.stdout).unwrap().trim()
+            ),
+        )
+        .unwrap();
+        allow_execution(path);
+        (
+            format!("./{}", path.file_name().unwrap().to_str().unwrap()),
+            vec![],
+        )
+    }
+}
+
+/// CRLF is accepted only on Windows; every other invalid fingerprint is common.
+pub fn invalid_fingerprints() -> Vec<Vec<u8>> {
+    let mut values: Vec<Vec<u8>> = [
+        b"".as_slice(),
+        b" value",
+        b"value ",
+        b"value\t",
+        b"value\r\r\n",
+        b"value\n\n",
+        b"one\ntwo",
+        b"value/key",
+        b"\xff",
+        b"ok\0",
+        b"\x1b[31mok\x1b[0m",
+        &[b'x'; 129],
+    ]
+    .into_iter()
+    .map(<[u8]>::to_vec)
+    .collect();
+    if !cfg!(windows) {
+        values.push(b"value\r\n".to_vec());
+    }
+    values
+}
+pub fn valid_fingerprints() -> Vec<Vec<u8>> {
+    let mut values = vec![b"Aa0._:-".to_vec(), b"Aa0._:-\n".to_vec(), vec![b'x'; 128]];
+    if cfg!(windows) {
+        values.push(b"Aa0._:-\r\n".to_vec());
+    }
+    values
+}
+
+/// A Python program that ends itself abnormally: by SIGKILL on Unix. Windows has no
+/// signals; Python's `os.kill` there ends the process with TerminateProcess.
+pub fn self_terminating_python() -> String {
+    let signal = if cfg!(windows) { "SIGTERM" } else { "SIGKILL" };
+    format!("import os, signal\nos.kill(os.getpid(), signal.{signal})")
+}
+
+/// Only Unix offers an independently observable signal termination status.
+pub fn signal_fingerprint() -> Option<Value> {
+    if cfg!(windows) {
+        None
+    } else {
+        Some(json!({"script":{"command":bin("/bin/sh"),"args":["-c","kill -TERM $$"]}}))
+    }
+}
+
+/// A PATH shim exercises native lookup: batch/PATHEXT on Windows, #! on Unix.
+pub fn lookup_shim(directory: &Path) {
+    #[cfg(windows)]
+    std::fs::write(
+        directory.join("artifactize-lookup-shim.cmd"),
+        "@echo off\r\npython3 \"%~dp0argv.py\" %*\r\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    write_script(
+        &directory.join("artifactize-lookup-shim"),
+        "exec python3 \"$(dirname \"$0\")/argv.py\" \"$@\"\n",
+    );
+}
+
+/// Human/model and persisted path spelling, independent of native separators.
+pub fn path_text(path: &Path) -> String {
+    let text = path.to_str().expect("fixture paths are Unicode");
+    #[cfg(windows)]
+    {
+        text.replace('\\', "/")
+    }
+    #[cfg(not(windows))]
+    {
+        text.to_owned()
+    }
+}
+
+/// Native executable suffix lookup used by the batch shim fixture.
+pub const PATHEXT: (&str, &str) = ("PATHEXT", ".CMD;.EXE;.BAT;.COM");
+
+/// Runtime operational failures supported by this platform.
+pub fn runtime_failures() -> Vec<(String, Vec<&'static str>, &'static str)> {
+    let cases = vec![
+        (bin("artifactize-missing-command"), vec![], "SPAWN_FAILED"),
+        (
+            bin("/bin/cat"),
+            vec!["{test}/missing"],
+            "PREPARATION_FAILED",
+        ),
+    ];
+    cases.into_iter().chain(signal_failure()).collect()
+}
+
+fn signal_failure() -> Option<(String, Vec<&'static str>, &'static str)> {
+    if cfg!(unix) {
+        Some((shell(), vec!["-c", SELF_TERMINATE], "ABNORMAL_EXIT"))
+    } else {
+        None
+    }
+}
+
+/// Fingerprint probe's private environment and permission checks differ by OS.
+pub fn fingerprint_probe(source: &str) -> String {
+    source.replace("PRIVATE_DIRECTORY_CHECK", "for key in ['HOME', 'TMPDIR', 'XDG_CACHE_HOME', 'ARTIFACTIZE_OUTPUT_DIR']:\n    path = pathlib.Path(os.environ[key])\n    assert not path.is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_WORKSPACE_DIR']))\n    assert os.name == 'nt' or stat.S_IMODE(path.stat().st_mode) == 0o700\n    (path / 'discard').write_text('scratch')")
+}
+
+// The stand-in executable also includes this dependency-free part of the OS layer.
+#[path = "os/stand_in.rs"]
+pub mod stand_in;
+
+/// Always select the portable stand-in, even on a Unix test runner.
+pub fn stand_in_bin(name: &str) -> std::path::PathBuf {
+    fixture::directory().join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+}
+
+/// Prepend test programs to the native search path without reimplementing its separator.
+pub fn prepend_path(directory: &Path) -> std::ffi::OsString {
+    std::env::join_paths(
+        std::iter::once(directory.to_owned()).chain(std::env::split_paths(&path())),
+    )
+    .unwrap()
+}
+
+/// Expected inherited human tool home and environment prefix.
+pub fn human_tool_home() -> &'static str {
+    "/reviewer-home"
+}
+pub fn human_tool_prefix() -> &'static str {
+    "/reviewer-home|real-environment|"
+}
+
+/// Python used by multimodal command-tool fixtures, installed on all CI platforms.
+pub fn python_program() -> &'static str {
+    "python3"
+}
+
+/// Ensure fixture stdout is Unicode even with Windows' default ANSI pipe encoding.
+pub fn write_python_script(path: &Path, code: &str) {
+    std::fs::write(
+        path,
+        format!("import sys\nsys.stdout.reconfigure(encoding='utf-8')\n{code}"),
+    )
+    .unwrap();
+}
+
+/// A private runtime environment has only platform launch essentials and private roots.
+pub const PYTHON_PRIVATE_ENVIRONMENT: &str = r#"
+assert os.environ['HOME'] != os.environ['TMPDIR']
+assert context['tmpDir'] == os.environ['TMPDIR'].replace('\\', '/')
+assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR'].replace('\\', '/')
+allowed = {'PATH','LANG','HOME','TMP','TEMP','TMPDIR','XDG_CACHE_HOME','ARTIFACTIZE_WORKSPACE_DIR','ARTIFACTIZE_OUTPUT_DIR','ARTIFACTIZE_TMP_DIR','LC_CTYPE'}
+if sys.platform == 'darwin': allowed.add('__CF_USER_TEXT_ENCODING')
+if os.name == 'nt': allowed |= {'USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','COMSPEC','PATHEXT'}
+assert set(os.environ) <= allowed
+"#;
+
+/// A file/directory redirection in an output fixture: Windows junctions need no privilege.
+pub fn python_output_links() -> (&'static str, &'static str) {
+    if cfg!(windows) {
+        (
+            "import _winapi; path = 'link'; _winapi.CreateJunction(os.getcwd(), os.path.join(root, path))",
+            "import _winapi; path = 'linkdir/source'; _winapi.CreateJunction(os.getcwd(), os.path.join(root, 'linkdir'))",
+        )
+    } else {
+        (
+            "path = 'link'; os.symlink(os.path.abspath('source'), os.path.join(root, path))",
+            "path = 'linkdir/source'; os.symlink(os.getcwd(), os.path.join(root, 'linkdir'))",
+        )
+    }
+}
+
+/// Write an owner-relative program that emits a fixed fixture string.
+pub fn output_script(path: &Path, output: &str) {
+    std::fs::write(path, format!("#!/bin/sh\nprintf '%s' '{output}'\n")).unwrap();
+    make_executable(path);
+}
+
+/// A bare PATH command and literal argv for the program-resolution seam.
+pub fn path_output(output: &str) -> (&'static str, Vec<String>) {
+    if cfg!(windows) {
+        (
+            python_program(),
+            vec![
+                "-c".into(),
+                format!("import sys; sys.stdout.write({output:?})"),
+            ],
+        )
+    } else {
+        ("printf", vec!["%s".into(), output.into()])
+    }
+}
+
+/// Expected IPC address independently pins the public namespace spelling and hash length.
+pub fn changes_address(user: &str, identity: &str) -> std::path::PathBuf {
+    if cfg!(windows) {
+        std::path::PathBuf::from(format!(r"\\.\pipe\artifactize-changes-{identity}"))
+    } else {
+        Path::new(if cfg!(target_os = "macos") {
+            "/private/tmp"
+        } else {
+            "/tmp"
+        })
+        .join(format!("artifactize-ipc-{user}-{}", &identity[..24]))
+        .join("hub.sock")
+    }
+}
+
+/// Launch one exact test in this binary for multi-process IPC/Job Object fixtures.
+pub fn self_test(name: &str) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
+    command
+        .args(["--exact", name, "--nocapture"])
+        .kill_on_drop(true);
+    command
+}
+
+/// Windows process fixture that emits a marker when admitted, or exits with a given code.
+#[cfg(windows)]
+pub fn windows_marker(directory: &Path) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new("cmd");
+    command
+        .args(["/d", "/c", "type nul > marker"])
+        .current_dir(directory)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null());
+    command
+}
+
+#[cfg(windows)]
+pub fn windows_exit(code: u32) -> tokio::process::Command {
+    let mut command = tokio::process::Command::new("cmd");
+    command.args(["/d", "/c", &format!("exit /b {code}")]);
+    command
+}
+
+/// An inert child controlled by the parent's stdin; no scheduler/timing assumption.
+pub fn stdin_waiter() -> tokio::process::Command {
+    let mut command = tokio::process::Command::new(python_program());
+    command
+        .args(["-c", "import sys; sys.stdin.buffer.read()"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    command
 }

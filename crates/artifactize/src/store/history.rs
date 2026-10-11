@@ -32,24 +32,25 @@ pub(super) const LATEST: &str = "e.completed_at DESC, e.rowid DESC";
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     pub key: crate::types::ReuseKey,
-    pub eval_def_hash: String,
+    pub eval_def_hash: crate::types::DefinitionHash,
     pub execution_id: crate::types::ExecutionId,
     pub verdict: crate::types::ExecutionStatus,
-    pub repo_path: String,
-    pub eval_id: String,
+    #[serde(with = "crate::platform::path_serde")]
+    pub repo_path: std::path::PathBuf,
+    pub eval_id: crate::types::EvalId,
     /// The target Artifact's fingerprint.
     pub fingerprint: Option<crate::types::Fingerprint>,
-    pub completed_at: Option<String>,
+    pub completed_at: Option<crate::types::Timestamp>,
     /// `user@host` of the machine that produced the result.
     pub producer: Option<String>,
     /// The selected profile variant, when the result came from one.
     pub variant: Option<String>,
     /// The remote store URL of a mirrored record.
-    pub origin: Option<String>,
+    pub origin: Option<crate::types::StoreUrl>,
     /// How many records the key holds.
     pub records: i64,
     pub bytes: i64,
-    pub last_used: String,
+    pub last_used: crate::types::Timestamp,
 }
 
 async fn open(state: &Path, writable: bool) -> Result<Option<NotifyingConnection>, String> {
@@ -89,16 +90,19 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
     connection
         .call(move |db| -> Result<_, Error> {
             let mut statement = db.prepare(&format!(
-                "SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.producer.name'),json_extract(e.data,'$.options.variant'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"
+                "SELECT * FROM (SELECT e.key,e.eval_def_hash,e.id,e.status,json_extract(e.data,'$.provenance.repoPath'),json_extract(e.data,'$.provenance.evalId'),json_extract(e.data,'$.fingerprint'),json_extract(e.data,'$.completedAt'),json_extract(e.data,'$.producer.name'),json_extract(e.data,'$.options.variant'),json_extract(e.data,'$.origin.store'),count(*) OVER (PARTITION BY e.key),e.bytes,e.last_used,row_number() OVER (PARTITION BY e.key ORDER BY {LATEST}) AS rank,e.data FROM executions e WHERE {RECORD}) WHERE ?1 OR rank=1 ORDER BY 1,rank"
             ))?;
             Ok(statement
                 .query_map([history], |row| {
-                    Ok(Entry {
+                    let id: crate::types::ExecutionId = row.get(2)?;
+                    let data: String = row.get(15)?;
+                    if super::unreadable::evidence::<Execution>("execution", &data).is_none() { return Ok(None); }
+                    Ok(Some(Entry {
                         key: row.get(0)?,
                         eval_def_hash: row.get(1)?,
-                        execution_id: row.get(2)?,
+                        execution_id: id,
                         verdict: row.get(3)?,
-                        repo_path: row.get(4)?,
+                        repo_path: row.get::<_, String>(4)?.into(),
                         eval_id: row.get(5)?,
                         fingerprint: row.get(6)?,
                         completed_at: row.get(7)?,
@@ -108,8 +112,9 @@ pub async fn list(state: &Path, history: bool) -> Result<Vec<Entry>, String> {
                         records: row.get(11)?,
                         bytes: row.get(12)?,
                         last_used: row.get(13)?,
-                    })
+                    }))
                 })?
+                .filter_map(|row| row.transpose())
                 .collect::<Result<_, _>>()?)
         })
         .await
@@ -133,7 +138,10 @@ pub async fn show(state: &Path, key: &str, history: bool) -> Result<Vec<Executio
                 .query_map(params![key, if history { -1 } else { 1 }], |row| {
                     row.get::<_, String>(0)
                 })?
-                .map(|row| Ok(serde_json::from_str(&row?)?))
+                .filter_map(|row| match row {
+                    Ok(data) => super::unreadable::evidence("execution", &data).map(Ok),
+                    Err(error) => Some(Err(Error::Sql(error))),
+                })
                 .collect()
         })
         .await
@@ -162,7 +170,10 @@ pub async fn local(
                     ],
                     |row| row.get::<_, String>(0),
                 )?
-                .map(|row| Ok(serde_json::from_str(&row?)?))
+                .filter_map(|row| match row {
+                    Ok(data) => super::unreadable::evidence("execution", &data).map(Ok),
+                    Err(error) => Some(Err(Error::Sql(error))),
+                })
                 .collect()
         })
         .await
@@ -205,25 +216,28 @@ pub async fn remove(state: &Path, key: &str) -> Result<bool, String> {
 /// The history columns of a completed record: its sortable completion time and size, or
 /// `None` when it does not join its key's history (no key, no verdict, or over the entry
 /// limit).
-pub(super) fn columns(execution: &Execution, bytes: usize) -> Result<Option<(String, i64)>, Error> {
-    let (Some(_), Some(_), Some(completed_at)) =
-        (&execution.key, execution.verdict(), &execution.completed_at)
-    else {
+pub(super) fn columns(
+    execution: &Execution,
+    bytes: usize,
+) -> Result<Option<(crate::types::Timestamp, i64)>, Error> {
+    let (Some(_), Some(_), Some(completed_at)) = (
+        &execution.key,
+        execution.verdict(),
+        &execution.completed_at(),
+    ) else {
         return Ok(None);
     };
     if bytes > MAX_ENTRY_BYTES {
         return Ok(None);
     }
-    let completed_at = crate::broker::sortable(completed_at)
-        .ok_or_else(|| Error::Invalid(format!("Invalid completion time {completed_at}.")))?;
-    Ok(Some((completed_at, bytes as i64)))
+    Ok(Some((*completed_at, bytes as i64)))
 }
 
 /// Mark a reused record as used now.
 pub(super) fn touch(
     db: &rusqlite::Connection,
     execution_id: &crate::types::ExecutionId,
-    at: &str,
+    at: crate::types::Timestamp,
 ) -> Result<(), Error> {
     db.execute(
         "UPDATE executions SET last_used=? WHERE id=? AND completed_at IS NOT NULL",
@@ -253,7 +267,7 @@ fn collect(db: &mut rusqlite::Connection) -> Result<(), Error> {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
         let over_capacity = entries > MAX_ENTRIES || bytes > MAX_BYTES;
-        let candidate: Option<String> = transaction
+        let candidate: Option<crate::types::ExecutionId> = transaction
             .query_row(
                 "SELECT e.id FROM executions e WHERE e.completed_at IS NOT NULL AND (? OR e.bytes>?)
              AND NOT EXISTS(SELECT 1 FROM executions a WHERE a.key=e.key AND a.status IN ('RUNNING','WAITING_HUMAN'))

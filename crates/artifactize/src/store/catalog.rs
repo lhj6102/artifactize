@@ -8,7 +8,6 @@ use crate::{
     types::{ExecutionId, RequestId, RequestStatus, RunStatus},
     workspace::{canonical_target, outside_workspace},
 };
-use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -27,16 +26,7 @@ pub struct CatalogRun {
     pub waiting: Vec<Signoff>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Facts {
-    repo_path: PathBuf,
-    #[serde(flatten)]
-    repository: Identity,
-    status: RunStatus,
-}
-
-/// Only identity and attention facts are loaded, never definitions or result bodies.
+/// Global attention facts; unreadable Runs are skipped individually with their reason.
 pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
     let state = canonical_target(state).map_err(|error| error.to_string())?;
     check_files(&state)?;
@@ -62,7 +52,7 @@ pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
             }
             let runs = {
                 let mut statement = transaction.prepare(
-                    "SELECT id,json_object('repoPath',repo,'commonDir',json_extract(data,'$.commonDir'),'worktreePath',json_extract(data,'$.worktreePath'),'branch',json_extract(data,'$.branch'),'status',status) FROM runs ORDER BY rowid",
+                    "SELECT id,data FROM runs ORDER BY rowid",
                 )?;
                 statement
                     .query_map([], |row| {
@@ -78,9 +68,9 @@ pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
             )?;
             let catalog = runs
                 .into_iter()
-                .map(|(id, data)| {
-                    let facts: Facts = serde_json::from_str(&data)?;
-                    outside_workspace(&facts.repo_path, &state)
+                .filter_map(|(id, data)| super::unreadable::evidence::<super::Run>("run", &data).map(|run| (id, run)))
+                .map(|(id, run)| {
+                    outside_workspace(&run.repo_path, &state)
                         .map_err(|error| Error::Invalid(error.to_string()))?;
                     let attention = requests
                         .query_map([id], |row| {
@@ -91,10 +81,11 @@ pub async fn read_catalog(state: &Path) -> Result<Vec<CatalogRun>, String> {
                             ))
                         })?
                         .collect::<Result<Vec<_>, _>>()?;
+                    let status = run.status();
                     Ok(CatalogRun {
-                        repo_path: facts.repo_path,
-                        repository: facts.repository,
-                        status: facts.status,
+                        repo_path: run.repo_path,
+                        repository: run.repository,
+                        status,
                         red: attention
                             .iter()
                             .filter(|(status, _, _)| *status == RequestStatus::Red)

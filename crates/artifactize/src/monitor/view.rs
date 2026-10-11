@@ -1,4 +1,5 @@
 //! Ratatui rendering only; semantic selection and review lifecycle live in their controllers.
+use super::model::Status;
 use super::{
     DetailArea, Monitor, Pane, Scope,
     input::{Button, Hits},
@@ -44,6 +45,12 @@ const SCOPE_INDENT: usize = 2;
 const LAST_LABEL: &str = "last: ";
 /// The help popup stays this wide, so its key column and descriptions read as a table.
 const HELP_WIDTH: u16 = 72;
+/// One more than "Tab / Shift-Tab", the longest key label in [`HELP`], so every label gets
+/// at least one space before its text.
+const HELP_KEY_WIDTH: usize = 16;
+/// The headline wraps into at most this share of the pane's height, so nothing below it is
+/// pushed off.
+const HEADLINE_HEIGHT_SHARE: u16 = 3;
 /// Beside the evidence, the sections take this share of the Detail's width, as the evidence
 /// lines (commands, paths, output) are usually the longer ones.
 const SECTIONS_BESIDE: u16 = 45;
@@ -58,22 +65,22 @@ pub(crate) fn clock(time: OffsetDateTime) -> String {
         time.second()
     )
 }
-fn color(status: Option<&str>) -> Style {
+fn color(status: Status) -> Style {
     Style::new().fg(match status {
-        Some("GREEN") => Color::Green,
-        Some("RED") => Color::Red,
-        Some("ERROR") => Color::Magenta,
-        Some("RUNNING") => Color::Yellow,
-        Some("WAITING_HUMAN") => Color::Cyan,
-        Some("BLOCKED" | "BUDGET_EXHAUSTED" | "INCOMPLETE") => Color::LightRed,
+        Status::Green => Color::Green,
+        Status::Red => Color::Red,
+        Status::Error => Color::Magenta,
+        Status::Running => Color::Yellow,
+        Status::WaitingHuman => Color::Cyan,
+        Status::Blocked | Status::BudgetExhausted | Status::Incomplete => Color::LightRed,
         _ => Color::Gray,
     })
 }
-fn status(status: &str) -> Span<'static> {
-    Span::styled(status.to_owned(), color(Some(status)))
+fn status(status: Status) -> Span<'static> {
+    Span::styled(status.as_str(), color(status))
 }
-fn glyph(status: &str) -> Span<'static> {
-    Span::styled(model::glyph(Some(status)).to_owned(), color(Some(status)))
+fn glyph(status: Status) -> Span<'static> {
+    Span::styled(status.glyph(), color(status))
 }
 fn field_lines(key: &str, value: &str, indent: &str) -> Vec<Line<'static>> {
     let mut values = value.lines();
@@ -197,13 +204,14 @@ fn tree_width(nodes: &[model::Node], depth: usize) -> usize {
 }
 /// Runs columns: glyph, status, id, age, counts, took and workspace.
 fn run_cells(row: &model::RunRow, workspace: bool) -> [String; 7] {
-    let name = std::path::Path::new(&row.repo)
-        .file_name()
-        .map_or_else(|| row.repo.clone(), |name| name.to_string_lossy().into());
+    let name = row.repo.file_name().map_or_else(
+        || crate::platform::path_text(&row.repo),
+        |name| name.to_string_lossy().into(),
+    );
     [
-        model::glyph(Some(&row.status)).to_owned(),
-        row.status.clone(),
-        row.id.clone(),
+        Status::from(row.status).glyph().to_owned(),
+        row.status.to_string(),
+        row.id.to_string(),
         row.age.clone(),
         row.counts.clone(),
         if row.took.is_empty() {
@@ -245,8 +253,10 @@ const RUN_BOUND: usize = 80;
 
 /// Columns of the Run headline and its attention lines.
 fn strip_width(strip: &model::Strip) -> usize {
-    let headline =
-        GLYPH_GAP + width(&strip.status) + width(HEADLINE_SEPARATOR) + width(&strip.headline);
+    let headline = GLYPH_GAP
+        + width(strip.status.as_str())
+        + width(HEADLINE_SEPARATOR)
+        + width(&strip.headline);
     let attention = strip
         .attention
         .iter()
@@ -267,9 +277,13 @@ fn short_id(id: &str) -> &str {
 
 impl Monitor {
     pub fn draw(&mut self, frame: &mut Frame) {
+        self.draw_at(frame, OffsetDateTime::now_utc());
+    }
+
+    /// Draw with ages and elapsed times measured at `now`.
+    pub(crate) fn draw_at(&mut self, frame: &mut Frame, now: OffsetDateTime) {
         self.hits = Hits::default();
         self.size = frame.area();
-        let now = OffsetDateTime::now_utc();
         let [header, body, notice, keys] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Fill(1),
@@ -334,7 +348,7 @@ impl Monitor {
             .map_or_else(
                 || match &self.scope {
                     Scope::Worktree(_, path) => path.file_name().map_or_else(
-                        || path.display().to_string(),
+                        || crate::platform::path_text(path),
                         |name| name.to_string_lossy().into(),
                     ),
                     _ => "repository".into(),
@@ -354,7 +368,8 @@ impl Monitor {
         if level >= 2 {
             match self.target() {
                 Some(model::Target::Run) => segments.push("Run".into()),
-                Some(model::Target::Artifact(id) | model::Target::Eval(id)) => segments.push(id),
+                Some(model::Target::Artifact(id)) => segments.push(id.to_string()),
+                Some(model::Target::Eval(id)) => segments.push(id.to_string()),
                 None => {}
             }
         }
@@ -371,8 +386,8 @@ impl Monitor {
             .unwrap_or_default();
         for (status, count) in badge {
             right.push(Span::styled(
-                format!("{}{count} ", model::glyph(Some(status))),
-                color(Some(status)),
+                format!("{}{count} ", status.glyph()),
+                color(status),
             ));
         }
         if !self.mouse_capture {
@@ -479,10 +494,7 @@ impl Monitor {
             };
             let parts = parts(row).into_iter().flat_map(|(status, count)| {
                 [
-                    Span::styled(
-                        format!("{}{count}", model::glyph(Some(status))),
-                        color(Some(status)),
-                    ),
+                    Span::styled(format!("{}{count}", status.glyph()), color(status)),
                     Span::raw(" "),
                 ]
             });
@@ -529,7 +541,7 @@ impl Monitor {
             let rows = rows.iter().map(|row| {
                 Row::new([
                     Cell::from(Line::from(vec![
-                        glyph(&row.status),
+                        glyph(row.status.into()),
                         format!(" {}", short_id(&row.id)).into(),
                     ])),
                     Cell::from(row.age.split(' ').next().unwrap_or_default().to_owned()),
@@ -553,8 +565,8 @@ impl Monitor {
                         .enumerate()
                         .filter(|(column, _)| widths[*column] > 0)
                         .map(|(column, cell)| match column {
-                            0 => Cell::from(glyph(&row.status)),
-                            1 => Cell::from(status(&row.status)),
+                            0 => Cell::from(glyph(row.status.into())),
+                            1 => Cell::from(status(row.status.into())),
                             5 | 6 => Cell::from(Span::raw(cell.clone()).dark_gray()),
                             _ => Cell::from(cell.clone()),
                         }),
@@ -601,28 +613,22 @@ impl Monitor {
         frame.render_widget(outer, area);
         // Compact keeps the status and its counts; the rest waits for focus.
         let headline = if density == Density::Compact {
-            model::counts(
-                progress
-                    .counts
-                    .iter()
-                    .map(|(status, n)| (status.as_str(), *n)),
-            )
+            model::counts(progress.counts.iter().copied())
         } else {
             strip.headline.clone()
         };
         let headline = Paragraph::new(Line::from(vec![
-            glyph(&strip.status),
+            glyph(strip.status),
             " ".into(),
-            status(&strip.status),
+            status(strip.status),
             format!("{HEADLINE_SEPARATOR}{headline}").into(),
         ]))
         .wrap(Wrap { trim: false });
-        // The headline wraps into at most a third of the pane; its height is measured after
-        // wrapping, so nothing below it is pushed off.
+        // The headline's height is measured after wrapping.
         let cap = if density == Density::Compact {
             1
         } else {
-            (inner.height / 3).max(1)
+            (inner.height / HEADLINE_HEIGHT_SHARE).max(1)
         };
         let wrapped = u16::try_from(headline.line_count(inner.width)).unwrap_or(u16::MAX);
         let headline_height = wrapped.clamp(1, cap);
@@ -644,7 +650,7 @@ impl Monitor {
             };
             attention.extend(strip.attention.iter().take(shown).map(|(state, text)| {
                 Line::from(vec![
-                    glyph(state),
+                    glyph(*state),
                     format!(
                         " {}",
                         fit(text, usize::from(inner.width).saturating_sub(GLYPH_GAP))
@@ -1003,7 +1009,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
                 Line::from(Span::styled(*key, Style::new().bold().cyan()))
             } else {
                 Line::from(vec![
-                    Span::styled(format!("  {key:<16}"), Modifier::BOLD),
+                    Span::styled(format!("  {key:<HELP_KEY_WIDTH$}"), Modifier::BOLD),
                     Span::raw(*text),
                 ])
             }

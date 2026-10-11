@@ -64,14 +64,14 @@ fn prose_real_newlines_markdown_and_verdict_are_readable_without_envelope_or_med
         &Event {
             at: None,
             send: None,
-            kind: Kind::End(super::End {
-                result: Some(json!({
+            kind: Kind::End(super::End::Completed(
+                serde_json::from_value(json!({
                     "verdict":"GREEN",
                     "summary":"# Complete\nWorks",
                     "custom":{"approved":true},
-                })),
-                ..super::End::default()
-            }),
+                }))
+                .unwrap(),
+            )),
         },
     );
     let text = shown(&blocks);
@@ -114,10 +114,9 @@ fn final_json_is_kept_until_matching_end_then_owner_failure_fields_remain_readab
         &Event {
             at: None,
             send: None,
-            kind: Kind::End(super::End {
-                result: Some(result),
-                ..super::End::default()
-            }),
+            kind: Kind::End(super::End::Completed(
+                serde_json::from_value(result).unwrap(),
+            )),
         },
     );
     let text = shown(&blocks);
@@ -143,10 +142,9 @@ fn final_json_is_kept_until_matching_end_then_owner_failure_fields_remain_readab
         &Event {
             at: None,
             send: None,
-            kind: Kind::End(super::End {
-                result: Some(json!({"verdict":"GREEN"})),
-                ..super::End::default()
-            }),
+            kind: Kind::End(super::End::Completed(
+                serde_json::from_value(json!({"verdict":"GREEN"})).unwrap(),
+            )),
         },
     );
     assert!(shown(&blocks).contains("Example:") && shown(&blocks).contains("\"verdict\":\"RED\""));

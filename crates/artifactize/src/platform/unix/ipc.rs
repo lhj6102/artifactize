@@ -1,3 +1,6 @@
+//! The changes hub endpoint on Unix: a socket in a private directory below the sticky
+//! system temporary root, checked by owner and peer credentials.
+
 use crate::platform;
 use std::{
     fs::{self, File},
@@ -10,18 +13,17 @@ pub(crate) type Stream = UnixStream;
 pub(crate) struct Listener {
     listener: UnixListener,
 }
-pub(super) fn user() -> io::Result<String> {
-    // SAFETY: geteuid has no preconditions and does not mutate process identity.
-    Ok(unsafe { libc::geteuid() }.to_string())
+pub(crate) fn user() -> io::Result<String> {
+    Ok(super::current_user().to_string())
 }
-pub(super) fn owned(file: &File) -> io::Result<bool> {
+pub(crate) fn owned(file: &File) -> io::Result<bool> {
     Ok(file.metadata()?.uid().to_string() == user()?)
 }
-pub(super) fn validate_directory(path: &Path) -> io::Result<()> {
+pub(crate) fn validate_directory(path: &Path) -> io::Result<()> {
     let metadata = fs::symlink_metadata(path)?;
     if !metadata.is_dir()
         || metadata.uid().to_string() != user()?
-        || metadata.mode() & platform::GROUP_OTHER_BITS != 0
+        || metadata.mode() & super::GROUP_OTHER_BITS != 0
     {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
@@ -30,7 +32,8 @@ pub(super) fn validate_directory(path: &Path) -> io::Result<()> {
 // MetadataExt reports u32 modes, while macOS libc uses u16 mode_t.
 const STICKY_BIT: u32 = 0o1000;
 
-pub(super) fn directory(identity: &str, user: &str) -> io::Result<PathBuf> {
+/// The private directory for one state namespace, created when missing and then validated.
+pub(crate) fn directory(namespace: &str, user: &str) -> io::Result<PathBuf> {
     // The standard OS temporary root is shared but sticky. The 0700 child is both short
     // enough for sockaddr_un and owned by this user. No environment-chosen endpoint path.
     // macOS's /tmp is a link. Use its fixed physical target, not a canonicalized path
@@ -49,10 +52,7 @@ pub(super) fn directory(identity: &str, user: &str) -> io::Result<PathBuf> {
     if !metadata.is_dir() || metadata.uid() != 0 || metadata.mode() & STICKY_BIT == 0 {
         return Err(io::ErrorKind::PermissionDenied.into());
     }
-    let directory = root.join(format!(
-        "artifactize-ipc-{user}-{}",
-        &identity[..super::RUNTIME_ID_PREFIX_HEX_CHARS]
-    ));
+    let directory = root.join(format!("artifactize-ipc-{user}-{}", namespace));
     match platform::create_private_dir(&directory) {
         Ok(()) => {}
         Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
@@ -61,7 +61,7 @@ pub(super) fn directory(identity: &str, user: &str) -> io::Result<PathBuf> {
     validate_directory(&directory)?;
     Ok(directory)
 }
-pub(super) fn address(directory: &Path, _identity: &str) -> PathBuf {
+pub(crate) fn address(directory: &Path, _identity: &str) -> PathBuf {
     directory.join("hub.sock")
 }
 fn validate_socket(address: &Path) -> io::Result<()> {
@@ -71,7 +71,7 @@ fn validate_socket(address: &Path) -> io::Result<()> {
     }
     Ok(())
 }
-pub(super) fn listen(address: &Path) -> io::Result<Listener> {
+pub(crate) fn listen(address: &Path) -> io::Result<Listener> {
     // Only an elected owner reaches here; a crashed predecessor's socket can be removed.
     match validate_socket(address) {
         Ok(()) => fs::remove_file(address)?,
@@ -81,7 +81,7 @@ pub(super) fn listen(address: &Path) -> io::Result<Listener> {
     let listener = UnixListener::bind(address)?;
     Ok(Listener { listener })
 }
-pub(super) async fn connect(address: &Path) -> io::Result<Stream> {
+pub(crate) async fn connect(address: &Path) -> io::Result<Stream> {
     validate_socket(address)?;
     let stream = UnixStream::connect(address).await?;
     if stream.peer_cred()?.uid().to_string() != user()? {

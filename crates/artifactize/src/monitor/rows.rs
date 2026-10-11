@@ -218,7 +218,7 @@ fn item(
     column: usize,
     star: bool,
     layout: &Layout,
-) -> std::io::Result<TreeItem<'static, String>> {
+) -> std::io::Result<TreeItem<'static, super::model::NodeId>> {
     let children = node
         .children
         .iter()
@@ -235,7 +235,7 @@ fn item(
 pub(super) fn items(
     nodes: &[Node],
     layout: &Layout,
-) -> std::io::Result<Vec<TreeItem<'static, String>>> {
+) -> std::io::Result<Vec<TreeItem<'static, super::model::NodeId>>> {
     let column = column(nodes, 0, layout.total);
     let star = nodes
         .iter()
@@ -248,15 +248,15 @@ pub(super) fn items(
 
 /// Rows of the Artifacts `upstream` names, as indices into the visible (unfolded) rows.
 pub(super) fn marked(
-    items: &[TreeItem<'static, String>],
-    state: &TreeState<String>,
+    items: &[TreeItem<'static, super::model::NodeId>],
+    state: &TreeState<super::model::NodeId>,
     upstream: &[Upstream],
 ) -> Vec<(usize, Completion)> {
     let visible = state.flatten(items);
     upstream
         .iter()
         .filter_map(|up| {
-            let id = vec![format!("a:{}", up.artifact)];
+            let id = vec![super::model::NodeId::artifact(up.artifact.clone())];
             visible
                 .iter()
                 .position(|row| row.identifier == id)
@@ -273,7 +273,7 @@ pub(super) fn draw(
     area: Rect,
     block: Block<'static>,
     nodes: &[Node],
-    state: &mut TreeState<String>,
+    state: &mut TreeState<super::model::NodeId>,
     layout: Layout,
 ) {
     let inner = block.inner(area);

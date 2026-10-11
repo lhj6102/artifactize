@@ -100,10 +100,38 @@ impl Command {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    clap::ValueEnum,
+)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[value(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Verdict {
     Green,
     Red,
+}
+
+impl Verdict {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Green => "GREEN",
+            Self::Red => "RED",
+        }
+    }
+}
+
+impl std::fmt::Display for Verdict {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.as_str())
+    }
 }
 
 #[derive(Debug)]
@@ -150,20 +178,21 @@ where
         Ok(mut output) => {
             output.stdout = clean_output(&output.stdout);
             output.stderr = clean_output(&output.stderr);
-            match output.status.code() {
-                Some(exit_code) => Outcome::Completed(ReviewResult {
-                    verdict: if exit_code == 0 {
-                        Verdict::Green
-                    } else {
-                        Verdict::Red
-                    },
-                    exit_code,
-                    output,
-                }),
-                None => Outcome::OperationalError(Error::AbnormalExit {
-                    signal: crate::platform::exit_signal(&output.status),
-                    output,
-                }),
+            match crate::platform::process_end(&output.status) {
+                crate::platform::ProcessEnd::Exited(exit_code) => {
+                    Outcome::Completed(ReviewResult {
+                        verdict: if exit_code == 0 {
+                            Verdict::Green
+                        } else {
+                            Verdict::Red
+                        },
+                        exit_code,
+                        output,
+                    })
+                }
+                crate::platform::ProcessEnd::Signaled(signal) => {
+                    Outcome::OperationalError(Error::AbnormalExit { signal, output })
+                }
             }
         }
         Err(error) => Outcome::OperationalError(Error::Process(error)),

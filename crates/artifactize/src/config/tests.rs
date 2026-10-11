@@ -33,7 +33,7 @@ fn defaults_and_payload_are_preserved_without_interpolation() {
     let original = eval(json!({ "kind": "human" }));
     let declaration = parse(json!({"name": "review", "evals": [original.clone()]})).unwrap();
     assert_eq!(
-        serde_json::to_value(&declaration.evals[0].payload).unwrap(),
+        serde_json::to_value(declaration.evals[0].payload()).unwrap(),
         original["payload"]
     );
 }
@@ -53,7 +53,7 @@ fn payload_instruction_is_required_string_while_owner_context_stays_dynamic() {
         .remove("instruction");
     assert!(parse(json!({"name":"a","evals":[missing]})).is_err());
     let parsed = parse(json!({"name":"a","evals":[declared.clone()]})).unwrap();
-    let payload = parsed.evals[0].payload.as_ref().unwrap();
+    let payload = parsed.evals[0].payload().unwrap();
     assert_eq!(payload.instruction, "Inspect {input}.");
     assert_eq!(payload.extra["ownerData"], declared["payload"]["ownerData"]);
     assert_eq!(serde_json::to_value(payload).unwrap(), declared["payload"]);
@@ -164,15 +164,18 @@ fn fixed_scripts_preserve_literal_args_but_reject_invalid_process_fields() {
         args: actual,
         timeout_ms,
         ..
-    } = &declaration.evals[0].profile
+    } = &declaration.evals[0].profile()
     else {
         panic!()
     };
     assert_eq!(serde_json::to_value(actual).unwrap(), args);
     assert_eq!(*timeout_ms, Some(std::time::Duration::from_millis(1000)));
-    let bad_command = eval(json!({"kind": "runtime", "command": "sh\n", "args": []}));
+    let bad_command = eval(
+        json!({"kind": "runtime", "command": format!("{}\n", crate::test_os::shell()), "args": []}),
+    );
     assert!(parse(json!({"name": "a", "evals": [bad_command]})).is_err());
-    let bad_arg = eval(json!({"kind": "runtime", "command": "sh", "args": ["\u{0}"]}));
+    let bad_arg =
+        eval(json!({"kind": "runtime", "command": crate::test_os::shell(), "args": ["\u{0}"]}));
     assert!(parse(json!({"name": "a", "evals": [bad_arg]})).is_err());
     assert!(
         parse(json!({
@@ -197,7 +200,7 @@ fn all_hook_timeouts_are_checked_without_opening_scripts() {
                     "input_schema": {"type": "object"},
                     "timeout_ms": 1000,
                     "protocol": "json",
-                    "command": "sh",
+                    "command": crate::test_os::shell(),
                     "args": ["view.sh"],
                 },
             },
@@ -225,8 +228,8 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
     for path in [
         "",
         "/absolute",
-        "C:/absolute",
-        "C:\\absolute",
+        &crate::test_os::windows_drive("absolute"),
+        &crate::test_os::windows_drive_native("absolute"),
         "../escape",
         "a/../b",
         "a/./b",
@@ -254,7 +257,7 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
                             "input_schema":{"type":"object"},
                             "protocol":"json",
                             "execution_paths":[path],
-                            "command":"sh",
+                            "command":crate::test_os::shell(),
                             "args":[],
                         },
                     },
@@ -283,7 +286,7 @@ fn response_schemas_are_validated_without_rewriting_owner_fields() {
     declared["pass_schema"] = schema.clone();
     let declaration = parse(json!({"name": "a", "evals": [declared.clone()]})).unwrap();
     assert_eq!(
-        declaration.evals[0].pass_schema.as_ref().unwrap(),
+        declaration.evals[0].pass_schema().unwrap(),
         schema.as_object().unwrap()
     );
 }
@@ -399,7 +402,7 @@ fn removed_template_fields_are_unknown_but_owner_payloads_stay_literal() {
         "payload":{"instruction":"Inspect.","owner":{"$param":"/literal"}}});
     let declaration = parse(json!({"name":"a","evals":[declared]})).unwrap();
     assert_eq!(
-        declaration.evals[0].payload.as_ref().unwrap().extra["owner"],
+        declaration.evals[0].payload().unwrap().extra["owner"],
         json!({"$param":"/literal"})
     );
 }
@@ -576,7 +579,7 @@ fn a_result_check_names_its_removal() {
     for (profile, check) in [
         (
             json!({"kind":"agent","backend":"openai","model":"m"}),
-            json!({"command":"python3","args":["check.py"]}),
+            json!({"command":crate::test_os::python_program(),"args":["check.py"]}),
         ),
         (json!({"kind":"human"}), json!(false)),
     ] {

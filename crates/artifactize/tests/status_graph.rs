@@ -6,7 +6,7 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::bin;
+use support::os::{echo_program, shell};
 use tempfile::TempDir;
 
 mod support;
@@ -19,7 +19,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(name: &str) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         support::copy_fixture(name, &repo);
         Self {
@@ -311,7 +311,7 @@ fn graph_projects_typed_edges_closure_and_dependency_first_cycles() {
     );
     assert_eq!(
         green["evals"][0]["declaration"]["profile"]["command"],
-        bin("/bin/sh")
+        shell()
     );
     let text =
         String::from_utf8(fixture.output(&["config", "graph", "cycle-a"], 0).stdout).unwrap();
@@ -325,19 +325,11 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let fixture = Fixture::new("declarations");
     let marker = fixture.root.path().join("hook-executed");
     let hook = fixture.repo.join("review/hook.sh");
-    fs::write(
+    support::os::write_script(
         &hook,
-        format!(
-            "#!/bin/sh\nprintf called > '{}'\nexit 91\n",
-            marker.display()
-        ),
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(hook, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+        &format!("printf called > '{}'\nexit 91\n", marker.display()),
+    );
+    support::os::allow_execution(&hook);
     fixture.json(&["config", "check"], 0);
     fixture.json(&["config", "graph"], 0);
     assert!(!marker.exists());
@@ -345,7 +337,7 @@ fn static_commands_never_execute_hooks_and_status_only_runs_fingerprint() {
     let path = fixture.repo.join("review/index.artf");
     let mut declaration: Value = support::declaration::read(fs::read(&path).unwrap()).unwrap();
     declaration["fingerprint"]["script"] =
-        json!({"command":bin("/bin/echo"),"args":["current-fingerprint"]});
+        json!({"command":echo_program(),"args":["current-fingerprint"]});
     support::declaration::write(path, declaration.to_string()).unwrap();
     let view = fixture.json(&["status"], 1);
     assert_eq!(row(&view, "artifacts", "unreviewed")["state"], "UNREVIEWED");
@@ -416,10 +408,7 @@ fn status_reads_only_this_repository_and_preserves_database_and_run_output() {
         99
     );
     let link = fixture.root.path().join("redirected-state");
-    #[cfg(unix)]
-    support::os::symlink_dir(&fixture.repo, &link).unwrap();
-    #[cfg(windows)]
-    support::os::junction(&fixture.repo, &link);
+    support::os::link_dir(&fixture.repo, &link);
     let output = Command::new(env!("CARGO_BIN_EXE_artifactize"))
         .arg("--repo")
         .arg(&fixture.repo)

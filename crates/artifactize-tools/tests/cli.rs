@@ -1,16 +1,14 @@
-use std::{
-    fs,
-    path::Path,
-    process::{Command, Output},
-};
+#[path = "support/os.rs"]
+mod os;
 
-fn call(root: &Path, args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_artifactize-tools"))
-        .current_dir(root)
-        .args(args)
-        .output()
-        .unwrap()
+fn tools() -> std::process::Command {
+    os::tools(env!("CARGO_BIN_EXE_artifactize-tools"))
 }
+fn call(root: &std::path::Path, args: &[&str]) -> Output {
+    os::call(env!("CARGO_BIN_EXE_artifactize-tools"), root, args)
+}
+use std::{fs, process::Output};
+
 fn text(output: Output) -> String {
     assert!(output.status.success(), "{output:?}");
     String::from_utf8(output.stdout).unwrap()
@@ -18,7 +16,7 @@ fn text(output: Output) -> String {
 
 #[test]
 fn subcommands_share_scoped_files_and_exit_codes() {
-    let root = tempfile::tempdir().unwrap();
+    let root = os::tempdir();
     fs::write(
         root.path().join("notes.md"),
         "# First\nalpha\n## Child\nchild\n# Next\nomega\n",
@@ -64,17 +62,11 @@ fn subcommands_share_scoped_files_and_exit_codes() {
 
 #[test]
 fn symlink_inputs_are_not_followed() {
-    let root = tempfile::tempdir().unwrap();
+    let root = os::tempdir();
     fs::write(root.path().join("real.md"), "# First\nbody\n").unwrap();
     let link = root.path().join("link.md");
-    #[cfg(unix)]
-    std::os::unix::fs::symlink(root.path().join("real.md"), &link).unwrap();
-    #[cfg(windows)]
-    if let Err(error) = std::os::windows::fs::symlink_file(root.path().join("real.md"), &link) {
-        if error.raw_os_error() == Some(1314) {
-            return;
-        }
-        panic!("{error}");
+    if os::symlink_file(root.path().join("real.md"), &link).is_none() {
+        return;
     }
     for args in [
         vec!["read", "link.md"],
@@ -88,47 +80,20 @@ fn symlink_inputs_are_not_followed() {
 
 #[test]
 fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
-    let root = tempfile::tempdir().unwrap();
-    let source = root.path().join("stub.rs");
-    fs::write(
-        &source,
-        r#"fn main() {
-        let args: Vec<_> = std::env::args().skip(1).collect();
-        assert_eq!(args.last().map(String::as_str), Some("--help"));
-        match args.first().map(String::as_str) {
-            Some("large") => print!("{}", "x".repeat(65537)),
-            Some("wait") => std::thread::sleep(std::time::Duration::from_secs(30)),
-            _ => println!("stub help: {}", args.join("|")),
-        }
-    }"#,
-    )
-    .unwrap();
-    let program = root
-        .path()
-        .join(format!("stub{}", std::env::consts::EXE_SUFFIX));
-    assert!(
-        Command::new("rustc")
-            .arg(&source)
-            .arg("-o")
-            .arg(&program)
-            .status()
-            .unwrap()
-            .success()
-    );
+    let root = os::tempdir();
+    os::help_program(root.path());
     let run = |arg| {
-        Command::new(env!("CARGO_BIN_EXE_artifactize-tools"))
-            .current_dir(root.path())
-            .env("PATH", root.path())
-            .env("PATHEXT", ".EXE")
-            .args(["help", "stub", arg])
-            .output()
-            .unwrap()
+        os::help(
+            env!("CARGO_BIN_EXE_artifactize-tools"),
+            root.path(),
+            "stub",
+            &[arg],
+        )
     };
     assert_eq!(text(run("sub")), "stub help: sub|--help\n");
     let large = run("large");
     assert_eq!(large.status.code(), Some(1));
     assert!(String::from_utf8(large.stderr).unwrap().contains("64 KiB"));
-    let start = std::time::Instant::now();
     let wait = run("wait");
     assert_eq!(wait.status.code(), Some(1));
     assert!(
@@ -136,52 +101,43 @@ fn help_resolves_path_and_enforces_output_and_timeout_bounds() {
             .unwrap()
             .contains("timed out")
     );
-    assert!(start.elapsed() < std::time::Duration::from_secs(20));
 }
 
+#[test]
+fn help_timeout_ends_the_program_and_the_children_it_starts_at_once() {
+    let root = os::tempdir();
+    let output = os::timeout_tree(env!("CARGO_BIN_EXE_artifactize-tools"), root.path());
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("timed out")
+    );
+}
+
+// Windows opens through ShellExecute, which runs no program a test can stand in for.
 #[cfg(unix)]
 #[test]
 fn open_passes_one_absolute_target_to_the_recording_opener() {
-    use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
-    let program = root.path().join(if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    });
-    fs::write(
-        &program,
-        "#!/bin/sh\nprintf '%s\\n%s\\n' \"$#\" \"$1\" > \"$RECORD\"\n",
-    )
-    .unwrap();
-    fs::set_permissions(&program, fs::Permissions::from_mode(0o700)).unwrap();
+    let root = os::tempdir();
+    os::recording_program(root.path(), os::OPENER);
     fs::write(root.path().join("space ; notes.md"), "notes").unwrap();
     let record = root.path().join("record");
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize-tools"))
-        .current_dir(root.path())
-        .env("PATH", root.path())
-        .env("RECORD", &record)
-        .args(["open", "space ; notes.md"])
-        .output()
-        .unwrap();
+    let output = os::open_recording(
+        env!("CARGO_BIN_EXE_artifactize-tools"),
+        root.path(),
+        "space ; notes.md",
+    );
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         fs::read_to_string(record).unwrap(),
-        format!(
-            "1\n{}\n",
-            fs::canonicalize(root.path().join("space ; notes.md"))
-                .unwrap()
-                .display()
-        )
+        format!("1\n{}\n", root.path().join("space ; notes.md").display())
     );
 }
 
 #[test]
 fn version_matches_the_shared_workspace_version() {
-    let output = Command::new(env!("CARGO_BIN_EXE_artifactize-tools"))
-        .arg("--version")
-        .output()
-        .unwrap();
+    let output = tools().arg("--version").output().unwrap();
     assert!(output.status.success());
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),

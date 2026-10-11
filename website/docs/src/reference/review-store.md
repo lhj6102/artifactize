@@ -99,8 +99,9 @@ server keeps the token valid until `server token revoke`. Tokens are never print
 or logged.
 
 With a store configured, `verify` reads and writes through it. Before the Run claims
-anything, it looks up every key once, in one batched `POST /v1/lookup`, including
-keys that already have local records, and reuses whichever record completed last:
+anything, it looks up every key once in `POST /v1/lookup` batches of at most 1000
+keys, including keys that already have local records. More than 1000 keys require
+multiple requests. It reuses whichever record completed last:
 the key's latest local record or the store's latest. A store record that completed
 after the local latest (or with no local record at all) is appended to the local
 history as a self-contained `remote-<executionId>` execution with an `origin`, and

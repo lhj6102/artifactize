@@ -6,7 +6,7 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::config::{parse_declaration, read_workspace_config};
-use crate::test_os::{bin, make_executable, symlink_dir};
+use crate::test_os::printf_program;
 
 struct Fixture {
     directory: TempDir,
@@ -33,13 +33,7 @@ impl Fixture {
     }
 
     fn script(&self, code: &str) {
-        // Python writes pipes in the ANSI code page on Windows; the tools here write UTF-8.
-        let code = if cfg!(windows) {
-            format!("import sys\nsys.stdout.reconfigure(encoding='utf-8')\n{code}")
-        } else {
-            code.to_owned()
-        };
-        fs::write(self.repo.join("tool.py"), code).unwrap();
+        crate::test_os::write_python_script(&self.repo.join("tool.py"), code);
     }
 
     async fn call(&self, args: Value) -> ToolResult {
@@ -78,13 +72,13 @@ fn command() -> Value {
     json!({
         "description":"Inspect {artifactName}",
         "protocol":"json",
-        "command":"python3",
+        "command":crate::test_os::python_program(),
         "args":["tool.py"],
     })
 }
 
 fn text(result: &ToolResult) -> &str {
-    let [Content::Text { text }] = result.content.as_slice() else {
+    let [Content::Text { text }] = result.content() else {
         panic!("expected text: {result:?}")
     };
     text
@@ -106,10 +100,10 @@ fn flat_declarations_validate_strictly_and_inertly() {
     }
     for invalid in [
         json!({"builtin":"unknown"}),
-        json!({"builtin":"read","command":"cat"}),
+        json!({"builtin":"read","command":crate::test_os::cat_program()}),
         json!({"builtin":"read","description":"   "}),
         json!({"builtin":"read","description":"Read {other}"}),
-        json!({"metadata":{"description":"Old"},"script":{"command":"cat","args":[]}}),
+        json!({"metadata":{"description":"Old"},"script":{"command":crate::test_os::cat_program(),"args":[]}}),
     ] {
         assert!(parse(invalid.clone()).is_err(), "{invalid}");
     }
@@ -179,14 +173,14 @@ async fn argument_validation_precedes_spawn_and_output_creation() {
                 CancellationToken::new(),
             )
             .await;
-        assert!(result.is_error);
+        assert!(result.is_error());
         assert!(text(&result).contains("Tool arguments"));
         assert!(!text(&result).contains("secret-input"));
         assert!(text(&result).len() < 4096);
         assert!(!fixture.repo.join("spawned").exists());
         assert!(!fixture.repo.join("must-not-create").exists());
     }
-    assert!(!fixture.call(json!({"n":1})).await.is_error);
+    assert!(!fixture.call(json!({"n":1})).await.is_error());
     assert!(fixture.repo.join("spawned").exists());
 }
 
@@ -196,36 +190,39 @@ async fn json_context_has_private_paths_declared_material_and_owner_cwd() {
     tool["execution_paths"] = json!(["shared.txt"]);
     let fixture = Fixture::new(tool);
     fs::write(fixture.repo.join("shared.txt"), "material").unwrap();
-    fixture.script(r#"import json, os, sys
+    fixture.script(
+        &r#"import json, os, sys
 request = json.load(sys.stdin)
 context = request['context']
 assert request['version'] == 1 and request['args'] == {}
 assert type(request['version']) is int
-assert os.getcwd() == context['artifactPath']
-assert os.environ['HOME'] != os.environ['TMPDIR']
-assert context['tmpDir'] == os.environ['TMPDIR']
-assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR']
-allowed = {'PATH','LANG','HOME','TMP','TEMP','TMPDIR','XDG_CACHE_HOME','ARTIFACTIZE_WORKSPACE_DIR','ARTIFACTIZE_OUTPUT_DIR','ARTIFACTIZE_TMP_DIR','LC_CTYPE'}
-if sys.platform == 'darwin':
-    # CoreFoundation supplies the effective users text encoding during framework startup.
-    allowed.add('__CF_USER_TEXT_ENCODING')
-if os.name == 'nt':
-    allowed |= {'USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','COMSPEC','PATHEXT'}
-assert set(os.environ) <= allowed
+assert os.path.samefile(os.getcwd(), context['artifactPath'])
+{PRIVATE_ENVIRONMENT}
 print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':context}]}))
-"#);
+"#
+        .replace(
+            "{PRIVATE_ENVIRONMENT}",
+            crate::test_os::PYTHON_PRIVATE_ENVIRONMENT,
+        ),
+    );
     let result = fixture.call(json!({})).await;
-    assert!(!result.is_error, "{result:?}");
-    let Content::Json { data } = &result.content[1] else {
+    assert!(!result.is_error(), "{result:?}");
+    let Content::Json { data } = &result.content()[1] else {
         panic!()
     };
     assert_eq!(data["artifactId"], "a");
-    assert_eq!(data["artifactPath"], json!(fixture.repo));
-    assert_eq!(data["scope"]["a"]["path"], json!(fixture.repo));
+    assert_eq!(
+        data["artifactPath"],
+        json!(crate::test_os::path_text(&fixture.repo))
+    );
+    assert_eq!(
+        data["scope"]["a"]["path"],
+        json!(crate::test_os::path_text(&fixture.repo))
+    );
     assert_eq!(data["scope"]["a"]["children"], json!({}));
     assert_eq!(
         data["executionPaths"]["shared.txt"],
-        json!(fixture.repo.join("shared.txt"))
+        json!(crate::test_os::path_text(&fixture.repo.join("shared.txt")))
     );
     assert!(!Path::new(data["outputDir"].as_str().unwrap()).exists());
 }
@@ -237,7 +234,7 @@ async fn json_success_authored_error_and_credential_safe_failures() {
         "print('{\"isError\":true,\"content\":[{\"type\":\"text\",\"text\":\"Choose a smaller range.\"}]}')",
     );
     let result = fixture.call(json!({})).await;
-    assert!(result.is_error);
+    assert!(result.is_error());
     assert_eq!(text(&result), "Choose a smaller range.");
     fixture.script(
         "import sys\nprint('secret-output')\nprint('secret-stderr',file=sys.stderr)\nsys.exit(2)",
@@ -246,9 +243,7 @@ async fn json_success_authored_error_and_credential_safe_failures() {
         text(&fixture.call(json!({})).await),
         "Agent tool execution failed."
     );
-    fixture.script(
-        "import os, signal\nos.kill(os.getpid(), getattr(signal, 'SIGKILL', signal.SIGTERM))",
-    );
+    fixture.script(&crate::test_os::self_terminating_python());
     assert_eq!(
         text(&fixture.call(json!({})).await),
         "Agent tool execution failed."
@@ -302,7 +297,7 @@ async fn json_capture_supports_large_blocks_but_rejects_truncation() {
     let fixture = Fixture::new(command());
     fixture
         .script("import json\nprint(json.dumps({'content':[{'type':'json','data':'x'*524286}]}))");
-    assert!(!fixture.call(json!({})).await.is_error);
+    assert!(!fixture.call(json!({})).await.is_error());
     fixture.script("print('x'*(16*1024*1024+1))");
     assert_eq!(
         text(&fixture.call(json!({})).await),
@@ -330,9 +325,9 @@ print(json.dumps({{'content':[
 "#
         ));
         let result = fixture.call(json!({})).await;
-        assert!(!result.is_error, "{result:?}");
+        assert!(!result.is_error(), "{result:?}");
         assert_eq!(
-            result.content,
+            result.content(),
             vec![
                 Content::Image {
                     data: encoded,
@@ -343,18 +338,7 @@ print(json.dumps({{'content':[
         );
     }
     fs::write(fixture.repo.join("source"), &image::tests::fixtures()[0].1).unwrap();
-    // Windows symlinks need a privilege; junctions, which redirect the same way, do not.
-    let (file_link, directory_link) = if cfg!(windows) {
-        (
-            "path = 'link'; _winapi.CreateJunction(os.getcwd(), os.path.join(root, path))",
-            "path = 'linkdir/source'; _winapi.CreateJunction(os.getcwd(), os.path.join(root, 'linkdir'))",
-        )
-    } else {
-        (
-            "path = 'link'; os.symlink(os.path.abspath('source'), os.path.join(root, path))",
-            "path = 'linkdir/source'; os.symlink(os.getcwd(), os.path.join(root, 'linkdir'))",
-        )
-    };
+    let (file_link, directory_link) = crate::test_os::python_output_links();
     for setup in [
         "path = request['context']['artifactPath'] + '/source'",
         "path = '../tmp/image'; shutil.copy('source', os.path.join(root, path))",
@@ -364,10 +348,10 @@ print(json.dumps({{'content':[
         "path = 'image'; open(os.path.join(root,path), 'wb').truncate(4*1024*1024+1)",
     ] {
         fixture.script(&format!(
-            "import json, os, shutil, sys\nif os.name == 'nt': import _winapi\nrequest = json.load(sys.stdin)\nroot = request['context']['outputDir']\n{setup}\nprint(json.dumps({{'content':[{{'type':'image','path':path,'mimeType':'image/png'}}]}}))"
+            "import json, os, shutil, sys\nrequest = json.load(sys.stdin)\nroot = request['context']['outputDir']\n{setup}\nprint(json.dumps({{'content':[{{'type':'image','path':path,'mimeType':'image/png'}}]}}))"
         ));
         let result = fixture.call(json!({})).await;
-        assert!(result.is_error, "{setup}");
+        assert!(result.is_error(), "{setup}");
         assert_eq!(text(&result), "Agent tool returned invalid output.");
     }
 }
@@ -397,7 +381,7 @@ async fn plain_substitution_is_literal_single_pass_and_handles_escaping() {
     let result = fixture
         .call(json!({"query":query,"n":42,"items":[1,true]}))
         .await;
-    assert!(!result.is_error);
+    assert!(!result.is_error());
     let argv: Value = serde_json::from_str(text(&result)).unwrap();
     assert_eq!(
         argv,
@@ -415,7 +399,7 @@ async fn plain_substitution_is_literal_single_pass_and_handles_escaping() {
         fixture
             .call(json!({"query":"\u{0}","n":42,"items":[]}))
             .await
-            .is_error
+            .is_error()
     );
 }
 
@@ -432,12 +416,12 @@ async fn plain_output_is_clean_bounded_and_nonzero_is_error() {
         "import sys\nprint('domain detail')\nprint('stderr-secret',file=sys.stderr)\nsys.exit(3)",
     );
     let result = fixture.call(json!({})).await;
-    assert!(result.is_error);
+    assert!(result.is_error());
     assert!(text(&result).contains("domain detail"));
     assert!(!text(&result).contains("stderr-secret"));
     fixture.script("print('界'*100000)");
     let result = fixture.call(json!({})).await;
-    assert!(!result.is_error);
+    assert!(!result.is_error());
     assert!(text(&result).len() <= 65536);
     assert!(text(&result).ends_with("[output truncated]"));
 }
@@ -450,9 +434,8 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
     tool["protocol"] = json!("plain");
     let fixture = Fixture::new(tool.clone());
     let script = fixture.repo.join("unique-artifactize-tool-not-on-path");
-    fs::write(&script, "#!/bin/sh\nprintf 'owner executable'\n").unwrap();
-    make_executable(&script);
-    assert!(fixture.call(json!({})).await.is_error);
+    crate::test_os::output_script(&script, "owner executable");
+    assert!(fixture.call(json!({})).await.is_error());
     tool["command"] = json!("./unique-artifactize-tool-not-on-path");
     write_artifact(
         &fixture.repo,
@@ -461,14 +444,9 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
         "Review.",
     );
     assert_eq!(text(&fixture.call(json!({})).await), "owner executable");
-    // Windows has no printf on every PATH; python3 is a test prerequisite anyway.
-    if cfg!(windows) {
-        tool["command"] = json!("python3");
-        tool["args"] = json!(["-c", "import sys; sys.stdout.write('from PATH')"]);
-    } else {
-        tool["command"] = json!("printf");
-        tool["args"] = json!(["%s", "from PATH"]);
-    }
+    let (program, args) = crate::test_os::path_output("from PATH");
+    tool["command"] = json!(program);
+    tool["args"] = json!(args);
     write_artifact(
         &fixture.repo,
         "a",
@@ -476,7 +454,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
         "Review.",
     );
     assert_eq!(text(&fixture.call(json!({})).await), "from PATH");
-    tool["command"] = json!(bin("/usr/bin/printf"));
+    tool["command"] = json!(printf_program());
     tool["args"] = json!(["%s", "from PATH"]);
     write_artifact(&fixture.repo, "a", json!({"inspect":tool}), "Review.");
     assert_eq!(text(&fixture.call(json!({})).await), "from PATH");
@@ -486,10 +464,7 @@ async fn executables_use_path_or_owner_relative_paths_not_implicit_local_search(
 async fn path_preparation_rejects_scope_and_workspace_escapes() {
     let fixture = Fixture::new(command());
     fixture.script("open('spawned','w').write('yes')\n");
-    if symlink_dir(fixture.directory.path(), fixture.repo.join("link")).is_none() {
-        #[cfg(windows)]
-        crate::test_os::junction(fixture.directory.path(), &fixture.repo.join("link"));
-    }
+    crate::test_os::link_dir(fixture.directory.path(), &fixture.repo.join("link"));
     for (key, value) in [
         ("command", json!("../outside")),
         ("command", json!("link/outside")),
@@ -513,7 +488,7 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
                         CancellationToken::new()
                     )
                     .await
-                    .is_error
+                    .is_error()
             );
         }
         assert!(!fixture.repo.join("spawned").exists());
@@ -529,7 +504,7 @@ async fn path_preparation_rejects_scope_and_workspace_escapes() {
             CancellationToken::new(),
         )
         .await;
-    assert!(result.is_error);
+    assert!(result.is_error());
     assert!(!fixture.repo.join("output").exists());
 }
 
@@ -580,7 +555,7 @@ async fn registry_admits_only_eval_scope_and_agent_audience() {
                 CancellationToken::new()
             )
             .await
-            .is_error
+            .is_error()
     );
     assert!(
         text(
@@ -624,7 +599,7 @@ async fn timeouts_and_cancelled_calls_cleanup_owned_directories() {
     let mut tool = command();
     tool["timeout_ms"] = json!(50);
     let fixture = Fixture::new(tool);
-    fixture.script("import time\ntime.sleep(60)");
+    fixture.script("import threading\nthreading.Event().wait()");
     assert_eq!(
         text(&fixture.call(json!({})).await),
         "Agent tool timed out."
@@ -681,15 +656,18 @@ async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
             CancellationToken::new(),
         )
         .await;
-    let [Content::Json { data }] = result.content.as_slice() else {
+    let [Content::Json { data }] = result.content() else {
         panic!("{result:?}")
     };
     assert_eq!(data["a"]["mounts"], json!({"alias":"leaf"}));
     assert_eq!(data["a"]["children"], json!({"cases":"leaf"}));
-    assert_eq!(data["leaf"]["path"], json!(fixture.repo.join("cases")));
+    assert_eq!(
+        data["leaf"]["path"],
+        json!(crate::platform::path_text(&fixture.repo.join("cases")))
+    );
     assert_eq!(
         data["leaf"],
-        json!({"path":fixture.repo.join("cases"),"kind":"folder","children":{},"mounts":{}})
+        json!({"path":crate::platform::path_text(&fixture.repo.join("cases")),"kind":"folder","children":{},"mounts":{}})
     );
     assert_eq!(data["a"].as_object().unwrap().len(), 4);
 }
@@ -697,7 +675,10 @@ async fn json_scope_contains_only_paths_kinds_mounts_and_children() {
 #[tokio::test]
 async fn dropping_call_cleans_process_before_removing_directories() {
     let fixture = Fixture::new(command());
-    fixture.script("import os,time\nopen('started','w').write(str(os.getpid()))\ntime.sleep(60)");
+    let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .await
+        .unwrap();
+    fixture.script(&format!("import os,socket,threading\ns = socket.create_connection(('127.0.0.1', {}))\ns.sendall(str(os.getpid()).encode())\ns.shutdown(socket.SHUT_WR)\nthreading.Event().wait()", listener.local_addr().unwrap().port()));
     let config = read_workspace_config(&fixture.repo).unwrap();
     let registry = Registry::new(&config, "a/review").unwrap();
     let mut call = Box::pin(registry.call(
@@ -706,35 +687,25 @@ async fn dropping_call_cleans_process_before_removing_directories() {
         &fixture.output,
         CancellationToken::new(),
     ));
-    tokio::select! {
+    let pid = tokio::select! {
         result = &mut call => panic!("unexpected completion: {result:?}"),
-        // The file exists before its PID is written; wait for the PID itself.
         result = tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            while fs::read_to_string(fixture.repo.join("started"))
-                .map_or(true, |pid| pid.parse::<u32>().is_err())
-            {
-                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-            }
-        }) => {
-            result.unwrap();
-        }
-    }
-    let pid: u32 = fs::read_to_string(fixture.repo.join("started"))
-        .unwrap()
-        .parse()
-        .unwrap();
+            use tokio::io::AsyncReadExt;
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut pid = String::new();
+            socket.read_to_string(&mut pid).await.unwrap();
+            pid.parse::<u32>().unwrap()
+        }) => result.unwrap(),
+    };
     drop(call);
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
         while fs::read_dir(&fixture.output).unwrap().count() != 1 {
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            tokio::task::yield_now().await;
         }
     })
     .await
     .unwrap();
-    #[cfg(unix)]
-    assert!(!crate::test_os::exists(pid as u32));
-    #[cfg(windows)]
-    assert!(!crate::test_os::running(pid));
+    assert!(crate::test_os::gone(pid));
 }
 
 #[test]

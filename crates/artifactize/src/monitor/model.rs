@@ -1,34 +1,38 @@
 //! Pure projections of saved state for the monitor screens.
+mod node_id;
+pub use node_id::NodeId;
 mod states;
+mod status;
 mod tree;
 pub use states::{Activity, Busy, Completion, EvalView, NotRun, Queue, Source, Upstream, Waits};
+pub use status::Status;
 pub use tree::{Kind, Node, Segment, Tone, Weight, completion, tree, upstream_index};
 
 use serde_json::Value;
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 use crate::{
     query,
     store::{RequestView, RunSummary, RunView},
+    types::{ArtifactName, EvalId},
 };
 
 /// What a tree node shows in the detail pane, parsed from its stable tree identifier.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Target {
     /// The open Run itself, from the node above its Artifacts.
     Run,
-    Artifact(String),
-    Eval(String),
+    Artifact(crate::types::ArtifactName),
+    Eval(crate::types::EvalId),
 }
 
 impl Target {
     pub fn parse(id: &str) -> Option<Self> {
         let (kind, name) = id.split_once(':')?;
-        let name = name.to_owned();
         match kind {
-            "run" => Some(Self::Run),
-            "a" => Some(Self::Artifact(name)),
-            "e" => Some(Self::Eval(name)),
+            "run" => name.parse::<crate::types::RunId>().ok().map(|_| Self::Run),
+            "a" => name.parse().ok().map(Self::Artifact),
+            "e" => name.parse().ok().map(Self::Eval),
             _ => None,
         }
     }
@@ -81,9 +85,9 @@ impl Section {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunRow {
-    pub id: String,
-    pub repo: String,
-    pub status: String,
+    pub id: crate::types::RunId,
+    pub repo: std::path::PathBuf,
+    pub status: crate::types::RunStatus,
     /// Request status glyphs with their counts, most urgent first, such as `✗1 ✓2`.
     pub counts: String,
     pub age: String,
@@ -91,9 +95,9 @@ pub struct RunRow {
     pub took: String,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Progress {
-    pub status: String,
+    pub status: Status,
     pub repo: String,
     pub validation: String,
     pub timing: String,
@@ -102,7 +106,7 @@ pub struct Progress {
     pub finished: bool,
     /// The saved validation snapshot: `None` until the Run ends.
     pub satisfied: Option<bool>,
-    pub counts: Vec<(String, u64)>,
+    pub counts: Vec<(Status, u64)>,
     /// Executions against their budget, and jobs.
     pub budget: String,
     /// Executed, reused and derived requests.
@@ -121,12 +125,12 @@ pub struct Progress {
 }
 
 /// The Run headline: one status line, then what needs attention.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Strip {
-    pub status: String,
+    pub status: Status,
     pub headline: String,
     /// Status and text: errors, then waiting Human reviews, then running evals.
-    pub attention: Vec<(String, String)>,
+    pub attention: Vec<(Status, String)>,
     /// Attention lines beyond the shown ones.
     pub more: usize,
 }
@@ -167,48 +171,11 @@ impl Detail {
 /// Attention lines shown in the Run headline before `+N more`.
 const ATTENTION_LINES: usize = 3;
 
-/// Most to least urgent, for status counts in the header, Scope, Runs and the headline.
-const URGENCY: &str = "ERROR RED BLOCKED RUNNING WAITING_HUMAN QUEUED BUDGET_EXHAUSTED \
-    WAIT_DEPENDENCY WAIT STALE UNREVIEWED INCOMPLETE GREEN BASIS";
 const ABSENT: &str = "not in Run";
 
-pub fn glyph(status: Option<&str>) -> &'static str {
-    match status {
-        Some("GREEN") => "✓",
-        Some("RED") => "✗",
-        Some("ERROR") => "!",
-        Some("RUNNING") => "◐",
-        Some("WAITING_HUMAN") => "?",
-        Some("QUEUED") => "·",
-        Some("BLOCKED") => "⊘",
-        Some("WAIT_DEPENDENCY" | "WAIT") => "…",
-        Some("BUDGET_EXHAUSTED") => "$",
-        Some("BASIS") => "◇",
-        None => "-",
-        _ => "○",
-    }
-}
-
-fn meaning(status: &str) -> &'static str {
-    match status {
-        "GREEN" => "criteria met",
-        "RED" => "criteria not met",
-        "ERROR" => "operational failure, not a verdict",
-        "RUNNING" => "executing",
-        "WAITING_HUMAN" => "waiting for a Human submission",
-        "BLOCKED" => "blocked by a RED dependency",
-        "WAIT_DEPENDENCY" => "waiting for current GREEN dependency evidence",
-        "BUDGET_EXHAUSTED" => "maxExecutions reached before it started",
-        _ => "not executed",
-    }
-}
-
-fn strs(value: &Value) -> impl Iterator<Item = &str> {
-    value
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
+/// The mark for `status`, or `-` for an eval without one.
+pub fn glyph(status: Option<Status>) -> &'static str {
+    status.map_or("-", Status::glyph)
 }
 
 fn join<T: AsRef<str>>(items: impl IntoIterator<Item = T>, separator: &str) -> String {
@@ -219,13 +186,12 @@ fn join<T: AsRef<str>>(items: impl IntoIterator<Item = T>, separator: &str) -> S
     items.join(separator)
 }
 
-fn pairs(value: &Value) -> String {
-    let pairs = value.as_object().into_iter().flatten();
-    join(pairs.map(|(key, value)| format!("{key} {value}")), ", ")
-}
-
-fn mark(name: &str, status: Option<&str>) -> String {
-    format!("{} {name} {}", glyph(status), status.unwrap_or(ABSENT))
+fn mark(name: &EvalId, status: Option<Status>) -> String {
+    format!(
+        "{} {name} {}",
+        glyph(status),
+        status.map_or(ABSENT, Status::as_str)
+    )
 }
 
 /// Seconds per minute, hour and day, the units a duration is shown in.
@@ -244,28 +210,23 @@ pub fn duration(seconds: i64) -> String {
 }
 
 /// Saved RFC 3339 times; an open end is measured to `now`.
-fn span(start: &str, end: Option<&str>, now: OffsetDateTime) -> Option<String> {
-    let parse = |time| OffsetDateTime::parse(time, &Rfc3339).ok();
-    let end = end.map_or(Some(now), parse)?;
-    Some(duration((end - parse(start)?).whole_seconds()))
-}
-
-/// Position in the urgency order; unknown statuses come last.
-pub fn urgency(status: &str) -> usize {
-    URGENCY
-        .split_whitespace()
-        .position(|known| known == status)
-        .unwrap_or(usize::MAX)
+fn span(
+    start: crate::types::Timestamp,
+    end: Option<crate::types::Timestamp>,
+    now: OffsetDateTime,
+) -> Option<String> {
+    let end = end.map_or(now, crate::types::Timestamp::time);
+    Some(duration((end - start.time()).whole_seconds()))
 }
 
 /// Status counts as glyphs, most urgent first and zero counts left out: `!2 ✓1`.
-pub fn counts<'a>(counts: impl IntoIterator<Item = (&'a str, u64)>) -> String {
+pub fn counts(counts: impl IntoIterator<Item = (Status, u64)>) -> String {
     let mut counts: Vec<_> = counts.into_iter().filter(|(_, n)| *n > 0).collect();
-    counts.sort_by_key(|(status, _)| urgency(status));
+    counts.sort_by_key(|(status, _)| *status);
     join(
         counts
             .into_iter()
-            .map(|(status, n)| format!("{}{n}", glyph(Some(status)))),
+            .map(|(status, n)| format!("{}{n}", status.glyph())),
         " ",
     )
 }
@@ -282,15 +243,14 @@ pub fn tokens(total: u64) -> String {
 pub fn run_rows(runs: &[RunSummary], now: OffsetDateTime) -> Vec<RunRow> {
     runs.iter()
         .map(|run| RunRow {
-            id: run.id.to_string(),
-            repo: run.repo_path.display().to_string(),
-            status: run.status.to_string(),
-            counts: counts(run.counts.iter().map(|(status, n)| (status.as_str(), *n))),
-            age: span(&run.created_at, None, now).unwrap_or_default(),
+            id: run.id.clone(),
+            repo: run.repo_path.clone(),
+            status: run.status,
+            counts: counts(run.counts.iter().map(|(status, n)| ((*status).into(), *n))),
+            age: span(run.created_at, None, now).unwrap_or_default(),
             took: run
                 .completed_at
-                .as_deref()
-                .and_then(|end| span(&run.created_at, Some(end), now))
+                .and_then(|end| span(run.created_at, Some(end), now))
                 .unwrap_or_default(),
         })
         .collect()
@@ -308,10 +268,14 @@ fn elapsed(view: &RequestView, now: OffsetDateTime) -> Option<String> {
     if reused(view) {
         return Some("reused".into());
     }
-    let active = matches!(request.status.as_str(), "RUNNING" | "WAITING_HUMAN");
-    let start = request.started_at.as_deref();
-    let start = start.or(active.then_some(request.created_at.as_str()))?;
-    span(start, request.completed_at.as_deref(), now)
+    let active = matches!(
+        request.status(),
+        crate::types::RequestStatus::Running | crate::types::RequestStatus::WaitingHuman
+    );
+    let start = request
+        .started_at
+        .or(active.then_some(request.created_at))?;
+    span(start, request.completed_at(), now)
 }
 
 fn claim(view: &RequestView) -> String {
@@ -322,8 +286,8 @@ fn claim(view: &RequestView) -> String {
 
 fn error(view: &RequestView) -> Option<String> {
     let request = &view.request;
-    let error = request.error.clone()?;
-    Some(match &request.error_code {
+    let error = request.error().map(str::to_owned)?;
+    Some(match &request.error_code() {
         Some(code) => format!("[{code}] {error}"),
         None => error,
     })
@@ -331,51 +295,58 @@ fn error(view: &RequestView) -> Option<String> {
 
 pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -> Progress {
     let run = &view.run;
-    let output = query::run_output(view, now);
-    let summary = &output["summary"];
-    let with = |status: &'static str| {
+    let (summary, saved_usage) = query::run_summary(view, now);
+    let with = |status: crate::types::RequestStatus| {
         requests
             .iter()
-            .filter(move |view| view.request.status.as_str() == status)
+            .filter(move |view| view.request.status() == status)
     };
-    let usage = pairs(&summary["usage"]);
-    let saved = pairs(&output["usage"]["saved"]);
-    let spent = &summary["usage"];
-    let tokens = spent["totalTokens"].as_u64().or_else(|| {
-        let input = spent["inputTokens"].as_u64();
-        let output = spent["outputTokens"].as_u64();
+    let usage = counter_pairs(&summary.usage.usage);
+    let saved = counter_pairs(&saved_usage);
+    let spent = &summary.usage.usage;
+    let tokens = spent.get("totalTokens").copied().or_else(|| {
+        let input = spent.get("inputTokens").copied();
+        let output = spent.get("outputTokens").copied();
         (input.is_some() || output.is_some())
             .then(|| input.unwrap_or(0).saturating_add(output.unwrap_or(0)))
     });
-    let unmet = join(strs(&run.validation["obligations"]), ", ");
-    let wall = span(&run.created_at, run.completed_at.as_deref(), now).unwrap_or_default();
+    let validation = run.validation.snapshot();
+    let unmet = validation
+        .and_then(|v| v.obligations.value())
+        .map(|ids| {
+            ids.iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_default();
+    let wall = span(run.created_at, run.completed_at(), now).unwrap_or_default();
     Progress {
-        status: run.status.to_string(),
-        repo: run.repo_path.display().to_string(),
+        status: run.status().into(),
+        repo: crate::platform::path_text(&run.repo_path),
         // The saved snapshot; the tree shows the current state.
-        validation: match run.validation.get("satisfied") {
+        validation: match validation.and_then(|v| v.satisfied.value()) {
             None => "pending".into(),
-            Some(Value::Bool(true)) => "SATISFIED at Run end".into(),
+            Some(true) => "SATISFIED at Run end".into(),
             Some(_) if unmet.is_empty() => "NOT SATISFIED at Run end".into(),
             Some(_) => format!("NOT SATISFIED at Run end (unmet: {unmet})"),
         },
         timing: format!(
             "started {} · {} {wall}",
             run.created_at,
-            if run.completed_at.is_some() {
+            if run.completed_at().is_some() {
                 "took"
             } else {
                 "elapsed"
             },
         ),
         elapsed: wall,
-        finished: run.completed_at.is_some(),
-        satisfied: run.validation.get("satisfied").map(|value| value == true),
-        counts: summary["counts"]
-            .as_object()
-            .into_iter()
-            .flatten()
-            .map(|(status, count)| (status.clone(), count.as_u64().unwrap_or(0)))
+        finished: run.completed_at().is_some(),
+        satisfied: validation.and_then(|v| v.satisfied.value()).copied(),
+        counts: summary
+            .counts
+            .iter()
+            .map(|(status, count)| ((*status).into(), *count))
             .collect(),
         budget: format!(
             "executions {}/{} · jobs {}",
@@ -386,32 +357,39 @@ pub fn progress(view: &RunView, requests: &[RequestView], now: OffsetDateTime) -
         ),
         work: format!(
             "executed {} · reused {} · derived {}",
-            summary["executed"]["total"],
-            summary["reused"]["total"],
-            summary["derived"].as_u64().unwrap_or(0),
+            summary.executed.total, summary.reused.kinds.total, summary.derived,
         ),
         usage,
         saved,
         tokens,
-        running: with("RUNNING")
+        running: with(crate::types::RequestStatus::Running)
             .map(|view| {
                 (
-                    view.request.eval_id.clone(),
+                    view.request.eval_id.to_string(),
                     elapsed(view, now).unwrap_or_default(),
                 )
             })
             .collect(),
-        waiting: with("WAITING_HUMAN")
-            .map(|view| (view.request.eval_id.clone(), claim(view)))
+        waiting: with(crate::types::RequestStatus::WaitingHuman)
+            .map(|view| (view.request.eval_id.to_string(), claim(view)))
             .collect(),
-        errors: with("ERROR")
+        errors: with(crate::types::RequestStatus::Error)
             .map(|view| {
                 (
-                    view.request.eval_id.clone(),
+                    view.request.eval_id.to_string(),
                     error(view).unwrap_or_default(),
                 )
             })
-            .chain(run.error.clone().map(|error| ("Run".into(), error)))
+            .chain(
+                run.error()
+                    .map(str::to_owned)
+                    .map(|error| ("Run".into(), error)),
+            )
+            .chain(
+                view.unreadable
+                    .iter()
+                    .map(|record| (record.id.clone(), record.to_string())),
+            )
             .collect(),
     }
 }
@@ -423,12 +401,7 @@ pub fn strip(progress: &Progress) -> Strip {
         Some(true) => "SATISFIED at Run end".to_owned(),
         Some(false) => "NOT SATISFIED at Run end".to_owned(),
     };
-    let counts = counts(
-        progress
-            .counts
-            .iter()
-            .map(|(status, n)| (status.as_str(), *n)),
-    );
+    let counts = counts(progress.counts.iter().copied());
     let time = format!(
         "{} {}",
         if progress.finished { "took" } else { "elapsed" },
@@ -444,19 +417,19 @@ pub fn strip(progress: &Progress) -> Strip {
             .filter(|part| !part.is_empty()),
         " · ",
     );
-    let mut attention: Vec<(String, String)> = progress
+    let mut attention: Vec<(Status, String)> = progress
         .errors
         .iter()
-        .map(|(eval, error)| ("ERROR".into(), format!("{eval}  {error}")))
+        .map(|(eval, error)| (Status::Error, format!("{eval}  {error}")))
         .chain(progress.waiting.iter().map(|(eval, claim)| {
             (
-                "WAITING_HUMAN".into(),
+                Status::WaitingHuman,
                 format!("{eval}  waiting Human · {claim}"),
             )
         }))
         .chain(progress.running.iter().map(|(eval, time)| {
             (
-                "RUNNING".into(),
+                Status::Running,
                 format!("{eval}  running {time}").trim_end().to_owned(),
             )
         }))
@@ -464,7 +437,7 @@ pub fn strip(progress: &Progress) -> Strip {
     let more = attention.len().saturating_sub(ATTENTION_LINES);
     attention.truncate(ATTENTION_LINES);
     Strip {
-        status: progress.status.clone(),
+        status: progress.status,
         headline,
         attention,
         more,
@@ -473,21 +446,21 @@ pub fn strip(progress: &Progress) -> Strip {
 
 /// The row above the Artifacts; Enter on it opens the Run detail.
 pub fn run_node(run: &RunView) -> Node {
-    let status = run.run.status.to_string();
+    let status = Status::from(run.run.status());
     Node {
-        id: format!("run:{}", run.run.id),
+        id: NodeId::run(&run.run.id),
         clock: None,
         kind: Kind::Artifact {
             completion: Completion::Complete,
             basis: false,
         },
-        glyph: glyph(Some(&status)),
-        tone: match status.as_str() {
-            "GREEN" => Tone::Green,
-            "RED" => Tone::Red,
-            "ERROR" => Tone::Error,
-            "RUNNING" => Tone::Running,
-            "BLOCKED" | "BUDGET_EXHAUSTED" | "INCOMPLETE" => Tone::Blocked,
+        glyph: status.glyph(),
+        tone: match status {
+            Status::Green => Tone::Green,
+            Status::Red => Tone::Red,
+            Status::Error => Tone::Error,
+            Status::Running => Tone::Running,
+            Status::Blocked | Status::BudgetExhausted | Status::Incomplete => Tone::Blocked,
             _ => Tone::Muted,
         },
         weight: Weight::Normal,
@@ -507,7 +480,8 @@ pub fn run_node(run: &RunView) -> Node {
 
 /// Top-level entries of a result, one line each, such as `verdict GREEN`. Saved runtime
 /// logs are left to the evidence view.
-fn result_summary(result: &Value) -> String {
+fn result_summary(result: &crate::store::ExecutionResult) -> String {
+    let result = result.to_json();
     let Some(object) = result.as_object() else {
         return result
             .to_string()
@@ -550,12 +524,17 @@ impl<'a> Saved<'a> {
     }
     fn artifacts(
         &self,
-    ) -> impl Iterator<Item = (&'a String, &'a crate::store::definitions::Artifact)> {
+    ) -> impl Iterator<
+        Item = (
+            &'a crate::types::ArtifactName,
+            &'a crate::store::definitions::Artifact,
+        ),
+    > {
         self.definitions()
             .into_iter()
             .flat_map(|graph| graph.artifacts())
     }
-    fn artifact(&self, id: &str) -> Option<&'a crate::store::definitions::Artifact> {
+    fn artifact(&self, id: &ArtifactName) -> Option<&'a crate::store::definitions::Artifact> {
         self.definitions().and_then(|graph| graph.artifact(id))
     }
     fn eval_definitions(&self) -> &'a [crate::store::definitions::Eval] {
@@ -565,65 +544,64 @@ impl<'a> Saved<'a> {
         self.definitions().map_or(&[], |graph| graph.components())
     }
 
-    fn request(&self, eval: &str) -> Option<&'a RequestView> {
+    fn request(&self, eval: &EvalId) -> Option<&'a RequestView> {
         self.requests
             .iter()
-            .find(|view| view.request.eval_id == eval)
+            .find(|view| &view.request.eval_id == eval)
     }
 
-    fn status(&self, eval: &str) -> Option<&'a str> {
-        self.request(eval).map(|view| view.request.status.as_str())
+    fn status(&self, eval: &EvalId) -> Option<Status> {
+        self.request(eval).map(|view| view.request.status().into())
     }
 
     /// Dependency-first component order with cycle peers by name, then any other saved or
     /// requested Artifact.
-    fn artifact_ids(&self) -> Vec<&'a str> {
+    fn artifact_ids(&self) -> Vec<&'a ArtifactName> {
         let components = self.components().iter();
         let saved = components
             .flat_map(|component| {
-                let mut members: Vec<_> = component
-                    .artifacts
-                    .value()
-                    .into_iter()
-                    .flatten()
-                    .map(String::as_str)
-                    .collect();
+                let mut members: Vec<_> =
+                    component.artifacts.value().into_iter().flatten().collect();
                 members.sort_unstable();
                 members
             })
-            .chain(self.artifacts().map(|(id, _)| id.as_str()))
-            .chain(
-                self.requests
-                    .iter()
-                    .map(|view| view.request.target.as_str()),
-            );
+            .chain(self.artifacts().map(|(id, _)| id))
+            .chain(self.requests.iter().map(|view| &view.request.target));
         let mut seen = std::collections::HashSet::new();
         saved.filter(|id| seen.insert(*id)).collect()
     }
 
     /// Saved Eval definitions targeting the Artifact, then requests without one.
-    fn evals(&self, artifact: &str) -> Vec<(&'a str, Option<&'a crate::store::definitions::Eval>)> {
+    fn evals(
+        &self,
+        artifact: &ArtifactName,
+    ) -> Vec<(&'a EvalId, Option<&'a crate::store::definitions::Eval>)> {
         let mut evals: Vec<_> = self
             .eval_definitions()
             .iter()
-            .filter(|eval| eval.target == artifact)
-            .map(|eval| (eval.id.as_str(), Some(eval)))
+            .filter(|eval| &eval.target == artifact)
+            .map(|eval| (&eval.id, Some(eval)))
             .collect();
         for request in self.requests.iter().map(|view| &view.request) {
-            if request.target == artifact && !evals.iter().any(|(id, _)| *id == request.eval_id) {
+            if &request.target == artifact && !evals.iter().any(|(id, _)| *id == &request.eval_id) {
                 evals.push((&request.eval_id, None));
             }
         }
         evals
     }
 
-    fn validation(&self, artifact: &str) -> &'a Value {
-        let saved = self.run.run.validation["artifacts"].as_array();
-        let saved = saved.and_then(|artifacts| artifacts.iter().find(|a| a["id"] == artifact));
-        saved.unwrap_or(&Value::Null)
+    fn validation(&self, artifact: &ArtifactName) -> Option<&'a crate::store::ArtifactValidation> {
+        self.run
+            .run
+            .validation
+            .snapshot()?
+            .artifacts
+            .value()?
+            .iter()
+            .find(|a| &a.id == artifact)
     }
 
-    fn component(&self, id: &str) -> Option<&'a crate::store::definitions::Component> {
+    fn component(&self, id: &ArtifactName) -> Option<&'a crate::store::definitions::Component> {
         self.components().iter().find(|component| {
             component
                 .artifacts
@@ -634,7 +612,7 @@ impl<'a> Saved<'a> {
 
     fn relations(
         &self,
-        artifact: &str,
+        artifact: &ArtifactName,
         input: bool,
     ) -> Vec<&'a crate::store::definitions::Relation> {
         self.definitions()
@@ -642,9 +620,9 @@ impl<'a> Saved<'a> {
             .flat_map(|graph| graph.relations())
             .filter(|relation| {
                 if input {
-                    relation.target == artifact
+                    &relation.target == artifact
                 } else {
-                    relation.source == artifact
+                    &relation.source == artifact
                 }
             })
             .collect()
@@ -656,15 +634,22 @@ fn relation_kind(relation: &crate::store::definitions::Relation) -> String {
     let kind = match &relation.kind {
         RelationKind::Unknown { .. } => serde_json::to_string(relation).unwrap_or_default(),
         RelationKind::Child { path } => {
-            format!("child {}", path.value().map_or("", String::as_str))
+            format!(
+                "child {}",
+                path.value().map_or("", crate::config::ChildPrefix::as_str)
+            )
         }
         RelationKind::Mount { alias } => {
-            format!("mount {}", alias.value().map_or("", String::as_str))
+            format!(
+                "mount {}",
+                alias.value().map_or("", crate::config::MountAlias::as_str)
+            )
         }
         RelationKind::Dependency { name, eval_id } => format!(
             "dependency {} in {}",
-            name.value().map_or("", String::as_str),
-            eval_id.value().map_or("", String::as_str)
+            name.value()
+                .map_or("", crate::config::ReferenceName::as_str),
+            eval_id.value().map_or("", crate::types::EvalId::as_str)
         ),
         RelationKind::Instruction { name, eval_id } => format!("{{{name}}} in {eval_id}"),
         RelationKind::Argument {
@@ -731,7 +716,7 @@ fn options(options: &crate::store::ExecutionOptions) -> String {
 
 fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     let request = &view.request;
-    let summary = &query::request_output(view, now)["summary"];
+    let summary = query::request_summary(view, now);
     let deps = join(&request.deps, ", ");
     let mut detail = Detail {
         title: format!("{} · {}", request.eval_id, request.title),
@@ -739,7 +724,7 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             [
                 format!(
                     "{}{}",
-                    request.status,
+                    request.status(),
                     elapsed(view, now).map_or(String::new(), |time| format!(" {time}"))
                 ),
                 profile(&request.profile),
@@ -757,13 +742,25 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     };
     detail.push(
         "Status",
-        format!("{} — {}", request.status, meaning(request.status.as_str())),
+        format!(
+            "{} — {}",
+            request.status(),
+            Status::from(request.status()).meaning()
+        ),
     );
     detail.push("Request", request.id.as_str());
     detail.push("Reason", request.blocked_reason.clone().unwrap_or_default());
     if request.profile.kind() == crate::config::ProfileKind::Dependency {
         detail.push("Source", "derived (no execution)");
-        detail.push("Blocked by", request.blocked_by.join(", "));
+        detail.push(
+            "Blocked by",
+            request
+                .blocked_by
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
     }
     detail.push("Error", error(view).unwrap_or_default());
     detail.push("Instruction", request.payload.instruction());
@@ -796,8 +793,10 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
                     source.run_id,
                     source.request_id,
                     source.eval_id,
-                    source.repo_path.display(),
-                    source.completed_at.as_deref().unwrap_or("?"),
+                    crate::platform::path_text(&source.repo_path),
+                    source
+                        .completed_at
+                        .map_or_else(|| "?".to_owned(), |time| time.to_string()),
                     request
                         .producer
                         .as_ref()
@@ -809,10 +808,12 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
         );
     }
     if let Some(execution) = &view.execution {
-        let owner = execution.owner_pid;
+        let owner = execution
+            .owner
+            .map_or(String::new(), |owner| format!(" · owner pid {}", owner.pid));
         detail.push(
             "Execution",
-            format!("{} {} · owner pid {owner}", execution.id, execution.status),
+            format!("{} {}{owner}", execution.id, execution.status()),
         );
     }
     if request.profile.kind() == crate::config::ProfileKind::Human || view.claim.is_some() {
@@ -823,8 +824,12 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
         format!(
             "created {} · started {} · completed {}{}",
             request.created_at,
-            request.started_at.as_deref().unwrap_or("-"),
-            request.completed_at.as_deref().unwrap_or("-"),
+            request
+                .started_at
+                .map_or_else(|| "-".to_owned(), |time| time.to_string()),
+            request
+                .completed_at()
+                .map_or_else(|| "-".to_owned(), |time| time.to_string()),
             elapsed(view, now).map_or(String::new(), |time| format!(" · {time}"))
         ),
     );
@@ -836,14 +841,14 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             .as_ref()
             .map_or(String::new(), |argv| argv.join(" ")),
     );
-    if let Some(result) = &request.result {
+    if let Some(result) = &request.result() {
         detail.push("Result", result_summary(result));
         detail.push(
             "Raw result",
             serde_json::to_string_pretty(result).unwrap_or_default(),
         );
     }
-    let total = pairs(&summary["usage"]);
+    let total = counter_pairs(&summary.usage.usage);
     let attempts = request.usage.as_ref().or(request.reused_usage.as_ref());
     let attempts = attempts.map_or(&[][..], Vec::as_slice);
     let original = attempts.len();
@@ -854,7 +859,7 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
             "turn {} attempt {}: {}{error}",
             attempt.turn,
             attempt.attempt,
-            pairs(&serde_json::to_value(&attempt.usage).expect("usage is JSON"))
+            counter_pairs(&attempt.usage)
         )
     });
     let state = if reused(view) {
@@ -862,8 +867,8 @@ fn request_detail(view: &RequestView, now: OffsetDateTime) -> Detail {
     } else {
         format!(
             "{} · attempts {}{}",
-            summary["usageState"].as_str().unwrap_or("unreported"),
-            summary["attempts"],
+            summary.usage.usage_state,
+            summary.usage.attempts,
             if total.is_empty() {
                 total
             } else {
@@ -898,7 +903,7 @@ pub fn detail(
                         .counts
                         .iter()
                         .filter(|(_, n)| *n > 0)
-                        .map(|(status, n)| format!("{} {status} {n}", glyph(Some(status)))),
+                        .map(|(status, n)| format!("{} {status} {n}", status.glyph())),
                     " · ",
                 ),
             );
@@ -976,14 +981,16 @@ pub fn detail(
             detail.summary = tree::artifact_status(&saved, id, now);
             detail.push("Status", detail.summary.clone());
             let snapshot = saved.validation(id);
-            if let Some(status) = snapshot["status"].as_str() {
-                let count = |key| snapshot[key].as_u64().unwrap_or(0);
+            if let Some(status) = snapshot.and_then(|s| s.status.value()) {
                 detail.push(
                     "At Run end",
                     format!(
                         "{status} · {}/{} Evals GREEN",
-                        count("passed"),
-                        count("total")
+                        snapshot
+                            .and_then(|s| s.passed.value())
+                            .copied()
+                            .unwrap_or(0),
+                        snapshot.and_then(|s| s.total.value()).copied().unwrap_or(0)
                     ),
                 );
             }
@@ -997,15 +1004,17 @@ pub fn detail(
                             if path.as_os_str().is_empty() {
                                 ".".into()
                             } else {
-                                path.display().to_string()
+                                crate::platform::path_text(path)
                             }
                         },
                     ),
             );
             detail.push(
                 "Fingerprint",
-                saved.validation(id)["fingerprint"]
-                    .as_str()
+                saved
+                    .validation(id)
+                    .and_then(|s| s.fingerprint.value())
+                    .map(|f| f.as_str())
                     .unwrap_or_default(),
             );
             let component = saved.component(id);
@@ -1053,4 +1062,20 @@ pub fn detail(
         }
     }
     detail
+}
+
+fn counter_pairs(counters: &std::collections::BTreeMap<String, u64>) -> String {
+    join(
+        counters
+            .iter()
+            .map(|(name, value)| format!("{name} {value}")),
+        ", ",
+    )
+}
+
+#[cfg(test)]
+pub(super) fn derivation_count(run: &RunView, requests: &[RequestView]) -> usize {
+    states::States::new(&Saved { run, requests })
+        .derivations
+        .get()
 }

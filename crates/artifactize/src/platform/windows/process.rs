@@ -17,7 +17,7 @@ use tokio::{
 use windows_sys::Win32::{
     Foundation::{
         ERROR_ACCESS_DENIED, ERROR_CANCELLED, ERROR_INVALID_PARAMETER, FILETIME,
-        HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, STILL_ACTIVE, SetHandleInformation,
+        HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, SetHandleInformation, WAIT_TIMEOUT,
     },
     System::{
         Console::{
@@ -34,8 +34,9 @@ use windows_sys::Win32::{
         },
         Threading::{
             CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED,
-            DETACHED_PROCESS, GetExitCodeProcess, GetProcessTimes, OpenProcess, OpenThread,
-            PROCESS_QUERY_LIMITED_INFORMATION, ResumeThread, THREAD_SUSPEND_RESUME,
+            DETACHED_PROCESS, GetProcessTimes, OpenProcess, OpenThread,
+            PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, ResumeThread,
+            THREAD_SUSPEND_RESUME, WaitForSingleObject,
         },
     },
 };
@@ -291,7 +292,13 @@ pub(crate) fn spawn_detached(mut command: Command) -> io::Result<tokio::process:
 /// processes and children, so such a PID was reused by another user's or a system process.
 pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     // SAFETY: the result is checked and then owned.
-    let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    let process = unsafe {
+        OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE,
+            0,
+            pid,
+        )
+    };
     if process.is_null() {
         let error = io::Error::last_os_error();
         return Err(match error.raw_os_error().map(|code| code as u32) {
@@ -301,14 +308,12 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     }
     // SAFETY: OpenProcess returned a new handle that nothing else owns.
     let process = unsafe { OwnedHandle::from_raw_handle(process) };
-    let mut code = 0;
-    // SAFETY: an open process handle and a valid out pointer.
-    if unsafe { GetExitCodeProcess(process.as_raw_handle(), &mut code) } == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    // A process that exits with code 259 itself is indistinguishable and counts as running.
-    if code != STILL_ACTIVE as u32 {
-        return Err(io::ErrorKind::NotFound.into());
+    // A process handle is signaled on exit, including a real exit code of 259.
+    // SAFETY: the owned process handle permits synchronization; zero never blocks.
+    match unsafe { WaitForSingleObject(process.as_raw_handle(), 0) } {
+        WAIT_TIMEOUT => {}
+        windows_sys::Win32::Foundation::WAIT_FAILED => return Err(io::Error::last_os_error()),
+        _ => return Err(io::ErrorKind::NotFound.into()),
     }
     let mut creation = FILETIME::default();
     let (mut exit, mut kernel, mut user) = (creation, creation, creation);
@@ -330,28 +335,18 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::Path, process::Stdio, time::Duration};
+    use std::time::Duration;
 
     use super::*;
 
-    /// A child that creates `marker` in `directory` as soon as it runs.
-    fn marker(directory: &Path) -> Command {
-        let mut command = Command::new("cmd");
-        command
-            .args(["/d", "/c", "type nul > marker"])
-            .current_dir(directory)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null());
-        command
-    }
-
     #[tokio::test]
     async fn an_unadmitted_gate_never_runs_the_child_and_kills_it() {
-        let directory = tempfile::tempdir().unwrap();
-        let (gate, spawning) = spawn_gated(marker(directory.path())).unwrap();
+        let directory = crate::test_os::tempdir();
+        let (gate, spawning) =
+            spawn_gated(crate::test_os::windows_marker(directory.path())).unwrap();
         let pid = gate.pid().await.unwrap();
         assert!(process_start_time(pid).is_ok(), "the held child exists");
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // pid() acknowledges the suspended gate: the child cannot run until admitted.
         assert!(!directory.path().join("marker").exists());
         drop(gate);
         let error = tokio::time::timeout(Duration::from_secs(5), spawning)
@@ -368,7 +363,8 @@ mod tests {
         assert!(!directory.path().join("marker").exists());
 
         // Admitted, the same child runs: the marker would have shown an early start.
-        let (gate, spawning) = spawn_gated(marker(directory.path())).unwrap();
+        let (gate, spawning) =
+            spawn_gated(crate::test_os::windows_marker(directory.path())).unwrap();
         gate.admit().unwrap();
         drop(gate);
         let mut child = spawning.await.unwrap().unwrap();
@@ -412,12 +408,7 @@ mod tests {
             unsafe { AssignProcessToJobObject(job.0.as_raw_handle(), GetCurrentProcess()) },
             0
         );
-        let mut command = Command::new("cmd");
-        command
-            .args(["/d", "/c", "ping -n 3 127.0.0.1 > nul"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+        let command = crate::test_os::stdin_waiter();
         let mut child = spawn_detached(command).unwrap();
         let mut in_job = 0;
         // SAFETY: both handles are open and the out pointer is valid.
@@ -433,5 +424,20 @@ mod tests {
         child.kill().await.unwrap();
         // Closing the job's last handle would end this process too; it closes at exit.
         std::mem::forget(job);
+    }
+}
+
+#[cfg(test)]
+mod exit_tests {
+    use super::*;
+    #[tokio::test]
+    async fn exit_code_259_does_not_mean_the_process_is_alive() {
+        let mut child = crate::test_os::windows_exit(259).spawn().unwrap();
+        let pid = child.id().unwrap();
+        assert_eq!(child.wait().await.unwrap().code(), Some(259));
+        assert_eq!(
+            process_start_time(pid).unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
     }
 }

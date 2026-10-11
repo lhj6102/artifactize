@@ -135,7 +135,7 @@ impl Drop for Whoami {
 
 #[test]
 fn login_status_overrides_and_logout_against_a_test_server() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let state = root.path().join("state");
     let token = test_token();
     let server = Whoami::start(&token);
@@ -266,7 +266,7 @@ fn login_status_overrides_and_logout_against_a_test_server() {
 
 #[test]
 fn doctor_checks_remote_configuration_without_opening_a_socket() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let state = root.path().join("state");
     let bin = root.path().join("bin");
     support::os::create_private_dir_all(&state.join("auth"));
@@ -307,7 +307,12 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     support::os::grant_everyone_read(&saved);
     let unsafe_file = doctor(1);
     assert_eq!(unsafe_file["status"], "FAIL");
-    assert!(unsafe_file["message"].as_str().unwrap().contains("0600"));
+    assert!(
+        unsafe_file["message"]
+            .as_str()
+            .unwrap()
+            .contains("readable by their owner only")
+    );
     // Owner-only again: mode 0600, or on Windows a new file with the folder's DACL.
     fs::remove_file(&saved).unwrap();
     support::os::write_private_file(&saved, &contents);
@@ -329,104 +334,59 @@ fn doctor_checks_remote_configuration_without_opening_a_socket() {
     assert!(doctor(1)["message"].as_str().unwrap().contains("https://"));
 }
 
-/// Needs a pseudo-terminal from openpty(3); the Windows console has no such pair to drive.
-#[cfg(unix)]
 #[test]
 fn login_on_a_terminal_does_not_echo_the_token() {
-    use std::os::fd::{FromRawFd, OwnedFd};
-
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let token = test_token();
     let server = Whoami::start(&token);
-    let (mut master, mut slave) = (0, 0);
-    // SAFETY: openpty writes two new descriptors, owned below.
-    let opened = unsafe {
-        libc::openpty(
-            &mut master,
-            &mut slave,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
-    assert_eq!(opened, 0);
-    // SAFETY: both descriptors were just opened and are owned exactly once.
-    let (mut master, slave) =
-        unsafe { (fs::File::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
-    let mut child = artifactize(&root.path().join("state"))
-        .args(["remote", "login", &server.url])
-        .stdin(slave.try_clone().unwrap())
-        .stdout(slave.try_clone().unwrap())
-        .stderr(slave)
-        .spawn()
-        .unwrap();
-    // Reading the master fails with EIO once the child closed the terminal.
-    fn read(master: &mut fs::File, output: &mut Vec<u8>, until: &str) {
-        let mut buffer = [0; 1024];
-        while !String::from_utf8_lossy(output).contains(until) {
-            match master.read(&mut buffer) {
-                Ok(0) | Err(_) => break,
-                Ok(count) => output.extend_from_slice(&buffer[..count]),
-            }
-        }
-    }
+    let state = root.path().join("state");
+    let (mut terminal, receiver) = support::os::PseudoTerminal::start(
+        Path::new(env!("CARGO_BIN_EXE_artifactize")),
+        &[
+            "--state-dir",
+            state.to_str().unwrap(),
+            "remote",
+            "login",
+            &server.url,
+        ],
+        &[
+            "ARTIFACTIZE_REMOTE",
+            "ARTIFACTIZE_REMOTE_TOKEN",
+            "ARTIFACTIZE_REMOTE_SHARE",
+        ],
+        100,
+        30,
+    );
+    let wait = support::os::patience(Duration::from_secs(10));
     let mut output = Vec::new();
-    read(&mut master, &mut output, "Paste the remote token");
-    master.write_all(format!("{token}\n").as_bytes()).unwrap();
-    read(&mut master, &mut output, "Signed in");
-    assert!(child.wait().unwrap().success());
+    while !String::from_utf8_lossy(&output).contains("Paste the remote token") {
+        output.extend(
+            receiver
+                .recv_timeout(wait)
+                .expect("login did not ask for the token"),
+        );
+    }
+    // A terminal's Enter key sends a carriage return.
+    terminal.type_text(format!("{token}\r").as_bytes());
+    assert!(terminal.finish());
+    // The output ends once the terminal has closed.
+    while let Ok(chunk) = receiver.recv_timeout(wait) {
+        output.extend(chunk);
+    }
     let output = String::from_utf8_lossy(&output);
     assert!(!output.contains(&token));
     assert!(output.contains("as alice-laptop"), "{output}");
 }
 
-/// Git Bash's mintty hands a program a pipe named like a pty: a terminal to `is_terminal`, but
-/// no console whose echo can be turned off. Login then reads the token visibly and says so.
+// Git Bash's mintty hands a program a pipe named like a pty: a terminal to `is_terminal`, but
+// no console whose echo can be turned off. Login then reads the token visibly and says so.
 #[cfg(windows)]
 #[test]
 fn login_on_a_mintty_pipe_reads_the_token_visibly_with_a_warning() {
-    use std::{os::windows::io::FromRawHandle, ptr};
-    use windows_sys::Win32::{
-        Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE},
-        Storage::FileSystem::{CreateFileW, OPEN_EXISTING, PIPE_ACCESS_OUTBOUND},
-        System::Pipes::{CreateNamedPipeW, PIPE_TYPE_BYTE, PIPE_WAIT},
-    };
-
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let token = test_token();
     let server = Whoami::start(&token);
-    let name: Vec<u16> = format!(r"\\.\pipe\msys-{}-pty0-from-master", std::process::id())
-        .encode_utf16()
-        .chain([0])
-        .collect();
-    // SAFETY: a NUL-terminated name; each handle is checked, then owned by one File.
-    let (mut writer, reader) = unsafe {
-        let server_end = CreateNamedPipeW(
-            name.as_ptr(),
-            PIPE_ACCESS_OUTBOUND,
-            PIPE_TYPE_BYTE | PIPE_WAIT,
-            1,
-            4096,
-            4096,
-            0,
-            ptr::null(),
-        );
-        assert_ne!(server_end, INVALID_HANDLE_VALUE);
-        let client_end = CreateFileW(
-            name.as_ptr(),
-            GENERIC_READ,
-            0,
-            ptr::null(),
-            OPEN_EXISTING,
-            0,
-            ptr::null_mut(),
-        );
-        assert_ne!(client_end, INVALID_HANDLE_VALUE);
-        (
-            fs::File::from_raw_handle(server_end),
-            fs::File::from_raw_handle(client_end),
-        )
-    };
+    let (mut writer, reader) = support::os::mintty_pipe();
     assert!(
         std::io::IsTerminal::is_terminal(&reader),
         "the pipe passes for a mintty terminal"

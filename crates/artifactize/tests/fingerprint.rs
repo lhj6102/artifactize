@@ -8,7 +8,7 @@ use std::{
 
 use rusqlite::Connection;
 use serde_json::{Value, json};
-use support::os::{bin, symlink_file};
+use support::os::{shell, sleep_program, symlink_file, true_program};
 use tempfile::TempDir;
 
 mod support;
@@ -21,7 +21,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir(&repo).unwrap();
         Self {
@@ -86,36 +86,20 @@ fn eval(id: &str, script: &str) -> Value {
     json!({
         "id":id,
         "title":"Check",
-        "profile":{"kind":"runtime","command":bin("/bin/sh"),"args":["-c",script]},
+        "profile":{"kind":"runtime","command":shell(),"args":["-c",script]},
         "payload":{"instruction":"Check input."},
     })
 }
 
 fn fingerprint(script: &str) -> Value {
-    json!({"script":{"command":bin("/bin/sh"),"args":["-c",script]}})
+    json!({"script":{"command":shell(),"args":["-c",script]}})
 }
 
 #[test]
 fn exact_output_is_validated_before_any_review_can_start() {
     let fixture = Fixture::new();
-    for bytes in [
-        b"".as_slice(),
-        b" value",
-        b"value ",
-        b"value\t",
-        // Windows takes CRLF as the one line ending its programs write.
-        #[cfg(unix)]
-        b"value\r\n",
-        b"value\r\r\n",
-        b"value\n\n",
-        b"one\ntwo",
-        b"value/key",
-        b"\xff",
-        b"ok\0",
-        b"\x1b[31mok\x1b[0m",
-        &[b'x'; 129],
-    ] {
-        fs::write(fixture.repo.join("key"), bytes).unwrap();
+    for bytes in support::os::invalid_fingerprints() {
+        fs::write(fixture.repo.join("key"), &bytes).unwrap();
         fixture.write(
             "index.artf",
             json!({
@@ -135,14 +119,8 @@ fn exact_output_is_validated_before_any_review_can_start() {
         );
         fixture.no_execution();
     }
-    for bytes in [
-        b"Aa0._:-".as_slice(),
-        b"Aa0._:-\n",
-        #[cfg(windows)]
-        b"Aa0._:-\r\n",
-        &[b'x'; 128],
-    ] {
-        fs::write(fixture.repo.join("key"), bytes).unwrap();
+    for bytes in support::os::valid_fingerprints() {
+        fs::write(fixture.repo.join("key"), &bytes).unwrap();
         let run = fixture.verify(&["--all"], 0);
         assert_eq!(
             run["requests"][0]["fingerprint"],
@@ -162,27 +140,20 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
     if symlink_file("key", fixture.repo.join("link")).is_some() {
         links.extend([
             (
-                json!({"script":{"command":bin("/bin/true"),"args":[],"files":["link"]}}),
+                json!({"script":{"command":true_program(),"args":[],"files":["link"]}}),
                 "symlinks",
             ),
             (json!({"script":{"command":"./link","args":[]}}), "symlinks"),
         ]);
     }
-    #[cfg(unix)]
-    support::os::symlink_dir(&fixture.repo, fixture.repo.join("dir-link")).unwrap();
-    // A junction redirects like a directory symlink and needs no privilege.
-    #[cfg(windows)]
-    support::os::junction(&fixture.repo, &fixture.repo.join("dir-link"));
+    support::os::link_dir(&fixture.repo, &fixture.repo.join("dir-link"));
     for (declared, message) in [
         (
             fingerprint("printf valid; printf private-diagnostic >&2; exit 7"),
             "exited with",
         ),
-        // Windows has no signals; every exit status there is an exit code.
-        #[cfg(unix)]
-        (fingerprint("kill -TERM $$"), "exited with"),
         (
-            json!({"script":{"command":bin("/bin/sleep"),"args":["30"],"timeout_ms":50}}),
+            json!({"script":{"command":sleep_program(),"args":[support::os::LINGERING_SECONDS],"timeout_ms":50}}),
             "timed out",
         ),
         (
@@ -190,11 +161,11 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
             "spawned",
         ),
         (
-            json!({"script":{"command":bin("/bin/true"),"args":[],"files":["missing"]}}),
+            json!({"script":{"command":true_program(),"args":[],"files":["missing"]}}),
             "missing",
         ),
         (
-            json!({"script":{"command":bin("/bin/true"),"args":[],"files":["dir-link/key"]}}),
+            json!({"script":{"command":true_program(),"args":[],"files":["dir-link/key"]}}),
             "symlinks",
         ),
         (
@@ -203,6 +174,7 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
         ),
     ]
     .into_iter()
+    .chain(support::os::signal_fingerprint().map(|value| (value, "exited with")))
     .chain(links)
     {
         fixture.write(
@@ -221,31 +193,23 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
 fn protocol_uses_owner_cwd_literal_argv_and_disposable_private_environment() {
     let fixture = Fixture::new();
     let probe = fixture.root.path().join("probe");
-    let script = r#"#!/usr/bin/python3
-import json, os, pathlib, stat, sys
+    let script = r#"import json, os, pathlib, stat, sys
 context = json.load(sys.stdin)
 assert context == {'version': 1, 'artifactId': 'test'}
 assert type(context['version']) is int
 assert pathlib.Path.cwd().name == 'owner'
 assert 'FINGERPRINT_SECRET' not in os.environ
 assert sys.argv[2] == '$HOME; ../literal $(touch executed)'
-assert sys.argv[3] == str(pathlib.Path.cwd() / 'key')
-for key in ['HOME', 'TMPDIR', 'XDG_CACHE_HOME', 'ARTIFACTIZE_OUTPUT_DIR']:
-    path = pathlib.Path(os.environ[key])
-    assert not path.is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_WORKSPACE_DIR']))
-    # Windows has no modes; tests/runtime.rs checks the owner-only DACL there.
-    assert os.name == 'nt' or stat.S_IMODE(path.stat().st_mode) == 0o700
-    (path / 'discard').write_text('scratch')
+assert pathlib.Path(sys.argv[3]) == pathlib.Path.cwd() / 'key'
+PRIVATE_DIRECTORY_CHECK
 with open(sys.argv[1], 'a') as log:
     log.write(os.environ['ARTIFACTIZE_OUTPUT_DIR'] + '\n')
 print('protocol:v1')
 "#;
-    // Windows has no #!, so it runs the script with python3 and the same arguments.
-    let (command, mut args) = if cfg!(windows) {
-        ("python3", vec![json!("fingerprint.py")])
-    } else {
-        ("./fingerprint.py", vec![])
-    };
+    let path = fixture.repo.join("owner/fingerprint.py");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let (command, mut args) =
+        support::os::python_script(&path, &support::os::fingerprint_probe(script));
     args.extend([
         json!(probe),
         json!("$HOME; ../literal $(touch executed)"),
@@ -260,13 +224,6 @@ print('protocol:v1')
         }),
     );
     fs::write(fixture.repo.join("owner/key"), "material").unwrap();
-    let path = fixture.repo.join("owner/fingerprint.py");
-    support::declaration::write(&path, script).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
-    }
     let run = fixture.verify(&["--all", "--force"], 1);
     assert_eq!(run["requests"][0]["fingerprint"], "protocol:v1");
     assert_eq!(run["requests"][1]["fingerprint"], "protocol:v1");
@@ -397,9 +354,10 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         let fixture = Fixture::new();
         let marker = fixture.root.path().join("started");
         let source = format!(
-            "if {}; then printf '%s\\n%s\\n' \"$$\" \"$ARTIFACTIZE_OUTPUT_DIR\" > '{}'; sleep 30 & wait; fi; printf stable",
+            "if {}; then printf '%s\\n%s\\n' \"$$\" \"$ARTIFACTIZE_OUTPUT_DIR\" > '{}'; {} & wait; fi; printf stable",
             if recheck { "test -e executed" } else { "true" },
-            marker.display()
+            marker.display(),
+            support::os::LINGERING
         );
         fixture.write(
             "index.artf",
@@ -425,18 +383,11 @@ fn cancellation_during_preparation_or_recheck_kills_the_command_and_removes_outp
         let mut lines = marker.lines();
         let pid: u32 = lines.next().unwrap().parse().unwrap();
         let output = lines.next().unwrap();
-        // SIGTERM on Unix; Windows asks with Ctrl-Break, the closest it has.
-        #[cfg(unix)]
-        assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
-        #[cfg(windows)]
-        support::os::interrupt(child.id());
+        support::os::terminate(child.id());
         let result = child.wait_with_output().unwrap();
         assert_eq!(result.status.code(), Some(2));
         assert!(!Path::new(output).exists());
-        #[cfg(unix)]
-        assert!(!support::os::exists(pid as u32));
-        #[cfg(windows)]
-        assert!(!support::os::running(pid));
+        assert!(support::os::gone(pid));
         let result: Value = serde_json::from_slice(&result.stdout).unwrap();
         let db = Connection::open(fixture.state.join("state.sqlite")).unwrap();
         assert_eq!(
@@ -479,7 +430,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
             "name":"api",
             "mounts":mounts,
             "fingerprint":{
-                "script":{"command":"python3","args":["../fingerprint.py",".",reference]},
+                "script":{"command":support::os::python_program(),"args":["../fingerprint.py",".",reference]},
             },
             "evals":[
                 {
@@ -487,7 +438,7 @@ fn fingerprint_arguments_resolve_global_names_like_runtime_argv() {
                     "title":"Tests",
                     "profile":{
                         "kind":"runtime",
-                        "command":"python3",
+                        "command":support::os::python_program(),
                         "args":["-B","test_api.py",reference],
                     },
                     "payload":{"instruction":"Run the API tests."},
@@ -552,7 +503,7 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
     let markers = fixture.root.path().join("markers");
     fs::create_dir(&markers).unwrap();
     // Each script marks itself running, counts the running markers, and stays up for a moment.
-    let script = r#"touch "$2/running.$1"; ls "$2" | grep -c '^running\.' >> "$2/counts.$1"; sleep 0.3; rm "$2/running.$1"; echo "$1-v1""#;
+    let script = r#"touch "$2/running.$1"; ls "$2" | grep -c '^running\.' >> "$2/counts.$1"; while [ ! -e "$2/release" ]; do sleep 0.01; done; rm "$2/running.$1"; echo "$1-v1""#;
     for index in 0..8 {
         let name = format!("part{index}");
         fixture.write(
@@ -560,7 +511,7 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
             json!({
                 "name":name,
                 "fingerprint":{
-                    "script":{"command":bin("/bin/sh"),"args":["-c",script,"sh",name,markers]},
+                    "script":{"command":shell(),"args":["-c",script,"sh",name,markers]},
                 },
                 "evals":[eval("check", "exit 0")],
             }),
@@ -574,6 +525,9 @@ fn most_at_once(markers: &Path) -> usize {
     let mut most = 0;
     for entry in fs::read_dir(markers).unwrap() {
         let path = entry.unwrap().path();
+        if path.file_name().unwrap() == "release" {
+            continue;
+        }
         let counts = fs::read_to_string(&path).unwrap();
         most = counts
             .lines()
@@ -591,17 +545,52 @@ fn fingerprints_run_in_bounded_parallel_with_the_same_output_at_any_bound() {
     let fixture = Fixture::new();
     let markers = concurrent_scripts(&fixture);
     let status = |jobs: &str| {
-        let output = fixture
+        let mut child = fixture
             .command()
             .args(["status", "--json", "--fingerprint-jobs", jobs])
-            .output()
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
             .unwrap();
+        let bound: usize = jobs.parse().unwrap();
+        let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
+        while fs::read_dir(&markers)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_str()
+                    .unwrap()
+                    .starts_with("running.")
+            })
+            .count()
+            < bound
+        {
+            if child.try_wait().unwrap().is_some() {
+                let output = child.wait_with_output().unwrap();
+                panic!(
+                    "status ended before its fingerprint workers met: {}{}",
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            assert!(
+                Instant::now() < deadline,
+                "fingerprint workers did not reach the barrier"
+            );
+            thread::yield_now();
+        }
+        fs::write(markers.join("release"), "").unwrap();
+        let output = child.wait_with_output().unwrap();
         assert_eq!(output.status.code(), Some(1));
         let status: Value = serde_json::from_slice(&output.stdout).unwrap();
         (status, most_at_once(&markers))
     };
     let (one, most) = status("1");
     assert_eq!(most, 1);
+    fs::remove_file(markers.join("release")).unwrap();
     let (three, most) = status("3");
     assert!((2..=3).contains(&most), "{most}");
     assert_eq!(three, one);
@@ -627,10 +616,16 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
     let started = fixture.root.path().join("started");
     for (name, script) in [
         // Fails last, but comes first.
-        ("alpha", "sleep 0.5; echo first failure >&2; exit 3"),
+        (
+            "alpha",
+            "while [ ! -e ../gamma/finished ]; do sleep 0.01; done; echo first failure >&2; exit 3",
+        ),
         // Would run long; it comes after alpha's failure, so it is cancelled.
-        ("beta", "sleep 30; echo beta"),
-        ("gamma", "exit 4"),
+        (
+            "beta",
+            "echo $$ > pid; while [ ! -e release ]; do sleep 0.01; done; echo beta",
+        ),
+        ("gamma", "touch finished; exit 4"),
     ] {
         fixture.write(
             &format!("{name}/index.artf"),
@@ -644,7 +639,6 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
             }),
         );
     }
-    let begin = Instant::now();
     let output = fixture
         .command()
         .args(["status", "--fingerprint-jobs", "4"])
@@ -656,10 +650,14 @@ fn the_first_failing_fingerprint_in_order_is_reported_and_later_ones_are_cancell
         stderr.contains("Fingerprint script for Artifact alpha failed"),
         "{stderr}"
     );
+    let pid: u32 = fs::read_to_string(fixture.repo.join("beta/pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
     assert!(
-        begin.elapsed() < Duration::from_secs(10),
-        "{:?}",
-        begin.elapsed()
+        support::os::gone(pid),
+        "later fingerprint was not cancelled"
     );
     // All three started at once.
     for name in ["alpha", "beta", "gamma"] {

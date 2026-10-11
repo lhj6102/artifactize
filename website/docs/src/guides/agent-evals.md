@@ -68,6 +68,7 @@ tools.
 ```toml
 [views.agent_tools]
 read = { builtin = "read", description = "Read {artifactName}." }
+section = { builtin = "section", args = ["spec.md"] }   # the model passes only the heading
 
 [views.agent_tools.inspect]
 description = "Inspect a section of {artifactName}."
@@ -91,8 +92,9 @@ keep their existing names. A file Artifact's built-ins expose its file, mounts a
 referenced Artifacts, not sibling files; command tools use the containing folder
 as cwd and remain trusted local programs.
 
-Field rules, the built-in tools, the `json` and `plain` protocols and their limits
-are in the [reference](../reference/agent-tools.md#agent-tools).
+Field rules, the `json` and `plain` protocols and their limits are in the
+[reference](../reference/agent-tools.md#agent-tools); every built-in tool, with its
+fixed `args` forms, is in [Built-in tools](../reference/builtin-tools.md).
 [`tools check`](../reference/agent-tools.md#tool-diagnostics) validates declared
 tools and runs one without a review.
 
@@ -117,8 +119,8 @@ be retried. A turn is retried, up to three attempts in all, when an attempt fail
 with a rate limit or a transient error before it produced any output or reported any
 usage. A retry waits as long as the provider asks with `retry-after-ms` or
 `Retry-After` (seconds or an HTTP date), else 250 ms and then 500 ms. When the
-provider asks for a wait that ends past the review's deadline, the review fails at
-once with `RATE_LIMIT`. A failure after output or usage is never retried, so nothing
+provider asks for a wait that reaches or exceeds the review's deadline, the review
+fails at once with the original `RATE_LIMIT` or `TRANSIENT` classification. A failure after output or usage is never retried, so nothing
 is paid for twice. Each attempt is saved in `usage` with its counters, `error` and
 `errorCode`.
 
@@ -140,8 +142,8 @@ A failed Agent review records one of these `errorCode` values:
 |---|---|---|
 | `AUTHENTICATION` | Missing, expired or rejected credentials: HTTP 401/403, no API key, no Codex sign-in or an expired auth file | no; stops the backend |
 | `QUOTA` | A billing, credit or plan usage limit (`insufficient_quota`, a Codex usage limit) | no; stops the backend |
-| `RATE_LIMIT` | HTTP 429 without a quota cause, after the retries or when `Retry-After` passes the deadline | yes |
-| `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream | yes, before output |
+| `RATE_LIMIT` | HTTP 429 without a quota cause, after the retries or when `Retry-After` reaches the deadline | yes |
+| `TRANSIENT` | A connection failure, HTTP 5xx or overloaded, or an interrupted stream; an excessive requested retry delay keeps this classification | yes, before output |
 | `TIMEOUT` | The review's `timeout_ms` deadline | no |
 | `CANCELLED` | Ctrl-C or a cancelled Run | no |
 | `PROVIDER_BUDGET_EXCEEDED` | `max_tokens` or `max_tool_calls` was exceeded | no |

@@ -8,7 +8,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Cell, Clear, Paragraph, Row, Table, Wrap},
 };
-use time::{OffsetDateTime, format_description::well_known::Rfc3339};
+use time::OffsetDateTime;
 
 use super::{Focus, Form, Input, Mode, Review, detail};
 use crate::monitor::{
@@ -19,6 +19,12 @@ use crate::monitor::{
 
 /// Keep a transient notice inside the fixed four-line footer rather than covering review content.
 const MAX_NOTICE_LINES: usize = 4;
+/// Two opposing borders consume one cell each in either dimension.
+const BORDER_CELLS: u16 = 2;
+/// Keep one spare content row below the JSON caret, in addition to the two border rows.
+const JSON_RESERVED_ROWS: u16 = BORDER_CELLS + 1;
+/// Keep one spare content column after the JSON caret, in addition to the border columns.
+const JSON_RESERVED_COLUMNS: u16 = BORDER_CELLS + 1;
 /// The Compact waiting list, borders included, beside a Full Detail.
 const LIST_COMPACT: u16 = 30;
 /// Fixed columns of the Full waiting list: claim and waiting time.
@@ -52,7 +58,7 @@ pub(super) fn lines(fields: Vec<(&'static str, String)>) -> Vec<Line<'static>> {
 }
 
 fn popup(frame: &mut Frame, area: Rect, title: String, text: Vec<Line<'static>>) {
-    let height = (text.len() as u16 + 2).min(area.height);
+    let height = (text.len() as u16 + BORDER_CELLS).min(area.height);
     let [area] = Layout::horizontal([Constraint::Percentage(POPUP_WIDTH)])
         .flex(Flex::Center)
         .areas(area);
@@ -157,14 +163,13 @@ impl Review {
             .repo
             .as_ref()
             .map_or("all repositories".into(), |repo| {
-                format!("repo {}", repo.display())
+                format!("repo {}", crate::platform::path_text(repo))
             });
         let mut segments = vec![scope];
         if self.focus == Focus::Detail {
-            match (&self.request, &self.open, &self.invalid_open) {
-                (Some(view), _, _) => segments.push(view.request.eval_id.clone()),
-                (None, Some(id), _) => segments.push(id.to_string()),
-                (None, None, Some(id)) => segments.push(id.clone()),
+            match (&self.request, &self.open) {
+                (Some(view), _) => segments.push(view.request.eval_id.to_string()),
+                (None, Some(id)) => segments.push(id.to_string()),
                 _ => {}
             }
         }
@@ -241,20 +246,20 @@ impl Review {
                     if claim.reviewer == self.reviewer {
                         format!("{} (you)", claim.reviewer)
                     } else {
-                        claim.reviewer.clone()
+                        claim.reviewer.to_string()
                     }
                 });
-                let age = OffsetDateTime::parse(&request.created_at, &Rfc3339)
-                    .map(|created| duration((now - created).whole_seconds()))
-                    .unwrap_or_default();
+                let age = duration((now - request.created_at.time()).whole_seconds());
                 let repo = request.human_definition.as_ref();
-                let repo = repo.and_then(|definition| definition["repo"].as_str());
+                let repo = repo
+                    .and_then(|definition| definition.repo.value())
+                    .map(|repo| crate::platform::path_text(repo));
                 [
-                    request.eval_id.clone(),
+                    request.eval_id.to_string(),
                     request.id.to_string(),
                     claim,
                     age,
-                    repo.unwrap_or("-").to_owned(),
+                    repo.unwrap_or_else(|| "-".into()),
                 ]
                 .map(|cell| plain(&cell).into_owned())
             })
@@ -295,7 +300,7 @@ impl Review {
             Modifier::BOLD
         };
         if density == Density::Compact {
-            let room = usize::from(area.width.saturating_sub(2));
+            let room = usize::from(area.width.saturating_sub(BORDER_CELLS));
             let rows = rows.into_iter().zip(&self.waiting).map(|(cells, view)| {
                 let mark = match &view.claim {
                     Some(claim) if claim.reviewer == self.reviewer => " (you)",
@@ -404,7 +409,7 @@ fn column_widths(rows: &[[String; 5]]) -> [u16; 5] {
 /// The Full list grows to its columns, so the rest of a wide terminal previews the request.
 fn list_width(rows: &[[String; 5]]) -> u16 {
     let widths = column_widths(rows);
-    widths.iter().sum::<u16>() + widths.len() as u16 - 1 + 2
+    widths.iter().sum::<u16>() + widths.len() as u16 - 1 + BORDER_CELLS
 }
 
 fn field_line(field: &super::Field, selected: bool) -> Line<'static> {
@@ -494,14 +499,14 @@ pub(super) fn draw_inline_form(
         .chars()
         .filter(|character| *character == '\n')
         .count();
-    let height = usize::from(area.height.saturating_sub(3));
+    let height = usize::from(area.height.saturating_sub(JSON_RESERVED_ROWS));
     let scroll = if scroll == 0 {
         row.saturating_sub(height.saturating_sub(1))
     } else {
         usize::from(scroll)
     };
     let column = Line::from(before.rsplit('\n').next().unwrap_or_default()).width();
-    let visible_width = usize::from(area.width.saturating_sub(3));
+    let visible_width = usize::from(area.width.saturating_sub(JSON_RESERVED_COLUMNS));
     let horizontal = column.saturating_sub(visible_width.saturating_sub(1));
     let mut text = format!("{}▏{}", before, &json[cursor..]);
     if let Some(error) = &form.error {
@@ -526,7 +531,7 @@ pub(super) fn draw_inline_form(
 }
 
 fn draw_fields(frame: &mut Frame, area: Rect, form: &Form, scroll: u16, border: Style) {
-    let color = if form.verdict == "GREEN" {
+    let color = if form.verdict == crate::runtime::Verdict::Green {
         Color::Green
     } else {
         Color::Red

@@ -24,7 +24,7 @@ its own evals: tests, LLM reviews, human sign-offs and derived dependency checks
 Every teammate, human or agent, works their own way on their part, and integrating
 that work reuses each review while its eval definition, covered Artifact kinds
 and fingerprints match. Earlier GREEN or RED results are reused. Artifactize is open source under the
-Apache License 2.0 and runs on Linux and WSL 2.
+Apache License 2.0 and runs on Linux, macOS and Windows.
 
 ## Why I built it
 
@@ -72,48 +72,41 @@ re-reviews only that Artifact.
 
 ## Install
 
-On Linux (x86_64 or aarch64) or WSL 2, install the static binary from the latest
-GitHub release into `~/.local/bin`. The script checks its SHA-256 and needs no `sudo`:
+Every installer puts two commands on your `PATH`: `artifactize` and
+`artifactize-tools`, its built-in tools as a standalone CLI. No Rust toolchain is
+needed.
+
+**Linux** (x86_64 or aarch64): the script installs the static binaries from the latest
+GitHub release into `~/.local/bin`. It checks their SHA-256 and needs no `sudo`:
 
 ```sh
 curl -fsSL https://artifactize.dev/install.sh | sh
 artifactize --version
 ```
 
-Prebuilt binaries are attached to releases from 0.5.2 on. To update, run the script
-again; to uninstall, `rm ~/.local/bin/artifactize`. Your state
-(`~/.local/state/artifactize` by default) is kept.
+With a Rust toolchain, use `cargo binstall artifactize artifactize-tools` for the
+prebuilt binaries, or build from [crates.io](https://crates.io/crates/artifactize)
+with `cargo install artifactize artifactize-tools --locked`.
 
-With a Rust toolchain and a C compiler, install the latest release from
-[crates.io](https://crates.io/crates/artifactize) instead (or fetch the prebuilt
-binary with `cargo binstall artifactize`):
+**macOS** (Apple silicon or Intel): use Homebrew, or the same install script.
 
 ```sh
-cargo install artifactize --locked
+brew install lhj6102/tap/artifactize
 ```
 
-To install a particular release from crates.io, name its version:
-
-```sh
-cargo install artifactize --locked --version <version>
-```
-
-To build from source instead:
-
-```sh
-git clone https://github.com/lhj6102/artifactize
-cd artifactize
-cargo install --path crates/artifactize --locked
-```
-
-Experimental: on Windows (x64), install from PowerShell:
+**Windows** (x64): use winget, the
+[Microsoft Store](https://apps.microsoft.com/detail/9PB6W4LL165D) or
+`irm https://artifactize.dev/install.ps1 | iex` in PowerShell. With Smart App Control
+on, use the Store version. In WSL 2, follow the Linux steps.
 
 ```powershell
-irm https://artifactize.dev/install.ps1 | iex
+winget install lhj6102.Artifactize
 ```
 
-[Install](https://artifactize.dev/docs/getting-started/install.html) covers the
-prerequisites, the Agent backends, state and uninstalling.
+To update, use the same channel again (`brew upgrade`, `winget upgrade`, or run the
+script again); the Store updates by itself. Your state is kept.
+[Install](https://artifactize.dev/docs/getting-started/install.html) covers every
+channel, updating and uninstalling, the prerequisites and the Agent backends.
 
 ## A tiny example
 

@@ -19,8 +19,8 @@ struct Repo {
 impl Repo {
     fn new() -> Self {
         Self {
-            root: tempfile::tempdir().unwrap(),
-            output: tempfile::tempdir().unwrap(),
+            root: crate::test_os::tempdir(),
+            output: crate::test_os::tempdir(),
         }
     }
 
@@ -32,11 +32,12 @@ impl Repo {
 
     fn artifact(&self, folder: &str, value: Value) {
         let path = Path::new(folder).join(CONFIG_FILE);
-        self.write(path.to_str().unwrap(), &value.to_string());
+        self.write(&crate::platform::path_text(&path), &value.to_string());
     }
 
     async fn fingerprint(&self, id: &str) -> Result<PreparedFingerprint, String> {
         let config = read_workspace_config(self.root.path()).map_err(|e| e.to_string())?;
+        let id = &config.artifacts[id].name;
         let mut fingerprints = prepare(
             &config,
             [id],
@@ -221,7 +222,8 @@ async fn content_inputs_reject_links_unless_ignored_and_name_paths_inside_the_ow
     if symlink_file("a.txt", &link).is_some() {
         check(repo.fingerprint("owner").await.unwrap_err());
     }
-    // A junction is a link too, and needs no privilege to create.
+    // Windows junctions are reparse links and exist only on Windows.
+    // They need no privilege to create.
     #[cfg(windows)]
     {
         let _ = fs::remove_file(&link);
@@ -277,7 +279,7 @@ fn an_eval_depends_on_its_target_mounts_children_and_named_artifacts_only() {
                 {
                     "id":"named",
                     "title":"Named",
-                    "profile":{"kind":"runtime","command":"cat","args":["{d}/x"]},
+                    "profile":{"kind":"runtime","command":crate::test_os::cat_program(),"args":["{d}/x"]},
                     "payload":{"instruction":"Compare with {e}."},
                 },
             ],
@@ -367,10 +369,10 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
         runtime(json!(["b"]), json!(null))
     );
 
-    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<String, crate::types::Fingerprint> {
+    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint> {
         pairs
             .iter()
-            .map(|(name, value)| (name.to_string(), value.parse().unwrap()))
+            .map(|(name, value)| (name.parse().unwrap(), value.parse().unwrap()))
             .collect()
     };
     let one = key(&base, &fingerprints(&[("app", "v1"), ("core", "v1")]));
@@ -395,33 +397,36 @@ fn the_key_covers_the_strategy_and_each_named_fingerprint_but_no_execution_optio
 #[test]
 fn changes_name_target_files_and_dependency_fingerprints() {
     let manifest = |files: &[(&str, &str)]| Manifest {
-        inputs: format!("{files:?}"),
+        inputs: content::hex(&Sha256::digest(format!("{files:?}")))
+            .parse()
+            .unwrap(),
         files: Some(
             files
                 .iter()
-                .map(|(path, digest)| (path.to_string(), digest.to_string()))
+                .map(|(path, digest)| (path.to_string(), digest.repeat(16).parse().unwrap()))
                 .collect(),
         ),
     };
-    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<String, crate::types::Fingerprint> {
+    let fingerprints = |pairs: &[(&str, &str)]| -> BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint> {
         pairs
             .iter()
-            .map(|(name, value)| (name.to_string(), value.parse().unwrap()))
+            .map(|(name, value)| (name.parse().unwrap(), value.parse().unwrap()))
             .collect()
     };
-    let execution = |manifest: Option<Manifest>,
-                     fingerprints: BTreeMap<String, crate::types::Fingerprint>|
-     -> Execution {
-        serde_json::from_value(json!({
+    let execution =
+        |manifest: Option<Manifest>,
+         fingerprints: BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint>|
+         -> Execution {
+            serde_json::from_value(json!({
             "id":"execution-1",
             "key":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             "fingerprint":"old",
             "fingerprints":fingerprints,
-            "evalDefHash":"hash",
+            "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
             "ownerPid":1,
             "ownerStartTime":1,
             "status":"GREEN",
-            "result":null,
+            "result":{"verdict":"GREEN"},
             "error":null,
             "errorCode":null,
             "profile":{"kind":"human"},
@@ -431,30 +436,33 @@ fn changes_name_target_files_and_dependency_fingerprints() {
                 "runId":"run-1",
                 "requestId":"run-1-1",
                 "evalId":"a/check",
-                "evalDefHash":"hash",
+                "evalDefHash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
                 "completedAt":null,
             },
-            "startedAt":"now",
-            "completedAt":"now",
+            "startedAt":"2026-01-01T00:00:00Z",
+            "completedAt":"2026-01-01T00:00:01Z",
             "manifest":manifest,
         }))
         .unwrap()
-    };
+        };
     let current = |pairs: &[(&str, &str)]| Key {
         value: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
             .parse()
             .unwrap(),
-        eval_def_hash: "hash".into(),
+        eval_def_hash: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+            .parse()
+            .unwrap(),
         fingerprints: fingerprints(pairs),
         artifact_kinds: BTreeMap::new(),
     };
+    let target: ArtifactName = "a".parse().unwrap();
     let old = manifest(&[("src/a.py", "1"), ("old.md", "1"), ("same", "1")]);
     let new = manifest(&[("src/a.py", "2"), ("docs/new.md", "1"), ("same", "1")]);
     let before = fingerprints(&[("a", "artifactsum:1"), ("core", "x"), ("gone", "x")]);
     let after = current(&[("a", "artifactsum:2"), ("core", "y"), ("extra", "x")]);
     let changes = changes(
         &execution(Some(old.clone()), before.clone()),
-        "a",
+        &target,
         &after,
         Some(&new),
     );
@@ -472,7 +480,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
     let only = current(&[("a", "artifactsum:1"), ("core", "y"), ("gone", "x")]);
     let changes = super::changes(
         &execution(Some(old.clone()), before.clone()),
-        "a",
+        &target,
         &only,
         Some(&old),
     );
@@ -483,7 +491,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
     assert_eq!(
         super::changes(
             &execution(Some(bounded), before.clone()),
-            "a",
+            &target,
             &after,
             Some(&new)
         )
@@ -493,7 +501,7 @@ fn changes_name_target_files_and_dependency_fingerprints() {
     let script = current(&[("a", "v2")]);
     let changes = super::changes(
         &execution(None, fingerprints(&[("a", "v1")])),
-        "a",
+        &target,
         &script,
         None,
     );
@@ -543,10 +551,10 @@ fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
         "payload":{"instruction":"Run the checks."},
     }))
     .unwrap();
-    let fingerprints: BTreeMap<String, crate::types::Fingerprint> =
+    let fingerprints: BTreeMap<crate::types::ArtifactName, crate::types::Fingerprint> =
         [("app", "content:1111"), ("spec", "script-v2")]
             .into_iter()
-            .map(|(name, value)| (name.to_owned(), value.parse().unwrap()))
+            .map(|(name, value)| (name.parse().unwrap(), value.parse().unwrap()))
             .collect();
     for (eval, hash, pinned) in [
         (
@@ -561,6 +569,70 @@ fn keys_from_before_the_artifactsum_upgrade_are_invalidated() {
         ),
     ] {
         assert_eq!(eval_definition_hash(eval), hash);
-        assert_ne!(key(hash, &fingerprints).as_str(), pinned);
+        assert_ne!(key(&hash.parse().unwrap(), &fingerprints).as_str(), pinned);
     }
+}
+
+/// Pinned independently from the documented hash envelopes, not recomputed by this test.
+#[test]
+fn typed_names_keep_reuse_key_bytes_and_kind_serialization_unchanged() {
+    let hash: crate::types::DefinitionHash =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            .parse()
+            .unwrap();
+    // Deliberately supply reverse order: the persisted envelope orders Artifact names.
+    let fingerprints = [("core", "script-v2"), ("app", "v1")]
+        .into_iter()
+        .map(|(name, value)| (name.parse().unwrap(), value.parse().unwrap()))
+        .collect();
+    let kinds = [
+        ("core", crate::config::ArtifactKind::File),
+        ("app", crate::config::ArtifactKind::Folder),
+    ]
+    .into_iter()
+    .map(|(name, kind)| (name.parse().unwrap(), kind))
+    .collect();
+    assert_eq!(
+        key(&hash, &fingerprints),
+        "6cda6b0b4333ee92a9dd41fb906cd75ad68fad058b6b1bc2b56526c9ecb6545c"
+    );
+    assert_eq!(
+        key_with_kinds(&hash, &fingerprints, &BTreeMap::new()),
+        "6cda6b0b4333ee92a9dd41fb906cd75ad68fad058b6b1bc2b56526c9ecb6545c"
+    );
+    assert_eq!(
+        key_with_kinds(&hash, &fingerprints, &kinds),
+        "bb8353add1160b941621051385838570e0082c1ed2e2bbda155f0144e370f8f0"
+    );
+}
+
+#[tokio::test]
+async fn missing_dependency_keeps_its_validated_artifact_name_and_omits_eval_key() {
+    let repo = Repo::new();
+    repo.artifact(
+        "app",
+        json!({"name":"app","mounts":{"rules":"basis"},"evals":[{
+            "id":"check","title":"Check","profile":{"kind":"human"},
+            "payload":{"instruction":"Check."}
+        }]}),
+    );
+    repo.artifact(
+        "basis",
+        json!({"name":"basis","basis":true,"fingerprint":false}),
+    );
+    let config = read_workspace_config(repo.root.path()).unwrap();
+    let fingerprints = prepare(
+        &config,
+        dependencies(&config, &config.evals[0]),
+        repo.output.path(),
+        &Parallelism::new(2),
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        eval_key(&config, &config.evals[0], &fingerprints),
+        Err(Unkeyed::Dependency(config.artifacts["basis"].name.clone()))
+    );
+    assert!(eval_keys(&config, &fingerprints).is_empty());
 }

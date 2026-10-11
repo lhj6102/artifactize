@@ -73,16 +73,30 @@ The [reference](../reference/human-tools.md#human-reviews) has the library API, 
 
 ## Human tools
 
-`views.human_tools` is a separate safe-name map of predefined commands. Each entry requires
-exactly `description`, `kind = "launch"` or `kind = "output"`, `command` and `args`, with
-optional `timeout_ms` (1–2147483647). No `input_schema`, free call arguments, `protocol`,
+`views.human_tools` is a separate safe-name map of predefined tools. The reviewer runs
+them; they take no free arguments. A [built-in tool](../reference/builtin-tools.md)
+works the same on Linux, macOS and Windows: `open` opens a file, folder or `http(s)`
+URL in the desktop's default application, and `read`, `list`, `section` and `help`
+print text in the terminal.
+
+```toml
+[views.human_tools]
+open = { description = "Open the review notes of {artifactName}.", builtin = "open", args = ["{artifactPath}/notes.md"] }
+notes = { description = "Print the review notes of {artifactName}.", builtin = "read", args = ["{artifactPath}/notes.md"] }
+```
+
+A built-in takes `builtin` and `args`, with an optional `description`. Its kind
+follows from the tool: `open` launches, the others print output.
+
+A command tool runs a program you choose. It requires exactly `description`,
+`kind = "launch"` or `kind = "output"`, `command` and `args`, with optional
+`timeout_ms` (1–2147483647). No `input_schema`, free call arguments, `protocol`,
 `execution_paths`, `metadata` or `script` wrappers are accepted. Descriptions follow
 the Agent description rules, including `{artifactName}`.
 
 ```toml
 [views.human_tools]
-open = { description = "Open {artifactName} for review.", kind = "launch", command = "code", args = ["{artifactPath}"] }
-show = { description = "Show the review notes for {artifactName}.", kind = "output", command = "cat", args = ["{artifactPath}/notes.txt"], timeout_ms = 120000 }
+edit = { description = "Open {artifactName} in VS Code.", kind = "launch", command = "code", args = ["{artifactPath}"] }
 ```
 
 Placeholders, executable resolution and the `launch` and `output` kinds are in the
@@ -168,7 +182,9 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   at once; there is no confirmation step. `j`/`k` also selects while not editing.
   The run needs your claim on a request that still waits, checked when it starts:
   after a release or a settlement elsewhere it neither claims nor runs. Each run
-  resolves the command again, so it runs what the declarations say at that moment.
+  reloads and resolves the declarations again, but refuses the action if the
+  recorded Artifact scope or eval declarations (including tools) have changed.
+  It does not accept an updated command in place of the recorded review definition.
   An open form stays open while a tool runs. A `launch` tool reports
   "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
   Ctrl-C cancels. Its stdout/stderr fill Output; PgUp/PgDn scroll. A nonzero exit
@@ -192,7 +208,7 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   standalone `review` starts fresh. A request settled by another command ends
   editing on refresh and releases the focus lock.
 - **External editor.** Only standalone `review` offers Ctrl-E in a form. It opens
-  `$EDITOR` (default `vi`) on the owner-fields JSON. Saving a valid nonempty object
+  `$VISUAL`, else `$EDITOR` (default `vi`, Notepad on Windows) on the owner-fields JSON. Saving a valid nonempty object
   submits it immediately; an empty file submits nothing. Monitor never opens
   `$EDITOR`; nested JSON stays in the TUI.
 

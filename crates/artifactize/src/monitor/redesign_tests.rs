@@ -43,22 +43,12 @@ fn saved_run(
     run
 }
 fn git(path: &Path, args: &[&str]) {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(path)
-        .args(args)
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    crate::test_os::git(path, args);
 }
 
 #[tokio::test]
 async fn catalog_is_global_and_scope_filter_precedes_more_than_one_page() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let state = root.path().join("state");
     let base = crate::test_os::canonical(root.path());
     let alpha = base.join("alpha");
@@ -121,15 +111,10 @@ async fn catalog_is_global_and_scope_filter_precedes_more_than_one_page() {
 
 #[tokio::test]
 async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_empty_worktrees() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let base = crate::test_os::canonical(root.path());
     let repo = base.join("repo");
-    // Windows forbids newline in file names; keep whitespace coverage with a space.
-    let other = base.join(if cfg!(windows) {
-        "other space"
-    } else {
-        "other space\nline"
-    });
+    let other = base.join(crate::test_os::whitespace_name());
     fs::create_dir_all(repo.join("workspace/sub")).unwrap();
     git(&repo, &["init", "-b", "main"]);
     git(
@@ -147,7 +132,13 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
     );
     git(
         &repo,
-        &["worktree", "add", "-b", "topic", other.to_str().unwrap()],
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "topic",
+            &crate::platform::path_text(&other),
+        ],
     );
     let workspace = repo.join("workspace");
     let state = root.path().join("state");
@@ -193,11 +184,20 @@ async fn git_subdirectory_initial_selection_preserves_workspace_and_discovers_em
             .iter()
             .any(|row| matches!(&row.scope, Scope::Worktree(_, path) if path == &other))
     );
-    git(&repo, &["worktree", "remove", other.to_str().unwrap()]);
+    git(
+        &repo,
+        &["worktree", "remove", &crate::platform::path_text(&other)],
+    );
     let empty = base.join("empty");
     git(
         &repo,
-        &["worktree", "add", "-b", "empty", empty.to_str().unwrap()],
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "empty",
+            &crate::platform::path_text(&empty),
+        ],
     );
     let mut fresh = Monitor::new(state.clone(), None);
     fresh.refresh().await;
@@ -303,22 +303,14 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
     render(&mut monitor, 200, 45);
     let area = monitor.hits.tree;
     let point = (area.x + 5, area.y + 1);
-    assert_eq!(
-        monitor.mouse(mouse(
-            MouseEventKind::Down(MouseButton::Left),
-            point.0,
-            point.1
-        )),
-        Action::None
-    );
-    assert_eq!(
-        monitor.mouse(mouse(
-            MouseEventKind::Down(MouseButton::Left),
-            point.0,
-            point.1
-        )),
-        Action::OpenDetail
-    );
+    let click = || mouse(MouseEventKind::Down(MouseButton::Left), point.0, point.1);
+    // Click times are given, not read from the clock: a second click past the double-click
+    // interval is a new first click, and one within it opens the row.
+    let start = std::time::Instant::now();
+    let later = |milliseconds| start + std::time::Duration::from_millis(milliseconds);
+    assert_eq!(monitor.mouse_at(click(), start), Action::None);
+    assert_eq!(monitor.mouse_at(click(), later(401)), Action::None);
+    assert_eq!(monitor.mouse_at(click(), later(500)), Action::OpenDetail);
     monitor.open_detail().await;
     render(&mut monitor, 200, 45);
     assert_eq!(monitor.focus, Pane::Detail);
@@ -378,7 +370,7 @@ async fn modal_mouse_intercepts_underlying_clicks_and_resize_hit_tests_follow_cu
 
 #[tokio::test]
 async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let mut view = super::tests::request(
         "app/check",
         "GREEN",
@@ -393,7 +385,7 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
     assert!(text.contains("identity"));
     view.request.session = Some(crate::agent::session::SessionRef {
         producer: store::Producer::current().name,
-        state: "fixture-state".into(),
+        state: "fixture-state".parse().unwrap(),
         run_id: "run-1".parse().unwrap(),
         request_id: view.request.id.clone(),
         session_id: "session-1".parse().unwrap(),
@@ -426,7 +418,7 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
             .unwrap()
             .contains("removed by session GC")
     );
-    crate::platform::create_private_dir_all(&crate::agent::session::directory(&state)).unwrap();
+    crate::test_os::create_private_dir_all(&crate::agent::session::directory(&state));
     crate::agent::session::live_tests::write(
         &source,
         "{\"kind\":\"review\",\"sessionId\":\"session-1\"}\n",
@@ -470,7 +462,7 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
 
 #[tokio::test]
 async fn selected_last_page_run_and_artifact_modal_survive_new_runs() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir_all(&repo).unwrap();
@@ -509,14 +501,13 @@ async fn selected_last_page_run_and_artifact_modal_survive_new_runs() {
 
 #[tokio::test]
 async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scroll() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir_all(&repo).unwrap();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
     let mut run = saved_run("run-1", &repo, &state, Default::default());
-    run.status = crate::types::RunStatus::Running;
-    run.completed_at = None;
+    run.state = store::RunState::Running;
     let mut request = super::tests::request(
         "app/check",
         "RUNNING",
@@ -527,9 +518,12 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
     receipts.create_run(&run, &[request.clone()]).await.unwrap();
     let mut monitor = Monitor::new(state.clone(), None);
     monitor.refresh().await;
-    monitor
-        .tree
-        .select(vec!["a:app".into(), "e:app/check".into()]);
+    monitor.tree.select(vec![
+        "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:app/check"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     monitor.open_detail().await;
     assert!(
         monitor
@@ -541,15 +535,18 @@ async fn runtime_modal_refreshes_saved_logs_on_completion_without_resetting_scro
             .contains("while running")
     );
     monitor.detail.as_mut().unwrap().scroll[1] = 7;
-    request.status = crate::types::RequestStatus::Green;
-    request.completed_at = Some("2026-01-01T00:00:01Z".into());
-    request.result = Some(json!({
-        "verdict":"GREEN",
-        "stdout":"final output",
-        "stderr":"final stderr",
-        "exitCode":0,
-        "truncated":false,
-    }));
+    request.state = crate::store::RequestState::completed(
+        json!({
+            "verdict":"GREEN",
+            "stdout":"final output",
+            "stderr":"final stderr",
+            "exitCode":0,
+            "truncated":false,
+        })
+        .try_into()
+        .unwrap(),
+        "2026-01-01T00:00:01Z".parse().unwrap(),
+    );
     receipts.save_request(&request).await.unwrap();
     monitor.refresh().await;
     assert!(
@@ -569,9 +566,12 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     let (view, requests) = super::tests::live();
     let mut monitor = Monitor::new("/fixture-state".into(), None);
     monitor.set_run(view, requests);
-    monitor
-        .tree
-        .select(vec!["a:app".into(), "e:app/review".into()]);
+    monitor.tree.select(vec![
+        "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:app/review"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     monitor.open_detail().await;
     let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
     review.control(review::Control::Red);
@@ -675,9 +675,12 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     }
     monitor.detail = None;
     monitor.reviews.clear();
-    monitor
-        .tree
-        .select(vec!["a:app".into(), "e:app/review".into()]);
+    monitor.tree.select(vec![
+        "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:app/review"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     monitor.open_detail().await;
     let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
     review.control(review::Control::Red);
@@ -700,9 +703,12 @@ async fn human_detail(review: review::Review) -> Monitor {
     let (view, requests) = super::tests::live();
     let mut monitor = Monitor::new("/fixture-state".into(), None);
     monitor.set_run(view, requests);
-    monitor
-        .tree
-        .select(vec!["a:app".into(), "e:app/review".into()]);
+    monitor.tree.select(vec![
+        "a:app".parse::<crate::monitor::model::NodeId>().unwrap(),
+        "e:app/review"
+            .parse::<crate::monitor::model::NodeId>()
+            .unwrap(),
+    ]);
     monitor.open_detail().await;
     monitor.detail.as_mut().unwrap().review = Some(review);
     monitor.notice = None;
@@ -790,7 +796,7 @@ async fn human_detail_keys_follow_the_shared_protocol() {
         row.x + 1,
         row.y,
     ));
-    assert!(render_text(&mut monitor, 160, 40).contains("$ xdg-open {artifactPath}"));
+    assert!(render_text(&mut monitor, 160, 40).contains("$ show-release {artifactPath}"));
     // The wheel over the instruction scrolls it without moving focus.
     let instruction = monitor.hits.review.instruction;
     monitor.mouse(mouse(
@@ -900,7 +906,7 @@ async fn a_review_settled_while_editing_gives_its_keys_back_to_monitor() {
 /// form, then submitted by another command under the same claimant.
 #[tokio::test]
 async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_detail() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     fs::create_dir(&repo).unwrap();
@@ -926,7 +932,7 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
     .unwrap();
     let id = run.requests[0].id.clone();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
-    let reviewer = crate::human::default_reviewer().unwrap_or_else(|_| "fixture".into());
+    let reviewer = crate::human::default_reviewer().unwrap_or_else(|_| "fixture".parse().unwrap());
     crate::human::claim(&receipts, id.as_str(), &reviewer)
         .await
         .unwrap();
@@ -940,7 +946,7 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
             let (_, requests) = monitor.run.as_ref().unwrap();
             let view = requests[0].clone();
             let mut review =
-                review::Review::new(state.clone(), None, reviewer.clone(), Some(id.to_string()));
+                review::Review::new(state.clone(), None, reviewer.clone(), Some(id.clone()));
             review.load_single(view);
             monitor.detail.as_mut().unwrap().review = Some(review);
         }
@@ -1036,6 +1042,9 @@ async fn help_and_next_attention_reach_monitor_from_idle_human_details() {
             1,
             "the review is kept for the next open"
         );
-        assert_eq!(monitor.target(), Some(Target::Eval("p2/check".into())));
+        assert_eq!(
+            monitor.target(),
+            Some(Target::Eval("p2/check".parse().unwrap()))
+        );
     }
 }

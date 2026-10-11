@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    env,
     ffi::OsString,
     io,
     path::{Path, PathBuf},
@@ -29,39 +28,33 @@ pub(super) fn prepare(
         platform::create_private_dir(&root.join(name))?;
     }
     let mut environment = BTreeMap::from([
-        ("PATH".into(), env::var_os("PATH").unwrap_or_default()),
+        (
+            "PATH".into(),
+            platform::environment::var("PATH").unwrap_or_default(),
+        ),
         (
             "LANG".into(),
-            env::var_os("LANG").unwrap_or_else(|| "en_US.UTF-8".into()),
+            platform::environment::var("LANG").unwrap_or_else(|| "en_US.UTF-8".into()),
         ),
         ("ARTIFACTIZE_WORKSPACE_DIR".into(), workspace.clone().into()),
     ]);
-    for (key, name) in [
+    // The child's home, cache and temporary directories are private ones, under every
+    // variable the platform's programs read them from.
+    let private = [
         ("ARTIFACTIZE_OUTPUT_DIR", "output"),
         ("ARTIFACTIZE_TMP_DIR", "tmp"),
-        ("TMPDIR", "tmp"),
-        ("TMP", "tmp"),
-        ("TEMP", "tmp"),
-        ("HOME", "home"),
-        ("XDG_CACHE_HOME", "cache"),
-    ] {
+    ]
+    .into_iter()
+    .chain(platform::TEMP_VARIABLES.iter().map(|key| (*key, "tmp")))
+    .chain(platform::HOME_VARIABLES.iter().map(|key| (*key, "home")))
+    .chain(platform::CACHE_VARIABLES.iter().map(|key| (*key, "cache")));
+    for (key, name) in private {
         environment.insert(key.into(), root.join(name).into());
     }
-    // Windows programs look for their home and caches here, and many cannot start without
-    // the system variables.
-    #[cfg(windows)]
-    {
-        for (key, name) in [
-            ("USERPROFILE", "home"),
-            ("APPDATA", "home"),
-            ("LOCALAPPDATA", "cache"),
-        ] {
-            environment.insert(key.into(), root.join(name).into());
-        }
-        for key in ["SystemRoot", "ComSpec", "PATHEXT"] {
-            if let Some(value) = env::var_os(key) {
-                environment.insert(key.into(), value);
-            }
+    // Some systems' programs cannot start without a few system variables.
+    for key in platform::SYSTEM_VARIABLES {
+        if let Some(value) = platform::environment::var(key) {
+            environment.insert(key.into(), value);
         }
     }
     Ok((workspace, directory.keep(), environment))

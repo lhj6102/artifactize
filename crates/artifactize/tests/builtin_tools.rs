@@ -41,7 +41,7 @@ fn parsed(output: Output, code: i32) -> Value {
 
 #[test]
 fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     declaration(
@@ -113,10 +113,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
             .unwrap();
         let report = parsed(output, 2);
         let error = report["error"].as_str().unwrap();
-        assert!(
-            error.contains("a/index.artf") || error.contains("a\\index.artf"),
-            "{error}"
-        );
+        assert!(error.contains("a/index.artf"), "{error}");
         assert!(error.contains(&format!("views.{audience}.bad")), "{error}");
         assert!(error.contains(" --> ") || error.contains("line"), "{error}");
     }
@@ -124,7 +121,7 @@ fn config_check_accepts_fixed_and_dynamic_forms_and_positions_refusals() {
 
 #[tokio::test]
 async fn fixed_agent_reads_sections_mounts_and_schemas() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     declaration(
         &repo,
@@ -162,22 +159,22 @@ async fn fixed_agent_reads_sections_mounts_and_schemas() {
         |name: &'static str, args| registry.call(name, args, root.path(), CancellationToken::new());
     let fixed = call("fixed_a", json!({})).await;
     assert_eq!(
-        fixed.content,
+        fixed.content(),
         vec![tools::Content::Text {
             text: "# First\nbody\n## Nested\nchild\n# Next\nlast\n".into()
         }]
     );
-    assert!(call("fixed_a", json!({"path":"other.md"})).await.is_error);
+    assert!(call("fixed_a", json!({"path":"other.md"})).await.is_error());
     let section = call("section_a", json!({"heading":"First"})).await;
     assert_eq!(
-        section.content,
+        section.content(),
         vec![tools::Content::Text {
             text: "# First\nbody\n## Nested\nchild\n".into()
         }]
     );
     assert_eq!(call("fixed_section_a", json!({})).await, section);
     let missing = call("section_a", json!({"heading":"missing"})).await;
-    assert!(missing.is_error);
+    assert!(missing.is_error());
     assert!(
         serde_json::to_string(&missing)
             .unwrap()
@@ -207,7 +204,7 @@ async fn fixed_agent_reads_sections_mounts_and_schemas() {
             CancellationToken::new(),
         )
         .await;
-    assert!(!result.is_error, "{result:?}");
+    assert!(!result.is_error(), "{result:?}");
     assert!(
         serde_json::to_string(&result)
             .unwrap()
@@ -217,7 +214,7 @@ async fn fixed_agent_reads_sections_mounts_and_schemas() {
 
 #[test]
 fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     declaration(&repo, json!({}), json!({}));
@@ -249,7 +246,7 @@ fn config_check_refuses_symlink_fixed_targets_with_args_locations() {
 
 #[tokio::test]
 async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     declaration(
         &repo,
@@ -268,13 +265,12 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
     value["evals"][0]["payload"]["instruction"] = json!("Review {b}.");
     support::declaration::write(repo.join("a/index.artf"), value.to_string()).unwrap();
     let config = read_workspace_config(&repo).unwrap();
-    let result = tools::human::Registry::new(&config, "a/review")
-        .unwrap()
-        .call("reference_a", CancellationToken::new())
-        .await;
-    assert!(!result.is_error, "{result:?}");
+    let registry = tools::human::Registry::new(&config, "a/review").unwrap();
+    registry.preflight("reference_a").unwrap();
+    let result = registry.call("reference_a", CancellationToken::new()).await;
+    assert!(!result.is_error(), "{result:?}");
     assert_eq!(
-        result.content,
+        result.content(),
         vec![tools::human::Content::Text {
             text: "reference text\n".into()
         }]
@@ -283,12 +279,12 @@ async fn human_named_placeholders_use_eval_scope_not_just_artifact_composition()
         .unwrap()
         .call("reference_a", CancellationToken::new())
         .await;
-    assert!(outside.is_error, "{outside:?}");
+    assert!(outside.is_error(), "{outside:?}");
 }
 
 #[test]
 fn changing_only_builtin_args_preserves_reuse_identity_like_command_views() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     declaration(
         &repo,
@@ -307,7 +303,7 @@ fn changing_only_builtin_args_preserves_reuse_identity_like_command_views() {
         cache::eval_definition_hash(&second.evals[0].declaration)
     );
     let fingerprints = std::collections::BTreeMap::from([(
-        "a",
+        &first.artifacts["a"].name,
         cache::PreparedFingerprint {
             value: "fixture-fingerprint".parse().unwrap(),
             manifest: None,
@@ -321,7 +317,7 @@ fn changing_only_builtin_args_preserves_reuse_identity_like_command_views() {
 
 #[test]
 fn request_tools_execute_builtins_in_process_with_bounded_text() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     declaration(
@@ -337,7 +333,7 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
     );
     fs::write(repo.join("a/large.txt"), "x".repeat(80_000)).unwrap();
     let stub = repo.join("a/help-stub");
-    fs::write(&stub, "#!/bin/sh\nprintf 'human help: %s\\n' \"$*\"\n").unwrap();
+    support::os::write_script(&stub, "printf 'human help: %s\\n' \"$*\"\n");
     support::os::make_executable(&stub);
     let run = parsed(
         command(&repo, &state)
@@ -375,11 +371,11 @@ fn request_tools_execute_builtins_in_process_with_bounded_text() {
     }
 }
 
+// Windows opens through ShellExecute, which runs no program a test can stand in for.
 #[cfg(unix)]
 #[test]
 fn request_open_hands_one_target_to_the_shared_opener() {
-    use std::os::unix::fs::PermissionsExt;
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     declaration(
@@ -389,17 +385,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
     );
     let bin = root.path().join("bin");
     fs::create_dir(&bin).unwrap();
-    let stub = bin.join(if cfg!(target_os = "macos") {
-        "open"
-    } else {
-        "xdg-open"
-    });
-    fs::write(
-        &stub,
-        "#!/bin/sh\nprintf '%s\\n%s\\n' \"$#\" \"$1\" > \"$RECORD\"\n",
-    )
-    .unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o700)).unwrap();
+    support::os::recording_program(&bin, support::os::OPENER);
     let run = parsed(
         command(&repo, &state)
             .args(["verify", "--all", "--timeout-ms", "1", "--json"])
@@ -418,7 +404,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
     let record = root.path().join("record");
     let output = command(&repo, &state)
         .env("PATH", bin)
-        .env("RECORD", &record)
+        .env(support::os::RECORD, &record)
         .args(["request", "tool", id, "open_a", "--json"])
         .output()
         .unwrap();
@@ -435,7 +421,7 @@ fn request_open_hands_one_target_to_the_shared_opener() {
 
 #[tokio::test]
 async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
-    let root = tempfile::tempdir().unwrap();
+    let root = support::os::tempdir();
     fs::write(
         root.path().join("notes.md"),
         "# First\nfile body\n# Next\nlast\n",
@@ -452,9 +438,9 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
     let config = read_workspace_config(root.path()).unwrap();
     let registry = tools::human::Registry::new(&config, "notes/review").unwrap();
     let read = registry.call("read_notes", CancellationToken::new()).await;
-    assert!(!read.is_error, "{read:?}");
+    assert!(!read.is_error(), "{read:?}");
     assert_eq!(
-        read.content,
+        read.content(),
         vec![tools::human::Content::Text {
             text: "# First\nfile body\n# Next\nlast\n".into()
         }]
@@ -462,11 +448,62 @@ async fn fixed_text_builtins_read_a_file_artifacts_placeholder_target() {
     let section = registry
         .call("section_notes", CancellationToken::new())
         .await;
-    assert!(!section.is_error, "{section:?}");
+    assert!(!section.is_error(), "{section:?}");
     assert_eq!(
-        section.content,
+        section.content(),
         vec![tools::human::Content::Text {
             text: "# First\nfile body\n".into()
         }]
     );
+}
+
+#[test]
+fn human_builtin_arguments_parse_at_the_declaration_edge_and_keep_saved_bytes() {
+    use artifactize::config::{HumanBuiltinTool, HumanCommandTool, ReferenceName};
+    use std::collections::BTreeMap;
+
+    for saved in [
+        r#"{"builtin":"read","description":"Read","kind":"output","args":["{artifactPath}/notes.md"]}"#,
+        r#"{"builtin":"section","description":"Read","kind":"output","args":["{mount}/notes.md","First"]}"#,
+        r#"{"builtin":"open","description":"Read","kind":"launch","args":["https://example.org/notes"]}"#,
+        r#"{"builtin":"help","description":"Read","kind":"output","args":["missing-program","subcommand"]}"#,
+    ] {
+        let declaration: HumanBuiltinTool = serde_json::from_str(saved).unwrap();
+        assert_eq!(serde_json::to_string(&declaration).unwrap(), saved);
+    }
+    for invalid in [
+        "{bad.name}",
+        "{unclosed",
+        "${HOME}",
+        "{artifactPath}/extra{brace}",
+        "prefix{artifactPath}",
+    ] {
+        assert!(
+            serde_json::from_value::<HumanBuiltinTool>(json!({
+                "builtin":"read", "description":"Read", "args":[invalid]
+            }))
+            .is_err(),
+            "{invalid}"
+        );
+        assert!(
+            serde_json::from_value::<HumanCommandTool>(json!({
+                "description":"Read", "kind":"output", "command":"missing-program", "args":[invalid]
+            }))
+            .is_err(),
+            "{invalid}"
+        );
+    }
+    let saved = r#"{"a-b_9":"target","artifactPath":"owner"}"#;
+    let references: BTreeMap<ReferenceName, artifactize::types::ArtifactName> =
+        serde_json::from_str(saved).unwrap();
+    assert_eq!(serde_json::to_string(&references).unwrap(), saved);
+    for invalid in ["", "bad/name", "bad.name", "_starts-with-underscore"] {
+        assert!(
+            serde_json::from_value::<BTreeMap<ReferenceName, artifactize::types::ArtifactName>>(
+                json!({invalid:"target"})
+            )
+            .is_err(),
+            "{invalid}"
+        );
+    }
 }

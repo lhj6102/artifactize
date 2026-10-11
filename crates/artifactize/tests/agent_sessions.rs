@@ -4,12 +4,12 @@
 mod support;
 
 use std::{
-    fs::{self, File},
+    fs,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -30,7 +30,7 @@ struct Project {
 
 impl Project {
     fn new(backend: &str) -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         let folder = repo.join("notes");
         fs::create_dir_all(&folder).unwrap();
@@ -321,15 +321,11 @@ fn a_review_saves_its_conversation_and_follow_ups_continue_it() {
         let end = events.last().unwrap();
         assert_eq!(end["kind"], "end");
         assert_eq!(end["result"], json!({"verdict":"GREEN","covered":["R1"]}));
-        #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode(&project.sessions()), 0o700);
-            assert_eq!(
-                mode(&project.sessions().join(format!("{session}.jsonl"))),
-                0o600
-            );
+            assert!(support::os::private_dir(&project.sessions()));
+            assert!(support::os::private_file(
+                &project.sessions().join(format!("{session}.jsonl"))
+            ));
         }
 
         // show: text, and the raw events with --json, by any form of the reference.
@@ -569,9 +565,12 @@ fn anthropic_reviews_are_saved_and_continued_without_a_cache_key() {
 #[test]
 fn concurrent_sends_take_turns_in_one_thread() {
     let project = Project::new("openai");
+    let gate = support::Gate::default();
+    let (entered, waiting) = std::sync::mpsc::channel();
     let in_flight = Arc::new(AtomicUsize::new(0));
     let most = Arc::new(AtomicUsize::new(0));
     let provider = FakeProvider::start({
+        let gate = gate.clone();
         let (in_flight, most) = (in_flight.clone(), most.clone());
         move |request| {
             let asked: Vec<_> = input(request)
@@ -593,7 +592,8 @@ fn concurrent_sends_take_turns_in_one_thread() {
             };
             let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             most.fetch_max(now, Ordering::SeqCst);
-            thread::sleep(Duration::from_millis(600));
+            entered.send(()).unwrap();
+            gate.wait();
             in_flight.fetch_sub(1, Ordering::SeqCst);
             responses(request, vec![openai::message(&format!("answer to {last}"))])
         }
@@ -615,6 +615,10 @@ fn concurrent_sends_take_turns_in_one_thread() {
                 .unwrap()
         })
         .collect();
+    waiting
+        .recv_timeout(support::os::patience(Duration::from_secs(20)))
+        .unwrap();
+    gate.open();
     for child in spawned {
         assert!(child.wait_with_output().unwrap().status.success());
     }
@@ -634,26 +638,15 @@ fn concurrent_sends_take_turns_in_one_thread() {
     assert!(last.contains(answers[0].1.as_str().unwrap()), "{last}");
 }
 
-/// Stamp a session file's last write, so that collection order is certain.
-fn written(path: &Path, seconds: u64) {
-    File::options()
-        .write(true)
-        .open(path)
-        .unwrap()
-        .set_modified(UNIX_EPOCH + Duration::from_secs(seconds))
-        .unwrap();
-}
-
 #[test]
 fn the_session_store_is_collected_oldest_first_down_to_its_target() {
     let project = Project::new("openai");
-    let release = Arc::new(AtomicBool::new(true));
+    let release = support::Gate::default();
+    release.open();
     let provider = FakeProvider::start({
         let release = release.clone();
         move |request| {
-            while !release.load(Ordering::SeqCst) {
-                thread::sleep(Duration::from_millis(20));
-            }
+            release.wait();
             responses(
                 request,
                 vec![openai::message(r#"{"verdict":"GREEN","covered":["R1"]}"#)],
@@ -679,13 +672,10 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
             .len()
     };
     let sizes: Vec<_> = reviews.iter().map(|(_, session)| size(session)).collect();
-    for (index, (_, session)) in reviews.iter().enumerate() {
-        written(
-            &project.sessions().join(format!("{session}.jsonl")),
-            1_000 + index as u64,
-        );
-    }
     let total: u64 = sizes.iter().sum();
+    // Down to the largest session, two of the three go, whichever are oldest: the order
+    // itself is the store's unit test, on given write times.
+    let target = *sizes.iter().max().unwrap();
     let doctor = project.json(&provider, &["doctor"], 0);
     let check = doctor["checks"]
         .as_array()
@@ -698,36 +688,34 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
     assert_eq!(check["details"]["bytes"], total);
 
     // At the maximum nothing goes; one byte over, the oldest go down to the target.
-    project.limits(json!({"agentSessions":{"maxBytes":total,"targetBytes":sizes[2]}}));
+    project.limits(json!({"agentSessions":{"maxBytes":total,"targetBytes":target}}));
     let pruned = project.json(&provider, &["prune"], 0);
     assert_eq!(pruned["removedSessions"], json!([]));
-    project.limits(json!({"agentSessions":{"maxBytes":total - 1,"targetBytes":sizes[2]}}));
+    project.limits(json!({"agentSessions":{"maxBytes":total - 1,"targetBytes":target}}));
     let dry = project.json(&provider, &["prune", "--dry-run"], 0);
-    assert_eq!(
-        dry["wouldRemoveSessions"],
-        json!([&reviews[0].1, &reviews[1].1])
-    );
-    assert!(
-        project
-            .sessions()
-            .join(format!("{}.jsonl", reviews[0].1))
-            .exists()
-    );
+    let doomed: Vec<_> = dry["wouldRemoveSessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|session| session.as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(doomed.len(), 2, "{dry}");
+    let [removed, survivor] = [true, false].map(|gone| {
+        reviews
+            .iter()
+            .filter(|(_, session)| doomed.contains(session) == gone)
+            .cloned()
+            .collect::<Vec<_>>()
+    });
+    assert_eq!((removed.len(), survivor.len()), (2, 1));
+    let survivor = survivor[0].1.clone();
+    let file = |session: &str| project.sessions().join(format!("{session}.jsonl"));
+    assert!(file(&removed[0].1).exists());
     let pruned = project.json(&provider, &["prune"], 0);
     assert_eq!(pruned["removedSessions"], dry["wouldRemoveSessions"]);
-    assert!(
-        !project
-            .sessions()
-            .join(format!("{}.jsonl", reviews[0].1))
-            .exists()
-    );
-    assert!(
-        project
-            .sessions()
-            .join(format!("{}.jsonl", reviews[2].1))
-            .exists()
-    );
-    for form in [&reviews[0].0, &reviews[1].1] {
+    assert!(!file(&removed[0].1).exists() && !file(&removed[1].1).exists());
+    assert!(file(&survivor).exists());
+    for form in [&removed[0].0, &removed[1].1] {
         let error = project.json(&provider, &["session", "show", form], 2);
         assert!(
             error["error"]
@@ -740,7 +728,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
 
     // A running review's session survives any collection; verify collects at its end.
     project.limits(json!({"agentSessions":{"maxBytes":1,"targetBytes":0}}));
-    release.store(false, Ordering::SeqCst);
+    release.close();
     let running = project
         .command(
             &provider,
@@ -750,7 +738,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(20);
+    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
     let session = loop {
         let found = fs::read_dir(project.sessions())
             .unwrap()
@@ -758,7 +746,7 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
                 let name = entry.unwrap().file_name().into_string().unwrap();
                 name.strip_suffix(".jsonl").map(str::to_owned)
             })
-            .find(|session| *session != reviews[2].1);
+            .find(|session| *session != survivor);
         if let Some(session) = found {
             break session;
         }
@@ -766,9 +754,9 @@ fn the_session_store_is_collected_oldest_first_down_to_its_target() {
         thread::sleep(Duration::from_millis(20));
     };
     let pruned = project.json(&provider, &["prune"], 0);
-    assert_eq!(pruned["removedSessions"], json!([&reviews[2].1]));
+    assert_eq!(pruned["removedSessions"], json!([&survivor]));
     assert!(project.sessions().join(format!("{session}.jsonl")).exists());
-    release.store(true, Ordering::SeqCst);
+    release.open();
     let output = running.wait_with_output().unwrap();
     let run: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(run["requests"][0]["sessionId"], session.as_str());
@@ -872,8 +860,8 @@ async fn a_reference_elsewhere_names_where_its_session_lives() {
         .as_mut()
         .unwrap()
         .producer = "alice@laptop".into();
-    record.publisher = Some("alice".into());
-    record.published_at = Some("2026-10-06T00:00:00Z".into());
+    record.publisher = Some("alice".parse().unwrap());
+    record.published_at = Some("2026-10-06T00:00:00Z".parse().unwrap());
     let receipts = Receipts::open(&other, &project.repo).await.unwrap();
     receipts
         .mirror_execution(&record.mirror("https://reviews.example/").unwrap())

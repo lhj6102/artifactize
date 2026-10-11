@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use serde_json::{Value, json};
+use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
@@ -98,7 +98,7 @@ pub async fn verify(
     });
     let graph = Graph::new(&config).map_err(|e| e.to_string())?;
     let selected = selection.resolve(&config)?;
-    let selected_ids: BTreeSet<_> = selected.evals.iter().map(|eval| eval.id.as_str()).collect();
+    let selected_ids: BTreeSet<_> = selected.evals.iter().map(|eval| &eval.id).collect();
     let required: BTreeSet<_> = graph
         .dependency_closure(&selected.roots)
         .map_err(|e| e.to_string())?
@@ -155,17 +155,17 @@ pub async fn verify(
         .path()
         .file_name()
         .unwrap()
-        .to_string_lossy()
-        .into_owned();
+        .to_str()
+        .expect("generated run directory names are ASCII")
+        .to_owned();
     let _ = directory.keep();
     let mut run = Run {
         id: id.parse()?,
         repo_path: config.root.clone(),
         repository: crate::repository::identify(&config.root),
         state_dir: state,
-        status: crate::types::RunStatus::Running,
+        state: crate::store::RunState::Running,
         created_at: now(),
-        completed_at: None,
         selection: selection.clone(),
         profile: options.profile.clone(),
         definitions,
@@ -179,8 +179,7 @@ pub async fn verify(
         recursive: options.recursive,
         force: options.force,
         ignore_gates,
-        validation: Value::Null,
-        error: None,
+        validation: Default::default(),
         stopped_backends: Vec::new(),
         evidence: BTreeMap::new(),
     };
@@ -188,6 +187,8 @@ pub async fn verify(
         .iter()
         .enumerate()
         .map(|(ordinal, eval)| Request {
+            state: crate::store::RequestState::pending(crate::types::RequestStatus::Queued, None)
+                .expect("queued state"),
             id: format!("{}-{}", run.id, ordinal + 1)
                 .parse()
                 .expect("generated request id is a safe segment"),
@@ -195,10 +196,10 @@ pub async fn verify(
             eval_id: eval.id.clone(),
             target: eval.target.clone(),
             title: eval.declaration.title.clone(),
-            profile: (&eval.declaration.profile).into(),
-            requested_profile: (&eval.declaration.profile).into(),
+            profile: (eval.declaration.profile()).into(),
+            requested_profile: (eval.declaration.profile()).into(),
             eval_def_hash: cache::eval_definition_hash(&eval.declaration),
-            options: ExecutionOptions::new(&eval.declaration.profile, eval.variant.as_deref()),
+            options: ExecutionOptions::new(eval.declaration.profile(), eval.variant.as_ref()),
             execution_id: None,
             provenance: None,
             usage: None,
@@ -210,35 +211,31 @@ pub async fn verify(
             session_id: None,
             session: None,
             human_definition: None,
-            payload: (&eval.declaration.payload).into(),
-            references: json!(eval.references),
+            payload: eval.declaration.payload().into(),
+            references: eval.references.clone(),
             deps: eval.deps.clone(),
             force: options.force
-                && selected_ids.contains(eval.id.as_str())
+                && selected_ids.contains(&eval.id)
                 && !matches!(
-                    eval.declaration.profile,
+                    eval.declaration.profile(),
                     crate::config::Profile::Dependency { .. }
                 ),
             fingerprint: fingerprints
-                .get(eval.target.as_str())
+                .get(&eval.target)
                 .map(|fingerprint| fingerprint.value.clone()),
-            key: keys.get(eval.id.as_str()).map(|key| key.value.clone()),
+            key: keys.get(&eval.id).map(|key| key.value.clone()),
             fingerprints: keys
-                .get(eval.id.as_str())
+                .get(&eval.id)
                 .map(|key| key.fingerprints.clone())
                 .unwrap_or_default(),
-            status: crate::types::RequestStatus::Queued,
-            created_at: run.created_at.clone(),
+            created_at: run.created_at,
             started_at: None,
-            completed_at: None,
             cwd: config.root.join(config.artifacts[&eval.target].folder()),
             run_dir: None,
             argv: None,
             child: None,
-            result: None,
-            error: None,
-            error_code: None,
             blocked_reason: None,
+            queue: None,
             blocked_by: Vec::new(),
         })
         .collect();
@@ -269,9 +266,10 @@ pub async fn verify(
         Ok(evidence) => evidence,
         Err(error) => {
             // A failing Run, for example on a rejected remote token, does not stay RUNNING.
-            run.status = crate::types::RunStatus::Error;
-            run.error = Some(error.clone());
-            run.completed_at = Some(now());
+            run.state = crate::store::RunState::Error {
+                at: now(),
+                error: Some(error.clone()),
+            };
             let _ = receipts.save_run(&run).await;
             return Err(error);
         }
@@ -279,30 +277,34 @@ pub async fn verify(
     let evaluation = graph.evaluate_with_policy(&evidence, ignore_gates);
     for request in &mut requests {
         if request.profile.kind() == ProfileKind::Dependency {
-            if request.status == crate::types::RequestStatus::Error {
+            if request.status() == crate::types::RequestStatus::Error {
                 continue;
             }
-            broker::derive(request, &evaluation.evals[request.eval_id.as_str()]);
+            broker::derive(request, &evaluation.evals[request.eval_id.as_str()], now());
             continue;
         }
-        if evidence.contains_key(&request.eval_id)
-            || request.status == crate::types::RequestStatus::WaitingHuman
+        if evidence.contains_key(request.eval_id.as_str())
+            || request.status() == crate::types::RequestStatus::WaitingHuman
         {
             continue;
         }
         let eval = &evaluation.evals[request.eval_id.as_str()];
         if cancellation.is_cancelled() {
-            request.status = crate::types::RequestStatus::Error;
-            request.error = Some("Run was cancelled.".into());
-            request.error_code = Some("CANCELLED".into());
-            request.completed_at = Some(now());
+            request.state = crate::store::RequestState::failed(
+                "Run was cancelled.".into(),
+                Some(crate::types::FailureCode::Cancelled),
+                now(),
+            );
             evidence.insert(request.eval_id.clone(), Evidence::OperationalError);
-        } else if request.status == crate::types::RequestStatus::BudgetExhausted
+        } else if request.status() == crate::types::RequestStatus::BudgetExhausted
             && eval.can_execute()
         {
             continue;
         } else {
-            request.status = status(eval.status);
+            request.state =
+                crate::store::RequestState::pending(status(eval.status), request.completed_at())
+                    .expect("non-executed request state");
+            request.queue = None;
             request.blocked_reason = Some(format!(
                 "{}: {}",
                 if eval.status == EvalStatus::Blocked {
@@ -310,7 +312,11 @@ pub async fn verify(
                 } else {
                     "Waiting for current GREEN dependency evidence"
                 },
-                eval.unmet_gates.join(", ")
+                eval.unmet_gates
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ));
         }
     }
@@ -320,50 +326,60 @@ pub async fn verify(
         .iter()
         .filter(|(id, _)| required.contains(&graph.eval_target(id).unwrap()))
         .collect();
-    let satisfied = required.iter().all(|id| evaluation.artifacts[id].satisfied);
+    let satisfied = required
+        .iter()
+        .all(|id| evaluation.artifacts[id.as_str()].satisfied);
     let budget_exhausted = requests
         .iter()
-        .any(|request| request.status == crate::types::RequestStatus::BudgetExhausted);
+        .any(|request| request.status() == crate::types::RequestStatus::BudgetExhausted);
     // Only a --reuse-only eval that had nothing to reuse leaves stale evidence in a Run.
     let not_reused = evidence
         .values()
         .filter(|evidence| matches!(evidence, Evidence::Stale))
         .count();
-    run.status = if cancellation.is_cancelled() {
-        crate::types::RunStatus::Error
-    } else if run.wait_timed_out || budget_exhausted || not_reused > 0 {
-        crate::types::RunStatus::Incomplete
+    let at = now();
+    run.state = if cancellation.is_cancelled() {
+        crate::store::RunState::Error {
+            at,
+            error: Some("Run was cancelled.".into()),
+        }
+    } else if run.wait_timed_out {
+        crate::store::RunState::Incomplete {
+            at,
+            error: Some(
+                "Human wait timed out; pending requests remain available for submission.".into(),
+            ),
+        }
+    } else if budget_exhausted {
+        crate::store::RunState::Incomplete {
+            at,
+            error: Some(broker::budget_reason(&run)),
+        }
+    } else if not_reused > 0 {
+        crate::store::RunState::Incomplete {
+            at,
+            error: Some(format!(
+                "{not_reused} eval{} had no result to reuse and {} not executed (--reuse-only).",
+                if not_reused == 1 { "" } else { "s" },
+                if not_reused == 1 { "was" } else { "were" }
+            )),
+        }
     } else if required_evals
         .iter()
         .any(|(_, c)| c.status == EvalStatus::Error)
     {
-        crate::types::RunStatus::Error
+        crate::store::RunState::Error { at, error: None }
     } else if required_evals
         .iter()
         .any(|(_, c)| c.status == EvalStatus::Red)
     {
-        crate::types::RunStatus::Red
+        crate::store::RunState::Red { at }
     } else if satisfied {
-        crate::types::RunStatus::Green
+        crate::store::RunState::Green { at }
     } else {
-        crate::types::RunStatus::Incomplete
+        crate::store::RunState::Incomplete { at, error: None }
     };
-    if cancellation.is_cancelled() {
-        run.error = Some("Run was cancelled.".into());
-    } else if run.wait_timed_out {
-        run.error =
-            Some("Human wait timed out; pending requests remain available for submission.".into());
-    } else if budget_exhausted {
-        run.error = Some(broker::budget_reason(&run));
-    } else if not_reused > 0 {
-        run.error = Some(format!(
-            "{not_reused} eval{} had no result to reuse and {} not executed (--reuse-only).",
-            if not_reused == 1 { "" } else { "s" },
-            if not_reused == 1 { "was" } else { "were" }
-        ));
-    }
-    run.completed_at = Some(now());
-    run.validation = json!({
+    run.validation = serde_json::from_value(json!({
         "selection":run.selection,
         "recursive":run.recursive,
         "force":run.force,
@@ -379,7 +395,7 @@ pub async fn verify(
         "artifacts":required
             .iter()
             .map(|id| {
-                let a = &evaluation.artifacts[id];
+                let a = &evaluation.artifacts[id.as_str()];
                 let mut artifact = json!({
                     "id":id,
                     "status":format!("{:?}", a.status).to_uppercase(),
@@ -408,16 +424,18 @@ pub async fn verify(
                 })
             })
             .collect::<Vec<_>>(),
-    });
+    }))
+    .expect("generated validation snapshot");
     receipts.finish(&run, &requests).await?;
     // Saved Agent conversations past their size bound are collected; a failure only warns.
     let state = run.state_dir.clone();
     let bounds = limits.agent_sessions();
-    let collected =
+    let collected = crate::task::joined(
         tokio::task::spawn_blocking(move || crate::agent::session::collect(&state, bounds, false))
-            .await
-            .map_err(|e| e.to_string())
-            .and_then(|collected| collected);
+            .await,
+    )
+    .map_err(|e| e.to_string())
+    .and_then(|collected| collected);
     if let Err(error) = collected {
         use std::io::Write;
         let _ = writeln!(

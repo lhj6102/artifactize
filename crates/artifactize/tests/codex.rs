@@ -29,7 +29,7 @@ impl Project {
     /// One `spec` Artifact with a built-in `read` tool, a content fingerprint (so its
     /// review has a reuse key) and a `codex` Agent eval.
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("spec")).unwrap();
         fs::write(repo.join("spec/spec.md"), "R1: the spec covers R1.\n").unwrap();
@@ -333,10 +333,13 @@ fn provider_errors_explain_themselves_and_permanent_ones_are_not_retried() {
     });
     let request = failed(&project, &limited);
     let error = request["error"].as_str().unwrap();
+    // How many minutes remain depends on the clock; the exact wording is checked in the
+    // Codex unit tests at fixed times.
     assert!(
-        error.contains("You have hit your ChatGPT usage limit (plus plan). Try again in ~90 min."),
+        error.contains("You have hit your ChatGPT usage limit (plus plan). Try again in ~"),
         "{error}"
     );
+    assert!(error.contains(" min."), "{error}");
     assert_eq!(limited.requests().len(), 1);
 
     let broken = FakeProvider::start(|_| {
@@ -394,10 +397,10 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
     project.sign_in(&codex::jwt("account-1", now() + 3600), now() + 3600);
     let access = codex::jwt("claim-account", now() + 3600);
     let file = project.auth_file(&access);
-    let before = (
-        fs::read(&file).unwrap(),
-        file.metadata().unwrap().modified().unwrap(),
-    );
+    // A file that cannot be written fails any write; one replaced by a rename gets a new
+    // identity; one rewritten in place gets new contents.
+    let read_only = support::os::read_only(&file);
+    let before = (fs::read(&file).unwrap(), support::os::file_identity(&file));
     let own = fs::read(project.credentials()).unwrap();
     let provider = FakeProvider::start(reviewer);
     let run = parsed(
@@ -414,12 +417,10 @@ fn a_codex_auth_file_is_used_read_only_and_never_refreshed() {
         assert_eq!(call.headers["chatgpt-account-id"], "file-account");
     }
     assert_eq!(
-        (
-            fs::read(&file).unwrap(),
-            file.metadata().unwrap().modified().unwrap()
-        ),
+        (fs::read(&file).unwrap(), support::os::file_identity(&file)),
         before
     );
+    drop(read_only);
     assert_eq!(fs::read(project.credentials()).unwrap(), own);
 
     let expired = project.auth_file(&codex::jwt("claim-account", now() - 10));
@@ -619,7 +620,7 @@ fn sign_in_storage_inside_a_git_work_tree_is_refused_and_doctor_only_warns() {
         message.starts_with("Codex sign-in storage ")
             && message.contains(&format!(
                 "{} is inside the git work tree ",
-                Path::new("state").join("auth").display()
+                "state/auth"
             ))
             && message.ends_with(
                 "; artifactize keeps tokens outside repositories. Use a state directory outside it, or set ARTIFACTIZE_CODEX_AUTH_FILE."

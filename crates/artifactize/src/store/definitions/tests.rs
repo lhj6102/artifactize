@@ -20,7 +20,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
                 "basis":null,
                 "fingerprint":{
                     "script":{
-                        "command":"echo",
+                        "command":crate::test_os::echo_program(),
                         "args":["v1"],
                         "files":[],
                         "timeoutMs":null,
@@ -34,7 +34,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
                         "inspect":{
                             "description":"Inspect",
                             "kind":"output",
-                            "command":"cat",
+                            "command":crate::test_os::cat_program(),
                             "args":["file.md"],
                             "futureHumanTool":1,
                         },
@@ -53,7 +53,7 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
                 "declaration":{
                     "id":"check",
                     "title":"Inspect",
-                    "profile":{"kind":"runtime","command":"true","args":[],"timeoutMs":null},
+                    "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[],"timeoutMs":null},
                     "profileVariants":{},
                     "payload":{"instruction":"Inspect {input}.","owner":[true,null,42]},
                     "passSchema":{"type":"object","properties":{"accepted":{"const":true}}},
@@ -133,13 +133,13 @@ fn saved_graph_keeps_known_null_missing_and_extensible_unknown_fields() {
 
 #[test]
 fn current_graph_capture_serializes_identically_to_pinned_query_view() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     crate::test_declaration::write(
         root.path().join("index.artf"),
         json!({
             "name":"app",
             "views":{"agent_tools":{"read":{"builtin":"read"}}},
-            "fingerprint":{"script":{"command":"echo","args":["v1"]}},
+            "fingerprint":{"script":{"command":crate::test_os::echo_program(),"args":["v1"]}},
             "evals":[
                 {
                     "id":"check",
@@ -216,7 +216,7 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
         eval_hash,
         "bc7083ad4c1041de824b8080a6bd576c8cc39caedd1db4b63d073ae973e6790b"
     );
-    let fingerprints = BTreeMap::from([("app".into(), "v1".parse().unwrap())]);
+    let fingerprints = BTreeMap::from([("app".parse().unwrap(), "v1".parse().unwrap())]);
     assert_eq!(
         crate::cache::key(&eval_hash, &fingerprints).as_str(),
         "4056b8c4b08cc6c34167297a0c9fbb6ca8c0ca28f996c1470805b690c7329350"
@@ -225,7 +225,7 @@ fn current_graph_capture_serializes_identically_to_pinned_query_view() {
 
 #[tokio::test]
 async fn saved_definition_timeouts_reject_unrepresentable_writes() {
-    let root = tempfile::tempdir().unwrap();
+    let root = crate::test_os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     std::fs::create_dir_all(&repo).unwrap();
@@ -240,14 +240,14 @@ async fn saved_definition_timeouts_reject_unrepresentable_writes() {
         "validation":null,
         "definitions":{
             "artifacts":{
-                "app":{"fingerprint":{"script":{"command":"echo","args":[],"timeoutMs":1}}},
+                "app":{"fingerprint":{"script":{"command":crate::test_os::echo_program(),"args":[],"timeoutMs":1}}},
             },
         },
     }))
     .unwrap();
     receipts.create_run(&run, &[]).await.unwrap();
     let wire = json!({
-        "artifacts":{"app":{"fingerprint":{"script":{"command":"echo","args":[],"timeoutMs":1}}}},
+        "artifacts":{"app":{"fingerprint":{"script":{"command":crate::test_os::echo_program(),"args":[],"timeoutMs":1}}}},
     });
     for duration in [
         std::time::Duration::ZERO,
@@ -272,7 +272,7 @@ async fn saved_definition_timeouts_reject_unrepresentable_writes() {
         fingerprint.script = Field::Value(script);
         artifact.fingerprint = Field::Value(fingerprint);
         snapshot.0.as_mut().unwrap().artifacts =
-            Field::Value(BTreeMap::from([("app".into(), artifact)]));
+            Field::Value(BTreeMap::from([("app".parse().unwrap(), artifact)]));
         assert!(serde_json::to_value(&snapshot).is_err());
         run.definitions = snapshot;
         assert!(receipts.save_run(&run).await.is_err());
@@ -288,5 +288,34 @@ async fn saved_definition_timeouts_reject_unrepresentable_writes() {
                 .is_err()
         );
         run.id = "run-definition".parse().unwrap();
+    }
+}
+
+#[test]
+fn saved_component_ids_and_known_declaration_keys_keep_their_wire_shapes() {
+    let saved = r#"{"id":17,"artifacts":["app"],"dependencies":[0,10],"gates":["spec/check"],"cyclic":false}"#;
+    let component: Component = serde_json::from_str(saved).unwrap();
+    assert_eq!(serde_json::to_string(&component).unwrap(), saved);
+    let saved = r#"{"children":{"nested/child":"child"},"mounts":{"spec":"input"}}"#;
+    let artifact: Artifact = serde_json::from_str(saved).unwrap();
+    assert_eq!(serde_json::to_string(&artifact).unwrap(), saved);
+    let saved = r#"{"profileVariants":{"sol-max":{"kind":"human"}}}"#;
+    let declaration: Declaration = serde_json::from_str(saved).unwrap();
+    assert_eq!(serde_json::to_string(&declaration).unwrap(), saved);
+
+    for invalid in ["-1", "1.5", "\"1\""] {
+        assert!(serde_json::from_str::<crate::graph::ComponentId>(invalid).is_err());
+    }
+    for invalid in [
+        json!({"artifacts":{"app":{"children":{"../outside":"child"}}}}),
+        json!({"artifacts":{"app":{"mounts":{"bad/name":"input"}}}}),
+        json!({"evals":[{"id":"app/check","target":"app","declaration":{"profileVariants":{"bad.name":{"kind":"human"}}}}]}),
+        json!({"relations":[{"source":"input","target":"app","kind":"mount","alias":"bad/name"}]}),
+        json!({"relations":[{"source":"input","target":"app","kind":"instruction","evalId":"app/check","name":"bad.name"}]}),
+    ] {
+        assert!(
+            serde_json::from_value::<Definitions>(invalid.clone()).is_err(),
+            "{invalid}"
+        );
     }
 }

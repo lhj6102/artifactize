@@ -16,7 +16,7 @@ async fn malformed_lookup_entries_are_typed_errors_next_to_valid_records() {
         "runId":"run-1",
         "requestId":"run-1-1",
         "executionId":"execution-1",
-        "profile":{"kind":"runtime","command":"true","args":[]},
+        "profile":{"kind":"runtime","command":crate::test_os::true_program(),"args":[]},
         "result":{"verdict":"GREEN"},
         "usage":null,
         "startedAt":"2026-01-01T00:00:00Z",
@@ -45,7 +45,10 @@ async fn malformed_lookup_entries_are_typed_errors_next_to_valid_records() {
         token: Some("fixture-only-token".into()),
         client: OnceLock::new(),
     };
-    let entries = remote.lookup(&["a".repeat(64)]).await.unwrap();
+    let entries = remote
+        .lookup(&["a".repeat(64).parse().unwrap()])
+        .await
+        .unwrap();
     assert_eq!(entries.len(), 3);
     assert!(entries[0].is_err());
     assert_eq!(entries[1].as_ref().unwrap().request_id.as_str(), "run-1-1");

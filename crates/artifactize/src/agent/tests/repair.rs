@@ -12,7 +12,7 @@ async fn fenced_json_is_repaired_with_same_settings_and_no_tools() {
             final_text(r#"{"verdict":"RED"}"#),
         ])
         .await;
-    assert_eq!(review.result.unwrap(), json!({"verdict":"RED"}));
+    assert_eq!(review.result.unwrap().into_json(), json!({"verdict":"RED"}));
     let requests = http.requests();
     assert_eq!(requests.len(), 2);
     let first: Value = serde_json::from_slice(&requests[0].body).unwrap();
@@ -39,7 +39,7 @@ async fn fenced_json_is_repaired_with_same_settings_and_no_tools() {
 #[tokio::test]
 async fn schema_invalid_response_repairs_and_preserves_owner_fields() {
     let mut fixture = Fixture::new("openai");
-    fixture.config.evals[0].declaration.pass_schema = json!({
+    *fixture.config.evals[0].declaration.pass_schema_mut() = json!({
         "type":"object",
         "properties":{"reason":{"type":"string","minLength":1}},
         "required":["reason"],
@@ -53,7 +53,7 @@ async fn schema_invalid_response_repairs_and_preserves_owner_fields() {
             final_text(&result.to_string()),
         ])
         .await;
-    assert_eq!(review.result.unwrap(), result);
+    assert_eq!(review.result.unwrap().into_json(), result);
     assert_eq!(http.requests().len(), 2);
     let repair: Value = serde_json::from_slice(&http.requests()[1].body).unwrap();
     let prompt = repair["input"].as_array().unwrap().last().unwrap()["content"][0]["text"]
@@ -69,11 +69,11 @@ async fn schema_invalid_response_repairs_and_preserves_owner_fields() {
 #[tokio::test]
 async fn schemas_are_selected_by_the_final_verdict() {
     let mut fixture = Fixture::new("openai");
-    fixture.config.evals[0].declaration.pass_schema =
+    *fixture.config.evals[0].declaration.pass_schema_mut() =
         json!({"type":"object","properties":{"reason":{"const":"pass"}},"required":["reason"]})
             .as_object()
             .cloned();
-    fixture.config.evals[0].declaration.fail_schema =
+    *fixture.config.evals[0].declaration.fail_schema_mut() =
         json!({"type":"object","properties":{"reason":{"const":"fail"}},"required":["reason"]})
             .as_object()
             .cloned();
@@ -85,7 +85,7 @@ async fn schemas_are_selected_by_the_final_verdict() {
                 final_text(&result.to_string()),
             ])
             .await;
-        assert_eq!(review.result.unwrap(), result);
+        assert_eq!(review.result.unwrap().into_json(), result);
         assert_eq!(http.requests().len(), 2);
     }
 }
@@ -164,7 +164,7 @@ async fn repair_retains_model_and_completion_checks() {
 #[tokio::test]
 async fn anthropic_repair_after_tools_exposes_no_tools() {
     let mut fixture = Fixture::new("anthropic");
-    fixture.config.evals[0].declaration.fail_schema =
+    *fixture.config.evals[0].declaration.fail_schema_mut() =
         json!({"type":"object","properties":{"reason":{"type":"string"}},"required":["reason"]})
             .as_object()
             .cloned();
@@ -189,9 +189,11 @@ async fn anthropic_repair_after_tools_exposes_no_tools() {
 }
 
 #[derive(Clone)]
-struct DelayResponses(Duration);
-
-impl rig_core::http_client::HttpMiddleware for DelayResponses {
+struct HoldRepair {
+    calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    reached: std::sync::Arc<tokio::sync::Notify>,
+}
+impl rig_core::http_client::HttpMiddleware for HoldRepair {
     fn after_response<'a>(
         &'a self,
         _: &'a rig_core::http_client::Method,
@@ -200,7 +202,11 @@ impl rig_core::http_client::HttpMiddleware for DelayResponses {
         _: &'a rig_core::http_client::HeaderMap,
     ) -> rig_core::wasm_compat::WasmBoxedFuture<'a, rig_core::http_client::Result<()>> {
         Box::pin(async move {
-            tokio::time::sleep(self.0).await;
+            if self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+                self.reached.notify_one();
+                // Hold the repair response until the explicit cancel/deadline signal wins.
+                std::future::pending::<()>().await;
+            }
             Ok(())
         })
     }
@@ -214,39 +220,47 @@ async fn repair_shares_original_deadline_and_cancellation_precedes_budget() {
             timeout_ms,
             max_tokens,
             ..
-        } = &mut fixture.config.evals[0].declaration.profile
+        } = fixture.config.evals[0].declaration.profile_mut()
         else {
             unreachable!()
         };
-        *timeout_ms = Some(std::time::Duration::from_millis(100));
+        *timeout_ms = Some(Duration::from_millis(100));
         *max_tokens = Some(1);
         let http = SequencedHttpClient::new(vec![final_text("invalid"), final_openai()]);
+        let reached = std::sync::Arc::new(tokio::sync::Notify::new());
         let client = Client::Openai(Box::new(
             OpenAIConfig::new("fake-key")
                 .connect(
-                    rig_core::http_client::DynHttpClient::new(http.clone())
-                        .with_middleware(DelayResponses(Duration::from_millis(60))),
+                    rig_core::http_client::DynHttpClient::new(http.clone()).with_middleware(
+                        HoldRepair {
+                            calls: Default::default(),
+                            reached: reached.clone(),
+                        },
+                    ),
                 )
                 .responses("exact-model"),
         ));
         let cancellation = CancellationToken::new();
-        if cancel {
-            let token = cancellation.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(90)).await;
-                token.cancel();
-            });
-        }
-        let started = Instant::now();
+        let mut recorder = session::Recorder::off(&SESSION.parse().unwrap());
         let review = review(
             &client,
             &fixture.config,
             &fixture.config.evals[0],
             &fixture.output,
-            &mut session::Recorder::off(&SESSION.parse().unwrap()),
-            cancellation,
-        )
-        .await;
+            &mut recorder,
+            cancellation.clone(),
+        );
+        tokio::pin!(review);
+        tokio::select! {
+            _ = reached.notified() => {},
+            _ = &mut review => panic!("repair completed before the handshake"),
+        }
+        if cancel {
+            cancellation.cancel();
+        } else {
+            tokio::time::advance(Duration::from_millis(100)).await;
+        }
+        let review = review.await;
         assert_eq!(
             review.result.unwrap_err().message,
             if cancel {
@@ -256,7 +270,6 @@ async fn repair_shares_original_deadline_and_cancellation_precedes_budget() {
             }
         );
         assert_eq!(http.requests().len(), 2);
-        assert!(started.elapsed() <= Duration::from_millis(100));
         assert_eq!(review.attempts.len(), 2);
     }
 }

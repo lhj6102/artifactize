@@ -11,8 +11,11 @@ the next `verify` will execute, reuse, derive or wait for, without running evals
 `--all`. Eval IDs are qualified (`green/check`). Selection order is preserved, with
 duplicates removed at their first occurrence; Artifacts expand to their evals in ID
 order within each declaration. READY runtime evals execute concurrently up to
-`--jobs N` (default 4, minimum 1), with dispatch in that same ordered selection
-then recursive configuration order. The graph is re-evaluated after each result;
+`--jobs N` (default 4, minimum 1). Nonrecursive dispatch preserves selector order;
+automatically included dependency requirements are appended in configuration
+order. With `--recursive`, the entire included scope instead dispatches in
+configuration order, not explicitly selected evals first. The graph is
+re-evaluated after each result;
 newly READY evals do not wait for an entire batch to finish. Waiters on a
 fingerprint claim occupy job slots while polling, but cache hits occupy none. An
 Agent review of a backend with a machine-wide limit also needs one of its
@@ -101,10 +104,11 @@ it, such as an upstream eval outside the execution selection. The Run records
 those verdicts in `evidence`, a map from qualified eval IDs to saved states:
 
 ```json
-{"run": {"evidence": {"code-style/approved": "GREEN"}}}
+{"evidence": {"code-style/approved": "GREEN"}}
 ```
 
-`run show RUN_ID --json` and `verify --json` expose it as `run.evidence`; the field
+`run show RUN_ID --json` and `verify --json` flatten the saved Run's fields into
+the output object: `evidence` is a top-level field, not nested under `run`, and
 is omitted when empty. It is the evidence this Run used, not a lookup of the
 latest result. Saved definitions, `evidence` and the Run's request states let the
 monitor judge gates without reading current declarations or recomputing fingerprints.
@@ -186,8 +190,11 @@ lists the target's own files as `path` (changed), `+path` (added) or
 whose fingerprint changed, as `name`, `+name` or `-name`. A script
 fingerprint, or a manifest whose file map was dropped, can only report `fingerprint changed`
 or `inputs changed` for the target. No explanation appears when that eval definition has
-never been cached, or for forced evals. An eval without a key says why: its Artifact
-or a dependency declares `fingerprint = false`.
+never been cached, or for forced evals. For an unforced READY Runtime/Agent eval
+without a key, the execution reason names the target or dependency declaring
+`fingerprint = false`. A READY Human eval instead says "Record a request awaiting
+a Human claim and submission", even without a key; blocked or waiting evals
+explain their gate or wait state instead.
 
 Dependency states are derived from current required evidence: all requirements GREEN
 gives GREEN (PASS in status); RED or BLOCKED gives BLOCKED; missing, stale, ERROR,
@@ -195,8 +202,9 @@ cancelled or Human-waiting evidence gives WAIT_DEPENDENCY. An Artifact with no
 evals, including a basis Artifact, fulfills the listed condition. Basis Artifacts
 cannot own evals; final obligations still cover upstream dependencies. Gate bypass
 never changes the derived verdict. The `blocked_by` list (`blockedBy` in JSON) contains
-each unfulfilled listed Artifact followed by its non-GREEN qualified eval IDs, in
-declared target order. Status reasons show those blockers. The monitor's one-row-
+each unfulfilled resolved Artifact in lexicographic Artifact-name order, followed
+by that Artifact's non-GREEN qualified eval IDs in ID order. Mount aliases resolve
+to Artifact names before this ordering. Status reasons show those blockers. The monitor's one-row-
 per-eval tree says `waits for X` or `blocked by X`, with X's Artifact completion
 state. Detail lists the same Artifacts under `Waits for`, with pending evals (`w`).
 

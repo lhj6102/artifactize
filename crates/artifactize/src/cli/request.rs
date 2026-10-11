@@ -28,14 +28,14 @@ pub enum RequestCommand {
         id: RequestId,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<String>,
+        reviewer: Option<crate::types::ReviewerId>,
     },
     /// Release your Human reviewer lock while the request still waits.
     Unclaim {
         id: RequestId,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<String>,
+        reviewer: Option<crate::types::ReviewerId>,
     },
     /// Run a predefined Human tool as the claimant.
     Tool {
@@ -43,13 +43,13 @@ pub enum RequestCommand {
         tool: String,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<String>,
+        reviewer: Option<crate::types::ReviewerId>,
     },
     /// Submit a schema-valid Human verdict and owner fields.
     Submit {
         id: RequestId,
-        #[arg(long, value_parser = ["GREEN", "RED"])]
-        verdict: String,
+        #[arg(long, value_enum)]
+        verdict: crate::runtime::Verdict,
         /// Owner fields as a JSON object (default {}).
         #[arg(long, value_name = "JSON", conflicts_with = "fields_file")]
         fields: Option<String>,
@@ -58,7 +58,7 @@ pub enum RequestCommand {
         fields_file: Option<PathBuf>,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
-        reviewer: Option<String>,
+        reviewer: Option<crate::types::ReviewerId>,
     },
 }
 
@@ -87,7 +87,7 @@ pub(super) async fn execute(
                         view.request.id,
                         view.request.run_id,
                         view.request.eval_id,
-                        view.request.status,
+                        view.request.status(),
                         view.claim
                             .as_ref()
                             .map_or("-", |claim| claim.reviewer.as_str())
@@ -124,7 +124,7 @@ pub(super) async fn execute(
                 print_json(&result)?;
             } else {
                 let mut out = io::stdout().lock();
-                for content in &result.content {
+                for content in result.content() {
                     match content {
                         Content::Text { text } => writeln!(out, "{text}"),
                         Content::Launch { launched } => writeln!(
@@ -140,7 +140,7 @@ pub(super) async fn execute(
                     .map_err(|e| e.to_string())?;
                 }
             }
-            return Ok(if result.is_error { 2 } else { 0 });
+            return Ok(if result.is_error() { 2 } else { 0 });
         }
         RequestCommand::Submit {
             id,
@@ -149,7 +149,7 @@ pub(super) async fn execute(
             fields_file,
             reviewer,
         } => {
-            let result = submission(&verdict, fields, fields_file)?;
+            let result = submission(verdict, fields, fields_file)?;
             let reviewer = reviewer.map_or_else(human::default_reviewer, Ok)?;
             let (cancellation, listener) = cancellation_listener()?;
             let result =
@@ -166,7 +166,7 @@ pub(super) async fn execute(
 }
 
 fn submission(
-    verdict: &str,
+    verdict: crate::runtime::Verdict,
     fields: Option<String>,
     file: Option<PathBuf>,
 ) -> Result<Value, String> {

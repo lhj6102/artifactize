@@ -6,7 +6,7 @@ use std::{fs, path::Path, process::Command};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use support::{FakeProvider, openai, os::bin};
+use support::{FakeProvider, openai, os::true_program};
 
 struct Fixture {
     root: tempfile::TempDir,
@@ -17,7 +17,7 @@ impl Fixture {
     /// A repository whose Agent eval has a tool executing `bin/sim` and the `rules` folder,
     /// and a fake OpenAI provider that passes every review.
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         let repo = root.path().join("repo");
         fs::create_dir_all(repo.join("bin")).unwrap();
         fs::create_dir_all(repo.join("rules/nested")).unwrap();
@@ -38,7 +38,7 @@ impl Fixture {
                             "description":"Simulate {artifactName}.",
                             "input_schema":{"type":"object","additionalProperties":false},
                             "protocol":"json",
-                            "command":bin("/bin/true"),
+                            "command":true_program(),
                             "args":[],
                             "execution_paths":["bin/sim","rules"],
                         },
@@ -79,7 +79,7 @@ impl Fixture {
             .arg(root.join("state"))
             .args(args)
             .arg("--json")
-            .env("HOME", root.join("home"))
+            .env(support::os::home_env(), root.join("home"))
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off")

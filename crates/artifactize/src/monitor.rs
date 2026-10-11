@@ -52,6 +52,9 @@ use tui_tree_widget::TreeState;
 const REFRESH: Duration = Duration::from_secs(1);
 /// Animate cancellable Human jobs without increasing database polling.
 const SPIN: Duration = Duration::from_millis(100);
+/// Check an open Agent conversation for new events: often enough that a live session
+/// follows within seconds, rarely enough that reading the session file stays cheap.
+const SESSION_PROBE: Duration = Duration::from_secs(5);
 /// Bound retained Run pages while allowing the selected scope to page older records.
 const PAGE: u32 = 100;
 
@@ -126,7 +129,7 @@ pub struct Monitor {
     list: TableState,
     open: Option<RunId>,
     run: Option<(RunView, Vec<RequestView>)>,
-    tree: TreeState<String>,
+    tree: TreeState<model::NodeId>,
     folds: fold::Folds,
     /// The cached tree it was built from, and that tree with the Run row above it.
     framed: Option<(Rows, Rows)>,
@@ -186,7 +189,13 @@ impl Monitor {
         match result {
             Ok(()) => {
                 self.refreshed = Some(now);
-                self.error = None;
+                let unreadable = self
+                    .runs
+                    .iter()
+                    .flat_map(|run| &run.unreadable)
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>();
+                self.error = (!unreadable.is_empty()).then(|| unreadable.join("; "));
             }
             Err(error) => self.error = Some(format!("read failed at {}: {error}", clock(now))),
         }
@@ -295,7 +304,10 @@ impl Monitor {
                 .or(Some(0))
                 .filter(|_| !self.runs.is_empty()),
         );
-        self.open = self.selected_run().map(|run| run.id.clone());
+        self.open = self
+            .selected_run()
+            .filter(|run| !run.unreadable.iter().any(|record| record.kind == "run"))
+            .map(|run| run.id.clone());
         if self.open.is_none() {
             self.run = None;
         }
@@ -315,7 +327,7 @@ impl Monitor {
         self.list.selected().and_then(|index| self.runs.get(index))
     }
     pub fn target(&self) -> Option<Target> {
-        self.tree.selected().last().and_then(|id| Target::parse(id))
+        self.tree.selected().last().map(Target::from)
     }
     /// The saved request of the selected eval node.
     fn selected_request(&self) -> Option<&RequestView> {
@@ -327,7 +339,7 @@ impl Monitor {
     }
     pub fn waiting(&self) -> Option<&str> {
         let view = self.selected_request()?;
-        (view.request.status == RequestStatus::WaitingHuman).then_some(view.request.id.as_str())
+        (view.request.status() == RequestStatus::WaitingHuman).then_some(view.request.id.as_str())
     }
     fn select_scope(&mut self, index: usize) -> Action {
         let Some(row) = self.catalog.rows.get(index) else {
@@ -351,7 +363,10 @@ impl Monitor {
             return Action::None;
         }
         self.list.select(Some(index));
-        self.open = self.selected_run().map(|run| run.id.clone());
+        self.open = self
+            .selected_run()
+            .filter(|run| !run.unreadable.iter().any(|record| record.kind == "run"))
+            .map(|run| run.id.clone());
         Action::Refresh
     }
     pub async fn open_detail(&mut self) {
@@ -393,7 +408,7 @@ impl Monitor {
         };
         if let Some(view) = view {
             if view.request.profile.kind() == ProfileKind::Human {
-                let resolved = if view.request.status == RequestStatus::WaitingHuman {
+                let resolved = if view.request.status() == RequestStatus::WaitingHuman {
                     evidence::original(&self.state, &view).await
                 } else {
                     Ok(view)
@@ -407,7 +422,7 @@ impl Monitor {
                                         self.state.clone(),
                                         None,
                                         reviewer,
-                                        Some(view.request.id.to_string()),
+                                        Some(view.request.id.clone()),
                                     )
                                 });
                             pane.request = Some(view.request.id.clone());
@@ -488,7 +503,7 @@ impl Monitor {
             .flatten()
             .filter(|view| {
                 view.request.profile.kind() == ProfileKind::Agent
-                    && view.request.status == RequestStatus::Running
+                    && view.request.status() == RequestStatus::Running
             })
             .cloned();
         let Some(view) = view else {
@@ -553,7 +568,11 @@ impl Monitor {
     }
     /// Select the next ERROR, RED or waiting Human eval after the selection, wrapping around.
     fn next_attention(&mut self) -> bool {
-        fn walk(nodes: &[Node], parent: &[String], order: &mut Vec<(Vec<String>, bool)>) {
+        fn walk(
+            nodes: &[Node],
+            parent: &[model::NodeId],
+            order: &mut Vec<(Vec<model::NodeId>, bool)>,
+        ) {
             for node in nodes {
                 let mut path = parent.to_vec();
                 path.push(node.id.clone());

@@ -29,36 +29,39 @@ pub struct StatusView {
     pub recursive: bool,
     pub force: bool,
     pub ignore_gates: bool,
-    pub selected_eval_ids: Vec<String>,
-    pub included_eval_ids: Vec<String>,
+    pub selected_eval_ids: Vec<crate::config::EvalId>,
+    pub included_eval_ids: Vec<crate::config::EvalId>,
     pub satisfied: bool,
-    pub obligations: Vec<String>,
+    pub obligations: Vec<crate::config::ArtifactName>,
     pub artifacts: Vec<ArtifactState>,
     pub evals: Vec<EvalState>,
     pub counts: Counts,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unreadable: Vec<store::Unreadable>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArtifactState {
-    pub id: String,
+    pub id: crate::config::ArtifactName,
     pub kind: crate::config::ArtifactKind,
+    #[serde(with = "crate::platform::path_serde")]
     pub path: std::path::PathBuf,
     pub tags: Vec<String>,
     pub state: ArtifactCondition,
     pub reason: String,
-    pub eval_ids: Vec<String>,
+    pub eval_ids: Vec<crate::config::EvalId>,
     pub passed: usize,
     pub total: usize,
     pub satisfied: bool,
-    pub obligations: Vec<String>,
+    pub obligations: Vec<crate::config::ArtifactName>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EvalState {
-    pub id: String,
-    pub target: String,
+    pub id: crate::config::EvalId,
+    pub target: crate::config::ArtifactName,
     pub title: String,
     pub profile: Profile,
     pub selected: bool,
@@ -67,14 +70,14 @@ pub struct EvalState {
     pub state: EvalCondition,
     pub action: VerifyAction,
     pub reason: String,
-    pub blocked_by: Vec<String>,
-    pub obligations: Vec<String>,
+    pub blocked_by: Vec<crate::store::Blocker>,
+    pub obligations: Vec<crate::config::ArtifactName>,
     /// The Eval definition hash: the eval strategy the key covers.
-    pub eval_def_hash: String,
+    pub eval_def_hash: crate::types::DefinitionHash,
     /// The target's current fingerprint; null without one.
     pub fingerprint: Option<crate::types::Fingerprint>,
     /// Each Artifact the eval depends on, with its current fingerprint or null without one.
-    pub fingerprints: BTreeMap<String, Option<crate::types::Fingerprint>>,
+    pub fingerprints: BTreeMap<crate::config::ArtifactName, Option<crate::types::Fingerprint>>,
     /// The reuse key composed of the hash and the fingerprints; null when one is missing.
     pub key: Option<crate::types::ReuseKey>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -158,7 +161,7 @@ pub async fn status(
     let all_keys = cache::eval_keys(&config, &fingerprints);
     let keys: BTreeMap<_, _> = all_keys
         .iter()
-        .filter(|(id, _)| !(options.force && selected_ids.contains(&id.to_string())))
+        .filter(|(id, _)| !(options.force && selected_ids.contains(*id)))
         .map(|(id, key)| (*id, key))
         .collect();
     let mut cached = store::read_keyed_executions(
@@ -194,12 +197,12 @@ pub async fn status(
             }
         }
     }
-    let claim = |id: &str| keys.get(id).and_then(|key| cached.get(&key.value));
+    let claim = |id: &crate::types::EvalId| keys.get(id).and_then(|key| cached.get(&key.value));
     // Explain changed keys against the newest cached result for the same Eval definition.
     let stale: Vec<_> = keys
         .iter()
         .filter(|(id, _)| !matches!(claim(id), Some(Claim::Reuse(_))))
-        .map(|(id, key)| ((*id).to_owned(), key.eval_def_hash.clone()))
+        .map(|(id, key)| ((*id).clone(), key.eval_def_hash.clone()))
         .collect();
     let previous = store::read_latest_cached(&state, &stale).await?;
     for eval in &config.evals {
@@ -218,37 +221,44 @@ pub async fn status(
         .obligations
         .iter()
         .filter(|id| required.contains(*id))
-        .map(|id| (*id).to_owned())
+        .map(|id| (*id).clone())
         .collect();
     let mut counts = Counts::default();
     let mut artifacts = Vec::new();
     for id in &required {
-        let artifact = &evaluation.artifacts[id];
+        let artifact = &evaluation.artifacts[id.as_str()];
         let status = ArtifactCondition::from(artifact.status);
-        let own = &graph.artifacts()[id];
+        let own = &graph.artifacts()[id.as_str()];
         let unmet = graph
-            .dependency_closure(&[id])
+            .dependency_closure(&[*id])
             .map_err(|error| error.to_string())?
             .into_iter()
-            .filter(|id| !evaluation.artifacts[id].own_satisfied)
-            .map(str::to_owned)
+            .filter(|id| !evaluation.artifacts[id.as_str()].own_satisfied)
+            .map(|id| (*id).clone())
             .collect::<Vec<_>>();
         let reason = if artifact.satisfied {
             "All required obligations are satisfied.".into()
         } else if own.evals.is_empty() && !own.basis {
             "No Evals are declared and this Artifact is not a basis.".into()
         } else {
-            format!("Unmet obligations: {}", unmet.join(", "))
+            format!(
+                "Unmet obligations: {}",
+                unmet
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
         };
         *counts.artifacts.entry(status).or_default() += 1;
         artifacts.push(ArtifactState {
             kind: config.artifacts[*id].kind,
             path: config.artifacts[*id].path.clone(),
-            id: (*id).to_owned(),
+            id: (*id).clone(),
             tags: config.artifacts[*id].tags.clone(),
             state: status,
             reason,
-            eval_ids: own.evals.iter().map(|id| (*id).to_owned()).collect(),
+            eval_ids: own.evals.iter().map(|id| (*id).clone()).collect(),
             passed: artifact.passed,
             total: artifact.total,
             satisfied: artifact.satisfied,
@@ -263,12 +273,12 @@ pub async fn status(
     for eval in config
         .evals
         .iter()
-        .filter(|eval| required.contains(&eval.target.as_str()))
+        .filter(|eval| required.contains(&eval.target))
     {
         let current = &evaluation.evals[eval.id.as_str()];
         let selected = selected_ids.contains(&eval.id);
         let included = included_ids.contains(&eval.id);
-        let derived = matches!(eval.declaration.profile, Profile::Dependency { .. });
+        let derived = matches!(eval.declaration.profile(), Profile::Dependency { .. });
         let force = options.force && selected && !derived;
         let (action, reason) = match current.readiness {
             _ if derived => (
@@ -278,7 +288,12 @@ pub async fn status(
                 } else {
                     format!(
                         "Derived dependency verdict: waiting for current GREEN evidence from {}.",
-                        current.blocked_by.join(", ")
+                        current
+                            .blocked_by
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     )
                 },
             ),
@@ -302,7 +317,7 @@ pub async fn status(
                         Some(Claim::Reuse(execution))
                             if execution.profile
                                 != crate::config::StoredProfile::from(
-                                    &eval.declaration.profile
+                                    eval.declaration.profile()
                                 ) =>
                             format!(
                                 " produced by profile {}",
@@ -314,24 +329,47 @@ pub async fn status(
                         Readiness::Ready => ".".into(),
                         Readiness::Wait => format!(
                             "; its gates still wait for: {}",
-                            current.unmet_gates.join(", ")
+                            current
+                                .unmet_gates
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", ")
                         ),
                         Readiness::Blocked => format!(
                             "; its gates are blocked by RED: {}",
-                            current.unmet_gates.join(", ")
+                            current
+                                .unmet_gates
+                                .iter()
+                                .map(ToString::to_string)
+                                .collect::<Vec<_>>()
+                                .join(", ")
                         ),
                     }
                 ),
             ),
             Readiness::Blocked => (
                 VerifyAction::Blocked,
-                format!("Dependency verdict RED: {}", current.unmet_gates.join(", ")),
+                format!(
+                    "Dependency verdict RED: {}",
+                    current
+                        .unmet_gates
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
             ),
             Readiness::Wait => (
                 VerifyAction::Wait,
                 format!(
                     "Waiting for current GREEN dependency evidence: {}",
-                    current.unmet_gates.join(", ")
+                    current
+                        .unmet_gates
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
             ),
             Readiness::Ready
@@ -343,7 +381,7 @@ pub async fn status(
                     "The current eval and fingerprints have a live execution.".into(),
                 )
             }
-            Readiness::Ready => match eval.declaration.profile {
+            Readiness::Ready => match eval.declaration.profile() {
                 Profile::Dependency { .. } => unreachable!("derived above"),
                 Profile::Human { .. } => (
                     VerifyAction::Execute,
@@ -385,37 +423,33 @@ pub async fn status(
             id: eval.id.clone(),
             target: eval.target.clone(),
             title: eval.declaration.title.clone(),
-            profile: eval.declaration.profile.clone(),
+            profile: eval.declaration.profile().clone(),
             selected,
             included,
             force,
             state: status,
             action,
             reason,
-            blocked_by: current
-                .blocked_by
-                .iter()
-                .map(|id| (*id).to_owned())
-                .collect(),
+            blocked_by: current.blocked_by.iter().copied().map(Into::into).collect(),
             obligations: obligations_by_artifact[eval.target.as_str()].clone(),
             eval_def_hash: cache::eval_definition_hash(&eval.declaration),
             fingerprint: fingerprints
-                .get(eval.target.as_str())
+                .get(&eval.target)
                 .map(|fingerprint| fingerprint.value.clone()),
             fingerprints: cache::dependencies(&config, eval)
                 .into_iter()
                 .map(|id| {
                     (
-                        id.to_owned(),
+                        config.artifacts[id].name.clone(),
                         fingerprints
                             .get(id)
                             .map(|fingerprint| fingerprint.value.clone()),
                     )
                 })
                 .collect(),
-            key: all_keys.get(eval.id.as_str()).map(|key| key.value.clone()),
-            last: latest.remove(&eval.id),
-            changes: keys.get(eval.id.as_str()).and_then(|key| {
+            key: all_keys.get(&eval.id).map(|key| key.value.clone()),
+            last: latest.remove(eval.id.as_str()),
+            changes: keys.get(&eval.id).and_then(|key| {
                 previous
                     .get(&(eval.id.clone(), key.eval_def_hash.clone()))
                     .map(|execution| {
@@ -423,13 +457,15 @@ pub async fn status(
                             execution,
                             &eval.target,
                             key,
-                            fingerprints[eval.target.as_str()].manifest.as_ref(),
+                            fingerprints[&eval.target].manifest.as_ref(),
                         )
                     })
             }),
         });
     }
+    let unreadable = store::read_unreadable(&state, Some(&config.root)).await?;
     Ok(StatusView {
+        unreadable,
         selection: selection.clone(),
         recursive: options.recursive,
         force: options.force,

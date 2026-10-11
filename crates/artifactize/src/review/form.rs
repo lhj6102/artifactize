@@ -117,7 +117,7 @@ impl Field {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Form {
-    pub verdict: &'static str,
+    pub verdict: crate::runtime::Verdict,
     pub fields: Vec<Field>,
     /// Owner fields as JSON text from `$EDITOR`; once set it replaces `fields`.
     pub json: Option<String>,
@@ -130,7 +130,7 @@ pub struct Form {
 
 impl Form {
     /// A form for a flat owner schema (or none); any other schema starts from a JSON template.
-    pub fn new(verdict: &'static str, schema: Option<&Value>) -> Self {
+    pub fn new(verdict: crate::runtime::Verdict, schema: Option<&Value>) -> Self {
         let fields = schema.map_or(Some(Vec::new()), fields);
         let json = fields.is_none().then(|| {
             let template = schema.map_or(json!({}), template);

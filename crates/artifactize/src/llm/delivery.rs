@@ -3,6 +3,7 @@
 #[cfg(test)]
 mod framing_tests;
 use crate::agent::session::{Delivery, DeliveryKind, DeliveryState};
+use crate::types::DeliveryBlock;
 use bytes::Bytes;
 use futures_util::StreamExt;
 use rig_core::{
@@ -26,26 +27,27 @@ pub(super) const CADENCE: Duration = Duration::from_millis(100);
 const FRAME_BYTES: usize = 256 * 1024;
 /// Bound coalesced deltas until the consuming task drains them.
 const PENDING_BYTES: usize = 64 * 1024;
+/// Ask for a drain once half the bound is pending, so the consumer catches up before
+/// further deltas would be dropped at the full bound.
+const READY_BYTES: usize = PENDING_BYTES / 2;
 /// Framing slices bound allocations even when the transport yields a very large chunk.
 const FRAME_SLICE: usize = 4096;
 /// Bound pathological empty summary parts and provider item identities independently.
 const SUMMARY_PARTS: usize = 256;
-const ITEM_ID_BYTES: usize = 1024;
-
 struct Pending {
     text: String,
     state: DeliveryState,
     order: usize,
 }
 struct Summary {
-    item: Option<String>,
+    item: Option<crate::types::ItemId>,
     index: usize,
     text: String,
 }
 #[derive(Default)]
 struct Buffer {
-    pending: BTreeMap<(DeliveryKind, String), Pending>,
-    summaries: BTreeMap<String, Summary>,
+    pending: BTreeMap<(DeliveryKind, DeliveryBlock), Pending>,
+    summaries: BTreeMap<DeliveryBlock, Summary>,
     ended: BTreeSet<(DeliveryKind, usize)>,
     dropped: bool,
     ordinal: usize,
@@ -57,7 +59,7 @@ impl Sink {
     pub async fn scope<F: std::future::Future>(&self, future: F) -> F::Output {
         ACTIVE.scope(self.clone(), future).await
     }
-    fn push(&self, kind: DeliveryKind, block: String, text: &str) {
+    fn push(&self, kind: DeliveryKind, block: DeliveryBlock, text: &str) {
         if text.is_empty() {
             return;
         }
@@ -88,7 +90,7 @@ impl Sink {
         });
         entry.text.push_str(text);
     }
-    fn complete(&self, kind: DeliveryKind, block: String, text: String) {
+    fn complete(&self, kind: DeliveryKind, block: DeliveryBlock, text: String) {
         let mut buffer = self.0.lock().unwrap();
         let order = buffer
             .pending
@@ -112,7 +114,7 @@ impl Sink {
             .values()
             .map(|entry| entry.text.len())
             .sum::<usize>()
-            >= PENDING_BYTES / 2
+            >= READY_BYTES
     }
     pub fn take(&self, turn: usize, attempt: usize) -> Vec<Delivery> {
         let mut buffer = self.0.lock().unwrap();
@@ -132,10 +134,13 @@ impl Sink {
             })
             .collect()
     }
-    fn summary(&self, item: Option<String>, output: Option<usize>, index: usize, text: String) {
-        if item.as_ref().is_some_and(|id| id.len() > ITEM_ID_BYTES) {
-            return;
-        }
+    fn summary(
+        &self,
+        item: Option<crate::types::ItemId>,
+        output: Option<usize>,
+        index: usize,
+        text: String,
+    ) {
         let Some(identity) = item
             .as_ref()
             .map(|id| format!("item-{id}"))
@@ -143,7 +148,7 @@ impl Sink {
         else {
             return;
         };
-        let block = format!("summary-{identity}-{index}");
+        let block = DeliveryBlock::summary(&identity, index);
         {
             let mut buffer = self.0.lock().unwrap();
             let observed = buffer
@@ -195,17 +200,15 @@ impl Sink {
                     .iter()
                     .find(|(_, entry)| {
                         entry.index == index
-                            && (reasoning
-                                .id
-                                .as_ref()
-                                .is_some_and(|id| entry.item.as_ref() == Some(id))
-                                || entry.text == *text)
+                            && (reasoning.id.as_ref().is_some_and(|id| {
+                                entry.item.as_ref().is_some_and(|item| item == id)
+                            }) || entry.text == *text)
                     })
                     .map(|(block, _)| block.clone())
             };
             self.complete(
                 DeliveryKind::Summary,
-                block.unwrap_or_else(|| format!("summary-final-{part}-{index}")),
+                block.unwrap_or_else(|| DeliveryBlock::summary(&format!("final-{part}"), index)),
                 text.clone(),
             );
         }
@@ -213,13 +216,13 @@ impl Sink {
     pub fn normalized(&self, item: &Item<StreamEvent>) {
         match item {
             Item::Event(StreamEvent::Text { part, text }) => {
-                self.push(DeliveryKind::Text, format!("text-{}", part.index()), text)
+                self.push(DeliveryKind::Text, DeliveryBlock::text(part.index()), text)
             }
             Item::Event(StreamEvent::End { part, content }) => match content {
                 AssistantContent::Text(text) => {
                     self.complete(
                         DeliveryKind::Text,
-                        format!("text-{}", part.index()),
+                        DeliveryBlock::text(part.index()),
                         text.text.clone(),
                     );
                     self.0
@@ -254,7 +257,7 @@ impl Sink {
                     if !self.ended(DeliveryKind::Text, index) {
                         self.complete(
                             DeliveryKind::Text,
-                            format!("text-{index}"),
+                            DeliveryBlock::text(index),
                             text.text.clone(),
                         );
                     }
@@ -325,7 +328,7 @@ enum SummaryFrame {
     #[serde(rename = "response.reasoning_summary_text.delta")]
     Delta {
         output_index: Option<usize>,
-        item_id: Option<String>,
+        item_id: Option<crate::types::ItemId>,
         summary_index: Option<usize>,
         delta: String,
     },

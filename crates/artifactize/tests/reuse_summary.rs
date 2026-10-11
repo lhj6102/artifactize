@@ -8,7 +8,10 @@ use std::{
 };
 
 use serde_json::{Value, json};
-use support::{FakeProvider, openai, os::bin};
+use support::{
+    FakeProvider, openai,
+    os::{shell, true_program},
+};
 
 /// Checkouts of one project sharing a state directory, with a fake OpenAI provider
 /// that passes every Agent review.
@@ -19,7 +22,7 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap();
+        let root = support::os::tempdir();
         fs::create_dir(root.path().join("home")).unwrap();
         let provider = FakeProvider::start(|request| {
             assert_eq!(request.path, "/v1/responses");
@@ -36,11 +39,11 @@ impl Fixture {
     /// `versions` are the api, web, style, docs and brand contents; each one is its fingerprint.
     fn checkout(&self, name: &str, versions: [&str; 5]) -> PathBuf {
         let repo = self.root.path().join(name);
-        let runtime = json!({"kind":"runtime","command":bin("/bin/true"),"args":[]});
+        let runtime = json!({"kind":"runtime","command":true_program(),"args":[]});
         // web/tests is RED when its version says "broken".
         let web = json!({
             "kind":"runtime",
-            "command":bin("/bin/sh"),
+            "command":shell(),
             "args":["-c","! grep -q broken version"],
         });
         let agent = json!({
@@ -82,7 +85,7 @@ impl Fixture {
             write(
                 &folder,
                 json!({"name":artifact,"evals":[declaration],
-                    "fingerprint":{"script":{"command":"cat","args":["version"]}}}),
+                    "fingerprint":{"script":{"command":support::os::cat_program(),"args":["version"]}}}),
             );
             fs::write(folder.join("version"), format!("{artifact}-{version}\n")).unwrap();
         }
@@ -97,7 +100,7 @@ impl Fixture {
             .arg("--state-dir")
             .arg(root.join("state"))
             .args(args)
-            .env("HOME", root.join("home"))
+            .env(support::os::home_env(), root.join("home"))
             .env("ARTIFACTIZE_OPENAI_BASE_URL", self.provider.openai_base())
             .env("OPENAI_API_KEY", "fake-openai-key")
             .env("ARTIFACTIZE_REMOTE", "off")

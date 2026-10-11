@@ -270,30 +270,36 @@ Summary: executed 3 (runtime 0, agent 3, human 0), reused 18 (runtime 7, agent 7
     <div class="wrap start-inner">
       <p class="kicker">Get started</p>
       <h2 id="start-title">Try it in five minutes.</h2>
-      <p>Artifactize is open source under the Apache License 2.0. Install it with one command, no Rust toolchain needed; the quick start then reviews an example project with no model or API key.</p>
+      <p>Artifactize is open source under the Apache License 2.0. Install it with one command on Linux, macOS or Windows, no Rust toolchain needed; the quick start then reviews an example project with no model or API key.</p>
       <div class="install" data-install>
         <div class="demo-tabs install-tabs" role="tablist" aria-label="Operating system" hidden>
-          <button type="button" class="demo-tab" role="tab" id="install-tab-linux" aria-controls="install-linux" aria-selected="true" data-os="linux">Linux / WSL</button>
-          <button type="button" class="demo-tab" role="tab" id="install-tab-windows" aria-controls="install-windows" aria-selected="false" tabindex="-1" data-os="windows">Windows</button>
+          <button type="button" class="demo-tab" role="tab" id="install-tab-linux" aria-controls="install-linux" aria-selected="true" data-os="linux">Linux</button>
           <button type="button" class="demo-tab" role="tab" id="install-tab-macos" aria-controls="install-macos" aria-selected="false" tabindex="-1" data-os="macos">macOS</button>
+          <button type="button" class="demo-tab" role="tab" id="install-tab-windows" aria-controls="install-windows" aria-selected="false" tabindex="-1" data-os="windows">Windows</button>
         </div>
         <div class="panel start-panel" role="tabpanel" id="install-linux" aria-labelledby="install-tab-linux" data-copy="curl -fsSL https://artifactize.dev/install.sh | sh">
           <button type="button" class="copy" aria-label="Copy the install command" hidden>Copy</button>
           <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
-<pre class="code term"><code><span class="t-dim"># Linux or WSL 2 (x86_64, aarch64): installs to ~/.local/bin, no sudo</span>
+<pre class="code term"><code><span class="t-dim"># Linux (x86_64, aarch64): installs to ~/.local/bin, no sudo</span>
 <span class="t-prompt">$</span> <span data-command>curl -fsSL https://artifactize.dev/install.sh | sh</span>
 <span class="t-prompt">$</span> artifactize --version</code></pre>
+          <p class="install-alt">Or with Rust: <code>cargo binstall artifactize artifactize-tools</code> or <code>cargo install artifactize artifactize-tools --locked</code>.</p>
         </div>
-        <div class="panel start-panel" role="tabpanel" id="install-windows" aria-labelledby="install-tab-windows" data-copy="irm https://artifactize.dev/install.ps1 | iex">
+        <div class="panel start-panel" role="tabpanel" id="install-macos" aria-labelledby="install-tab-macos" data-copy="brew install lhj6102/tap/artifactize">
           <button type="button" class="copy" aria-label="Copy the install command" hidden>Copy</button>
           <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
-<pre class="code term"><code><span class="t-dim"># Windows x86_64 in PowerShell (experimental): installs to</span>
-<span class="t-dim"># %LOCALAPPDATA%\Programs\artifactize and adds it to your PATH, no admin</span>
-<span class="t-prompt">PS&gt;</span> <span data-command>irm https://artifactize.dev/install.ps1 | iex</span>
-<span class="t-prompt">PS&gt;</span> artifactize --version</code></pre>
+<pre class="code term"><code><span class="t-dim"># macOS (Apple silicon, Intel) with Homebrew</span>
+<span class="t-prompt">$</span> <span data-command>brew install lhj6102/tap/artifactize</span>
+<span class="t-prompt">$</span> artifactize --version</code></pre>
+          <p class="install-alt">Without Homebrew: <code>curl -fsSL https://artifactize.dev/install.sh | sh</code>.</p>
         </div>
-        <div class="panel start-panel" role="tabpanel" id="install-macos" aria-labelledby="install-tab-macos">
-          <p class="install-note">macOS support is coming. Follow its progress in <a href="https://github.com/lhj6102/artifactize/issues/111">issue #111</a>.</p>
+        <div class="panel start-panel" role="tabpanel" id="install-windows" aria-labelledby="install-tab-windows" data-copy="winget install lhj6102.Artifactize">
+          <button type="button" class="copy" aria-label="Copy the install command" hidden>Copy</button>
+          <span class="visually-hidden" role="status" aria-live="polite" data-copy-status></span>
+<pre class="code term"><code><span class="t-dim"># Windows x64 with winget; then open a new terminal</span>
+<span class="t-prompt">PS&gt;</span> <span data-command>winget install lhj6102.Artifactize</span>
+<span class="t-prompt">PS&gt;</span> artifactize --version</code></pre>
+          <p class="install-alt">Or get it from the <a href="https://apps.microsoft.com/detail/9PB6W4LL165D">Microsoft Store</a>, the choice when Smart App Control is on. Also: <code>irm https://artifactize.dev/install.ps1 | iex</code>, or the Linux steps inside WSL.</p>
         </div>
       </div>
       <p>Upgrading to 0.9: declarations move to TOML <code>.artf</code>, families are removed, state schema 6 requires a new state, and reuse-key v2 reuses no earlier verdict. Every executable eval needs one new review, Human sign-offs included. The monitor drills down through Scope, Runs, the Run tree and Detail, with an explicit claim for Human sign-offs. Esc steps back; it never quits. <a href="/docs/getting-started/install.html#upgrading-to-09">Upgrade instructions</a>.</p>

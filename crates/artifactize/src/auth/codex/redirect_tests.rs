@@ -5,11 +5,11 @@ use rig_core::test_utils::MockHttpResponse;
 
 #[tokio::test]
 async fn shared_port_redirect_matches_authorize_callback_and_token_exchange() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = crate::test_os::tempdir();
     let storage = Storage::new(Some(directory.path()), None, Tokens::Codex).unwrap();
     let server = Server::new(vec![MockHttpResponse::success(
         json!({
-            "access_token":jwt("fixture-account", now().unwrap() + 3600),
+            "access_token":jwt("fixture-account", now().unwrap().checked_add(Duration::from_secs(3600)).unwrap().seconds()),
             "refresh_token":"fixture-refresh",
             "expires_in":3600,
         })
@@ -33,7 +33,7 @@ async fn shared_port_redirect_matches_authorize_callback_and_token_exchange() {
             let target = format!("{CALLBACK_PATH}?code=fixture-code&state={}", pairs["state"]);
             let pending = Pending {
                 verifier: String::new(),
-                state: pairs["state"].clone(),
+                state: pairs["state"].parse().unwrap(),
             };
             assert!(
                 matches!(pending.callback(&target).2, Some(Ok(code)) if code == "fixture-code")
