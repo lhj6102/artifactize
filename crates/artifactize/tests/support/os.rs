@@ -2282,3 +2282,16 @@ pub fn stdin_waiter() -> tokio::process::Command {
 pub fn copy_editor_command(source: &Path) -> String {
     format!("copy /y \"{}\"", source.display())
 }
+
+/// Run a relative script file through the platform's shared shell fixture, as argv.
+pub fn script_file(path: &Path) -> (String, Vec<String>) {
+    (shell(), vec![path.to_str().unwrap().to_owned()])
+}
+
+/// The native Windows Ctrl-C termination status is an ordinary signed process exit code.
+/// Only Windows has this status code and distinguishes it from Unix signal termination.
+#[cfg(windows)]
+pub fn control_c_exit() -> (String, Vec<String>, i32) {
+    let code = windows_sys::Win32::Foundation::STATUS_CONTROL_C_EXIT;
+    (shell(), vec!["-c".into(), format!("exit {code}")], code)
+}

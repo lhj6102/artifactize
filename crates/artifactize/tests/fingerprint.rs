@@ -511,7 +511,7 @@ fn concurrent_scripts(fixture: &Fixture) -> PathBuf {
             json!({
                 "name":name,
                 "fingerprint":{
-                    "script":{"command":shell(),"args":["-c",script,"sh",name,markers]},
+                    "script":{"command":shell(),"args":["-c",script,"fingerprint",name,markers]},
                 },
                 "evals":[eval("check", "exit 0")],
             }),

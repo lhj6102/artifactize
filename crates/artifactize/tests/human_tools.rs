@@ -89,8 +89,10 @@ fn flat_declarations_reject_free_arguments_and_unknown_placeholders_inertly() {
         assert!(parse(invalid.clone()).is_err(), "{invalid}");
     }
     assert!(
-        parse(json!({"metadata":{"description":"Old"},"script":{"command":"true","args":[]}}))
-            .is_err()
+        parse(
+            json!({"metadata":{"description":"Old"},"script":{"command":"noop-fixture","args":[]}})
+        )
+        .is_err()
     );
     let repo = support::os::tempdir();
     write_artifact(

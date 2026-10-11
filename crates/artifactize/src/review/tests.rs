@@ -68,7 +68,7 @@ fn definition(pass: Value, fail: Value) -> Value {
                         "notes":{
                             "description":"Print the notes of {artifactName}.",
                             "kind":"output",
-                            "command":"cat",
+                            "command":"get",
                             "args":["{artifactPath}/notes.md"],
                         },
                         "open":{
@@ -112,7 +112,7 @@ pub(crate) fn builtins() -> Value {
         "notes":{
             "description":"Print the notes of {artifactName}.",
             "kind":"output",
-            "command":"cat",
+            "command":"get",
             "args":["{artifactPath}/notes.md"],
         },
         "open":{
@@ -245,7 +245,7 @@ fn command(args: &[&str]) -> CommandLine {
     CommandLine {
         repo: "/repo".into(),
         kind: HumanToolKind::Output,
-        program: "cat".into(),
+        program: "get".into(),
         args: args.iter().map(|arg| (*arg).to_owned()).collect(),
         cwd: "/repo/release".into(),
     }
@@ -309,7 +309,7 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
             (
                 "notes_release",
                 HumanToolKind::Output,
-                &Runs::Command("cat {artifactPath}/notes.md".into())
+                &Runs::Command("get {artifactPath}/notes.md".into())
             ),
             (
                 "open_release",
@@ -365,7 +365,7 @@ fn instruction_leads_and_technical_details_stay_folded_until_t() {
     let text = screen(&mut review);
     for expected in [
         "notes_release  output",
-        "$ cat {artifactPath}/notes.md",
+        "$ get {artifactPath}/notes.md",
         "Print the notes of release.",
         "open_release  launch",
         "Unclaimed. c claims it for alice",
@@ -426,7 +426,7 @@ fn tools_need_a_claim_then_enter_runs_at_once_showing_the_resolved_command() {
     };
     resolved(&mut review);
     let text = screen(&mut review);
-    assert!(text.contains("$ cat /repo/release/notes.md"), "{text}");
+    assert!(text.contains("$ get /repo/release/notes.md"), "{text}");
     assert!(!text.contains("{artifactPath}"), "{text}");
     let run = |tool: &str| {
         Action::Start(Job::Run {
@@ -1477,7 +1477,7 @@ pub(crate) fn builtin_rows(width: u16) -> Vec<Vec<&'static str>> {
         // A command tool keeps its declared command line.
         vec![
             "notes_release  output",
-            "  $ cat {artifactPath}/notes.md",
+            "  $ get {artifactPath}/notes.md",
             "  Print the notes of release.",
         ],
         vec![
