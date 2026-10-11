@@ -400,23 +400,28 @@ pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), Stri
         .await
         .ok();
     let terminal = std::io::stdin().is_terminal();
-    let pasted = terminal.then(|| {
+    let pasted = if terminal {
         let (send, receive) = oneshot::channel();
         // Detached: a sign-in finished in the browser leaves this read unanswered.
-        std::thread::spawn(move || {
-            for line in std::io::stdin().lines() {
-                match line {
-                    Ok(line) if line.trim().is_empty() => continue,
-                    Ok(line) => {
-                        let _ = send.send(line);
+        std::thread::Builder::new()
+            .name("codex-login-input".into())
+            .spawn(move || {
+                for line in std::io::stdin().lines() {
+                    match line {
+                        Ok(line) if line.trim().is_empty() => continue,
+                        Ok(line) => {
+                            let _ = send.send(line);
+                        }
+                        Err(_) => {}
                     }
-                    Err(_) => {}
+                    break;
                 }
-                break;
-            }
-        });
-        receive
-    });
+            })
+            .map_err(|error| format!("Cannot start Codex sign-in input: {error}"))?;
+        Some(receive)
+    } else {
+        None
+    };
     let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
     sign_in(&storage, &root, listener, &redirect_uri, pasted, true, |url, callback| {
         let mut err = std::io::stderr().lock();
