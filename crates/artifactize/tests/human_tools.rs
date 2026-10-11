@@ -44,7 +44,7 @@ async fn call(repo: &Path) -> ToolResult {
     let config = read_workspace_config(repo).unwrap();
     Registry::new(&config, "a/review")
         .unwrap()
-        .call("inspect_a", CancellationToken::new())
+        .call(&"inspect_a".parse().unwrap(), CancellationToken::new())
         .await
 }
 
@@ -167,7 +167,7 @@ async fn catalog_is_human_only_scoped_and_collision_checked() {
     for unknown in ["read_a", "inspect_c"] {
         assert!(
             registry
-                .call(unknown, CancellationToken::new())
+                .call(&unknown.parse().unwrap(), CancellationToken::new())
                 .await
                 .is_error()
         );
@@ -238,7 +238,7 @@ async fn scope_operands_use_runtime_resolution_and_recheck_symlinks() {
     support::os::link_dir(&support::os::temp_root(), &input);
     assert!(
         registry
-            .call("inspect_a", CancellationToken::new())
+            .call(&"inspect_a".parse().unwrap(), CancellationToken::new())
             .await
             .is_error()
     );
@@ -356,7 +356,7 @@ async fn output_timeout_and_pre_cancelled_launch_do_not_handoff() {
     assert!(
         Registry::new(&config, "a/review")
             .unwrap()
-            .call("inspect_a", cancellation)
+            .call(&"inspect_a".parse().unwrap(), cancellation)
             .await
             .is_error()
     );

@@ -126,7 +126,12 @@ fn insert_counter(
 
 impl Client {
     /// `state` and `repo` locate Codex credentials; the API-key backends ignore them.
-    pub fn new(backend: Backend, model: &str, state: &Path, repo: &Path) -> Result<Self, Failure> {
+    pub fn new(
+        backend: Backend,
+        model: &crate::config::ModelId,
+        state: &Path,
+        repo: &Path,
+    ) -> Result<Self, Failure> {
         let base = base_url(backend)?;
         if backend == Backend::Codex {
             return Ok(Self::Codex(codex::Codex::new(model, base, state, repo)?));
@@ -139,13 +144,13 @@ impl Client {
                 openai::OpenAIConfig::new(key)
                     .with_base_url(base)
                     .connect(http)
-                    .responses(model),
+                    .responses(model.as_str()),
             )),
             Backend::Anthropic => Self::Anthropic(Box::new(
                 anthropic::AnthropicConfig::new(key)
                     .with_base_url(base)
                     .connect(http)
-                    .completion(model),
+                    .completion(model.as_str()),
             )),
             Backend::Codex => unreachable!("built above"),
         })

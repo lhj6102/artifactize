@@ -203,13 +203,13 @@ impl<'a> Registry<'a> {
         self.tools.values().map(|tool| &tool.definition)
     }
 
-    pub fn is_command(&self, name: &str) -> bool {
+    pub fn is_command(&self, name: &crate::config::ToolName) -> bool {
         self.tools
             .get(name)
             .is_some_and(|tool| matches!(tool.declaration, HumanTool::Command(_)))
     }
 
-    pub fn preflight(&self, name: &str) -> Result<(), String> {
+    pub fn preflight(&self, name: &crate::config::ToolName) -> Result<(), String> {
         let tool = self
             .tools
             .get(name)
@@ -238,7 +238,7 @@ impl<'a> Registry<'a> {
     }
 
     /// Resolve the command line a call would run, without running it.
-    pub fn command(&self, name: &str) -> Result<CommandLine, String> {
+    pub fn command(&self, name: &crate::config::ToolName) -> Result<CommandLine, String> {
         let tool = self
             .tools
             .get(name)
@@ -266,7 +266,11 @@ impl<'a> Registry<'a> {
         })
     }
 
-    pub async fn call(&self, name: &str, cancellation: CancellationToken) -> ToolResult {
+    pub async fn call(
+        &self,
+        name: &crate::config::ToolName,
+        cancellation: CancellationToken,
+    ) -> ToolResult {
         let Some(tool) = self.tools.get(name) else {
             return ToolResult::error("Unknown registered Human tool.");
         };

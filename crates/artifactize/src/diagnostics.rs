@@ -155,7 +155,7 @@ impl Catalog<'_> {
                 .collect(),
         }
     }
-    fn preflight(&self, name: &str) -> Result<(), String> {
+    fn preflight(&self, name: &crate::config::ToolName) -> Result<(), String> {
         match self {
             Self::Agent(r) => r.preflight(name),
             Self::Human(r) => r.preflight(name),
@@ -317,7 +317,7 @@ async fn execute_tool(
     config: &RepoConfig,
     state: Option<&Path>,
     catalog: &Catalog<'_>,
-    name: &str,
+    name: &crate::config::ToolName,
     options: &ToolCheckOptions,
     cancellation: CancellationToken,
 ) -> Result<ToolCheckResult, String> {

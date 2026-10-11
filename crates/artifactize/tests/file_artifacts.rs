@@ -540,7 +540,7 @@ fn human_tools_use_containing_folder_and_resolve_only_scoped_paths() {
     );
     let config = fixture.config();
     let registry = artifactize::tools::human::Registry::for_artifact(&config, "file").unwrap();
-    let command = registry.command("open_file").unwrap();
+    let command = registry.command(&"open_file".parse().unwrap()).unwrap();
     assert_eq!(command.cwd, config.root.join("files"));
     assert_eq!(
         command.args,
@@ -1247,7 +1247,7 @@ async fn command_and_human_tools_revalidate_file_targets_on_every_call() {
         );
         assert!(
             human
-                .call("inspect_file", CancellationToken::new())
+                .call(&"inspect_file".parse().unwrap(), CancellationToken::new())
                 .await
                 .is_error()
         );

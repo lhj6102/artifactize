@@ -40,7 +40,7 @@ pub enum RequestCommand {
     /// Run a predefined Human tool as the claimant.
     Tool {
         id: RequestId,
-        tool: String,
+        tool: crate::config::ToolName,
         /// Reviewer name (defaults to USER).
         #[arg(long, value_name = "NAME")]
         reviewer: Option<crate::types::ReviewerId>,
