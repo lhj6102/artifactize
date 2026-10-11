@@ -45,7 +45,10 @@ Summary: executed 3 (runtime 3, agent 0, human 0), reused 0 (runtime 0, agent 0,
 
 Each GREEN result passed its fingerprint recheck, so `verify` published its summary
 record: verdict, owner fields, profile, usage counters, producer and timestamps.
-It sent no argv, stdout/stderr or paths.
+The summary omitted captured stdout/stderr, the separate invocation audit and
+local repository provenance. The declared runtime command and arguments were
+still shared as part of the profile; paths and sensitive literals in those
+arguments are not redacted.
 
 ## 3. Bob reuses Alice's verdicts
 

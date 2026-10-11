@@ -148,9 +148,14 @@ The target must remain an existing regular file with no symlink traversal, not
 just at discovery. It is validated at fingerprint preparation/recheck, before
 reuse, at eval start/end and on every Agent/Human tool call, including with
 `fingerprint = false`. A file invalid before eval admission produces
-ERROR/PREPARATION_FAILED; a target that becomes invalid during an eval produces
-ERROR/INPUT_CHANGED instead of a semantic verdict. Preparation failures abort
-before reuse or execution; tool calls return an error without running the tool.
+ERROR/PREPARATION_FAILED. If accepting a completed Runtime/Agent result discovers
+that a target has become invalid, it records ERROR/INPUT_CHANGED instead of a
+semantic verdict. A Human action first reloads its recorded scope and declarations;
+if discovery or reconnection fails, for example because a file target is missing
+or invalid, the action fails without settling the waiting request. A changed
+fingerprint value after successful Human reconnection still settles
+ERROR/INPUT_CHANGED for a keyed request. Preparation failures abort before reuse
+or execution; tool calls return an error without running the tool.
 
 ## Dependency evals
 
@@ -314,9 +319,12 @@ a shell. The default cwd is the canonical workspace; a scoped caller can set
 file Artifact). `process::run` is the lower-level API for resolved commands with
 a complete explicit environment. `verify` uses the owner working directory as cwd.
 
-Only `PATH` and `LANG` are inherited (`LANG` defaults to `en_US.UTF-8`). Each prepared
-runtime command gets a fresh 0700 directory below the caller's external `run_dir`,
-with 0700 `output`, `tmp`, `home`, and `cache` subdirectories. Children receive
+`PATH` and `LANG` are inherited (`LANG` defaults to `en_US.UTF-8`); Windows also
+inherits `SystemRoot`, `ComSpec` and `PATHEXT` when set, so its programs can start
+and find executable suffixes. Each prepared runtime command gets a fresh
+owner-only directory below the caller's external `run_dir`, with owner-only
+`output`, `tmp`, `home`, and `cache` subdirectories (0700 on Unix, a protected
+owner-only DACL on Windows). Children receive
 `ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR`, `ARTIFACTIZE_TMP_DIR`, private
 `HOME` and `XDG_CACHE_HOME`, and `TMPDIR`/`TMP`/`TEMP` pointing at private temporary
 storage. Existing output ancestors are canonicalized before creation; output
@@ -332,12 +340,14 @@ results decode UTF-8 lossily, remove ANSI CSI sequences and C0 controls except t
 LF and CR (DEL is preserved), and retain the truncation flag and actual exit
 status/duration. Low-level process results remain unmodified bytes.
 
-Cancellation and timeout signal the entire owned process group with SIGTERM,
-then SIGKILL after at most one second; ordinary leader exit also kills its group.
-Capture stops waiting at most one second after cleanup if a pipe remains open.
+Cancellation and timeout stop the owned child tree. On Unix, artifactize sends
+SIGTERM to its process group, then SIGKILL after at most one second. On Windows,
+it attempts Ctrl-Break for the console group, then terminates the owned Job
+Object after the grace period. Ordinary leader exit also cleans up the group or
+job. Capture stops waiting at most one second after cleanup if a pipe remains open.
 Dropping the caller cancels the supervisor, which still cleans up and reaps the
 leader. Configured programs are trusted local code, **not an OS sandbox**: they
 can use ordinary OS access, must keep reviewed input unchanged, and descendants
-that deliberately detach into another process group can escape cleanup. These
+that deliberately leave the owned process group or job may escape cleanup. These
 controls do not promise confinement or detection of every adversarial transient
 write.

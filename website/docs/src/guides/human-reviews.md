@@ -182,7 +182,9 @@ and selects it; a click on the selected tool, or on `[Run tool ⏎]`, runs it.
   at once; there is no confirmation step. `j`/`k` also selects while not editing.
   The run needs your claim on a request that still waits, checked when it starts:
   after a release or a settlement elsewhere it neither claims nor runs. Each run
-  resolves the command again, so it runs what the declarations say at that moment.
+  reloads and resolves the declarations again, but refuses the action if the
+  recorded Artifact scope or eval declarations (including tools) have changed.
+  It does not accept an updated command in place of the recorded review definition.
   An open form stays open while a tool runs. A `launch` tool reports
   "launched" and the UI continues. An `output` tool runs with a spinner; Esc or
   Ctrl-C cancels. Its stdout/stderr fill Output; PgUp/PgDn scroll. A nonzero exit

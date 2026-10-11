@@ -130,8 +130,10 @@ Runtime or Agent invocation consumes one start, even when it fails to spawn or
 later returns ERROR. Human waiting, claim and tool actions and dependency
 derivation consume no starts. Fingerprint preparation/rechecks, cache hits, and
 joined waiters
-consume none. Preparation failures before invocation consume none. Zero permits
-reuse, joining, Human reviews and dependency derivation; a budgeted waiter replacing a failed/dead owner uses
+consume none. Failures in initial executor preparation consume no start. Agent
+`execution_paths` pinning happens after a start is charged: a pinning failure still
+consumes that start and records ERROR/PREPARATION_FAILED without calling the model.
+Zero permits reuse, joining, Human reviews and dependency derivation; a budgeted waiter replacing a failed/dead owner uses
 its own Run's remaining budget. Exhaustion never interrupts running evals, but
 leaves remaining READY requests `BUDGET_EXHAUSTED` and ends the Run INCOMPLETE
 with a reason (exit 4). Hitting the cap exactly without unmet starts is not an

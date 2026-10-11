@@ -136,7 +136,8 @@ as given. JSON-protocol argv may use existing scoped Artifact references, but
 cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
 schema-property placeholders. Commands themselves are never interpolated.
 Command calls use the owner's working directory (the containing folder for a file
-Artifact) as cwd, runtime's PATH/LANG-only inheritance and
+Artifact) as cwd, runtime's restricted environment (`PATH`/`LANG`, plus
+`SystemRoot`/`ComSpec`/`PATHEXT` on Windows) and
 private external HOME/TMP/output, a default 120000 ms deadline (1–2147483647), and
 process-group cancellation/cleanup. Per-call directories are removed on success,
 failure and cancellation, including dropped call futures; caller-owned output
