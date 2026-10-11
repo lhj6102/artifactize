@@ -289,6 +289,7 @@ fn tools_facade_matches_the_standalone_cli() {
     // Use the actual trusted program for the help tool, not clap help navigation.
     let program = standalone.to_str().unwrap();
     for (args, code) in [
+        (vec!["--version"], 0),
         (vec!["read", "notes.md"], 0),
         (vec!["list"], 0),
         (vec!["glob", "*.md"], 0),

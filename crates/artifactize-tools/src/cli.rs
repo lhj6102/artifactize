@@ -10,10 +10,13 @@ use clap::{Parser, Subcommand};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 
+/// The standalone and facade command report the same release version.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
 #[derive(Parser)]
 #[command(
     disable_help_subcommand = true,
-    version,
+    version = VERSION,
     about = "Portable scoped tools for artifactize",
     long_about = "Portable scoped tools for artifactize. Filesystem targets must be relative to the current directory and stay below it. Parent components, absolute paths, and symlinks are refused. Use '.' for the current directory. Only open accepts HTTP(S) URLs. help resolves a literal program through the system's program search path."
 )]
