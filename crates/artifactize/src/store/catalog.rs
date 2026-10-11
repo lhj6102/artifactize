@@ -5,10 +5,9 @@ use super::{
 };
 use crate::{
     repository::Identity,
-    types::{ExecutionId, RequestId, RequestStatus, RunStatus},
+    types::{ExecutionId, RequestId, RequestStatus, RunStatus, Sha256Bytes},
     workspace::{canonical_target, outside_workspaces},
 };
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -68,7 +67,7 @@ pub(super) fn in_snapshot(
 
 #[derive(Default)]
 pub(super) struct Facts {
-    runs: std::collections::BTreeMap<crate::types::RunId, ([u8; 32], Option<CatalogRun>)>,
+    runs: std::collections::BTreeMap<crate::types::RunId, (Sha256Bytes, Option<CatalogRun>)>,
 }
 
 pub(super) fn in_snapshot_cached(
@@ -89,7 +88,7 @@ pub(super) fn in_snapshot_cached(
     let mut order = Vec::new();
     let mut retained = std::collections::BTreeMap::new();
     for (id, data) in runs {
-        let digest: [u8; 32] = Sha256::digest(data.as_bytes()).into();
+        let digest = Sha256Bytes::of(data.as_bytes());
         let fact = match facts.runs.remove(&id) {
             Some((saved, fact)) if saved == digest => fact,
             _ => super::unreadable::evidence::<super::Run>("run", &data).map(|run| {
