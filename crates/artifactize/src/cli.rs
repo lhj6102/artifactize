@@ -65,7 +65,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Run scoped tools or check declared review tools.
-    #[command(disable_help_subcommand = true, version = artifactize_tools::cli::VERSION)]
+    #[command(disable_help_subcommand = true, version)]
     Tools {
         #[command(subcommand)]
         command: ToolsCommand,
