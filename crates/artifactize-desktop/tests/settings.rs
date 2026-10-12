@@ -267,6 +267,41 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         json!({"state": "absent"})
     );
 
+    // Overlapping starts: a newer start stops the older sign-in, whose waiter then finishes
+    // (cancelled) without clearing the newer one, which a paste still completes.
+    let older = std::thread::scope(|scope| {
+        call("codex_login_start", json!({"browser": false})).unwrap();
+        let waiting = scope.spawn(|| call("codex_login_wait", json!({})));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let newer = call("codex_login_start", json!({"browser": false})).unwrap();
+        let ended = waiting.join().unwrap();
+        (newer, ended)
+    });
+    let (newer, ended) = older;
+    assert_eq!(
+        ended.unwrap_err(),
+        json!({"kind": "account", "message": "Codex sign-in was cancelled."})
+    );
+    let redirect = format!(
+        "http://localhost:1455/auth/callback?code=newer-code&state={}",
+        oauth_state(newer["url"].as_str().unwrap())
+    );
+    let status = std::thread::scope(|scope| {
+        let waiting = scope.spawn(|| call("codex_login_wait", json!({})));
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        call("codex_login_paste", json!({"redirect": redirect})).unwrap();
+        waiting.join().unwrap()
+    })
+    .unwrap();
+    assert_eq!(status["state"], "stored");
+    assert!(provider.requests().iter().any(|request| {
+        request
+            .body
+            .as_str()
+            .is_some_and(|body| body.contains("code=newer-code"))
+    }));
+    call("codex_logout", json!({})).unwrap();
+
     // Remote: not configured, a refused token saves nothing, then login, status, logout.
     let none = call("remote_status", json!({})).unwrap();
     assert_eq!(none["configured"], json!(false));
