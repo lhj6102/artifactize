@@ -331,6 +331,14 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     );
     // The typed draft as owner-fields JSON, as the terminal review hands it to $EDITOR.
     let draft = json!({"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "확인했습니다"}]], "json": null});
+    // Choosing the verdict again hands the kept draft to the library, which answers with it.
+    let again = invoke(
+        &window,
+        "human_form",
+        json!({"id": id, "verdict": "GREEN", "kept": draft}),
+    )
+    .unwrap();
+    assert_eq!(again["draft"]["fields"][1][1]["value"], "확인했습니다");
     let text = invoke(&window, "human_json", json!({"id": id, "draft": draft})).unwrap();
     assert_eq!(
         serde_json::from_str::<Value>(text.as_str().unwrap()).unwrap(),

@@ -310,12 +310,33 @@ pub const OPENER: &str = if cfg!(target_os = "macos") {
 /// The environment variable naming the file a recording program appends to.
 pub const RECORD: &str = "ARTIFACTIZE_OPENER_RECORD";
 
+/// Build a program named `name` in `directory` from Rust `source`. A compiled program runs the
+/// same on every system and needs no shell.
+fn compiled_program(directory: &Path, name: &str, source: &str) -> std::path::PathBuf {
+    let file = directory.join(format!("{name}-source.rs"));
+    std::fs::write(&file, source).unwrap();
+    let program = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let output = Command::new(rustc)
+        .args(["--edition", "2024", "-o"])
+        .arg(&program)
+        .arg(&file)
+        .output()
+        .expect("rustc builds the test program");
+    assert!(
+        output.status.success(),
+        "building the test program {name} failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    program
+}
+
 /// Build a program named `name` in `directory` that appends its argument count and first
-/// argument, one per line, to the file named by `RECORD`. A compiled program needs no shell.
+/// argument, one per line, to the file named by `RECORD`.
 pub fn recording_program(directory: &Path, name: &str) -> std::path::PathBuf {
-    let source = directory.join(format!("{name}-recorder.rs"));
-    std::fs::write(
-        &source,
+    compiled_program(
+        directory,
+        name,
         r#"use std::io::Write;
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -326,21 +347,73 @@ fn main() {
 }
 "#,
     )
-    .unwrap();
-    let program = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let output = Command::new(rustc)
-        .args(["--edition", "2024", "-o"])
-        .arg(&program)
-        .arg(&source)
-        .output()
-        .expect("rustc builds the recording program");
-    assert!(
-        output.status.success(),
-        "building the recording program failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    program
+}
+
+/// A program in `directory` that prints `output` and exits with `code`.
+pub fn exiting_program(directory: &Path, code: i32, output: &str) -> String {
+    compiled_program(
+        directory,
+        "exiting",
+        &format!("fn main() {{ print!({output:?}); std::process::exit({code}); }}"),
+    )
+    .to_string_lossy()
+    .into_owned()
+}
+
+/// A program in `directory` that waits until the file named by its first argument exists, then
+/// exits 0.
+pub fn waiting_program(directory: &Path) -> String {
+    compiled_program(
+        directory,
+        "waiting",
+        r#"fn main() {
+    let file = std::env::args().nth(1).expect("the file to wait for");
+    while !std::path::Path::new(&file).exists() {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+"#,
+    )
+    .to_string_lossy()
+    .into_owned()
+}
+
+/// A program in `directory` that exits 1 while the file named by its first argument exists, and
+/// 0 once it is gone.
+pub fn fails_while_present_program(directory: &Path) -> String {
+    compiled_program(
+        directory,
+        "fails-while-present",
+        r#"fn main() {
+    let file = std::env::args().nth(1).expect("the file to look for");
+    std::process::exit(i32::from(std::path::Path::new(&file).exists()));
+}
+"#,
+    )
+    .to_string_lossy()
+    .into_owned()
+}
+
+/// Run `command` as the signed-in user `name`, whichever variable the system names the user by.
+pub fn sign_in_as<'a>(command: &'a mut Command, name: &str) -> &'a mut Command {
+    command
+        .env("USER", name)
+        .env("LOGNAME", name)
+        .env("USERNAME", name)
+}
+
+/// Wait for a spawned `child` to end within the usual patience; a child that does not is killed
+/// and the test fails naming `what`.
+pub fn finish(mut child: std::process::Child, what: &str) -> std::process::Output {
+    let deadline = std::time::Instant::now() + patience(std::time::Duration::from_secs(20));
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() > deadline {
+            child.kill().unwrap();
+            panic!("{what} did not finish");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    child.wait_with_output().unwrap()
 }
 
 /// Set a Unix permission mode, for checks of modes artifactize refuses or must tolerate.

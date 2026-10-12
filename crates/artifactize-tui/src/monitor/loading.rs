@@ -70,7 +70,8 @@ impl Monitor {
                     .and_then(|index| self.catalog.rows.get(index))
                     .and_then(|row| row.fold.clone());
                 if snapshot.origin.replaces(&self.origin) {
-                    if let Some(review) = self.detail.as_ref().and_then(|pane| pane.review.as_ref())
+                    if let Some(review) =
+                        self.detail.as_ref().and_then(|pane| pane.content.review())
                     {
                         review.cancel_single();
                     }

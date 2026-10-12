@@ -219,6 +219,16 @@ fn width(text: &str) -> usize {
 fn cap(columns: usize) -> u16 {
     u16::try_from(columns).unwrap_or(u16::MAX)
 }
+/// The Runs table's columns, in the order `run_cells` builds them: glyph, status, id, age,
+/// counts, took and workspace. Only those a narrow table drops are named.
+const STATUS: usize = 1;
+const COUNTS: usize = 4;
+const TOOK: usize = 5;
+const WORKSPACE: usize = 6;
+/// What a narrow table drops, in this order, until it fits: where the Run ran, how long it
+/// took, its counts, then the status word. The glyph (which carries the status), the id and the
+/// age identify the Run and always stay.
+const DROPPED: [usize; 4] = [WORKSPACE, TOOK, COUNTS, STATUS];
 /// Runs columns: glyph, status, id, age, counts, took and workspace.
 fn run_cells(row: &model::RunRow, workspace: bool) -> [String; 7] {
     let name = row.repo.file_name().map_or_else(
@@ -252,7 +262,7 @@ fn run_widths(rows: &[[String; 7]], available: usize) -> [usize; 7] {
             widths[column] = widths[column].max(width(cell));
         }
     }
-    for column in [6, 5, 4, 1] {
+    for column in DROPPED {
         if total(&widths) <= available {
             break;
         }
@@ -399,9 +409,9 @@ impl Monitor {
                 "↑↓ Run · → Artifacts · ← scope · ! attention · ? keys · q quit"
             }
             Pane::Detail => match &self.detail {
-                Some(pane) => match &pane.review {
+                Some(pane) => match pane.content.review() {
                     Some(review) => return review.detail_hints(),
-                    None if pane.live.is_some() && !pane.show_details => {
+                    None if pane.content.live().is_some() && !pane.show_details => {
                         "↑↓ PgUp/PgDn scroll · Home/End · Space tools · d details · Esc back"
                     }
                     None if pane.detail.field("Waits for").is_some() => {
@@ -710,7 +720,7 @@ impl Monitor {
         self.hits.detail = area;
         let detail = pane.detail.clone();
         // A Human review is the shared component, the same one the standalone review draws.
-        if let Some(review) = &mut pane.review {
+        if let Some(review) = pane.content.review_mut() {
             let hits = review.draw_detail(frame, area, true);
             self.hits.areas = [hits.tools, hits.fields];
             self.hits.buttons = hits
@@ -732,7 +742,7 @@ impl Monitor {
         frame.render_widget(outer, area);
         let [content, buttons] =
             Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(inner);
-        if let Some(live) = &mut pane.live {
+        if let Some(live) = pane.content.live_mut() {
             let [transcript, footer] =
                 Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(content);
             self.hits.areas = [Rect::default(), transcript];

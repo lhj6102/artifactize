@@ -16,6 +16,10 @@ export class MonitorState {
   runView = $state<"tree" | "graph">("tree");
   /** The Artifact the graph is zoomed into. */
   zoomed = $state<string | null>(null);
+  /** The Run the zoom belongs to; another Run's graph starts zoomed out. */
+  zoomRun: string | null = null;
+  /** The Runs pane took its first focus: only the first accepted snapshot moves it. */
+  started = false;
   /** The Run tree's folds and selection. */
   readonly tree = new Tree();
   /** Human reviews by request: leaving and reopening a request keeps its drafts. */

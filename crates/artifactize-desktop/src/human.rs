@@ -350,17 +350,19 @@ pub async fn human_open(
     Ok(show(&app, &request))
 }
 
-/// A fresh form for `verdict`, from the owner schema recorded with request `id`.
+/// The form for `verdict`, from the owner schema recorded with request `id`, holding the values
+/// of `kept` (the earlier draft of this verdict) when the schema still takes them.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_form(
     app: tauri::State<'_, App>,
     id: RequestKey,
     verdict: Verdict,
+    kept: Option<Draft>,
 ) -> Result<FormView, Failure> {
     let id = id.into_inner();
     guard(&app, &id, review::review_refusal).await?;
-    form::template(&opened(&app, &id)?.request, verdict)
+    form::template(&opened(&app, &id)?.request, verdict, kept)
 }
 
 async fn run_job(app: &App, job: JobId, work: Job) -> Outcome {

@@ -23,8 +23,12 @@ function backend(stage: "claim" | "review", submit?: (args: Record<string, unkno
       case "human_claim":
         current = "review";
         return { notice: { text: "Claimed. Fill GREEN or RED fields, then Submit.", error: false }, view: humanView("review") };
-      case "human_form":
-        return (args as { verdict: string }).verdict === "RED" ? redForm : greenForm;
+      case "human_form": {
+        // The library hands a kept draft back when the schema still takes it.
+        const asked = args as { verdict: string; kept: object | null };
+        const form = asked.verdict === "RED" ? redForm : greenForm;
+        return asked.kept ? { ...form, draft: asked.kept } : form;
+      }
       case "human_submit":
         return submit?.(args as Record<string, unknown>);
       case "human_json":

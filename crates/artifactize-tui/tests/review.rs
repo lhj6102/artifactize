@@ -110,8 +110,8 @@ impl Fixture {
 
     fn command(&self) -> Command {
         let mut command = Command::new(support::os::cli());
+        support::os::sign_in_as(&mut command, "alice");
         command
-            .env("USER", "alice")
             .arg("--repo")
             .arg(&self.repo)
             .arg("--state-dir")
@@ -176,16 +176,8 @@ async fn press(review: &mut Review, key: impl Into<KeyEvent>) -> Action {
     }
 }
 
-fn finish(mut child: Child) -> (Option<i32>, Value) {
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
-    while child.try_wait().unwrap().is_none() {
-        if Instant::now() > deadline {
-            child.kill().unwrap();
-            panic!("verify did not finish");
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    let output = child.wait_with_output().unwrap();
+fn finish(child: Child) -> (Option<i32>, Value) {
+    let output = support::os::finish(child, "verify");
     (
         output.status.code(),
         serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {

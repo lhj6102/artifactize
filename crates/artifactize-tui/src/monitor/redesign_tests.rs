@@ -616,14 +616,14 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     monitor.open_detail().await;
     let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
     review.control(review::Control::Red);
-    monitor.detail.as_mut().unwrap().review = Some(review);
+    monitor.detail.as_mut().unwrap().content = Content::Review(Box::new(review));
     monitor.paste("qrg한글");
     let draft = |monitor: &Monitor| match monitor
         .detail
         .as_ref()
         .unwrap()
-        .review
-        .as_ref()
+        .content
+        .review()
         .unwrap()
         .mode()
     {
@@ -637,8 +637,8 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
             .detail
             .as_ref()
             .unwrap()
-            .review
-            .as_ref()
+            .content
+            .review()
             .unwrap()
             .area(),
         review::Area::Tools
@@ -651,8 +651,8 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
             .detail
             .as_ref()
             .unwrap()
-            .review
-            .as_ref()
+            .content
+            .review()
             .unwrap()
             .area(),
         review::Area::Fields
@@ -725,7 +725,7 @@ async fn human_modal_routes_focus_paste_buttons_and_ctrl_c_without_losing_drafts
     monitor.open_detail().await;
     let mut review = crate::review::tests::opened(Some("alice"), crate::review::tests::demo());
     review.control(review::Control::Red);
-    monitor.detail.as_mut().unwrap().review = Some(review);
+    monitor.detail.as_mut().unwrap().content = Content::Review(Box::new(review));
     assert_eq!(monitor.focus, Pane::Detail);
     monitor.key(KeyEvent::from(KeyCode::F(2)));
     monitor.paste(" off");
@@ -751,7 +751,7 @@ async fn human_detail(review: review::Review) -> Monitor {
             .unwrap(),
     ]);
     monitor.open_detail().await;
-    monitor.detail.as_mut().unwrap().review = Some(review);
+    monitor.detail.as_mut().unwrap().content = Content::Review(Box::new(review));
     monitor.notice = None;
     monitor
 }
@@ -810,8 +810,8 @@ async fn human_detail_keys_follow_the_shared_protocol() {
             .detail
             .as_ref()
             .unwrap()
-            .review
-            .as_ref()
+            .content
+            .review()
             .unwrap()
             .mode()
             .clone()
@@ -983,13 +983,13 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
     render(&mut monitor, 160, 30);
     let open = |monitor: &mut Monitor| {
         // Without USER in the environment, open the same request under the fixture reviewer.
-        if monitor.detail.as_ref().unwrap().review.is_none() {
+        if monitor.detail.as_ref().unwrap().content.review().is_none() {
             let (_, requests) = monitor.run.as_ref().unwrap();
             let view = requests[0].clone();
             let mut review =
                 review::Review::new(state.clone(), None, reviewer.clone(), Some(id.clone()));
             review.load_single(view);
-            monitor.detail.as_mut().unwrap().review = Some(review);
+            monitor.detail.as_mut().unwrap().content = Content::Review(Box::new(review));
         }
     };
     monitor.open_detail().await;

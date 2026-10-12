@@ -83,7 +83,7 @@ async fn watch(
                 if let Some(review) = monitor
                     .detail
                     .as_ref()
-                    .and_then(|pane| pane.review.as_ref())
+                    .and_then(|pane| pane.content.review())
                 {
                     review.cancel_single();
                 }
@@ -105,7 +105,7 @@ async fn watch(
                 }
             }
             Action::Review(review::Action::Edit(_)) => {
-                return Err("Monitor never invokes an external editor.".into());
+                unreachable!("the embedded review hands its JSON to the form, never to an editor")
             }
             _ => {}
         }

@@ -260,10 +260,9 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
             summary: "RUNNING 3s · agent openai m · ← lib".into(),
             fields: vec![("Status", "RUNNING — executing".into())],
         },
-        review: None,
         focus: DetailArea::Evidence,
         scroll: [0; 2],
-        live: Some(live),
+        content: Content::Session(Box::new(live)),
         show_details: false,
         technical: false,
         pending: false,
@@ -271,7 +270,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     monitor.focus = Pane::Detail;
     let mut terminal = Terminal::new(TestBackend::new(80, 30)).unwrap();
     terminal.draw(|frame| monitor.draw(frame)).unwrap();
-    complete(monitor.detail.as_mut().unwrap().live.as_mut().unwrap());
+    complete(monitor.detail.as_mut().unwrap().content.live_mut().unwrap());
     terminal.draw(|frame| monitor.draw(frame)).unwrap();
     let evidence = monitor.hits.areas[1];
     let mouse = |kind| MouseEvent {
@@ -284,8 +283,8 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         .detail
         .as_ref()
         .unwrap()
-        .live
-        .as_ref()
+        .content
+        .live()
         .unwrap()
         .scroll
         .top;
@@ -295,8 +294,8 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
             .detail
             .as_ref()
             .unwrap()
-            .live
-            .as_ref()
+            .content
+            .live()
             .unwrap()
             .scroll
             .top,
@@ -308,8 +307,8 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
             .detail
             .as_ref()
             .unwrap()
-            .live
-            .as_ref()
+            .content
+            .live()
             .unwrap()
             .scroll
             .mode,
@@ -321,8 +320,8 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
             .detail
             .as_ref()
             .unwrap()
-            .live
-            .as_ref()
+            .content
+            .live()
             .unwrap()
             .scroll
             .top,
@@ -345,8 +344,8 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
             .detail
             .as_ref()
             .unwrap()
-            .live
-            .as_ref()
+            .content
+            .live()
             .unwrap()
             .scroll
             .mode,
@@ -357,8 +356,8 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         .detail
         .as_ref()
         .unwrap()
-        .live
-        .as_ref()
+        .content
+        .live()
         .unwrap()
         .scroll
         .top;
@@ -368,15 +367,15 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
             .detail
             .as_ref()
             .unwrap()
-            .live
-            .as_ref()
+            .content
+            .live()
             .unwrap()
             .scroll
             .top,
         top
     );
     monitor.key(KeyEvent::from(KeyCode::PageUp));
-    let live = monitor.detail.as_ref().unwrap().live.as_ref().unwrap();
+    let live = monitor.detail.as_ref().unwrap().content.live().unwrap();
     assert_eq!(live.scroll.top, top - live.scroll.height);
     monitor.key(KeyEvent::from(KeyCode::Char('d')));
     assert!(monitor.detail.as_ref().unwrap().show_details);
@@ -384,8 +383,8 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
         .detail
         .as_ref()
         .unwrap()
-        .live
-        .as_ref()
+        .content
+        .live()
         .unwrap()
         .scroll
         .top;
@@ -395,8 +394,8 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
             .detail
             .as_ref()
             .unwrap()
-            .live
-            .as_ref()
+            .content
+            .live()
             .unwrap()
             .scroll
             .top,
@@ -413,7 +412,7 @@ fn keyboard_mouse_page_buttons_capture_and_summary_keep_same_rules() {
     // The one-line outcome stays in the title; only a Human review advertises Ctrl-S.
     assert!(text.contains("app/check · Title · RUNNING 3s · agent openai m · ← lib"));
     assert!(!text.contains("Ctrl-S") && text.contains("d details · Esc back"));
-    let live = monitor.detail.as_mut().unwrap().live.as_mut().unwrap();
+    let live = monitor.detail.as_mut().unwrap().content.live_mut().unwrap();
     live.scroll.total = 100000;
     live.scroll.top = live.scroll.bottom();
     live.scroll.mode = Mode::Following;

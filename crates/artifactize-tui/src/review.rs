@@ -1,6 +1,7 @@
 //! Human review TUI: claim, run Human tools and submit, in-process like `request`.
 
 mod detail;
+mod editor;
 mod embedded;
 #[cfg(test)]
 mod embedded_tests;
@@ -10,28 +11,26 @@ mod list;
 #[cfg(test)]
 mod list_tests;
 mod record;
+mod terminal;
 #[cfg(test)]
 pub(crate) mod tests;
 mod view;
 
 pub use artifactize_core::review::*;
 pub(crate) use detail::{Handled, Hits};
+#[cfg(test)]
+use editor::edit;
 pub(crate) use embedded::Control;
+pub use terminal::run;
 
 use crate::config::ToolName;
 use std::{
     future::Future,
-    io::Read,
     path::PathBuf,
-    pin::Pin,
     time::{Duration, Instant},
 };
 
-use crossterm::event::{
-    Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
-    MouseEventKind,
-};
-use futures_util::StreamExt;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{layout::Position, widgets::TableState};
 use serde_json::Value;
 use time::OffsetDateTime;
@@ -780,180 +779,5 @@ impl Review {
             }
         }
         Action::None
-    }
-}
-
-/// Edit text in `$VISUAL`, then `$EDITOR` (default `vi`, Notepad on Windows); bounded
-/// like `--fields-file`.
-async fn edit(text: String) -> Result<String, String> {
-    let file =
-        crate::platform::private_temp_file("artifactize-fields-").map_err(|e| e.to_string())?;
-    std::fs::write(file.path(), text).map_err(|e| e.to_string())?;
-    crate::platform::run_editor(&crate::platform::selected_editor(), file.path())
-        .await
-        .map_err(|e| format!("cannot run the editor: {e}"))?;
-    let mut bytes = Vec::new();
-    crate::platform::open_regular(file.path())
-        .and_then(|file| {
-            file.take(crate::human::FIELDS_READ_BYTES)
-                .read_to_end(&mut bytes)
-        })
-        .map_err(|e| e.to_string())?;
-    if bytes.len() > crate::human::MAX_RESULT_BYTES {
-        return Err(format!(
-            "Human fields exceed {} bytes.",
-            crate::human::MAX_RESULT_BYTES
-        ));
-    }
-    String::from_utf8(bytes).map_err(|e| e.to_string())
-}
-
-/// Run the review UI until q, a signal, or a submission that leaves nothing waiting.
-pub async fn run(
-    state: PathBuf,
-    repo: Option<PathBuf>,
-    reviewer: crate::types::ReviewerId,
-    open: Option<RequestId>,
-    cancellation: CancellationToken,
-) -> Result<(), String> {
-    // ratatui's panic hook restores the terminal before a panic message is printed.
-    let mut terminal = ratatui::try_init().map_err(|e| {
-        let _ = crossterm::terminal::disable_raw_mode();
-        format!("cannot start the review: {e}")
-    })?;
-    // Bracketed paste, like monitor: a pasted block reaches a field whole, never as keys.
-    let guard = crate::monitor::InputGuard;
-    let result = async {
-        let review = Review::new(state, repo, reviewer, open);
-        crate::monitor::input::protocols(review.mouse_capture, true)?;
-        drive(&mut terminal, review, cancellation).await
-    }
-    .await;
-    drop(guard);
-    drop(terminal);
-    ratatui::try_restore().map_err(|e| e.to_string())?;
-    result
-}
-
-async fn drive(
-    terminal: &mut ratatui::DefaultTerminal,
-    mut review: Review,
-    cancellation: CancellationToken,
-) -> Result<(), String> {
-    let mut changes = crate::changes::Subscription::new(&review.state).await;
-    let mut events = EventStream::new();
-    let mut tick = tokio::time::interval(REFRESH);
-    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut spin = tokio::time::interval(SPIN);
-    let mut pending: Option<Pin<Box<dyn Future<Output = Outcome>>>> = None;
-    let mut action = Action::Refresh;
-    // A read-only Agent Detail reads its session with the monitor's bounded reader jobs.
-    let mut session_job: Option<
-        tokio::task::JoinHandle<(
-            crate::monitor::session::Job,
-            crate::agent::session::live::Window,
-        )>,
-    > = None;
-    let mut session_probe = tokio::time::interval(crate::monitor::SESSION_PROBE);
-    session_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    loop {
-        loop {
-            action = match action {
-                Action::None => break,
-                Action::Quit => return Ok(()),
-                Action::Refresh => {
-                    tick.reset();
-                    review.refresh().await
-                }
-                Action::Start(job) => {
-                    pending = Some(Box::pin(review.start(job)));
-                    Action::None
-                }
-                Action::Edit(text) => {
-                    // The editor owns the terminal; no event reader may compete for its input.
-                    drop(events);
-                    let edited = crate::monitor::suspend(terminal, edit(text)).await;
-                    crate::monitor::input::protocols(review.mouse_capture, true)?;
-                    events = EventStream::new();
-                    review.edited(edited?)
-                }
-                Action::Capture(capture) => {
-                    crate::monitor::input::protocols(capture, true)?;
-                    Action::None
-                }
-            };
-        }
-        terminal
-            .draw(|frame| review.draw(frame))
-            .map_err(|e| e.to_string())?;
-        if session_job.is_none()
-            && let Some(job) = review
-                .record_live()
-                .and_then(crate::monitor::session::Live::job)
-        {
-            session_job = Some(tokio::task::spawn_blocking(move || {
-                let mut job = job;
-                let window =
-                    job.reader
-                        .step_expanded(job.width, job.height, job.position, &job.expanded);
-                (job, window)
-            }));
-        }
-        action = tokio::select! {
-            _ = cancellation.cancelled() => Action::Quit,
-            outcome = async { session_job.as_mut().expect("active session job").await },
-                if session_job.is_some() =>
-            {
-                session_job = None;
-                let (job, window) = crate::task::joined(outcome)
-                    .map_err(|error| format!("Session reader job failed: {error}"))?;
-                if let Some(live) = review.record_live()
-                    && live.serial == job.serial
-                    && live.source.reference == job.reader.source.reference
-                {
-                    live.finish(job, window);
-                }
-                Action::None
-            }
-            _ = session_probe.tick() => {
-                if let Some(live) = review.record_live() {
-                    live.invalidate();
-                }
-                Action::None
-            }
-            outcome = async { pending.as_mut().expect("pending job").await },
-                if pending.is_some() =>
-            {
-                pending = None;
-                if matches!(outcome, Outcome::Submitted { .. }) {
-                    // Remote and cache warnings may have reached stderr; repaint every cell.
-                    crate::monitor::repaint(terminal)?;
-                }
-                review.finish(outcome)
-            }
-            _ = spin.tick(), if review.busy() => Action::None,
-            _ = tick.tick() => Action::None,
-            change = changes.next() => match change {
-                crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => {
-                    Action::Refresh
-                }
-                crate::changes::Change::SessionInvalidated(id) => {
-                    if let Some(live) = review.record_live()
-                        && live.source.reference.session_id == id
-                    {
-                        live.invalidate();
-                    }
-                    Action::None
-                }
-            },
-            event = events.next() => match event {
-                Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => review.key(key),
-                Some(Ok(Event::Mouse(mouse))) => review.mouse(mouse),
-                Some(Ok(Event::Paste(text))) => review.paste(&text),
-                Some(Ok(_)) => Action::None,
-                Some(Err(error)) => return Err(error.to_string()),
-                None => Action::Quit,
-            },
-        };
     }
 }

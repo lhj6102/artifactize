@@ -92,8 +92,17 @@ fn new(request: &Request, verdict: Verdict) -> Result<Form, Failure> {
     Ok(Form::new(verdict.into(), schema.as_ref()))
 }
 
-pub fn template(request: &Request, verdict: Verdict) -> Result<FormView, Failure> {
-    let form = new(request, verdict)?;
+/// The form of `verdict` for the request, with the values of `kept` (an earlier draft of this
+/// verdict) when the recorded schema still takes them.
+pub fn template(
+    request: &Request,
+    verdict: Verdict,
+    kept: Option<Draft>,
+) -> Result<FormView, Failure> {
+    let form = match kept {
+        Some(kept) if kept.verdict == verdict => filled(request, kept)?,
+        _ => new(request, verdict)?,
+    };
     let fields = form
         .fields
         .iter()

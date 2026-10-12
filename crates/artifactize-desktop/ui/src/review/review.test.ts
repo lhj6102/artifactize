@@ -26,7 +26,9 @@ function backend() {
     if (cmd === "human_form") {
       const verdict = payload.verdict as string;
       await new Promise<void>((answer) => pending.push({ verdict, answer }));
-      return verdict === "RED" ? redForm : greenForm;
+      // The library hands a kept draft back when the schema still takes it.
+      const form = verdict === "RED" ? redForm : greenForm;
+      return payload.kept ? { ...form, draft: payload.kept } : form;
     }
     return null;
   });
@@ -88,7 +90,10 @@ describe("Review", () => {
     pending[1].answer();
     await red;
     expect(review.form?.json).toBeNull();
-    await review.choose("GREEN");
+    const again = review.choose("GREEN");
+    await settle();
+    pending[2].answer();
+    await again;
     expect(review.form?.json).toContain('"approved": true');
   });
 

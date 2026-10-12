@@ -27,7 +27,6 @@
   const run = $derived(view?.run ?? null);
   const selectedNode = $derived(tree.selected.at(-1) ?? null);
 
-  let graphRun: string | null = null;
   /** What a snapshot changes here, as it is accepted. */
   function accept(shown: BrowseView) {
     const at = shown.run;
@@ -42,8 +41,8 @@
     if (m.opened !== null && m.opened !== at?.id) m.opened = null;
     // Another Run's graph starts zoomed out.
     const id = at?.id ?? null;
-    if (id !== graphRun) {
-      graphRun = id;
+    if (id !== m.zoomRun) {
+      m.zoomRun = id;
       m.zoomed = null;
     }
   }
@@ -104,11 +103,10 @@
     }
   }
 
-  let started = false;
   /** The Runs pane has focus first, as in the terminal monitor. */
   const begin: Attachment = () => {
-    if (active && !started && view?.refreshed) {
-      started = true;
+    if (active && !m.started && view?.refreshed) {
+      m.started = true;
       void move(m.focus);
     }
   };

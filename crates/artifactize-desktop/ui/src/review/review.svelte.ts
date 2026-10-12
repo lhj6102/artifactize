@@ -100,7 +100,9 @@ export class Review {
   busy = $state<Busy | null>(null);
   notice = $state<Notice | null>(null);
   form = $state<FormDraft | null>(null);
-  #drafts = new SvelteMap<Verdict, FormDraft>();
+  /** Each verdict's draft as the library last answered it; choosing the verdict again hands it
+   * back, and the library says whether the recorded schema still takes it. */
+  #drafts = new SvelteMap<Verdict, Draft>();
   /** Counts verdict choices: a form that arrives after a newer choice is not shown. */
   #choice = 0;
 
@@ -182,26 +184,24 @@ export class Review {
     this.area = "fields";
     const choice = ++this.#choice;
     if (this.form?.verdict === verdict) return;
-    let draft = this.#drafts.get(verdict);
-    if (!draft) {
-      try {
-        draft = new FormDraft(this.id, await call(commands.humanForm(this.id, verdict)));
-      } catch (error) {
-        if (choice === this.#choice) this.notice = { text: message(error), error: true };
-        return;
-      }
-      // Another verdict was chosen, or editing stopped, while this form was on its way.
-      if (choice !== this.#choice) return;
+    let draft: FormDraft;
+    try {
+      draft = new FormDraft(this.id, await call(commands.humanForm(this.id, verdict, this.#drafts.get(verdict) ?? null)));
+    } catch (error) {
+      if (choice === this.#choice) this.notice = { text: message(error), error: true };
+      return;
     }
+    // Another verdict was chosen, or editing stopped, while this form was on its way.
+    if (choice !== this.#choice) return;
     this.#drafts.delete(verdict);
-    if (this.form) this.#drafts.set(this.form.verdict, this.form);
+    if (this.form) this.#drafts.set(this.form.verdict, this.form.draft());
     this.form = draft;
   }
 
   /** Leave the form with its draft kept; the same verdict reopens it. */
   stopEditing(): void {
     this.#choice += 1;
-    if (this.form) this.#drafts.set(this.form.verdict, this.form);
+    if (this.form) this.#drafts.set(this.form.verdict, this.form.draft());
     this.form = null;
   }
 

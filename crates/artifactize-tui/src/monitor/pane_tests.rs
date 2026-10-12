@@ -104,13 +104,13 @@ async fn detail_steps_back_and_human_form_keeps_json_cursor_editing() {
     );
     review.load_single(view);
     review.control(review::Control::Red);
-    monitor.detail.as_mut().unwrap().review = Some(review);
+    monitor.detail.as_mut().unwrap().content = Content::Review(Box::new(review));
     let cursor = |monitor: &Monitor| match monitor
         .detail
         .as_ref()
         .unwrap()
-        .review
-        .as_ref()
+        .content
+        .review()
         .unwrap()
         .mode()
     {

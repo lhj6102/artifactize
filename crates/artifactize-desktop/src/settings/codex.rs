@@ -299,8 +299,8 @@ pub async fn codex_login_wait(
 
 /// A sign-in task that did not return: cancelled is reported, a panic is a bug and goes on.
 fn ended_badly(error: tokio::task::JoinError) -> Failure {
-    match error.try_into_panic() {
-        Ok(panic) => std::panic::resume_unwind(panic),
+    match artifactize_core::task::joined::<()>(Err(error)) {
+        Ok(()) => unreachable!("an error stays an error"),
         Err(_) => Failure::Account(CANCELLED.into()),
     }
 }

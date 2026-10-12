@@ -24,6 +24,8 @@ struct Fixture {
     beta: PathBuf,
     state: PathBuf,
     release: PathBuf,
+    /// The program the RED eval runs: it prints `finding` and exits 7.
+    finding: String,
 }
 
 fn declare(path: &Path, declaration: Value) {
@@ -52,6 +54,7 @@ impl Fixture {
         let alpha = root.path().join("alpha");
         let beta = root.path().join("beta");
         let release = root.path().join("release");
+        let finding = support::os::exiting_program(root.path(), 7, "finding\n");
         declare(
             &alpha.join("input"),
             json!({"name":"input","basis":true,"fingerprint":{}}),
@@ -80,7 +83,7 @@ impl Fixture {
                 "name":"red",
                 "fingerprint":{"script":{"command":support::os::echo_program(),"args":["red-v1"]}},
                 "evals":[
-                    eval("check", runtime(&support::os::shell(), &["-c", "echo finding; exit 7"]), "Check {input}."),
+                    eval("check", runtime(&finding, &[]), "Check {input}."),
                 ],
             }),
         );
@@ -88,13 +91,10 @@ impl Fixture {
             &alpha.join("red/part"),
             json!({"name":"part","basis":true,"fingerprint":{}}),
         );
-        let wait = format!(
-            "while [ ! -e '{}' ]; do sleep 0.05; done",
-            release.display()
-        );
+        let waiting = support::os::waiting_program(root.path());
         declare(
             &beta.join("slow"),
-            json!({"name":"slow","evals":[eval("wait", runtime(&support::os::shell(), &["-c", &wait]), "Wait.")]}),
+            json!({"name":"slow","evals":[eval("wait", runtime(&waiting, &[&release.to_string_lossy()]), "Wait.")]}),
         );
         declare(
             &beta.join("human"),
@@ -106,6 +106,7 @@ impl Fixture {
             alpha,
             beta,
             release,
+            finding,
         }
     }
 
@@ -172,16 +173,8 @@ fn press(monitor: &mut Monitor, code: KeyCode) -> monitor::Action {
     monitor.key(KeyEvent::from(code))
 }
 
-fn finish(mut child: Child) -> std::process::Output {
-    let deadline = Instant::now() + support::os::patience(Duration::from_secs(20));
-    while child.try_wait().unwrap().is_none() {
-        if Instant::now() > deadline {
-            child.kill().unwrap();
-            panic!("verify did not finish");
-        }
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    child.wait_with_output().unwrap()
+fn finish(child: Child) -> std::process::Output {
+    support::os::finish(child, "verify")
 }
 
 #[tokio::test]
@@ -472,8 +465,8 @@ async fn saved_tree_details_without_repository_or_writes() {
     assert_eq!(result["exitCode"], 7);
     assert_eq!(result["stdout"], "finding\n");
     assert_eq!(
-        red.field("Profile"),
-        Some(format!("runtime {} -c echo finding; exit 7", support::os::shell()).as_str())
+        red.field("Profile").map(str::trim_end),
+        Some(format!("runtime {}", fixture.finding).as_str())
     );
     assert!(
         red.field("Usage")
@@ -583,12 +576,12 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     let flag = root.path().join("fail");
-    let check = format!("test ! -e '{}'", flag.display());
+    let check = support::os::fails_while_present_program(root.path());
     let fingerprint = |name: &str| json!({"script":{"command":support::os::echo_program(),"args":[format!("{name}-v1")]}});
     declare(
         &repo.join("a"),
         json!({"name":"a","fingerprint":fingerprint("a"),
-            "evals":[eval("x", runtime(&support::os::shell(), &["-c", &check]), "Check.")]}),
+            "evals":[eval("x", runtime(&check, &[&flag.to_string_lossy()]), "Check.")]}),
     );
     declare(
         &repo.join("b"),

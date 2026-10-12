@@ -80,6 +80,54 @@ pub enum DetailArea {
     Evidence,
 }
 
+/// What an opened Detail holds besides its sections: a Human request is a review, an Agent
+/// request with a saved conversation is a session, anything else only its evidence.
+enum Content {
+    Evidence,
+    Review(Box<Review>),
+    Session(Box<session::Live>),
+}
+
+impl Content {
+    fn review(&self) -> Option<&Review> {
+        match self {
+            Self::Review(review) => Some(review.as_ref()),
+            _ => None,
+        }
+    }
+    fn review_mut(&mut self) -> Option<&mut Review> {
+        match self {
+            Self::Review(review) => Some(review.as_mut()),
+            _ => None,
+        }
+    }
+    fn live(&self) -> Option<&session::Live> {
+        match self {
+            Self::Session(live) => Some(live.as_ref()),
+            _ => None,
+        }
+    }
+    fn live_mut(&mut self) -> Option<&mut session::Live> {
+        match self {
+            Self::Session(live) => Some(live.as_mut()),
+            _ => None,
+        }
+    }
+    /// The conversation shown, or none: a session that cannot be read leaves only evidence.
+    fn set_live(&mut self, live: Option<session::Live>) {
+        *self = live.map_or(Self::Evidence, |live| Self::Session(Box::new(live)));
+    }
+    fn take_review(&mut self) -> Option<Review> {
+        match std::mem::replace(self, Self::Evidence) {
+            Self::Review(review) => Some(*review),
+            other => {
+                *self = other;
+                None
+            }
+        }
+    }
+}
+
 /// The opened Detail of one tree node: sections, evidence, an Agent session or a Human review.
 pub struct DetailPane {
     run_id: RunId,
@@ -89,10 +137,10 @@ pub struct DetailPane {
     evidence_stamp: Option<evidence::EvidenceStamp>,
     /// Snapshot remains attached to this Detail if the selected Run is pruned or shifts pages.
     detail: Detail,
-    review: Option<Review>,
+    /// What the Detail shows beyond its sections.
+    content: Content,
     focus: DetailArea,
     scroll: [u16; 2],
-    live: Option<session::Live>,
     show_details: bool,
     /// The folded Technical section is shown.
     technical: bool,
@@ -218,7 +266,7 @@ impl Monitor {
                     .is_none_or(|id| requests.iter().any(|view| &view.request.id == id))
             {
                 pane.detail = model::detail(run, requests, &pane.target, OffsetDateTime::now_utc());
-                if pane.review.is_none()
+                if pane.content.review().is_none()
                     && let Some(view) = pane
                         .request
                         .as_ref()
@@ -226,7 +274,8 @@ impl Monitor {
                 {
                     let stamp = evidence::EvidenceStamp::new(view);
                     if pane.evidence_stamp.as_ref() != Some(&stamp)
-                        || pane.live.is_none() && view.request.profile.kind() == ProfileKind::Agent
+                        || pane.content.live().is_none()
+                            && view.request.profile.kind() == ProfileKind::Agent
                     {
                         Self::load_evidence(
                             &self.state,
@@ -240,7 +289,7 @@ impl Monitor {
                     }
                 }
             }
-            if changed && let Some(review) = &mut pane.review {
+            if changed && let Some(review) = pane.content.review_mut() {
                 let _ = review.refresh().await;
             }
         }
@@ -355,16 +404,16 @@ impl Monitor {
             request: view.as_ref().map(|view| view.request.id.clone()),
             evidence: evidence::Evidence::default(),
             evidence_stamp: view.as_ref().map(evidence::EvidenceStamp::new),
-            review: None,
             // Sections first; an Agent session moves focus to its transcript.
             focus: DetailArea::Summary,
             scroll: [0; 2],
             // The peek's session keeps its reader and position.
-            live: self
+            content: self
                 .peek
                 .take()
                 .filter(|peek| pane_request(&view) == Some(&peek.request))
-                .and_then(|peek| peek.live),
+                .and_then(|peek| peek.live)
+                .map_or(Content::Evidence, |live| Content::Session(Box::new(live))),
             show_details: false,
             technical: false,
             pending: false,
@@ -391,7 +440,7 @@ impl Monitor {
                             pane.request = Some(view.request.id.clone());
                             review.load_single(view);
                             review.resolve_commands().await;
-                            pane.review = Some(review);
+                            pane.content = Content::Review(Box::new(review));
                         }
                         Err(error) => self.notice = Some(error),
                     },
@@ -426,26 +475,30 @@ impl Monitor {
         pane.evidence.title = "Agent session".into();
         match live::resolve_cached(state, view, identity).await {
             Ok(Resolution::Local(source)) => {
-                let refreshed = pane.live.as_mut().is_some_and(|live| live.refresh(&source));
+                let refreshed = pane
+                    .content
+                    .live_mut()
+                    .is_some_and(|live| live.refresh(&source));
                 if !refreshed {
-                    pane.live = Some(session::Live::new(serial, source));
+                    pane.content
+                        .set_live(Some(session::Live::new(serial, source)));
                 }
                 pane.evidence.text = "Loading session…".into();
             }
             Ok(Resolution::Unavailable(text)) => {
-                pane.live = None;
+                pane.content.set_live(None);
                 pane.evidence.text = text;
             }
             Err(error) => {
-                pane.live = None;
+                pane.content.set_live(None);
                 pane.evidence.text = format!("Conversation unavailable: {error}");
             }
         }
     }
     /// Close the Detail and step back to the tree; Human drafts survive for the next open.
     fn leave_detail(&mut self) {
-        if let Some(pane) = self.detail.take()
-            && let (Some(id), Some(review)) = (pane.request, pane.review)
+        if let Some(mut pane) = self.detail.take()
+            && let (Some(id), Some(review)) = (pane.request, pane.content.take_review())
         {
             self.reviews.insert(id, review);
         }
@@ -515,18 +568,20 @@ impl Monitor {
     /// The Agent session the driver reads for: the open Detail's, or else the peek's.
     fn live_mut(&mut self) -> Option<&mut session::Live> {
         match &mut self.detail {
-            Some(pane) => pane.live.as_mut(),
+            Some(pane) => pane.content.live_mut(),
             None => self.peek.as_mut().and_then(|peek| peek.live.as_mut()),
         }
     }
     fn review_mut(&mut self) -> Option<&mut Review> {
-        self.detail.as_mut().and_then(|pane| pane.review.as_mut())
+        self.detail
+            .as_mut()
+            .and_then(|pane| pane.content.review_mut())
     }
     /// A Human review that is working or editing keeps focus in Detail.
     fn locked(&self) -> bool {
         self.detail
             .as_ref()
-            .and_then(|pane| pane.review.as_ref())
+            .and_then(|pane| pane.content.review())
             .is_some_and(owns_keys)
     }
     /// Select the next ERROR, RED or waiting Human eval after the selection, wrapping around.
@@ -739,7 +794,7 @@ impl Monitor {
         let Some(pane) = &mut self.detail else {
             return Action::None;
         };
-        if let Some(review) = &mut pane.review {
+        if let Some(review) = pane.content.review_mut() {
             match review.key_detail(key) {
                 review::Handled::Action(action) => return Action::Review(action),
                 review::Handled::Back => {
@@ -786,17 +841,17 @@ impl Monitor {
             return Action::None;
         };
         match key.code {
-            KeyCode::Char('t') if pane.live.is_none() || pane.show_details => {
+            KeyCode::Char('t') if pane.content.live().is_none() || pane.show_details => {
                 pane.technical = !pane.technical;
                 return Action::None;
             }
-            KeyCode::Char('w') if pane.live.is_none() || pane.show_details => {
+            KeyCode::Char('w') if pane.content.live().is_none() || pane.show_details => {
                 pane.pending = !pane.pending;
                 return Action::None;
             }
             _ => {}
         }
-        if pane.live.is_some() && key.code == KeyCode::Char('d') {
+        if pane.content.live().is_some() && key.code == KeyCode::Char('d') {
             pane.show_details = !pane.show_details;
             pane.focus = if pane.show_details {
                 DetailArea::Summary
@@ -805,11 +860,11 @@ impl Monitor {
             };
             return Action::None;
         }
-        if pane.live.is_some() && !pane.show_details {
+        if pane.content.live().is_some() && !pane.show_details {
             pane.focus = DetailArea::Evidence;
         }
         if pane.focus == DetailArea::Evidence
-            && let Some(live) = &mut pane.live
+            && let Some(live) = pane.content.live_mut()
         {
             use crate::agent::session::document::Move;
             if matches!(key.code, KeyCode::Enter | KeyCode::Char(' ')) {

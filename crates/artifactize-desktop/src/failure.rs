@@ -2,13 +2,11 @@
 use serde::Serialize;
 use specta::Type;
 
-/// The result of a joined task. A task that panicked has a bug: the panic goes on in the
-/// caller, as if the work had run there. A cancelled task is the one failure to report.
+/// The result of a joined task; the core's policy decides what a panic is, and a cancelled
+/// task is the one failure to report.
 pub(crate) fn joined<T>(ended: Result<T, tokio::task::JoinError>) -> Result<T, Failure> {
-    ended.map_err(|error| match error.try_into_panic() {
-        Ok(panic) => std::panic::resume_unwind(panic),
-        Err(error) => Failure::Read(format!("The work was cancelled: {error}")),
-    })
+    artifactize_core::task::joined(ended)
+        .map_err(|error| Failure::Read(format!("The work was cancelled: {error}")))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Type, thiserror::Error)]

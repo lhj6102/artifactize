@@ -234,7 +234,7 @@ impl Monitor {
             {
                 return match button {
                     Button::Close => {
-                        if let Some(review) = &mut pane.review
+                        if let Some(review) = pane.content.review_mut()
                             && review.busy()
                         {
                             return Action::Review(review.control(Control::Cancel));
@@ -252,7 +252,7 @@ impl Monitor {
                         Action::None
                     }
                     Button::SessionTop | Button::SessionBottom => {
-                        if let Some(live) = &mut pane.live {
+                        if let Some(live) = pane.content.live_mut() {
                             pane.focus = DetailArea::Evidence;
                             live.movement(if *button == Button::SessionTop {
                                 crate::agent::session::document::Move::Top
@@ -263,7 +263,7 @@ impl Monitor {
                         Action::None
                     }
                     Button::Review(control) => {
-                        pane.review.as_mut().map_or(Action::None, |review| {
+                        pane.content.review_mut().map_or(Action::None, |review| {
                             Action::Review(review.control(*control))
                         })
                     }
@@ -274,7 +274,7 @@ impl Monitor {
                 .session_groups
                 .iter()
                 .find(|(rect, _)| contains(*rect, point))
-                && let Some(live) = &mut pane.live
+                && let Some(live) = pane.content.live_mut()
             {
                 pane.focus = DetailArea::Evidence;
                 live.toggle(*id);
@@ -282,7 +282,7 @@ impl Monitor {
             }
             // The shared component: focus an area, select a row; a click on the selected tool
             // of the focused Tools pane runs it.
-            if let Some(review) = &mut pane.review {
+            if let Some(review) = pane.content.review_mut() {
                 return Action::Review(review.click(&self.hits.review, point));
             } else if contains(self.hits.areas[0], point) {
                 pane.focus = DetailArea::Summary;
@@ -296,7 +296,7 @@ impl Monitor {
             _ => return Action::None,
         };
         if contains(self.hits.review.instruction, point)
-            && let Some(review) = &mut pane.review
+            && let Some(review) = pane.content.review_mut()
         {
             review.scroll_instruction(delta);
             return Action::None;
@@ -308,10 +308,10 @@ impl Monitor {
         } else {
             return Action::None;
         };
-        if let Some(review) = &mut pane.review {
+        if let Some(review) = pane.content.review_mut() {
             review.scroll_single(delta, index == 1);
         } else if index == 1
-            && let Some(live) = &mut pane.live
+            && let Some(live) = pane.content.live_mut()
         {
             pane.focus = DetailArea::Evidence;
             live.movement(if delta > 0 {

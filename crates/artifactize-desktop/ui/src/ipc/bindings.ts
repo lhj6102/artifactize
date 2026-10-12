@@ -21,8 +21,15 @@ export const commands = {
 	 *  (its waiting time) without reading the state.
 	 */
 	humanOpen: (id: string, reload: boolean) => typedError<HumanView, Failure>(__TAURI_INVOKE("human_open", { id, reload })),
-	/**  A fresh form for `verdict`, from the owner schema recorded with request `id`. */
-	humanForm: (id: string, verdict: Verdict) => typedError<FormView, Failure>(__TAURI_INVOKE("human_form", { id, verdict })),
+	/**
+	 *  The form for `verdict`, from the owner schema recorded with request `id`, holding the values
+	 *  of `kept` (the earlier draft of this verdict) when the schema still takes them.
+	 */
+	humanForm: (id: string, verdict: Verdict, kept: {
+	verdict: Verdict,
+	fields: ([string, FieldValue])[],
+	json: string | null,
+} | null) => typedError<FormView, Failure>(__TAURI_INVOKE("human_form", { id, verdict, kept })),
 	/**
 	 *  The owner-fields JSON of `draft`, to edit a typed form as JSON: what the terminal review
 	 *  hands to `$EDITOR`.
