@@ -131,6 +131,19 @@ impl Review {
         self.pages = vec![0];
     }
 
+    /// Pasted text joins the query as one line and searches again, as typing does.
+    pub(super) fn paste_query(&mut self, text: &str) -> Action {
+        self.query.extend(text.chars().map(|character| {
+            if character.is_control() {
+                ' '
+            } else {
+                character
+            }
+        }));
+        self.candidates.clear();
+        self.requery()
+    }
+
     /// A new query starts again from the first page.
     fn requery(&mut self) -> Action {
         self.filter = self.query.parse();

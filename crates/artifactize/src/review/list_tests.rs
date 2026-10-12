@@ -305,3 +305,59 @@ async fn page_keys_move_through_more_matches_than_one_page() {
     press(&mut review, KeyEvent::from(KeyCode::PageUp)).await;
     assert_eq!(review.listed.len(), search::PAGE);
 }
+
+/// A paste is one edit of the search: it searches again from the first page, like typing.
+#[tokio::test]
+async fn a_paste_into_the_search_requeries_from_the_first_page() {
+    let root = crate::test_os::tempdir();
+    let state = root.path().join("state");
+    let repo = root.path().join("repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    let requests: Vec<_> = (0..search::PAGE + 5)
+        .map(|index| {
+            request(
+                "run-p",
+                &format!("app/check{index:03}"),
+                "GREEN",
+                json!({"kind":"runtime","command":"true","args":[]}),
+            )
+        })
+        .collect();
+    run(&state, &repo, "run-p", &requests).await;
+    let mut review = Review::new(state, None, "alice".parse().unwrap(), None);
+    review.refresh().await;
+
+    // On the first page.
+    press(&mut review, KeyEvent::from(KeyCode::Char('/'))).await;
+    press(
+        &mut review,
+        KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+    )
+    .await;
+    let mut action = review.paste("eval:check104\n");
+    while action == Action::Refresh {
+        action = review.refresh().await;
+    }
+    assert_eq!(review.query, "eval:check104 ");
+    assert_eq!(listed(&review), ["app/check104"]);
+    press(&mut review, KeyEvent::from(KeyCode::Enter)).await;
+
+    // On a later page: the pasted term searches from the first page again.
+    press(&mut review, KeyEvent::from(KeyCode::Char('/'))).await;
+    press(
+        &mut review,
+        KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+    )
+    .await;
+    type_text(&mut review, "status:green").await;
+    press(&mut review, KeyEvent::from(KeyCode::Enter)).await;
+    press(&mut review, KeyEvent::from(KeyCode::PageDown)).await;
+    assert_eq!(review.page(), 2);
+    press(&mut review, KeyEvent::from(KeyCode::Char('/'))).await;
+    let mut action = review.paste(" eval:check000");
+    while action == Action::Refresh {
+        action = review.refresh().await;
+    }
+    assert_eq!(review.page(), 1);
+    assert_eq!(listed(&review), ["app/check000"]);
+}

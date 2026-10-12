@@ -878,13 +878,16 @@ impl Review {
     }
 
     /// A bracketed paste goes to the focused field of the open review, as in monitor.
-    pub fn paste(&mut self, text: &str) {
+    /// Paste into the search being edited (one line, searched from the first page like typed
+    /// text) or into the focused form field.
+    pub fn paste(&mut self, text: &str) -> Action {
         if self.focus == Focus::List && self.editing_query.is_some() {
-            self.query.push_str(text);
-            self.filter = self.query.parse();
-        } else if self.focus == Focus::Detail && self.area == Area::Fields {
+            return self.paste_query(text);
+        }
+        if self.focus == Focus::Detail && self.area == Area::Fields {
             self.paste_single(text);
         }
+        Action::None
     }
 
     /// Feed back the text `$EDITOR` saved; a non-empty object is submitted at once.
@@ -1275,10 +1278,7 @@ async fn drive(
             event = events.next() => match event {
                 Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => review.key(key),
                 Some(Ok(Event::Mouse(mouse))) => review.mouse(mouse),
-                Some(Ok(Event::Paste(text))) => {
-                    review.paste(&text);
-                    Action::None
-                }
+                Some(Ok(Event::Paste(text))) => review.paste(&text),
                 Some(Ok(_)) => Action::None,
                 Some(Err(error)) => return Err(error.to_string()),
                 None => Action::Quit,
