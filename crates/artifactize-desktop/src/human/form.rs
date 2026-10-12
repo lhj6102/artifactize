@@ -116,7 +116,10 @@ pub fn template(
                 },
                 Input::Bool(_) => FieldInput::Bool,
                 Input::Choice(options, _) => FieldInput::Choice {
-                    options: options.iter().map(ToString::to_string).collect(),
+                    options: options
+                        .iter()
+                        .map(|option| serde_json::Value::String(option.clone()).to_string())
+                        .collect(),
                 },
                 Input::Text(_) => FieldInput::Text,
                 Input::Integer(_) => FieldInput::Integer,

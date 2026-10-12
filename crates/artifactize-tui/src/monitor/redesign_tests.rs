@@ -757,11 +757,25 @@ async fn human_detail(review: review::Review) -> Monitor {
 }
 
 /// Columns `from..` of every row but the header and the key line.
+/// The rows of `text` from column `from` on, without its first and last row. How long a request
+/// has waited depends on when each screen was drawn, so the age is masked.
 fn region(text: &str, from: usize) -> Vec<String> {
     let rows: Vec<&str> = text.lines().collect();
     rows[1..rows.len() - 1]
         .iter()
-        .map(|row| row.chars().skip(from).collect())
+        .map(|row| {
+            let row: String = row.chars().skip(from).collect();
+            match row.split_once("waiting ") {
+                Some((before, after)) => {
+                    let age = after
+                        .chars()
+                        .take_while(|c| c.is_ascii_alphanumeric())
+                        .count();
+                    format!("{before}waiting {}", after[age..].trim_end())
+                }
+                None => row.trim_end().to_owned(),
+            }
+        })
         .collect()
 }
 

@@ -39,7 +39,7 @@ pub enum Input {
     /// `None` until chosen.
     Bool(Option<bool>),
     /// String `enum` options and the chosen index.
-    Choice(Vec<Value>, Option<usize>),
+    Choice(Vec<String>, Option<usize>),
     Text(String),
     Integer(String),
     Number(String),
@@ -72,7 +72,9 @@ impl Field {
         Ok(match &self.input {
             Input::Fixed(value) => Some(value.clone()),
             Input::Bool(value) => value.map(Value::Bool),
-            Input::Choice(options, index) => index.map(|index| options[index].clone()),
+            Input::Choice(options, index) => {
+                index.map(|index| Value::String(options[index].clone()))
+            }
             Input::Text(text) => (self.required || !text.is_empty()).then(|| json!(text)),
             Input::Integer(text) | Input::Number(text) if text.trim().is_empty() => None,
             Input::Integer(text) => Some(number(text, true)?),
@@ -86,7 +88,9 @@ impl Field {
             Input::Fixed(value) => format!("{value} (fixed)"),
             Input::Bool(None) | Input::Choice(_, None) => "–".into(),
             Input::Bool(Some(value)) => value.to_string(),
-            Input::Choice(options, Some(index)) => options[*index].to_string(),
+            Input::Choice(options, Some(index)) => {
+                Value::String(options[*index].clone()).to_string()
+            }
             Input::Text(text) | Input::Integer(text) | Input::Number(text) => text.clone(),
         }
     }
@@ -382,9 +386,13 @@ fn input(property: &Value) -> Option<(Input, String)> {
         only(&["const", "type"]).then(|| Input::Fixed(value.clone()))?
     } else if let Some(options) = property.get("enum") {
         let options = options.as_array()?;
-        let strings = !options.is_empty() && options.iter().all(Value::is_string);
-        (strings && kind.is_none_or(|kind| kind == Some("string")) && only(&["enum", "type"]))
-            .then(|| Input::Choice(options.clone(), None))?
+        let strings: Option<Vec<String>> = options
+            .iter()
+            .map(|option| option.as_str().map(str::to_owned))
+            .collect();
+        let strings = strings.filter(|strings| !strings.is_empty())?;
+        (kind.is_none_or(|kind| kind == Some("string")) && only(&["enum", "type"]))
+            .then_some(Input::Choice(strings, None))?
     } else {
         match kind?? {
             "boolean" if only(&["type"]) => Input::Bool(None),
