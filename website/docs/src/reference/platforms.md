@@ -35,6 +35,22 @@ standard library quotes each argument for `cmd.exe` and refuses an argument it c
 pass safely. The error reads `Process arguments could not be passed safely`, and
 nothing runs.
 
+Tool-session start, stop and bound invocations each own a process group (Unix) or
+kill-on-close Job (Windows). Unix crash recovery checks each group's saved PID and
+start time before signalling, while owner liveness separately excludes zombie or
+terminated processes on both Linux and macOS. An ended session releases its cleaned group so
+later cleanup cannot signal a stale group ID. Windows normal cleanup waits for
+all Job descendants to terminate before deleting their files, with an internal
+30-second bound. After owner death, Jobs terminate asynchronously; the next session
+start waits up to 30 seconds for abandoned-directory file sharing to clear. Unix
+abandoned groups and directories are likewise swept before that next start. A
+supervisor lease prevents sweeping an active review and allows failed cleanup to
+be recovered after release even when its process remains alive. Retirement errors
+do not skip mandatory cleanup, and unconfirmed cleanup retains admission journals;
+removal/sweep failures are reported rather than erasing still-needed records. The
+cleanup executor outlives a caller-runtime shutdown, but process death itself
+cannot run stop. Commands remain trusted and can deliberately detach descendants.
+
 ## Paths
 
 Logical paths use `/` on every OS, in declarations, tool arguments, results and

@@ -5,7 +5,7 @@ use std::{
     net::Shutdown,
     os::{fd::AsRawFd, unix::net::UnixStream},
     process::ExitStatus,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use process_wrap::tokio::{ChildWrapper, CommandWrap, ProcessGroup};
@@ -16,48 +16,60 @@ use tokio::{
 };
 
 /// The child's process group, killed when dropped.
-pub(crate) struct Child(Box<dyn ChildWrapper>, #[cfg(target_os = "macos")] u32);
+pub(crate) struct Child {
+    child: Box<dyn ChildWrapper>,
+    group: Option<crate::process::ChildIdentity>,
+}
 
 impl Child {
     pub fn stdin(&mut self) -> &mut Option<ChildStdin> {
-        self.0.stdin()
+        self.child.stdin()
     }
 
     pub fn stdout(&mut self) -> &mut Option<ChildStdout> {
-        self.0.stdout()
+        self.child.stdout()
     }
 
     pub fn stderr(&mut self) -> &mut Option<ChildStderr> {
-        self.0.stderr()
+        self.child.stderr()
     }
 
     /// Wait for the leader, then reap the rest of its group.
     pub async fn wait(&mut self) -> io::Result<ExitStatus> {
-        self.0.wait().await
+        self.child.wait().await
+    }
+
+    /// Session liveness is the leader's, not its descendants'.
+    pub async fn wait_leader(&mut self) -> io::Result<ExitStatus> {
+        self.child.inner_mut().wait().await
+    }
+
+    pub fn try_wait_leader(&mut self) -> io::Result<Option<ExitStatus>> {
+        self.child.inner_mut().try_wait()
     }
 
     /// Ask the group to stop with SIGTERM.
     pub fn interrupt(&self) -> io::Result<()> {
-        self.0.signal(libc::SIGTERM)
+        if let Some(group) = self.group {
+            signal_saved_group(group, libc::SIGTERM)
+        } else {
+            Ok(())
+        }
     }
 
     /// SIGKILL the group; a group that is already gone is not an error.
     pub fn kill(&mut self) -> io::Result<()> {
-        match self.0.start_kill() {
-            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
-            #[cfg(target_os = "macos")]
-            Err(error) if error.raw_os_error() == Some(libc::EPERM) => {
-                // Darwin can report EPERM while the last members are exiting or
-                // zombies, before the group disappears. Suppress it only when the
-                // kernel confirms no member can still execute user code.
-                if process_group_exited(self.1)? {
-                    Ok(())
-                } else {
-                    Err(error)
-                }
-            }
-            result => result,
+        if let Some(group) = self.group {
+            kill_saved_group(group)?;
+            // No later wait, cleanup or Drop may signal this numeric PGID again.
+            self.group = None;
         }
+        Ok(())
+    }
+
+    pub async fn cleanup(&mut self) -> io::Result<ExitStatus> {
+        self.kill()?;
+        self.wait().await
     }
 }
 
@@ -121,7 +133,7 @@ fn process_group_exited(pgid: u32) -> io::Result<bool> {
 
 impl Drop for Child {
     fn drop(&mut self) {
-        let _ = self.0.start_kill();
+        let _ = self.kill();
     }
 }
 
@@ -155,11 +167,48 @@ const START_TIME_AFTER_NAME: usize = 22 - 3;
 /// Field 22 of /proc/PID/stat: the start time in clock ticks since boot.
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
+    process_stat(pid).map(|(_, start)| start)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn process_stat(pid: u32) -> io::Result<(char, u64)> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
-    stat.rsplit_once(')')
-        .and_then(|(_, fields)| fields.split_whitespace().nth(START_TIME_AFTER_NAME))
-        .and_then(|value| value.parse().ok())
-        .ok_or_else(|| io::Error::other("invalid child process start time"))
+    let mut fields = stat
+        .rsplit_once(')')
+        .ok_or_else(|| io::Error::other("invalid process stat"))?
+        .1
+        .split_whitespace();
+    let state = fields
+        .next()
+        .and_then(|field| field.chars().next())
+        .ok_or_else(|| io::Error::other("invalid process state"))?;
+    let start = fields
+        .nth(START_TIME_AFTER_NAME - 1)
+        .and_then(|field| field.parse().ok())
+        .ok_or_else(|| io::Error::other("invalid child process start time"))?;
+    Ok((state, start))
+}
+
+/// An unreaped zombie still has an identity, but cannot own live execution.
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
+    let (state, start) = process_stat(pid)?;
+    if matches!(state, 'Z' | 'X' | 'x') {
+        Err(io::ErrorKind::NotFound.into())
+    } else {
+        Ok(start)
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
+    let pid = i32::try_from(pid).map_err(|_| io::ErrorKind::InvalidInput)?;
+    let info = process_info(pid, 1)?;
+    if info.pbi_status == libc::SZOMB || info.pbi_flags & PROC_FLAG_INEXIT != 0 {
+        Err(io::ErrorKind::NotFound.into())
+    } else {
+        process_birth_time(info)
+    }
 }
 
 /// macOS exposes the kernel's process birth timestamp, in microseconds since the epoch.
@@ -170,7 +219,11 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     if pid <= 0 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
-    let info = process_info(pid, 0)?;
+    process_birth_time(process_info(pid, 1)?)
+}
+
+#[cfg(target_os = "macos")]
+fn process_birth_time(info: libc::proc_bsdinfo) -> io::Result<u64> {
     const MICROSECONDS_PER_SECOND: u64 = 1_000_000;
     info.pbi_start_tvsec
         .checked_mul(MICROSECONDS_PER_SECOND)
@@ -219,7 +272,10 @@ fn process_info(pid: i32, include_zombies: u64) -> io::Result<libc::proc_bsdinfo
 /// that this exact byte, not some other write, arrived.
 const GATE_ADMIT: u8 = 1;
 
-pub(crate) struct Gate(Arc<AsyncFd<UnixStream>>);
+pub(crate) struct Gate(
+    Arc<AsyncFd<UnixStream>>,
+    Arc<OnceLock<crate::process::ChildIdentity>>,
+);
 
 impl Gate {
     pub async fn pid(&self) -> io::Result<u32> {
@@ -234,7 +290,10 @@ impl Gate {
                 Err(_) => continue,
             }
         }
-        Ok(u32::from_ne_bytes(bytes))
+        let pid = u32::from_ne_bytes(bytes);
+        let identity = crate::process::child_identity(pid)?;
+        let _ = self.1.set(identity);
+        Ok(pid)
     }
 
     pub fn admit(&self) -> io::Result<()> {
@@ -252,7 +311,8 @@ impl Drop for Gate {
 fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Child>>)> {
     let (parent, child) = UnixStream::pair()?;
     parent.set_nonblocking(true)?;
-    let gate = Gate(Arc::new(AsyncFd::new(parent)?));
+    let identity = Arc::new(OnceLock::new());
+    let gate = Gate(Arc::new(AsyncFd::new(parent)?), identity.clone());
     let parent = gate.0.clone();
     // SAFETY: the forked child uses only async-signal-safe syscalls and stack data.
     // Both descriptors stay alive until spawn completes; CLOEXEC closes the child
@@ -295,17 +355,58 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
     // std spawn waits for exec's error pipe, so it cannot run on the task that
     // opens the gate. Returning a guarded child also covers a dropped join handle.
     let spawning = tokio::task::spawn_blocking(move || {
-        command.spawn().map(|child| {
-            #[cfg(target_os = "macos")]
-            let pid = child.id().expect("new child has a PID");
-            Child(
-                child,
-                #[cfg(target_os = "macos")]
-                pid,
-            )
+        let child = command.spawn()?;
+        // Captured while inert: even an immediately exiting command retains its
+        // original identity, rather than reading a potentially reused PID here.
+        let group = *identity.get().expect("admitted child identity");
+        Ok(Child {
+            child,
+            group: Some(group),
         })
     });
     Ok((gate, spawning))
+}
+
+/// Recover only the saved group, never a reused leader PID. An absent leader can
+/// still have live descendants; Darwin's zombie-only EPERM follows ordinary cleanup.
+pub(crate) fn kill_saved_group(leader: crate::process::ChildIdentity) -> io::Result<()> {
+    signal_saved_group(leader, libc::SIGKILL)
+}
+
+fn signal_saved_group(leader: crate::process::ChildIdentity, signal: i32) -> io::Result<()> {
+    match process_start_time(leader.pid.get()) {
+        Ok(start) if start != leader.start_time => return Ok(()),
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let pgid = i32::try_from(leader.pid.get()).map_err(|_| io::ErrorKind::InvalidInput)?;
+    // SAFETY: the nonzero saved PID names a group owned by the dead artifactize owner;
+    // the preceding identity check excludes a known reused leader.
+    if signal_group(pgid, signal) == 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    if error.raw_os_error() == Some(libc::EPERM) && process_group_exited(leader.pid.get())? {
+        return Ok(());
+    }
+    Err(error)
+}
+
+// Observe actual OS-boundary signal attempts, not private Child fields. The
+// test catches an extra syscall even when the kernel answers ESRCH successfully.
+#[cfg(test)]
+thread_local! { static GROUP_SIGNALS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+
+fn signal_group(pgid: i32, signal: i32) -> i32 {
+    #[cfg(test)]
+    GROUP_SIGNALS.with(|count| count.set(count.get() + 1));
+    // SAFETY: the caller identity-checked a nonzero, owned group before signalling.
+    unsafe { libc::killpg(pgid, signal) }
 }
 
 #[cfg(test)]
@@ -335,13 +436,36 @@ mod tests {
         assert!(process_group_exited(pid).unwrap());
         // Exercise the real EPERM path, not an injected error or a delay.
         assert_eq!(
-            child.0.start_kill().unwrap_err().raw_os_error(),
+            child.child.start_kill().unwrap_err().raw_os_error(),
             Some(libc::EPERM)
         );
         child.kill().unwrap();
         assert!(child.wait().await.unwrap().success());
         assert!(process_group_exited(pid).unwrap());
         child.kill().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_cleaned_group_no_longer_owns_a_signal_target() {
+        let mut command = Command::new(crate::test_os::true_program());
+        command.env_clear().stdin(Stdio::null());
+        let (gate, spawning) = spawn_gated(command).unwrap();
+        gate.pid().await.unwrap();
+        gate.admit().unwrap();
+        drop(gate);
+        let mut child = spawning.await.unwrap().unwrap();
+        assert!(child.wait_leader().await.unwrap().success());
+        GROUP_SIGNALS.with(|count| count.set(0));
+        child.cleanup().await.unwrap();
+        assert_eq!(GROUP_SIGNALS.with(std::cell::Cell::get), 1);
+        child.interrupt().unwrap();
+        child.cleanup().await.unwrap();
+        drop(child);
+        assert_eq!(
+            GROUP_SIGNALS.with(std::cell::Cell::get),
+            1,
+            "a cleaned group must never be signalled again"
+        );
     }
 
     #[tokio::test]

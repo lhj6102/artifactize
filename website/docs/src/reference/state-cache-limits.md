@@ -164,8 +164,8 @@ status is RUNNING. A slot is taken just before a review would start: one write
 transaction (`BEGIN IMMEDIATE`) counts the RUNNING executions of the backend and,
 under the limit, inserts this one. A request that would reuse a result or join a live
 execution of its key takes none. The slot frees when the review's execution
-completes. An execution whose owner process is gone (it crashed or was killed, by pid
-and start time) ends as ERROR (`OWNER_DIED`) the next time a process asks for a slot,
+completes. An execution whose owner process has exited (including an unreaped
+zombie, checked by process state, pid and start time) ends as ERROR (`OWNER_DIED`) the next time a process asks for a slot,
 which frees its slot with it; there is no separate cleanup. When a review's failure
 stops its backend for the Run ([`BACKEND_STOPPED`](../guides/agent-evals.md#stopping-a-backend)),
 the stop is recorded before its slot frees, so a request waiting for that slot is not
@@ -179,6 +179,22 @@ evals, Human requests and other backends keep running. Once it has its slot it
 occupies a job slot like any running eval, so a process runs at most
 `min(--jobs, free slots)` reviews of a limited backend. Cancelling a `verify` ends
 its waiting requests as CANCELLED, and its held slots are released.
+
+Tool-session directories live under `$STATE/tool-sessions/`, separately from saved
+conversations. They retain admission records for start, stop and bound invocation
+processes until those groups have been cleaned. Removal is conditional on confirmed
+process cleanup, not merely on the supervisor returning. Before the next tool session
+starts, exited-owner state (zombies included), or state whose supervisor lease has
+been released after failed cleanup, is swept using saved process identities on Unix;
+Windows Jobs
+terminate with their owner and pending file sharing dispositions are given a bounded
+wait. Normal release, panic and caller-runtime shutdown run stop and await process
+cleanup before removing the directory. Retirement errors still attempt stop and
+join bound calls; unconfirmed termination or failed removal retains recoverable
+state and reports an error. An active lease protects another concurrent session;
+a released lease permits recovery even while the owner process is alive. Sweep
+failures refuse startup without erasing the journals. Abrupt process death cannot
+run stop.
 
 ## Agent sessions
 

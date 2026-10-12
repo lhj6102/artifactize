@@ -245,6 +245,7 @@ async fn repair_shares_original_deadline_and_cancellation_precedes_budget() {
         );
         let cancellation = CancellationToken::new();
         let mut recorder = session::Recorder::off(&SESSION.parse().unwrap());
+        let tools = crate::tools::sessions::Sessions::default();
         let review = review(
             &client,
             &fixture.config,
@@ -252,6 +253,7 @@ async fn repair_shares_original_deadline_and_cancellation_precedes_budget() {
             &fixture.output,
             &mut recorder,
             cancellation.clone(),
+            &tools,
         );
         tokio::pin!(review);
         tokio::select! {

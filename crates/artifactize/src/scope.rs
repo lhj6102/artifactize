@@ -59,7 +59,7 @@ pub enum RelationKind {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Scope<'a> {
     pub artifacts: BTreeMap<ArtifactName, &'a Artifact>,
 }

@@ -89,12 +89,13 @@ pub async fn execute(
     state: &Path,
     recorder: &mut Recorder,
     cancellation: CancellationToken,
+    tools: &crate::tools::sessions::Sessions,
 ) -> Review {
     let Profile::Agent { backend, model, .. } = eval.declaration.profile() else {
         unreachable!("Agent executor requires an Agent profile")
     };
     match Client::new(*backend, model, state, &config.root) {
-        Ok(client) => review(&client, config, eval, output, recorder, cancellation).await,
+        Ok(client) => review(&client, config, eval, output, recorder, cancellation, tools).await,
         Err(error) => Review {
             result: Err(error),
             attempts: Vec::new(),
@@ -109,6 +110,7 @@ async fn review(
     output: &Path,
     recorder: &mut Recorder,
     cancellation: CancellationToken,
+    tools: &crate::tools::sessions::Sessions,
 ) -> Review {
     let mut review = Review {
         result: Err(Failure::new(
@@ -125,6 +127,7 @@ async fn review(
         recorder,
         &cancellation,
         &mut review.attempts,
+        tools,
     )
     .await;
     recorder.event(match &review.result {
@@ -326,6 +329,10 @@ fn text_of(response: &CompletionResponse) -> String {
         .collect()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "review context, its recorder, budgets and prepared tool sessions"
+)]
 async fn run(
     client: &Client,
     config: &RepoConfig,
@@ -334,6 +341,7 @@ async fn run(
     recorder: &mut Recorder,
     cancellation: &CancellationToken,
     attempts: &mut Vec<Attempt>,
+    tools: &crate::tools::sessions::Sessions,
 ) -> Result<verdict::ValidatedResult, Failure> {
     let Profile::Agent {
         backend,
@@ -348,7 +356,7 @@ async fn run(
     };
     let timeout_ms = timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
     let deadline = Instant::now() + timeout_ms;
-    let registry = Registry::new(config, &eval.id)?;
+    let registry = Registry::new(config, &eval.id)?.with_sessions(tools);
     let verdict = verdict::VerdictSchema::new(
         eval.declaration.pass_schema(),
         eval.declaration.fail_schema(),
@@ -546,7 +554,6 @@ async fn continue_conversation(
     let reasoning = header.reasoning.map(crate::config::Reasoning::as_str);
     let defaults = session::Budgets::default();
     let budgets = header.budgets.as_ref().unwrap_or(&defaults);
-    let deadline = Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
     let client = client(backend, model, continuation.state, &config.root)?;
     let registry = Registry::new(config, &eval.id)?;
     let history = continuation
@@ -568,8 +575,13 @@ async fn continue_conversation(
     let mut request = CompletionRequest::new(question.clone());
     request.chat_history = history;
     request.chat_history.push(question.clone());
-    request.tools = definitions(&registry);
     request.additional_params = Some(Client::parameters(backend, reasoning, recorder.id())?);
+    let tools = registry
+        .start_sessions(continuation.state, None, cancellation.clone())
+        .await?;
+    let registry = registry.with_sessions(&tools);
+    let deadline = Instant::now() + budgets.timeout_ms.unwrap_or(DEFAULT_TIMEOUT);
+    request.tools = definitions(&registry);
     recorder.event(session::Kind::Send(session::Send {
         text: Some(message.into()),
         framing: Some(framing),
@@ -601,6 +613,11 @@ async fn continue_conversation(
     // The send is recorded at this point, even if cancellation prevents an HTTP attempt.
     let mut attempts = Vec::new();
     let answer = answer_follow_up(&mut turns, request, &mut attempts).await;
+    drop(turns);
+    let cleaned = tools.close().await;
+    let answer = cleaned
+        .map_err(|error| Failure::new(Code::AgentError, error))
+        .and(answer);
     Ok(StartedFollowUp { answer, attempts })
 }
 

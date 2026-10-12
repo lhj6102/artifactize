@@ -29,8 +29,10 @@ use windows_sys::Win32::{
         },
         JobObjects::{
             AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-            JOBOBJECT_BASIC_LIMIT_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-            JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_BASIC_LIMIT_INFORMATION,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
+            JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
+            TerminateJobObject,
         },
         Threading::{
             CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, CREATE_SUSPENDED,
@@ -68,6 +70,14 @@ impl Child {
         self.child.wait().await
     }
 
+    pub async fn wait_leader(&mut self) -> io::Result<ExitStatus> {
+        self.child.wait().await
+    }
+
+    pub fn try_wait_leader(&mut self) -> io::Result<Option<ExitStatus>> {
+        self.child.try_wait()
+    }
+
     /// Ask the child's console process group to stop with Ctrl-Break, the closest to SIGTERM.
     /// This fails when the child shares no console with artifactize; the job is killed after
     /// the grace period either way.
@@ -81,6 +91,17 @@ impl Child {
             return Err(io::Error::last_os_error());
         }
         Ok(())
+    }
+
+    /// Terminate and await the whole Job, not just its leader. Descendants may
+    /// still hold non-delete-shared files after TerminateJobObject returns.
+    pub async fn cleanup(&mut self) -> io::Result<ExitStatus> {
+        self.kill()?;
+        let status = self.child.wait().await?;
+        let job = Job(self.job.0.try_clone()?);
+        crate::task::joined(tokio::task::spawn_blocking(move || job.wait_empty()).await)
+            .map_err(io::Error::other)??;
+        Ok(status)
     }
 
     /// Terminate every process in the job.
@@ -138,6 +159,41 @@ impl Job {
             return Err(io::Error::last_os_error());
         }
         Ok(())
+    }
+
+    fn wait_empty(&self) -> io::Result<()> {
+        // The kernel's termination is asynchronous; cap even cleanup failures.
+        const CLEANUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+        // Jobs expose active-process accounting, not a general empty-Job wait.
+        const ACCOUNTING_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
+        let deadline = std::time::Instant::now() + CLEANUP_TIMEOUT;
+        loop {
+            let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+            // SAFETY: the open Job handle and information-class-matching writable
+            // buffer remain valid for the exact supplied buffer size.
+            if unsafe {
+                QueryInformationJobObject(
+                    self.0.as_raw_handle(),
+                    JobObjectBasicAccountingInformation,
+                    (&raw mut info).cast(),
+                    mem::size_of_val(&info) as u32,
+                    ptr::null_mut(),
+                )
+            } == 0
+            {
+                return Err(io::Error::last_os_error());
+            }
+            if info.ActiveProcesses == 0 {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Job descendants did not terminate",
+                ));
+            }
+            std::thread::sleep(ACCOUNTING_INTERVAL);
+        }
     }
 
     fn terminate(&self) -> io::Result<()> {
@@ -331,6 +387,16 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
         return Err(io::Error::last_os_error());
     }
     Ok((u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
+}
+
+/// Windows identity lookup already excludes a signalled (terminated) process.
+pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
+    process_start_time(pid)
+}
+
+/// A dead owner has already closed its kill-on-close Job handle.
+pub(crate) fn kill_saved_group(_leader: crate::process::ChildIdentity) -> io::Result<()> {
+    Ok(())
 }
 
 #[cfg(test)]

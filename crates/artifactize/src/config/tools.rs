@@ -35,6 +35,8 @@ impl<'de> Deserialize<'de> for AgentTool {
     try_from = "CommandToolInput"
 )]
 pub struct CommandTool {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<super::ToolOperationName>,
     pub description: String,
     #[serde(default = "empty_schema")]
     pub input_schema: Value,
@@ -60,6 +62,8 @@ pub struct CommandTool {
     deny_unknown_fields
 )]
 struct CommandToolInput {
+    #[serde(default)]
+    pub session: Option<super::ToolOperationName>,
     pub description: String,
     #[serde(default = "empty_schema")]
     pub input_schema: Value,
@@ -92,6 +96,7 @@ impl TryFrom<CommandToolInput> for CommandTool {
             Vec::new()
         };
         Ok(Self {
+            session: input.session,
             description: input.description,
             input_schema: input.input_schema,
             protocol: input.protocol,
@@ -101,6 +106,35 @@ impl TryFrom<CommandToolInput> for CommandTool {
             execution_paths: input.execution_paths,
             plain_args,
         })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ToolSession {
+    pub start: SessionCommand,
+    pub stop: SessionCommand,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(
+    rename_all(serialize = "camelCase", deserialize = "snake_case"),
+    deny_unknown_fields
+)]
+pub struct SessionCommand {
+    pub command: String,
+    pub args: Vec<crate::scope::Argument>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub execution_paths: Vec<super::LogicalPath>,
+}
+
+impl SessionCommand {
+    pub(super) fn validate(&self) -> Result<(), String> {
+        script(&self.command, &self.args)?;
+        if self.command.contains(['{', '}']) {
+            return Err("Session command must not contain placeholders.".into());
+        }
+        paths(&self.execution_paths, "execution_paths")
     }
 }
 

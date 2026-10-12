@@ -24,7 +24,7 @@ crates/app/tests/
 examples/
 ```
 
-Names, eval IDs, mount aliases, tool names and profile variant names match
+Names, eval IDs, mount aliases, tool/session names and profile variant names match
 `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Artifact names are globally unique. Evals are
 ID-keyed tables, not an array; `[evals.check]` on `app` becomes `app/check`.
 An explicit eval `id` field is rejected. Evals within each declaration are ordered
@@ -38,12 +38,24 @@ by ID, not by their position in the TOML source.
 | `basis` | Optional boolean; `true` declares a no-eval input, waiving its own review obligations but not its dependencies |
 | `fingerprint` | Omission uses artifactsum; `false` disables reuse; otherwise an artifactsum or script table |
 | `views.agent_tools`, `views.human_tools` | Optional maps of declared tools |
+| `views.agent_sessions.<name>.start`, `.stop` | Tool-session commands: required `command` and `args`, optional `execution_paths`; no other fields |
+| `views.agent_tools.<name>.session` | Optional name of a tool session declared in the same Artifact; command Agent tools only |
 | `review_policy.dependency_gates` | `green` (default) or `ignore`; only in the repository root's `index.artf` |
 | `evals.<id>.title` | Required nonblank title |
 | `evals.<id>.profile` | Required `runtime`, `agent`, `human` or `dependency` profile |
 | `evals.<id>.payload.instruction` | Required nonblank instruction for runtime, Agent and Human evals |
 | `evals.<id>.pass_schema`, `fail_schema` | Optional owner-field JSON Schemas for executable evals |
 | `evals.<id>.profile_variants` | Up to 64 named complete profiles retaining the default kind; not allowed for dependency evals |
+
+[Tool sessions](agent-tools.md#tool-sessions) own start, stop and bound-call
+processes for one review. Stop runs on normal release, panic and caller-runtime
+shutdown; abrupt owner death instead uses identity-checked crash recovery before
+the next session starts, including when the exited owner is an unreaped zombie.
+Retirement errors do not skip stop or bound-call cleanup, and unconfirmed process
+cleanup keeps its journals instead of deleting them. A released supervisor lease
+makes failed cleanup recoverable even while the owner process remains alive. There
+are no declaration options for these lifetimes or cleanup bounds. Job descendants
+finish terminating before their session files are removed.
 
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,

@@ -88,7 +88,7 @@ impl rusqlite::types::FromSql for ProcessId {
 }
 
 /// Process id and start time, captured while the group leader is still inert.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ChildIdentity {
     pub pid: ProcessId,
     /// Linux: clock ticks since boot (procfs field 22). macOS: microseconds since the
@@ -173,6 +173,8 @@ pub enum Error {
     Registration(#[source] io::Error),
     #[error("process supervision failed: {0}")]
     Io(#[from] io::Error),
+    #[error("process cleanup could not be confirmed: {0}")]
+    Cleanup(#[source] io::Error),
     #[error("process supervision task failed: {0}")]
     Task(#[from] tokio::task::JoinError),
     #[error("process timed out")]
@@ -184,6 +186,20 @@ pub enum Error {
 }
 
 impl Error {
+    /// Every ordinary run error is returned only after cleanup or before admission.
+    /// Cleanup/task failures are the exceptions: retain any admission record.
+    pub(crate) fn cleanup_confirmed(&self) -> bool {
+        match self {
+            Self::Cleanup(_) | Self::Task(_) => false,
+            Self::Spawn(_)
+            | Self::Registration(_)
+            | Self::Io(_)
+            | Self::Timeout
+            | Self::Cancelled
+            | Self::OutputDidNotClose => true,
+        }
+    }
+
     pub(crate) fn argument_refusal(&self) -> Option<String> {
         match self {
             Self::Spawn(error) if error.kind() == io::ErrorKind::InvalidInput => Some(format!(
@@ -267,6 +283,92 @@ where
         return Err(Error::Timeout);
     }
 
+    let mut child = spawn_owned(
+        &command,
+        input.is_some(),
+        cancellation.clone(),
+        deadline,
+        register,
+    )
+    .await?;
+
+    let stdout = child.stdout().take().expect("stdout is piped");
+    let stderr = child.stderr().take().expect("stderr is piped");
+    let stdin = child.stdin().take();
+    let reaped = CancellationToken::new();
+    let feed = async {
+        if let (Some(mut stdin), Some(input)) = (stdin, input) {
+            tokio::select! {
+                _ = reaped.cancelled() => {},
+                _ = cancellation.cancelled() => {},
+                _ = sleep_until(deadline) => {},
+                result = stdin.write_all(&input) => {
+                    // Fingerprint scripts may intentionally ignore their context.
+                    if let Err(error) = result && error.kind() != io::ErrorKind::BrokenPipe {
+                        return Err(Error::Io(error));
+                    }
+                }
+            }
+        }
+        Ok(())
+    };
+    let wait = async {
+        let result = tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => Err(Error::Cancelled),
+            _ = sleep_until(deadline) => Err(Error::Timeout),
+            status = child.wait() => status.map_err(Error::Io),
+        };
+        let cleanup = if result.is_err() {
+            terminate(&mut child).await
+        } else {
+            // An ordinary main-process exit must not leave its descendants running.
+            child.cleanup().await.map(|_| ())
+        };
+        reaped.cancel();
+        cleanup.map_err(Error::Cleanup)?;
+        result
+    };
+    let capture = async {
+        let read = async {
+            tokio::try_join!(capture(stdout, output_limit), capture(stderr, output_limit))
+        };
+        tokio::pin!(read);
+        tokio::select! {
+            result = &mut read => result.map_err(Error::Io),
+            _ = reaped.cancelled() => {
+                timeout(CLEANUP_GRACE, read).await
+                    .map_err(|_| Error::OutputDidNotClose)?
+                    .map_err(Error::Io)
+            }
+        }
+    };
+    let (status, output, input) = tokio::join!(wait, capture, feed);
+    let status = status?;
+    input?;
+    let ((stdout, stdout_truncated), (stderr, stderr_truncated)) = output?;
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+        truncated: stdout_truncated || stderr_truncated,
+        duration: started.elapsed(),
+    })
+}
+
+/// Gated spawn shared by one-shot calls and long-lived tool sessions. The caller must
+/// own this future in a supervisor so dropping a request cannot abandon admission.
+pub(crate) async fn spawn_owned<F, R>(
+    command: &Command,
+    input: bool,
+    cancellation: CancellationToken,
+    deadline: Instant,
+    register: F,
+) -> Result<Child, Error>
+where
+    F: FnOnce(ChildIdentity) -> R,
+    R: Future<Output = io::Result<()>>,
+{
     let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
         environment_value(&command.env, name).map(ToOwned::to_owned)
     })
@@ -277,11 +379,7 @@ where
         .current_dir(&command.cwd)
         .env_clear()
         .envs(&command.env)
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
+        .stdin(if input { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
@@ -319,72 +417,11 @@ where
         }
     };
     if let Err(error) = admission {
-        terminate(&mut child).await?;
+        terminate(&mut child).await.map_err(Error::Cleanup)?;
         return Err(error);
     }
 
-    let stdout = child.stdout().take().expect("stdout is piped");
-    let stderr = child.stderr().take().expect("stderr is piped");
-    let stdin = child.stdin().take();
-    let reaped = CancellationToken::new();
-    let feed = async {
-        if let (Some(mut stdin), Some(input)) = (stdin, input) {
-            tokio::select! {
-                _ = reaped.cancelled() => {},
-                _ = cancellation.cancelled() => {},
-                _ = sleep_until(deadline) => {},
-                result = stdin.write_all(&input) => {
-                    // Fingerprint scripts may intentionally ignore their context.
-                    if let Err(error) = result && error.kind() != io::ErrorKind::BrokenPipe {
-                        return Err(Error::Io(error));
-                    }
-                }
-            }
-        }
-        Ok(())
-    };
-    let wait = async {
-        let result = tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => Err(Error::Cancelled),
-            _ = sleep_until(deadline) => Err(Error::Timeout),
-            status = child.wait() => status.map_err(Error::Io),
-        };
-        let cleanup = if result.is_err() {
-            terminate(&mut child).await
-        } else {
-            // An ordinary main-process exit must not leave its descendants running.
-            child.kill()
-        };
-        reaped.cancel();
-        cleanup?;
-        result
-    };
-    let capture = async {
-        let read = async {
-            tokio::try_join!(capture(stdout, output_limit), capture(stderr, output_limit))
-        };
-        tokio::pin!(read);
-        tokio::select! {
-            result = &mut read => result.map_err(Error::Io),
-            _ = reaped.cancelled() => {
-                timeout(CLEANUP_GRACE, read).await
-                    .map_err(|_| Error::OutputDidNotClose)?
-                    .map_err(Error::Io)
-            }
-        }
-    };
-    let (status, output, input) = tokio::join!(wait, capture, feed);
-    let status = status?;
-    input?;
-    let ((stdout, stdout_truncated), (stderr, stderr_truncated)) = output?;
-    Ok(Output {
-        status,
-        stdout,
-        stderr,
-        truncated: stdout_truncated || stderr_truncated,
-        duration: started.elapsed(),
-    })
+    Ok(child)
 }
 
 fn environment_value<'a>(
@@ -430,8 +467,8 @@ pub(crate) fn is_alive(owner: Option<ChildIdentity>) -> io::Result<bool> {
     let Some(owner) = owner else {
         return Ok(false);
     };
-    match child_identity(owner.pid.get()) {
-        Ok(current) => Ok(current == owner),
+    match platform::running_process_start_time(owner.pid.get()) {
+        Ok(start_time) => Ok(start_time == owner.start_time),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }
@@ -443,8 +480,7 @@ async fn terminate(child: &mut Child) -> io::Result<()> {
         _ = sleep(CLEANUP_GRACE) => {},
         _ = child.wait() => {},
     }
-    child.kill()?;
-    child.wait().await?;
+    child.cleanup().await?;
     Ok(())
 }
 
