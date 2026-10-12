@@ -55,11 +55,19 @@ describe("a Run with every verdict", () => {
 
   // UX edges: E-GRAPH-OPEN
   it("colours RED, ERROR, blocked and GREEN Artifacts and the edge between a RED one and its dependent", async () => {
-    await eventually(async () => Object.keys((await lights()).nodes).length === 4, "four Artifact nodes");
+    await eventually(async () => Object.keys((await lights()).nodes).length === 7, "seven Artifact nodes");
     const { nodes, edges } = await lights();
-    assert.deepEqual(nodes, { "a:red": "red", "a:crash": "error", "a:down": "blocked", "a:fine": "green" });
-    // The edge out of the RED Artifact is lit as what it passes on; it is not GREEN.
-    assert.ok(edges["a:red>a:down"] && edges["a:red>a:down"] !== "green", `the edge is lit: ${edges["a:red>a:down"]}`);
+    assert.deepEqual(nodes, {
+      "a:red": "red",
+      "a:crash": "error",
+      "a:down": "blocked",
+      "a:after": "blocked",
+      "a:fine": "green",
+      "a:gate": "active",
+      "a:later": "waiting",
+    });
+    // Each edge is lit as what its source passes on: RED, ERROR, or work in progress.
+    assert.deepEqual(edges, { "a:red>a:down": "red", "a:crash>a:after": "error", "a:gate>a:later": "active" });
     const legend = await browser.$('[aria-label="Legend"]').getText();
     for (const word of ["GREEN", "RED", "ERROR", "blocked"]) assert.match(legend, new RegExp(word));
   });

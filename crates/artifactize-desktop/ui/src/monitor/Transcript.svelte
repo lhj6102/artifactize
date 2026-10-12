@@ -25,13 +25,10 @@
   /** A wheel step moves three rows, like the terminal's. */
   const WHEEL_ROWS = 3;
 
-  let handle: number | null = null;
-  let session: string | null = null;
   
   
   
   
-  let size = { columns: 0, rows: 0 };
   let asking = false;
   let again: { movement: Movement | null; toggle: number | null; changed: boolean } | null = null;
   let closed = false;
@@ -45,14 +42,14 @@
     const box = t.pane.getBoundingClientRect();
     const columns = Math.max(Math.floor(box.width / width) - 1, 10) || 10;
     const rows = peek ? PEEK_ROWS : Math.max(Math.floor(box.height / height), 3);
-    const changed = columns !== size.columns || rows !== size.rows;
-    size = { columns, rows };
+    const changed = columns !== t.size.columns || rows !== t.size.rows;
+    t.size = { columns, rows };
     return changed;
   }
 
   /** Ask for the window; requests made meanwhile merge into one follow-up. */
   async function ask(movement: Movement | null = null, toggle: number | null = null, changed = false) {
-    if (handle === null || closed) return;
+    if (t.handle === null || closed) return;
     if (asking) {
       again = {
         movement: movement ?? again?.movement ?? null,
@@ -64,19 +61,19 @@
     asking = true;
     // A reader replaced while this request was pending makes its answer, rows or failure,
     // obsolete; only the current reader's answers are shown.
-    const reader = handle;
+    const reader = t.handle;
     let loading = false;
     try {
       const next = await call(
-        commands.transcriptWindow(reader, size.columns, size.rows, movement, toggle, changed),
+        commands.transcriptWindow(reader, t.size.columns, t.size.rows, movement, toggle, changed),
       );
-      if (reader === handle) {
+      if (reader === t.handle) {
         t.view = next;
         t.unavailable = null;
         loading = next.loading;
       }
     } catch (error) {
-      if (reader === handle) t.unavailable = message(error);
+      if (reader === t.handle) t.unavailable = message(error);
     } finally {
       asking = false;
     }
@@ -97,18 +94,18 @@
     if (closed || resolving) return;
     resolving = true;
     try {
-      const opened = await call(commands.transcriptOpen(id, handle));
+      const opened = await call(commands.transcriptOpen(id, t.handle));
       if (closed) {
         if (opened.kind === "local") void commands.transcriptClose(opened.handle);
         return;
       }
       const next = opened.kind === "local" ? opened.handle : null;
-      const replaced = next !== handle;
-      handle = next;
-      session = opened.kind === "local" ? opened.session : null;
+      const replaced = next !== t.handle;
+      t.handle = next;
+      t.session = opened.kind === "local" ? opened.session : null;
       t.unavailable = opened.kind === "unavailable" ? opened.text : null;
       if (replaced) t.view = null;
-      if (handle !== null) void ask(null, null, true);
+      if (t.handle !== null) void ask(null, null, true);
     } catch (error) {
       t.unavailable = message(error);
     } finally {
@@ -124,9 +121,9 @@
     });
     if (t.pane) observer.observe(t.pane);
     // Missed appends and removals show within the probe; without a session yet, resolve again.
-    const timer = setInterval(() => (handle === null ? void resolve() : void ask(null, null, true)), PROBE_MS);
+    const timer = setInterval(() => (t.handle === null ? void resolve() : void ask(null, null, true)), PROBE_MS);
     const stopSession = onSessionChanged((changed) => {
-      if (changed === session) void ask(null, null, true);
+      if (changed === t.session) void ask(null, null, true);
     });
     const stopState = onStateChanged(() => void resolve());
     return () => {
@@ -139,11 +136,11 @@
 
   onDestroy(() => {
     closed = true;
-    if (handle !== null) void commands.transcriptClose(handle);
+    if (t.handle !== null) void commands.transcriptClose(t.handle);
   });
 
   function keydown(event: KeyboardEvent) {
-    const page = Math.max(size.rows, 1);
+    const page = Math.max(t.size.rows, 1);
     const moves: Record<string, Movement> = {
       ArrowUp: { kind: "up", rows: 1 },
       k: { kind: "up", rows: 1 },

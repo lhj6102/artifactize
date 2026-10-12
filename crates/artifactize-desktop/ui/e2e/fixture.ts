@@ -202,9 +202,9 @@ Check ${reference}."""
 }
 
 /**
- * A fresh repository with one Artifact in each state of a finished Run that is not GREEN
- * or waiting: `red` fails, `crash` dies by a signal (ERROR), `down` is blocked by `red`, and
- * `fine` is GREEN. Three of them have no dependency, so they share the graph's first column.
+ * A fresh repository with one Artifact in each state of a Run that is not simply GREEN:
+ * `red` fails, `crash` dies by a signal (ERROR), `down` is blocked by `red`, `after` by
+ * `crash`, `fine` is GREEN, and `later` waits for the Human sign-off of `gate`. Three of them have no dependency, so they share the graph's first column.
  */
 export function createStates(): Fixture {
   const root = newRoot();
@@ -230,10 +230,28 @@ ${instruction}"""
   artifact("crash", "sh", '["-c", "kill -TERM $$"]', "Die by a signal.");
   artifact("down", "true", "[]", "Run after {red}.");
   artifact("fine", "true", "[]", "Pass.");
+  artifact("after", "true", "[]", "Run after {crash}.");
+  // A sign-off nobody has given yet, and what waits for it.
+  mkdirSync(join(repo, "gate"), { recursive: true });
+  writeFileSync(
+    join(repo, "gate", "index.artf"),
+    `name = "gate"
+
+[evals.signoff]
+title = "A person approves"
+profile = { kind = "human" }
+
+[evals.signoff.payload]
+instruction = """
+Approve."""
+`,
+  );
+  artifact("later", "true", "[]", "Run after {gate}.");
   execFileSync("git", ["init", "-q", repo]);
   const fixture = { root, repo, state };
-  // RED and ERROR end the Run unsatisfied: any exit status but a crash of the CLI itself.
-  const status = artifactize(fixture, "verify", "--all", "--json");
+  // RED and ERROR end the Run unsatisfied, and the sign-off keeps it waiting: any exit status
+  // but a crash of the CLI itself.
+  const status = artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json");
   if (status === -1) throw new Error("verify did not run");
   return fixture;
 }

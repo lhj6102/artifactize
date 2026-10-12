@@ -123,7 +123,6 @@
   // moves anywhere else (the eval list, another pane, a press outside) ends the hold, and so
   // does hiding the graph's screen: a hidden graph never takes focus, and only fresh graph
   // focus holds again.
-  let held: string | null = null;
   let handoff = 0;
   let watching = false;
 
@@ -133,8 +132,8 @@
     if (watching) return;
     watching = true;
     const step = () => {
-      if (held !== null && hidden()) release();
-      if (held === null || !v.canvas?.isConnected) {
+      if (v.held !== null && hidden()) release();
+      if (v.held === null || !v.canvas?.isConnected) {
         watching = false;
         return;
       }
@@ -146,8 +145,8 @@
 
   /** Put focus back on the held node, or on the canvas while it is not drawn. */
   function restore() {
-    if (held === null || !v.canvas || hidden()) return;
-    const target = element(held);
+    if (v.held === null || !v.canvas || hidden()) return;
+    const target = element(v.held);
     const active = document.activeElement;
     if (target && (lost() || active === v.canvas)) target.focus({ preventScroll: true });
     else if (!target && lost()) v.canvas.focus({ preventScroll: true });
@@ -159,7 +158,7 @@
   /** Give graph focus to `id` from now on; returns this handoff's number. */
   function hold(id: string): number {
     if (hidden()) return handoff;
-    held = id;
+    v.held = id;
     handoff += 1;
     if (document.activeElement !== element(id)) element(id)?.focus({ preventScroll: true });
     watch();
@@ -167,7 +166,7 @@
   }
 
   function release() {
-    held = null;
+    v.held = null;
     handoff += 1;
   }
 
@@ -179,7 +178,7 @@
       if (!target || target === canvas) return;
       const id = canvas.contains(target) ? target.closest<HTMLElement>(".svelte-flow__node")?.dataset.id : undefined;
       if (!id) return release();
-      if (id !== held) hold(id);
+      if (id !== v.held) hold(id);
       // Focus is the graph's selection, so the keys always start from the node in focus.
       if (id !== selected[0] && !zoomed) onselect([id]);
     };
@@ -188,9 +187,9 @@
     };
     // Keys that land on the page during a redraw belong to the held node of the shown graph.
     const pagekey = (event: KeyboardEvent) => {
-      if (held === null || hidden()) return;
+      if (v.held === null || hidden()) return;
       if (event.target !== document.body && event.target !== document.documentElement) return;
-      const id = held;
+      const id = v.held;
       restore();
       handle(event, id);
     };
@@ -253,7 +252,7 @@
   /** Keys on the canvas: arrows move along edges, Enter zooms in, Esc zooms out. */
   function keydown(event: KeyboardEvent) {
     // On a node, or on the canvas while the held node is not drawn.
-    const focused = nodeOf(event) ?? (event.target === v.canvas ? (held ?? undefined) : undefined);
+    const focused = nodeOf(event) ?? (event.target === v.canvas ? (v.held ?? undefined) : undefined);
     if (focused) handle(event, focused);
   }
 

@@ -82,11 +82,10 @@ impl SignIns {
                 let ended = task.await;
                 self.finish(id);
                 match ended {
-                    Ok(result) => {
-                        Err(Failure::Account(result.err().unwrap_or_else(|| {
-                            "Codex sign-in ended before it started.".into()
-                        })))
-                    }
+                    Ok(Err(error)) => Err(Failure::Account(error)),
+                    // The library shows the prompt before it can succeed: a success without
+                    // one is a bug in this sign-in's own wiring.
+                    Ok(Ok(())) => unreachable!("a sign-in succeeded without showing its prompt"),
                     Err(error) => Err(ended_badly(error)),
                 }
             }

@@ -3,10 +3,12 @@
   import { Command, Dialog } from "bits-ui";
   import { getAppState } from "./app.svelte";
   import { label } from "./keys";
+  import { PaletteState, setPaletteState } from "./palette.svelte";
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
   const { commands } = getAppState();
-  let input = $state<HTMLInputElement | null>(null);
+  const palette = new PaletteState();
+  setPaletteState(palette);
 
   const groups = $derived.by(() => {
     const enabled = commands.all.filter((command) => command.enabled?.() ?? true);
@@ -34,12 +36,12 @@
       onOpenAutoFocus={(event) => {
         // However it opened (button or Ctrl+K), typing searches the commands.
         event.preventDefault();
-        input?.focus();
+        palette.input?.focus();
       }}
     >
       <Dialog.Title class="sr-only">Command palette</Dialog.Title>
       <Command.Root loop>
-        <Command.Input class="palette-input" placeholder="Type a command…" bind:ref={input} />
+        <Command.Input class="palette-input" placeholder="Type a command…" bind:ref={palette.input} />
         <Command.List class="palette-list">
           <Command.Viewport>
             <Command.Empty class="palette-empty">No matching command.</Command.Empty>

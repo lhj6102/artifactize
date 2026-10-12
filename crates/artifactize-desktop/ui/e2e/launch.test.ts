@@ -75,6 +75,46 @@ describe("launching the Monitor", () => {
   });
 });
 
+describe("launching the Monitor for every repository", () => {
+  let fixture: Fixture;
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+  const text = () => browser.execute(() => document.body.innerText);
+  const selectedScope = () =>
+    browser.execute(() => (document.querySelector('[aria-label="Scope"] [aria-selected="true"]') as HTMLElement | null)?.innerText ?? "");
+
+  before(async () => {
+    fixture = create();
+    addRepository(fixture, "other");
+    addRepository(fixture, "third");
+    // No repository named: the Monitor starts on everything in the state.
+    session = await start(fixture, "--all");
+    browser = session.browser;
+    await eventually(async () => (await text()).includes("signoff"), "the Run tree");
+  });
+
+  after(async () => {
+    await session?.stop();
+  });
+
+  // UX edges: E-LAUNCH-MONITOR E-MON-SCOPE-MOVE
+  it("starts on ALL with every repository's Runs and narrows to one repository", async () => {
+    assert.match(await selectedScope(), /^ALL/);
+    await eventually(async () => /Runs \(3\)/i.test(await text()), "the Runs of all three repositories");
+    const runIds = () =>
+      browser.execute(() =>
+        [...document.querySelectorAll('[aria-label="Runs"] [role="option"]')].map((row) => /run-\S+/.exec((row as HTMLElement).innerText)?.[0] ?? ""),
+      );
+    const all = await runIds();
+    assert.equal(new Set(all).size, 3, "three distinct Runs");
+    await browser.$('//ul[@aria-label="Scope"]//li[contains(., "third")]').click();
+    await eventually(async () => /Runs \(1\)/i.test(await text()), "one repository's Run");
+    const one = await runIds();
+    assert.equal(one.length, 1);
+    assert.ok(all.includes(one[0]), "it is one of the three");
+  });
+});
+
 describe("launching the Review screen for every repository", () => {
   let fixture: Fixture;
   let session: Session;
