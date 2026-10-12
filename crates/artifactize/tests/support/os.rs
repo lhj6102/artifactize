@@ -791,22 +791,28 @@ fn nt_process(pid: u32, suspend: bool) {
 }
 
 /// End a process at once, as SIGKILL does; one that has already gone is fine.
-#[cfg(windows)]
 pub fn kill(pid: u32) {
-    use windows_sys::Win32::{
-        Foundation::CloseHandle,
-        System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess},
-    };
-    // SAFETY: the handle is checked, used once, and closed.
-    unsafe {
-        let process = OpenProcess(PROCESS_TERMINATE, 0, pid);
-        if !process.is_null() {
-            TerminateProcess(process, 1);
-            CloseHandle(process);
+    #[cfg(unix)]
+    {
+        // SAFETY: the PID is a process this test owns, not a group or the caller.
+        unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+    }
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::{
+            Foundation::CloseHandle,
+            System::Threading::{OpenProcess, PROCESS_TERMINATE, TerminateProcess},
+        };
+        // SAFETY: the handle is checked, used once, and closed.
+        unsafe {
+            let process = OpenProcess(PROCESS_TERMINATE, 0, pid);
+            if !process.is_null() {
+                TerminateProcess(process, 1);
+                CloseHandle(process);
+            }
         }
     }
 }
-
 /// Whether a process has not exited. A PID that no longer names a process, or names one
 /// this user may not open, counts as exited.
 #[cfg(windows)]

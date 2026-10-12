@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 pub use crate::types::{ArtifactName, EvalId};
 mod identities;
 pub use identities::{
-    ChildPrefix, EndpointId, HubEpoch, LogicalPath, ModelId, MountAlias, ProfileVariantName,
-    ReferenceName, ToolName, ToolOperationName,
+    ChildPrefix, EndpointId, ExecutionPinName, HubEpoch, LogicalPath, ModelId, MountAlias,
+    ProfileVariantName, ReferenceName, ToolName, ToolOperationName,
 };
 use serde_json::{Map, Value};
 use thiserror::Error;
@@ -26,7 +26,7 @@ pub use stored::{Field, StoredPayload, StoredProfile};
 
 pub use tools::{
     AgentTool, Builtin, BuiltinTool, CommandTool, HumanBuiltinTool, HumanCommandTool, HumanTool,
-    HumanToolKind, ToolProtocol,
+    HumanToolKind, SessionCommand, ToolProtocol, ToolSession,
 };
 
 use location::Location;
@@ -550,6 +550,8 @@ impl EvalDeclaration {
 )]
 pub struct Views {
     #[serde(default)]
+    pub agent_sessions: BTreeMap<ToolOperationName, ToolSession>,
+    #[serde(default)]
     pub agent_tools: BTreeMap<ToolOperationName, AgentTool>,
     #[serde(default)]
     pub human_tools: BTreeMap<ToolOperationName, HumanTool>,
@@ -557,8 +559,31 @@ pub struct Views {
 
 impl Views {
     fn validate(&self, location: &Location<'_, '_>) -> Result<(), String> {
+        for (name, session) in &self.agent_sessions {
+            let sessions = location.child("agent_sessions");
+            sessions
+                .key(name)
+                .check(identifier(name, "Tool session name"))?;
+            sessions
+                .child(name)
+                .child("start")
+                .check(session.start.validate())?;
+            sessions
+                .child(name)
+                .child("stop")
+                .check(session.stop.validate())?;
+        }
         for (name, tool) in &self.agent_tools {
             let tools = location.child("agent_tools");
+            if let AgentTool::Command(tool) = tool
+                && let Some(session) = &tool.session
+                && !self.agent_sessions.contains_key(session)
+            {
+                return Err(tools
+                    .child(name)
+                    .child("session")
+                    .error(format!("Unknown tool session: {session}")));
+            }
             tools.key(name).check(identifier(name, "Agent tool name"))?;
             tools
                 .child(name)
@@ -917,6 +942,20 @@ pub fn parse_declaration(source: &str) -> Result<ArtifactDeclaration, String> {
                 .child("human_tools")
                 .child(name.get_ref())
                 .deserialize::<HumanTool>()?;
+        }
+    }
+    if let Some(sessions) = document
+        .get_ref()
+        .get("views")
+        .and_then(|views| views.get_ref().get("agent_sessions"))
+        .and_then(|sessions| sessions.get_ref().as_table())
+    {
+        for (name, _) in sessions {
+            location
+                .child("views")
+                .child("agent_sessions")
+                .child(name.get_ref())
+                .deserialize::<ToolSession>()?;
         }
     }
     let declaration =

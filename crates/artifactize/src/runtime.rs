@@ -60,6 +60,33 @@ impl Command {
         })
     }
 
+    pub(crate) fn session_environment(&mut self, directory: &Path) {
+        self.command
+            .env
+            .insert("ARTIFACTIZE_SESSION_DIR".into(), directory.into());
+    }
+
+    pub(crate) fn inherit_session(
+        &mut self,
+        environment: &std::collections::BTreeMap<OsString, OsString>,
+    ) {
+        for key in crate::platform::HOME_VARIABLES
+            .iter()
+            .chain(crate::platform::CACHE_VARIABLES.iter())
+            .copied()
+            .chain(["ARTIFACTIZE_SESSION_DIR"])
+        {
+            if let Some(value) = environment.get(std::ffi::OsStr::new(key)) {
+                self.command.env.insert(key.into(), value.clone());
+            }
+        }
+    }
+
+    pub(crate) fn into_process(mut self) -> process::Command {
+        self.command.cwd = self.cwd;
+        self.command
+    }
+
     pub fn directory(&self) -> &Path {
         &self.directory
     }

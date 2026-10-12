@@ -107,6 +107,13 @@ identity!(ToolName, |value: &str| !value.is_empty()
     && value.bytes().all(
         |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
     ));
+// Provenance also names lifecycle commands; a dot cannot occur in published tools.
+identity!(ExecutionPinName, |value: &str| value
+    .strip_suffix(".start")
+    .or_else(|| value.strip_suffix(".stop"))
+    .unwrap_or(value)
+    .parse::<ToolName>()
+    .is_ok());
 identity!(EndpointId, |value: &str| value.len() == ENDPOINT_HEX_BYTES
     && value.bytes().all(
         |byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()

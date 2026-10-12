@@ -68,6 +68,14 @@ impl Child {
         self.child.wait().await
     }
 
+    pub async fn wait_leader(&mut self) -> io::Result<ExitStatus> {
+        self.child.wait().await
+    }
+
+    pub fn try_wait_leader(&mut self) -> io::Result<Option<ExitStatus>> {
+        self.child.try_wait()
+    }
+
     /// Ask the child's console process group to stop with Ctrl-Break, the closest to SIGTERM.
     /// This fails when the child shares no console with artifactize; the job is killed after
     /// the grace period either way.
@@ -331,6 +339,11 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
         return Err(io::Error::last_os_error());
     }
     Ok((u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
+}
+
+/// A dead owner has already closed its kill-on-close Job handle.
+pub(crate) fn kill_saved_group(_leader: crate::process::ChildIdentity) -> io::Result<()> {
+    Ok(())
 }
 
 #[cfg(test)]

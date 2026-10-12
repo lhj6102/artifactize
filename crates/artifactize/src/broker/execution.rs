@@ -22,6 +22,7 @@ pub(super) enum Prepared {
         session: crate::types::SessionId,
         /// Where the review's conversation is saved; `None` when saving is off.
         saving: Option<agent::session::Saving>,
+        tools: crate::tools::sessions::Sessions,
     },
     Human,
 }
@@ -64,6 +65,7 @@ pub(super) async fn execute(
             state,
             session,
             saving,
+            tools,
         }) => {
             let eval = config
                 .evals
@@ -78,8 +80,10 @@ pub(super) async fn execute(
                 &state,
                 &mut recorder,
                 cancellation.clone(),
+                &tools,
             )
             .await;
+            let cleaned = tools.close().await;
             // The result names its saved conversation, and so does every reuse of it.
             if let Some(reference) = recorder.reference() {
                 request.session = Some(reference.clone());
@@ -88,10 +92,13 @@ pub(super) async fn execute(
                 }
             }
             request.usage = Some(review.attempts);
-            review
-                .result
-                .map(Into::into)
-                .map_err(|failure| (failure.message, failure.code.into()))
+            match cleaned {
+                Ok(()) => review
+                    .result
+                    .map(Into::into)
+                    .map_err(|failure| (failure.message, failure.code.into())),
+                Err(error) => Err((error, crate::types::FailureCode::AgentError)),
+            }
         }
         Ok(Prepared::Runtime(command)) => {
             let receipts = receipts.clone();
@@ -241,6 +248,7 @@ pub(super) fn prepare(
             state: state.into(),
             session,
             saving: saving.cloned(),
+            tools: Default::default(),
         });
     }
     let Profile::Runtime {

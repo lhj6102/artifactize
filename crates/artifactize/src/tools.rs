@@ -6,6 +6,7 @@ pub mod human;
 mod image;
 pub mod pins;
 mod result;
+pub mod sessions;
 pub(crate) use artifactize_tools::schema;
 
 pub use artifactize_tools::{Content, ToolResult};
@@ -99,6 +100,7 @@ pub struct Registry<'a> {
     config: &'a RepoConfig,
     scope: Scope<'a>,
     tools: BTreeMap<crate::config::ToolName, RegisteredTool<'a>>,
+    sessions: Option<&'a sessions::Sessions>,
 }
 
 impl<'a> Registry<'a> {
@@ -127,8 +129,21 @@ impl<'a> Registry<'a> {
 
     fn with_scope(config: &'a RepoConfig, scope: Scope<'a>) -> Result<Self, String> {
         let mut tools = BTreeMap::new();
+        let mut session_names = BTreeMap::new();
         for (id, artifact) in &scope.artifacts {
             for (operation, declaration) in &artifact.views.agent_tools {
+                if let AgentTool::Command(command) = declaration
+                    && let Some(session) = &command.session
+                {
+                    let key = format!("{session}_{id}");
+                    let identity = (id, session);
+                    if session_names
+                        .insert(key.clone(), identity)
+                        .is_some_and(|previous| previous != identity)
+                    {
+                        return Err(format!("Artifact tool session names collide: {key}"));
+                    }
+                }
                 let name: crate::config::ToolName = format!("{operation}_{id}")
                     .parse()
                     .expect("validated tool and Artifact names");
@@ -165,7 +180,21 @@ impl<'a> Registry<'a> {
             config,
             scope,
             tools,
+            sessions: None,
         })
+    }
+
+    pub(crate) fn with_session_scope<'b>(
+        &'b self,
+        sessions: &'b sessions::Sessions,
+    ) -> Result<Registry<'b>, String> {
+        Registry::with_scope(self.config, self.scope.clone())
+            .map(|registry| registry.with_sessions(sessions))
+    }
+
+    pub fn with_sessions(mut self, sessions: &'a sessions::Sessions) -> Self {
+        self.sessions = Some(sessions);
+        self
     }
 
     pub fn list(&self) -> impl Iterator<Item = &ToolDefinition> {
@@ -184,6 +213,18 @@ impl<'a> Registry<'a> {
             .map_err(|e| e.to_string())?;
         if let AgentTool::Command(command) = tool.declaration {
             preflight_executable(&self.config.root, &self.scope, owner, &command.command)?;
+            if let Some(name) = &command.session {
+                let session = &self.scope.artifacts[owner].views.agent_sessions[name];
+                for command in [&session.start, &session.stop] {
+                    preflight_executable(&self.config.root, &self.scope, owner, &command.command)?;
+                    scope::resolve_argv(self.config, &self.scope, owner, &command.args)
+                        .map_err(|error| error.to_string())?;
+                    for path in &command.execution_paths {
+                        scope::scoped_path(&self.config.root, Path::new(path))
+                            .map_err(|error| error.to_string())?;
+                    }
+                }
+            }
             if matches!(command.protocol, ToolProtocol::Json) {
                 scope::resolve_argv(self.config, &self.scope, owner, &command.args)
                     .map_err(|e| e.to_string())?;
@@ -272,6 +313,18 @@ impl<'a> Registry<'a> {
                 .unwrap_or_else(|_| ToolResult::error("Built-in Agent tool execution failed."));
             }
         };
+        let environment = if let Some(name) = &command.session {
+            let key = sessions::session_key(name, &tool.definition.artifact_id);
+            match self
+                .sessions
+                .and_then(|sessions| sessions.environment(&key))
+            {
+                Some(environment) => Some(environment.clone()),
+                None => return ToolResult::error(format!("The tool session `{name}` ended.")),
+            }
+        } else {
+            None
+        };
         let invocation = match self.prepare(&tool.definition.artifact_id, command, &args) {
             Ok(invocation) => invocation,
             Err(()) => return ToolResult::error("Agent tool preparation failed."),
@@ -283,11 +336,39 @@ impl<'a> Registry<'a> {
         // Keep cleanup alive if the caller drops its future while a command is running.
         crate::task::joined(
             tokio::spawn(async move {
-                invoke(invocation, args, &workspace, &output_root, cancellation).await
+                invoke(
+                    invocation,
+                    args,
+                    &workspace,
+                    &output_root,
+                    cancellation,
+                    environment,
+                )
+                .await
             })
             .await,
         )
         .unwrap_or_else(|_| ToolResult::error("Agent tool execution failed."))
+    }
+
+    fn prepare_session(
+        &self,
+        owner: &crate::config::ArtifactName,
+        command: &crate::config::SessionCommand,
+    ) -> Result<Invocation, String> {
+        let tool = CommandTool {
+            session: None,
+            description: String::new(),
+            input_schema: json!({"type":"object"}),
+            protocol: ToolProtocol::Json,
+            command: command.command.clone(),
+            args: command.args.clone(),
+            timeout_ms: None,
+            execution_paths: command.execution_paths.clone(),
+            plain_args: Vec::new(),
+        };
+        self.prepare(owner, &tool, &json!({}))
+            .map_err(|()| "Tool session preparation failed.".into())
     }
 
     fn prepare(
@@ -401,6 +482,7 @@ async fn invoke(
     workspace: &Path,
     output_root: &Path,
     cancellation: CancellationToken,
+    environment: Option<BTreeMap<OsString, OsString>>,
 ) -> ToolResult {
     let run = || {
         let root = workspace::prepare_directory(output_root, workspace).map_err(|_| ())?;
@@ -425,6 +507,9 @@ async fn invoke(
             runtime::Command::prepare(program, argv, workspace, directory.path(), Some(timeout_ms))
                 .map_err(|_| "Agent tool preparation failed.")?;
         command.cwd = cwd;
+        if let Some(environment) = &environment {
+            command.inherit_session(environment);
+        }
         let output_dir = command.directory().join("output");
         context.output_dir = Some(output_dir.clone());
         context.tmp_dir = Some(command.directory().join("tmp"));

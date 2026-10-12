@@ -802,7 +802,40 @@ impl Scheduler<'_, '_> {
                                 {
                                     Ok(pins) => {
                                         execution.provenance.execution_paths = pins;
-                                        Ok(prepared)
+                                        match prepared {
+                                            execution::Prepared::Agent {
+                                                state,
+                                                session,
+                                                saving,
+                                                ..
+                                            } => {
+                                                match tools::Registry::new(
+                                                    &config,
+                                                    &request.eval_id,
+                                                ) {
+                                                    Ok(registry) => match registry
+                                                        .start_sessions(
+                                                            &state,
+                                                            None,
+                                                            cancellation.clone(),
+                                                        )
+                                                        .await
+                                                    {
+                                                        Ok(tools) => {
+                                                            Ok(execution::Prepared::Agent {
+                                                                state,
+                                                                session,
+                                                                saving,
+                                                                tools,
+                                                            })
+                                                        }
+                                                        Err(error) => Err(error),
+                                                    },
+                                                    Err(error) => Err(error),
+                                                }
+                                            }
+                                            prepared => Ok(prepared),
+                                        }
                                     }
                                     Err(error) => Err(error),
                                 }

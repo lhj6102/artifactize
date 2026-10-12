@@ -16,6 +16,7 @@ use crate::{
 mod budgets;
 mod follow_up;
 mod repair;
+mod tool_sessions;
 
 const SESSION: &str = "0f4c2a9e-review-session";
 
@@ -172,6 +173,7 @@ impl Fixture {
                 &self.output,
                 &mut recorder,
                 CancellationToken::new(),
+                &crate::tools::sessions::Sessions::default(),
             )
             .await,
             http,

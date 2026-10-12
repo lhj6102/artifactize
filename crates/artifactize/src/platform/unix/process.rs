@@ -36,6 +36,15 @@ impl Child {
         self.0.wait().await
     }
 
+    /// Session liveness is the leader's, not its descendants'.
+    pub async fn wait_leader(&mut self) -> io::Result<ExitStatus> {
+        self.0.inner_mut().wait().await
+    }
+
+    pub fn try_wait_leader(&mut self) -> io::Result<Option<ExitStatus>> {
+        self.0.inner_mut().try_wait()
+    }
+
     /// Ask the group to stop with SIGTERM.
     pub fn interrupt(&self) -> io::Result<()> {
         self.0.signal(libc::SIGTERM)
@@ -306,6 +315,32 @@ fn spawn(mut command: CommandWrap) -> io::Result<(Gate, JoinHandle<io::Result<Ch
         })
     });
     Ok((gate, spawning))
+}
+
+/// Recover only the saved group, never a reused leader PID. An absent leader can
+/// still have live descendants; Darwin's zombie-only EPERM follows ordinary cleanup.
+pub(crate) fn kill_saved_group(leader: crate::process::ChildIdentity) -> io::Result<()> {
+    match process_start_time(leader.pid.get()) {
+        Ok(start) if start != leader.start_time => return Ok(()),
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+    }
+    let pgid = i32::try_from(leader.pid.get()).map_err(|_| io::ErrorKind::InvalidInput)?;
+    // SAFETY: the nonzero saved PID names a group owned by the dead artifactize owner;
+    // the preceding identity check excludes a known reused leader.
+    if unsafe { libc::killpg(pgid, libc::SIGKILL) } == 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::ESRCH) {
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    if error.raw_os_error() == Some(libc::EPERM) && process_group_exited(leader.pid.get())? {
+        return Ok(());
+    }
+    Err(error)
 }
 
 #[cfg(test)]

@@ -24,7 +24,7 @@ crates/app/tests/
 examples/
 ```
 
-Names, eval IDs, mount aliases, tool names and profile variant names match
+Names, eval IDs, mount aliases, tool/session names and profile variant names match
 `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Artifact names are globally unique. Evals are
 ID-keyed tables, not an array; `[evals.check]` on `app` becomes `app/check`.
 An explicit eval `id` field is rejected. Evals within each declaration are ordered
@@ -38,6 +38,8 @@ by ID, not by their position in the TOML source.
 | `basis` | Optional boolean; `true` declares a no-eval input, waiving its own review obligations but not its dependencies |
 | `fingerprint` | Omission uses artifactsum; `false` disables reuse; otherwise an artifactsum or script table |
 | `views.agent_tools`, `views.human_tools` | Optional maps of declared tools |
+| `views.agent_sessions.<name>.start`, `.stop` | Tool-session commands: required `command` and `args`, optional `execution_paths`; no other fields |
+| `views.agent_tools.<name>.session` | Optional name of a tool session declared in the same Artifact; command Agent tools only |
 | `review_policy.dependency_gates` | `green` (default) or `ignore`; only in the repository root's `index.artf` |
 | `evals.<id>.title` | Required nonblank title |
 | `evals.<id>.profile` | Required `runtime`, `agent`, `human` or `dependency` profile |

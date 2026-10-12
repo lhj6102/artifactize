@@ -88,7 +88,7 @@ impl rusqlite::types::FromSql for ProcessId {
 }
 
 /// Process id and start time, captured while the group leader is still inert.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ChildIdentity {
     pub pid: ProcessId,
     /// Linux: clock ticks since boot (procfs field 22). macOS: microseconds since the
@@ -267,61 +267,14 @@ where
         return Err(Error::Timeout);
     }
 
-    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
-        environment_value(&command.env, name).map(ToOwned::to_owned)
-    })
-    .map_err(Error::Spawn)?;
-    let mut child = tokio::process::Command::new(&program);
-    child
-        .args(&command.args)
-        .current_dir(&command.cwd)
-        .env_clear()
-        .envs(&command.env)
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    let (gate, mut spawning) = platform::spawn_gated(child).map_err(Error::Spawn)?;
-    let admission = tokio::select! {
-        biased;
-        _ = cancellation.cancelled() => Err(Error::Cancelled),
-        _ = sleep_until(deadline) => Err(Error::Timeout),
-        result = async {
-            let pid = gate.pid().await?;
-            let child = child_identity(pid).map_err(Error::Registration)?;
-            register(child).await.map_err(Error::Registration)?;
-            Ok::<_, Error>(())
-        } => result,
-    };
-    // Cancellation may have arrived during the callback's final poll.
-    let admission = admission.and_then(|()| {
-        if cancellation.is_cancelled() {
-            Err(Error::Cancelled)
-        } else if Instant::now() >= deadline {
-            Err(Error::Timeout)
-        } else {
-            gate.admit().map_err(Error::Io)
-        }
-    });
-    drop(gate);
-    let spawned = crate::task::joined((&mut spawning).await)?;
-    let mut child = match spawned {
-        Ok(child) => child,
-        Err(error) => {
-            return Err(match admission {
-                Err(error @ (Error::Registration(_) | Error::Cancelled | Error::Timeout)) => error,
-                _ => Error::Spawn(error),
-            });
-        }
-    };
-    if let Err(error) = admission {
-        terminate(&mut child).await?;
-        return Err(error);
-    }
+    let mut child = spawn_owned(
+        &command,
+        input.is_some(),
+        cancellation.clone(),
+        deadline,
+        register,
+    )
+    .await?;
 
     let stdout = child.stdout().take().expect("stdout is piped");
     let stderr = child.stderr().take().expect("stderr is piped");
@@ -385,6 +338,74 @@ where
         truncated: stdout_truncated || stderr_truncated,
         duration: started.elapsed(),
     })
+}
+
+/// Gated spawn shared by one-shot calls and long-lived tool sessions. The caller must
+/// own this future in a supervisor so dropping a request cannot abandon admission.
+pub(crate) async fn spawn_owned<F, R>(
+    command: &Command,
+    input: bool,
+    cancellation: CancellationToken,
+    deadline: Instant,
+    register: F,
+) -> Result<Child, Error>
+where
+    F: FnOnce(ChildIdentity) -> R,
+    R: Future<Output = io::Result<()>>,
+{
+    let program = platform::program::resolve_with(&command.program, &command.cwd, |name| {
+        environment_value(&command.env, name).map(ToOwned::to_owned)
+    })
+    .map_err(Error::Spawn)?;
+    let mut child = tokio::process::Command::new(&program);
+    child
+        .args(&command.args)
+        .current_dir(&command.cwd)
+        .env_clear()
+        .envs(&command.env)
+        .stdin(if input { Stdio::piped() } else { Stdio::null() })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    let (gate, mut spawning) = platform::spawn_gated(child).map_err(Error::Spawn)?;
+    let admission = tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => Err(Error::Cancelled),
+        _ = sleep_until(deadline) => Err(Error::Timeout),
+        result = async {
+            let pid = gate.pid().await?;
+            let child = child_identity(pid).map_err(Error::Registration)?;
+            register(child).await.map_err(Error::Registration)?;
+            Ok::<_, Error>(())
+        } => result,
+    };
+    // Cancellation may have arrived during the callback's final poll.
+    let admission = admission.and_then(|()| {
+        if cancellation.is_cancelled() {
+            Err(Error::Cancelled)
+        } else if Instant::now() >= deadline {
+            Err(Error::Timeout)
+        } else {
+            gate.admit().map_err(Error::Io)
+        }
+    });
+    drop(gate);
+    let spawned = crate::task::joined((&mut spawning).await)?;
+    let mut child = match spawned {
+        Ok(child) => child,
+        Err(error) => {
+            return Err(match admission {
+                Err(error @ (Error::Registration(_) | Error::Cancelled | Error::Timeout)) => error,
+                _ => Error::Spawn(error),
+            });
+        }
+    };
+    if let Err(error) = admission {
+        terminate(&mut child).await?;
+        return Err(error);
+    }
+
+    Ok(child)
 }
 
 fn environment_value<'a>(

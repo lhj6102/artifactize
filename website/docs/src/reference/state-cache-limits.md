@@ -180,6 +180,9 @@ occupies a job slot like any running eval, so a process runs at most
 `min(--jobs, free slots)` reviews of a limited backend. Cancelling a `verify` ends
 its waiting requests as CANCELLED, and its held slots are released.
 
+Tool-session directories live under `$STATE/tool-sessions/`, separately from saved
+conversations, and are cleaned after a crash before the next tool session starts.
+
 ## Agent sessions
 
 Each Agent review's conversation is saved under the state, for

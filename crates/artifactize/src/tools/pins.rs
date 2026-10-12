@@ -18,7 +18,7 @@ const MAX_BYTES: u64 = 1024 * 1024 * 1024;
 
 /// Pins by registered tool name, then by declared workspace-relative path.
 pub type Pins = BTreeMap<
-    crate::config::ToolName,
+    crate::config::ExecutionPinName,
     BTreeMap<crate::config::LogicalPath, crate::types::Sha256Digest>,
 >;
 
@@ -38,7 +38,34 @@ pub async fn execution_paths(config: &RepoConfig, eval_id: &str) -> Result<Pins,
         for path in &command.execution_paths {
             let absolute = scope::scoped_path(&config.root, Path::new(path))
                 .map_err(|e| format!("Tool {name} executionPaths {path}: {e}"))?;
-            resolved.push((name.clone(), path.clone(), absolute));
+            resolved.push((
+                name.as_str().parse::<crate::config::ExecutionPinName>()?,
+                path.clone(),
+                absolute,
+            ));
+        }
+    }
+    let mut sessions = std::collections::BTreeSet::new();
+    for tool in registry.tools.values() {
+        let AgentTool::Command(command) = tool.declaration else {
+            continue;
+        };
+        let Some(name) = &command.session else {
+            continue;
+        };
+        let owner = &tool.definition.artifact_id;
+        if !sessions.insert((owner.clone(), name.clone())) {
+            continue;
+        }
+        let session = &registry.scope.artifacts[owner].views.agent_sessions[name];
+        for (suffix, command) in [("start", &session.start), ("stop", &session.stop)] {
+            let key: crate::config::ExecutionPinName =
+                format!("{name}_{owner}.{suffix}").parse()?;
+            for path in &command.execution_paths {
+                let absolute = scope::scoped_path(&config.root, Path::new(path))
+                    .map_err(|error| format!("Tool {key} executionPaths {path}: {error}"))?;
+                resolved.push((key.clone(), path.clone(), absolute));
+            }
         }
     }
     if resolved.is_empty() {

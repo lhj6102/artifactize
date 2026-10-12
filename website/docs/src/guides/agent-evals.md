@@ -98,6 +98,29 @@ fixed `args` forms, is in [Built-in tools](../reference/builtin-tools.md).
 [`tools check`](../reference/agent-tools.md#tool-diagnostics) validates declared
 tools and runs one without a review.
 
+### Keep a harness running across tool calls
+
+Declare a [tool session](../reference/agent-tools.md#tool-sessions) and bind tools to
+it. artifactize starts it before the Agent and always stops it after the review;
+the Agent never calls start/stop or supplies a session ID.
+
+```toml
+[views.agent_sessions.app]
+start = { command = "harness", args = ["start"] }
+stop = { command = "harness", args = ["stop"] }
+
+[views.agent_tools.click]
+session = "app"
+description = "Click an element of the running app."
+command = "harness"
+args = ["act"]
+protocol = "json"
+```
+
+The start command receives the usual JSON envelope and `ARTIFACTIZE_SESSION_DIR`,
+prints one line when ready, and stays running. Bound tools and stop use the same
+private directory. These are tool sessions, not the saved conversations below.
+
 ## Agent backends
 
 [Agent reviews](#agent-reviews) above shows the Agent profile, the backends and

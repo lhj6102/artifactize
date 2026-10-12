@@ -19,7 +19,9 @@ use std::{
 pub(crate) use tempfile::TempDir as PrivateTempDir;
 use tokio::signal::unix::{SignalKind, signal};
 
-pub(crate) use process::{Child, process_start_time, spawn_detached, spawn_gated};
+pub(crate) use process::{
+    Child, kill_saved_group, process_start_time, spawn_detached, spawn_gated,
+};
 
 /// POSIX file locks are advisory, and unlinking a name never invalidates another handle's
 /// access to it, so a plain metadata or open race like Windows's never happens here.

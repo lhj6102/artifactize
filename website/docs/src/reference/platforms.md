@@ -35,6 +35,9 @@ standard library quotes each argument for `cmd.exe` and refuses an argument it c
 pass safely. The error reads `Process arguments could not be passed safely`, and
 nothing runs.
 
+Tool sessions on Windows die with artifactize's kill-on-close Job; abandoned Unix
+session groups are cleaned before the next tool session starts.
+
 ## Paths
 
 Logical paths use `/` on every OS, in declarations, tool arguments, results and
