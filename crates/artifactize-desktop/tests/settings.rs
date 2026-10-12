@@ -290,7 +290,7 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     secret_free(&echoed);
     assert_eq!(
         echoed["message"],
-        "The remote store answered HTTP 400: Bad request; Authorization: Bearer [redacted]"
+        "The remote store answered HTTP 400: [withheld: it contained part of the credential sent]"
     );
     let invalid = call(
         "remote_login",
@@ -327,12 +327,12 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     assert_eq!(echoed["principal"], Value::Null);
     assert_eq!(
         echoed["error"],
-        "The remote store answered HTTP 400: Bad request; Authorization: Bearer [redacted]"
+        "The remote store answered HTTP 400: [withheld: it contained part of the credential sent]"
     );
     let failed = call("remote_push", json!({"dryRun": true})).unwrap_err();
     secret_free(&failed);
     assert!(
-        failed["message"].as_str().unwrap().contains("[redacted]"),
+        failed["message"].as_str().unwrap().contains("[withheld"),
         "{failed}"
     );
     ECHO.store(false, Ordering::SeqCst);

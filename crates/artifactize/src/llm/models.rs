@@ -60,7 +60,14 @@ async fn list_at(backend: Backend, key: &str, base: &str) -> Result<Vec<ListedMo
     let models = tokio::time::timeout(LIST_TIMEOUT, request)
         .await
         .map_err(|_| "Model listing timed out.".to_owned())?
-        .map_err(|error| super::diagnostic(&error).replace(key, "[redacted]"))?;
+        .map_err(|error| {
+            let text = super::diagnostic_hiding(&error, &[key]);
+            if text == crate::secret::WITHHELD {
+                format!("Model listing failed: {text}")
+            } else {
+                text
+            }
+        })?;
     // A listed model without a usable id cannot be selected, so it is left out.
     Ok(models
         .into_iter()
@@ -152,8 +159,23 @@ mod tests {
                 .await
                 .err()
                 .unwrap();
-            assert!(error.contains("Invalid"), "{error}");
-            assert!(!error.contains("secret-key"), "{error}");
+            // The provider's text held the key: withheld whole, as every server text is.
+            assert_eq!(
+                error,
+                format!("Model listing failed: {}", crate::secret::WITHHELD)
+            );
         }
+        // Text without the key still explains the failure.
+        let server = Server::new(vec![MockHttpResponse::error(
+            rig_core::http_client::StatusCode::UNAUTHORIZED,
+            json!({"error":{"message":"Invalid API key\n", "type":"authentication_error"}})
+                .to_string(),
+        )])
+        .await;
+        let error = list_at(Backend::Openai, "secret-key-value", &server.base)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(error, "Invalid API key");
     }
 }

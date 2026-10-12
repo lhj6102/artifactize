@@ -714,3 +714,42 @@ fn the_newer_record_wins_across_local_history_and_the_store() {
     assert!(again["requests"][0]["origin"].is_null());
     assert_eq!(history().as_array().unwrap().len(), 3);
 }
+
+/// A store that accepts the token, then answers a lookup with a record whose only field is the
+/// token: decoding it fails, and the failure names the field. Neither verify's output nor its
+/// warnings may hold the token or a piece of it.
+#[test]
+fn an_undecodable_record_naming_the_token_never_gets_it_printed() {
+    let root = support::os::tempdir();
+    let token = format!("azt_lookup{}", "0123456789abcdef".repeat(2));
+    let echoed = token.clone();
+    let store = support::FakeProvider::start(move |request| match request.path.as_str() {
+        "/v1/whoami" => {
+            support::Reply::Json(200, json!({"principal":"bob-laptop","scopes":["read"]}))
+        }
+        "/v1/lookup" => support::Reply::Json(
+            200,
+            json!({"entries":[{ echoed.clone(): null }, { format!("{}\n{}", &echoed[..14], &echoed[14..]): 1 }]}),
+        ),
+        _ => support::Reply::Json(404, json!({"error":"not found"})),
+    });
+    let bob = Machine::new(root.path(), "bob", &format!("{}/", store.url), &token);
+    let repo = runtime_repo(root.path(), "repo", "v1");
+    let (stdout, stderr) = bob.run(&repo, &["verify", "--all", "--json"], 0);
+    for piece in [&token[10..22], &token[token.len() - 12..]] {
+        assert!(
+            !stdout.contains(piece) && !stderr.contains(piece),
+            "{stdout}{stderr}"
+        );
+    }
+    assert!(
+        stderr.contains("Ignoring an invalid remote review record: [withheld"),
+        "{stderr}"
+    );
+    assert!(
+        store
+            .requests()
+            .iter()
+            .any(|request| request.path == "/v1/lookup")
+    );
+}

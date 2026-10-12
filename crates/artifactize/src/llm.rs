@@ -508,7 +508,19 @@ fn wait_header(
 }
 
 fn diagnostic(error: &ProviderError) -> String {
-    let message = error
+    clean_diagnostic(&message(error))
+}
+
+/// A provider's error for a request that carried `secrets` (an API key): the shared rule for
+/// server text, so an echoed key is withheld rather than shown.
+fn diagnostic_hiding(error: &ProviderError, secrets: &[&str]) -> String {
+    let cleaned = String::from_utf8(crate::runtime::clean_output(message(error).as_bytes()))
+        .expect("clean output is UTF-8");
+    crate::secret::server_text(&cleaned, secrets, MAX_DIAGNOSTIC_CHARS)
+}
+
+fn message(error: &ProviderError) -> String {
+    error
         .provider_response()
         .and_then(|response| serde_json::from_str::<Value>(&response.body).ok())
         .and_then(|body| {
@@ -517,8 +529,7 @@ fn diagnostic(error: &ProviderError) -> String {
                 .and_then(Value::as_str)
                 .map(str::to_owned)
         })
-        .unwrap_or_else(|| error.to_string());
-    clean_diagnostic(&message)
+        .unwrap_or_else(|| error.to_string())
 }
 
 /// The environment variable that holds an API-key backend's key; `None` for codex.

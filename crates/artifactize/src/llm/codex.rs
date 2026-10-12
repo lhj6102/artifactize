@@ -245,12 +245,25 @@ pub(super) async fn models(
     if !status.is_success() {
         // Provider error payloads vary by endpoint; the success catalog has a known shape.
         let body = errors::Error::parse(&data);
-        return Err(describe(
-            Some(status.as_u16()),
-            body.as_ref(),
-            "Codex model listing failed.",
-            auth::now().ok(),
-        ));
+        // The provider's text answers a request that carried the access token.
+        let text = crate::secret::server_text(
+            &describe(
+                Some(status.as_u16()),
+                body.as_ref(),
+                "Codex model listing failed.",
+                auth::now().ok(),
+            ),
+            &[&token.access_token],
+            super::MAX_DIAGNOSTIC_CHARS,
+        );
+        return Err(if text == crate::secret::WITHHELD {
+            format!(
+                "Codex model listing failed (HTTP {}): {text}",
+                status.as_u16()
+            )
+        } else {
+            text
+        });
     }
     picker_models(&data)
 }

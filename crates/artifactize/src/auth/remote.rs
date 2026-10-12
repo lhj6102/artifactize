@@ -284,19 +284,10 @@ fn transport(error: reqwest::Error) -> Failure {
     }
 }
 
-/// A store's own explanation, safe to show and save: the token it was sent (a store or proxy
-/// may echo the Authorization header) is redacted before anything is cut, so no part of it
-/// survives, then control characters go and the text is clipped.
-fn diagnostic(error: &str, token: Option<&str>) -> String {
-    let redacted = match token.filter(|token| !token.is_empty()) {
-        Some(token) => error.replace(token, "[redacted]"),
-        None => error.to_owned(),
-    };
-    redacted
-        .chars()
-        .filter(|c| !c.is_control())
-        .take(MAX_ERROR_CHARS)
-        .collect()
+/// A store's own text (an error, a record it could not decode), safe to show and save: the
+/// shared rule for server text that may echo the token this request carried.
+fn diagnostic(text: &str, token: Option<&str>) -> String {
+    crate::secret::server_text(text, token.as_slice(), MAX_ERROR_CHARS)
 }
 
 impl Remote {
@@ -396,8 +387,10 @@ impl Remote {
                 .request(Method::POST, "v1/lookup")?
                 .json(&json!({ "keys": chunk }));
             let found: Found = Self::json(self.send(request).await?, "lookup").await?;
+            // A decode error quotes the record's own fields and values: server text.
             entries.extend(found.entries.into_iter().map(|entry| {
-                serde_json::from_value::<Record>(entry).map_err(|error| error.to_string())
+                serde_json::from_value::<Record>(entry)
+                    .map_err(|error| diagnostic(&error.to_string(), self.token.as_deref()))
             }));
         }
         Ok(entries)
@@ -513,22 +506,6 @@ pub fn logout(state: Option<&Path>, repo: Option<&Path>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_store_diagnostic_never_carries_the_token() {
-        let token = "azt_0123456789abcdef0123456789abcdef";
-        // Echoed whole, inside the clip, or where the clip would cut it.
-        for error in [
-            format!("Bad request: Authorization: Bearer {token}"),
-            format!("{}{token}", "x".repeat(MAX_ERROR_CHARS - 10)),
-            format!("{token}\n{token}"),
-        ] {
-            let shown = diagnostic(&error, Some(token));
-            assert!(!shown.contains(&token[..8]), "{shown}");
-            assert!(shown.chars().count() <= MAX_ERROR_CHARS);
-        }
-        assert_eq!(diagnostic("Unknown schema.\n", None), "Unknown schema.");
-    }
 
     #[test]
     fn nested_invalid_data_is_a_tls_failure() {

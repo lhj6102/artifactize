@@ -23,6 +23,7 @@ pub mod repository;
 pub mod review;
 pub mod runtime;
 pub mod scope;
+mod secret;
 pub mod server;
 pub mod store;
 mod task;
