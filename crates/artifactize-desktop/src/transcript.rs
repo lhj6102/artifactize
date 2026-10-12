@@ -3,7 +3,7 @@
 use crate::{App, Failure};
 use artifactize::{
     agent::session::{document::Move, live, transcript::BlockId},
-    monitor::session::Live,
+    monitor::{EvidenceStamp, session::Live},
     store,
 };
 use serde::{Deserialize, Serialize};
@@ -19,8 +19,14 @@ use std::{
 /// Open transcripts by handle; each is read by at most one job at a time.
 #[derive(Default)]
 pub struct Transcripts {
-    open: Mutex<BTreeMap<u32, Arc<tokio::sync::Mutex<Live>>>>,
+    open: Mutex<BTreeMap<u32, Entry>>,
     next: AtomicU32,
+}
+
+/// An open reader and the request's session facts it was resolved for.
+struct Entry {
+    live: Arc<tokio::sync::Mutex<Live>>,
+    stamp: EvidenceStamp,
 }
 
 /// The session behind a request, or why there is none to read.
@@ -65,28 +71,79 @@ pub struct TranscriptView {
     pub loading: bool,
 }
 
-/// Resolve request `id`'s session and open a reader for it.
+/// Resolve request `id`'s session and open a reader for it. With the `handle` already open
+/// for it, resolve again only when the request's session facts changed, as the terminal
+/// monitor does: a queued request gains its session once it runs. An unchanged session keeps
+/// its reader and position; another session replaces it.
 #[tauri::command]
 #[specta::specta]
-pub async fn transcript_open(app: tauri::State<'_, App>, id: String) -> Result<Opened, Failure> {
+pub async fn transcript_open(
+    app: tauri::State<'_, App>,
+    id: String,
+    handle: Option<u32>,
+) -> Result<Opened, Failure> {
     let view = store::read_request(&app.launch.state, &id)
         .await
         .map_err(Failure::Read)?;
-    Ok(match live::resolve(&app.launch.state, &view).await {
+    let stamp = EvidenceStamp::new(&view);
+    let current = handle.and_then(|handle| {
+        let open = app.transcripts.open.lock().expect("transcripts lock");
+        open.get(&handle)
+            .map(|entry| (handle, entry.live.clone(), entry.stamp == stamp))
+    });
+    if let Some((handle, live, true)) = &current {
+        let session = live.lock().await.source.reference.session_id.to_string();
+        return Ok(Opened {
+            handle: Some(*handle),
+            session: Some(session),
+            text: None,
+        });
+    }
+    let resolved = live::resolve(&app.launch.state, &view).await;
+    let mut open = app.transcripts.open.lock().expect("transcripts lock");
+    if let Some((handle, _, _)) = &current {
+        // Nothing to keep unless the same session resolves again below.
+        let kept = open.remove(handle);
+        if let (Ok(live::Resolution::Local(source)), Some(entry)) = (&resolved, kept) {
+            let reader = entry.live.clone();
+            // A reader busy with a window is replaced rather than waited for.
+            if let Ok(mut live) = reader.try_lock()
+                && live.source.reference == source.reference
+            {
+                live.source = source.clone();
+                if let Some(reader) = &mut live.reader {
+                    reader.source = source.clone();
+                }
+                live.invalidate();
+                drop(live);
+                let session = source.reference.session_id.to_string();
+                open.insert(
+                    *handle,
+                    Entry {
+                        live: entry.live,
+                        stamp,
+                    },
+                );
+                return Ok(Opened {
+                    handle: Some(*handle),
+                    session: Some(session),
+                    text: None,
+                });
+            }
+        }
+    }
+    Ok(match resolved {
         Ok(live::Resolution::Local(source)) => {
             let handle = app.transcripts.next.fetch_add(1, Ordering::Relaxed);
             let session = source.reference.session_id.to_string();
-            app.transcripts
-                .open
-                .lock()
-                .expect("transcripts lock")
-                .insert(
-                    handle,
-                    Arc::new(tokio::sync::Mutex::new(Live::new(
-                        u64::from(handle),
-                        source,
-                    ))),
-                );
+            let live = Live::new(u64::from(handle), source);
+            open.insert(
+                handle,
+                Entry {
+                    live: Arc::new(tokio::sync::Mutex::new(live)),
+                    stamp,
+                },
+            );
             Opened {
                 handle: Some(handle),
                 session: Some(session),
@@ -126,7 +183,7 @@ pub async fn transcript_window(
         .lock()
         .expect("transcripts lock")
         .get(&handle)
-        .cloned()
+        .map(|entry| entry.live.clone())
         .ok_or_else(|| Failure::Missing("The transcript was closed.".into()))?;
     let mut live = live.lock().await;
     live.geometry(columns as usize, rows as usize);

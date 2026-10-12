@@ -24,6 +24,11 @@ export const commands = {
 	/**  A fresh form for `verdict`, from the owner schema recorded with request `id`. */
 	humanForm: (id: string, verdict: Verdict) => typedError<FormView, Failure>(__TAURI_INVOKE("human_form", { id, verdict })),
 	/**
+	 *  The owner-fields JSON of `draft`, to edit a typed form as JSON: what the terminal review
+	 *  hands to `$EDITOR`.
+	 */
+	humanJson: (id: string, draft: Draft) => typedError<string, Failure>(__TAURI_INVOKE("human_json", { id, draft })),
+	/**
 	 *  Claim request `id` for this reviewer; nothing else claims. The standalone review offers
 	 *  its claims for release on quit; the monitor keeps them, as in the terminal.
 	 */
@@ -39,7 +44,7 @@ export const commands = {
 	 *  Submit `draft` for request `id` and publish it like `request submit`. A result the
 	 *  schema rejects keeps the request waiting and fails as `invalid`.
 	 */
-	humanSubmit: (id: string, draft: Draft, job: number) => typedError<Acted, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
+	humanSubmit: (id: string, draft: Draft, job: number) => typedError<Submitted, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
 	/**  Release this reviewer's claims on `ids` without a verdict. */
 	humanRelease: (ids: string[], job: number) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
 	/**
@@ -47,14 +52,19 @@ export const commands = {
 	 *  entry per sign-off, followers collapsed onto their original. `reload: false` redraws
 	 *  the last list.
 	 */
-	humanWaiting: (all: boolean, reload: boolean) => typedError<WaitingRow[], Failure>(__TAURI_INVOKE("human_waiting", { all, reload })),
+	humanWaiting: (all: boolean, reload: boolean) => typedError<Waiting, Failure>(__TAURI_INVOKE("human_waiting", { all, reload })),
 	/**
 	 *  Claims the standalone review took and has neither submitted nor released, for the quit
 	 *  prompt.
 	 */
 	humanTaken: () => __TAURI_INVOKE<string[]>("human_taken"),
-	/**  Resolve request `id`'s session and open a reader for it. */
-	transcriptOpen: (id: string) => typedError<Opened, Failure>(__TAURI_INVOKE("transcript_open", { id })),
+	/**
+	 *  Resolve request `id`'s session and open a reader for it. With the `handle` already open
+	 *  for it, resolve again only when the request's session facts changed, as the terminal
+	 *  monitor does: a queued request gains its session once it runs. An unchanged session keeps
+	 *  its reader and position; another session replaces it.
+	 */
+	transcriptOpen: (id: string, handle: number | null) => typedError<Opened, Failure>(__TAURI_INVOKE("transcript_open", { id, handle })),
 	/**
 	 *  The visible rows of transcript `handle` in a `columns` × `rows` pane, after moving and
 	 *  toggling the activity group on `toggle` (a row of the last window). `changed` re-reads
@@ -101,6 +111,12 @@ export type BrowseView = {
 	refreshed: boolean,
 	/**  The state was replaced since the last view: Details and drafts no longer apply. */
 	replaced: boolean,
+	/**
+	 *  Grows with every change of the shown snapshot; a response with a lower revision is
+	 *  older than one already shown, and views derived from the snapshot (Detail) read again
+	 *  when it grows.
+	 */
+	revision: number,
 };
 
 export type Claimant = {
@@ -207,6 +223,8 @@ export type HumanView = {
 	recorded: boolean,
 	/**  A completed request's status and result, or its error. */
 	result: string | null,
+	/**  The state generation it was read from; a newer one means it no longer applies. */
+	generation: number,
 };
 
 /**  What the frontend needs to know about this launch. */
@@ -353,6 +371,16 @@ export type SessionChanged = {
 	session: string,
 };
 
+/**  Where a submission's settled result stands. */
+export type Settled = 
+/**  Settled locally and, with a review store configured, published to it. */
+"published" | 
+/**
+ *  Settled locally, but publishing it failed: the result stands and is never submitted
+ *  again; the notice says what failed.
+ */
+"savedLocally";
+
 export type Stage = 
 /**  Waiting and not claimed by this reviewer: read-only until claimed. */
 "claim" | 
@@ -366,6 +394,13 @@ export type StateChanged = {
 
 /**  Every status the monitor shows, most urgent first. */
 export type Status = "ERROR" | "RED" | "BLOCKED" | "RUNNING" | "WAITING_HUMAN" | "QUEUED" | "BUDGET_EXHAUSTED" | "WAIT_DEPENDENCY" | "WAIT" | "STALE" | "UNREVIEWED" | "INCOMPLETE" | "GREEN" | "BASIS";
+
+/**  A settled submission: how it stands, its notice and the completed request. */
+export type Submitted = {
+	settled: Settled,
+	notice: Notice,
+	view: HumanView | null,
+};
 
 export type Tone = "green" | "red" | "error" | "running" | "human" | "queued" | "blocked" | "muted";
 
@@ -441,6 +476,12 @@ export type Verdict = "GREEN" | "RED";
 export type WaitLine = {
 	text: string,
 	pending: boolean,
+};
+
+/**  The waiting list and the state generation it was read from. */
+export type Waiting = {
+	generation: number,
+	rows: WaitingRow[],
 };
 
 export type WaitingRow = {

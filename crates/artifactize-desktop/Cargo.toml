@@ -30,8 +30,29 @@ tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
 tokio-util = "0.7"
 
 [dev-dependencies]
+# The CLI tests' shared operating-system helpers (tests/support/os.rs) need these.
+sha2 = "0.11"
+toml = "1.1.8"
 tauri = { version = "2.12", features = ["test"] }
 tempfile = "3.27"
+
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }
 
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }

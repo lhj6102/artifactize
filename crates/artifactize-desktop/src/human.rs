@@ -8,6 +8,16 @@ mod form;
 
 pub use form::{Draft, FormView, Verdict};
 
+/// The state's identity right now, noted as the generation every Human view belongs to.
+async fn current(app: &App) -> Result<u32, Failure> {
+    let state = app.launch.state.clone();
+    let identity = tokio::task::spawn_blocking(move || store::read_state_id(&state))
+        .await
+        .map_err(|error| Failure::Read(error.to_string()))?
+        .map_err(Failure::Read)?;
+    Ok(app.observe(identity))
+}
+
 use crate::{App, Failure, detail::Field, status::Mark};
 use artifactize::{
     config::{HumanToolKind, ToolName},
@@ -45,6 +55,15 @@ pub struct Reviews {
 }
 
 impl Reviews {
+    /// Forget everything read from a replaced state and cancel its jobs.
+    pub fn reset(&self) {
+        self.cancel_all();
+        self.views.lock().expect("views lock").clear();
+        self.commands.lock().expect("commands lock").clear();
+        self.taken.lock().expect("taken lock").clear();
+        *self.waiting.lock().expect("waiting lock") = None;
+    }
+
     pub fn cancel_all(&self) {
         for token in self.jobs.lock().expect("jobs lock").values() {
             token.cancel();
@@ -135,6 +154,8 @@ pub struct HumanView {
     pub recorded: bool,
     /// A completed request's status and result, or its error.
     pub result: Option<String>,
+    /// The state generation it was read from; a newer one means it no longer applies.
+    pub generation: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -199,7 +220,12 @@ fn kind(kind: HumanToolKind) -> ToolKind {
     }
 }
 
-fn view(view: &RequestView, reviewer: &str, commands: Option<&Commands>) -> HumanView {
+fn view(
+    view: &RequestView,
+    reviewer: &str,
+    commands: Option<&Commands>,
+    generation: u32,
+) -> HumanView {
     let request = &view.request;
     let settled = request.status() != RequestStatus::WaitingHuman;
     let claim = view.claim.as_ref().map(|claim| Claimant {
@@ -251,6 +277,7 @@ fn view(view: &RequestView, reviewer: &str, commands: Option<&Commands>) -> Huma
             );
             format!("{}\n{result}", request.status())
         }),
+        generation,
     }
 }
 
@@ -301,6 +328,7 @@ fn show(app: &App, request: &RequestView) -> HumanView {
         request,
         app.launch.reviewer.as_str(),
         commands.get(&request.request.id),
+        app.generation.current(),
     )
 }
 
@@ -340,18 +368,7 @@ pub async fn human_form(
     verdict: Verdict,
 ) -> Result<FormView, Failure> {
     let id = parse(&id)?;
-    let request = match app
-        .human
-        .views
-        .lock()
-        .expect("views lock")
-        .get(&id)
-        .cloned()
-    {
-        Some(request) => request,
-        None => return Err(Failure::Missing("Open the request first.".into())),
-    };
-    form::template(&request.request, verdict)
+    form::template(&opened(&app, &id)?.request, verdict)
 }
 
 async fn run_job(app: &App, job: u32, work: Job) -> Outcome {
@@ -445,6 +462,37 @@ pub fn human_cancel(app: tauri::State<'_, App>, job: u32) {
     }
 }
 
+/// Where a submission's settled result stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub enum Settled {
+    /// Settled locally and, with a review store configured, published to it.
+    Published,
+    /// Settled locally, but publishing it failed: the result stands and is never submitted
+    /// again; the notice says what failed.
+    SavedLocally,
+}
+
+/// A settled submission: how it stands, its notice and the completed request.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Submitted {
+    pub settled: Settled,
+    pub notice: Notice,
+    pub view: Option<HumanView>,
+}
+
+/// The request recorded for request `id` when it was opened.
+fn opened(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
+    app.human
+        .views
+        .lock()
+        .expect("views lock")
+        .get(id)
+        .cloned()
+        .ok_or_else(|| Failure::Missing("Open the request first.".into()))
+}
+
 /// Submit `draft` for request `id` and publish it like `request submit`. A result the
 /// schema rejects keeps the request waiting and fails as `invalid`.
 #[tauri::command]
@@ -454,19 +502,9 @@ pub async fn human_submit(
     id: String,
     draft: Draft,
     job: u32,
-) -> Result<Acted, Failure> {
+) -> Result<Submitted, Failure> {
     let id = parse(&id)?;
-    let request = match app
-        .human
-        .views
-        .lock()
-        .expect("views lock")
-        .get(&id)
-        .cloned()
-    {
-        Some(request) => request,
-        None => return Err(Failure::Missing("Open the request first.".into())),
-    };
+    let request = opened(&app, &id)?;
     let result = form::result(&request.request, draft)?;
     let outcome = run_job(
         &app,
@@ -478,15 +516,29 @@ pub async fn human_submit(
         },
     )
     .await;
-    match &outcome {
+    let settled = match &outcome {
         Outcome::Submitted {
             result: Err(error), ..
-        } => Err(Failure::Invalid(error.clone())),
-        _ => {
-            app.human.took(&id, false);
-            acted(&app, &id, outcome).await
-        }
-    }
+        } => return Err(Failure::Invalid(error.clone())),
+        Outcome::SavedLocally { .. } => Settled::SavedLocally,
+        _ => Settled::Published,
+    };
+    app.human.took(&id, false);
+    let Acted { notice, view } = acted(&app, &id, outcome).await?;
+    Ok(Submitted {
+        settled,
+        notice,
+        view,
+    })
+}
+
+/// The owner-fields JSON of `draft`, to edit a typed form as JSON: what the terminal review
+/// hands to `$EDITOR`.
+#[tauri::command]
+#[specta::specta]
+pub fn human_json(app: tauri::State<'_, App>, id: String, draft: Draft) -> Result<String, Failure> {
+    let request = opened(&app, &parse(&id)?)?;
+    form::json(&request.request, draft)
 }
 
 /// Release this reviewer's claims on `ids` without a verdict.
@@ -531,6 +583,14 @@ pub async fn human_release(
     Ok(Acted { notice, view })
 }
 
+/// The waiting list and the state generation it was read from.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(rename_all = "camelCase")]
+pub struct Waiting {
+    pub generation: u32,
+    pub rows: Vec<WaitingRow>,
+}
+
 /// The waiting Human sign-offs of the launch repository, or with `all` of every one; one
 /// entry per sign-off, followers collapsed onto their original. `reload: false` redraws
 /// the last list.
@@ -540,22 +600,29 @@ pub async fn human_waiting(
     app: tauri::State<'_, App>,
     all: bool,
     reload: bool,
-) -> Result<Vec<WaitingRow>, Failure> {
+) -> Result<Waiting, Failure> {
     let cached = app.human.waiting.lock().expect("waiting lock").clone();
     let waiting = match cached {
         Some((covers, waiting)) if !reload && covers == all => waiting,
         _ => {
+            current(&app).await?;
             let repo = if all { None } else { app.launch.initial() };
             let waiting = store::read_waiting_originals(&app.launch.state, repo.as_deref())
                 .await
                 .map_err(Failure::Read)?;
             *app.human.waiting.lock().expect("waiting lock") = Some((all, waiting.clone()));
+            // The same read freshens every listed request's view, so its Preview shows the
+            // claims and states the list shows.
+            let mut views = app.human.views.lock().expect("views lock");
+            for view in &waiting {
+                views.insert(view.request.id.clone(), view.clone());
+            }
             waiting
         }
     };
     let now = OffsetDateTime::now_utc();
     let reviewer = app.launch.reviewer.as_str();
-    Ok(waiting
+    let rows = waiting
         .iter()
         .map(|view| {
             let request = &view.request;
@@ -586,7 +653,11 @@ pub async fn human_waiting(
                     ),
             }
         })
-        .collect())
+        .collect();
+    Ok(Waiting {
+        generation: app.generation.current(),
+        rows,
+    })
 }
 
 /// Claims the standalone review took and has neither submitted nor released, for the quit

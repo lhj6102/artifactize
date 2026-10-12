@@ -120,8 +120,9 @@ pub fn template(request: &Request, verdict: Verdict) -> Result<FormView, Failure
     })
 }
 
-/// The complete result of `draft`, or the form's own error for it.
-pub fn result(request: &Request, draft: Draft) -> Result<serde_json::Value, Failure> {
+/// The review's form for `draft`: the recorded schema's fields with the draft's values, or its
+/// JSON text.
+fn filled(request: &Request, draft: Draft) -> Result<Form, Failure> {
     let mut form = new(request, draft.verdict)?;
     match draft.json {
         Some(json) => form.set_json(json),
@@ -148,5 +149,15 @@ pub fn result(request: &Request, draft: Draft) -> Result<serde_json::Value, Fail
             }
         }
     }
-    form.result().map_err(Failure::Invalid)
+    Ok(form)
+}
+
+/// The complete result of `draft`, or the form's own error for it.
+pub fn result(request: &Request, draft: Draft) -> Result<serde_json::Value, Failure> {
+    filled(request, draft)?.result().map_err(Failure::Invalid)
+}
+
+/// The owner-fields JSON of `draft`, as the terminal review opens a form in `$EDITOR`.
+pub fn json(request: &Request, draft: Draft) -> Result<String, Failure> {
+    Ok(filled(request, draft)?.draft())
 }

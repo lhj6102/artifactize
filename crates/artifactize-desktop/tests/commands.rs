@@ -4,13 +4,17 @@
 use artifactize::project::{VerifyOptions, selection::Selection};
 use artifactize_desktop::{Launch, Mode};
 use serde_json::{Value, json};
-use std::{fs, time::Duration};
+use std::{fs, path::Path, time::Duration};
 use tauri::{
     WebviewWindow,
     ipc::{CallbackFn, InvokeBody},
     test::{INVOKE_KEY, MockRuntime, mock_builder, mock_context, noop_assets},
     webview::InvokeRequest,
 };
+
+/// The CLI tests' operating-system helpers: private directories and files.
+#[path = "../../artifactize/tests/support/os.rs"]
+mod os;
 
 const RELEASE: &str = r#"name = "release"
 fingerprint = { files = ["."] }
@@ -52,7 +56,8 @@ struct Fixture {
 
 /// A repository whose Run waits for the Human sign-off, made by the library's `verify`.
 fn fixture() -> Fixture {
-    let root = tempfile::tempdir_in(env!("CARGO_TARGET_TMPDIR")).unwrap();
+    // Below the OS temp root (TMPDIR), as the CLI tests do: token storage refuses Git trees.
+    let root = os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
     for (name, text) in [("release", RELEASE), ("ship", SHIP)] {
@@ -67,6 +72,16 @@ fn fixture() -> Fixture {
         .status()
         .unwrap();
     assert!(init.success());
+    verify(&repo, &state);
+    Fixture {
+        _root: root,
+        repo,
+        state,
+    }
+}
+
+/// A Run of `repo` in `state` whose Human request is left waiting.
+fn verify(repo: &Path, state: &Path) {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -78,8 +93,8 @@ fn fixture() -> Fixture {
         };
         // The wait ends at once; the Human request stays waiting.
         artifactize::project::verify(
-            &repo,
-            Some(&state),
+            repo,
+            Some(state),
             &Selection::All,
             &options,
             Default::default(),
@@ -87,11 +102,6 @@ fn fixture() -> Fixture {
         .await
         .unwrap();
     });
-    Fixture {
-        _root: root,
-        repo,
-        state,
-    }
 }
 
 fn window(fixture: &Fixture, mode: Mode) -> WebviewWindow<MockRuntime> {
@@ -247,8 +257,8 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
         json!({"all": false, "reload": true}),
     )
     .unwrap();
-    assert_eq!(waiting[0]["id"], id);
-    assert_eq!(waiting[0]["claim"], "-");
+    assert_eq!(waiting["rows"][0]["id"], id);
+    assert_eq!(waiting["rows"][0]["claim"], "-");
 
     let open = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
     assert_eq!(open["stage"], "claim");
@@ -308,12 +318,20 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
         green["fields"][0]["input"],
         json!({"kind": "fixed", "value": "true"})
     );
+    // The typed draft as owner-fields JSON, as the terminal review hands it to $EDITOR.
+    let draft = json!({"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "확인했습니다"}]], "json": null});
+    let text = invoke(&window, "human_json", json!({"id": id, "draft": draft})).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(text.as_str().unwrap()).unwrap(),
+        json!({"approved": true, "comment": "확인했습니다"})
+    );
     let submitted = invoke(
         &window,
         "human_submit",
-        json!({"id": id, "job": 5, "draft": {"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "확인했습니다"}]], "json": null}}),
+        json!({"id": id, "job": 5, "draft": {"verdict": "GREEN", "fields": [], "json": text}}),
     )
     .unwrap();
+    assert_eq!(submitted["settled"], "published");
     assert_eq!(submitted["view"]["stage"], "completed");
     let saved = saved(&fixture, "release/signoff");
     assert_eq!(
@@ -330,5 +348,106 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
         json!({"all": false, "reload": true}),
     )
     .unwrap();
-    assert_eq!(waiting, json!([]));
+    assert_eq!(waiting["rows"], json!([]));
+}
+
+#[test]
+fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let waiting = |reload: bool| {
+        invoke(
+            &window,
+            "human_waiting",
+            json!({"all": false, "reload": reload}),
+        )
+        .unwrap()
+    };
+    let old = saved(&fixture, "release/signoff").request.id.to_string();
+    assert_eq!(waiting(true)["generation"], 0);
+    invoke(&window, "human_open", json!({"id": old, "reload": true})).unwrap();
+    invoke(
+        &window,
+        "human_claim",
+        json!({"id": old, "job": 1, "standalone": true}),
+    )
+    .unwrap();
+    // An ordinary refresh keeps the generation, the claim taken here and the cached view.
+    assert_eq!(waiting(true)["generation"], 0);
+    assert_eq!(
+        invoke(&window, "human_taken", json!({})).unwrap(),
+        json!([old])
+    );
+
+    fs::remove_dir_all(&fixture.state).unwrap();
+    verify(&fixture.repo, &fixture.state);
+    let replaced = waiting(true);
+    assert_eq!(replaced["generation"], 1);
+    assert_ne!(replaced["rows"][0]["id"], old);
+    assert_eq!(
+        invoke(&window, "human_taken", json!({})).unwrap(),
+        json!([])
+    );
+    // The old request's view is gone with its state, not redrawn as still actionable.
+    assert!(invoke(&window, "human_open", json!({"id": old, "reload": false})).is_err());
+    assert_eq!(waiting(true)["generation"], 1);
+}
+
+#[test]
+fn a_publication_failure_after_local_settlement_is_saved_locally() {
+    let fixture = fixture();
+    // No real credentials: a loopback store rejects a fake token after local settlement.
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/", listener.local_addr().unwrap());
+    fs::write(
+        fixture.state.join("remote.json"),
+        json!({"url": url, "share": "summary"}).to_string(),
+    )
+    .unwrap();
+    let credentials = fixture.state.join("auth");
+    os::create_private_dir_all(&credentials);
+    os::write_private_file(
+        &credentials.join("remote-token.json"),
+        json!({"url": url, "token": "fixture-token-never-real"}).to_string(),
+    );
+    let server = std::thread::spawn(move || {
+        use std::io::{Read, Write};
+        let (mut connection, _) = listener.accept().unwrap();
+        let mut buffer = [0; 4096];
+        let _ = connection.read(&mut buffer).unwrap();
+        connection
+            .write_all(b"HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            .unwrap();
+    });
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
+    invoke(
+        &window,
+        "human_claim",
+        json!({"id": id, "job": 1, "standalone": true}),
+    )
+    .unwrap();
+    let submitted = invoke(
+        &window,
+        "human_submit",
+        json!({"id": id, "job": 2, "draft": {"verdict": "GREEN", "fields": [], "json": "{\"approved\": true, \"comment\": \"\"}"}}),
+    )
+    .unwrap();
+    server.join().unwrap();
+    assert_eq!(submitted["settled"], "savedLocally");
+    assert_eq!(submitted["notice"]["error"], json!(true));
+    assert!(
+        submitted["notice"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("saved locally"),
+        "{submitted}"
+    );
+    // The completed local result stays; nothing invites a second submission.
+    assert_eq!(submitted["view"]["stage"], "completed");
+    assert_eq!(
+        saved(&fixture, "release/signoff").request.status(),
+        artifactize::types::RequestStatus::Green
+    );
 }

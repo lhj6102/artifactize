@@ -8,7 +8,7 @@ use crate::{App, Failure};
 use artifactize::{
     monitor::{self, Catalog, Input, Loader, Node, Origin, Page, Scope},
     store::{RequestView, RunSummary, RunView},
-    types::RunId,
+    types::{RunId, StateId},
 };
 use serde::Deserialize;
 use specta::Type;
@@ -33,6 +33,9 @@ struct Shown {
     refreshed: bool,
     /// The state was replaced since the frontend last drew; it drops Details and drafts.
     replaced: bool,
+    /// Counts every change of what is shown (navigation, accepted reads, folds), so the
+    /// frontend can order responses and know when views derived from it are stale.
+    revision: u32,
 }
 
 /// The snapshot worker and the shown snapshot. Loads are serialized by the loader lock;
@@ -87,6 +90,7 @@ impl Browse {
                 error: None,
                 refreshed: false,
                 replaced: false,
+                revision: 0,
             }),
         }
     }
@@ -98,6 +102,15 @@ impl Browse {
     /// Apply `step` to the shown selection, as the monitor's keys do.
     fn navigate(&self, step: &Navigate) -> Result<(), Failure> {
         let mut shown = self.shown();
+        let before = (shown.page.clone(), shown.runs.len());
+        let result = Self::step(&mut shown, step);
+        if (shown.page.clone(), shown.runs.len()) != before {
+            shown.revision += 1;
+        }
+        result
+    }
+
+    fn step(shown: &mut Shown, step: &Navigate) -> Result<(), Failure> {
         if let Some(key) = &step.scope {
             let scope = key.to_scope();
             if shown.page.scope != scope {
@@ -140,7 +153,13 @@ impl Browse {
 
     /// Read a snapshot for the shown selection on a blocking thread and accept it, unless
     /// navigation moved on meanwhile; the newer navigation's own load reads it then.
-    async fn load(&self, state: &Path, full: bool, resync: bool) -> Result<(), Failure> {
+    /// Returns the accepted snapshot's state identity, or `None` when no snapshot was taken.
+    async fn load(
+        &self,
+        state: &Path,
+        full: bool,
+        resync: bool,
+    ) -> Result<Option<Option<StateId>>, Failure> {
         let mut loader = self.loader.lock().await;
         if resync {
             loader.reset();
@@ -171,7 +190,7 @@ impl Browse {
         let mut shown = self.shown();
         if shown.page != page {
             loader.reset();
-            return Ok(());
+            return Ok(None);
         }
         let snapshot = match result {
             Ok(snapshot) => snapshot,
@@ -184,6 +203,7 @@ impl Browse {
             shown.run = None;
             shown.replaced = true;
         }
+        let identity = snapshot.origin.identity().cloned();
         shown.origin = snapshot.origin;
         shown.catalog = snapshot.catalog;
         shown.page.scope = snapshot.scope;
@@ -208,7 +228,8 @@ impl Browse {
             .collect();
         shown.error = (!unreadable.is_empty()).then(|| unreadable.join("; "));
         shown.refreshed = true;
-        Ok(())
+        shown.revision += 1;
+        Ok(Some(identity))
     }
 
     /// The shown snapshot as of `now`. Taking it clears the replaced flag.
@@ -240,9 +261,13 @@ impl Browse {
 #[specta::specta]
 pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<BrowseView, Failure> {
     app.browse.navigate(&navigate)?;
-    app.browse
+    let accepted = app
+        .browse
         .load(&app.launch.state, navigate.full, navigate.resync)
         .await?;
+    if let Some(identity) = accepted {
+        app.observe(identity);
+    }
     Ok(app.browse.view(OffsetDateTime::now_utc()))
 }
 
@@ -261,6 +286,7 @@ pub fn toggle_worktrees(app: tauri::State<'_, App>, repository: RepositoryKey) -
         let mut shown = app.browse.shown();
         shown.catalog.toggle(&repository.to_repository());
         shown.catalog.rebuild();
+        shown.revision += 1;
     }
     app.browse.view(OffsetDateTime::now_utc())
 }

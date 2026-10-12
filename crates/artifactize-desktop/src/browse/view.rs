@@ -203,6 +203,10 @@ pub struct BrowseView {
     pub refreshed: bool,
     /// The state was replaced since the last view: Details and drafts no longer apply.
     pub replaced: bool,
+    /// Grows with every change of the shown snapshot; a response with a lower revision is
+    /// older than one already shown, and views derived from the snapshot (Detail) read again
+    /// when it grows.
+    pub revision: u32,
 }
 
 fn badge(row: &monitor::CatalogRow) -> Vec<Count> {
@@ -341,5 +345,6 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         error: shown.error.clone(),
         refreshed: shown.refreshed,
         replaced: shown.replaced,
+        revision: shown.revision,
     }
 }

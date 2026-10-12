@@ -8,6 +8,7 @@
 mod browse;
 mod detail;
 mod failure;
+mod generation;
 mod human;
 mod launch;
 mod status;
@@ -36,6 +37,7 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             detail::detail,
             human::human_open,
             human::human_form,
+            human::human_json,
             human::human_claim,
             human::human_run,
             human::human_cancel,
@@ -66,6 +68,7 @@ pub struct App {
     browse: browse::Browse,
     human: human::Reviews,
     transcripts: transcript::Transcripts,
+    generation: generation::Generation,
 }
 
 impl App {
@@ -75,7 +78,19 @@ impl App {
             launch,
             human: human::Reviews::default(),
             transcripts: transcript::Transcripts::default(),
+            generation: generation::Generation::default(),
         }
+    }
+
+    /// Note the state identity a read found and return the state's generation. A different
+    /// identity means the state was replaced: the Human caches, claims taken here and running
+    /// jobs belong to the old state and are dropped.
+    fn observe(&self, identity: Option<artifactize::types::StateId>) -> u32 {
+        let (generation, replaced) = self.generation.observe(identity);
+        if replaced {
+            self.human.reset();
+        }
+        generation
     }
 }
 
