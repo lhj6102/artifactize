@@ -1,10 +1,10 @@
 // Drive the real app through tauri-driver and WebKitWebDriver.
 import { spawnSync } from "node:child_process";
 import { createConnection } from "node:net";
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { remote } from "webdriverio";
-import { app, type Fixture } from "./fixture.ts";
+import { app, cli, type Fixture } from "./fixture.ts";
 import { Owned } from "./owned.ts";
 
 /** The newest modification time of any file below `directory`. */
@@ -29,6 +29,11 @@ function checkBuild() {
     stdio: ["ignore", "ignore", "inherit"],
   });
   if (built.status !== 0) throw new Error("cargo build -p artifactize -p artifactize-desktop failed; see its output above.");
+  assertFresh();
+}
+
+/** The app embeds ui/dist when it compiles, so it must not be older than the files there. */
+export function assertFresh() {
   const dist = resolve(import.meta.dirname, "../dist");
   if (statSync(app).mtimeMs < newest(dist)) {
     throw new Error(`${app} is older than ${dist}; run \`pnpm build\` before \`cargo build\`, not after.`);
@@ -68,6 +73,19 @@ async function until(check: () => Promise<boolean>, what: string, ms = 20000): P
 
 /** Start the app on `fixture` with `args` (such as `review`) and connect to its webview. */
 export async function start(fixture: Fixture, ...args: string[]): Promise<Session> {
+  return launch(fixture, {}, args);
+}
+
+/**
+ * Start the app like `start` from binaries that are already built (and only checked): for a
+ * harness that runs where cargo is unavailable.
+ */
+export async function startBuilt(fixture: Fixture, ...args: string[]): Promise<Session> {
+  if (!existsSync(app) || !existsSync(cli)) {
+    throw new Error("Build first: cargo build -p artifactize -p artifactize-desktop (after pnpm build in the ui folder).");
+  }
+  assertFresh();
+  checked = true;
   return launch(fixture, {}, args);
 }
 

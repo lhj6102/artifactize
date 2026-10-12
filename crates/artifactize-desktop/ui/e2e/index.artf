@@ -1,0 +1,67 @@
+name = "desktop-e2e"
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.covers-journeys]
+title = "The tests cover every journey and every edge of the UX"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tokens = 8000000 }
+
+[evals.covers-journeys.profile_variants]
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000, max_tokens = 4000000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000, max_tokens = 4000000 }
+luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000, max_tokens = 8000000 }
+
+[evals.covers-journeys.payload]
+instruction = """
+Read the journeys {ux-features} with read_features_ux-features and the graph {ux-graph} with \
+read_graph_ux-graph. Then read the end-to-end tests of {desktop-e2e} (*.test.ts, with fixture.ts, \
+driver.ts and keys.ts as helpers) using list_desktop-e2e, glob_desktop-e2e, grep_desktop-e2e and \
+read_desktop-e2e. Check that every journey (J- id) is exercised by a test that does what the journey \
+says, and that every edge (E- id) is exercised by an assertion that the transition happens, not only \
+mentioned in a comment. Submit GREEN when none is missing. Otherwise submit RED with up to 20 gaps, \
+the most important first, each with the journey or edge id (item), the test file (where) and one \
+sentence on the test to add or fix."""
+
+[evals.covers-journeys.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.covers-journeys.fail_schema]
+type = "object"
+required = ["gaps"]
+additionalProperties = false
+
+[evals.covers-journeys.fail_schema.properties.gaps]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.covers-journeys.fail_schema.properties.gaps.items]
+type = "object"
+properties.item = { type = "string", minLength = 1 }
+properties.where = { type = "string", minLength = 1 }
+properties.change = { type = "string", minLength = 1 }
+required = ["item", "where", "change"]
+additionalProperties = false
+
+[evals.edge-ids]
+title = "Every edge id of the UX graph appears in the end-to-end tests"
+profile = { kind = "runtime", command = "node", args = ["check-edges.ts", "{ux-graph}", "."], timeout_ms = 30000 }
+
+[evals.edge-ids.payload]
+instruction = """
+Check that every edge id of {ux-graph} is cited in the tests of {desktop-e2e}."""
+
+[evals.suite-passes]
+title = "The end-to-end suite passes on a headless display"
+profile = { kind = "runtime", command = "pnpm", args = ["-C", "..", "e2e"], timeout_ms = 900000 }
+
+[evals.suite-passes.payload]
+instruction = """
+Run the end-to-end tests of {desktop-e2e} against the built app on a private Xvfb display."""

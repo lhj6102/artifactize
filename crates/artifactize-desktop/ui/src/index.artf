@@ -1,0 +1,58 @@
+name = "desktop-ui"
+
+[views.agent_tools]
+list = { builtin = "list" }
+glob = { builtin = "glob" }
+grep = { builtin = "grep" }
+read = { builtin = "read" }
+
+[evals.follows-frontend-style]
+title = "The desktop UI follows the frontend checklist"
+profile = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "xhigh", timeout_ms = 1800000, max_tokens = 8000000 }
+
+[evals.follows-frontend-style.profile_variants]
+sol-medium = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "medium", timeout_ms = 1800000, max_tokens = 4000000 }
+sol-max = { kind = "agent", backend = "codex", model = "gpt-6.1-sol", reasoning = "max", timeout_ms = 1800000, max_tokens = 4000000 }
+luna-max = { kind = "agent", backend = "codex", model = "gpt-6-luna", reasoning = "max", timeout_ms = 1800000, max_tokens = 8000000 }
+
+[evals.follows-frontend-style.payload]
+instruction = """
+Read the checklist {frontend-style} with read_frontend_frontend-style. Then review the Svelte and TypeScript \
+of {desktop-ui} (the generated bindings in ipc/bindings.ts are excluded; ipc/client.ts is not) against \
+every item, using list_desktop-ui, glob_desktop-ui, grep_desktop-ui and read_desktop-ui. The UI gets all \
+domain state and decisions from the library {cli} through the IPC bindings: report any that it \
+re-implements (read the library with list_cli, glob_cli, grep_cli and read_cli). Tool paths are relative to the Artifact, for example src/lib.rs. Submit GREEN when no item is clearly violated. Otherwise submit RED with up to 20 violations, the most important first, each with the item id, a path:line and one sentence on what to change."""
+
+[evals.follows-frontend-style.pass_schema]
+type = "object"
+properties.summary = { type = "string", minLength = 1 }
+required = ["summary"]
+additionalProperties = false
+
+[evals.follows-frontend-style.fail_schema]
+type = "object"
+required = ["violations"]
+additionalProperties = false
+
+[evals.follows-frontend-style.fail_schema.properties.violations]
+type = "array"
+minItems = 1
+maxItems = 20
+
+[evals.follows-frontend-style.fail_schema.properties.violations.items]
+type = "object"
+properties.item = { type = "string", minLength = 1 }
+properties.where = { type = "string", minLength = 1 }
+properties.change = { type = "string", minLength = 1 }
+required = ["item", "where", "change"]
+additionalProperties = false
+
+[evals.lint]
+title = "The mechanical frontend rules and the type check pass"
+profile = { kind = "runtime", command = "pnpm", args = ["-C", "..", "lint"], timeout_ms = 600000 }
+
+[evals.lint.payload]
+instruction = """
+Run eslint (no inline config; Svelte recommended rules, prefer-writable-derived, \
+no-unnecessary-state-wrap, require-each-key, and a $effect without an // EFFECT: comment) over \
+{desktop-ui} and then svelte-check. The generated bindings are excluded."""
