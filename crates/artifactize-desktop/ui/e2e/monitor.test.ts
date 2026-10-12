@@ -153,8 +153,14 @@ describe("monitor", () => {
       );
     const before = await width();
     const dividers = await browser.$$("[data-pane-resizer]");
-    // Scope | Runs, the sidebar | Run tree, then the Run tree | Detail divider.
-    await dividers[2].dragAndDrop({ x: 120, y: 0 });
+    // Scope | Runs, the sidebar | Run tree, then the Run tree | Detail divider. paneforge
+    // listens for moves only from an effect after the press starts the drag, so the pointer
+    // pauses after the press and moves in steps, as a hand does; one instant move (what
+    // dragAndDrop sends) could arrive before the listener and drop the whole drag.
+    const pointer = browser.action("pointer");
+    pointer.move({ origin: dividers[2] }).down().pause(150);
+    for (let step = 0; step < 6; step += 1) pointer.move({ origin: "pointer", x: 20, y: 0, duration: 20 });
+    await pointer.pause(100).up().perform();
     await eventually(async () => (await width()) > before + 60, "a wider Run tree");
   });
 });
