@@ -1,10 +1,11 @@
 //! Selected-session jobs. Geometry/input are pure; the driver alone starts bounded reader jobs.
+//! A UI sizes the window in text columns and rows, whether a terminal or the desktop app.
 use crate::agent::session::{
     document::{Anchor, Mode, Move, Position, Scroll},
     live::{Reader, Source, Window},
 };
 
-pub(super) struct Live {
+pub struct Live {
     pub serial: u64,
     pub source: Source,
     pub reader: Option<Reader>,
@@ -20,7 +21,7 @@ pub(super) struct Live {
     expanded: std::collections::BTreeSet<crate::agent::session::transcript::BlockId>,
 }
 
-pub(super) struct Job {
+pub struct Job {
     pub serial: u64,
     pub revision: u64,
     pub width: usize,

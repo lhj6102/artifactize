@@ -121,7 +121,7 @@ fn title(view: &RequestView) -> String {
 }
 
 /// Status, claim and waiting time in one row; errors keep their first line.
-pub(super) fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> String {
+pub fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> String {
     let request = &view.request;
     let waiting = request.status() == RequestStatus::WaitingHuman;
     let mut parts = vec![request.status().to_string()];
@@ -150,7 +150,7 @@ pub(super) fn meta(view: &RequestView, reviewer: &str, now: OffsetDateTime) -> S
 }
 
 /// A follower's actions go to the request that owns the shared execution.
-pub(super) fn shared(view: &RequestView) -> Option<String> {
+pub fn shared(view: &RequestView) -> Option<String> {
     let source = view
         .execution
         .as_ref()
@@ -172,7 +172,7 @@ fn schema(schema: Option<&Value>) -> String {
 }
 
 /// The folded Technical section: identifiers, the repository and the raw owner schemas.
-pub(super) fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
+pub fn technical(view: &RequestView, reviewer: &str) -> Vec<(&'static str, String)> {
     let request = &view.request;
     let definition = request.human_definition.as_ref();
     let declaration = definition
@@ -677,27 +677,16 @@ impl Review {
                 if focused {
                     // What Enter runs: a command's resolved line once known, else as declared;
                     // a builtin's action on its logical target.
-                    match (&tool.declared, self.command(&tool.name)) {
-                        (Runs::Command(_), Some(Ok(command))) => {
-                            let words = std::iter::once(crate::platform::path_text(
-                                std::path::Path::new(&command.program),
-                            ))
-                            .chain(command.args.iter().cloned())
-                            .collect::<Vec<_>>();
-                            let command = super::shell(words.iter().map(String::as_str));
-                            rows.push((Line::from(format!("  $ {}", plain(&command))), index));
-                        }
-                        (declared @ Runs::Command(_), _) => {
-                            rows.push((
-                                Line::from(format!("  {}", plain(&declared.line()))),
-                                index,
-                            ));
+                    let action = tool.action(self.command(&tool.name));
+                    match &tool.declared {
+                        Runs::Command(_) => {
+                            rows.push((Line::from(format!("  {}", plain(&action))), index));
                         }
                         // A builtin's target wraps rather than being cut off at the border.
-                        (declared, _) => {
+                        _ => {
                             let width = area.width.saturating_sub(2);
                             rows.extend(
-                                wrap(&plain(&declared.line()), width)
+                                wrap(&plain(&action), width)
                                     .into_iter()
                                     .map(|row| (Line::from(row), index)),
                             );

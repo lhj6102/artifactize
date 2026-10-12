@@ -272,6 +272,25 @@ impl Catalog {
             self.expanded.insert(repository.clone());
         }
     }
+    /// The name the breadcrumb shows for `scope`: its row's label, else its folder name.
+    pub fn label(&self, scope: &Scope) -> String {
+        if *scope == Scope::All {
+            return "all repositories".into();
+        }
+        self.rows
+            .iter()
+            .find(|row| row.fold.is_none() && row.scope == *scope)
+            .map_or_else(
+                || match scope {
+                    Scope::Worktree(_, path) => path.file_name().map_or_else(
+                        || crate::platform::path_text(path),
+                        |name| name.to_string_lossy().into(),
+                    ),
+                    _ => "repository".into(),
+                },
+                |row| row.label.clone(),
+            )
+    }
     pub fn paths(&self, scope: &Scope) -> Option<Vec<PathBuf>> {
         match scope {
             Scope::All => None,

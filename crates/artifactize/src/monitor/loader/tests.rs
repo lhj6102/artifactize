@@ -182,11 +182,11 @@ async fn different_state_identity_resets_details_even_when_run_ids_match() {
     let (_other, _other_receipts, replacement) = fixture(1).await;
     monitor.refresh().await;
     monitor.open_detail().await;
-    let previous = monitor.state_id.clone().unwrap();
+    let previous = monitor.origin.identity().cloned().unwrap();
     assert!(monitor.detail.is_some());
     monitor.state = replacement.state;
     monitor.refresh().await;
-    assert_ne!(monitor.state_id.as_ref(), Some(&previous));
+    assert_ne!(monitor.origin.identity(), Some(&previous));
     assert!(monitor.detail.is_none() && monitor.peek.is_none() && monitor.reviews.is_empty());
     assert_eq!(monitor.run.as_ref().unwrap().0.run.id.as_str(), "run-0");
 }

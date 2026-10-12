@@ -145,6 +145,14 @@ impl Node {
         ) && !self.children.is_empty()
     }
 
+    /// An ERROR, RED or waiting Human eval row: what `!` (next attention) visits.
+    pub fn urgent(&self) -> bool {
+        matches!(
+            self.kind,
+            Kind::Eval(EvalView::Failed { .. } | EvalView::InProgress(Activity::Human(_)))
+        )
+    }
+
     /// An eval row that is in progress or failed: where the cursor starts.
     pub fn attention(&self) -> bool {
         matches!(

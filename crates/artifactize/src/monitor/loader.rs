@@ -1,6 +1,9 @@
 //! One in-flight snapshot job, isolated from UI navigation. Generation checks discard stale
 //! scopes/pages; state hints coalesce in the driver and resyncs drop the worker's caches.
-use super::{Monitor, Rows, Scope, catalog, model};
+//!
+//! [`Loader`] is the UI-agnostic seam: the terminal monitor and the desktop app both read
+//! their catalog, Runs page and selected Run through it.
+use super::{Monitor, Node, Scope, catalog, model};
 use crate::{
     store::{self, RequestView, RunSummary, RunView, reader::Reader},
     types::RunId,
@@ -8,45 +11,97 @@ use crate::{
 use std::{path::PathBuf, sync::Arc};
 use time::OffsetDateTime;
 
+/// Which Runs page of which scope a snapshot reads, and the Run it opens.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Page {
+    pub scope: Scope,
+    /// The selected Run; `None` opens the first (or, with `tail`, the last) Run of the page.
+    pub open: Option<RunId>,
+    pub offset: u32,
+    pub tail: bool,
+    pub limit: u32,
+}
+
+/// The monitor's page plus what tells an obsolete job from a current one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Selection {
     state: PathBuf,
-    scope: Scope,
-    open: Option<RunId>,
-    offset: u32,
-    tail: bool,
-    limit: u32,
+    page: Page,
     revision: u64,
 }
-struct Input {
-    state: PathBuf,
-    initial: Option<PathBuf>,
-    catalog: catalog::Catalog,
-    initialized: bool,
-    selection: Selection,
-    full: bool,
-    displayed: Option<RunId>,
-    page: Option<Vec<RunSummary>>,
+
+/// Everything one snapshot read needs; the caller keeps the catalog between reads.
+pub struct Input {
+    pub state: PathBuf,
+    /// cwd, `--repo` or `--all` (`None`): only the first selection.
+    pub initial: Option<PathBuf>,
+    pub catalog: catalog::Catalog,
+    /// False before the first accepted snapshot, which picks the initial scope.
+    pub initialized: bool,
+    pub page: Page,
+    /// Read the catalog afresh instead of reusing unchanged cached facts.
+    pub full: bool,
+    /// The Run the caller already shows; the reader decodes it again only when it changed.
+    pub displayed: Option<RunId>,
+    /// The page the caller already shows, reused while the database is unchanged.
+    pub runs: Option<Vec<RunSummary>>,
 }
-pub(super) struct Snapshot {
+
+/// Where a snapshot was read from: the state identity and the database file.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Origin {
     identity: Option<crate::types::StateId>,
     database: Option<crate::platform::FileIdentity>,
-    catalog: catalog::Catalog,
-    scope: Scope,
-    runs: Vec<RunSummary>,
-    selected_id: Option<RunId>,
-    selected: Option<(RunView, Vec<RequestView>, Rows)>,
 }
+impl Origin {
+    /// The state was replaced since `previous` was read: Details, drafts and sessions
+    /// of the old state no longer apply.
+    pub fn replaces(&self, previous: &Self) -> bool {
+        previous.database.is_some() && previous.database != self.database
+            || previous.identity.is_some() && previous.identity != self.identity
+    }
+    pub fn identity(&self) -> Option<&crate::types::StateId> {
+        self.identity.as_ref()
+    }
+}
+
+/// One consistent read: the catalog, the scope's Runs page and the selected Run with its tree.
+pub struct Snapshot {
+    pub origin: Origin,
+    pub catalog: catalog::Catalog,
+    pub scope: Scope,
+    pub runs: Vec<RunSummary>,
+    pub selected_id: Option<RunId>,
+    /// The selected Run when it was read again: its requests and projected tree.
+    pub selected: Option<(RunView, Vec<RequestView>, Arc<Vec<Node>>)>,
+}
+
+/// A persistent, read-only snapshot worker with its caches. Call [`Loader::load`] on a
+/// blocking thread; it never writes.
+#[derive(Default)]
+pub struct Loader {
+    reader: Reader,
+}
+impl Loader {
+    pub fn load(&mut self, input: Input) -> Result<Snapshot, String> {
+        load(&mut self.reader, input)
+    }
+    /// Drop every cache, so the next load reads the whole state afresh.
+    pub fn reset(&mut self) {
+        self.reader.reset();
+    }
+}
+
 pub(super) struct Completed {
     selection: Selection,
-    reader: Reader,
+    loader: Loader,
     result: Result<Snapshot, String>,
     #[cfg(test)]
     queries: Vec<String>,
 }
 fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
     let mut catalog = input.catalog;
-    let mut scope = input.selection.scope.clone();
+    let mut scope = input.page.scope.clone();
     // Empty state is a normal baseline. File safety checks still run on the worker.
     if !input
         .state
@@ -61,8 +116,7 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
         }
         reader.reset();
         return Ok(Snapshot {
-            identity: None,
-            database: None,
+            origin: Origin::default(),
             catalog,
             scope,
             runs: Vec::new(),
@@ -71,7 +125,7 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
         });
     }
     let saved = reader.snapshot_optional(&input.state, |db, cache, state| {
-        let reuse_page = input.page.is_some()
+        let reuse_page = input.runs.is_some()
             && !input.full
             && input.initialized
             && cache.has_catalog()
@@ -96,25 +150,25 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
         }
         let paths = catalog.paths(&scope);
         let runs = if reuse_page {
-            input.page.clone().expect("accepted same-database page")
+            input.runs.clone().expect("accepted same-database page")
         } else {
             cache.page(
                 db,
                 state,
                 paths.as_deref(),
-                input.selection.limit,
-                input.selection.offset,
-                input.selection.open.as_ref(),
+                input.page.limit,
+                input.page.offset,
+                input.page.open.as_ref(),
             )?
         };
         let selected = input
-            .selection
+            .page
             .open
             .as_ref()
             .and_then(|id| runs.iter().find(|run| &run.id == id))
             .or_else(|| {
-                if input.selection.tail {
-                    runs.iter().take(input.selection.limit as usize).next_back()
+                if input.page.tail {
+                    runs.iter().take(input.page.limit as usize).next_back()
                 } else {
                     runs.first()
                 }
@@ -140,8 +194,10 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
             scope = catalog.initial(input.initial.as_deref());
         }
         return Ok(Snapshot {
-            identity: None,
-            database: reader.database(),
+            origin: Origin {
+                identity: None,
+                database: reader.database(),
+            },
             catalog,
             scope,
             runs: Vec::new(),
@@ -156,8 +212,10 @@ fn load(reader: &mut Reader, input: Input) -> Result<Snapshot, String> {
     });
     reader.require_current(&input.state)?;
     Ok(Snapshot {
-        identity,
-        database: reader.database(),
+        origin: Origin {
+            identity,
+            database: reader.database(),
+        },
         catalog,
         scope,
         runs,
@@ -169,11 +227,13 @@ impl Monitor {
     fn selection(&self) -> Selection {
         Selection {
             state: self.state.clone(),
-            scope: self.scope.clone(),
-            open: self.selected_run().map(|run| run.id.clone()),
-            offset: self.offset,
-            tail: self.page_tail,
-            limit: self.limit,
+            page: Page {
+                scope: self.scope.clone(),
+                open: self.selected_run().map(|run| run.id.clone()),
+                offset: self.offset,
+                tail: self.page_tail,
+                limit: self.limit,
+            },
             revision: self.load_revision,
         }
     }
@@ -190,31 +250,31 @@ impl Monitor {
         resync: bool,
         before: impl FnOnce() + Send + 'static,
     ) -> Option<tokio::task::JoinHandle<Completed>> {
-        let mut reader = self.reader.take()?;
+        let mut loader = self.loader.take()?;
         if resync {
-            reader.reset();
+            loader.reset();
         }
+        let selection = self.selection();
         let input = Input {
             state: self.state.clone(),
             initial: self.initial.clone(),
             catalog: self.catalog.clone(),
             initialized: self.initialized,
-            selection: self.selection(),
+            page: selection.page.clone(),
             full,
             displayed: self.run.as_ref().map(|(run, _)| run.run.id.clone()),
-            page: (!full && !self.runs.is_empty()).then(|| self.runs.clone()),
+            runs: (!full && !self.runs.is_empty()).then(|| self.runs.clone()),
         };
         Some(tokio::task::spawn_blocking(move || {
             before();
             #[cfg(test)]
-            reader.traced_statements();
-            let selection = input.selection.clone();
-            let result = load(&mut reader, input);
+            loader.reader.traced_statements();
+            let result = loader.load(input);
             #[cfg(test)]
-            let queries = reader.traced_statements();
+            let queries = loader.reader.traced_statements();
             Completed {
                 selection,
-                reader,
+                loader,
                 result,
                 #[cfg(test)]
                 queries,
@@ -224,11 +284,11 @@ impl Monitor {
     /// Returns false for obsolete navigation; the driver queues a fresh job in that case.
     pub(super) async fn finish_refresh(&mut self, mut completed: Completed) -> bool {
         if completed.selection != self.selection() {
-            completed.reader.reset();
-            self.reader = Some(completed.reader);
+            completed.loader.reset();
+            self.loader = Some(completed.loader);
             return false;
         }
-        self.reader = Some(completed.reader);
+        self.loader = Some(completed.loader);
         let now = OffsetDateTime::now_utc();
         match completed.result {
             Err(error) => {
@@ -240,9 +300,7 @@ impl Monitor {
                     .selected()
                     .and_then(|index| self.catalog.rows.get(index))
                     .and_then(|row| row.fold.clone());
-                if (self.database.is_some() && self.database != snapshot.database)
-                    || (self.state_id.is_some() && self.state_id != snapshot.identity)
-                {
+                if snapshot.origin.replaces(&self.origin) {
                     if let Some(review) = self.detail.as_ref().and_then(|pane| pane.review.as_ref())
                     {
                         review.cancel_single();
@@ -256,8 +314,7 @@ impl Monitor {
                     self.framed = None;
                     self.serial += 1;
                 }
-                self.database = snapshot.database;
-                self.state_id = snapshot.identity;
+                self.origin = snapshot.origin;
                 self.catalog = snapshot.catalog;
                 self.scope = snapshot.scope;
                 self.initialized = true;

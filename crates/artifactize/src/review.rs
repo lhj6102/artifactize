@@ -13,6 +13,7 @@ pub(crate) mod tests;
 mod view;
 
 pub(crate) use detail::{Handled, Hits};
+pub use detail::{meta, shared, technical};
 pub(crate) use embedded::Control;
 pub use form::{Field, Form, Input, template};
 pub use runs::Runs;
@@ -126,6 +127,54 @@ pub enum Outcome {
     },
 }
 
+impl Outcome {
+    /// What the review tells the reviewer about the outcome, and whether it is an error.
+    pub fn notice(&self) -> (String, bool) {
+        match self {
+            Self::SavedLocally { error, .. } => (error.clone(), true),
+            Self::Claimed { result: Ok(_) } => (
+                "Claimed. Fill GREEN or RED fields, then Submit.".into(),
+                false,
+            ),
+            Self::Claimed { result: Err(error) } => (error.clone(), true),
+            Self::Ran { tool, result, .. } => {
+                let launched = Content::Launch { launched: true };
+                match result {
+                    Ok(result) if result.is_error() => (
+                        format!("{tool} failed; a tool error is not a verdict."),
+                        true,
+                    ),
+                    Ok(result) if result.content().contains(&launched) => {
+                        (format!("{tool} launched."), false)
+                    }
+                    Ok(_) => (format!("{tool} finished."), false),
+                    Err(_) => (format!("{tool} did not run."), true),
+                }
+            }
+            Self::Submitted {
+                result: Ok(request),
+                ..
+            } => (
+                format!(
+                    "Submitted {} for {} ({}).",
+                    request.status(),
+                    request.eval_id,
+                    request.id
+                ),
+                false,
+            ),
+            Self::Submitted {
+                result: Err(error), ..
+            } => (error.clone(), true),
+            Self::Released { failed, .. } if failed.is_empty() => ("Claim released.".into(), false),
+            Self::Released { failed, .. } => {
+                let lines = failed.iter().map(|(id, error)| format!("{id}: {error}"));
+                (lines.collect::<Vec<_>>().join("\n"), true)
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
     None,
@@ -145,6 +194,22 @@ pub struct Tool {
     pub kind: HumanToolKind,
     pub description: String,
     pub declared: Runs,
+}
+
+impl Tool {
+    /// What running the tool does, as the Tools pane shows it: a command's resolved line once
+    /// `resolved` is known, else its declaration; a builtin's action on its logical target.
+    pub fn action(&self, resolved: Option<&Result<CommandLine, String>>) -> String {
+        match (&self.declared, resolved) {
+            (Runs::Command(_), Some(Ok(command))) => {
+                let program = crate::platform::path_text(std::path::Path::new(&command.program));
+                let words = std::iter::once(program).chain(command.args.iter().cloned());
+                let words: Vec<_> = words.collect();
+                format!("$ {}", shell(words.iter().map(String::as_str)))
+            }
+            (declared, _) => declared.line(),
+        }
+    }
 }
 
 /// The last tool result or failure, shown in the output pane.
@@ -716,34 +781,29 @@ impl Review {
     /// Apply a job's outcome.
     pub fn finish(&mut self, outcome: Outcome) -> Action {
         self.busy = None;
+        let notice = outcome.notice();
         match outcome {
-            Outcome::SavedLocally { request, error } => {
+            Outcome::SavedLocally { request, .. } => {
                 self.taken.retain(|id| id != &request.id);
                 if let Some(view) = &mut self.request {
                     view.request = *request;
                     view.claim = None;
                 }
                 self.mode = Mode::Request;
-                self.notice = Some((error, true));
+                self.notice = Some(notice);
                 Action::Refresh
             }
             Outcome::Claimed { result } => {
-                match result {
-                    Ok(claim) => {
-                        self.took(Some(claim.clone()));
-                        if let Some(view) = &mut self.request {
-                            view.claim = Some(claim);
-                        }
-                        if !matches!(self.mode, Mode::Form(_)) {
-                            self.mode = Mode::Request;
-                        }
-                        self.notice = Some((
-                            "Claimed. Fill GREEN or RED fields, then Submit.".into(),
-                            false,
-                        ));
+                if let Ok(claim) = result {
+                    self.took(Some(claim.clone()));
+                    if let Some(view) = &mut self.request {
+                        view.claim = Some(claim);
                     }
-                    Err(error) => self.notice = Some((error, true)),
+                    if !matches!(self.mode, Mode::Form(_)) {
+                        self.mode = Mode::Request;
+                    }
                 }
+                self.notice = Some(notice);
                 Action::Refresh
             }
             Outcome::Ran {
@@ -754,18 +814,7 @@ impl Review {
                 self.took(claimed);
                 // Declarations may have changed; show the command the next run resolves.
                 self.commands = None;
-                let launched = Content::Launch { launched: true };
-                self.notice = Some(match &result {
-                    Ok(result) if result.is_error() => (
-                        format!("{tool} failed; a tool error is not a verdict."),
-                        true,
-                    ),
-                    Ok(result) if result.content().contains(&launched) => {
-                        (format!("{tool} launched."), false)
-                    }
-                    Ok(_) => (format!("{tool} finished."), false),
-                    Err(_) => (format!("{tool} did not run."), true),
-                });
+                self.notice = Some(notice);
                 self.output = Some(output(&tool, result));
                 self.scroll = 0;
                 Action::Refresh
@@ -777,17 +826,9 @@ impl Review {
             } => {
                 self.took(claimed);
                 match result {
-                    Ok(request) => {
+                    Ok(_) => {
                         self.taken.retain(|taken| *taken != id);
-                        self.notice = Some((
-                            format!(
-                                "Submitted {} for {} ({}).",
-                                request.status(),
-                                request.eval_id,
-                                request.id
-                            ),
-                            false,
-                        ));
+                        self.notice = Some(notice);
                         self.open = None;
                         self.request = None;
                         self.output = None;
@@ -799,7 +840,7 @@ impl Review {
                         if let Mode::Form(form) = &mut self.mode {
                             form.error = Some(error);
                         } else {
-                            self.notice = Some((error, true));
+                            self.notice = Some(notice);
                         }
                     }
                 }
@@ -811,12 +852,10 @@ impl Review {
                     if quit {
                         return Action::Quit;
                     }
-                    self.notice = Some(("Claim released.".into(), false));
                 } else {
-                    let lines = failed.iter().map(|(id, error)| format!("{id}: {error}"));
-                    self.notice = Some((lines.collect::<Vec<_>>().join("\n"), true));
                     self.taken.extend(failed.into_iter().map(|(id, _)| id));
                 }
+                self.notice = Some(notice);
                 Action::Refresh
             }
         }
@@ -852,7 +891,9 @@ impl Review {
 }
 
 impl Job {
-    async fn run(
+    /// Carry out the job through the `human` lifecycle API, as `request` does; every UI runs
+    /// its Human actions through here.
+    pub async fn run(
         self,
         state: PathBuf,
         reviewer: crate::types::ReviewerId,
@@ -984,6 +1025,24 @@ pub fn tools(request: &Request) -> Vec<Tool> {
     tools
 }
 
+/// The owner schema of `verdict` recorded with the request: `None` when it declares none.
+/// Without a recorded Human definition the schemas are unknown, not empty: an empty form
+/// would submit a verdict the schema then rejects.
+pub fn schema(
+    request: &Request,
+    verdict: crate::runtime::Verdict,
+) -> Result<Option<Value>, String> {
+    let definition = request.human_definition.as_ref().ok_or(
+        "This request records no Human definition; open the original request its actions go to.",
+    )?;
+    let declaration = definition.eval.declaration.value();
+    let schema = declaration.and_then(|declaration| match verdict {
+        crate::runtime::Verdict::Green => declaration.pass_schema.value(),
+        crate::runtime::Verdict::Red => declaration.fail_schema.value(),
+    });
+    Ok(schema.map(|schema| Value::Object(schema.clone())))
+}
+
 /// Words joined for an on-screen preview, double-quoted when a word has whitespace or a
 /// quote of its own. This is a reading aid, not a shell command: it claims no single
 /// shell's escaping rules, which differ between Unix shells and Windows's.
@@ -1002,7 +1061,8 @@ pub fn shell<'a>(words: impl IntoIterator<Item = &'a str>) -> String {
     words.into_iter().map(quote).collect::<Vec<_>>().join(" ")
 }
 
-fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
+/// The output pane's view of a tool run: its text, or why it failed.
+pub fn output(tool: &str, result: Result<ToolResult, String>) -> Output {
     match result {
         Ok(result) => Output {
             title: if result.is_error() {

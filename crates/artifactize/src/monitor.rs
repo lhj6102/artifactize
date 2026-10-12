@@ -14,7 +14,7 @@ mod pty_fixture_tests;
 #[cfg(test)]
 mod redesign_tests;
 mod rows;
-mod session;
+pub mod session;
 #[cfg(test)]
 mod session_tests;
 mod terminal;
@@ -23,13 +23,16 @@ pub(crate) mod tests;
 #[cfg(test)]
 mod tree_tests;
 mod view;
-pub use catalog::{Repository, Scope};
+pub use catalog::{Badge, Catalog, CatalogRow, Repository, Scope};
 #[cfg(test)]
 pub(crate) use evidence::original as test_original;
+pub use evidence::{Evidence, evidence};
+pub use fold::upstream;
+pub use loader::{Input, Loader, Origin, Page, Snapshot};
 pub use model::{
-    Activity, Busy, Completion, Detail, EvalView, Kind, Node, NotRun, Progress, Queue, RunRow,
-    Section, Segment, Source, Strip, Target, Tone, Upstream, Waits, Weight, detail, duration,
-    glyph, progress, run_rows, strip, tree, upstream_index,
+    Activity, Busy, Clock, Completion, Detail, EvalView, Kind, Node, NodeId, NotRun, Progress,
+    Queue, RunRow, Section, Segment, Source, Status, Strip, Target, Tone, Upstream, Waits, Weight,
+    counts, detail, duration, glyph, progress, run_node, run_rows, strip, tree, upstream_index,
 };
 pub(crate) use rows::{fit, plain, width};
 pub use terminal::run;
@@ -39,10 +42,13 @@ pub(crate) use view::{clock, crumbs};
 use crate::{
     config::ProfileKind,
     review::{self, Review},
-    store::{self, RequestView, RunSummary, RunView},
+    store::{RequestView, RunSummary, RunView},
     types::{RequestId, RequestStatus, RunId},
     workspace::canonical_target,
 };
+// The unit tests reach the store through this module.
+#[cfg(test)]
+use crate::store;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{layout::Rect, widgets::TableState};
 use std::{path::PathBuf, time::Duration};
@@ -57,7 +63,7 @@ const SPIN: Duration = Duration::from_millis(100);
 /// follows within seconds, rarely enough that reading the session file stays cheap.
 const SESSION_PROBE: Duration = Duration::from_secs(5);
 /// Bound retained Run pages while allowing the selected scope to page older records.
-const PAGE: u32 = 100;
+pub const PAGE: u32 = 100;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {
@@ -129,9 +135,8 @@ pub struct Monitor {
     page_tail: bool,
     load_revision: u64,
     navigation: bool,
-    reader: Option<store::reader::Reader>,
-    state_id: Option<crate::types::StateId>,
-    database: Option<crate::platform::FileIdentity>,
+    loader: Option<loader::Loader>,
+    origin: loader::Origin,
     runs: Vec<RunSummary>,
     repositories: TableState,
     list: TableState,
@@ -159,10 +164,9 @@ pub struct Monitor {
 impl Monitor {
     /// cwd/--repo/--all determines only the initial selection; catalog always covers all state.
     pub fn new(state: PathBuf, repo: Option<PathBuf>) -> Self {
-        let initial = repo.map(|path| canonical_target(&path).unwrap_or(path));
         Self {
             state,
-            initial,
+            initial: initial(repo),
             catalog: catalog::Catalog::default(),
             scope: Scope::All,
             focus: Pane::Runs,
@@ -172,9 +176,8 @@ impl Monitor {
             page_tail: false,
             load_revision: 0,
             navigation: false,
-            reader: Some(Default::default()),
-            state_id: None,
-            database: None,
+            loader: Some(Default::default()),
+            origin: loader::Origin::default(),
             runs: Vec::new(),
             repositories: TableState::default(),
             list: TableState::default(),
@@ -236,7 +239,7 @@ impl Monitor {
                     {
                         Self::load_evidence(
                             &self.state,
-                            self.state_id.as_ref(),
+                            self.origin.identity(),
                             self.serial,
                             pane,
                             view,
@@ -406,7 +409,7 @@ impl Monitor {
             } else {
                 Self::load_evidence(
                     &self.state,
-                    self.state_id.as_ref(),
+                    self.origin.identity(),
                     self.serial,
                     &mut pane,
                     &view,
@@ -502,7 +505,7 @@ impl Monitor {
             .filter(|peek| peek.request == view.request.id)
             .and_then(|peek| peek.live);
         let (live, text) =
-            match live::resolve_cached(&self.state, &view, self.state_id.as_ref()).await {
+            match live::resolve_cached(&self.state, &view, self.origin.identity()).await {
                 Ok(Resolution::Local(source)) => match kept {
                     Some(mut live) if live.source.reference == source.reference => {
                         live.source = source;
@@ -554,11 +557,7 @@ impl Monitor {
             for node in nodes {
                 let mut path = parent.to_vec();
                 path.push(node.id.clone());
-                let attention = matches!(
-                    node.kind,
-                    Kind::Eval(EvalView::Failed { .. } | EvalView::InProgress(Activity::Human(_)))
-                );
-                order.push((path.clone(), attention));
+                order.push((path.clone(), node.urgent()));
                 walk(&node.children, &path, order);
             }
         }
@@ -879,6 +878,12 @@ impl Monitor {
             review.paste_single(text);
         }
     }
+}
+
+/// The path that picks the first scope from cwd or `--repo`, canonical like the catalog's
+/// paths; `None` (`--all`) starts on every repository.
+pub fn initial(repo: Option<PathBuf>) -> Option<PathBuf> {
+    repo.map(|path| canonical_target(&path).unwrap_or(path))
 }
 
 /// A Human review takes every key while it works, or while it edits a request

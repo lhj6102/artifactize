@@ -30,7 +30,7 @@ struct Blocker {
 }
 
 /// The Artifacts a row depends on: an eval's own, or the union over an Artifact's evals.
-pub(super) fn upstream(nodes: &[Node], path: &[model::NodeId]) -> Vec<Upstream> {
+pub fn upstream(nodes: &[Node], path: &[model::NodeId]) -> Vec<Upstream> {
     let Some(id) = path.last() else {
         return Vec::new();
     };

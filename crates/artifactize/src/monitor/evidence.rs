@@ -9,7 +9,7 @@ use crate::{
 use std::path::Path;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct EvidenceStamp {
+pub(crate) struct EvidenceStamp {
     status: RequestStatus,
     completed_at: Option<crate::types::Timestamp>,
     session: Option<session::SessionRef>,

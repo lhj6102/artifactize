@@ -6,7 +6,7 @@ mod status;
 mod tree;
 pub use states::{Activity, Busy, Completion, EvalView, NotRun, Queue, Source, Upstream, Waits};
 pub use status::Status;
-pub use tree::{Kind, Node, Segment, Tone, Weight, completion, tree, upstream_index};
+pub use tree::{Clock, Kind, Node, Segment, Tone, Weight, completion, tree, upstream_index};
 
 use serde_json::Value;
 use time::OffsetDateTime;

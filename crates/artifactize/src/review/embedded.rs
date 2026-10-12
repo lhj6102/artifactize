@@ -129,35 +129,14 @@ impl Review {
                 if matches!(&self.mode, Mode::Form(form) if form.verdict == verdict) {
                     return Action::None;
                 }
-                let key = if control == Control::Green {
-                    "passSchema"
-                } else {
-                    "failSchema"
+                let schema = match self.request.as_ref() {
+                    Some(view) => super::schema(&view.request, verdict),
+                    None => return Action::None,
                 };
-                // Without the recorded definition the owner schemas are unknown, not empty: an
-                // empty form would submit a verdict the schema then rejects.
-                let Some(definition) = self
-                    .request
-                    .as_ref()
-                    .and_then(|view| view.request.human_definition.as_ref())
-                else {
-                    return self.notify(
-                        "This request records no Human definition; open the original request its actions go to.",
-                        true,
-                    );
+                let schema = match schema {
+                    Ok(schema) => schema,
+                    Err(error) => return self.notify(error, true),
                 };
-                let schema = definition
-                    .eval
-                    .declaration
-                    .value()
-                    .and_then(|declaration| {
-                        if key == "passSchema" {
-                            declaration.pass_schema.value()
-                        } else {
-                            declaration.fail_schema.value()
-                        }
-                    })
-                    .map(|schema| serde_json::Value::Object(schema.clone()));
                 let schema = schema.as_ref();
                 let form = self
                     .drafts

@@ -300,23 +300,7 @@ impl Monitor {
         }
     }
     fn scope_label(&self) -> String {
-        if self.scope == Scope::All {
-            return "all repositories".into();
-        }
-        self.catalog
-            .rows
-            .iter()
-            .find(|row| row.fold.is_none() && row.scope == self.scope)
-            .map_or_else(
-                || match &self.scope {
-                    Scope::Worktree(_, path) => path.file_name().map_or_else(
-                        || crate::platform::path_text(path),
-                        |name| name.to_string_lossy().into(),
-                    ),
-                    _ => "repository".into(),
-                },
-                |row| row.label.clone(),
-            )
+        self.catalog.label(&self.scope)
     }
     /// `artifactize › scope › Run › node`, up to the focused level, and global attention.
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
