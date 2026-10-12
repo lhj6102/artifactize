@@ -30,6 +30,7 @@ describe("review", () => {
     await session?.stop();
   });
 
+  // UX edges: E-REVIEW-PREVIEW
   it("lists the waiting sign-off with a read-only preview", async () => {
     const list = await browser.$('[aria-label="Requests"]');
     await list.waitForExist({ timeout: 15000 });
@@ -47,6 +48,7 @@ describe("review", () => {
     await eventually(async () => (await text()).includes("WAITING_HUMAN · unclaimed"), "the Preview's release");
   });
 
+  // UX edges: E-REVIEW-OPEN-ID E-HUMAN-CLAIM
   it("opens a request by ID and claims it", async () => {
     const id = signoff(fixture).id;
     await browser.keys(["Control", "o"]);
@@ -61,6 +63,7 @@ describe("review", () => {
     await eventually(async () => signoff(fixture).claim?.reviewer === "alice", "claimed");
   });
 
+  // UX edges: E-HUMAN-ESC-FORM E-HUMAN-ESC-DETAIL
   it("leaves a field's form with Esc, then the Detail with the next Esc, keyboard only", async () => {
     await eventually(async () => (await text()).includes("REVIEW (yours)"), "the review stage");
     await browser.keys(["g"]);
@@ -78,6 +81,7 @@ describe("review", () => {
     await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 10000 });
   });
 
+  // UX edges: E-QUIT-ASK E-QUIT-STAY E-QUIT-RELEASE
   it("asks before quitting with the claim: Esc stays, u releases and quits", async () => {
     await eventually(async () => (await text()).includes("REVIEW (yours)"), "the review stage");
     const dialog = await browser.$('[role="alertdialog"]');

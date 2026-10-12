@@ -71,6 +71,7 @@ describe("settings", () => {
     await fixture.remove();
   });
 
+  // UX edges: E-SET-KEYS
   it("shows which API keys the environment sets, never their values", async () => {
     await browser.$("button=Settings").click();
     await eventually(async () => (await browser.$('[data-testid="key-openai"]').isExisting()), "the key list");
@@ -82,6 +83,7 @@ describe("settings", () => {
     assert.ok(!(await html()).includes(KEY), "the key's value is nowhere on the page");
   });
 
+  // UX edges: E-SET-REMOTE-LOGIN E-SET-REMOTE-STATUS E-SET-REMOTE-LOGOUT
   it("signs in to a remote store, shows its status, and signs out", async () => {
     await eventually(async () => (await text()).includes("No remote review store is configured."), "no store yet");
     await browser.$("#remote-url").click();

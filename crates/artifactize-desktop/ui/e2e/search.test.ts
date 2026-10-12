@@ -46,12 +46,14 @@ describe("review search", () => {
     await session?.stop();
   });
 
+  // UX edges: E-LAUNCH-REVIEW
   it("starts on the launch repository's waiting sign-off", async () => {
     await eventually(async () => (await rows()).length === 1, "one waiting row");
     assert.match((await rows())[0], /release\/signoff/);
     assert.match(await query(), /^kind:human status:waiting_human repo:/);
   });
 
+  // UX edges: E-REVIEW-SEARCH E-REVIEW-SUGGEST
   it("filters every repository's requests and takes suggestions for a partial key and value", async () => {
     await press(browser, ["/"], focused("Search requests"), "focus in the search");
     // Esc clears the query: every request of every repository.
@@ -80,6 +82,7 @@ describe("review search", () => {
     assert.match(row, /other/);
   });
 
+  // UX edges: E-REVIEW-READONLY
   it("opens a request that is not a Human review read-only", async () => {
     // Esc clears the query; a new search, then Enter leaves for the list.
     await press(browser, ["Escape"], holds(""), "the query cleared");

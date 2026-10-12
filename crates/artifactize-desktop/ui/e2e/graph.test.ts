@@ -46,6 +46,7 @@ describe("run graph", () => {
     await session?.stop();
   });
 
+  // UX edges: E-GRAPH-OPEN E-GRAPH-RECOLOUR E-GRAPH-ZOOM-IN E-GRAPH-EVAL
   it("lights Artifacts and edges, recolours them in place and opens a zoomed eval after a submission", async () => {
     await browser.$("button*=Graph").click();
     await eventually(async () => Object.keys((await graph()).nodes).length === 3, "three Artifact nodes");
@@ -96,6 +97,7 @@ describe("run graph", () => {
     await press(browser, ["Escape"], async () => !(await evals.isExisting()), "zoomed out");
   });
 
+  // UX edges: E-GRAPH-MOVE E-GRAPH-CLOSE
   it("moves along edges with the arrow keys and switches back to the tree with v", async () => {
     await eventually(
       () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === "a:release"),
@@ -125,6 +127,7 @@ describe("run graph of many Artifacts", () => {
     await session?.stop();
   });
 
+  // UX edges: E-GRAPH-BEYOND E-GRAPH-ZOOM-OUT
   it("walks the whole chain beyond the drawn nodes, through a zoom in and out, focus following", async () => {
     await browser.$("button*=Graph").click();
     await eventually(async () => (await mounted()) > 0, "the graph", 30000);

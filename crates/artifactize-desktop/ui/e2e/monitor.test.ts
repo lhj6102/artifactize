@@ -34,6 +34,7 @@ describe("monitor", () => {
     await session?.stop();
   });
 
+  // UX edges: E-LAUNCH-MONITOR
   it("catalogs the repository and its Run, and peeks at the selected eval", async () => {
     const shown = await text();
     assert.match(shown, /ALL/);
@@ -46,6 +47,7 @@ describe("monitor", () => {
     assert.match(shown, /WAITING_HUMAN — waiting for a Human submission/);
   });
 
+  // UX edges: E-MON-SCOPE-RUNS E-MON-RUNS-TREE E-MON-TREE-MOVE E-MON-TREE-DETAIL
   it("navigates Scope → Runs → tree → Detail with the keyboard", async () => {
     await browser.$('[aria-label="Scope"] [role="option"]').click();
     await eventually(async () => (await text()).includes("all repositories"), "ALL selected");
@@ -63,6 +65,7 @@ describe("monitor", () => {
     assert.match(crumbs, /artifactize\s*›\s*all repositories\s*›\s*run-\S+\s*›\s*signoff/);
   });
 
+  // UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-CLAIM E-HUMAN-RELEASE E-MON-LIVE
   it("follows a claim another process makes, then claims and releases explicitly", async () => {
     const id = signoff(fixture).id;
     assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);
@@ -90,6 +93,7 @@ describe("monitor", () => {
     await eventually(async () => (await text()).includes("REVIEW (yours)"), "the review stage");
   });
 
+  // UX edges: E-HUMAN-TOOL
   it("runs an output tool and shows its output", async () => {
     const notes = await browser.$('//li[@role="option"][.//span[text()="notes_release"]]');
     await notes.click();
@@ -99,6 +103,7 @@ describe("monitor", () => {
     assert.match(await text(), /notes_release finished\./);
   });
 
+  // UX edges: E-HUMAN-RED E-HUMAN-INVALID
   it("keeps a RED result that fails its schema correctable and shows the failing path", async () => {
     await browser.$('[aria-label="Human review"]').click();
     await browser.keys(["r"]);
@@ -112,6 +117,7 @@ describe("monitor", () => {
     assert.equal(signoff(fixture).status, "WAITING_HUMAN");
   });
 
+  // UX edges: E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT
   it("submits GREEN with Korean text edited as JSON and keeps the completed result open", async () => {
     await browser.keys(["Control", "g"]);
     const comment = await browser.$("#field-comment");
@@ -146,6 +152,7 @@ describe("monitor", () => {
     assert.match(await text(), /Submitted GREEN for release\/signoff/);
   });
 
+  // UX edges: E-MON-RESIZE
   it("resizes a split pane by dragging its divider", async () => {
     const width = () =>
       browser.execute(() =>

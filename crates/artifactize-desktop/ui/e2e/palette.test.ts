@@ -61,6 +61,7 @@ describe("command palette", () => {
     await session?.stop();
   });
 
+  // UX edges: E-PALETTE-OPEN E-PALETTE-CLOSE
   it("opens by its button and by Ctrl+K, and again after Esc, several times", async () => {
     for (let round = 0; round < 3; round += 1) {
       await browser.$("button*=Commands").click();
@@ -71,6 +72,7 @@ describe("command palette", () => {
     }
   });
 
+  // UX edges: E-PALETTE-RUN E-SCREEN-MONITOR E-SCREEN-REVIEW E-SCREEN-SETTINGS
   it("runs commands that switch screens and opens again after each", async () => {
     for (const label of ["Show Review", "Show Monitor", "Show Review", "Show Monitor"]) {
       await ctrlK(`before ${label}`);

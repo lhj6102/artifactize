@@ -15,5 +15,5 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts", "e2e/**/*.ts"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "vite.config.ts", "e2e/**/*.ts", "../harness/*.mts"]
 }
