@@ -57,13 +57,17 @@ pub(crate) fn append(source: &Source, text: &str) {
 pub(crate) fn answer(text: &str) -> String {
     format!("{}\n", json!({"kind":"answer","text":text}))
 }
+/// Steps a conversation of the small test fixtures can take to finish indexing: far more than
+/// any of them needs, so only indexing that never ends reaches it.
+const JOB_LIMIT: usize = 10_000;
+
 pub(crate) fn finish(
     reader: &mut Reader,
     width: usize,
     height: usize,
     mut position: Position,
 ) -> live::Window {
-    for _ in 0..10000 {
+    for _ in 0..JOB_LIMIT {
         let window = reader.step(width, height, position);
         if !window.loading {
             return window;

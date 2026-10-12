@@ -195,6 +195,10 @@ fn line(node: &Node, depth: usize, column: usize, star: bool, layout: &Layout) -
     }
     Line::from(spans)
 }
+/// A border label starts one cell in, after the corner.
+const BORDER_LABEL_START: u16 = 1;
+/// A border label leaves out both corners and one spare dash before the right one.
+const BORDER_LABEL_RESERVED: u16 = 3;
 
 fn item(
     node: &Node,
@@ -311,7 +315,14 @@ pub(super) fn draw(
         }
     }
     // Right-aligned on the border, one dash before the corner.
-    let border = |y: u16| Rect::new(area.x + 1, y, area.width.saturating_sub(3), 1);
+    let border = |y: u16| {
+        Rect::new(
+            area.x + BORDER_LABEL_START,
+            y,
+            area.width.saturating_sub(BORDER_LABEL_RESERVED),
+            1,
+        )
+    };
     if above > 0 && area.height > 0 {
         frame.render_widget(
             Line::from(format!(" ↑{above} above ")).right_aligned(),

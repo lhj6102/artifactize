@@ -2,8 +2,12 @@ use super::*;
 use crate::agent::session::document::{Mode, Move};
 use crate::test_session_files::{answer, append, fixture};
 
+/// Jobs a conversation of these small fixtures can take to finish loading: far more than any
+/// of them needs, so only a job that never ends reaches it.
+const JOB_LIMIT: usize = 10_000;
+
 fn complete(live: &mut session::Live) {
-    for _ in 0..10000 {
+    for _ in 0..JOB_LIMIT {
         let Some(mut job) = live.job() else {
             return;
         };
