@@ -974,7 +974,7 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
     let id = run.requests[0].id.clone();
     let receipts = store::Receipts::open(&state, &repo).await.unwrap();
     let reviewer = crate::human::default_reviewer().unwrap_or_else(|_| "fixture".parse().unwrap());
-    crate::human::claim(&receipts, id.as_str(), &reviewer)
+    crate::human::claim(&receipts, &id, &reviewer)
         .await
         .unwrap();
     let mut monitor = Monitor::new(state.clone(), Some(repo.clone()));
@@ -1011,7 +1011,7 @@ async fn an_external_submission_frees_the_keys_and_focus_of_an_edited_human_deta
 
     crate::human::submit(
         &receipts,
-        id.as_str(),
+        &id,
         &reviewer,
         &json!({"verdict":"GREEN","note":"outside"}),
         tokio_util::sync::CancellationToken::new(),

@@ -121,14 +121,14 @@ impl Fixture {
         command
     }
 
-    async fn waiting(&self) -> String {
+    async fn waiting(&self) -> artifactize::types::RequestId {
         let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
         loop {
             let waiting = store::read_waiting(&self.state, Some(&self.repo))
                 .await
                 .unwrap();
             if let Some(view) = waiting.first() {
-                return view.request.id.to_string();
+                return view.request.id.clone();
             }
             assert!(Instant::now() < deadline, "Human request did not appear");
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -216,7 +216,7 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     review.refresh().await;
     let list = screen(&mut review);
     assert!(
-        list.contains("Waiting Human reviews (1)") && list.contains(&id),
+        list.contains("Waiting Human reviews (1)") && list.contains(id.as_str()),
         "{list}"
     );
     // The fixed 36-column Preview wraps the instruction within its borders.

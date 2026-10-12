@@ -363,7 +363,7 @@ async fn an_external_submission_ends_editing_and_frees_the_detail_keys() {
     // The same reviewer submits from another terminal; the review reloads the request.
     human::submit_and_publish(
         &state,
-        view.request.id.as_str(),
+        &view.request.id,
         &"alice".parse().unwrap(),
         &json!({"verdict":"GREEN","approved":true}),
         CancellationToken::new(),
@@ -439,7 +439,7 @@ async fn a_run_after_an_outside_submission_neither_runs_nor_drops_the_draft() {
     review.paste_single("draft with 한글");
     human::submit_and_publish(
         &state,
-        id.as_str(),
+        &id,
         &"alice".parse().unwrap(),
         &json!({"verdict":"GREEN","approved":true}),
         CancellationToken::new(),
@@ -487,7 +487,7 @@ async fn a_refresh_keeps_the_quit_prompt_for_claims_still_held() {
     // Another terminal settles it; this session still holds the claim it took on a second one.
     human::submit_and_publish(
         &state,
-        id.as_str(),
+        &id,
         &"alice".parse().unwrap(),
         &json!({"verdict":"GREEN","approved":true}),
         CancellationToken::new(),

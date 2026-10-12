@@ -191,10 +191,10 @@ impl Receipts {
 
     pub(crate) async fn claim_human(
         &self,
-        id: &str,
+        id: &crate::types::RequestId,
         reviewer: &crate::types::ReviewerId,
     ) -> Result<HumanClaim, String> {
-        let id: crate::types::RequestId = id.parse()?;
+        let id = id.to_owned();
         let reviewer = reviewer.to_owned();
         self.connection
             .call(move |db| -> Result<_, Error> {
@@ -217,10 +217,10 @@ impl Receipts {
     /// Only the claimant releases, and only while the original request still waits.
     pub(crate) async fn release_human(
         &self,
-        id: &str,
+        id: &crate::types::RequestId,
         reviewer: &crate::types::ReviewerId,
     ) -> Result<HumanClaim, String> {
-        let id: crate::types::RequestId = id.parse()?;
+        let id = id.to_owned();
         let reviewer = reviewer.to_owned();
         self.connection
             .call(move |db| -> Result<_, Error> {
@@ -238,8 +238,11 @@ impl Receipts {
     }
 
     /// The original waiting request that a request or follower forwards Human actions to.
-    pub(crate) async fn waiting_human(&self, id: &str) -> Result<Request, String> {
-        let id: crate::types::RequestId = id.parse()?;
+    pub(crate) async fn waiting_human(
+        &self,
+        id: &crate::types::RequestId,
+    ) -> Result<Request, String> {
+        let id = id.to_owned();
         self.connection
             .call(move |db| -> Result<_, Error> {
                 let transaction = db.transaction()?;
@@ -253,10 +256,10 @@ impl Receipts {
 
     pub(crate) async fn human_request(
         &self,
-        id: &str,
+        id: &crate::types::RequestId,
         reviewer: &crate::types::ReviewerId,
     ) -> Result<(Request, Execution), String> {
-        let id: crate::types::RequestId = id.parse()?;
+        let id = id.to_owned();
         let reviewer = reviewer.to_owned();
         self.connection
             .call(move |db| -> Result<_, Error> {

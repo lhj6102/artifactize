@@ -65,7 +65,7 @@ describe("monitor", () => {
     assert.match(crumbs, /artifactize\s*›\s*all repositories\s*›\s*run-\S+\s*›\s*signoff/);
   });
 
-  // UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-CLAIM E-HUMAN-RELEASE E-MON-LIVE
+  // UX edges: E-HUMAN-CLAIMED-ELSEWHERE E-HUMAN-RELEASED-ELSEWHERE E-HUMAN-CLAIM E-HUMAN-RELEASE E-MON-LIVE
   it("follows a claim another process makes, then claims and releases explicitly", async () => {
     const id = signoff(fixture).id;
     assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "bob"), 0);

@@ -30,14 +30,17 @@ pub fn default_reviewer() -> Result<crate::types::ReviewerId, String> {
 }
 
 /// The saved request's Run repository and its receipts, where its Human actions are recorded.
-pub async fn open(state: &Path, request: &str) -> Result<(Receipts, PathBuf), String> {
+pub async fn open(
+    state: &Path,
+    request: &crate::types::RequestId,
+) -> Result<(Receipts, PathBuf), String> {
     let (_, repo) = store::read_request_repo(state, request).await?;
     Ok((Receipts::open(state, &repo).await?, repo))
 }
 
 pub async fn claim(
     receipts: &Receipts,
-    request: &str,
+    request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
 ) -> Result<HumanClaim, String> {
     receipts.claim_human(request, reviewer).await
@@ -46,7 +49,7 @@ pub async fn claim(
 /// Release the reviewer lock without a verdict, so another reviewer can claim the request.
 pub async fn unclaim(
     receipts: &Receipts,
-    request: &str,
+    request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
 ) -> Result<HumanClaim, String> {
     receipts.release_human(request, reviewer).await
@@ -54,7 +57,7 @@ pub async fn unclaim(
 
 pub async fn run_human_tool(
     receipts: &Receipts,
-    request: &str,
+    request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
     tool: &crate::config::ToolName,
     cancellation: CancellationToken,
@@ -81,7 +84,7 @@ pub async fn run_human_tool(
 /// claim and runs nothing. A tool that cannot be resolved carries its error.
 pub async fn tool_commands(
     receipts: &Receipts,
-    request: &str,
+    request: &crate::types::RequestId,
 ) -> Result<std::collections::BTreeMap<crate::config::ToolName, Result<CommandLine, String>>, String>
 {
     let request = receipts.waiting_human(request).await?;
@@ -98,7 +101,7 @@ pub async fn tool_commands(
 /// check.
 pub async fn submit(
     receipts: &Receipts,
-    request: &str,
+    request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
     result: &Value,
     cancellation: CancellationToken,
@@ -122,7 +125,7 @@ pub async fn submit(
 /// `submit`, then publish the settled result to the configured remote review store.
 pub async fn submit_and_publish(
     state: &Path,
-    request: &str,
+    request: &crate::types::RequestId,
     reviewer: &crate::types::ReviewerId,
     result: &Value,
     cancellation: CancellationToken,

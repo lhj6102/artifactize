@@ -12,7 +12,7 @@ that makes the transition happen and checks where it leads.
   repositories"); the Monitor's breadcrumb and the Review search show it too.
 - **Monitor**: four panes. **Scope** lists ALL repositories and each repository and worktree;
   **Runs** lists the selected scope's Runs, newest first; **Tree** shows the selected Run's
-  Artifacts and their evals, each with its verdict; **Detail** shows the selected row.
+  Artifacts and their evals, each with its verdict; **Detail** shows the selected row: for an eval its instruction, result and request, and with `t` its technical record.
   States: Scope, Runs, Tree or Graph focused, Graph zoomed into an Artifact, Detail open.
 - **Run graph**: the selected Run's Artifacts as nodes and their dependencies as edges,
   coloured by verdict: GREEN, running or waiting for a Human, waiting, RED, ERROR, blocked.
@@ -20,7 +20,8 @@ that makes the transition happen and checks where it leads.
   with a read-only preview of the selected request, and the search field above it. States:
   Requests focused, Search focused (with or without suggestions), a request open (a Human
   review is actionable, any other request read-only).
-- **Human review** (in the Monitor's Detail or in Review): Unclaimed, Claimed, Editing GREEN
+- **Human review** (in the Monitor's Detail or in Review): Unclaimed, Taken (another reviewer
+  holds the claim), Claimed (by this reviewer), Editing GREEN
   (the form built from the eval's pass schema), Editing RED (built from its fail schema),
   Submitted; a tool may be running.
 - **Settings**: Codex account, API keys, Models, Remote store (URL, share level and token).
@@ -42,7 +43,7 @@ that makes the transition happen and checks where it leads.
 | E-PALETTE-CLOSE | Palette | Esc or a click outside | the screen below |
 | E-HELP-OPEN | any screen, outside fields | `?` | Help, listing the keys of the current screen |
 | E-HELP-CLOSE | Help | Esc | the screen below |
-| E-REFRESH | any screen | Ctrl+R or F5 | same screen, state reloaded |
+| E-REFRESH | any screen | F5, or Ctrl+R outside verdict editing (while editing a verdict Ctrl+R switches to RED, E-HUMAN-SWITCH) | same screen, state reloaded |
 | E-QUIT-CLEAN | any screen, no claims held | `q` outside fields, or closing the window from anywhere | window closed |
 | E-QUIT-ASK | any screen, claims held | `q` outside fields, or closing the window from anywhere | Leave dialog |
 | E-QUIT-STAY | Leave dialog | Esc | the screen below |
@@ -70,7 +71,7 @@ that makes the transition happen and checks where it leads.
 | E-GRAPH-OPEN | Tree | `v` | Graph |
 | E-GRAPH-CLOSE | Graph | `v` | Tree |
 | E-GRAPH-RECOLOUR | Graph | a result arrives | Graph, nodes and edges recoloured in place |
-| E-GRAPH-MOVE | Graph | arrows | Graph, neighbouring Artifact selected |
+| E-GRAPH-MOVE | Graph | ← upstream, → downstream, ↑ ↓ the neighbour in the same column | Graph, that Artifact selected and focused |
 | E-GRAPH-ZOOM-IN | Graph | Enter or click on an Artifact | Graph zoomed into its evals |
 | E-GRAPH-EVAL-SELECT | Graph zoomed | ↑ ↓ | Graph zoomed, another eval selected; Detail follows |
 | E-GRAPH-EVAL-OPEN | Graph zoomed | Enter on an eval | Detail opened |
@@ -83,7 +84,8 @@ that makes the transition happen and checks where it leads.
 | --- | --- | --- | --- |
 | E-HUMAN-CLAIM | Unclaimed | `c` | Claimed |
 | E-HUMAN-RELEASE | Claimed | `u` | Unclaimed |
-| E-HUMAN-CLAIMED-ELSEWHERE | Unclaimed | another process claims | Unclaimed, shown as taken |
+| E-HUMAN-CLAIMED-ELSEWHERE | Unclaimed | another process claims | Taken, shown with the claimant; claiming here is refused |
+| E-HUMAN-RELEASED-ELSEWHERE | Taken | the other process releases | Unclaimed |
 | E-HUMAN-TOOL | any | Enter on an output tool | same state, the tool's output shown |
 | E-HUMAN-TOOL-LAUNCH | any | Enter on a launch tool | same state, the application opened and said so |
 | E-HUMAN-TOOL-FAIL | any | Enter on a tool that fails | same state, the tool's error shown |
@@ -95,7 +97,7 @@ that makes the transition happen and checks where it leads.
 | E-HUMAN-TEXT | Editing | type text, including composed Korean | Editing, no shortcut fires |
 | E-HUMAN-ESC-CANCEL | a tool or submission running | Esc | same state, the running work cancelled |
 | E-HUMAN-ESC-FORM | Editing | Esc | Claimed |
-| E-HUMAN-ESC-DETAIL | Claimed | Esc | the list or tree the Detail was opened from |
+| E-HUMAN-ESC-DETAIL | Unclaimed, Claimed or Submitted, nothing running or being edited | Esc | the list or tree the Detail was opened from |
 
 ## Review
 
@@ -156,7 +158,7 @@ several walks lists them one per line. Selecting a row first is the movement edg
   E-GRAPH-OPEN → E-GRAPH-ZOOM-IN → E-GRAPH-EVAL-SELECT → E-GRAPH-EVAL-OPEN → E-MON-DETAIL-BACK
 - J-GRAPH-LARGE: E-GRAPH-OPEN → E-GRAPH-BEYOND
 - J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
-  E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-CLAIM
+  E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-RELEASED-ELSEWHERE → E-HUMAN-CLAIM
 - J-HUMAN-TOOL: E-HUMAN-TOOL | E-HUMAN-TOOL-LAUNCH | E-HUMAN-TOOL-FAIL
 - J-HUMAN-GREEN: E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-SUBMIT
 - J-HUMAN-RED: E-HUMAN-CLAIM → E-HUMAN-RED → E-HUMAN-INVALID → E-HUMAN-SWITCH

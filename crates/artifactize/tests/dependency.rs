@@ -113,6 +113,11 @@ impl Fixture {
     }
 }
 
+/// A request ID parsed once, where a test names one.
+fn rid(id: &str) -> artifactize::types::RequestId {
+    id.parse().unwrap()
+}
+
 #[test]
 fn dependency_declarations_are_strict_and_other_profiles_still_require_payload() {
     let valid = json!({"name":"player","evals":[dependency(&["movement", "art"])]});
@@ -546,7 +551,7 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     assert!(
         artifactize::human::claim(
             &receipts,
-            run.requests[0].id.as_str(),
+            &rid(run.requests[0].id.as_str()),
             &"tester".parse().unwrap()
         )
         .await
@@ -554,14 +559,14 @@ async fn dependency_waits_for_human_and_never_offers_its_own_human_request() {
     );
     artifactize::human::claim(
         &receipts,
-        run.requests[1].id.as_str(),
+        &rid(run.requests[1].id.as_str()),
         &"tester".parse().unwrap(),
     )
     .await
     .unwrap();
     artifactize::human::submit(
         &receipts,
-        run.requests[1].id.as_str(),
+        &rid(run.requests[1].id.as_str()),
         &"tester".parse().unwrap(),
         &json!({"verdict":"GREEN"}),
         CancellationToken::new(),
