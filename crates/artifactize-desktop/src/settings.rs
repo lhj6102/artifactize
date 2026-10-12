@@ -1,6 +1,7 @@
 //! Settings: the accounts, keys and stores the CLI configures, through the same library calls
 //! (`login`/`logout codex`, `models`, `remote login|logout|status|push`). Nothing here stores,
 //! validates or reaches a service on its own; secrets never come back to the frontend.
+use crate::ids::SignInId;
 use crate::{App, Failure};
 use artifactize::{
     auth::{codex, remote},
@@ -24,7 +25,7 @@ type SignInTask = tokio::task::JoinHandle<Result<(), String>>;
 struct SignIn {
     /// Which sign-in this is: its waiter names it, and a waiter of an older one never takes
     /// or clears a newer one.
-    id: u32,
+    id: SignInId,
     /// Delivers a pasted redirect URL to the sign-in.
     paste: Option<oneshot::Sender<String>>,
     /// Stops the sign-in: its listener closes, the port is freed and nothing is saved.
@@ -56,10 +57,8 @@ impl SignIns {
     }
 
     /// Make `task` the sign-in in progress (stopping any other) and return its id.
-    fn register(&self, task: SignInTask, paste: oneshot::Sender<String>) -> u32 {
-        let id = self
-            .started
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    fn register(&self, task: SignInTask, paste: oneshot::Sender<String>) -> SignInId {
+        let id = SignInId::allocate(&self.started);
         let mut current = self.current();
         if let Some(previous) = current.take() {
             previous.abort.abort();
@@ -80,7 +79,7 @@ impl SignIns {
     async fn start(
         &self,
         launch: impl FnOnce(oneshot::Receiver<String>, oneshot::Sender<codex::Prompt>) -> SignInTask,
-    ) -> Result<(u32, codex::Prompt), Failure> {
+    ) -> Result<(SignInId, codex::Prompt), Failure> {
         // The previous sign-in frees its port before this one listens.
         self.stop();
         let (paste, pasted) = oneshot::channel();
@@ -101,15 +100,14 @@ impl SignIns {
                             "Codex sign-in ended before it started.".into()
                         })))
                     }
-                    Err(error) if error.is_cancelled() => Err(Failure::Account(CANCELLED.into())),
-                    Err(error) => Err(Failure::Account(error.to_string())),
+                    Err(error) => Err(ended_badly(error)),
                 }
             }
         }
     }
 
     /// Sign-in `id` is still the one in progress.
-    fn is_current(&self, id: u32) -> bool {
+    fn is_current(&self, id: SignInId) -> bool {
         self.current()
             .as_ref()
             .is_some_and(|sign_in| sign_in.id == id)
@@ -117,7 +115,7 @@ impl SignIns {
 
     /// The task of sign-in `id` for its waiter. A sign-in another one replaced, or that was
     /// cancelled, reads as cancelled.
-    fn take(&self, id: u32) -> Result<SignInTask, Failure> {
+    fn take(&self, id: SignInId) -> Result<SignInTask, Failure> {
         let mut current = self.current();
         let sign_in = current
             .as_mut()
@@ -129,7 +127,7 @@ impl SignIns {
     }
 
     /// Sign-in `id` ended: forget it, unless another one replaced it meanwhile.
-    fn finish(&self, id: u32) {
+    fn finish(&self, id: SignInId) {
         let mut current = self.current();
         if current.as_ref().is_some_and(|sign_in| sign_in.id == id) {
             *current = None;
@@ -283,7 +281,7 @@ pub struct CodexPrompt {
     pub url: String,
     pub callback: bool,
     /// The sign-in to wait for with [`codex_login_wait`].
-    pub sign_in: u32,
+    pub sign_in: SignInId,
 }
 
 /// Start `login codex`: the sign-in URL to show (the system browser gets it too when
@@ -328,7 +326,7 @@ pub async fn codex_login_start(
 #[specta::specta]
 pub async fn codex_login_wait(
     app: tauri::State<'_, App>,
-    sign_in: u32,
+    sign_in: SignInId,
 ) -> Result<CodexStatus, Failure> {
     let task = app.settings.sign_ins.take(sign_in)?;
     let ended = task.await;
@@ -336,8 +334,15 @@ pub async fn codex_login_wait(
     match ended {
         Ok(Ok(())) => read_codex(&app),
         Ok(Err(error)) => Err(Failure::Account(error)),
-        Err(error) if error.is_cancelled() => Err(Failure::Account(CANCELLED.into())),
-        Err(error) => Err(Failure::Account(error.to_string())),
+        Err(error) => Err(ended_badly(error)),
+    }
+}
+
+/// A sign-in task that did not return: cancelled is reported, a panic is a bug and goes on.
+fn ended_badly(error: tokio::task::JoinError) -> Failure {
+    match error.try_into_panic() {
+        Ok(panic) => std::panic::resume_unwind(panic),
+        Err(_) => Failure::Account(CANCELLED.into()),
     }
 }
 
@@ -446,50 +451,71 @@ pub enum TokenSource {
 
 /// `remote status`: never the token.
 #[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct RemoteStatus {
-    pub configured: bool,
-    pub url: Option<String>,
-    pub share: Option<Share>,
-    pub token_source: Option<TokenSource>,
-    pub reachable: bool,
-    pub principal: Option<String>,
-    pub scopes: Vec<String>,
-    pub error: Option<String>,
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum RemoteStatus {
+    /// No remote review store is configured.
+    Unconfigured,
+    Configured {
+        url: String,
+        share: Share,
+        token_source: TokenSource,
+        connection: Connection,
+    },
+}
+
+/// What asking the store answered.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum Connection {
+    Reachable {
+        principal: Option<String>,
+        scopes: Vec<String>,
+        /// What the store said when it named no principal.
+        error: Option<String>,
+    },
+    Unreachable {
+        error: Option<String>,
+    },
 }
 
 impl From<Option<remote::Status>> for RemoteStatus {
     fn from(status: Option<remote::Status>) -> Self {
         let Some(status) = status else {
-            return Self {
-                configured: false,
-                url: None,
-                share: None,
-                token_source: None,
-                reachable: false,
-                principal: None,
-                scopes: Vec::new(),
-                error: None,
-            };
+            return Self::Unconfigured;
         };
-        Self {
-            configured: true,
-            url: Some(status.url),
-            share: Some(status.share.into()),
-            token_source: Some(match status.token_source {
+        let connection = if status.reachable {
+            Connection::Reachable {
+                principal: status.principal.map(|principal| principal.to_string()),
+                scopes: status
+                    .scopes
+                    .into_iter()
+                    .flatten()
+                    .map(|scope| scope.to_string())
+                    .collect(),
+                error: status.error,
+            }
+        } else {
+            Connection::Unreachable {
+                error: status.error,
+            }
+        };
+        Self::Configured {
+            url: status.url,
+            share: status.share.into(),
+            token_source: match status.token_source {
                 remote::TokenSource::Env => TokenSource::Env,
                 remote::TokenSource::File => TokenSource::File,
                 remote::TokenSource::None => TokenSource::None,
-            }),
-            reachable: status.reachable,
-            principal: status.principal.map(|principal| principal.to_string()),
-            scopes: status
-                .scopes
-                .into_iter()
-                .flatten()
-                .map(|scope| scope.to_string())
-                .collect(),
-            error: status.error,
+            },
+            connection,
         }
     }
 }
@@ -518,11 +544,11 @@ pub async fn remote_login(
     share: Share,
     token: String,
 ) -> Result<RemoteStatus, Failure> {
-    remote::parse_url(&url).map_err(Failure::Invalid)?;
+    let url = remote::parse_url(&url).map_err(Failure::Invalid)?;
     remote::login(
         Some(&app.launch.state),
         app.launch.repo.as_deref(),
-        &url,
+        url,
         share.into(),
         token.trim().to_owned(),
     )

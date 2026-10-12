@@ -304,7 +304,7 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
 
     // Remote: not configured, a refused token saves nothing, then login, status, logout.
     let none = call("remote_status", json!({})).unwrap();
-    assert_eq!(none["configured"], json!(false));
+    assert_eq!(none["state"], json!("unconfigured"));
     let store = format!("{}/", provider.url);
     let refused = call(
         "remote_login",
@@ -313,8 +313,8 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     .unwrap_err();
     assert_eq!(refused["kind"], "account");
     assert_eq!(
-        call("remote_status", json!({})).unwrap()["configured"],
-        json!(false)
+        call("remote_status", json!({})).unwrap()["state"],
+        json!("unconfigured")
     );
     // Signing in with a token the store echoes back: refused, and never shown.
     let echoed = call(
@@ -342,14 +342,16 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     assert_eq!(
         status,
         json!({
-            "configured": true,
+            "state": "configured",
             "url": store,
             "share": "full",
             "tokenSource": "file",
-            "reachable": true,
-            "principal": "alice-laptop",
-            "scopes": ["read", "publish"],
-            "error": null,
+            "connection": {
+                "state": "reachable",
+                "principal": "alice-laptop",
+                "scopes": ["read", "publish"],
+                "error": null,
+            },
         })
     );
     assert_eq!(call("remote_status", json!({})).unwrap(), status);
@@ -358,10 +360,10 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     ECHO.store(true, Ordering::SeqCst);
     let echoed = call("remote_status", json!({})).unwrap();
     secret_free(&echoed);
-    assert_eq!(echoed["reachable"], json!(true));
-    assert_eq!(echoed["principal"], Value::Null);
+    assert_eq!(echoed["connection"]["state"], json!("reachable"));
+    assert_eq!(echoed["connection"]["principal"], Value::Null);
     assert_eq!(
-        echoed["error"],
+        echoed["connection"]["error"],
         "The remote store answered HTTP 400: [withheld: it contained part of the credential sent]"
     );
     let failed = call("remote_push", json!({"dryRun": true})).unwrap_err();
@@ -374,6 +376,6 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     let pushed = call("remote_push", json!({"dryRun": true})).unwrap();
     assert_eq!(pushed["pushed"], json!(0));
     let out = call("remote_logout", json!({})).unwrap();
-    assert_eq!(out["configured"], json!(false));
+    assert_eq!(out["state"], json!("unconfigured"));
     std::mem::forget(app);
 }

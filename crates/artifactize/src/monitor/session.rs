@@ -61,6 +61,21 @@ impl Live {
     pub fn invalidate(&mut self) {
         self.dirty = true;
     }
+
+    /// Point this reader at a freshly resolved `source`. Of the same session it keeps its
+    /// position, follow state and expanded groups and reads again (`true`); another session
+    /// is not this reader's (`false`, nothing changed).
+    pub fn refresh(&mut self, source: &Source) -> bool {
+        if self.source.reference != source.reference {
+            return false;
+        }
+        self.source = source.clone();
+        if let Some(reader) = &mut self.reader {
+            reader.source = source.clone();
+        }
+        self.invalidate();
+        true
+    }
     #[cfg(test)]
     pub fn expanded(&self, id: crate::agent::session::transcript::BlockId) -> bool {
         self.expanded.contains(&id)

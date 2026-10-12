@@ -211,15 +211,14 @@ async fn evidence(
     match live::resolve(state, view).await {
         Ok(live::Resolution::Local(source)) => {
             let live = match kept {
-                Some(mut live) if live.source.reference == source.reference => {
-                    live.source = source.clone();
-                    if let Some(reader) = &mut live.reader {
-                        reader.source = source;
+                Some(mut live) => {
+                    if live.refresh(&source) {
+                        live
+                    } else {
+                        Live::new(serial, source)
                     }
-                    live.invalidate();
-                    live
                 }
-                _ => Live::new(serial, source),
+                None => Live::new(serial, source),
             };
             (
                 Evidence {

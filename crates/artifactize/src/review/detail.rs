@@ -8,7 +8,7 @@ use super::{Action, Area, Control, Mode, Review, Runs, SCROLL_PAGE, Tool, view};
 use crate::{
     config::HumanToolKind,
     monitor::{duration, plain},
-    store::RequestView,
+    store::{Request, RequestView},
     types::RequestStatus,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -63,8 +63,9 @@ pub(crate) struct Hits {
     pub close: Rect,
 }
 
+/// Where a Human request stands for one reviewer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Stage {
+pub enum Stage {
     Claim,
     Review,
     Completed,
@@ -285,15 +286,29 @@ pub(super) fn draw_peek(frame: &mut Frame, area: Rect, view: &RequestView, revie
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
+/// The stage of a request that is `settled`, or open and claimed by this reviewer (`mine`).
+pub fn stage(settled: bool, mine: bool) -> Stage {
+    if settled {
+        Stage::Completed
+    } else if mine {
+        Stage::Review
+    } else {
+        Stage::Claim
+    }
+}
+
+/// A settled request's outcome as the completed Detail shows it: its result as pretty JSON, or
+/// its error.
+pub fn outcome_text(request: &Request) -> String {
+    request.result().map_or_else(
+        || request.error().map(str::to_owned).unwrap_or_default(),
+        |result| serde_json::to_string_pretty(result).unwrap_or_default(),
+    )
+}
+
 impl Review {
     fn stage(&self) -> Stage {
-        if self.settled() {
-            Stage::Completed
-        } else if self.owned() {
-            Stage::Review
-        } else {
-            Stage::Claim
-        }
+        stage(self.settled(), self.owned())
     }
 
     /// The key that moves focus to the Tools pane from here: Tab, or Shift-Tab while a form
@@ -768,10 +783,7 @@ impl Review {
         };
         if self.settled() {
             let request = &view.request;
-            let result = request.result().map_or_else(
-                || request.error().map(str::to_owned).unwrap_or_default(),
-                |result| serde_json::to_string_pretty(result).unwrap_or_default(),
-            );
+            let result = outcome_text(request);
             frame.render_widget(
                 Paragraph::new(format!("{}\n{result}", request.status()))
                     .wrap(Wrap { trim: false })

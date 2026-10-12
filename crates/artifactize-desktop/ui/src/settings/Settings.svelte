@@ -153,7 +153,10 @@
     working = true;
     await remoteCall(
       () => call(commands.remoteLogin(url.trim(), share, typed)),
-      (status) => `Signed in to ${status.url} as ${status.principal}.`,
+      (status) =>
+        status.state === "configured"
+          ? `Signed in to ${status.url}${principalOf(status) ? ` as ${principalOf(status)}` : ""}.`
+          : "Signed in.",
     );
     working = false;
   }
@@ -187,6 +190,11 @@
   }
 
   const signedIn = $derived(codex?.state === "stored");
+
+  /** The principal the store named, when it was reachable and named one. */
+  const principalOf = (status: RemoteStatus | null) =>
+    status?.state === "configured" && status.connection.state === "reachable" ? status.connection.principal : null;
+  const principal = $derived(principalOf(remote));
 
   useCommands(() =>
     active
@@ -303,7 +311,7 @@
       {#if !remote}
         <dt>Status</dt>
         <dd>…</dd>
-      {:else if !remote.configured}
+      {:else if remote.state === "unconfigured"}
         <dt>Status</dt>
         <dd data-testid="remote-status">No remote review store is configured.</dd>
       {:else}
@@ -314,22 +322,22 @@
         <dt>Token</dt>
         <dd>{remote.tokenSource}</dd>
         <dt>Reachable</dt>
-        <dd>{remote.reachable ? "yes" : "no"}</dd>
-        {#if remote.principal}
+        <dd>{remote.connection.state === "reachable" ? "yes" : "no"}</dd>
+        {#if remote.connection.state === "reachable" && remote.connection.principal}
           <dt>Principal</dt>
-          <dd data-testid="remote-principal">{remote.principal} (scopes: {remote.scopes.join(", ")})</dd>
-        {:else if remote.error}
+          <dd data-testid="remote-principal">{remote.connection.principal} (scopes: {remote.connection.scopes.join(", ")})</dd>
+        {:else if remote.connection.error}
           <dt>Error</dt>
-          <dd class="error">{remote.error}</dd>
+          <dd class="error">{remote.connection.error}</dd>
         {/if}
       {/if}
     </dl>
     <div class="row">
       <button class="button" disabled={working} onclick={() => void loadRemote()}>Check status</button>
-      {#if remote?.configured}
+      {#if remote?.state === "configured"}
         <button class="button" disabled={working} onclick={() => void remoteLogout()}>Sign out of the store</button>
-        <button class="button" disabled={working || !remote.principal} onclick={() => void push(true)}>Push (dry run)</button>
-        <button class="button" disabled={working || !remote.principal} onclick={() => void push(false)}>Push results</button>
+        <button class="button" disabled={working || !principal} onclick={() => void push(true)}>Push (dry run)</button>
+        <button class="button" disabled={working || !principal} onclick={() => void push(false)}>Push results</button>
       {/if}
     </div>
     <form class="login" onsubmit={remoteLogin} aria-label="Sign in to a remote store">

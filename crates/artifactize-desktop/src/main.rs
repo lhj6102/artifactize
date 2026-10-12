@@ -1,6 +1,5 @@
-// The release app has no console window on Windows; the terminal UIs stay in the CLI.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
+// The terminal UIs stay in the CLI; this is the window app (its Windows link settings are in
+// build.rs).
 fn main() -> std::process::ExitCode {
     let launch = match artifactize_desktop::Launch::parse(std::env::args_os()) {
         Ok(launch) => launch,

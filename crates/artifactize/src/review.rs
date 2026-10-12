@@ -18,7 +18,7 @@ pub(crate) mod tests;
 mod view;
 
 pub(crate) use detail::{Handled, Hits};
-pub use detail::{meta, shared, technical};
+pub use detail::{Stage, meta, outcome_text, shared, stage, technical};
 pub(crate) use embedded::Control;
 pub use form::{Field, Form, Input, template};
 pub use runs::Runs;

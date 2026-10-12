@@ -11,6 +11,7 @@ mod failure;
 mod generation;
 mod graph;
 mod human;
+mod ids;
 mod launch;
 mod search;
 mod settings;
@@ -19,6 +20,7 @@ mod transcript;
 mod watch;
 
 pub use failure::Failure;
+pub use ids::{JobId, SignInId, TranscriptHandle};
 pub use launch::{Launch, Mode};
 
 use specta_typescript::Typescript;

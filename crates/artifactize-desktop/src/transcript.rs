@@ -1,5 +1,6 @@
 //! An Agent request's live transcript, read by the monitor's own session reader. The frontend
 //! sizes the window in text columns and rows of its monospace pane, like a terminal would.
+use crate::ids::TranscriptHandle;
 use crate::{App, Failure};
 use artifactize::{
     agent::session::{document::Move, live, transcript::BlockId},
@@ -10,16 +11,13 @@ use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::{
     collections::BTreeMap,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU32, Ordering},
-    },
+    sync::{Arc, Mutex, atomic::AtomicU32},
 };
 
 /// Open transcripts by handle; each is read by at most one job at a time.
 #[derive(Default)]
 pub struct Transcripts {
-    open: Mutex<BTreeMap<u32, Entry>>,
+    open: Mutex<BTreeMap<TranscriptHandle, Entry>>,
     next: AtomicU32,
 }
 
@@ -31,13 +29,15 @@ struct Entry {
 
 /// The session behind a request, or why there is none to read.
 #[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Opened {
-    pub handle: Option<u32>,
-    /// The session id, which change hints name.
-    pub session: Option<String>,
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum Opened {
+    Local {
+        handle: TranscriptHandle,
+        /// The session id, which change hints name.
+        session: String,
+    },
     /// Why the conversation cannot be shown.
-    pub text: Option<String>,
+    Unavailable { text: String },
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Type)]
@@ -80,7 +80,7 @@ pub struct TranscriptView {
 pub async fn transcript_open(
     app: tauri::State<'_, App>,
     id: String,
-    handle: Option<u32>,
+    handle: Option<TranscriptHandle>,
 ) -> Result<Opened, Failure> {
     let view = store::read_request(&app.launch.state, &id)
         .await
@@ -93,10 +93,9 @@ pub async fn transcript_open(
     });
     if let Some((handle, live, true)) = &current {
         let session = live.lock().await.source.reference.session_id.to_string();
-        return Ok(Opened {
-            handle: Some(*handle),
-            session: Some(session),
-            text: None,
+        return Ok(Opened::Local {
+            handle: *handle,
+            session,
         });
     }
     let resolved = live::resolve(&app.launch.state, &view).await;
@@ -104,21 +103,15 @@ pub async fn transcript_open(
         // The same session keeps its reader, position, follow state and expanded groups, as in
         // the terminal monitor: wait for a window job to finish with it rather than replace it.
         let mut reader = live.lock().await;
-        if reader.source.reference == source.reference {
-            reader.source = source.clone();
-            if let Some(file) = &mut reader.reader {
-                file.source = source.clone();
-            }
-            reader.invalidate();
+        if reader.refresh(source) {
             drop(reader);
             let mut open = app.transcripts.open.lock().expect("transcripts lock");
             // Closed meanwhile: a new reader opens below instead.
             if let Some(entry) = open.get_mut(handle) {
                 entry.stamp = stamp;
-                return Ok(Opened {
-                    handle: Some(*handle),
-                    session: Some(source.reference.session_id.to_string()),
-                    text: None,
+                return Ok(Opened::Local {
+                    handle: *handle,
+                    session: source.reference.session_id.to_string(),
                 });
             }
         }
@@ -130,9 +123,9 @@ pub async fn transcript_open(
     }
     Ok(match resolved {
         Ok(live::Resolution::Local(source)) => {
-            let handle = app.transcripts.next.fetch_add(1, Ordering::Relaxed);
+            let handle = TranscriptHandle::allocate(&app.transcripts.next);
             let session = source.reference.session_id.to_string();
-            let live = Live::new(u64::from(handle), source);
+            let live = Live::new(handle.number(), source);
             open.insert(
                 handle,
                 Entry {
@@ -140,21 +133,11 @@ pub async fn transcript_open(
                     stamp,
                 },
             );
-            Opened {
-                handle: Some(handle),
-                session: Some(session),
-                text: None,
-            }
+            Opened::Local { handle, session }
         }
-        Ok(live::Resolution::Unavailable(text)) => Opened {
-            handle: None,
-            session: None,
-            text: Some(text),
-        },
-        Err(error) => Opened {
-            handle: None,
-            session: None,
-            text: Some(format!("Conversation unavailable: {error}")),
+        Ok(live::Resolution::Unavailable(text)) => Opened::Unavailable { text },
+        Err(error) => Opened::Unavailable {
+            text: format!("Conversation unavailable: {error}"),
         },
     })
 }
@@ -166,7 +149,7 @@ pub async fn transcript_open(
 #[specta::specta]
 pub async fn transcript_window(
     app: tauri::State<'_, App>,
-    handle: u32,
+    handle: TranscriptHandle,
     columns: u32,
     rows: u32,
     movement: Option<Movement>,
@@ -207,15 +190,15 @@ pub async fn transcript_window(
     }
     // One bounded job per call; `loading` asks the caller for the next one.
     if let Some(job) = live.job() {
-        let (job, window) = tokio::task::spawn_blocking(move || {
+        let job = tokio::task::spawn_blocking(move || {
             let mut job = job;
             let window =
                 job.reader
                     .step_expanded(job.width, job.height, job.position, &job.expanded);
             (job, window)
         })
-        .await
-        .map_err(|error| Failure::Read(format!("Session reader job failed: {error}")))?;
+        .await;
+        let (job, window) = crate::failure::joined(job)?;
         live.finish(job, window);
     }
     let window = &live.window;
@@ -240,7 +223,7 @@ pub async fn transcript_window(
 /// Close transcript `handle`; its reader removes its temporary files.
 #[tauri::command]
 #[specta::specta]
-pub fn transcript_close(app: tauri::State<'_, App>, handle: u32) {
+pub fn transcript_close(app: tauri::State<'_, App>, handle: TranscriptHandle) {
     app.transcripts
         .open
         .lock()

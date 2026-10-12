@@ -179,13 +179,13 @@ impl Browse {
             (shown.page.clone(), input)
         };
         let worker = std::mem::take(&mut *loader);
-        let (worker, result) = tokio::task::spawn_blocking(move || {
+        let joined = tokio::task::spawn_blocking(move || {
             let mut worker = worker;
             let result = worker.load(input);
             (worker, result)
         })
-        .await
-        .map_err(|error| Failure::Read(error.to_string()))?;
+        .await;
+        let (worker, result) = crate::failure::joined(joined)?;
         *loader = worker;
         let mut shown = self.shown();
         if shown.page != page {

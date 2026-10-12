@@ -413,11 +413,10 @@ impl Remote {
 pub async fn login(
     state: Option<&Path>,
     repo: Option<&Path>,
-    url: &str,
+    url: Url,
     share: Share,
     token: String,
 ) -> Result<(Remote, Principal), String> {
-    let url = parse_url(url)?;
     valid_token(&token)?;
     let remote = Remote {
         url,

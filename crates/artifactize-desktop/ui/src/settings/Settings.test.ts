@@ -10,25 +10,13 @@ import type { CodexStatus, RemoteStatus } from "../ipc/client";
 const STORE = "http://127.0.0.1:8417/";
 const TOKEN = "azt_secret-store-token";
 
-const none: RemoteStatus = {
-  configured: false,
-  url: null,
-  share: null,
-  tokenSource: null,
-  reachable: false,
-  principal: null,
-  scopes: [],
-  error: null,
-};
+const none: RemoteStatus = { state: "unconfigured" };
 const signedIn: RemoteStatus = {
-  configured: true,
+  state: "configured",
   url: STORE,
   share: "summary",
   tokenSource: "file",
-  reachable: true,
-  principal: "alice-laptop",
-  scopes: ["read", "publish"],
-  error: null,
+  connection: { state: "reachable", principal: "alice-laptop", scopes: ["read", "publish"], error: null },
 };
 
 type Calls = { cmd: string; args: Record<string, unknown> }[];

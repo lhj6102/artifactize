@@ -43,9 +43,9 @@ pub(super) async fn execute(
     let mut out = io::stdout();
     match command {
         RemoteCommand::Login { url, share } => {
-            remote::parse_url(&url)?;
+            let url = remote::parse_url(&url)?;
             let token = read_token()?;
-            let (remote, principal) = remote::login(state, repo, &url, share, token).await?;
+            let (remote, principal) = remote::login(state, repo, url, share, token).await?;
             if json {
                 print_json(&json!({
                     "url": remote.url,

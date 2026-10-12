@@ -18,6 +18,7 @@ pub(crate) async fn current(app: &App) -> Result<u32, Failure> {
     Ok(app.observe(origin))
 }
 
+use crate::ids::JobId;
 use crate::{App, Failure, detail::Field, status::Mark};
 use artifactize::{
     config::{HumanToolKind, ToolName},
@@ -38,6 +39,8 @@ use tokio_util::sync::CancellationToken;
 
 /// Resolved command lines of a request's tools, by tool name.
 type Commands = BTreeMap<ToolName, Result<CommandLine, String>>;
+/// What resolving a request's tool commands answered: them, or why it could not.
+type Resolved = Result<Commands, String>;
 
 /// Per-app review state: what is cached for drawing, running jobs, and claims taken here.
 #[derive(Default)]
@@ -45,9 +48,9 @@ pub struct Reviews {
     /// The last read view of each opened request, for redraws without a read.
     views: Mutex<BTreeMap<RequestId, RequestView>>,
     /// Resolved tool command lines, resolved once per request and again after each run.
-    commands: Mutex<BTreeMap<RequestId, Commands>>,
+    commands: Mutex<BTreeMap<RequestId, Resolved>>,
     /// Running jobs by the frontend's job number.
-    jobs: Mutex<BTreeMap<u32, CancellationToken>>,
+    jobs: Mutex<BTreeMap<JobId, CancellationToken>>,
     /// Claims this app took and has neither submitted nor released.
     taken: Mutex<BTreeSet<RequestId>>,
 }
@@ -67,7 +70,7 @@ impl Reviews {
         }
     }
 
-    fn start(&self, job: u32) -> CancellationToken {
+    fn start(&self, job: JobId) -> CancellationToken {
         let token = CancellationToken::new();
         self.jobs
             .lock()
@@ -76,7 +79,7 @@ impl Reviews {
         token
     }
 
-    fn end(&self, job: u32) {
+    fn end(&self, job: JobId) {
         self.jobs.lock().expect("jobs lock").remove(&job);
     }
 
@@ -215,7 +218,7 @@ fn kind(kind: HumanToolKind) -> ToolKind {
 fn view(
     view: &RequestView,
     reviewer: &str,
-    commands: Option<&Commands>,
+    commands: Option<&Resolved>,
     generation: u32,
     now: OffsetDateTime,
 ) -> HumanView {
@@ -240,22 +243,26 @@ fn view(
             })
             .collect(),
         mark: monitor::Status::from(request.status()).into(),
-        stage: if settled {
-            Stage::Completed
-        } else if mine {
-            Stage::Review
-        } else {
-            Stage::Claim
+        stage: match review::stage(settled, mine) {
+            review::Stage::Completed => Stage::Completed,
+            review::Stage::Review => Stage::Review,
+            review::Stage::Claim => Stage::Claim,
         },
         claim,
         reviewer: reviewer.to_owned(),
         tools: review::tools(request)
             .into_iter()
             .map(|tool| {
-                let resolved = commands.and_then(|commands| commands.get(&tool.name));
+                // Every tool carries why its commands could not be resolved at all.
+                let (resolved, failed) = match commands {
+                    Some(Ok(commands)) => (commands.get(&tool.name), None),
+                    Some(Err(error)) => (None, Some(error.clone())),
+                    None => (None, None),
+                };
                 ToolView {
                     action: tool.action(resolved),
-                    error: resolved.and_then(|resolved| resolved.as_ref().err().cloned()),
+                    error: failed
+                        .or_else(|| resolved.and_then(|resolved| resolved.as_ref().err().cloned())),
                     name: tool.name.to_string(),
                     kind: kind(tool.kind),
                     description: tool.description,
@@ -263,13 +270,7 @@ fn view(
             })
             .collect(),
         recorded: request.human_definition.is_some(),
-        result: settled.then(|| {
-            let result = request.result().map_or_else(
-                || request.error().map(str::to_owned).unwrap_or_default(),
-                |result| serde_json::to_string_pretty(result).unwrap_or_default(),
-            );
-            format!("{}\n{result}", request.status())
-        }),
+        result: settled.then(|| format!("{}\n{}", request.status(), review::outcome_text(request))),
         generation,
     }
 }
@@ -307,7 +308,7 @@ async fn read(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
             .commands
             .lock()
             .expect("commands lock")
-            .insert(view.request.id.clone(), commands.unwrap_or_default());
+            .insert(view.request.id.clone(), commands);
     }
     let mut views = app.human.views.lock().expect("views lock");
     views.insert(id.clone(), view.clone());
@@ -365,7 +366,7 @@ pub async fn human_form(
     form::template(&opened(&app, &id)?.request, verdict)
 }
 
-async fn run_job(app: &App, job: u32, work: Job) -> Outcome {
+async fn run_job(app: &App, job: JobId, work: Job) -> Outcome {
     let cancel = app.human.start(job);
     let outcome = work
         .run(
@@ -385,7 +386,7 @@ async fn run_job(app: &App, job: u32, work: Job) -> Outcome {
 pub async fn human_claim(
     app: tauri::State<'_, App>,
     id: String,
-    job: u32,
+    job: JobId,
     standalone: bool,
 ) -> Result<Acted, Failure> {
     let id = parse(&id)?;
@@ -412,7 +413,7 @@ pub async fn human_run(
     app: tauri::State<'_, App>,
     id: String,
     tool: String,
-    job: u32,
+    job: JobId,
 ) -> Result<ToolRun, Failure> {
     let id = parse(&id)?;
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
@@ -450,7 +451,7 @@ pub async fn human_run(
 /// Cancel running job `job`: a tool, or a submission's fingerprint recheck.
 #[tauri::command]
 #[specta::specta]
-pub fn human_cancel(app: tauri::State<'_, App>, job: u32) {
+pub fn human_cancel(app: tauri::State<'_, App>, job: JobId) {
     if let Some(token) = app.human.jobs.lock().expect("jobs lock").get(&job) {
         token.cancel();
     }
@@ -495,7 +496,7 @@ pub async fn human_submit(
     app: tauri::State<'_, App>,
     id: String,
     draft: Draft,
-    job: u32,
+    job: JobId,
 ) -> Result<Submitted, Failure> {
     let id = parse(&id)?;
     let request = opened(&app, &id)?;
@@ -541,7 +542,7 @@ pub fn human_json(app: tauri::State<'_, App>, id: String, draft: Draft) -> Resul
 pub async fn human_release(
     app: tauri::State<'_, App>,
     ids: Vec<String>,
-    job: u32,
+    job: JobId,
 ) -> Result<Acted, Failure> {
     let ids = ids
         .iter()

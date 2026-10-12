@@ -28,8 +28,8 @@ describe("Transcript", () => {
       (cmd, args) => {
         if (cmd === "transcript_open") {
           return running
-            ? { handle: 7, session: "s-1", text: null }
-            : { handle: null, session: null, text: "No saved Agent conversation yet." };
+            ? { kind: "local", handle: 7, session: "s-1" }
+            : { kind: "unavailable", text: "No saved Agent conversation yet." };
         }
         if (cmd === "transcript_window") {
           windows.push(args);
@@ -52,7 +52,7 @@ describe("Transcript", () => {
     const pending: { reject: (error: unknown) => void }[] = [];
     mockIPC(
       (cmd, args) => {
-        if (cmd === "transcript_open") return { handle, session: `s-${handle}`, text: null };
+        if (cmd === "transcript_open") return { kind: "local", handle, session: `s-${handle}` };
         if (cmd === "transcript_window") {
           if ((args as { handle: number }).handle === 7) {
             return new Promise((_, reject) => pending.push({ reject }));

@@ -436,18 +436,9 @@ impl Monitor {
         pane.evidence.title = "Agent session".into();
         match live::resolve_cached(state, view, identity).await {
             Ok(Resolution::Local(source)) => {
-                let same = pane
-                    .live
-                    .as_ref()
-                    .is_some_and(|live| live.source.reference == source.reference);
-                if !same {
+                let refreshed = pane.live.as_mut().is_some_and(|live| live.refresh(&source));
+                if !refreshed {
                     pane.live = Some(session::Live::new(serial, source));
-                } else if let Some(live) = &mut pane.live {
-                    live.source = source;
-                    if let Some(reader) = &mut live.reader {
-                        reader.source = live.source.clone();
-                    }
-                    live.invalidate();
                 }
                 pane.evidence.text = "Loading session…".into();
             }

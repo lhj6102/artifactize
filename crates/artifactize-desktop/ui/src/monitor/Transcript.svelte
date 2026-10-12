@@ -96,13 +96,14 @@
     try {
       const opened = await call(commands.transcriptOpen(id, handle));
       if (closed) {
-        if (opened.handle !== null) void commands.transcriptClose(opened.handle);
+        if (opened.kind === "local") void commands.transcriptClose(opened.handle);
         return;
       }
-      const replaced = opened.handle !== handle;
-      handle = opened.handle;
-      session = opened.session;
-      unavailable = opened.text;
+      const next = opened.kind === "local" ? opened.handle : null;
+      const replaced = next !== handle;
+      handle = next;
+      session = opened.kind === "local" ? opened.session : null;
+      unavailable = opened.kind === "unavailable" ? opened.text : null;
       if (replaced) view = null;
       if (handle !== null) void ask(null, null, true);
     } catch (error) {

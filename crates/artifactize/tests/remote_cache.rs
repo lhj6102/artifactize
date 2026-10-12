@@ -825,7 +825,7 @@ fn tool_session_lifecycle_pins_round_trip_through_the_remote_store() {
         let (remote, _) = artifactize::auth::remote::login(
             Some(&state),
             Some(&repo),
-            &server.url,
+            artifactize::auth::remote::parse_url(&server.url).unwrap(),
             artifactize::auth::remote::Share::Summary,
             token.clone(),
         )

@@ -32,21 +32,21 @@ export const commands = {
 	 *  Claim request `id` for this reviewer; nothing else claims. The standalone review offers
 	 *  its claims for release on quit; the monitor keeps them, as in the terminal.
 	 */
-	humanClaim: (id: string, job: number, standalone: boolean) => typedError<Acted, Failure>(__TAURI_INVOKE("human_claim", { id, job, standalone })),
+	humanClaim: (id: string, job: JobId, standalone: boolean) => typedError<Acted, Failure>(__TAURI_INVOKE("human_claim", { id, job, standalone })),
 	/**
 	 *  Run tool `tool` of request `id`; job number `job` cancels it. The run needs this
 	 *  reviewer's claim on a request that still waits and unchanged declarations.
 	 */
-	humanRun: (id: string, tool: string, job: number) => typedError<ToolRun, Failure>(__TAURI_INVOKE("human_run", { id, tool, job })),
+	humanRun: (id: string, tool: string, job: JobId) => typedError<ToolRun, Failure>(__TAURI_INVOKE("human_run", { id, tool, job })),
 	/**  Cancel running job `job`: a tool, or a submission's fingerprint recheck. */
-	humanCancel: (job: number) => __TAURI_INVOKE<void>("human_cancel", { job }),
+	humanCancel: (job: JobId) => __TAURI_INVOKE<void>("human_cancel", { job }),
 	/**
 	 *  Submit `draft` for request `id` and publish it like `request submit`. A result the
 	 *  schema rejects keeps the request waiting and fails as `invalid`.
 	 */
-	humanSubmit: (id: string, draft: Draft, job: number) => typedError<Submitted, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
+	humanSubmit: (id: string, draft: Draft, job: JobId) => typedError<Submitted, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
 	/**  Release this reviewer's claims on `ids` without a verdict. */
-	humanRelease: (ids: string[], job: number) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
+	humanRelease: (ids: string[], job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
 	/**  The selected Run `run` as a graph of its Artifacts, from the shown snapshot. */
 	runGraph: (run: string) => typedError<RunGraph, Failure>(__TAURI_INVOKE("run_graph", { run })),
 	/**
@@ -78,9 +78,9 @@ export const commands = {
 	 *  toggling the activity group on `toggle` (a row of the last window). `changed` re-reads
 	 *  the session file after a change hint or probe.
 	 */
-	transcriptWindow: (handle: number, columns: number, rows: number, movement: { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" } | null, toggle: number | null, changed: boolean) => typedError<TranscriptView, Failure>(__TAURI_INVOKE("transcript_window", { handle, columns, rows, movement, toggle, changed })),
+	transcriptWindow: (handle: TranscriptHandle, columns: number, rows: number, movement: { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" } | null, toggle: number | null, changed: boolean) => typedError<TranscriptView, Failure>(__TAURI_INVOKE("transcript_window", { handle, columns, rows, movement, toggle, changed })),
 	/**  Close transcript `handle`; its reader removes its temporary files. */
-	transcriptClose: (handle: number) => __TAURI_INVOKE<void>("transcript_close", { handle }),
+	transcriptClose: (handle: TranscriptHandle) => __TAURI_INVOKE<void>("transcript_close", { handle }),
 	/**  The OpenAI and Anthropic keys, as `doctor` reports them. */
 	settingsKeys: () => __TAURI_INVOKE<KeyStatus[]>("settings_keys"),
 	/**  The Codex sign-in state, offline. */
@@ -95,7 +95,7 @@ export const commands = {
 	 *  The sign-in stays reachable meanwhile, so a paste or a cancel still reaches it; one that a
 	 *  newer start replaced reads as cancelled and never touches the newer one.
 	 */
-	codexLoginWait: (signIn: number) => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_login_wait", { signIn })),
+	codexLoginWait: (signIn: SignInId) => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_login_wait", { signIn })),
 	/**  Finish the sign-in with the URL the browser was sent to, as the CLI accepts on stdin. */
 	codexLoginPaste: (redirect: string) => typedError<null, Failure>(__TAURI_INVOKE("codex_login_paste", { redirect })),
 	/**  Stop the sign-in in progress; nothing is saved, even if the browser returns later. */
@@ -177,7 +177,7 @@ export type CodexPrompt = {
 	url: string,
 	callback: boolean,
 	/**  The sign-in to wait for with [`codex_login_wait`]. */
-	signIn: number,
+	signIn: SignInId,
 };
 
 /**  How Codex is signed in, read offline as the CLI does. */
@@ -200,6 +200,11 @@ export type Completion = {
 	keep: string,
 	candidates: string[],
 };
+
+/**  What asking the store answered. */
+export type Connection = { state: "reachable"; principal: string | null; scopes: string[]; 
+/**  What the store said when it named no principal. */
+error: string | null } | { state: "unreachable"; error: string | null };
 
 /**  A badge part such as `!2`: a status and how many. */
 export type Count = {
@@ -322,6 +327,9 @@ export type HumanView = {
 	generation: number,
 };
 
+/**  A cancellable job of one Human action, numbered by the frontend. */
+export type JobId = number;
+
 /**  Whether an API-key backend's key is in the environment; never its value. */
 export type KeyStatus = {
 	provider: Provider,
@@ -406,13 +414,11 @@ export type Notice = {
 };
 
 /**  The session behind a request, or why there is none to read. */
-export type Opened = {
-	handle: number | null,
-	/**  The session id, which change hints name. */
-	session: string | null,
-	/**  Why the conversation cannot be shown. */
-	text: string | null,
-};
+export type Opened = { kind: "local"; handle: TranscriptHandle; 
+/**  The session id, which change hints name. */
+session: string } | 
+/**  Why the conversation cannot be shown. */
+{ kind: "unavailable"; text: string };
 
 export type Output = {
 	title: string,
@@ -422,6 +428,12 @@ export type Output = {
 
 /**  Which way to page through the selected scope's Runs. */
 export type Paging = "older" | "newer";
+
+/**
+ *  A path as the frontend holds it: text with `/` on every system, which `PathBuf` reads back
+ *  on all of them. Only this type makes or reads one.
+ */
+export type PathKey = string;
 
 export type Profile = "runtime" | "agent" | "human" | "dependency";
 
@@ -436,23 +448,16 @@ export type Pushed = {
 };
 
 /**  `remote status`: never the token. */
-export type RemoteStatus = {
-	configured: boolean,
-	url: string | null,
-	share: Share | null,
-	tokenSource: TokenSource | null,
-	reachable: boolean,
-	principal: string | null,
-	scopes: string[],
-	error: string | null,
-};
+export type RemoteStatus = 
+/**  No remote review store is configured. */
+{ state: "unconfigured" } | { state: "configured"; url: string; share: Share; tokenSource: TokenSource; connection: Connection };
 
 /**  A repository as the catalog groups Runs: Git clones by their common directory. */
 export type RepositoryKey = 
-/**  The common Git directory, as a native path. */
-{ kind: "git"; path: string } | 
+/**  The common Git directory. */
+{ kind: "git"; path: PathKey } | 
 /**  A non-Git workspace. */
-{ kind: "workspace"; path: string };
+{ kind: "workspace"; path: PathKey };
 
 /**  A page of what the query found. */
 export type Results = {
@@ -512,9 +517,9 @@ export type RunPanel = {
 
 /**
  *  A scope by value, so a selection survives refreshes that reorder the catalog. Paths are
- *  native and round-trip; labels for people come with the rows.
+ *  round-trip; labels for people come with the rows.
  */
-export type ScopeKey = { kind: "all" } | { kind: "repository"; repository: RepositoryKey } | { kind: "worktree"; repository: RepositoryKey; path: string };
+export type ScopeKey = { kind: "all" } | { kind: "repository"; repository: RepositoryKey } | { kind: "worktree"; repository: RepositoryKey; path: PathKey };
 
 /**
  *  One catalog row: ALL, a repository, one of its worktrees, or its fold of worktrees
@@ -565,6 +570,9 @@ export type Share =
 "summary" | 
 /**  Also the saved execution as is. */
 "full";
+
+/**  A Codex sign-in in progress. */
+export type SignInId = number;
 
 export type SignedOut = {
 	/**  The store confirmed the revocation; otherwise only the local tokens were removed. */
@@ -622,6 +630,9 @@ export type ToolView = {
 	/**  Why the command could not be resolved; it is shown as declared. */
 	error: string | null,
 };
+
+/**  An open transcript reader. */
+export type TranscriptHandle = number;
 
 export type TranscriptView = {
 	rows: Row[],

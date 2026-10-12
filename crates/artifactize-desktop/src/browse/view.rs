@@ -9,18 +9,33 @@ use specta::Type;
 use std::path::PathBuf;
 use time::OffsetDateTime;
 
+/// A path as the frontend holds it: text with `/` on every system, which `PathBuf` reads back
+/// on all of them. Only this type makes or reads one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub struct PathKey(String);
+
+impl PathKey {
+    fn new(path: &std::path::Path) -> Self {
+        Self(path_text(path))
+    }
+    fn to_path(&self) -> PathBuf {
+        PathBuf::from(&self.0)
+    }
+}
+
 /// A repository as the catalog groups Runs: Git clones by their common directory.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum RepositoryKey {
-    /// The common Git directory, as a native path.
-    Git { path: String },
+    /// The common Git directory.
+    Git { path: PathKey },
     /// A non-Git workspace.
-    Workspace { path: String },
+    Workspace { path: PathKey },
 }
 
 /// A scope by value, so a selection survives refreshes that reorder the catalog. Paths are
-/// native and round-trip; labels for people come with the rows.
+/// round-trip; labels for people come with the rows.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ScopeKey {
@@ -30,26 +45,25 @@ pub enum ScopeKey {
     },
     Worktree {
         repository: RepositoryKey,
-        path: String,
+        path: PathKey,
     },
-}
-
-/// A path as a key: text with `/` on every system, which `PathBuf` reads back on all of them.
-fn native(path: &std::path::Path) -> String {
-    artifactize_tools::files::path_text(path)
 }
 
 impl RepositoryKey {
     fn new(repository: &Repository) -> Self {
         match repository {
-            Repository::Git(path) => Self::Git { path: native(path) },
-            Repository::Workspace(path) => Self::Workspace { path: native(path) },
+            Repository::Git(path) => Self::Git {
+                path: PathKey::new(path),
+            },
+            Repository::Workspace(path) => Self::Workspace {
+                path: PathKey::new(path),
+            },
         }
     }
     pub fn to_repository(&self) -> Repository {
         match self {
-            Self::Git { path } => Repository::Git(PathBuf::from(path)),
-            Self::Workspace { path } => Repository::Workspace(PathBuf::from(path)),
+            Self::Git { path } => Repository::Git(path.to_path()),
+            Self::Workspace { path } => Repository::Workspace(path.to_path()),
         }
     }
 }
@@ -63,7 +77,7 @@ impl ScopeKey {
             },
             Scope::Worktree(repository, path) => Self::Worktree {
                 repository: RepositoryKey::new(repository),
-                path: native(path),
+                path: PathKey::new(path),
             },
         }
     }
@@ -72,7 +86,7 @@ impl ScopeKey {
             Self::All => Scope::All,
             Self::Repository { repository } => Scope::Repository(repository.to_repository()),
             Self::Worktree { repository, path } => {
-                Scope::Worktree(repository.to_repository(), PathBuf::from(path))
+                Scope::Worktree(repository.to_repository(), path.to_path())
             }
         }
     }
