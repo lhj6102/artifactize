@@ -7,6 +7,7 @@ import { createServer, type Server } from "node:http";
 import { after, before, describe, it } from "node:test";
 import { cli, createOutside } from "./fixture.ts";
 import { type Session, startEnv } from "./driver.ts";
+import { typeText } from "./keys.ts";
 
 const KEY = "sk-e2e-settings-value";
 const TOKEN = "azt_e2esettingstoken0123456789abcdef";
@@ -83,8 +84,10 @@ describe("settings", () => {
 
   it("signs in to a remote store, shows its status, and signs out", async () => {
     await eventually(async () => (await text()).includes("No remote review store is configured."), "no store yet");
-    await browser.$("#remote-url").setValue(url);
-    await browser.$("#remote-token").setValue(TOKEN);
+    await browser.$("#remote-url").click();
+    await typeText(browser, url);
+    await browser.$("#remote-token").click();
+    await typeText(browser, TOKEN);
     assert.equal(await browser.$("#remote-token").getAttribute("type"), "password");
     await browser.$("button=Sign in to the store").click();
     await eventually(async () => (await text()).includes("alice-laptop (scopes: read, publish)"), "the principal");

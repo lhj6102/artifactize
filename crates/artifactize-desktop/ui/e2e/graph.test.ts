@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { artifactize, create, createChain, type Fixture, signoff } from "./fixture.ts";
 import { type Session, start } from "./driver.ts";
+import { press } from "./keys.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
   const end = Date.now() + ms;
@@ -87,14 +88,12 @@ describe("run graph", () => {
 
     // The tree folded the completed Artifact; Enter still opens the highlighted sign-off's
     // Detail (an Artifact's Detail has no Human review).
-    await browser.keys(["Enter"]);
-    await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 10000 });
+    const review = () => browser.$('[aria-label="Human review"]').isExisting();
+    await press(browser, ["Enter"], review, "the sign-off's Human review");
     // Back to the graph: Esc leaves Detail, a click on the list and Esc zooms out.
-    await browser.keys(["Escape"]);
-    await browser.$('[aria-label="Human review"]').waitForExist({ reverse: true, timeout: 10000 });
+    await press(browser, ["Escape"], async () => !(await review()), "Detail left");
     await evals.click();
-    await browser.keys(["Escape"]);
-    await evals.waitForExist({ reverse: true, timeout: 10000 });
+    await press(browser, ["Escape"], async () => !(await evals.isExisting()), "zoomed out");
   });
 
   it("moves along edges with the arrow keys and switches back to the tree with v", async () => {
@@ -102,18 +101,11 @@ describe("run graph", () => {
       () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === "a:release"),
       "focus back on release",
     );
-    await browser.keys(["ArrowRight"]);
-    await eventually(
-      () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === "a:ship"),
-      "focus on ship, downstream",
-    );
-    await browser.keys(["ArrowLeft"]);
-    await eventually(
-      () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === "a:release"),
-      "focus on release, upstream",
-    );
-    await browser.keys(["v"]);
-    await browser.$('[role="tree"]').waitForExist({ timeout: 10000 });
+    const on = (id: string) => () =>
+      browser.execute((want) => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") === want, id);
+    await press(browser, ["ArrowRight"], on("a:ship"), "focus on ship, downstream");
+    await press(browser, ["ArrowLeft"], on("a:release"), "focus on release, upstream");
+    await press(browser, ["v"], () => browser.$('[role="tree"]').isExisting(), "the tree");
   });
 });
 
@@ -147,11 +139,8 @@ describe("run graph of many Artifacts", () => {
       node.focus();
     });
     const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
-    /** Press `key` and wait for focus on `want`; it must still hold a moment later. */
-    const step = async (key: string, want: string) => {
-      await browser.keys([key]);
-      await eventually(async () => (await focused()) === want, `focus on ${want}`);
-    };
+    /** Press `key` and wait for focus on `want`. */
+    const step = (key: string, want: string) => press(browser, [key], async () => (await focused()) === want, `focus on ${want}`);
     // Back to the start of the chain, then along all of it.
     let at = Number(((await focused()) ?? "").slice(3));
     while (at > 0) await step("ArrowLeft", name((at -= 1)));
@@ -160,11 +149,14 @@ describe("run graph of many Artifacts", () => {
       if (index === 40) {
         // Into the revealed Artifact's evals and back out: focus returns to it and stays
         // through the camera's move, and the keys go on from it.
-        await browser.keys(["Enter"]);
-        await eventually(() => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"), "the evals");
+        await press(
+          browser,
+          ["Enter"],
+          () => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"),
+          "the evals",
+        );
         await browser.pause(400);
-        await browser.keys(["Escape"]);
-        await eventually(async () => (await focused()) === name(40), "focus back on n040");
+        await step("Escape", name(40));
         await browser.pause(800);
         assert.equal(await focused(), name(40), "focus held through the transition");
       }
