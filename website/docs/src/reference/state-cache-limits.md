@@ -267,7 +267,8 @@ eligible Run is considered. `--dry-run` returns `wouldRemove` without deleting;
 normal JSON returns `removed`, and both include `skippedRuns`. `prune` also collects
 the [Agent session store](#agent-sessions) under its size bounds, whatever
 `--older-than` says: `removedSessions` lists the deleted sessions, and with `--dry-run`
-`wouldRemoveSessions` those it would delete.
+`wouldRemoveSessions` those over the size bounds. A dry run does not check for a running
+`session send`, which an actual prune leaves alone, so the two can differ.
 
 What `doctor` checks, the `models` output and exactly which directories `prune`
 removes are in the [reference](#doctor-models-and-prune).
