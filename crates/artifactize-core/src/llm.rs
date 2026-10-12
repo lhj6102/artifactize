@@ -136,7 +136,7 @@ impl Client {
     ) -> Result<Self, Failure> {
         let base = base_url(backend)?;
         if backend == Backend::Codex {
-            return Ok(Self::Codex(codex::Codex::new(model, base, state, repo)?));
+            return Ok(Self::Codex(codex::Codex::new(model, &base, state, repo)?));
         }
         let key = api_key(backend, "for this Agent backend")
             .map_err(|message| Failure::new(Code::Authentication, message))?;

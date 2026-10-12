@@ -79,7 +79,8 @@ pub fn user_agent() -> String {
 
 pub struct Codex {
     model: crate::config::ModelId,
-    base: String,
+    /// The validated API root; text only where the HTTP adapter wants it.
+    base: reqwest::Url,
     state: PathBuf,
     repo: PathBuf,
     http: reqwest::Client,
@@ -90,13 +91,14 @@ pub struct Codex {
 impl Codex {
     pub(super) fn new(
         model: &crate::config::ModelId,
-        base: String,
+        base: &str,
         state: &Path,
         repo: &Path,
     ) -> Result<Self, String> {
         Ok(Self {
             model: model.clone(),
-            base,
+            base: reqwest::Url::parse(base)
+                .map_err(|_| format!("Invalid Codex endpoint: {base}"))?,
             state: state.into(),
             repo: repo.into(),
             http: super::http_client()?,
@@ -129,7 +131,7 @@ impl Codex {
             identity.session_ids = false;
         }
         let mut config = openai::OpenAIConfig::with_key(&dialect, token.access_token)
-            .with_base_url(&self.base)
+            .with_base_url(self.base.as_str().trim_end_matches('/'))
             .with_account_id(token.account_id.to_string());
         config.instructions = None;
         config.identity = Some(CallerIdentity {
