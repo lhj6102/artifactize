@@ -22,6 +22,6 @@
   },
   "bundle": {
     "active": false,
-    "icon": ["../../assets/brand/favicon.png"]
+    "icon": ["../../assets/brand/favicon.png", "../../assets/brand/artifactize-icon.ico"]
   }
 }

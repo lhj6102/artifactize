@@ -130,6 +130,19 @@ def png_bytes(image):
     return output.getvalue()
 
 
+# The Windows app icon's sizes: the shell picks the nearest for each view and DPI.
+ICO_SIZES = (16, 24, 32, 48, 64, 128, 256)
+
+
+def ico_bytes(svg):
+    """One frame per size, each rendered from the vector art rather than downscaled."""
+    frames = [rasterize(svg, size, size) for size in ICO_SIZES]
+    output = BytesIO()
+    frames[-1].save(output, format="ICO", sizes=[(size, size) for size in ICO_SIZES],
+                    append_images=frames[:-1])
+    return output.getvalue()
+
+
 def generated_assets():
     source = (BRAND / "artifactize-icon.svg").read_text(encoding="utf-8")
     bounds = artwork_bounds(source)
@@ -154,6 +167,7 @@ def generated_assets():
         "artifactize-icon-h56.png": png_bytes(rasterize(mark, round(width / height * 56), 56)),
         "favicon.svg": favicon.encode("utf-8"),
         "favicon.png": png_bytes(rasterize(favicon, 48, 48)),
+        "artifactize-icon.ico": ico_bytes(favicon),
         "apple-touch-icon.png": png_bytes(apple.convert("RGB")),
         "og.jpg": jpeg.getvalue(),
     }
@@ -171,7 +185,8 @@ def main():
     if args.preflight_only:
         return 0
     changed = []
-    for filename, data in generated_assets().items():
+    assets = generated_assets()
+    for filename, data in assets.items():
         path = BRAND / filename
         if args.check:
             if not path.is_file() or path.read_bytes() != data:
@@ -180,6 +195,10 @@ def main():
             path.write_bytes(data)
         if path.suffix == ".svg":
             dimensions = ET.fromstring(data).attrib["viewBox"]
+        elif path.suffix == ".ico":
+            with Image.open(BytesIO(data)) as image:
+                sizes = sorted(image.info["sizes"])
+            dimensions = ", ".join(f"{width}x{height}" for width, height in sizes)
         else:
             with Image.open(BytesIO(data)) as image:
                 dimensions = f"{image.width}x{image.height} {image.mode}"
@@ -189,7 +208,7 @@ def main():
         print("Regenerate with python3 assets/brand/build-icons.py and commit the outputs.", file=sys.stderr)
         return 1
     if args.check:
-        print("All 6 generated brand assets match the source and template byte-for-byte.")
+        print(f"All {len(assets)} generated brand assets match the source and template byte-for-byte.")
     return 0
 
 
