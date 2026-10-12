@@ -1,7 +1,7 @@
 <script lang="ts">
   // The one Human review component, shared by the monitor's Detail and the Review screen:
   // instruction first, then CLAIM → REVIEW with tools, output and the GREEN/RED fields.
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { onStateChanged, type Settled } from "../ipc/client";
   import type { Review } from "./review.svelte";
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
@@ -60,8 +60,15 @@
     if (settled) onsubmitted?.(settled);
   }
 
-  function back() {
-    if (review.escape()) onback();
+  /** Esc: cancel the job, then stop editing, then leave. Stopping editing removes the
+   * focused field, so focus returns to the Detail and the next Esc still reaches it. */
+  async function back() {
+    if (review.escape()) {
+      onback();
+      return;
+    }
+    await tick();
+    if (root && !root.contains(document.activeElement)) root.focus();
   }
 
   function scrollInstruction(rows: number) {
@@ -80,7 +87,7 @@
       return handled();
     }
     if (event.key === "Escape") {
-      back();
+      void back();
       return handled();
     }
     // `q` quits only outside a form or work, as in the terminal.
@@ -267,7 +274,7 @@
           {/if}
         {/if}
         <span class="spacer"></span>
-        <button class="button" onclick={back}>Close <kbd>Esc</kbd></button>
+        <button class="button" onclick={() => void back()}>Close <kbd>Esc</kbd></button>
       </div>
       <p class="hints">{hints.join(" · ")}</p>
     </footer>

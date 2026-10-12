@@ -124,7 +124,9 @@ describe("HumanDetail", () => {
     await fireEvent.keyDown(comment, { key: "Escape" });
     await waitFor(() => expect(screen.queryByLabelText(/comment/)).toBeNull());
     expect(left).toBe(0);
-    await fireEvent.keyDown(region, { key: "Escape" });
+    // The removed field's focus returns to the Detail, where the next Esc lands.
+    await waitFor(() => expect(document.activeElement).toBe(region));
+    await fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
     expect(left).toBe(1);
   });
 });
