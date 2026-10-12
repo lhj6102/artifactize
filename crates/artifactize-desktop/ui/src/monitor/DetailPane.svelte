@@ -1,6 +1,7 @@
 <script lang="ts">
   // The Detail of the selected tree row: a peek that follows the selection, or the opened
   // Detail — sections and saved logs, an Agent transcript, or the shared Human Detail.
+  import type { Attachment } from "svelte/attachments";
   import { call, commands, message, type DetailView } from "../ipc/client";
   import type { Browse } from "./browse.svelte";
   import type { Review } from "../review/review.svelte";
@@ -41,13 +42,19 @@
 
   let detail = $state<DetailView | null>(null);
   let error = $state<string | null>(null);
-  let technical = $state(false);
-  let pending = $state(false);
+  /** The folds belong to one row: another opened row starts folded, as the terminal's Detail
+   * does. */
+  let folds = $state({ node: null as string | null, technical: false, pending: false, details: false });
+  const technical = $derived(folds.node === node && folds.technical);
+  const pending = $derived(folds.node === node && folds.pending);
   /** An Agent's summary sections instead of its transcript. */
-  let details = $state(false);
+  const details = $derived(folds.node === node && folds.details);
+  function fold(change: Partial<{ technical: boolean; pending: boolean; details: boolean }>) {
+    folds = { node, technical, pending, details, ...change };
+  }
 
-  $effect(() => {
-    // Read again for every accepted snapshot; the Detail comes from the backend's copy.
+  /** Read again for every accepted snapshot; the Detail comes from the backend's copy. */
+  const read: Attachment<HTMLElement> = () => {
     void browse.revision;
     const [at, target] = [run, node];
     if (!at || !target) {
@@ -69,17 +76,7 @@
     return () => {
       current = false;
     };
-  });
-
-  $effect(() => {
-    // Another opened row starts folded, as the terminal's Detail does.
-    void node;
-    if (full) {
-      technical = false;
-      pending = false;
-      details = false;
-    }
-  });
+  };
 
   const human = $derived(full && detail?.profile === "human" && detail.request !== null);
   const agent = $derived(detail?.profile === "agent" && detail.request !== null);
@@ -87,21 +84,21 @@
   function keydown(event: KeyboardEvent) {
     if (human) return;
     if (plain(event, "Escape") || plain(event, "ArrowLeft")) {
-      if (details) details = false;
+      if (details) fold({ details: false });
       else onback();
-    } else if (plain(event, "t") && (!agent || details)) technical = !technical;
-    else if (plain(event, "w") && (!agent || details)) pending = !pending;
-    else if (plain(event, "d") && agent) details = !details;
+    } else if (plain(event, "t") && (!agent || details)) fold({ technical: !technical });
+    else if (plain(event, "w") && (!agent || details)) fold({ pending: !pending });
+    else if (plain(event, "d") && agent) fold({ details: !details });
     else return;
     event.preventDefault();
   }
 </script>
 
-<Panel title={human ? "Human review" : (detail?.title ?? "Detail")} focused={focused} bind:element {onfocus} onkeydown={keydown}>
+<Panel title={human ? "Human review" : (detail?.title ?? "Detail")} focused={focused} bind:element {onfocus} onkeydown={keydown} attach={read}>
   {#snippet actions()}
     {#if full && !human}
       {#if agent}
-        <button class="button small" onclick={() => (details = !details)} aria-pressed={details}>
+        <button class="button small" onclick={() => fold({ details: !details })} aria-pressed={details}>
           Details <kbd>d</kbd>
         </button>
       {/if}
@@ -117,7 +114,12 @@
       <HumanDetail review={review(detail.request)} {active} {onback} />
     {/key}
   {:else if full}
-    <RecordDetail {detail} bind:technical bind:pending bind:details />
+    <RecordDetail
+      {detail}
+      bind:technical={() => technical, (value) => fold({ technical: value })}
+      bind:pending={() => pending, (value) => fold({ pending: value })}
+      bind:details={() => details, (value) => fold({ details: value })}
+    />
   {:else}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="peek" role="button" tabindex="-1" onclick={onopen} title="Open">

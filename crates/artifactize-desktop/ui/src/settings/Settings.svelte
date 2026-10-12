@@ -17,6 +17,7 @@
     type Share,
   } from "../ipc/client";
   import { untrack } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import { useCommands } from "../shell/commands.svelte";
 
   let { active }: { active: boolean } = $props();
@@ -81,11 +82,11 @@
     await Promise.all([loadCodex(), loadRemote()]);
   }
 
-  $effect(() => {
-    // Read every time the screen shows: another process may have signed in or out. A
-    // sign-in in progress keeps what it shows.
+  /** Read every time the screen shows: another process may have signed in or out. A sign-in
+   * in progress keeps what it shows. */
+  const reload: Attachment = () => {
     if (active) untrack(() => !prompt && void load());
-  });
+  };
 
   async function signIn() {
     codexError = null;
@@ -203,7 +204,7 @@
   );
 </script>
 
-<div class="settings">
+<div class="settings" {@attach reload}>
   <h1>Settings</h1>
   <p class="lead">The same settings as the CLI's <code>login</code>, <code>models</code> and <code>remote</code> commands.</p>
 

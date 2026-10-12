@@ -4,7 +4,9 @@
   import { ContextMenu } from "bits-ui";
   import type { Browse } from "./browse.svelte";
   import { type Tree, visible, find } from "./tree.svelte";
+  import type { Attachment } from "svelte/attachments";
   import Panel from "../shell/Panel.svelte";
+  import { scrollTo } from "../shell/attach";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
 
@@ -47,11 +49,6 @@
 
   const rowId = (path: string[]) => `tree-${path.join("/").replace(/[^A-Za-z0-9_-]/g, "_")}`;
 
-  $effect(() => {
-    void selectedId;
-    list?.querySelector<HTMLElement>(`[data-path="${CSS.escape(selectedId)}"]`)?.scrollIntoView({ block: "nearest" });
-  });
-
   /** Count marked upstream rows outside the visible part of the tree. */
   function measure() {
     if (!list) return;
@@ -67,11 +64,12 @@
     offscreen = { above, below };
   }
 
-  $effect(() => {
+  /** Count again whenever the rows or the marked upstream change. */
+  const remeasure: Attachment = () => {
     void upstream;
     void rows;
     queueMicrotask(measure);
-  });
+  };
 
   function keydown(event: KeyboardEvent) {
     if (plain(event, "v")) view = view === "tree" ? "graph" : "tree";
@@ -158,6 +156,8 @@
             aria-activedescendant={rows.length ? rowId(tree.selected) : undefined}
             bind:this={list}
             onscroll={measure}
+            {@attach scrollTo(() => `[data-path="${CSS.escape(selectedId)}"]`)}
+            {@attach remeasure}
           >
             {#each rows as row (row.path.join("/"))}
               {@const node = row.node}

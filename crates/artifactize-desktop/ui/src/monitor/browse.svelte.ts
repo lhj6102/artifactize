@@ -10,9 +10,20 @@ export class Browse {
   error = $state<string | null>(null);
   /** The backend snapshot's revision: views derived from it (Detail) read again when it grows. */
   revision = $state(0);
+  #listeners: ((view: BrowseView) => void)[] = [];
   #draining = false;
   #dirty = false;
   #resync = false;
+
+  /** Call `listener` with every snapshot as it is accepted, until the returned function
+   * removes it: the views that follow a snapshot (selection, folds, an open Detail) update
+   * with it, in the same turn. */
+  onShown(listener: (view: BrowseView) => void): () => void {
+    this.#listeners.push(listener);
+    return () => {
+      this.#listeners = this.#listeners.filter((entry) => entry !== listener);
+    };
+  }
 
   /** Navigate and read: selection changes reuse the cached catalog, refreshes read it. */
   async navigate(step: Partial<Navigate>): Promise<void> {
@@ -58,5 +69,6 @@ export class Browse {
     if (this.view && view.revision < this.view.revision) return;
     this.view = view;
     this.revision = view.revision;
+    for (const listener of this.#listeners) listener(view);
   }
 }

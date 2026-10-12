@@ -218,7 +218,6 @@
           <Pane defaultSize={45} minSize={25}><Tools {review} /></Pane>
           <PaneResizer class="resizer gap" />
           <Pane defaultSize={55} minSize={25}>
-          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
             class="fields"
             class:focused={review.area === "fields"}

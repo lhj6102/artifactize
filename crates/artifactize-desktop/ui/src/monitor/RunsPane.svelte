@@ -2,6 +2,7 @@
   // The selected scope's Runs, newest first; moving past either end pages.
   import type { Browse } from "./browse.svelte";
   import Panel from "../shell/Panel.svelte";
+  import { scrollTo } from "../shell/attach";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
 
@@ -25,11 +26,6 @@
   const runs = $derived(view?.runs ?? []);
   const index = $derived(runs.findIndex((run) => run.id === view?.selectedRun));
   const workspace = $derived(view?.scope.kind !== "worktree");
-  let list = $state<HTMLElement>();
-
-  $effect(() => {
-    list?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.scrollIntoView({ block: "nearest" });
-  });
 
   function select(at: number) {
     const run = runs[at];
@@ -59,7 +55,7 @@
   {#if runs.length === 0}
     <p class="empty">{view?.refreshed ? "No saved Runs. Start one with `artifactize verify`." : "Loading…"}</p>
   {:else}
-    <ul class="rows" role="listbox" aria-label="Runs" tabindex="0" bind:this={list}>
+    <ul class="rows" role="listbox" aria-label="Runs" tabindex="0" {@attach scrollTo(() => `[data-index="${index}"]`)}>
       {#each runs as run, at (run.id)}
         <li
           role="option"

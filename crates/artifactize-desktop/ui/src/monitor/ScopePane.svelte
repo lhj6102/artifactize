@@ -3,6 +3,7 @@
   import type { Browse } from "./browse.svelte";
   import type { ScopeRow } from "../ipc/client";
   import Panel from "../shell/Panel.svelte";
+  import { scrollTo } from "../shell/attach";
   import Badge from "../shell/Badge.svelte";
   import { plain } from "../shell/keys";
   import { commands } from "../ipc/client";
@@ -25,11 +26,6 @@
   /** The highlighted row: the selected scope, or a fold row the keys moved to. */
   let cursor = $state<number | null>(null);
   const index = $derived(cursor ?? Math.max(rows.findIndex((row) => row.selected), 0));
-  let list = $state<HTMLElement>();
-
-  $effect(() => {
-    list?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.scrollIntoView({ block: "nearest" });
-  });
 
   async function choose(at: number) {
     const row = rows[at];
@@ -55,7 +51,7 @@
 </script>
 
 <Panel title="Scope" {focused} bind:element {onfocus} onkeydown={keydown}>
-  <ul class="rows" role="listbox" aria-label="Scope" tabindex="0" bind:this={list}>
+  <ul class="rows" role="listbox" aria-label="Scope" tabindex="0" {@attach scrollTo(() => `[data-index="${index}"]`)}>
     {#each rows as row, at (at)}
       <li
         role="option"

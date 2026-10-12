@@ -1,6 +1,6 @@
 // What the Run tree shows of the snapshot: folds, the selection and the blocker jumps. Rows
 // and their meaning come from the backend; only this navigation state lives here.
-import { SvelteSet } from "svelte/reactivity";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type { TreeNode, UpstreamMark } from "../ipc/client";
 
 export type Row = { node: TreeNode; depth: number; path: string[] };
@@ -28,7 +28,7 @@ export class Tree {
   selected = $state<string[]>([]);
   /** A `b` jump: where it started and the Artifact row it reached. */
   blocker = $state<{ origin: string[]; at: string[] } | null>(null);
-  #touched = new Set<string>();
+  #touched = new SvelteSet<string>();
   #run: string | null = null;
 
   /**
@@ -108,7 +108,7 @@ export class Tree {
   /** The Artifacts marked `↑`, by row id. */
   upstream(tree: TreeNode[]): Map<string, UpstreamMark> {
     const marks = find(tree, this.origin())?.upstream ?? [];
-    return new Map(marks.map((mark) => [mark.node, mark]));
+    return new SvelteMap(marks.map((mark) => [mark.node, mark]));
   }
 
   /** `b`: the next Artifact the origin row depends on, unmet first. */

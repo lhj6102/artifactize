@@ -4,6 +4,7 @@
   // in, Esc zooms out. An eval selected here is the tree's selection, so Detail follows it.
   import { SvelteFlow, Controls, MiniMap, useSvelteFlow, type Edge, type Node } from "@xyflow/svelte";
   import { tick } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import type { RunGraph, TreeNode } from "../ipc/client";
   import ArtifactNode from "./ArtifactNode.svelte";
   import { LEGEND, WORDS, neighbor, type Arrow, type Point } from "./graph";
@@ -37,17 +38,11 @@
   const nodeTypes = { artifact: ArtifactNode };
   let canvas = $state<HTMLElement>();
   let list = $state<HTMLElement>();
-  /** The eval of the zoomed Artifact the list points at. */
-  let index = $state(0);
-
-  let nodes = $state.raw<Node[]>([]);
-  let edges = $state.raw<Edge[]>([]);
-
-  $effect(() => {
-    // Lights change in place; positions only come with a new layout. The selection is not part
-    // of a node: a node whose selection flips is drawn again and loses focus, so focus (which
-    // follows the selection) marks the selected Artifact instead.
-    nodes = graph.nodes
+  // Lights change in place; positions only come with a new layout. The selection is not part
+  // of a node: a node whose selection flips is drawn again and loses focus, so focus (which
+  // follows the selection) marks the selected Artifact instead.
+  let nodes = $derived.by<Node[]>(() =>
+    graph.nodes
       .filter((node) => positions.has(node.id))
       .map((node) => ({
         id: node.id,
@@ -61,8 +56,10 @@
         connectable: false,
         ariaLabel: `${node.name}: ${WORDS[node.light]}`,
         domAttributes: { "data-light": node.light },
-      }));
-    edges = graph.edges.map((edge) => ({
+      })),
+  );
+  let edges = $derived.by<Edge[]>(() =>
+    graph.edges.map((edge) => ({
       id: `${edge.source}>${edge.target}`,
       source: edge.source,
       target: edge.target,
@@ -70,19 +67,20 @@
       selectable: false,
       focusable: false,
       domAttributes: { "data-light": edge.light },
-    }));
-  });
+    })),
+  );
 
   const artifact = $derived(zoomed ? (tree.find((node) => node.id === zoomed) ?? null) : null);
   const evals = $derived(artifact?.children ?? []);
 
-  $effect(() => {
-    // The tree's selection moves the highlight; when it leaves the evals (a completed
-    // Artifact folds in the tree), the highlight stays and Enter selects it again.
-    if (!zoomed || selected[0] !== zoomed) return;
-    const at = evals.findIndex((node) => node.id === selected[1]);
-    if (at >= 0) index = at;
-    else index = Math.min(index, Math.max(evals.length - 1, 0));
+  /** The eval the list was last pointed at by a key or a click. */
+  let picked = $state(0);
+  /** The eval of the zoomed Artifact the list points at: the tree's selection moves the
+   * highlight; when it leaves the evals (a completed Artifact folds in the tree), the
+   * highlight stays and Enter selects it again. */
+  const index = $derived.by(() => {
+    const at = zoomed && selected[0] === zoomed ? evals.findIndex((node) => node.id === selected[1]) : -1;
+    return at >= 0 ? at : Math.min(picked, Math.max(evals.length - 1, 0));
   });
 
   /** Open the Detail of the highlighted eval, which becomes the selection first. */
@@ -170,16 +168,12 @@
     handoff += 1;
   }
 
-  $effect(() => {
-    // Leaving the screen ends the hold at once; the watch stops on its next frame.
-    if (!active) release();
-  });
-
-  $effect(() => {
-    // Focus or a press anywhere outside the graph's nodes and canvas ends the hold.
+  /** Focus or a press anywhere outside the graph's nodes and canvas ends the hold; so does
+   * leaving the screen, which the watch notices on its next frame. */
+  const holdFocus: Attachment<HTMLElement> = (canvas) => {
     const focusin = (event: FocusEvent) => {
       const target = event.target as HTMLElement | null;
-      if (!target || !canvas || target === canvas) return;
+      if (!target || target === canvas) return;
       const id = canvas.contains(target) ? target.closest<HTMLElement>(".svelte-flow__node")?.dataset.id : undefined;
       if (!id) return release();
       if (id !== held) hold(id);
@@ -187,7 +181,7 @@
       if (id !== selected[0] && !zoomed) onselect([id]);
     };
     const pointerdown = (event: PointerEvent) => {
-      if (!canvas?.contains(event.target as HTMLElement | null)) release();
+      if (!canvas.contains(event.target as HTMLElement | null)) release();
     };
     // Keys that land on the page during a redraw belong to the held node of the shown graph.
     const pagekey = (event: KeyboardEvent) => {
@@ -199,7 +193,7 @@
     };
     // A redraw that removes the focused node: focus goes back before any key can arrive.
     const redrawn = new MutationObserver(() => restore());
-    if (canvas) redrawn.observe(canvas, { childList: true, subtree: true });
+    redrawn.observe(canvas, { childList: true, subtree: true });
     document.addEventListener("focusin", focusin);
     document.addEventListener("pointerdown", pointerdown, true);
     document.addEventListener("keydown", pagekey);
@@ -210,14 +204,14 @@
       redrawn.disconnect();
       release();
     };
-  });
+  };
 
   async function zoomIn(id: string) {
     release();
     zoomed = id;
     const at = evals.findIndex((node) => node.id === selected[1]);
-    index = Math.max(at, 0);
-    onselect(evals[index] ? [id, evals[index].id] : [id]);
+    picked = Math.max(at, 0);
+    onselect(evals[picked] ? [id, evals[picked].id] : [id]);
     void flow.fitView({ nodes: [{ id }], duration: 250, maxZoom: 1.6, padding: 0.6 });
     await tick();
     list?.focus();
@@ -278,8 +272,8 @@
 
   function listKey(event: KeyboardEvent) {
     const move = (to: number) => {
-      index = Math.min(Math.max(to, 0), evals.length - 1);
-      if (zoomed && evals[index]) onselect([zoomed, evals[index].id]);
+      picked = Math.min(Math.max(to, 0), evals.length - 1);
+      if (zoomed && evals[picked]) onselect([zoomed, evals[picked].id]);
     };
     if (plain(event, "ArrowDown") || plain(event, "j")) move(index + 1);
     else if (plain(event, "ArrowUp") || plain(event, "k")) move(index - 1);
@@ -293,7 +287,7 @@
 
 <div class="graph" class:split={zoomed !== null}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="canvas" bind:this={canvas} onkeydown={keydown} tabindex="-1">
+  <div class="canvas" bind:this={canvas} {@attach holdFocus} onkeydown={keydown} tabindex="-1">
     <SvelteFlow
       bind:nodes
       bind:edges
@@ -334,11 +328,11 @@
             class:selected={at === index}
             class="weight-{node.weight}"
             onclick={() => {
-              index = at;
+              picked = at;
               if (zoomed) onselect([zoomed, node.id]);
             }}
             ondblclick={() => {
-              index = at;
+              picked = at;
               openEval();
             }}
             onkeydown={() => {}}

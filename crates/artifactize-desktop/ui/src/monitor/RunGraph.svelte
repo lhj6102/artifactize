@@ -3,6 +3,8 @@
   // the same snapshot as the tree. Every accepted snapshot recolours the graph in place; only a
   // change of Artifacts or edges lays it out again, so nodes never jump on a state change.
   import { SvelteFlowProvider } from "@xyflow/svelte";
+  import type { Attachment } from "svelte/attachments";
+  import { SvelteMap } from "svelte/reactivity";
   import "@xyflow/svelte/dist/style.css";
   import { call, commands, message, type RunGraph, type TreeNode } from "../ipc/client";
   import GraphView from "./GraphView.svelte";
@@ -39,7 +41,7 @@
   /** Each read of the graph; only the newest one may show what it read. */
   let reads = 0;
   /** Layouts by Run and shape, finished or in flight, so returning to a Run reuses its own. */
-  const layouts = new Map<string, Promise<Map<string, Point>>>();
+  const layouts = new SvelteMap<string, Promise<Map<string, Point>>>();
   const KEPT = 8;
 
   function positions(graph: RunGraph, key: string): Promise<Map<string, Point>> {
@@ -75,7 +77,8 @@
   }
 
   let last: string | null = null;
-  $effect(() => {
+  /** Read the graph again for every accepted snapshot and for another Run. */
+  const reread: Attachment<HTMLElement> = () => {
     void revision;
     const at = run;
     const read = ++reads;
@@ -93,9 +96,10 @@
         if (read === reads) error = message(failure);
       },
     );
-  });
+  };
 </script>
 
+<div class="host" {@attach reread}>
 {#if error}
   <p class="note error">{error}</p>
 {:else if pending}
@@ -123,8 +127,12 @@
     </SvelteFlowProvider>
   {/key}
 {/if}
+</div>
 
 <style>
+  .host {
+    display: contents;
+  }
   .note {
     color: var(--muted);
     padding: 0 var(--pad);

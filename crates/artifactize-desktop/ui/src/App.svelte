@@ -37,6 +37,7 @@
     void browse.navigate({ full: true });
     // Ages and running times redraw from the snapshot; nothing is read.
     const clock = setInterval(() => void browse.redraw(), 1000);
+    const unchanged = onStateChanged((resync) => browse.refresh(resync));
     // Closing the window asks about this session's review claims first, like `q`.
     let unlisten: (() => void) | undefined;
     getCurrentWindow()
@@ -44,11 +45,10 @@
       .then((stop) => (unlisten = stop), () => {});
     return () => {
       clearInterval(clock);
+      unchanged();
       unlisten?.();
     };
   });
-
-  $effect(() => onStateChanged((resync) => browse.refresh(resync)));
 
   async function quit() {
     if (await leaving.allowed()) await getCurrentWindow().destroy();

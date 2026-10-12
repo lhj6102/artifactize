@@ -2,7 +2,9 @@
   // Scope → Runs → Run tree → Detail as resizable panes. Focus moves between the panes; the
   // Detail follows the tree's selection as a peek until it is opened.
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
-  import { tick } from "svelte";
+  import { onMount, tick } from "svelte";
+  import type { Attachment } from "svelte/attachments";
+  import type { BrowseView } from "../ipc/client";
   import type { Browse } from "./browse.svelte";
   import { Tree, find } from "./tree.svelte";
   import ScopePane from "./ScopePane.svelte";
@@ -25,48 +27,41 @@
   let zoomed = $state<string | null>(null);
   const tree = new Tree();
   /** Human reviews by request: leaving and reopening a request keeps its drafts. */
-  const reviews = new Map<string, Review>();
+  const reviews: Record<string, Review> = {};
   const panes: Partial<Record<Focus, HTMLElement>> = $state({});
 
   const view = $derived(browse.view);
   const run = $derived(view?.run ?? null);
   const selectedNode = $derived(tree.selected.at(-1) ?? null);
 
-  $effect(() => {
-    if (run) tree.sync(run.id, run.tree);
-  });
-
-  $effect(() => {
+  let graphRun: string | null = null;
+  /** What a snapshot changes here, as it is accepted. */
+  function accept(shown: BrowseView) {
+    const at = shown.run;
+    if (at) tree.sync(at.id, at.tree);
     // A replaced state: Details, drafts and sessions of the old one no longer apply.
-    if (view?.replaced) {
+    if (shown.replaced) {
       opened = null;
-      reviews.clear();
+      for (const id of Object.keys(reviews)) delete reviews[id];
       if (focus === "detail") focus = "tree";
     }
-  });
-
-  $effect(() => {
     // Leaving the selected Run (or losing it) closes its Detail.
-    if (opened && opened.run !== run?.id) opened = null;
-  });
-
-  let graphRun: string | null = null;
-  $effect(() => {
+    if (opened && opened.run !== at?.id) opened = null;
     // Another Run's graph starts zoomed out.
-    const id = run?.id ?? null;
+    const id = at?.id ?? null;
     if (id !== graphRun) {
       graphRun = id;
       zoomed = null;
     }
+  }
+
+  onMount(() => {
+    if (browse.view) accept(browse.view);
+    return browse.onShown(accept);
   });
 
   function review(id: string): Review {
-    let found = reviews.get(id);
-    if (!found) {
-      found = new Review(id, false);
-      reviews.set(id, found);
-    }
-    return found;
+    return (reviews[id] ??= new Review(id, false));
   }
 
   /** Move focus to a pane's list, tree or review, or else to the pane itself. */
@@ -114,13 +109,13 @@
   }
 
   let started = false;
-  $effect(() => {
-    // The Runs pane has focus first, as in the terminal monitor.
+  /** The Runs pane has focus first, as in the terminal monitor. */
+  const begin: Attachment = () => {
     if (active && !started && view?.refreshed) {
       started = true;
       void move(focus);
     }
-  });
+  };
 
   /** `artifactize › scope › Run › node`, up to the focused level, as in the terminal. */
   const crumbs = $derived.by(() => {
@@ -166,7 +161,7 @@
 
 <svelte:window onkeydown={keydown} />
 
-<div class="monitor">
+<div class="monitor" {@attach begin}>
   <nav class="crumbs" aria-label="Breadcrumb">
     <span class="root">artifactize</span>
     {#each crumbs as crumb, index (index)}

@@ -1,6 +1,7 @@
 <script lang="ts">
   // A titled, focusable pane. Keys reach `onkeydown` while focus is anywhere inside it.
   import type { Snippet } from "svelte";
+  import type { Attachment } from "svelte/attachments";
 
   let {
     title,
@@ -11,6 +12,7 @@
     actions,
     children,
     label,
+    attach,
   }: {
     title: string;
     focused: boolean;
@@ -20,6 +22,8 @@
     actions?: Snippet;
     children: Snippet;
     label?: string;
+    /** Follows the pane's element for as long as it exists (an `{@attach}`). */
+    attach?: Attachment<HTMLElement>;
   } = $props();
 </script>
 
@@ -31,6 +35,7 @@
   aria-label={label ?? title}
   tabindex="-1"
   bind:this={element}
+  {@attach attach}
   onfocusin={onfocus}
   {onkeydown}
 >

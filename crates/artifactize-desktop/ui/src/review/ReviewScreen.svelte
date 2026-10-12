@@ -4,6 +4,7 @@
   import { ContextMenu, Dialog } from "bits-ui";
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
+  import type { Attachment } from "svelte/attachments";
   import {
     call,
     commands,
@@ -21,6 +22,7 @@
   import RecordDetail from "../monitor/RecordDetail.svelte";
   import Sections from "../monitor/Sections.svelte";
   import Panel from "../shell/Panel.svelte";
+  import { scrollTo } from "../shell/attach";
   import { useCommands } from "../shell/commands.svelte";
   import { chord, plain } from "../shell/keys";
   import { tone } from "../shell/tone";
@@ -94,17 +96,16 @@
   }
 
   /** The query last searched; a changed query searches again from the newest page. */
-  let searched: string | null = null;
-  $effect(() => {
-    const text = query;
-    if (searched === null) {
-      searched = text;
-      return;
-    }
-    if (text === searched) return;
-    const timer = setTimeout(() => void research(), 120);
-    return () => clearTimeout(timer);
-  });
+  // svelte-ignore state_referenced_locally
+  let searched = query;
+  let typing: ReturnType<typeof setTimeout> | undefined;
+
+  /** Every change of the query, typed or set by a command: a pause in typing searches. */
+  function setQuery(text: string) {
+    query = text;
+    clearTimeout(typing);
+    if (text !== searched) typing = setTimeout(() => void research(), 120);
+  }
 
   /** Search the query from the newest page now, unless it already was. */
   async function research() {
@@ -139,13 +140,14 @@
     const stop = onStateChanged(() => void load());
     return () => {
       clearInterval(clock);
+      clearTimeout(typing);
       stop();
     };
   });
 
-  $effect(() => {
-    // The read-only Preview of the selected request; opening it claims nothing. Every list
-    // read (and clock redraw) shows it again from the same snapshot as the list.
+  /** The read-only Preview of the selected request; opening it claims nothing. Every list
+   * read (and clock redraw) shows it again from the same snapshot as the list. */
+  const previewSelected: Attachment<HTMLElement> = () => {
     void rows;
     const row = selected;
     if (!row || focus !== "list") return;
@@ -161,7 +163,7 @@
     return () => {
       current = false;
     };
-  });
+  };
 
   /** Open a Human request; another request than the open one starts from a clean review. */
   function open(id: string, tools = false) {
@@ -257,16 +259,15 @@
     event.preventDefault();
   }
 
-  $effect(() => {
-    // Showing the screen, or its first rows, puts focus on the list so its keys work at once;
-    // focus already somewhere (the search field) stays there.
-    const element = list;
-    if (!active || focus !== "list" || !element) return;
+  /** Showing the screen, or its first rows, puts focus on the list so its keys work at once;
+   * focus already somewhere (the search field) stays there. */
+  const takeFocus: Attachment<HTMLElement> = (element) => {
+    if (!active || focus !== "list") return;
     void tick().then(() => {
       const current = document.activeElement;
       if (!current || current === document.body || !current.closest(".review")) element.focus();
     });
-  });
+  };
 
   function keydown(event: KeyboardEvent) {
     if (focus === "detail" && record) return recordKey(event);
@@ -294,10 +295,6 @@
     event.preventDefault();
   }
 
-  $effect(() => {
-    list?.querySelector<HTMLElement>(`[data-index="${index}"]`)?.scrollIntoView({ block: "nearest" });
-  });
-
   useCommands(() =>
     active
       ? [
@@ -308,7 +305,7 @@
             group: "Review",
             label: "Show waiting Human reviews",
             enabled: () => query !== launch.search,
-            run: () => (query = launch.search),
+            run: () => setQuery(launch.search),
           },
           { id: "review.refresh", group: "Review", label: "Refresh the list", keys: "r", run: () => void load() },
           { id: "review.older", group: "Review", label: "Older requests", keys: "PgDn", enabled: () => next !== null, run: older },
@@ -328,7 +325,7 @@
 <svelte:window onkeydown={global} />
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="review" onkeydown={keydown}>
+<div class="review" onkeydown={keydown} {@attach previewSelected}>
   <nav class="crumbs" aria-label="Breadcrumb">
     <span class="root">artifactize review</span>
     <span class="sep">›</span>
@@ -354,7 +351,7 @@
           {/if}
           <button class="button small" onclick={() => (asking = true)}>Open ID <kbd>Ctrl+O</kbd></button>
         {/snippet}
-        <SearchField bind:value={query} bind:input={field} complete={(text) => call(commands.reviewComplete(text))} onleave={() => void leave()} />
+        <SearchField bind:value={() => query, setQuery} bind:input={field} complete={(text) => call(commands.reviewComplete(text))} onleave={() => void leave()} />
         {#if rows.length === 0}
           <p class="empty" class:error={!!invalid}>
             {invalid ?? (!loaded ? "Loading…" : waiting ? "No Human reviews are waiting." : "No request matches the search.")}
@@ -367,7 +364,14 @@
                   <div class="head" aria-hidden="true">
                     <span>Eval</span><span>Request</span><span>Status</span><span>Claim</span><span>Age</span><span>Repository</span>
                   </div>
-                  <ul role="listbox" aria-label="Requests" tabindex="0" bind:this={list}>
+                  <ul
+                    role="listbox"
+                    aria-label="Requests"
+                    tabindex="0"
+                    bind:this={list}
+                    {@attach takeFocus}
+                    {@attach scrollTo(() => `[data-index="${index}"]`)}
+                  >
                     {#each rows as row, at (row.id)}
                       <li
                         role="option"

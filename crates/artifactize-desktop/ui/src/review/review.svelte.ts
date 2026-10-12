@@ -1,6 +1,7 @@
 // One request in the shared Human Detail: what it shows, which area has focus, the GREEN and
 // RED drafts and the running job. Every write goes through a backend job; the request's state
 // is whatever the backend last read.
+import { SvelteMap } from "svelte/reactivity";
 import { CommandError, call, commands, message, nextJob } from "../ipc/client";
 import type {
   Acted,
@@ -76,7 +77,7 @@ export class Review {
   busy = $state<Busy | null>(null);
   notice = $state<Notice | null>(null);
   form = $state<FormDraft | null>(null);
-  #drafts = new Map<Verdict, FormDraft>();
+  #drafts = new SvelteMap<Verdict, FormDraft>();
   /** Counts verdict choices: a form that arrives after a newer choice is not shown. */
   #choice = 0;
 

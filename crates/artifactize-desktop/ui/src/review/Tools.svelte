@@ -1,6 +1,7 @@
 <script lang="ts">
   // The request's Human tools and the last output. Enter or a click on the selected tool
   // runs it at once; the selected tool shows what it runs.
+  import type { Attachment } from "svelte/attachments";
   import type { Review } from "./review.svelte";
   import { plain } from "../shell/keys";
 
@@ -8,12 +9,10 @@
 
   const tools = $derived(review.view?.tools ?? []);
   const focused = $derived(review.area === "tools");
-  let list = $state<HTMLElement>();
-
-  $effect(() => {
-    // `Tab or click: tools` and the `tools` command move focus here.
-    if (focused && list && !list.contains(document.activeElement)) list.focus();
-  });
+  /** `Tab or click: tools` and the `tools` command move focus here. */
+  const takeFocus: Attachment<HTMLElement> = (list) => {
+    if (focused && !list.contains(document.activeElement)) list.focus();
+  };
 
   function keydown(event: KeyboardEvent) {
     if (plain(event, "Enter")) void review.run();
@@ -46,7 +45,7 @@
       aria-label="Human tools"
       tabindex="0"
       aria-activedescendant="tool-{review.tool}"
-      bind:this={list}
+      {@attach takeFocus}
       onfocus={() => (review.area = "tools")}
       onkeydown={keydown}
     >

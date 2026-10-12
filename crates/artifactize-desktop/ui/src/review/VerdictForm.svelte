@@ -1,26 +1,23 @@
 <script lang="ts">
   // The chosen verdict's owner fields: typed inputs for a flat schema, JSON text otherwise.
   // Enter never submits; Ctrl+S does. Values are checked and coerced by the backend's form.
+  import type { Attachment } from "svelte/attachments";
   import type { FieldValue } from "../ipc/client";
   import type { FormDraft, Review } from "./review.svelte";
   import { composing, label } from "../shell/keys";
 
   let { review, form }: { review: Review; form: FormDraft } = $props();
 
-  let root = $state<HTMLElement>();
-
   /** Typed fields or JSON text: switching either way moves focus like opening a form does. */
   const mode = $derived(form.json === null ? "fields" : "json");
 
-  $effect(() => {
-    // Typing goes to the form: the first editable field takes focus when a verdict opens or
-    // its typed fields become JSON.
+  /** Typing goes to the form: the first editable field takes focus when a verdict opens or
+   * its typed fields become JSON. */
+  const takeFocus: Attachment<HTMLElement> = (root) => {
     void form;
     void mode;
-    queueMicrotask(() =>
-      root?.querySelector<HTMLElement>("input:not([readonly]), textarea, select")?.focus(),
-    );
-  });
+    queueMicrotask(() => root.querySelector<HTMLElement>("input:not([readonly]), textarea, select")?.focus());
+  };
 
   function set(name: string, value: FieldValue) {
     form.values[name] = value;
@@ -38,7 +35,7 @@
   const text = (value: FieldValue) => ("value" in value && typeof value.value === "string" ? value.value : "");
 </script>
 
-<div class="form" bind:this={root}>
+<div class="form" {@attach takeFocus}>
   <div class="verdicts" role="radiogroup" aria-label="Verdict">
     {#each ["GREEN", "RED"] as const as verdict (verdict)}
       <button
