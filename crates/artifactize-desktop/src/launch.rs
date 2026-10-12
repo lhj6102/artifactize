@@ -25,53 +25,54 @@ pub struct Launch {
     pub search: String,
 }
 
-const USAGE: &str = "usage: artifactize-desktop [monitor | review [REQUEST_ID]] [--repo PATH | --all] [--state-dir PATH] [--reviewer NAME]";
+/// The options as `artifactize monitor` and `artifactize review` take them, with their typed
+/// values; the reviewer may follow either screen.
+#[derive(clap::Parser)]
+#[command(name = "artifactize-desktop", about = "The artifactize desktop app.")]
+struct Args {
+    #[command(subcommand)]
+    screen: Option<Screen>,
+    /// Repository input path.
+    #[arg(long, global = true, value_name = "PATH", conflicts_with = "all")]
+    repo: Option<PathBuf>,
+    /// Review every repository.
+    #[arg(long, global = true)]
+    all: bool,
+    /// State database and Run output directory.
+    #[arg(long, global = true, value_name = "PATH")]
+    state_dir: Option<PathBuf>,
+    /// Reviewer name (defaults to USER).
+    #[arg(long, global = true, value_name = "NAME")]
+    reviewer: Option<artifactize_core::types::ReviewerId>,
+}
+
+#[derive(clap::Subcommand)]
+enum Screen {
+    /// Open on the Monitor.
+    Monitor,
+    /// Open on Review.
+    Review {
+        /// Open this request instead of the list.
+        #[arg(value_name = "REQUEST_ID")]
+        request: Option<artifactize_core::types::RequestId>,
+    },
+}
 
 impl Launch {
-    /// Parse `args` (with the program name first) the way `artifactize monitor` and
-    /// `artifactize review` take their options.
+    /// Parse `args` (with the program name first).
     pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Self, String> {
-        let mut args = args.into_iter().skip(1);
-        let mut mode = Mode::Monitor;
-        let (mut repo, mut all, mut state, mut reviewer, mut request) =
-            (None, false, None, None, None);
-        let text = |value: Option<OsString>, name: &str| {
-            value
-                .and_then(|value| value.into_string().ok())
-                .ok_or_else(|| format!("{name} needs a value.\n{USAGE}"))
+        use clap::Parser;
+        let Args {
+            screen,
+            repo,
+            all,
+            state_dir: state,
+            reviewer,
+        } = Args::try_parse_from(args).map_err(|error| error.to_string())?;
+        let (mode, request) = match screen {
+            None | Some(Screen::Monitor) => (Mode::Monitor, None),
+            Some(Screen::Review { request }) => (Mode::Review, request),
         };
-        while let Some(arg) = args.next() {
-            match arg.to_str() {
-                Some("monitor") => mode = Mode::Monitor,
-                Some("review") => mode = Mode::Review,
-                Some("--repo") => {
-                    repo = Some(PathBuf::from(
-                        args.next()
-                            .ok_or(format!("--repo needs a value.\n{USAGE}"))?,
-                    ))
-                }
-                Some("--all") => all = true,
-                Some("--state-dir") => {
-                    state = Some(PathBuf::from(
-                        args.next()
-                            .ok_or(format!("--state-dir needs a value.\n{USAGE}"))?,
-                    ))
-                }
-                Some("--reviewer") => reviewer = Some(text(args.next(), "--reviewer")?.parse()?),
-                Some(id) if mode == Mode::Review && request.is_none() && !id.starts_with('-') => {
-                    request = Some(id.parse()?)
-                }
-                _ => {
-                    return Err(format!(
-                        "unexpected argument {}\n{USAGE}",
-                        arg.to_string_lossy()
-                    ));
-                }
-            }
-        }
-        if all && repo.is_some() {
-            return Err("accepts --repo or --all, not both.".into());
-        }
         let reviewer = match reviewer {
             Some(reviewer) => reviewer,
             None => artifactize_core::human::default_reviewer()?,

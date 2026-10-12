@@ -1,8 +1,9 @@
 // Settings against a mocked command boundary: key presence without values, the Codex sign-in
 // states (prompt, pasted redirect, cancel, sign-out), model listings and their errors, and the
 // remote store's masked token, which leaves the screen's state when submitted.
+import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it } from "vitest";
 import Settings from "./Settings.svelte";
 import type { CodexStatus, RemoteStatus } from "../ipc/client";
@@ -77,7 +78,7 @@ afterEach(() => {
 describe("Settings", () => {
   it("shows whether each API key is set, never a value, and the current sign-ins", async () => {
     backend({});
-    render(Settings, { active: true });
+    renderHosted(Settings, { active: true });
     expect((await screen.findByTestId("key-openai")).textContent).toBe("Set");
     expect(screen.getByTestId("key-anthropic").textContent).toBe("Not set");
     await waitFor(() => expect(screen.getByTestId("codex-status").textContent?.trim()).toBe("Not signed in"));
@@ -88,7 +89,7 @@ describe("Settings", () => {
   it("signs in to Codex with a pasted redirect, then signs out", async () => {
     let finish: (status: CodexStatus) => void = () => {};
     const calls = backend({ wait: () => new Promise((done) => (finish = done)) });
-    render(Settings, { active: true });
+    renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Sign in with ChatGPT" }));
     await screen.findByText("http://127.0.0.1:9/oauth/authorize?state=s");
     expect(calls.find((call) => call.cmd === "codex_login_start")?.args).toEqual({ browser: true });
@@ -118,7 +119,7 @@ describe("Settings", () => {
       codex: () => state,
       wait: () => new Promise((_, reject) => (fail = reject)),
     });
-    render(Settings, { active: true });
+    renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "Sign in again" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
     expect(calls.some((call) => call.cmd === "codex_login_cancel")).toBe(true);
@@ -136,7 +137,7 @@ describe("Settings", () => {
 
   it("lists models and shows the CLI's error for a backend without its key", async () => {
     backend({});
-    render(Settings, { active: true });
+    renderHosted(Settings, { active: true });
     await fireEvent.click(await screen.findByRole("button", { name: "List models" }));
     await screen.findByText("GPT Fake");
     await fireEvent.change(screen.getByLabelText("Backend"), { target: { value: "anthropic" } });
@@ -147,7 +148,7 @@ describe("Settings", () => {
   it("masks the store token and drops it from the screen once submitted, refused or not", async () => {
     let attempts = 0;
     const calls = backend({ login: () => (++attempts === 1 ? new Error("Invalid or revoked token.") : signedIn) });
-    render(Settings, { active: true });
+    renderHosted(Settings, { active: true });
     const token = await screen.findByLabelText<HTMLInputElement>("Token");
     expect(token.type).toBe("password");
     expect(token.autocomplete).toBe("off");
@@ -189,7 +190,7 @@ describe("Settings", () => {
           return null;
       }
     });
-    render(Settings, { active: true });
+    renderHosted(Settings, { active: true });
     await screen.findByTestId("remote-principal");
     slow = true;
     await fireEvent.click(screen.getByRole("button", { name: "Check status" }));

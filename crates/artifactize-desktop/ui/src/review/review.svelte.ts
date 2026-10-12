@@ -21,22 +21,19 @@ export type Area = "instruction" | "tools" | "fields";
 const NO_DRAFT: Draft = { verdict: "GREEN", fields: [], json: null };
 
 /** The draft of one verdict; it survives switching verdicts and leaving the Detail. The library
- * owns what an edit means: every edit is sent to it and its answer replaces the draft whole.
- * What was typed shows over the draft meanwhile and is dropped when the answer, or a refusal,
- * comes. */
+ * owns what an edit means: every edit is sent to it and its answer replaces the draft whole. A
+ * typed value shows at once as a temporary override of the values derived from that draft, and
+ * is rolled back if the library refuses it. */
 export class FormDraft {
   readonly id: string;
   readonly verdict: Verdict;
   readonly fields: FormField[];
   /** The library's draft. */
   snapshot = $state.raw<Draft>(NO_DRAFT);
-  /** What was typed and has no answer yet. */
-  #typed = $state.raw<{ fields: Record<string, FieldValue>; json: string | null }>({ fields: {}, json: null });
-  readonly values = $derived<Record<string, FieldValue>>({
-    ...Object.fromEntries(this.snapshot.fields),
-    ...this.#typed.fields,
-  });
-  readonly json = $derived(this.#typed.json ?? this.snapshot.json);
+  /** The draft's values; assigned over, they show what was typed until the next answer. */
+  values = $derived<Record<string, FieldValue>>(Object.fromEntries(this.snapshot.fields));
+  /** The draft's owner-fields JSON text, likewise. */
+  json = $derived<string | null>(this.snapshot.json);
   error = $state<string | null>(null);
   /** Counts edits: only the newest answer replaces the draft. */
   #edits = 0;
@@ -63,13 +60,13 @@ export class FormDraft {
 
   /** Set field `name`. */
   async set(name: string, value: FieldValue): Promise<void> {
-    this.#typed = { ...this.#typed, fields: { ...this.#typed.fields, [name]: value } };
+    this.values = { ...this.values, [name]: value };
     await this.#ask((draft) => call(commands.humanEditField(this.id, draft, name, value)));
   }
 
   /** Replace the owner-fields JSON text. */
   async setJson(text: string): Promise<void> {
-    this.#typed = { ...this.#typed, json: text };
+    this.json = text;
     await this.#ask((draft) => call(commands.humanEditJson(this.id, draft, text)));
   }
 
@@ -79,9 +76,11 @@ export class FormDraft {
       const answer = await edit(this.draft());
       if (mine === this.#edits) this.snapshot = answer;
     } catch (error) {
-      if (mine === this.#edits) this.error = message(error);
-    } finally {
-      if (mine === this.#edits) this.#typed = { fields: {}, json: null };
+      if (mine === this.#edits) {
+        // Rolled back: a new snapshot object derives the values from the draft again.
+        this.snapshot = { ...this.snapshot };
+        this.error = message(error);
+      }
     }
   }
 }

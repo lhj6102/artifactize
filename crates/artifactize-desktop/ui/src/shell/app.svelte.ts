@@ -3,6 +3,7 @@
 import { createContext } from "svelte";
 import type { LaunchView } from "../ipc/client";
 import { Browse } from "../monitor/browse.svelte";
+import { Registry } from "./commands.svelte";
 import { Leaving } from "./leaving.svelte";
 
 export type Screen = "monitor" | "review" | "settings";
@@ -15,6 +16,8 @@ export class AppState {
   /** The monitor's snapshot. */
   readonly browse = new Browse();
   readonly leaving = new Leaving();
+  /** What the command palette lists: each screen registers its commands here. */
+  readonly commands = new Registry();
   palette = $state(false);
   help = $state(false);
 }

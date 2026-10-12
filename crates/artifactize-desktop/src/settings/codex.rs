@@ -1,23 +1,11 @@
-//! Settings: the accounts, keys and stores the CLI configures, through the same library calls
-//! (`login`/`logout codex`, `models`, `remote login|logout|status|push`). Nothing here stores,
-//! validates or reaches a service on its own; secrets never come back to the frontend.
+//! The Codex sign-in: its state, the sign-in in progress and its commands.
 use crate::ids::SignInId;
 use crate::{App, Failure};
-use artifactize_core::{
-    auth::{codex, remote},
-    config::Backend,
-    llm,
-};
-use serde::{Deserialize, Serialize};
+use artifactize_core::auth::codex;
+use serde::Serialize;
 use specta::Type;
 use std::sync::Mutex;
 use tokio::sync::oneshot;
-
-/// The Codex sign-in in progress, if any.
-#[derive(Default)]
-pub struct Settings {
-    sign_ins: SignIns,
-}
 
 type SignInTask = tokio::task::JoinHandle<Result<(), String>>;
 
@@ -36,7 +24,7 @@ struct SignIn {
 /// The one sign-in in progress. It stays here, reachable for a paste or a cancel, until it
 /// ends; only its own waiter clears it.
 #[derive(Default)]
-struct SignIns {
+pub(super) struct SignIns {
     current: Mutex<Option<SignIn>>,
     started: std::sync::atomic::AtomicU32,
 }
@@ -156,54 +144,6 @@ impl SignIns {
             }
         }
     }
-}
-
-/// A backend, as the CLI names it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub enum Provider {
-    Openai,
-    Anthropic,
-    Codex,
-}
-
-impl From<Provider> for Backend {
-    fn from(provider: Provider) -> Self {
-        match provider {
-            Provider::Openai => Backend::Openai,
-            Provider::Anthropic => Backend::Anthropic,
-            Provider::Codex => Backend::Codex,
-        }
-    }
-}
-
-/// Whether an API-key backend's key is in the environment; never its value.
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct KeyStatus {
-    pub provider: Provider,
-    /// The environment variable the CLI reads.
-    pub variable: String,
-    pub present: bool,
-}
-
-/// The OpenAI and Anthropic keys, as `doctor` reports them.
-#[tauri::command]
-#[specta::specta]
-pub fn settings_keys() -> Vec<KeyStatus> {
-    [Provider::Openai, Provider::Anthropic]
-        .into_iter()
-        .map(|provider| {
-            let backend = provider.into();
-            KeyStatus {
-                provider,
-                variable: llm::key_variable(backend)
-                    .expect("an API-key backend")
-                    .into(),
-                present: llm::key_present(backend),
-            }
-        })
-        .collect()
 }
 
 /// A moment as the library counts it: whole seconds since 1970, as decimal text so no value of
@@ -398,213 +338,6 @@ pub async fn codex_logout(app: tauri::State<'_, App>) -> Result<SignedOut, Failu
     Ok(SignedOut {
         revoked,
         status: read_codex(&app)?,
-    })
-}
-
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Model {
-    pub slug: String,
-    pub display_name: String,
-}
-
-/// `models <provider>`: what the backend offers to this key or account.
-#[tauri::command]
-#[specta::specta]
-pub async fn models_list(
-    app: tauri::State<'_, App>,
-    provider: Provider,
-) -> Result<Vec<Model>, Failure> {
-    let listing = llm::models::list(
-        provider.into(),
-        Some(&app.launch.state),
-        app.launch.repo.as_deref(),
-    )
-    .await
-    .map_err(Failure::Account)?;
-    Ok(listing
-        .models
-        .into_iter()
-        .map(|model| Model {
-            slug: model.slug.to_string(),
-            display_name: model.display_name,
-        })
-        .collect())
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub enum Share {
-    /// Reduced records without argv, captured output, tool calls or paths.
-    Summary,
-    /// Also the saved execution as is.
-    Full,
-}
-
-impl From<Share> for remote::Share {
-    fn from(share: Share) -> Self {
-        match share {
-            Share::Summary => remote::Share::Summary,
-            Share::Full => remote::Share::Full,
-        }
-    }
-}
-
-impl From<remote::Share> for Share {
-    fn from(share: remote::Share) -> Self {
-        match share {
-            remote::Share::Summary => Share::Summary,
-            remote::Share::Full => Share::Full,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub enum TokenSource {
-    /// ARTIFACTIZE_REMOTE_TOKEN.
-    Env,
-    /// Saved by `remote login`.
-    File,
-    None,
-}
-
-/// `remote status`: never the token.
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(
-    tag = "state",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum RemoteStatus {
-    /// No remote review store is configured.
-    Unconfigured,
-    Configured {
-        url: String,
-        share: Share,
-        token_source: TokenSource,
-        connection: Connection,
-    },
-}
-
-/// What asking the store answered.
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(
-    tag = "state",
-    rename_all = "camelCase",
-    rename_all_fields = "camelCase"
-)]
-pub enum Connection {
-    /// The token was accepted.
-    SignedIn {
-        principal: String,
-        scopes: Vec<String>,
-    },
-    /// The store answered, but not with an accepted token.
-    Refused { error: String },
-    /// The store sent no HTTP response.
-    Unreachable { error: String },
-}
-
-impl From<Option<remote::Status>> for RemoteStatus {
-    fn from(status: Option<remote::Status>) -> Self {
-        let Some(status) = status else {
-            return Self::Unconfigured;
-        };
-        let connection = match status.connection {
-            remote::Connection::SignedIn { principal, scopes } => Connection::SignedIn {
-                principal: principal.to_string(),
-                scopes: scopes.into_iter().map(|scope| scope.to_string()).collect(),
-            },
-            remote::Connection::Refused { error } => Connection::Refused { error },
-            remote::Connection::Unreachable { error } => Connection::Unreachable { error },
-        };
-        Self::Configured {
-            url: status.url,
-            share: status.share.into(),
-            token_source: match status.token_source {
-                remote::TokenSource::Env => TokenSource::Env,
-                remote::TokenSource::File => TokenSource::File,
-                remote::TokenSource::None => TokenSource::None,
-            },
-            connection,
-        }
-    }
-}
-
-async fn remote_status_of(app: &App) -> Result<RemoteStatus, Failure> {
-    remote::status(Some(&app.launch.state), app.launch.repo.as_deref())
-        .await
-        .map(Into::into)
-        .map_err(Failure::Account)
-}
-
-/// `remote status`: URL, share level, token source, reachability, principal and scopes.
-#[tauri::command]
-#[specta::specta]
-pub async fn remote_status(app: tauri::State<'_, App>) -> Result<RemoteStatus, Failure> {
-    remote_status_of(&app).await
-}
-
-/// `remote login`: verify `token` with the store, then save it with remote.json. The token
-/// arrives in the IPC body only; it is never logged, echoed or returned.
-#[tauri::command]
-#[specta::specta]
-pub async fn remote_login(
-    app: tauri::State<'_, App>,
-    url: String,
-    share: Share,
-    token: String,
-) -> Result<RemoteStatus, Failure> {
-    let url = remote::parse_url(&url).map_err(Failure::Invalid)?;
-    remote::login(
-        Some(&app.launch.state),
-        app.launch.repo.as_deref(),
-        url,
-        share.into(),
-        token.trim().to_owned(),
-    )
-    .await
-    .map_err(Failure::Account)?;
-    remote_status_of(&app).await
-}
-
-/// `remote logout`: forget the stored token and remote.json; the server keeps the token
-/// valid until it is revoked there.
-#[tauri::command]
-#[specta::specta]
-pub async fn remote_logout(app: tauri::State<'_, App>) -> Result<RemoteStatus, Failure> {
-    remote::logout(Some(&app.launch.state), app.launch.repo.as_deref())
-        .map_err(Failure::Account)?;
-    remote_status_of(&app).await
-}
-
-#[derive(Debug, Clone, Serialize, Type)]
-#[serde(rename_all = "camelCase")]
-pub struct Pushed {
-    pub dry_run: bool,
-    pub pushed: u32,
-    pub existing: u32,
-    pub skipped: u32,
-}
-
-/// `remote push`: re-send local GREEN/RED results the store does not have yet.
-#[tauri::command]
-#[specta::specta]
-pub async fn remote_push(app: tauri::State<'_, App>, dry_run: bool) -> Result<Pushed, Failure> {
-    let report = artifactize_core::remote::push(
-        Some(&app.launch.state),
-        app.launch.repo.as_deref(),
-        dry_run,
-    )
-    .await
-    .map_err(Failure::Account)?;
-    let count = |value: usize| u32::try_from(value).unwrap_or(u32::MAX);
-    Ok(Pushed {
-        dry_run: report.dry_run,
-        pushed: count(report.pushed),
-        existing: count(report.existing),
-        skipped: count(report.skipped),
     })
 }
 

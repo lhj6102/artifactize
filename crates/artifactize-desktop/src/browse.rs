@@ -61,7 +61,7 @@ pub struct Navigate {
     /// Select this scope; its Runs start again from the newest page.
     pub scope: Option<ScopeKey>,
     /// Select this Run of the shown page.
-    pub run: Option<String>,
+    pub run: Option<crate::ids::RunKey>,
     pub paging: Option<Paging>,
     /// Read the catalog afresh: refreshes and change hints; navigation reuses it.
     pub full: bool,
@@ -125,8 +125,8 @@ impl Browse {
                 shown.run = None;
             }
         }
-        if let Some(id) = &step.run {
-            let id: RunId = id.parse().map_err(Failure::Missing)?;
+        if let Some(id) = step.run.clone() {
+            let id: RunId = id.into_inner();
             let readable = shown
                 .runs
                 .iter()

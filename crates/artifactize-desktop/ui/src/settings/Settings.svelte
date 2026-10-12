@@ -7,52 +7,49 @@
     call,
     commands,
     message,
-    type CodexPrompt,
-    type CodexStatus,
-    type KeyStatus,
-    type Model,
     type Provider,
     type Pushed,
     type RemoteStatus,
-    type Share,
   } from "../ipc/client";
   import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
+  import { SettingsState } from "./settings.svelte";
   import { useCommands } from "../shell/commands.svelte";
 
   let { active }: { active: boolean } = $props();
+  const s = new SettingsState();
 
-  let keys = $state.raw<KeyStatus[]>([]);
-  let codex = $state.raw<CodexStatus | null>(null);
-  let codexError = $state<string | null>(null);
-  let codexNotice = $state<string | null>(null);
+  
+  
+  
+  
   /** A sign-in in progress: what it asked the person to open. */
-  let prompt = $state.raw<CodexPrompt | null>(null);
-  let redirect = $state("");
-  let busy = $state(false);
+  
+  
+  
 
-  let provider = $state<Provider>("openai");
-  let models = $state.raw<Model[] | null>(null);
-  let modelsError = $state<string | null>(null);
-  let listing = $state(false);
+  
+  
+  
+  
 
-  let remote = $state.raw<RemoteStatus | null>(null);
-  let remoteError = $state<string | null>(null);
-  let remoteNotice = $state<string | null>(null);
-  let url = $state("");
-  let share = $state<Share>("summary");
+  
+  
+  
+  
+  
   /** The store token while typed; cleared the moment it is submitted. */
-  let token = $state("");
-  let working = $state(false);
+  
+  
 
   const NAMES: Record<Provider, string> = { openai: "OpenAI", anthropic: "Anthropic", codex: "Codex (ChatGPT)" };
 
   async function loadCodex() {
     try {
-      codex = await call(commands.codexStatus());
-      codexError = null;
+      s.codex = await call(commands.codexStatus());
+      s.codexError = null;
     } catch (failure) {
-      codexError = message(failure);
+      s.codexError = message(failure);
     }
   }
 
@@ -62,14 +59,14 @@
 
   async function remoteCall(run: () => Promise<RemoteStatus>, notice?: (status: RemoteStatus) => string) {
     const mine = ++remoteCalls;
-    remoteError = null;
+    s.remoteError = null;
     try {
       const status = await run();
       if (mine !== remoteCalls) return;
-      remote = status;
-      remoteNotice = notice ? notice(status) : remoteNotice;
+      s.remote = status;
+      s.remoteNotice = notice ? notice(status) : s.remoteNotice;
     } catch (failure) {
-      if (mine === remoteCalls) remoteError = message(failure);
+      if (mine === remoteCalls) s.remoteError = message(failure);
     }
   }
 
@@ -78,108 +75,108 @@
   }
 
   async function load() {
-    keys = await commands.settingsKeys();
+    s.keys = await commands.settingsKeys();
     await Promise.all([loadCodex(), loadRemote()]);
   }
 
   /** Read every time the screen shows: another process may have signed in or out. A sign-in
    * in progress keeps what it shows. */
   const reload: Attachment = () => {
-    if (active) untrack(() => !prompt && void load());
+    if (active) untrack(() => !s.prompt && void load());
   };
 
   async function signIn() {
-    codexError = null;
-    codexNotice = null;
-    busy = true;
+    s.codexError = null;
+    s.codexNotice = null;
+    s.busy = true;
     try {
-      prompt = await call(commands.codexLoginStart(true));
-      codex = await call(commands.codexLoginWait(prompt.signIn));
-      codexNotice = "Signed in with Codex.";
+      s.prompt = await call(commands.codexLoginStart(true));
+      s.codex = await call(commands.codexLoginWait(s.prompt.signIn));
+      s.codexNotice = "Signed in with Codex.";
     } catch (failure) {
-      codexError = message(failure);
+      s.codexError = message(failure);
       await loadCodex();
     } finally {
-      prompt = null;
-      redirect = "";
-      busy = false;
+      s.prompt = null;
+      s.redirect = "";
+      s.busy = false;
     }
   }
 
   async function paste(event: SubmitEvent) {
     event.preventDefault();
-    const text = redirect.trim();
+    const text = s.redirect.trim();
     if (!text) return;
     try {
       await call(commands.codexLoginPaste(text));
     } catch (failure) {
-      codexError = message(failure);
+      s.codexError = message(failure);
     }
   }
 
   async function signOut() {
-    codexError = null;
-    busy = true;
+    s.codexError = null;
+    s.busy = true;
     try {
       const out = await call(commands.codexLogout());
-      codex = out.status;
-      codexNotice = out.revoked ? "Signed out of Codex." : "Local tokens removed; their revocation was not confirmed.";
+      s.codex = out.status;
+      s.codexNotice = out.revoked ? "Signed out of Codex." : "Local tokens removed; their revocation was not confirmed.";
     } catch (failure) {
-      codexError = message(failure);
+      s.codexError = message(failure);
     } finally {
-      busy = false;
+      s.busy = false;
     }
   }
 
   async function listModels() {
-    listing = true;
-    models = null;
-    modelsError = null;
+    s.listing = true;
+    s.models = null;
+    s.modelsError = null;
     try {
-      models = await call(commands.modelsList(provider));
+      s.models = await call(commands.modelsList(s.provider));
     } catch (failure) {
-      modelsError = message(failure);
+      s.modelsError = message(failure);
     } finally {
-      listing = false;
+      s.listing = false;
     }
   }
 
   async function remoteLogin(event: SubmitEvent) {
     event.preventDefault();
     // The token leaves this screen's state before the store is even asked.
-    const typed = token;
-    token = "";
-    remoteNotice = null;
-    working = true;
+    const typed = s.token;
+    s.token = "";
+    s.remoteNotice = null;
+    s.working = true;
     await remoteCall(
-      () => call(commands.remoteLogin(url.trim(), share, typed)),
+      () => call(commands.remoteLogin(s.url.trim(), s.share, typed)),
       (status) =>
         status.state === "configured"
           ? `Signed in to ${status.url}${principalOf(status) ? ` as ${principalOf(status)}` : ""}.`
           : "Signed in.",
     );
-    working = false;
+    s.working = false;
   }
 
   async function remoteLogout() {
-    working = true;
+    s.working = true;
     await remoteCall(
       () => call(commands.remoteLogout()),
       () => "Signed out of the remote review store. The server keeps the token valid until `artifactize server token revoke`.",
     );
-    working = false;
+    s.working = false;
   }
 
   async function push(dryRun: boolean) {
-    remoteError = null;
-    working = true;
+    s.remoteError = null;
+    s.working = true;
     try {
       const report: Pushed = await call(commands.remotePush(dryRun));
-      remoteNotice = `${dryRun ? "Would push" : "Pushed"} ${report.pushed}, already in the store ${report.existing}, skipped ${report.skipped}.`;
+      s.remoteNotice = `${dryRun ? "Would push" : "Pushed"} ${report.pushed}, already in the store ${report.existing}, skipped ${report.skipped}.`;
     } catch (failure) {
-      remoteError = message(failure);
+      s.remoteError = message(failure);
     } finally {
-      working = false;
+      s.working = false;
     }
   }
 
@@ -191,12 +188,12 @@
     return Number.isNaN(date.getTime()) ? `${seconds} s` : date.toLocaleString();
   }
 
-  const signedIn = $derived(codex?.state === "stored");
+  const signedIn = $derived(s.codex?.state === "stored");
 
   /** The principal the store named, when it was reachable and named one. */
   const principalOf = (status: RemoteStatus | null) =>
     status?.state === "configured" && status.connection.state === "signedIn" ? status.connection.principal : null;
-  const principal = $derived(principalOf(remote));
+  const principal = $derived(principalOf(s.remote));
 
   useCommands(() =>
     active
@@ -206,7 +203,7 @@
             id: "settings.codex",
             group: "Settings",
             label: signedIn ? "Sign in to Codex again" : "Sign in to Codex",
-            enabled: () => !busy && codex?.state !== "file" && codex?.state !== "refused",
+            enabled: () => !s.busy && s.codex?.state !== "file" && s.codex?.state !== "refused",
             run: () => void signIn(),
           },
         ]
@@ -224,31 +221,31 @@
     <dl class="facts" aria-label="Codex sign-in">
       <dt>Status</dt>
       <dd data-testid="codex-status">
-        {#if !codex}
+        {#if !s.codex}
           …
-        {:else if codex.state === "absent"}
+        {:else if s.codex.state === "absent"}
           Not signed in
-        {:else if codex.state === "stored"}
-          Signed in{codex.expiry.state === "expired" ? "; the access token expired and refreshes on next use" : ""} · token until {when(codex.expiry.expiresAt)}
-        {:else if codex.state === "file"}
-          Read-only Codex auth file {codex.path}{codex.expiry.state === "expired" ? " (expired; sign in with Codex again)" : ""}
+        {:else if s.codex.state === "stored"}
+          Signed in{s.codex.expiry.state === "expired" ? "; the access token expired and refreshes on next use" : ""} · token until {when(s.codex.expiry.expiresAt)}
+        {:else if s.codex.state === "file"}
+          Read-only Codex auth file {s.codex.path}{s.codex.expiry.state === "expired" ? " (expired; sign in with Codex again)" : ""}
         {:else}
-          Cannot store tokens here: {codex.reason}
+          Cannot store tokens here: {s.codex.reason}
         {/if}
       </dd>
     </dl>
-    {#if prompt}
+    {#if s.prompt}
       <div class="pending" role="status">
         <p>Waiting for the browser. If it did not open, open this URL:</p>
-        <p class="url"><code>{prompt.url}</code></p>
-        {#if !prompt.callback}
+        <p class="url"><code>{s.prompt.url}</code></p>
+        {#if !s.prompt.callback}
           <p class="warn">Port 1455 is in use (another Codex sign-in?), so the browser cannot return here; paste the URL it was sent to.</p>
         {/if}
         <form onsubmit={paste}>
           <label for="codex-redirect">When the browser cannot return here, paste the URL it was sent to</label>
           <div class="row">
-            <input id="codex-redirect" class="input" bind:value={redirect} autocomplete="off" spellcheck="false" />
-            <button class="button" type="submit" disabled={!redirect.trim()}>Finish sign-in</button>
+            <input id="codex-redirect" class="input" bind:value={s.redirect} autocomplete="off" spellcheck="false" />
+            <button class="button" type="submit" disabled={!s.redirect.trim()}>Finish sign-in</button>
           </div>
         </form>
         <button class="button" onclick={() => void commands.codexLoginCancel()}>Cancel sign-in</button>
@@ -257,20 +254,20 @@
     <div class="row">
       <button
         class="button primary"
-        disabled={busy || codex?.state === "file" || codex?.state === "refused"}
+        disabled={s.busy || s.codex?.state === "file" || s.codex?.state === "refused"}
         onclick={() => void signIn()}>{signedIn ? "Sign in again" : "Sign in with ChatGPT"}</button
       >
-      <button class="button" disabled={busy || !signedIn} onclick={() => void signOut()}>Sign out of Codex</button>
+      <button class="button" disabled={s.busy || !signedIn} onclick={() => void signOut()}>Sign out of Codex</button>
     </div>
-    {#if codexNotice}<p class="notice" role="status">{codexNotice}</p>{/if}
-    {#if codexError}<p class="error" role="alert">{codexError}</p>{/if}
+    {#if s.codexNotice}<p class="notice" role="status">{s.codexNotice}</p>{/if}
+    {#if s.codexError}<p class="error" role="alert">{s.codexError}</p>{/if}
   </section>
 
   <section aria-labelledby="keys-title">
     <h2 id="keys-title">OpenAI and Anthropic</h2>
     <p class="muted">API keys come only from the environment artifactize starts in; they are never entered or stored here.</p>
     <dl class="facts" aria-label="API keys">
-      {#each keys as key (key.variable)}
+      {#each s.keys as key (key.variable)}
         <dt><code>{key.variable}</code></dt>
         <dd data-testid="key-{key.provider}">{key.present ? "Set" : "Not set"}</dd>
       {/each}
@@ -282,22 +279,22 @@
     <p class="muted">What each backend offers to your key or account, as <code>artifactize models</code> lists them.</p>
     <div class="row">
       <label for="models-provider" class="sr-only">Backend</label>
-      <select id="models-provider" class="input narrow" bind:value={provider}>
+      <select id="models-provider" class="input narrow" bind:value={s.provider}>
         {#each Object.entries(NAMES) as [value, name] (value)}
           <option {value}>{name}</option>
         {/each}
       </select>
-      <button class="button" disabled={listing} onclick={() => void listModels()}>{listing ? "Listing…" : "List models"}</button>
+      <button class="button" disabled={s.listing} onclick={() => void listModels()}>{s.listing ? "Listing…" : "List models"}</button>
     </div>
-    {#if modelsError}<p class="error" role="alert">{modelsError}</p>{/if}
-    {#if models}
-      {#if models.length === 0}
+    {#if s.modelsError}<p class="error" role="alert">{s.modelsError}</p>{/if}
+    {#if s.models}
+      {#if s.models.length === 0}
         <p class="muted">No models listed.</p>
       {:else}
         <table aria-label="Models">
           <thead><tr><th>Model</th><th>Name</th></tr></thead>
           <tbody>
-            {#each models as model (model.slug)}
+            {#each s.models as model (model.slug)}
               <tr><td><code>{model.slug}</code></td><td>{model.displayName}</td></tr>
             {/each}
           </tbody>
@@ -310,62 +307,62 @@
     <h2 id="remote-title">Shared remote review store</h2>
     <p class="muted">Signs in, out and checks status as <code>artifactize remote</code> does; the token is checked with the store and saved with remote.json.</p>
     <dl class="facts" aria-label="Remote store">
-      {#if !remote}
+      {#if !s.remote}
         <dt>Status</dt>
         <dd>…</dd>
-      {:else if remote.state === "unconfigured"}
+      {:else if s.remote.state === "unconfigured"}
         <dt>Status</dt>
         <dd data-testid="remote-status">No remote review store is configured.</dd>
       {:else}
         <dt>Remote</dt>
-        <dd data-testid="remote-status">{remote.url}</dd>
+        <dd data-testid="remote-status">{s.remote.url}</dd>
         <dt>Share</dt>
-        <dd>{remote.share}</dd>
+        <dd>{s.remote.share}</dd>
         <dt>Token</dt>
-        <dd>{remote.tokenSource}</dd>
+        <dd>{s.remote.tokenSource}</dd>
         <dt>Reachable</dt>
-        <dd>{remote.connection.state === "unreachable" ? "no" : "yes"}</dd>
-        {#if remote.connection.state === "signedIn"}
+        <dd>{s.remote.connection.state === "unreachable" ? "no" : "yes"}</dd>
+        {#if s.remote.connection.state === "signedIn"}
           <dt>Principal</dt>
-          <dd data-testid="remote-principal">{remote.connection.principal} (scopes: {remote.connection.scopes.join(", ")})</dd>
+          <dd data-testid="remote-principal">{s.remote.connection.principal} (scopes: {s.remote.connection.scopes.join(", ")})</dd>
         {:else}
           <dt>Error</dt>
-          <dd class="error">{remote.connection.error}</dd>
+          <dd class="error">{s.remote.connection.error}</dd>
         {/if}
       {/if}
     </dl>
     <div class="row">
-      <button class="button" disabled={working} onclick={() => void loadRemote()}>Check status</button>
-      {#if remote?.state === "configured"}
-        <button class="button" disabled={working} onclick={() => void remoteLogout()}>Sign out of the store</button>
-        <button class="button" disabled={working || !principal} onclick={() => void push(true)}>Push (dry run)</button>
-        <button class="button" disabled={working || !principal} onclick={() => void push(false)}>Push results</button>
+      <button class="button" disabled={s.working} onclick={() => void loadRemote()}>Check status</button>
+      {#if s.remote?.state === "configured"}
+        <button class="button" disabled={s.working} onclick={() => void remoteLogout()}>Sign out of the store</button>
+        <button class="button" disabled={s.working || !principal} onclick={() => void push(true)}>Push (dry run)</button>
+        <button class="button" disabled={s.working || !principal} onclick={() => void push(false)}>Push results</button>
       {/if}
     </div>
     <form class="login" onsubmit={remoteLogin} aria-label="Sign in to a remote store">
       <label for="remote-url">Store URL</label>
-      <input id="remote-url" class="input" bind:value={url} placeholder="https://reviews.example/" autocomplete="off" spellcheck="false" />
+      <input id="remote-url" class="input" bind:value={s.url} placeholder="https://reviews.example/" autocomplete="off" spellcheck="false" />
       <span class="label">Share</span>
       <div class="row" role="radiogroup" aria-label="Share">
-        <label><input type="radio" name="share" value="summary" bind:group={share} /> summary</label>
-        <label><input type="radio" name="share" value="full" bind:group={share} /> full</label>
+        <label><input type="radio" name="share" value="summary" bind:group={s.share} /> summary</label>
+        <label><input type="radio" name="share" value="full" bind:group={s.share} /> full</label>
       </div>
       <label for="remote-token">Token</label>
       <input
         id="remote-token"
         class="input"
         type="password"
-        bind:value={token}
+        bind:value={s.token}
         autocomplete="off"
         spellcheck="false"
         placeholder="azt_…"
       />
       <div class="row">
-        <button class="button primary" type="submit" disabled={working || !url.trim() || !token}>Sign in to the store</button>
+        <button class="button primary" type="submit" disabled={s.working || !s.url.trim() || !s.token}>Sign in to the store</button>
       </div>
     </form>
-    {#if remoteNotice}<p class="notice" role="status">{remoteNotice}</p>{/if}
-    {#if remoteError}<p class="error" role="alert">{remoteError}</p>{/if}
+    {#if s.remoteNotice}<p class="notice" role="status">{s.remoteNotice}</p>{/if}
+    {#if s.remoteError}<p class="error" role="alert">{s.remoteError}</p>{/if}
   </section>
 </div>
 

@@ -6,6 +6,7 @@
   import type { Attachment } from "svelte/attachments";
   import type { BrowseView } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
+  import { MonitorState, setMonitorState, type Focus } from "./monitor.svelte";
   import { Tree, find } from "./tree.svelte";
   import ScopePane from "./ScopePane.svelte";
   import RunsPane from "./RunsPane.svelte";
@@ -18,15 +19,8 @@
   let { active }: { active: boolean } = $props();
   const { browse } = getAppState();
 
-  type Focus = "scope" | "runs" | "tree" | "detail";
-  let focus = $state<Focus>("runs");
-  /** The Run whose Detail is open. The Detail shows the tree's selection, whatever it is. */
-  let opened = $state<string | null>(null);
-  let notice = $state<string | null>(null);
-  /** The Run as a tree, or as a graph of Artifacts. */
-  let runView = $state<"tree" | "graph">("tree");
-  /** The Artifact the graph is zoomed into. */
-  let zoomed = $state<string | null>(null);
+  const m = new MonitorState();
+  setMonitorState(m);
   const tree = new Tree();
   /** Human reviews by request: leaving and reopening a request keeps its drafts. */
   const reviews: Record<string, Review> = {};
@@ -43,17 +37,17 @@
     if (at) tree.sync(at.id, at.tree);
     // A replaced state: Details, drafts and sessions of the old one no longer apply.
     if (shown.replaced) {
-      opened = null;
+      m.opened = null;
       for (const id of Object.keys(reviews)) delete reviews[id];
-      if (focus === "detail") focus = "tree";
+      if (m.focus === "detail") m.focus = "tree";
     }
     // Leaving the selected Run (or losing it) closes its Detail.
-    if (opened !== null && opened !== at?.id) opened = null;
+    if (m.opened !== null && m.opened !== at?.id) m.opened = null;
     // Another Run's graph starts zoomed out.
     const id = at?.id ?? null;
     if (id !== graphRun) {
       graphRun = id;
-      zoomed = null;
+      m.zoomed = null;
     }
   }
 
@@ -71,7 +65,7 @@
 
   /** Move focus to a pane's list, tree or review, or else to the pane itself. */
   async function move(to: Focus) {
-    focus = to;
+    m.focus = to;
     await tick();
     const pane = panes[to];
     (pane?.querySelector<HTMLElement>('[tabindex="0"]') ?? pane)?.focus();
@@ -79,27 +73,27 @@
 
   function openDetail() {
     if (!run || !selectedNode) return;
-    opened = run.id;
+    m.opened = run.id;
     void move("detail");
   }
 
   function leaveDetail() {
-    opened = null;
+    m.opened = null;
     void move("tree");
   }
 
   /** `!`: the next ERROR, RED or waiting Human eval; from Detail, open its Detail. */
   function attention() {
     if (!run) {
-      notice = "Open a Run to find what needs attention.";
+      m.notice = "Open a Run to find what needs attention.";
       return;
     }
-    const fromDetail = opened !== null;
+    const fromDetail = m.opened !== null;
     if (!tree.nextAttention(run.tree)) {
-      notice = "Nothing in this Run needs attention.";
+      m.notice = "Nothing in this Run needs attention.";
       return;
     }
-    notice = null;
+    m.notice = null;
     if (fromDetail) openDetail();
     else void move("tree");
   }
@@ -118,15 +112,15 @@
   const begin: Attachment = () => {
     if (active && !started && view?.refreshed) {
       started = true;
-      void move(focus);
+      void move(m.focus);
     }
   };
 
   /** `artifactize › scope › Run › node`, up to the focused level, as in the terminal. */
   const crumbs = $derived.by(() => {
     const parts = [view?.scopeLabel ?? "…"];
-    if (focus !== "scope" && view?.selectedRun) parts.push(view.selectedRun);
-    if ((focus === "tree" || focus === "detail") && run) {
+    if (m.focus !== "scope" && view?.selectedRun) parts.push(view.selectedRun);
+    if ((m.focus === "tree" || m.focus === "detail") && run) {
       const node = find(run.tree, tree.selected);
       if (node) parts.push(node.kind === "run" ? "Run" : node.name);
     }
@@ -144,10 +138,10 @@
           {
             id: "monitor.view",
             group: "Monitor",
-            label: runView === "tree" ? "Show the Run graph" : "Show the Run tree",
+            label: m.runView === "tree" ? "Show the Run graph" : "Show the Run tree",
             keys: "v",
             run: () => {
-              runView = runView === "tree" ? "graph" : "tree";
+              m.runView = m.runView === "tree" ? "graph" : "tree";
               void move("tree");
             },
           },
@@ -172,8 +166,8 @@
     {#each crumbs as crumb, index (index)}
       <span class="sep">›</span><span>{crumb}</span>
     {/each}
-    {#if notice || browse.error || view?.error}
-      <span class="notice" role="status">{notice ?? browse.error ?? view?.error}</span>
+    {#if m.notice || browse.error || view?.error}
+      <span class="notice" role="status">{m.notice ?? browse.error ?? view?.error}</span>
     {/if}
   </nav>
   <PaneGroup direction="horizontal" autoSaveId="monitor-columns" class="columns">
@@ -181,18 +175,18 @@
       <PaneGroup direction="vertical" autoSaveId="monitor-sidebar">
         <Pane defaultSize={38} minSize={15}>
           <ScopePane
-            focused={focus === "scope"}
+            focused={m.focus === "scope"}
             bind:element={panes.scope}
-            onfocus={() => (focus = "scope")}
+            onfocus={() => (m.focus = "scope")}
             onnext={() => void move("runs")}
           />
         </Pane>
         <PaneResizer class="resizer" />
         <Pane defaultSize={62} minSize={15}>
           <RunsPane
-            focused={focus === "runs"}
+            focused={m.focus === "runs"}
             bind:element={panes.runs}
-            onfocus={() => (focus = "runs")}
+            onfocus={() => (m.focus = "runs")}
             onnext={() => void move("tree")}
             onback={() => void move("scope")}
           />
@@ -203,12 +197,12 @@
     <Pane defaultSize={36} minSize={18}>
       <RunPane
         {tree}
-        bind:view={runView}
-        bind:zoomed
+        bind:view={m.runView}
+        bind:zoomed={m.zoomed}
         {active}
-        focused={focus === "tree"}
+        focused={m.focus === "tree"}
         bind:element={panes.tree}
-        onfocus={() => (focus = "tree")}
+        onfocus={() => (m.focus = "tree")}
         onopen={openDetail}
         onback={() => void move("runs")}
         onattention={attention}
@@ -219,13 +213,13 @@
       <DetailPane
         run={run?.id ?? null}
         node={selectedNode}
-        full={opened !== null}
-        focused={focus === "detail"}
+        full={m.opened !== null}
+        focused={m.focus === "detail"}
         {active}
         {review}
         {openReview}
         bind:element={panes.detail}
-        onfocus={() => (focus = "detail")}
+        onfocus={() => (m.focus = "detail")}
         onopen={openDetail}
         onback={leaveDetail}
       />

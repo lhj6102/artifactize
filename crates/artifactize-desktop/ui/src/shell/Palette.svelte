@@ -1,14 +1,15 @@
 <script lang="ts">
   // Ctrl+K (⌘K): every action that is possible now, searchable, with its shortcut.
   import { Command, Dialog } from "bits-ui";
-  import { registry } from "./commands.svelte";
+  import { getAppState } from "./app.svelte";
   import { label } from "./keys";
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
+  const { commands } = getAppState();
   let input = $state<HTMLInputElement | null>(null);
 
   const groups = $derived.by(() => {
-    const enabled = registry.all.filter((command) => command.enabled?.() ?? true);
+    const enabled = commands.all.filter((command) => command.enabled?.() ?? true);
     const names = [...new Set(enabled.map((command) => command.group))];
     return names.map((name) => ({
       name,
@@ -17,7 +18,7 @@
   });
 
   function run(id: string) {
-    const command = registry.all.find((command) => command.id === id);
+    const command = commands.all.find((command) => command.id === id);
     open = false;
     // Let the dialog restore focus before the command moves it.
     queueMicrotask(() => command?.run());

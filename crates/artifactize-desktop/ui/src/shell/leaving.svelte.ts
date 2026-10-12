@@ -5,7 +5,7 @@ import { commands } from "../ipc/client";
 
 export class Leaving {
   /** The claims the open prompt asks about; `null` while no prompt is open. */
-  taken = $state<string[] | null>(null);
+  taken = $state.raw<string[] | null>(null);
 
   /** Whether the window may close now; otherwise the prompt opens (or stays open). */
   async allowed(): Promise<boolean> {

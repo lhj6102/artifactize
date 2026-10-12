@@ -1,9 +1,10 @@
 // The standalone review against a mocked command boundary: the request search, a result saved
 // locally whose publication failed stays open with its failure, a replaced state drops the open
 // review, and a request that is not a Human review opens read-only.
+import { renderHosted } from "../test-host";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { emit } from "@tauri-apps/api/event";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import ReviewScreen from "./ReviewScreen.svelte";
 import { greenForm, humanView } from "./fixtures";
@@ -109,7 +110,7 @@ afterEach(() => {
 });
 
 async function openReview() {
-  render(ReviewScreen, { launch, active: true });
+  renderHosted(ReviewScreen, { launch, active: true });
   await screen.findByText("release/signoff");
   await fireEvent.dblClick(await screen.findByText("release/signoff"));
   return screen.findByLabelText("Human review");
@@ -146,7 +147,7 @@ describe("ReviewScreen", () => {
       rows: (query) => (query.includes("kind:agent") ? [agentRow] : query.includes(WAITING) ? [row] : []),
       searched,
     });
-    render(ReviewScreen, { launch, active: true });
+    renderHosted(ReviewScreen, { launch, active: true });
     await screen.findByText("release/signoff");
     expect(searched[0]).toBe(WAITING);
     expect(screen.getByText(/Waiting Human reviews \(1\)/)).not.toBeNull();
@@ -162,7 +163,7 @@ describe("ReviewScreen", () => {
 
   it("opens a request that is not a Human review read-only", async () => {
     backend({ generation: () => 0, rows: () => [agentRow] });
-    render(ReviewScreen, { launch: { ...launch, search: "kind:agent" }, active: true });
+    renderHosted(ReviewScreen, { launch: { ...launch, search: "kind:agent" }, active: true });
     await fireEvent.dblClick(await screen.findByText("app/agent"));
     await screen.findByText(/An Agent reads the input · read-only/);
     expect(screen.queryByLabelText("Human review")).toBeNull();

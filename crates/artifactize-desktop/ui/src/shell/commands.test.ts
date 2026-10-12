@@ -1,7 +1,9 @@
 // The palette registry: what a screen registers leaves again with it, so switching screens
 // never lists a command twice.
 import { describe, expect, it } from "vitest";
-import { registry, type Command } from "./commands.svelte";
+import { Registry, type Command } from "./commands.svelte";
+
+const registry = new Registry();
 
 const command = (id: string): Command => ({ id, label: id, group: "Test", run: () => {} });
 
