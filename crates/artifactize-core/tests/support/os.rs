@@ -8,21 +8,13 @@ use serde_json::{Value, json};
 use std::fs;
 use std::{path::Path, process::Command};
 
-/// The built `artifactize` binary, which lives in its own package: next to the test executable's
-/// `deps` directory, where `cargo test` for the workspace puts it.
+/// The built `artifactize` binary. Cargo builds it for the tests of its own package and names it
+/// in `CARGO_BIN_EXE_artifactize`, so only tests there can start it.
 pub fn cli() -> std::path::PathBuf {
-    let mut path = std::env::current_exe().expect("the test executable");
-    path.pop();
-    if path.ends_with("deps") {
-        path.pop();
-    }
-    path.push(format!("artifactize{}", std::env::consts::EXE_SUFFIX));
-    assert!(
-        path.is_file(),
-        "{} is missing: build it with `cargo test -p artifactize -p artifactize-core`",
-        path.display()
-    );
-    path
+    std::path::PathBuf::from(
+        option_env!("CARGO_BIN_EXE_artifactize")
+            .expect("tests that start the CLI live in the artifactize package"),
+    )
 }
 
 /// A semantic snapshot, without struct padding, of the input terminal's current modes.
@@ -655,7 +647,7 @@ mod fixture {
                 .arg(&program)
                 .arg(concat!(
                     env!("CARGO_MANIFEST_DIR"),
-                    "/tests/support/fixture.rs"
+                    "/../artifactize-core/tests/support/fixture.rs"
                 ))
                 .output()
                 .expect("rustc builds the test fixture");

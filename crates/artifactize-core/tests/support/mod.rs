@@ -37,7 +37,7 @@ pub mod tool_sessions;
 pub fn copy_fixture(name: &str, target: &Path) {
     copy(
         &Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures")
+            .join("../artifactize-core/tests/fixtures")
             .join(name),
         target,
         true,

@@ -25,3 +25,46 @@ pkg-fmt = "zip"
 [dependencies]
 artifactize-core.workspace = true
 artifactize-tui.workspace = true
+
+[dev-dependencies]
+artifactize-core = { workspace = true, features = ["test-support"] }
+artifactize-tools.workspace = true
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
+base64 = "0.22"
+bytes = "1"
+crossterm = "0.29"
+futures-util = "0.3"
+getrandom = "0.4"
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "form"] }
+rig-core = { version = "=0.43.0", default-features = false, features = ["test-utils"] }
+rusqlite = { version = "0.40.1", features = ["bundled", "trace"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+tempfile = "3.27"
+time = { version = "0.3", features = ["formatting", "parsing"] }
+tokio = { version = "1", features = ["io-util", "macros", "net", "process", "rt", "signal", "sync", "time", "test-util"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+toml = "1.1.8"
+url = { version = "2", features = ["serde"] }
+
+# The OS helpers the tests share (artifactize-core/tests/support/os.rs) call these.
+[target.'cfg(unix)'.dev-dependencies]
+libc = "0.2"
+hostname = "0.4.2"
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_IO",
+    "Win32_System_JobObjects",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }
