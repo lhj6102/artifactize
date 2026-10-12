@@ -294,7 +294,7 @@ async fn followers_keep_the_original_claim_remote_session_and_run_specific_evide
     follower.session_id = Some("remote-session".parse().unwrap());
     follower.session = Some(serde_json::from_value(json!({"producer":"remote@host","state":"remote-state","runId":"remote-run","requestId":"remote-request","sessionId":"remote-session"})).unwrap());
     follower.producer = Some(store::Producer {
-        name: "remote@host".into(),
+        name: "remote@host".parse().unwrap(),
         version: "saved".into(),
         session: follower.session.clone(),
     });

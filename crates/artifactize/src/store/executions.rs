@@ -269,7 +269,7 @@ impl ExecutionOptions {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Producer {
     /// `user@host`.
-    pub name: String,
+    pub name: crate::types::ProducerId,
     /// The producing artifactize version.
     pub version: String,
     /// Where an Agent review's saved conversation lives. It travels with remote records,
@@ -278,8 +278,8 @@ pub struct Producer {
     pub session: Option<crate::agent::session::SessionRef>,
 }
 
-/// Keep printable producer display metadata bounded in saved records and reuse messages.
-const MAX_PRODUCER_CHARS: usize = 200;
+/// The name every producer without a user or host gets.
+const UNKNOWN_PRODUCER: &str = "unknown@unknown";
 
 impl Producer {
     pub fn current() -> Self {
@@ -293,12 +293,15 @@ impl Producer {
                 .filter(|host| !host.is_empty())
                 .unwrap_or("unknown")
         );
+        // A name is printable and bounded; whatever the system reports is cut to fit.
+        let mut printable: String = name.chars().filter(|c| !c.is_control()).collect();
+        while printable.len() > crate::types::MAX_ID_BYTES {
+            printable.pop();
+        }
         Self {
-            name: name
-                .chars()
-                .filter(|c| !c.is_control())
-                .take(MAX_PRODUCER_CHARS)
-                .collect(),
+            name: printable
+                .parse()
+                .unwrap_or_else(|_| UNKNOWN_PRODUCER.parse().expect("a valid producer name")),
             version: env!("CARGO_PKG_VERSION").into(),
             session: None,
         }

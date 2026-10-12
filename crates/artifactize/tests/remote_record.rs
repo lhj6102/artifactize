@@ -411,7 +411,7 @@ async fn an_agent_result_is_reused_across_models_and_shows_its_profile() {
         },
         started_at: "2026-10-04T00:00:00Z".parse().unwrap(),
         producer: Some(Producer {
-            name: "bob@laptop".into(),
+            name: "bob@laptop".parse().unwrap(),
             version: "0.5.0".into(),
             session: None,
         }),

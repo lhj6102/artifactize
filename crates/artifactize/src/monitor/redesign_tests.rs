@@ -425,7 +425,7 @@ async fn evidence_distinguishes_never_saved_gc_remote_and_runtime_summary() {
         .unwrap_err();
     assert!(text.contains("identity"));
     view.request.session = Some(crate::agent::session::SessionRef {
-        producer: store::Producer::current().name.parse().unwrap(),
+        producer: store::Producer::current().name,
         state: "fixture-state".parse().unwrap(),
         run_id: "run-1".parse().unwrap(),
         request_id: view.request.id.clone(),

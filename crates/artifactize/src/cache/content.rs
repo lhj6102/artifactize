@@ -214,12 +214,8 @@ impl Walk {
             entries.push((name, kind == FileKind::Directory));
         }
         entries.sort();
-        let gitignore = read_gitignore(directory).map_err(|e| {
-            format!(
-                "{}: {e}",
-                join(path, ".gitignore").expect("a fixed name under a validated logical folder")
-            )
-        })?;
+        let gitignore =
+            read_gitignore(directory).map_err(|e| format!("{}: {e}", gitignore_name(path)))?;
         let pushed = gitignore.is_some();
         if let Some(gitignore) = gitignore {
             gitignores.push((join(&self.prefix, path)?, gitignore));
@@ -231,7 +227,7 @@ impl Walk {
             let child = join(path, &name)?;
             if (!is_dir && name.ends_with(".artf"))
                 || self.excluded.contains(child.as_str())
-                || self.ignored(&child, is_dir, gitignores)
+                || self.ignored(&child, is_dir, gitignores)?
             {
                 continue;
             }
@@ -265,13 +261,7 @@ impl Walk {
                 .join("/")
                 .parse()
                 .expect("ancestors of a validated logical path");
-            let label = |e: String| {
-                format!(
-                    "{}: {e}",
-                    join(&base, ".gitignore")
-                        .expect("a fixed name under a validated logical folder")
-                )
-            };
+            let label = |e: String| format!("{}: {e}", gitignore_name(&base));
             let directory =
                 scope::open_scoped(&self.root, &base).map_err(|e| label(e.to_string()))?;
             if let Some(gitignore) = read_gitignore(&directory).map_err(label)? {
@@ -288,11 +278,11 @@ impl Walk {
         path: &LogicalTarget,
         is_dir: bool,
         gitignores: &[(LogicalTarget, Gitignore)],
-    ) -> bool {
+    ) -> Result<bool, String> {
         if self.ignore.matched(path, is_dir).is_ignore() {
-            return true;
+            return Ok(true);
         }
-        let full = join(&self.prefix, path).expect("two validated logical paths");
+        let full = join(&self.prefix, path)?;
         for (base, gitignore) in gitignores.iter().rev() {
             let relative = if base.is_empty() {
                 full.as_str()
@@ -300,12 +290,12 @@ impl Walk {
                 &full[base.len() + 1..]
             };
             match gitignore.matched(relative, is_dir) {
-                Match::Ignore(_) => return true,
-                Match::Whitelist(_) => return false,
+                Match::Ignore(_) => return Ok(true),
+                Match::Whitelist(_) => return Ok(false),
                 Match::None => {}
             }
         }
-        false
+        Ok(false)
     }
 }
 
@@ -362,6 +352,13 @@ fn hash_file(mut file: File, path: &LogicalTarget, state: &mut State) -> Result<
         crate::types::Sha256Bytes::from_digest(digest.finalize().into()),
     );
     Ok(())
+}
+
+/// The `.gitignore` of a folder, for messages: its logical path, or when that would be too
+/// long to be one, the folder and the name as written.
+fn gitignore_name(folder: &LogicalTarget) -> String {
+    join(folder, ".gitignore")
+        .map_or_else(|_| format!("{folder}/.gitignore"), |path| path.to_string())
 }
 
 fn join(base: &LogicalTarget, name: &str) -> Result<LogicalTarget, String> {

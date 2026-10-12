@@ -56,7 +56,7 @@ pub(crate) async fn resolve_cached(
             .ok_or("State has no identity.")?
         }
     };
-    let producer: crate::types::ProducerId = store::Producer::current().name.parse()?;
+    let producer = store::Producer::current().name;
     let mut view = view.clone();
     // A local follower may have no session_id until completion. Resolve only its original
     // local producer, never a mirrored provenance id that happens to collide in this state.

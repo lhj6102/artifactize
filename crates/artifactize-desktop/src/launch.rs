@@ -95,6 +95,14 @@ impl Launch {
     pub fn initial(&self) -> Option<PathBuf> {
         artifactize::monitor::initial(self.repo.clone())
     }
+
+    /// The window title: the app and the repository it was started for.
+    pub fn title(&self) -> String {
+        match self.initial() {
+            Some(repo) => format!("Artifactize — {}", repo.display()),
+            None => "Artifactize — all repositories".into(),
+        }
+    }
 }
 
 /// What the frontend needs to know about this launch.

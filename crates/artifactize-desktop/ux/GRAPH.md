@@ -8,8 +8,8 @@ that makes the transition happen and checks where it leads.
 ## Screens and states
 
 - **Launch**: the window opening. It opens on the Monitor, or on Review when started with
-  `review`, and shows the repository it was started for (the Monitor's breadcrumb, the Review
-  search).
+  `review`. The window's title bar names the repository it was started for (or "all
+  repositories"); the Monitor's breadcrumb and the Review search show it too.
 - **Monitor**: four panes. **Scope** lists ALL repositories and each repository and worktree;
   **Runs** lists the selected scope's Runs, newest first; **Tree** shows the selected Run's
   Artifacts and their evals, each with its verdict; **Detail** shows the selected row.
@@ -31,8 +31,8 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-LAUNCH-MONITOR | Launch | start without arguments | Monitor, showing the repository in its breadcrumb |
-| E-LAUNCH-REVIEW | Launch | start with `review` | Review, listing the waiting Human reviews of every repository |
+| E-LAUNCH-MONITOR | Launch | start without arguments | Monitor; the title bar names the repository |
+| E-LAUNCH-REVIEW | Launch | start with `review` | Review, listing the waiting Human reviews of every repository; the title bar names the repository |
 | E-SCREEN-MONITOR | any screen | Ctrl+1 | Monitor |
 | E-SCREEN-REVIEW | any screen | Ctrl+2 | Review |
 | E-SCREEN-SETTINGS | any screen | Ctrl+, | Settings |
@@ -43,8 +43,8 @@ that makes the transition happen and checks where it leads.
 | E-HELP-OPEN | any screen, outside fields | `?` | Help, listing the keys of the current screen |
 | E-HELP-CLOSE | Help | Esc | the screen below |
 | E-REFRESH | any screen | Ctrl+R or F5 | same screen, state reloaded |
-| E-QUIT-CLEAN | any screen, no claims held, outside fields | `q`, or closing the window | window closed |
-| E-QUIT-ASK | any screen, claims held, outside fields | `q`, or closing the window | Leave dialog |
+| E-QUIT-CLEAN | any screen, no claims held | `q` outside fields, or closing the window from anywhere | window closed |
+| E-QUIT-ASK | any screen, claims held | `q` outside fields, or closing the window from anywhere | Leave dialog |
 | E-QUIT-STAY | Leave dialog | Esc | the screen below |
 | E-QUIT-RELEASE | Leave dialog | `u` | claims released, window closed |
 
@@ -52,12 +52,12 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-MON-SCOPE-MOVE | Scope | `j`, `k` or arrows | Scope, another scope selected; Runs lists its Runs |
+| E-MON-SCOPE-MOVE | Scope | `j`, `k`, ↑ or ↓ | Scope, another scope selected; Runs lists its Runs |
 | E-MON-SCOPE-RUNS | Scope | Enter or → | Runs |
-| E-MON-RUNS-MOVE | Runs | `j`, `k` or arrows | Runs, another Run selected; Tree shows it |
+| E-MON-RUNS-MOVE | Runs | `j`, `k`, ↑ or ↓ | Runs, another Run selected; Tree shows it |
 | E-MON-RUNS-TREE | Runs | Enter or → | Tree |
-| E-MON-TREE-MOVE | Tree | `j`, `k` or arrows | Tree, other row selected; Detail previews it |
-| E-MON-TREE-DETAIL | Tree row | Enter, `o` or double-click | Detail opened |
+| E-MON-TREE-MOVE | Tree | `j`, `k`, ↑ or ↓ | Tree, other row selected; Detail previews it |
+| E-MON-TREE-DETAIL | Tree row | Enter, → (one level deeper), `o` or double-click | Detail opened; it keeps showing the tree's selection |
 | E-MON-DETAIL-TECHNICAL | Detail of an eval | `t` | Detail, the technical record shown or hidden |
 | E-MON-DETAIL-BACK | Detail | Esc or ← | Tree |
 | E-MON-TREE-TO-RUNS | Tree | Esc or ← | Runs |
@@ -132,36 +132,42 @@ that makes the transition happen and checks where it leads.
 
 ## Journeys as paths
 
-Each journey of FEATURES.md as the edges it takes, in order.
+Each journey of FEATURES.md as walks through the edges above: `→` joins edges one after the
+other (each starts where the one before ended), `|` separates alternatives, and a journey with
+several walks lists them one per line. Selecting a row first is the movement edge of its pane.
 
-- J-LAUNCH: E-LAUNCH-MONITOR or E-LAUNCH-REVIEW
-- J-SWITCH-SCREEN: E-SCREEN-MONITOR, E-SCREEN-REVIEW, E-SCREEN-SETTINGS
-- J-PALETTE: E-PALETTE-OPEN, E-PALETTE-FILTER, E-PALETTE-RUN or E-PALETTE-CLOSE
-- J-HELP: E-HELP-OPEN, E-HELP-CLOSE
+- J-LAUNCH: E-LAUNCH-MONITOR | E-LAUNCH-REVIEW
+- J-SWITCH-SCREEN: E-SCREEN-MONITOR | E-SCREEN-REVIEW | E-SCREEN-SETTINGS
+- J-PALETTE: E-PALETTE-OPEN → E-PALETTE-FILTER → E-PALETTE-RUN | E-PALETTE-CLOSE
+- J-HELP: E-HELP-OPEN → E-HELP-CLOSE
 - J-REFRESH: E-REFRESH
-- J-QUIT: E-QUIT-CLEAN; with claims E-QUIT-ASK, then E-QUIT-STAY or E-QUIT-RELEASE
-- J-MON-CATALOG: E-LAUNCH-MONITOR, E-MON-SCOPE-MOVE, E-MON-RUNS-MOVE
-- J-MON-NAVIGATE: E-MON-SCOPE-MOVE, E-MON-SCOPE-RUNS, E-MON-RUNS-MOVE, E-MON-RUNS-TREE, E-MON-TREE-MOVE, E-MON-TREE-FOLD, E-MON-DETAIL-BACK, E-MON-TREE-TO-RUNS, E-MON-RUNS-TO-SCOPE
-- J-MON-DETAIL: E-MON-TREE-DETAIL, E-MON-DETAIL-TECHNICAL, E-MON-DETAIL-BACK
-- J-MON-ATTENTION: E-MON-ATTENTION, E-MON-BLOCKER
+- J-QUIT: E-QUIT-CLEAN | E-QUIT-ASK → E-QUIT-STAY | E-QUIT-ASK → E-QUIT-RELEASE
+- J-MON-CATALOG: E-LAUNCH-MONITOR → E-MON-SCOPE-MOVE → E-MON-SCOPE-RUNS → E-MON-RUNS-MOVE → E-MON-RUNS-TREE → E-MON-TREE-MOVE
+- J-MON-NAVIGATE: E-MON-SCOPE-MOVE → E-MON-SCOPE-RUNS → E-MON-RUNS-MOVE → E-MON-RUNS-TREE → E-MON-TREE-MOVE → E-MON-TREE-FOLD → E-MON-TREE-DETAIL → E-MON-DETAIL-BACK → E-MON-TREE-TO-RUNS → E-MON-RUNS-TO-SCOPE
+- J-MON-DETAIL: E-MON-TREE-DETAIL → E-MON-DETAIL-TECHNICAL → E-MON-DETAIL-BACK
+- J-MON-ATTENTION: E-MON-TREE-MOVE → E-MON-ATTENTION
+  E-MON-TREE-MOVE (onto a blocked eval) → E-MON-BLOCKER
 - J-MON-LIVE: E-MON-LIVE
 - J-MON-RESIZE: E-MON-RESIZE
-- J-GRAPH-SWITCH: E-GRAPH-OPEN, E-GRAPH-CLOSE
-- J-GRAPH-COLOURS: E-GRAPH-OPEN, E-GRAPH-RECOLOUR
-- J-GRAPH-MOVE: E-GRAPH-MOVE
-- J-GRAPH-ZOOM: E-GRAPH-ZOOM-IN, E-GRAPH-EVAL-SELECT, E-GRAPH-EVAL-OPEN, E-GRAPH-ZOOM-OUT
-- J-GRAPH-LARGE: E-GRAPH-BEYOND
-- J-HUMAN-CLAIM: E-HUMAN-CLAIM, E-HUMAN-RELEASE, E-HUMAN-CLAIMED-ELSEWHERE
-- J-HUMAN-TOOL: E-HUMAN-TOOL, E-HUMAN-TOOL-LAUNCH, E-HUMAN-TOOL-FAIL
-- J-HUMAN-GREEN: E-HUMAN-CLAIM, E-HUMAN-GREEN, E-HUMAN-SUBMIT
-- J-HUMAN-RED: E-HUMAN-CLAIM, E-HUMAN-RED, E-HUMAN-INVALID, E-HUMAN-SWITCH
-- J-HUMAN-TEXT: E-HUMAN-GREEN, E-HUMAN-TEXT
-- J-HUMAN-ESC: E-HUMAN-ESC-CANCEL, E-HUMAN-ESC-FORM, E-HUMAN-ESC-DETAIL
-- J-REVIEW-LIST: E-LAUNCH-REVIEW or E-SCREEN-REVIEW, E-REVIEW-PREVIEW
-- J-REVIEW-OPEN: E-REVIEW-OPEN, E-REVIEW-OPEN-TOOLS, E-REVIEW-OPEN-ID, E-REVIEW-READONLY
-- J-REVIEW-SEARCH: E-REVIEW-SEARCH-FOCUS, E-REVIEW-SEARCH-TERMS, E-REVIEW-SUGGEST, E-REVIEW-SUGGEST-CLOSE, E-REVIEW-SEARCH-CLEAR, E-REVIEW-SEARCH-LEAVE
+- J-GRAPH-SWITCH: E-GRAPH-OPEN → E-GRAPH-CLOSE
+- J-GRAPH-COLOURS: E-GRAPH-OPEN → E-GRAPH-RECOLOUR
+- J-GRAPH-MOVE: E-GRAPH-OPEN → E-GRAPH-MOVE
+- J-GRAPH-ZOOM: E-GRAPH-OPEN → E-GRAPH-ZOOM-IN → E-GRAPH-EVAL-SELECT → E-GRAPH-ZOOM-OUT
+  E-GRAPH-OPEN → E-GRAPH-ZOOM-IN → E-GRAPH-EVAL-SELECT → E-GRAPH-EVAL-OPEN → E-MON-DETAIL-BACK
+- J-GRAPH-LARGE: E-GRAPH-OPEN → E-GRAPH-BEYOND
+- J-HUMAN-CLAIM: E-HUMAN-CLAIM → E-HUMAN-RELEASE
+  E-HUMAN-CLAIMED-ELSEWHERE → E-HUMAN-CLAIM
+- J-HUMAN-TOOL: E-HUMAN-TOOL | E-HUMAN-TOOL-LAUNCH | E-HUMAN-TOOL-FAIL
+- J-HUMAN-GREEN: E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-SUBMIT
+- J-HUMAN-RED: E-HUMAN-CLAIM → E-HUMAN-RED → E-HUMAN-INVALID → E-HUMAN-SWITCH
+- J-HUMAN-TEXT: E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-TEXT
+- J-HUMAN-ESC: E-HUMAN-ESC-CANCEL
+  E-HUMAN-CLAIM → E-HUMAN-GREEN → E-HUMAN-ESC-FORM → E-HUMAN-ESC-DETAIL
+- J-REVIEW-LIST: E-LAUNCH-REVIEW | E-SCREEN-REVIEW → E-REVIEW-PREVIEW
+- J-REVIEW-OPEN: E-REVIEW-OPEN | E-REVIEW-OPEN-TOOLS | E-REVIEW-OPEN-ID | E-REVIEW-READONLY
+- J-REVIEW-SEARCH: E-REVIEW-SEARCH-FOCUS → E-REVIEW-SEARCH-TERMS → E-REVIEW-SUGGEST → E-REVIEW-SUGGEST-CLOSE → E-REVIEW-SEARCH-CLEAR → E-REVIEW-SEARCH-LEAVE
 - J-REVIEW-PAGE: E-REVIEW-PAGE
-- J-SET-KEYS: E-SET-KEYS
-- J-SET-CODEX: E-SET-CODEX-LOGIN, then E-SET-CODEX-RETURN or E-SET-CODEX-PASTE or E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
+- J-SET-KEYS: E-SCREEN-SETTINGS → E-SET-KEYS
+- J-SET-CODEX: E-SET-CODEX-LOGIN → E-SET-CODEX-RETURN | E-SET-CODEX-LOGIN → E-SET-CODEX-PASTE | E-SET-CODEX-LOGIN → E-SET-CODEX-CANCEL; E-SET-CODEX-LOGOUT
 - J-SET-MODELS: E-SET-MODELS
-- J-SET-REMOTE: E-SET-REMOTE-LOGIN, E-SET-REMOTE-STATUS, E-SET-REMOTE-PUSH, E-SET-REMOTE-LOGOUT
+- J-SET-REMOTE: E-SET-REMOTE-LOGIN → E-SET-REMOTE-STATUS → E-SET-REMOTE-PUSH → E-SET-REMOTE-LOGOUT

@@ -13,7 +13,7 @@ pub(crate) fn fixture() -> (tempfile::TempDir, Source) {
     let source = Source {
         state: root.path().into(),
         reference: SessionRef {
-            producer: store::Producer::current().name.parse().unwrap(),
+            producer: store::Producer::current().name,
             state: "state".parse().unwrap(),
             run_id: "run".parse().unwrap(),
             request_id: "request".parse().unwrap(),
@@ -462,7 +462,7 @@ async fn resolution_running_foreign_and_remote_never_uses_remote_path() {
     ));
     view.request.session = None;
     view.request.producer = Some(store::Producer {
-        name: "foreign@host".into(),
+        name: "foreign@host".parse().unwrap(),
         version: "fixture".into(),
         session: None,
     });

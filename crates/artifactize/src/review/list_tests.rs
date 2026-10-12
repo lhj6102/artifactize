@@ -90,7 +90,7 @@ async fn fixture() -> Fixture {
     let saving = Saving {
         state: state.clone(),
         state_id: receipts.state_id().await.unwrap(),
-        producer: store::Producer::current().name.parse().unwrap(),
+        producer: store::Producer::current().name,
     };
     let mut recorder = Recorder::new(Some(&saving), &agent, &"session-a".parse().unwrap());
     recorder.start(Header::default());

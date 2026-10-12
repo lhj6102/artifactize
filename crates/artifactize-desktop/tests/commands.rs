@@ -885,3 +885,23 @@ Check {broken}."""
         &json!({"source": "a:broken", "target": "a:after", "light": "error", "dependency": false})
     );
 }
+
+#[test]
+fn the_window_title_names_the_repository_or_all_repositories() {
+    let fixture = fixture();
+    let launch = |repo: Option<std::path::PathBuf>| Launch {
+        mode: Mode::Monitor,
+        state: fixture.state.clone(),
+        repo,
+        reviewer: "alice".parse().unwrap(),
+        request: None,
+        search: artifactize::review::search::DEFAULT.into(),
+    };
+    let named = launch(Some(fixture.repo.clone())).title();
+    assert!(named.starts_with("Artifactize — "), "{named}");
+    assert!(
+        named.ends_with(fixture.repo.file_name().unwrap().to_str().unwrap()),
+        "{named}"
+    );
+    assert_eq!(launch(None).title(), "Artifactize — all repositories");
+}

@@ -589,7 +589,7 @@ async fn failed_peeks_resolve_again_after_refresh_and_session_changes_while_read
     assert!(monitor.peek.as_ref().unwrap().live.is_none());
     // The session appears: the peek reads it after the refresh that brings it.
     let session = |id: &str| crate::agent::session::SessionRef {
-        producer: store::Producer::current().name.parse().unwrap(),
+        producer: store::Producer::current().name,
         state: "placeholder".parse().unwrap(),
         run_id: "run-1".parse().unwrap(),
         request_id: request.id.clone(),
