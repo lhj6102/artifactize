@@ -363,6 +363,7 @@ pub async fn human_form(
     verdict: Verdict,
 ) -> Result<FormView, Failure> {
     let id = parse(&id)?;
+    guard(&app, &id, review::review_refusal).await?;
     form::template(&opened(&app, &id)?.request, verdict)
 }
 
@@ -390,6 +391,9 @@ pub async fn human_claim(
     standalone: bool,
 ) -> Result<Acted, Failure> {
     let id = parse(&id)?;
+    // Someone else's claim, or a settled request, is refused in the library's words.
+    let view = read(&app, &id).await?;
+    review::actionable(Some(&view), &app.launch.reviewer).map_err(Failure::Action)?;
     let outcome = run_job(&app, job, Job::Claim { id: id.clone() }).await;
     if standalone && let Outcome::Claimed { result: Ok(_) } = &outcome {
         app.human.took(&id, true);
@@ -417,6 +421,7 @@ pub async fn human_run(
 ) -> Result<ToolRun, Failure> {
     let id = parse(&id)?;
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
+    guard(&app, &id, review::review_refusal).await?;
     let outcome = run_job(
         &app,
         job,
@@ -478,6 +483,20 @@ pub struct Submitted {
 }
 
 /// The request recorded for request `id` when it was opened.
+/// A rule of the library's (`review::review_refusal`, `release_refusal`) applied to the request
+/// as it stands now: its refusal is the failure, so every interface refuses in the same words.
+async fn guard(
+    app: &App,
+    id: &RequestId,
+    rule: fn(Option<&RequestView>, &artifactize_core::types::ReviewerId) -> Option<String>,
+) -> Result<(), Failure> {
+    let view = read(app, id).await?;
+    match rule(Some(&view), &app.launch.reviewer) {
+        Some(refusal) => Err(Failure::Action(refusal)),
+        None => Ok(()),
+    }
+}
+
 fn opened(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
     app.human
         .views
@@ -486,6 +505,33 @@ fn opened(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
         .get(id)
         .cloned()
         .ok_or_else(|| Failure::Missing("Open the request first.".into()))
+}
+
+/// `draft` of request `id` with field `name` set to `value`, as the library's form takes it.
+#[tauri::command]
+#[specta::specta]
+pub async fn human_edit_field(
+    app: tauri::State<'_, App>,
+    id: String,
+    draft: Draft,
+    name: String,
+    value: form::FieldValue,
+) -> Result<Draft, Failure> {
+    let id = parse(&id)?;
+    form::edit_field(&opened(&app, &id)?.request, draft, &name, value)
+}
+
+/// `draft` of request `id` with its owner-fields JSON replaced.
+#[tauri::command]
+#[specta::specta]
+pub async fn human_edit_json(
+    app: tauri::State<'_, App>,
+    id: String,
+    draft: Draft,
+    json: String,
+) -> Result<Draft, Failure> {
+    let id = parse(&id)?;
+    form::edit_json(&opened(&app, &id)?.request, draft, json)
 }
 
 /// Submit `draft` for request `id` and publish it like `request submit`. A result the
@@ -499,6 +545,7 @@ pub async fn human_submit(
     job: JobId,
 ) -> Result<Submitted, Failure> {
     let id = parse(&id)?;
+    guard(&app, &id, review::review_refusal).await?;
     let request = opened(&app, &id)?;
     let result = form::result(&request.request, draft)?;
     let outcome = run_job(
@@ -548,6 +595,9 @@ pub async fn human_release(
         .iter()
         .map(|id| parse(id))
         .collect::<Result<Vec<_>, _>>()?;
+    if let [id] = ids.as_slice() {
+        guard(&app, id, review::release_refusal).await?;
+    }
     let outcome = run_job(
         &app,
         job,

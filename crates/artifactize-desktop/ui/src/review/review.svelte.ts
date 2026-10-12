@@ -18,39 +18,29 @@ import type {
 
 export type Area = "instruction" | "tools" | "fields";
 
-const CLAIM_FIRST = "Claim this request before reviewing it.";
-
-/** A field's empty draft value, by how it is entered. */
-function initial(field: FormField): FieldValue {
-  switch (field.input.kind) {
-    case "fixed":
-      return { kind: "fixed" };
-    case "bool":
-      return { kind: "bool", value: null };
-    case "choice":
-      return { kind: "choice", value: null };
-    case "text":
-      return { kind: "text", value: "" };
-    case "integer":
-      return { kind: "integer", value: "" };
-    case "number":
-      return { kind: "number", value: "" };
-  }
-}
-
-/** The draft of one verdict; it survives switching verdicts and leaving the Detail. */
+/** The draft of one verdict; it survives switching verdicts and leaving the Detail. The library
+ * owns what an edit means: every edit is sent to it and the answer replaces the draft. What was
+ * typed shows at once meanwhile, and is rolled back if the library refuses it. */
 export class FormDraft {
+  readonly id: string;
   readonly verdict: Verdict;
   readonly fields: FormField[];
   values = $state<Record<string, FieldValue>>({});
   json = $state<string | null>(null);
   error = $state<string | null>(null);
+  /** Counts edits: only the newest answer replaces the draft. */
+  #edits = 0;
 
-  constructor(view: FormView) {
+  constructor(id: string, view: FormView) {
+    this.id = id;
     this.verdict = view.verdict;
     this.fields = view.fields;
-    this.json = view.json;
-    this.values = Object.fromEntries(view.fields.map((field) => [field.name, initial(field)]));
+    this.#adopt(view.draft);
+  }
+
+  #adopt(draft: Draft) {
+    this.json = draft.json;
+    this.values = Object.fromEntries(draft.fields);
   }
 
   draft(): Draft {
@@ -59,6 +49,33 @@ export class FormDraft {
       fields: Object.entries($state.snapshot(this.values)) as [string, FieldValue][],
       json: this.json,
     };
+  }
+
+  /** Set field `name`: shown now, then as the library's form takes it. */
+  async set(name: string, value: FieldValue): Promise<void> {
+    const before = this.draft();
+    this.values[name] = value;
+    await this.#ask(before, (draft) => call(commands.humanEditField(this.id, draft, name, value)));
+  }
+
+  /** Replace the owner-fields JSON text. */
+  async setJson(text: string): Promise<void> {
+    const before = this.draft();
+    this.json = text;
+    await this.#ask(before, (draft) => call(commands.humanEditJson(this.id, draft, text)));
+  }
+
+  async #ask(before: Draft, edit: (draft: Draft) => Promise<Draft>): Promise<void> {
+    const mine = ++this.#edits;
+    try {
+      const answer = await edit(this.draft());
+      if (mine === this.#edits) this.#adopt(answer);
+    } catch (error) {
+      if (mine === this.#edits) {
+        this.#adopt(before);
+        this.error = message(error);
+      }
+    }
   }
 }
 
@@ -131,15 +148,6 @@ export class Review {
   /** Claim explicitly; tools and submission never claim. */
   async claim(): Promise<void> {
     if (this.busy || this.settled) return;
-    if (!this.claimable) {
-      if (this.view?.claim && !this.view.claim.mine) {
-        this.notice = {
-          text: `Claimed by ${this.view.claim.reviewer}; read-only for ${this.view.reviewer}.`,
-          error: true,
-        };
-      }
-      return;
-    }
     try {
       const acted = await this.#job("Claiming the review", (job) =>
         call(commands.humanClaim(this.id, job, this.standalone)),
@@ -152,10 +160,6 @@ export class Review {
 
   async release(): Promise<void> {
     if (this.busy || this.settled) return;
-    if (!this.owned) {
-      this.notice = { text: "The request is not claimed.", error: true };
-      return;
-    }
     try {
       const acted = await this.#job("Releasing the claim", (job) =>
         call(commands.humanRelease([this.id], job)),
@@ -169,17 +173,13 @@ export class Review {
   /** Open the form of `verdict`, keeping the other verdict's draft. */
   async choose(verdict: Verdict): Promise<void> {
     if (this.busy || this.settled) return;
-    if (!this.owned) {
-      this.notice = { text: CLAIM_FIRST, error: true };
-      return;
-    }
     this.area = "fields";
     const choice = ++this.#choice;
     if (this.form?.verdict === verdict) return;
     let draft = this.#drafts.get(verdict);
     if (!draft) {
       try {
-        draft = new FormDraft(await call(commands.humanForm(this.id, verdict)));
+        draft = new FormDraft(this.id, await call(commands.humanForm(this.id, verdict)));
       } catch (error) {
         if (choice === this.#choice) this.notice = { text: message(error), error: true };
         return;
@@ -229,10 +229,6 @@ export class Review {
       this.notice = { text: "Choose GREEN or RED first.", error: true };
       return null;
     }
-    if (!this.owned) {
-      form.error = CLAIM_FIRST;
-      return null;
-    }
     try {
       const submitted = await this.#job(`Submitting ${form.verdict}`, (job) =>
         call(commands.humanSubmit(this.id, form.draft(), job)),
@@ -263,10 +259,6 @@ export class Review {
       return;
     }
     this.tool = index;
-    if (!this.owned) {
-      this.notice = { text: CLAIM_FIRST, error: true };
-      return;
-    }
     try {
       const ran = await this.#job(`Running ${tool.name}`, (job) =>
         call(commands.humanRun(this.id, tool.name, job)),

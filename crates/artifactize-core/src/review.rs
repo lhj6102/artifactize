@@ -50,6 +50,58 @@ use crate::{
     types::RequestId,
 };
 
+/// The refusal for reviewing a request nobody claimed.
+pub const CLAIM_FIRST: &str = "Claim this request before reviewing it.";
+/// The refusal for releasing a claim that is not this reviewer's.
+pub const NOT_CLAIMED: &str = "The request is not claimed.";
+
+/// What `reviewer` may do with the request now: its id and whether nobody holds the claim
+/// yet, or why it is read-only (loading, settled, claimed by someone else). Every interface
+/// asks this, so they refuse alike.
+pub fn actionable(
+    view: Option<&crate::store::RequestView>,
+    reviewer: &crate::types::ReviewerId,
+) -> Result<(RequestId, bool), String> {
+    let view = view.ok_or("The request is still loading.")?;
+    if view.request.status() != crate::types::RequestStatus::WaitingHuman {
+        return Err(format!(
+            "The request is {}; there is nothing to review.",
+            view.request.status()
+        ));
+    }
+    match &view.claim {
+        Some(claim) if &claim.reviewer != reviewer => Err(format!(
+            "Claimed by {}; read-only for {}.",
+            claim.reviewer, reviewer
+        )),
+        claim => Ok((view.request.id.clone(), claim.is_none())),
+    }
+}
+
+/// The refusal for choosing a verdict, running a tool or submitting, as the reviewer sees it:
+/// only the claimant reviews, and a claim is always the explicit one.
+pub fn review_refusal(
+    view: Option<&crate::store::RequestView>,
+    reviewer: &crate::types::ReviewerId,
+) -> Option<String> {
+    match actionable(view, reviewer) {
+        Ok((_, false)) => None,
+        Ok((_, true)) | Err(_) => Some(CLAIM_FIRST.into()),
+    }
+}
+
+/// The refusal for releasing: only a claim of this reviewer is released.
+pub fn release_refusal(
+    view: Option<&crate::store::RequestView>,
+    reviewer: &crate::types::ReviewerId,
+) -> Option<String> {
+    match actionable(view, reviewer) {
+        Ok((_, false)) => None,
+        Ok((_, true)) => Some(NOT_CLAIMED.into()),
+        Err(error) => Some(error),
+    }
+}
+
 /// Redraw cached claim times and durations; database refresh uses invalidation hints.
 const REFRESH: Duration = Duration::from_secs(1);
 /// Animate running tools at ten frames per second, independently of database refresh.
@@ -483,23 +535,7 @@ impl Review {
 
     /// The open request when this reviewer may act on it.
     fn actionable(&self) -> Result<(RequestId, bool), String> {
-        let view = self
-            .request
-            .as_ref()
-            .ok_or("The request is still loading.")?;
-        if view.request.status() != crate::types::RequestStatus::WaitingHuman {
-            return Err(format!(
-                "The request is {}; there is nothing to review.",
-                view.request.status()
-            ));
-        }
-        match &view.claim {
-            Some(claim) if claim.reviewer != self.reviewer => Err(format!(
-                "Claimed by {}; read-only for {}.",
-                claim.reviewer, self.reviewer
-            )),
-            claim => Ok((view.request.id.clone(), claim.is_none())),
-        }
+        actionable(self.request.as_ref(), &self.reviewer)
     }
 
     fn notify(&mut self, message: impl Into<String>, error: bool) -> Action {
@@ -719,7 +755,7 @@ impl Review {
     fn owned_request(&self) -> Result<RequestId, String> {
         match self.actionable()? {
             (id, false) => Ok(id),
-            (_, true) => Err("Claim this request before reviewing it.".into()),
+            (_, true) => Err(CLAIM_FIRST.into()),
         }
     }
 
@@ -729,7 +765,7 @@ impl Review {
                 ids: vec![id],
                 quit: false,
             }),
-            (Ok(_), false) => self.notify("The request is not claimed.", true),
+            (Ok(_), false) => self.notify(NOT_CLAIMED, true),
             (Err(error), _) => self.notify(error, true),
         }
     }

@@ -279,8 +279,10 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
         "human_run",
         json!({"id": id, "tool": "notes_release", "job": 1}),
     )
-    .unwrap();
-    assert_eq!(refused["notice"]["error"], json!(true));
+    .unwrap_err();
+    // The library's own refusal, in its words.
+    assert_eq!(refused["kind"], "action");
+    assert_eq!(refused["message"], artifactize_core::review::CLAIM_FIRST);
     assert!(saved(&fixture, "release/signoff").claim.is_none());
 
     let claimed = invoke(

@@ -54,17 +54,19 @@ pub struct FormField {
     pub input: FieldInput,
 }
 
-/// A new form: typed `fields`, or `json` text to edit when the schema is not flat.
+/// A new form: typed `fields`, or `json` text to edit when the schema is not flat, with the
+/// draft the library starts it from.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct FormView {
     pub verdict: Verdict,
     pub fields: Vec<FormField>,
     pub json: Option<String>,
+    pub draft: Draft,
 }
 
 /// A field's draft value, by the field's kind.
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(tag = "kind", content = "value", rename_all = "camelCase")]
 pub enum FieldValue {
     Fixed,
@@ -77,7 +79,7 @@ pub enum FieldValue {
 }
 
 /// The frontend's draft of one verdict: field values by name, or JSON text.
-#[derive(Debug, Clone, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Draft {
     pub verdict: Verdict,
@@ -113,10 +115,12 @@ pub fn template(request: &Request, verdict: Verdict) -> Result<FormView, Failure
             },
         })
         .collect();
+    let draft = draft_of(verdict, &form);
     Ok(FormView {
         verdict,
         fields,
         json: form.json,
+        draft,
     })
 }
 
@@ -150,6 +154,54 @@ fn filled(request: &Request, draft: Draft) -> Result<Form, Failure> {
         }
     }
     Ok(form)
+}
+
+/// A field's draft value as the form holds it.
+fn value_of(input: &Input) -> FieldValue {
+    match input {
+        Input::Fixed(_) => FieldValue::Fixed,
+        Input::Bool(value) => FieldValue::Bool(*value),
+        Input::Choice(_, index) => FieldValue::Choice(index.map(|index| index as u32)),
+        Input::Text(text) => FieldValue::Text(text.clone()),
+        Input::Integer(text) => FieldValue::Integer(text.clone()),
+        Input::Number(text) => FieldValue::Number(text.clone()),
+    }
+}
+
+/// The draft a form holds: each field's value, or its JSON text.
+fn draft_of(verdict: Verdict, form: &Form) -> Draft {
+    Draft {
+        verdict,
+        fields: form
+            .fields
+            .iter()
+            .map(|field| (field.name.clone(), value_of(&field.input)))
+            .collect(),
+        json: form.json.clone(),
+    }
+}
+
+/// `draft` with field `name` set to `value`, as the library's form takes it.
+pub fn edit_field(
+    request: &Request,
+    mut draft: Draft,
+    name: &str,
+    value: FieldValue,
+) -> Result<Draft, Failure> {
+    draft.json = None;
+    match draft.fields.iter_mut().find(|(field, _)| field == name) {
+        Some((_, current)) => *current = value,
+        None => draft.fields.push((name.to_owned(), value)),
+    }
+    let verdict = draft.verdict;
+    Ok(draft_of(verdict, &filled(request, draft)?))
+}
+
+/// `draft` with its owner-fields JSON text replaced.
+pub fn edit_json(request: &Request, mut draft: Draft, json: String) -> Result<Draft, Failure> {
+    draft.json = Some(json);
+    let verdict = draft.verdict;
+    Ok(draft_of(verdict, &filled(request, draft)?))
 }
 
 /// The complete result of `draft`, or the form's own error for it.

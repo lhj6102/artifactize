@@ -28,6 +28,10 @@ export const commands = {
 	 *  hands to `$EDITOR`.
 	 */
 	humanJson: (id: string, draft: Draft) => typedError<string, Failure>(__TAURI_INVOKE("human_json", { id, draft })),
+	/**  `draft` of request `id` with field `name` set to `value`, as the library's form takes it. */
+	humanEditField: (id: string, draft: Draft, name: string, value: FieldValue) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_field", { id, draft, name, value })),
+	/**  `draft` of request `id` with its owner-fields JSON replaced. */
+	humanEditJson: (id: string, draft: Draft, json: string) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_json", { id, draft, json })),
 	/**
 	 *  Claim request `id` for this reviewer; nothing else claims. The standalone review offers
 	 *  its claims for release on quit; the monitor keeps them, as in the terminal.
@@ -279,11 +283,15 @@ export type FormField = {
 	input: FieldInput,
 };
 
-/**  A new form: typed `fields`, or `json` text to edit when the schema is not flat. */
+/**
+ *  A new form: typed `fields`, or `json` text to edit when the schema is not flat, with the
+ *  draft the library starts it from.
+ */
 export type FormView = {
 	verdict: Verdict,
 	fields: FormField[],
 	json: string | null,
+	draft: Draft,
 };
 
 /**  `target`'s evals depend on `source`; both are tree ids. */

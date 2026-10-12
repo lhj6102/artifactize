@@ -27,6 +27,7 @@ export const redForm: FormView = {
   verdict: "RED",
   fields: [{ name: "reason", required: true, hint: "string, minLength 3", input: { kind: "text" } }],
   json: null,
+  draft: { verdict: "RED", fields: [["reason", { kind: "text", value: "" }]], json: null },
 };
 
 export const greenForm: FormView = {
@@ -36,4 +37,12 @@ export const greenForm: FormView = {
     { name: "comment", required: true, hint: "string", input: { kind: "text" } },
   ],
   json: null,
+  draft: {
+    verdict: "GREEN",
+    fields: [
+      ["approved", { kind: "fixed" }],
+      ["comment", { kind: "text", value: "" }],
+    ],
+    json: null,
+  },
 };

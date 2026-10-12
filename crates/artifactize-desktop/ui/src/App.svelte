@@ -4,7 +4,7 @@
   import { Tabs } from "bits-ui";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
-  import { call, commands, message, onStateChanged, type LaunchView } from "./ipc/client";
+  import { call, commands, message, onStateChanged } from "./ipc/client";
   import { Browse } from "./monitor/browse.svelte";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewScreen from "./review/ReviewScreen.svelte";
@@ -16,23 +16,21 @@
   import { useCommands } from "./shell/commands.svelte";
   import { chord, composing, plain } from "./shell/keys";
   import { HELP } from "./shell/help";
+  import { AppState, setAppState } from "./shell/app.svelte";
   import { Leaving } from "./shell/leaving.svelte";
 
-  let launch = $state.raw<LaunchView | null>(null);
-  let failure = $state<string | null>(null);
-  let screen = $state<"monitor" | "review" | "settings">("monitor");
-  let palette = $state(false);
-  let help = $state(false);
+  const app = new AppState();
+  setAppState(app);
   const leaving = new Leaving();
   const browse = new Browse();
 
   onMount(() => {
     call(commands.launch()).then(
       (view) => {
-        launch = view;
-        screen = view.mode;
+        app.launch = view;
+        app.screen = view.mode;
       },
-      (error) => (failure = message(error)),
+      (error) => (app.failure = message(error)),
     );
     void browse.navigate({ full: true });
     // Ages and running times redraw from the snapshot; nothing is read.
@@ -55,11 +53,11 @@
   }
 
   useCommands(() => [
-    { id: "app.palette", group: "App", label: "Command palette", keys: "Ctrl+K", run: () => (palette = true) },
-    { id: "app.help", group: "App", label: "Keyboard shortcuts", keys: "?", run: () => (help = true) },
-    { id: "app.monitor", group: "App", label: "Show Monitor", keys: "Ctrl+1", run: () => (screen = "monitor") },
-    { id: "app.review", group: "App", label: "Show Review", keys: "Ctrl+2", run: () => (screen = "review") },
-    { id: "app.settings", group: "App", label: "Show Settings", keys: "Ctrl+,", run: () => (screen = "settings") },
+    { id: "app.palette", group: "App", label: "Command palette", keys: "Ctrl+K", run: () => (app.palette = true) },
+    { id: "app.help", group: "App", label: "Keyboard shortcuts", keys: "?", run: () => (app.help = true) },
+    { id: "app.monitor", group: "App", label: "Show Monitor", keys: "Ctrl+1", run: () => (app.screen = "monitor") },
+    { id: "app.review", group: "App", label: "Show Review", keys: "Ctrl+2", run: () => (app.screen = "review") },
+    { id: "app.settings", group: "App", label: "Show Settings", keys: "Ctrl+,", run: () => (app.screen = "settings") },
     { id: "app.quit", group: "App", label: "Quit", keys: "q", run: () => void quit() },
   ]);
 
@@ -67,16 +65,16 @@
     if (event.defaultPrevented || composing(event)) return;
     if (chord(event, "k") || (event.key === "F1" && !event.ctrlKey)) {
       event.preventDefault();
-      palette = true;
+      app.palette = true;
     } else if (chord(event, "1") || chord(event, "2")) {
       event.preventDefault();
-      screen = chord(event, "1") ? "monitor" : "review";
+      app.screen = chord(event, "1") ? "monitor" : "review";
     } else if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key === "," || event.code === "Comma")) {
       event.preventDefault();
-      screen = "settings";
+      app.screen = "settings";
     } else if (plain(event, "?")) {
       event.preventDefault();
-      help = true;
+      app.help = true;
     } else if (plain(event, "q")) {
       event.preventDefault();
       void quit();
@@ -93,7 +91,7 @@
 <div class="app">
   <header class="bar">
     <div class="brand">artifactize</div>
-    <Tabs.Root bind:value={screen}>
+    <Tabs.Root bind:value={app.screen}>
       <Tabs.List class="tabs" aria-label="Screens">
         <Tabs.Trigger class="tab" value="monitor">Monitor</Tabs.Trigger>
         <Tabs.Trigger class="tab" value="review">Review</Tabs.Trigger>
@@ -102,36 +100,36 @@
     <div class="spacer"></div>
     {#if browse.view && !browse.view.refreshed}<span class="muted">loading…</span>{/if}
     <Badge counts={browse.view?.badge ?? []} />
-    {#if launch}<span class="muted" title="Reviewer">{launch.reviewer}</span>{/if}
+    {#if app.launch}<span class="muted" title="Reviewer">{app.launch.reviewer}</span>{/if}
     <button
       class="button"
-      aria-pressed={screen === "settings"}
-      onclick={() => (screen = "settings")}
+      aria-pressed={app.screen === "settings"}
+      onclick={() => (app.screen = "settings")}
       title="Accounts, keys, models and the remote store (Ctrl+,)">Settings</button
     >
-    <button class="button" onclick={() => (palette = true)} title="Command palette">
+    <button class="button" onclick={() => (app.palette = true)} title="Command palette">
       Commands <kbd>Ctrl+K</kbd>
     </button>
   </header>
-  {#if failure}
-    <p class="failure">{failure}</p>
-  {:else if launch}
+  {#if app.failure}
+    <p class="failure">{app.failure}</p>
+  {:else if app.launch}
     <main>
-      <div class="screen" hidden={screen !== "monitor"}>
-        <Monitor {browse} active={screen === "monitor"} />
+      <div class="screen" hidden={app.screen !== "monitor"}>
+        <Monitor {browse} active={app.screen === "monitor"} />
       </div>
-      <div class="screen" hidden={screen !== "review"}>
-        <ReviewScreen {launch} active={screen === "review"} />
+      <div class="screen" hidden={app.screen !== "review"}>
+        <ReviewScreen launch={app.launch} active={app.screen === "review"} />
       </div>
-      <div class="screen" hidden={screen !== "settings"}>
-        <Settings active={screen === "settings"} />
+      <div class="screen" hidden={app.screen !== "settings"}>
+        <Settings active={app.screen === "settings"} />
       </div>
     </main>
   {/if}
 </div>
 
-<Palette bind:open={palette} />
-<Help bind:open={help} sections={HELP[screen]} />
+<Palette bind:open={app.palette} />
+<Help bind:open={app.help} sections={HELP[app.screen]} />
 <LeaveDialog
   taken={leaving.taken}
   onstay={() => leaving.stay()}

@@ -115,7 +115,7 @@ impl Review {
             return Action::None;
         }
         if self.actionable().is_err() || !self.owned() {
-            return self.notify("Claim this request before reviewing it.", true);
+            return self.notify(super::CLAIM_FIRST, true);
         }
         match control {
             Control::Green | Control::Red => {

@@ -20,7 +20,7 @@
   };
 
   function set(name: string, value: FieldValue) {
-    form.values[name] = value;
+    void form.set(name, value);
   }
 
   /** Tab indents JSON, as in the terminal; Shift+Tab still leaves the field. */
@@ -29,7 +29,7 @@
     event.preventDefault();
     const area = event.currentTarget as HTMLTextAreaElement;
     area.setRangeText("  ", area.selectionStart, area.selectionEnd, "end");
-    form.json = area.value;
+    void form.setJson(area.value);
   }
 
   const text = (value: FieldValue) => ("value" in value && typeof value.value === "string" ? value.value : "");
@@ -60,7 +60,8 @@
       <textarea
         class="json"
         spellcheck="false"
-        bind:value={form.json}
+        value={form.json}
+        oninput={(event) => void form.setJson((event.currentTarget as HTMLTextAreaElement).value)}
         onkeydown={indent}
         rows="12"
       ></textarea>

@@ -28,6 +28,13 @@ function backend(stage: "claim" | "review", submit?: (args: Record<string, unkno
         return submit?.(args as Record<string, unknown>);
       case "human_json":
         return '{\n  "approved": true,\n  "comment": ""\n}';
+      case "human_edit_field": {
+        // The library's form takes the value as typed.
+        const edit = args as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
+        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
+      }
+      case "human_edit_json":
+        return { ...(args as { draft: object }).draft, json: (args as { json: string }).json };
       default:
         return null;
     }
