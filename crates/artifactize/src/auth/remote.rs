@@ -284,6 +284,21 @@ fn transport(error: reqwest::Error) -> Failure {
     }
 }
 
+/// A store's own explanation, safe to show and save: the token it was sent (a store or proxy
+/// may echo the Authorization header) is redacted before anything is cut, so no part of it
+/// survives, then control characters go and the text is clipped.
+fn diagnostic(error: &str, token: Option<&str>) -> String {
+    let redacted = match token.filter(|token| !token.is_empty()) {
+        Some(token) => error.replace(token, "[redacted]"),
+        None => error.to_owned(),
+    };
+    redacted
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_ERROR_CHARS)
+        .collect()
+}
+
 impl Remote {
     fn request(&self, method: Method, route: &str) -> Result<reqwest::RequestBuilder, Failure> {
         // One client per process reuses connections and the loaded trust store.
@@ -328,13 +343,9 @@ impl Remote {
                 // A client error explains itself, for example a store of another schema.
                 let detail = if status.is_client_error() {
                     response.json::<Value>().await.ok().and_then(|body| {
-                        body["error"].as_str().map(|error| {
-                            error
-                                .chars()
-                                .filter(|c| !c.is_control())
-                                .take(MAX_ERROR_CHARS)
-                                .collect::<String>()
-                        })
+                        body["error"]
+                            .as_str()
+                            .map(|error| diagnostic(error, self.token.as_deref()))
                     })
                 } else {
                     None
@@ -502,6 +513,22 @@ pub fn logout(state: Option<&Path>, repo: Option<&Path>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_store_diagnostic_never_carries_the_token() {
+        let token = "azt_0123456789abcdef0123456789abcdef";
+        // Echoed whole, inside the clip, or where the clip would cut it.
+        for error in [
+            format!("Bad request: Authorization: Bearer {token}"),
+            format!("{}{token}", "x".repeat(MAX_ERROR_CHARS - 10)),
+            format!("{token}\n{token}"),
+        ] {
+            let shown = diagnostic(&error, Some(token));
+            assert!(!shown.contains(&token[..8]), "{shown}");
+            assert!(shown.chars().count() <= MAX_ERROR_CHARS);
+        }
+        assert_eq!(diagnostic("Unknown schema.\n", None), "Unknown schema.");
+    }
 
     #[test]
     fn nested_invalid_data_is_a_tls_failure() {

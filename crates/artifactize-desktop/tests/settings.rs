@@ -4,6 +4,7 @@
 //! login|status|logout`. One test, so this process's environment is its own.
 use artifactize_desktop::{Launch, Mode};
 use serde_json::{Value, json};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{
     WebviewWindow,
     ipc::{CallbackFn, InvokeBody},
@@ -19,6 +20,10 @@ use support::{FakeProvider, Reply, codex, openai};
 
 const OPENAI_KEY: &str = "sk-desktop-settings-secret";
 const REMOTE_TOKEN: &str = "azt_desktopsettingstoken0123456789";
+/// Answered with a client error that echoes it back.
+const ECHO_TOKEN: &str = "azt_echoedbythestore0123456789abcd";
+/// Every whoami echoes its Authorization header in a client error.
+static ECHO: AtomicBool = AtomicBool::new(false);
 
 fn invoke(window: &WebviewWindow<MockRuntime>, command: &str, args: Value) -> Result<Value, Value> {
     tauri::test::get_ipc_response(
@@ -58,6 +63,16 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
                 codex::tokens(&codex::jwt("account-1", codex::VALID_EXPIRY), "refresh-1")
             }
             ("POST", "/oauth/revoke") => Reply::Json(200, json!({})),
+            // A store or proxy that echoes the Authorization header in a client error.
+            ("GET", "/v1/whoami") if ECHO.load(Ordering::SeqCst) || bearer(ECHO_TOKEN) => {
+                Reply::Json(
+                    400,
+                    json!({"error": format!(
+                        "Bad request; Authorization: {}",
+                        request.headers.get("authorization").cloned().unwrap_or_default()
+                    )}),
+                )
+            }
             ("GET", "/v1/whoami") if bearer(REMOTE_TOKEN) => Reply::Json(
                 200,
                 json!({"principal":"alice-laptop","scopes":["read","publish"]}),
@@ -107,10 +122,10 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     let call = |command: &str, args: Value| invoke(&window, command, args);
     let secret_free = |value: &Value| {
         let text = value.to_string();
-        assert!(
-            !text.contains(OPENAI_KEY) && !text.contains(REMOTE_TOKEN),
-            "{text}"
-        );
+        for secret in [OPENAI_KEY, REMOTE_TOKEN, ECHO_TOKEN] {
+            // Not even a prefix of it.
+            assert!(!text.contains(&secret[..12]), "{text}");
+        }
     };
 
     // API keys: whether each is in the environment, never its value.
@@ -266,6 +281,17 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         call("remote_status", json!({})).unwrap()["configured"],
         json!(false)
     );
+    // Signing in with a token the store echoes back: refused, and never shown.
+    let echoed = call(
+        "remote_login",
+        json!({"url": store, "share": "summary", "token": ECHO_TOKEN}),
+    )
+    .unwrap_err();
+    secret_free(&echoed);
+    assert_eq!(
+        echoed["message"],
+        "The remote store answered HTTP 400: Bad request; Authorization: Bearer [redacted]"
+    );
     let invalid = call(
         "remote_login",
         json!({"url": "http://reviews.example/", "share": "summary", "token": REMOTE_TOKEN}),
@@ -292,6 +318,24 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         })
     );
     assert_eq!(call("remote_status", json!({})).unwrap(), status);
+    // A store that echoes the saved token in a client error: status and push say so, without
+    // the token.
+    ECHO.store(true, Ordering::SeqCst);
+    let echoed = call("remote_status", json!({})).unwrap();
+    secret_free(&echoed);
+    assert_eq!(echoed["reachable"], json!(true));
+    assert_eq!(echoed["principal"], Value::Null);
+    assert_eq!(
+        echoed["error"],
+        "The remote store answered HTTP 400: Bad request; Authorization: Bearer [redacted]"
+    );
+    let failed = call("remote_push", json!({"dryRun": true})).unwrap_err();
+    secret_free(&failed);
+    assert!(
+        failed["message"].as_str().unwrap().contains("[redacted]"),
+        "{failed}"
+    );
+    ECHO.store(false, Ordering::SeqCst);
     let pushed = call("remote_push", json!({"dryRun": true})).unwrap();
     assert_eq!(pushed["pushed"], json!(0));
     let out = call("remote_logout", json!({})).unwrap();

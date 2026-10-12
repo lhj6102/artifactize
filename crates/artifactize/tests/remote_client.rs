@@ -412,3 +412,52 @@ fn login_on_a_mintty_pipe_reads_the_token_visibly_with_a_warning() {
     assert!(stdout.contains("as alice-laptop"), "{stdout}");
     assert!(!stdout.contains(&token) && !stderr.contains(&token));
 }
+
+/// A store or proxy that answers whoami with a client error echoing the Authorization header.
+#[test]
+fn a_store_that_echoes_the_token_never_gets_it_printed() {
+    let root = support::os::tempdir();
+    let state = root.path().join("state");
+    let token = test_token();
+    let server = support::FakeProvider::start(|request| {
+        support::Reply::Json(
+            400,
+            json!({"error": format!(
+                "Bad request; Authorization: {}",
+                request.headers.get("authorization").cloned().unwrap_or_default()
+            )}),
+        )
+    });
+    let url = format!("{}/", server.url);
+    let echoed =
+        "The remote store answered HTTP 400: Bad request; Authorization: Bearer [redacted]";
+    // run() also checks that no output holds the token.
+    let refused = run(
+        artifactize(&state).args(["remote", "login", &url]),
+        &format!("{token}\n"),
+        &token,
+        2,
+    );
+    assert_eq!(refused["error"], echoed);
+    // A saved token the store later echoes: status and push say so without it.
+    let status = run(
+        artifactize(&state)
+            .args(["remote", "status"])
+            .env("ARTIFACTIZE_REMOTE", &url)
+            .env("ARTIFACTIZE_REMOTE_TOKEN", &token),
+        "",
+        &token,
+        1,
+    );
+    assert_eq!(status["error"], echoed);
+    let push = run(
+        artifactize(&state)
+            .args(["remote", "push"])
+            .env("ARTIFACTIZE_REMOTE", &url)
+            .env("ARTIFACTIZE_REMOTE_TOKEN", &token),
+        "",
+        &token,
+        2,
+    );
+    assert_eq!(push["error"], echoed);
+}
