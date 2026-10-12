@@ -2,6 +2,7 @@
   // Quitting with claims the standalone review took and did not submit: keep or release them.
   import { AlertDialog } from "bits-ui";
   import { commands, call, message, nextJob } from "../ipc/client";
+  import { composing } from "../shell/keys";
 
   let {
     taken,
@@ -26,7 +27,7 @@
   }
 
   function keydown(event: KeyboardEvent) {
-    if (working) return;
+    if (working || composing(event)) return;
     if (event.key === "k") onleave();
     else if (event.key === "u") void release();
     else return;

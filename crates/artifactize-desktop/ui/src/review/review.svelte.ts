@@ -11,6 +11,7 @@ import type {
   HumanView,
   Notice,
   Output,
+  Settled,
   Verdict,
 } from "../ipc/client";
 
@@ -76,6 +77,8 @@ export class Review {
   notice = $state<Notice | null>(null);
   form = $state<FormDraft | null>(null);
   #drafts = new Map<Verdict, FormDraft>();
+  /** Counts verdict choices: a form that arrives after a newer choice is not shown. */
+  #choice = 0;
 
   readonly settled = $derived(this.view?.stage === "completed");
   readonly owned = $derived(this.view?.stage === "review");
@@ -108,7 +111,7 @@ export class Review {
     if (view.stage === "completed") this.stopEditing();
   }
 
-  #acted(acted: Acted): void {
+  #acted(acted: Pick<Acted, "notice" | "view">): void {
     this.notice = acted.notice;
     if (acted.view) this.#show(acted.view);
   }
@@ -170,15 +173,18 @@ export class Review {
       return;
     }
     this.area = "fields";
+    const choice = ++this.#choice;
     if (this.form?.verdict === verdict) return;
     let draft = this.#drafts.get(verdict);
     if (!draft) {
       try {
         draft = new FormDraft(await call(commands.humanForm(this.id, verdict)));
       } catch (error) {
-        this.notice = { text: message(error), error: true };
+        if (choice === this.#choice) this.notice = { text: message(error), error: true };
         return;
       }
+      // Another verdict was chosen, or editing stopped, while this form was on its way.
+      if (choice !== this.#choice) return;
     }
     this.#drafts.delete(verdict);
     if (this.form) this.#drafts.set(this.form.verdict, this.form);
@@ -187,40 +193,55 @@ export class Review {
 
   /** Leave the form with its draft kept; the same verdict reopens it. */
   stopEditing(): void {
+    this.#choice += 1;
     if (this.form) this.#drafts.set(this.form.verdict, this.form);
     this.form = null;
   }
 
-  /** Submit the open form; the result returns `true` once the request is settled. */
-  async submit(): Promise<boolean> {
+  /** Edit the open typed form as owner-fields JSON, as the terminal review does in `$EDITOR`;
+   * the JSON stays this verdict's draft. */
+  async editJson(): Promise<void> {
     const form = this.form;
-    if (this.busy || this.settled) return false;
+    if (this.busy || !form || form.json !== null) return;
+    try {
+      const json = await call(commands.humanJson(this.id, form.draft()));
+      if (this.form === form && form.json === null) form.json = json;
+    } catch (error) {
+      form.error = message(error);
+    }
+  }
+
+  /** Submit the open form; the result says how the settled request stands, or `null` when
+   * nothing was settled. */
+  async submit(): Promise<Settled | null> {
+    const form = this.form;
+    if (this.busy || this.settled) return null;
     if (!form) {
       this.notice = { text: "Choose GREEN or RED first.", error: true };
-      return false;
+      return null;
     }
     if (!this.owned) {
       form.error = CLAIM_FIRST;
-      return false;
+      return null;
     }
     try {
-      const acted = await this.#job(`Submitting ${form.verdict}`, (job) =>
+      const submitted = await this.#job(`Submitting ${form.verdict}`, (job) =>
         call(commands.humanSubmit(this.id, form.draft(), job)),
       );
-      if (!acted) return false;
+      if (!submitted) return null;
       form.error = null;
       this.form = null;
       this.#drafts.clear();
       this.output = null;
-      this.#acted(acted);
-      return true;
+      this.#acted(submitted);
+      return submitted.settled;
     } catch (error) {
       if (error instanceof CommandError && error.failure.kind !== "read") {
         form.error = error.message;
       } else {
         this.notice = { text: message(error), error: true };
       }
-      return false;
+      return null;
     }
   }
 

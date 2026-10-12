@@ -7,6 +7,7 @@
     commands,
     message,
     onSessionChanged,
+    onStateChanged,
     type Movement,
     type TranscriptView,
   } from "../ipc/client";
@@ -35,10 +36,11 @@
   function measure(): boolean {
     if (!pane || !probe) return false;
     const cell = probe.getBoundingClientRect();
-    const width = cell.width / 10;
+    // Before layout (or without one) a cell is assumed 7 × 18 pixels.
+    const width = cell.width / 10 || 7;
     const height = cell.height || 18;
     const box = pane.getBoundingClientRect();
-    const columns = Math.max(Math.floor(box.width / width) - 1, 10);
+    const columns = Math.max(Math.floor(box.width / width) - 1, 10) || 10;
     const rows = peek ? PEEK_ROWS : Math.max(Math.floor(box.height / height), 3);
     const changed = columns !== size.columns || rows !== size.rows;
     size = { columns, rows };
@@ -73,36 +75,52 @@
     else if (view?.loading) setTimeout(() => void ask(), 30);
   }
 
+  let resolving = false;
+
+  /**
+   * Resolve the request's session, again whenever its state may have changed: a queued request
+   * gains a session once it runs, and the backend keeps an unchanged session's reader.
+   */
+  async function resolve() {
+    if (closed || resolving) return;
+    resolving = true;
+    try {
+      const opened = await call(commands.transcriptOpen(id, handle));
+      if (closed) {
+        if (opened.handle !== null) void commands.transcriptClose(opened.handle);
+        return;
+      }
+      const replaced = opened.handle !== handle;
+      handle = opened.handle;
+      session = opened.session;
+      unavailable = opened.text;
+      if (replaced) view = null;
+      if (handle !== null) void ask(null, null, true);
+    } catch (error) {
+      unavailable = message(error);
+    } finally {
+      resolving = false;
+    }
+  }
+
   onMount(() => {
-    let observer: ResizeObserver | undefined;
-    let timer: ReturnType<typeof setInterval> | undefined;
-    let stop: (() => void) | undefined;
-    call(commands.transcriptOpen(id)).then(
-      (opened) => {
-        if (closed) {
-          if (opened.handle !== null) void commands.transcriptClose(opened.handle);
-          return;
-        }
-        handle = opened.handle;
-        session = opened.session;
-        unavailable = opened.text;
-        measure();
-        void ask();
-        observer = new ResizeObserver(() => {
-          if (measure()) void ask();
-        });
-        if (pane) observer.observe(pane);
-        timer = setInterval(() => void ask(null, null, true), PROBE_MS);
-        stop = onSessionChanged((changed) => {
-          if (changed === session) void ask(null, null, true);
-        });
-      },
-      (error) => (unavailable = message(error)),
-    );
+    measure();
+    void resolve();
+    const observer = new ResizeObserver(() => {
+      if (measure()) void ask();
+    });
+    if (pane) observer.observe(pane);
+    // Missed appends and removals show within the probe; without a session yet, resolve again.
+    const timer = setInterval(() => (handle === null ? void resolve() : void ask(null, null, true)), PROBE_MS);
+    const stopSession = onSessionChanged((changed) => {
+      if (changed === session) void ask(null, null, true);
+    });
+    const stopState = onStateChanged(() => void resolve());
     return () => {
-      observer?.disconnect();
+      observer.disconnect();
       clearInterval(timer);
-      stop?.();
+      stopSession();
+      stopState();
     };
   });
 

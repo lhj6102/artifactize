@@ -2,13 +2,13 @@
   // The one Human review component, shared by the monitor's Detail and the Review screen:
   // instruction first, then CLAIM → REVIEW with tools, output and the GREEN/RED fields.
   import { onMount } from "svelte";
-  import { onStateChanged } from "../ipc/client";
+  import { onStateChanged, type Settled } from "../ipc/client";
   import type { Review } from "./review.svelte";
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import Tools from "./Tools.svelte";
   import VerdictForm from "./VerdictForm.svelte";
   import { useCommands } from "../shell/commands.svelte";
-  import { chord, editable, label, plain } from "../shell/keys";
+  import { chord, composing, editable, label, plain } from "../shell/keys";
   import { tone } from "../shell/tone";
 
   let {
@@ -21,7 +21,8 @@
     /** Its screen is shown: only then it offers palette commands. */
     active?: boolean;
     onback: () => void;
-    onsubmitted?: () => void;
+    /** A submission settled the request, published or saved locally only. */
+    onsubmitted?: (settled: Settled) => void;
   } = $props();
 
   /** Rows the instruction keeps once tools and fields take the body. */
@@ -55,7 +56,8 @@
   });
 
   async function submit() {
-    if (await review.submit()) onsubmitted?.();
+    const settled = await review.submit();
+    if (settled) onsubmitted?.(settled);
   }
 
   function back() {
@@ -67,7 +69,8 @@
   }
 
   function keydown(event: KeyboardEvent) {
-    if (event.defaultPrevented) return;
+    // Keys of an input method's composition, Escape included, belong to the composition.
+    if (event.defaultPrevented || composing(event)) return;
     const handled = () => {
       event.preventDefault();
       event.stopPropagation();
@@ -87,6 +90,7 @@
     else if (chord(event, "r")) void review.choose("RED");
     else if (chord(event, "u")) void review.release();
     else if (chord(event, "s")) void submit();
+    else if (chord(event, "e")) void review.editJson();
     else if (editable(event.target) && review.editing) return;
     else if (plain(event, "c")) void review.claim();
     else if (plain(event, "g")) void review.choose("GREEN");
@@ -108,7 +112,7 @@
       if (tools) list.push("↑↓ tool", review.owned ? "Enter run" : review.claimable ? "c claim, then Enter run" : "");
       else if (review.claimable) list.push("c claim");
     } else if (review.editing) {
-      list.push("Ctrl+S submit", "Ctrl+G/R verdict", "Esc stop editing");
+      list.push("Ctrl+S submit", "Ctrl+G/R verdict", "Ctrl+E JSON", "Esc stop editing");
     } else if (review.owned) {
       list.push("g GREEN", "r RED", "u release");
     } else if (review.claimable) {
@@ -126,6 +130,7 @@
       { id: "human.green", group: "Human review", label: "GREEN form", keys: "g", enabled: () => ready() && review.owned, run: () => void review.choose("GREEN") },
       { id: "human.red", group: "Human review", label: "RED form", keys: "r", enabled: () => ready() && review.owned, run: () => void review.choose("RED") },
       { id: "human.submit", group: "Human review", label: "Submit", keys: "Ctrl+S", enabled: () => ready() && review.editing, run: () => void submit() },
+      { id: "human.json", group: "Human review", label: "Edit the form as JSON", keys: "Ctrl+E", enabled: () => ready() && review.editing && review.form?.json === null, run: () => void review.editJson() },
       { id: "human.release", group: "Human review", label: "Release the claim", keys: "u", enabled: () => ready() && review.owned, run: () => void review.release() },
       { id: "human.run", group: "Human review", label: "Run the selected tool", keys: "Enter", enabled: () => ready() && review.owned && (view?.tools.length ?? 0) > 0, run: () => void review.run() },
       { id: "human.cancel", group: "Human review", label: "Cancel the running job", keys: "Esc", enabled: () => review.busy !== null, run: () => review.cancel() },

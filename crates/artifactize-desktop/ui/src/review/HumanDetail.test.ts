@@ -83,6 +83,21 @@ describe("HumanDetail", () => {
     expect(((await screen.findByLabelText(/reason/)) as HTMLTextAreaElement).value).toBe("no");
   });
 
+  it("leaves an input method its Escape: a composing Escape neither stops editing nor leaves", async () => {
+    backend("review");
+    let left = 0;
+    render(HumanDetail, { review: new Review("run-a-2", false), onback: () => (left += 1) });
+    const region = await screen.findByLabelText("Human review");
+    await screen.findByText("REVIEW (yours)");
+    await fireEvent.keyDown(region, { key: "g" });
+    const comment = await screen.findByLabelText(/comment/);
+    await fireEvent.keyDown(comment, { key: "Escape", isComposing: true });
+    await fireEvent.keyDown(comment, { key: "Escape", keyCode: 229 });
+    await fireEvent.keyDown(region, { key: "Escape", keyCode: 229 });
+    expect(screen.queryByLabelText(/comment/)).not.toBeNull();
+    expect(left).toBe(0);
+  });
+
   it("Esc stops editing first, then leaves", async () => {
     backend("review");
     let left = 0;

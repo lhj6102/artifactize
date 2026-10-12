@@ -18,6 +18,7 @@ export function humanView(stage: HumanView["stage"], overrides: Partial<HumanVie
     ],
     recorded: true,
     result: null,
+    generation: 0,
     ...overrides,
   };
 }

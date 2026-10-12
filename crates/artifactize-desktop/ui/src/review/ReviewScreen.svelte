@@ -3,7 +3,7 @@
   import { ContextMenu, Dialog } from "bits-ui";
   import { PaneGroup, Pane, PaneResizer } from "paneforge";
   import { onMount, tick } from "svelte";
-  import { call, commands, message, onStateChanged, type HumanView, type LaunchView, type WaitingRow } from "../ipc/client";
+  import { call, commands, message, onStateChanged, type HumanView, type LaunchView, type Settled, type WaitingRow } from "../ipc/client";
   import { Review } from "./review.svelte";
   import HumanDetail from "./HumanDetail.svelte";
   import Panel from "../shell/Panel.svelte";
@@ -27,12 +27,22 @@
   let wanted = $state("");
   let list = $state<HTMLElement>();
   let notice = $state<string | null>(null);
+  /** The state generation the list and the open review were read from. */
+  let generation: number | null = null;
 
   const selected = $derived(rows[index] ?? null);
 
   async function load(reload = true) {
     try {
-      const next = await call(commands.humanWaiting(all, reload));
+      const waiting = await call(commands.humanWaiting(all, reload));
+      if (generation !== null && waiting.generation !== generation) {
+        // The state was replaced: the open review, its drafts and the Preview are of the old one.
+        review = null;
+        preview = null;
+        focus = "list";
+      }
+      generation = waiting.generation;
+      const next = waiting.rows;
       const id = selected?.id;
       rows = next;
       loaded = true;
@@ -56,7 +66,9 @@
   });
 
   $effect(() => {
-    // The read-only Preview of the selected request; opening it claims nothing.
+    // The read-only Preview of the selected request; opening it claims nothing. Every list
+    // read (and clock redraw) shows it again from the same snapshot as the list.
+    void rows;
     const id = selected?.id;
     if (!id || focus !== "list") return;
     let current = true;
@@ -84,8 +96,11 @@
     void load();
   }
 
-  async function submitted() {
+  async function submitted(settled: Settled) {
     await load();
+    // A result saved locally whose publication failed stays open with its failure, as in the
+    // terminal review; it is never offered for submission again.
+    if (settled === "savedLocally") return;
     review = null;
     await back();
     if (rows.length === 0) notice = "No Human reviews are waiting.";
@@ -217,7 +232,7 @@
       <Panel title={focus === "detail" ? "Review" : "Preview"} focused={focus === "detail"} onfocus={() => review && (focus = "detail")}>
         {#if focus === "detail" && review}
           {#key review}
-            <HumanDetail {review} {active} onback={() => void back()} onsubmitted={() => void submitted()} />
+            <HumanDetail {review} {active} onback={() => void back()} onsubmitted={(settled) => void submitted(settled)} />
           {/key}
         {:else if preview && selected}
           <!-- svelte-ignore a11y_click_events_have_key_events -->

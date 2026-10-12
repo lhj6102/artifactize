@@ -45,6 +45,11 @@
         {verdict} <kbd>{label(verdict === "GREEN" ? "Ctrl+G" : "Ctrl+R")}</kbd>
       </button>
     {/each}
+    {#if form.json === null}
+      <button class="verdict json" onclick={() => void review.editJson()}>
+        Edit as JSON <kbd>{label("Ctrl+E")}</kbd>
+      </button>
+    {/if}
   </div>
 
   {#if form.json !== null}
@@ -155,6 +160,9 @@
     border-radius: 6px;
     padding: 3px 12px;
     cursor: pointer;
+  }
+  .verdict.json {
+    margin-left: auto;
   }
   .verdict.green[aria-checked="true"] {
     color: var(--green);

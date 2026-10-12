@@ -15,13 +15,14 @@
   import { useCommands } from "./shell/commands.svelte";
   import { chord, composing, plain } from "./shell/keys";
   import { HELP } from "./shell/help";
+  import { Leaving } from "./shell/leaving.svelte";
 
   let launch = $state<LaunchView | null>(null);
   let failure = $state<string | null>(null);
   let screen = $state<"monitor" | "review">("monitor");
   let palette = $state(false);
   let help = $state(false);
-  let leaving = $state<string[] | null>(null);
+  const leaving = new Leaving();
   const browse = new Browse();
 
   onMount(() => {
@@ -38,13 +39,7 @@
     // Closing the window asks about this session's review claims first, like `q`.
     let unlisten: (() => void) | undefined;
     getCurrentWindow()
-      .onCloseRequested(async (event) => {
-        const taken = await commands.humanTaken();
-        if (taken.length > 0 && leaving === null) {
-          event.preventDefault();
-          leaving = taken;
-        }
-      })
+      .onCloseRequested((event) => leaving.closeRequested(event))
       .then((stop) => (unlisten = stop), () => {});
     return () => {
       clearInterval(clock);
@@ -55,9 +50,7 @@
   $effect(() => onStateChanged((resync) => browse.refresh(resync)));
 
   async function quit() {
-    const taken = await commands.humanTaken();
-    if (taken.length > 0) leaving = taken;
-    else await getCurrentWindow().destroy();
+    if (await leaving.allowed()) await getCurrentWindow().destroy();
   }
 
   useCommands(() => [
@@ -126,8 +119,8 @@
 <Palette bind:open={palette} />
 <Help bind:open={help} sections={HELP[screen]} />
 <LeaveDialog
-  taken={leaving}
-  onstay={() => (leaving = null)}
+  taken={leaving.taken}
+  onstay={() => leaving.stay()}
   onleave={() => void getCurrentWindow().destroy()}
 />
 

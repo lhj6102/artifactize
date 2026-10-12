@@ -8,19 +8,17 @@ const still: Navigate = { scope: null, run: null, paging: null, full: false, res
 export class Browse {
   view = $state<BrowseView | null>(null);
   error = $state<string | null>(null);
-  /** Counts accepted snapshots, so views derived from one read again. */
+  /** The backend snapshot's revision: views derived from it (Detail) read again when it grows. */
   revision = $state(0);
-  #asked = 0;
-  #shown = 0;
   #draining = false;
   #dirty = false;
   #resync = false;
 
   /** Navigate and read: selection changes reuse the cached catalog, refreshes read it. */
   async navigate(step: Partial<Navigate>): Promise<void> {
-    const asked = ++this.#asked;
     try {
-      this.#show(asked, await call(commands.browse({ ...still, ...step })));
+      this.#show(await call(commands.browse({ ...still, ...step })));
+      this.error = null;
     } catch (error) {
       this.error = message(error);
     }
@@ -51,17 +49,14 @@ export class Browse {
   /** Redraw ages and elapsed times from the backend's snapshot; nothing is read. */
   async redraw(): Promise<void> {
     if (!this.view) return;
-    const asked = ++this.#asked;
-    this.#show(asked, await commands.redraw(), false);
+    this.#show(await commands.redraw());
   }
 
-  #show(asked: number, view: BrowseView, read = true): void {
-    if (asked < this.#shown) return;
-    this.#shown = asked;
+  /** Responses may arrive in any order; one older than the shown snapshot is dropped. A
+   * redraw that already carries a newer read's snapshot advances the revision too. */
+  #show(view: BrowseView): void {
+    if (this.view && view.revision < this.view.revision) return;
     this.view = view;
-    if (read) {
-      this.error = null;
-      this.revision += 1;
-    }
+    this.revision = view.revision;
   }
 }
