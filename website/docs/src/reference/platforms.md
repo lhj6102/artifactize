@@ -14,6 +14,13 @@ reviewed: an eval that runs `python3` or `grep` needs them on every reviewer's `
 For reading, searching and opening files, the [built-in tools](builtin-tools.md) work
 everywhere without an external program.
 
+They also run in the author's own environment: `artifactize` passes on its whole
+environment (the home and cache variables of each OS, and on Windows the system
+variables too), so a toolchain behind a version manager resolves as in a terminal. Only
+`ARTIFACTIZE_*` variables are withheld, and each run gets a private `TMPDIR` (`TMP` and
+`TEMP` as well) of its own. See the
+[runtime environment](declarations.md#runtime-execution-library).
+
 ## Program lookup
 
 A declared program is found the same way by `tools check`, runtime evals,

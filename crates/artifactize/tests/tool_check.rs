@@ -192,9 +192,9 @@ fn static_check_never_runs_processes_and_execute_uses_the_selected_audience() {
         "execute"
     );
     let text = agent["result"]["content"][0]["text"].as_str().unwrap();
-    let home = format!("{}|unset|", support::os::native("/home"));
-    assert!(text.contains(&home), "{text}");
-    assert!(!text.contains("reviewer-home"));
+    // The Agent tool runs in the author's environment, as the Human tool does: the same home
+    // and the same variables.
+    assert!(text.starts_with(support::os::human_tool_prefix()), "{text}");
     let human = parsed(
         &check(
             &repo,

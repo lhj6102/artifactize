@@ -48,7 +48,7 @@ elif mode in ['act', 'plain', 'hold', 'hold-tree', 'ignore-term', 'freeze-cleanu
         child = subprocess.Popen([sys.executable, __file__, 'child', str(log), 'call-' + session.name])
         wait(log / ('child-call-' + session.name))
     if mode in ['ignore-term', 'freeze-cleanup']: observe_session_interrupt(log, mode == 'freeze-cleanup')
-    record('call', {'directory':str(session), 'pid':os.getpid(), 'child':child.pid if child else None})
+    record('call', {'directory':str(session), 'home':str(pathlib.Path.home()), 'pid':os.getpid(), 'child':child.pid if child else None})
     if mode in ['hold', 'hold-tree', 'ignore-term', 'freeze-cleanup']: wait(log / 'release')
     if mode == 'crash':
         (session / 'exit').write_text('')

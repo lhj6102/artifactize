@@ -269,6 +269,7 @@ async fn runtime_has_independent_private_external_directories() {
     let scratch = Scratch::new();
     let command = scratch.command(&support::os::env_program(), &[], None);
     let directory = command.directory().to_owned();
+    let tmp = directory.join("tmp");
     let other = scratch.command(&support::os::true_program(), &[], None);
     assert_ne!(directory, other.directory());
     let result = completed(execute(command).await);
@@ -277,8 +278,6 @@ async fn runtime_has_independent_private_external_directories() {
         .lines()
         .map(|line| line.split_once('=').unwrap())
         .collect();
-    // Windows children also get their profile folders and the system variables.
-    assert_eq!(environment.len(), support::os::runtime_environment_len());
     assert_eq!(
         environment["ARTIFACTIZE_WORKSPACE_DIR"],
         support::os::canonical(&scratch.workspace())
@@ -289,9 +288,14 @@ async fn runtime_has_independent_private_external_directories() {
         let path = Path::new(environment[variable]);
         assert_eq!(path, directory.join(name));
         assert!(!path.starts_with(scratch.workspace()));
-        assert!(path.is_dir());
-        assert!(private_dir(path));
+        if name != "tmp" {
+            assert!(private_dir(path));
+        }
     }
+    // The temporary directory is the command's scratch space and goes with the run; the output
+    // directory stays for receipts and pruning.
+    assert!(!tmp.exists());
+    assert!(directory.join("output").is_dir());
     for path in [&directory, &scratch.run_dir()] {
         assert!(private_dir(path));
     }
@@ -369,16 +373,17 @@ async fn external_symlinked_output_uses_canonical_existing_ancestors() {
 }
 
 #[test]
-fn parent_secret_is_not_visible_to_runtime_child() {
+fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables() {
     // The probe's PATH has no compiler, so build the Windows stand-ins first.
     support::os::env_program();
     // Set the parent environment in another process, never mutate this test runner's env.
     let result = std::process::Command::new(std::env::current_exe().unwrap())
         .args(["--exact", "environment_subprocess_probe", "--nocapture"])
         .env("ARTIFACTIZE_ENV_PROBE", "enabled")
-        .env("PROVIDER_SECRET", "not-for-child")
-        .env("NODE_OPTIONS", "--require=not-for-child")
-        .env("PYTHONPATH", "/not-for-child")
+        .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_not-for-the-command")
+        .env("ARTIFACTIZE_REMOTE", "https://store.invalid")
+        .env("AUTHOR_VARIABLE", "from-the-terminal")
+        .env(support::os::home_env(), "/the-authors-home")
         .env("PATH", support::os::system_path())
         .env("LANG", "C")
         .output()
@@ -396,25 +401,36 @@ async fn environment_subprocess_probe() {
     if std::env::var_os("ARTIFACTIZE_ENV_PROBE").is_none() {
         return;
     }
-    assert_eq!(std::env::var("PROVIDER_SECRET").unwrap(), "not-for-child");
+    assert_eq!(
+        std::env::var("ARTIFACTIZE_REMOTE_TOKEN").unwrap(),
+        "azt_not-for-the-command"
+    );
     let scratch = Scratch::new();
     let result = completed(execute(scratch.command(&support::os::env_program(), &[], None)).await);
     let output = String::from_utf8(result.output.stdout).unwrap();
+    let lines: Vec<&str> = output.lines().collect();
+    // The author's own environment: path, locale, real home and any variable of theirs.
     assert!(
-        output
-            .lines()
-            .any(|line| line == format!("PATH={}", support::os::system_path().to_str().unwrap()))
+        lines.contains(&format!("PATH={}", support::os::system_path().to_str().unwrap()).as_str())
     );
-    assert!(output.lines().any(|line| line == "LANG=C"));
+    assert!(lines.contains(&"LANG=C"));
+    assert!(lines.contains(&"AUTHOR_VARIABLE=from-the-terminal"));
+    assert!(lines.contains(&format!("{}=/the-authors-home", support::os::home_env()).as_str()));
+    // Artifactize's credentials and settings stay out; only its per-run variables are set.
     for forbidden in [
-        "PROVIDER_SECRET",
-        "NODE_OPTIONS",
-        "PYTHONPATH",
+        "ARTIFACTIZE_REMOTE_TOKEN",
+        "ARTIFACTIZE_REMOTE=",
         "ARTIFACTIZE_ENV_PROBE",
-        "not-for-child",
-        "NODE_NO_WARNINGS",
+        "azt_not-for-the-command",
     ] {
-        assert!(!output.contains(forbidden));
+        assert!(!output.contains(forbidden), "{forbidden}");
+    }
+    for own in [
+        "ARTIFACTIZE_WORKSPACE_DIR=",
+        "ARTIFACTIZE_OUTPUT_DIR=",
+        "ARTIFACTIZE_TMP_DIR=",
+    ] {
+        assert!(output.contains(own), "{own}");
     }
 }
 

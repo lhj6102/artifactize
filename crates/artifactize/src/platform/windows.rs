@@ -99,17 +99,8 @@ pub(crate) const ENV_NAMES_IGNORE_CASE: bool = true;
 /// The variable naming the user's home directory, which Unix-style tools read on Windows too.
 pub(crate) const HOME_VARIABLE: &str = "HOME";
 
-/// Variables Windows programs, and Unix-style tools on Windows, read their home from.
-pub(crate) const HOME_VARIABLES: &[&str] = &[HOME_VARIABLE, "USERPROFILE", "APPDATA"];
-
-/// Variables programs read their cache directory from.
-pub(crate) const CACHE_VARIABLES: &[&str] = &["XDG_CACHE_HOME", "LOCALAPPDATA"];
-
 /// Variables programs read their temporary directory from.
 pub(crate) const TEMP_VARIABLES: &[&str] = &["TMPDIR", "TMP", "TEMP"];
-
-/// System variables many Windows programs cannot start without.
-pub(crate) const SYSTEM_VARIABLES: &[&str] = &["SystemRoot", "ComSpec", "PATHEXT"];
 
 /// Variables naming a per-user state directory, in order; artifactize keeps its state in an
 /// `artifactize` folder below the first one set, and otherwise below `HOME`.

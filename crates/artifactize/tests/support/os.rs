@@ -1969,30 +1969,15 @@ pub fn revoke_execution(path: &Path) -> bool {
     }
 }
 
-/// Baseline runtime variables include system/profile entries on Windows.
-pub fn runtime_environment_len() -> usize {
-    if cfg!(windows) { 16 } else { 10 }
-}
-
-/// Every disposable environment folder, including platform home aliases.
+/// Every per-run folder artifactize gives a command, under the variables that name it.
 pub fn runtime_directories() -> Vec<(&'static str, &'static str)> {
-    let mut entries = vec![
+    vec![
         ("ARTIFACTIZE_OUTPUT_DIR", "output"),
         ("ARTIFACTIZE_TMP_DIR", "tmp"),
-        ("HOME", "home"),
-        ("XDG_CACHE_HOME", "cache"),
         ("TMPDIR", "tmp"),
         ("TMP", "tmp"),
         ("TEMP", "tmp"),
-    ];
-    if cfg!(windows) {
-        entries.extend([
-            ("USERPROFILE", "home"),
-            ("LOCALAPPDATA", "cache"),
-            ("APPDATA", "home"),
-        ]);
-    }
-    entries
+    ]
 }
 
 /// Portable executable fixture name; Windows uses its adjacent executable stand-in.
@@ -2041,7 +2026,7 @@ pub fn human_environment_probe() -> String {
         home_env()
     )
 }
-pub fn isolated_home_probe() -> String {
+pub fn inherited_home_probe() -> String {
     format!(
         "import os; print(os.environ.get('ARTIFACTIZE_HUMAN_MARKER','absent')); print(os.environ['{}'])",
         home_env()
@@ -2182,9 +2167,9 @@ fn signal_failure() -> Option<(String, Vec<&'static str>, &'static str)> {
     }
 }
 
-/// Fingerprint probe's private environment and permission checks differ by OS.
+/// Fingerprint probe's private directory and permission checks differ by OS.
 pub fn fingerprint_probe(source: &str) -> String {
-    source.replace("PRIVATE_DIRECTORY_CHECK", "for key in ['HOME', 'TMPDIR', 'XDG_CACHE_HOME', 'ARTIFACTIZE_OUTPUT_DIR']:\n    path = pathlib.Path(os.environ[key])\n    assert not path.is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_WORKSPACE_DIR']))\n    assert os.name == 'nt' or stat.S_IMODE(path.stat().st_mode) == 0o700\n    (path / 'discard').write_text('scratch')")
+    source.replace("PRIVATE_DIRECTORY_CHECK", "for key in ['TMPDIR', 'ARTIFACTIZE_OUTPUT_DIR']:\n    path = pathlib.Path(os.environ[key])\n    assert not path.is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_WORKSPACE_DIR']))\n    assert os.name == 'nt' or stat.S_IMODE(path.stat().st_mode) == 0o700\n    (path / 'discard').write_text('scratch')\nassert not pathlib.Path(os.environ['HOME']).is_relative_to(pathlib.Path(os.environ['ARTIFACTIZE_OUTPUT_DIR']).parent)")
 }
 
 // The stand-in executable also includes this dependency-free part of the OS layer.
@@ -2226,15 +2211,14 @@ pub fn write_python_script(path: &Path, code: &str) {
     .unwrap();
 }
 
-/// A private runtime environment has only platform launch essentials and private roots.
-pub const PYTHON_PRIVATE_ENVIRONMENT: &str = r#"
+/// A command runs in the author's environment: the real home, the per-run private temporary
+/// and output directories, and none of artifactize's own variables.
+pub const PYTHON_AUTHORS_ENVIRONMENT: &str = r#"
 assert os.environ['HOME'] != os.environ['TMPDIR']
 assert context['tmpDir'] == os.environ['TMPDIR'].replace('\\', '/')
 assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR'].replace('\\', '/')
-allowed = {'PATH','LANG','HOME','TMP','TEMP','TMPDIR','XDG_CACHE_HOME','ARTIFACTIZE_WORKSPACE_DIR','ARTIFACTIZE_OUTPUT_DIR','ARTIFACTIZE_TMP_DIR','LC_CTYPE'}
-if sys.platform == 'darwin': allowed.add('__CF_USER_TEXT_ENCODING')
-if os.name == 'nt': allowed |= {'USERPROFILE','APPDATA','LOCALAPPDATA','SYSTEMROOT','COMSPEC','PATHEXT'}
-assert set(os.environ) <= allowed
+own = ('ARTIFACTIZE_WORKSPACE_DIR', 'ARTIFACTIZE_OUTPUT_DIR', 'ARTIFACTIZE_TMP_DIR', 'ARTIFACTIZE_SESSION_DIR')
+assert not [name for name in os.environ if name.upper().startswith('ARTIFACTIZE_') and name not in own]
 "#;
 
 /// A file/directory redirection in an output fixture: Windows junctions need no privilege.

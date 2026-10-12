@@ -22,7 +22,8 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 /// Share configuration and CLI's signed 32-bit millisecond protocol bound.
 pub const MAX_TIMEOUT: Duration = Duration::from_millis(crate::config::validation::MAX_TIMEOUT_MS);
 
-/// A single runtime invocation with private writable directories and filtered env.
+/// A single runtime invocation with private output and temporary directories, in the
+/// author's own environment.
 /// The caller owns the run directory and retains its contents for receipts/pruning.
 #[derive(Debug)]
 pub struct Command {
@@ -33,8 +34,9 @@ pub struct Command {
 }
 
 impl Command {
-    /// Prepare literal argv. Only PATH and LANG are inherited from the host.
-    /// Each invocation gets independent 0700 directories below external `run_dir`.
+    /// Prepare literal argv. The command inherits the caller's environment except artifactize's
+    /// own `ARTIFACTIZE_*` variables. Each invocation gets independent 0700 output and
+    /// temporary directories below external `run_dir`.
     pub fn prepare(
         program: OsString,
         args: Vec<OsString>,
@@ -66,19 +68,15 @@ impl Command {
             .insert("ARTIFACTIZE_SESSION_DIR".into(), directory.into());
     }
 
+    /// Share the session directory of the environment a tool session's start ran in.
     pub(crate) fn inherit_session(
         &mut self,
         environment: &std::collections::BTreeMap<OsString, OsString>,
     ) {
-        for key in crate::platform::HOME_VARIABLES
-            .iter()
-            .chain(crate::platform::CACHE_VARIABLES.iter())
-            .copied()
-            .chain(["ARTIFACTIZE_SESSION_DIR"])
-        {
-            if let Some(value) = environment.get(std::ffi::OsStr::new(key)) {
-                self.command.env.insert(key.into(), value.clone());
-            }
+        if let Some(value) = environment.get(std::ffi::OsStr::new("ARTIFACTIZE_SESSION_DIR")) {
+            self.command
+                .env
+                .insert("ARTIFACTIZE_SESSION_DIR".into(), value.clone());
         }
     }
 
@@ -201,7 +199,12 @@ where
     R: Future<Output = io::Result<()>> + Send + 'static,
 {
     command.command.cwd = command.cwd;
-    match process::run(command.command, cancellation, register).await {
+    // The command's temporary directory is only its own scratch space: it goes with the run,
+    // while the output directory stays for receipts and pruning.
+    let scratch = command.directory.join("tmp");
+    let result = process::run(command.command, cancellation, register).await;
+    let _ = std::fs::remove_dir_all(scratch);
+    match result {
         Ok(mut output) => {
             output.stdout = clean_output(&output.stdout);
             output.stderr = clean_output(&output.stderr);

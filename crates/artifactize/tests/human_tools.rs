@@ -390,7 +390,7 @@ impl Drop for Launched {
 }
 
 #[test]
-fn launch_outlives_host_and_human_environment_is_not_agent_environment() {
+fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize_variables() {
     let repo = support::os::tempdir();
     // The parent owns the release: exiting the launcher probe must not end its child.
     let _release = support::os::Release(repo.path().to_path_buf());
@@ -475,7 +475,7 @@ async fn human_environment_and_launch_probe() {
             "command":support::os::python_program(),
             "args":[
                 "-c",
-                support::os::isolated_home_probe(),
+                support::os::inherited_home_probe(),
             ],
         },
     });
@@ -507,7 +507,8 @@ async fn human_environment_and_launch_probe() {
         panic!()
     };
     assert!(text.replace("\r\n", "\n").starts_with("absent\n"));
-    assert!(!text.contains("real-home"));
+    // The author's own environment, home included; artifactize's variable is not in it.
+    assert!(text.contains("real-home"));
     let result = call(repo).await;
     assert!(!result.is_error(), "{result:?}");
     assert_eq!(result.content(), [Content::Launch { launched: true }]);

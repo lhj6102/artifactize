@@ -143,9 +143,9 @@ and symlinks are rejected in both cases. Absolute commands run as given. JSON-pr
 cannot add Artifacts outside the eval's admitted scope. Plain argv uses only its
 schema-property placeholders. Commands themselves are never interpolated.
 Command calls use the owner's working directory (the containing folder for a file
-Artifact) as cwd, runtime's restricted environment (`PATH`/`LANG`, plus
-`SystemRoot`/`ComSpec`/`PATHEXT` on Windows) and
-private external HOME/TMP/output, a default 120000 ms deadline (1–2147483647), and
+Artifact) as cwd, the author's own environment (the
+[runtime environment](declarations.md#runtime-execution-library): the real home, no
+`ARTIFACTIZE_*` variables of the caller) with private external TMP/output, a default 120000 ms deadline (1–2147483647), and
 process-group cancellation/cleanup. Per-call directories are removed on success,
 failure and cancellation, including dropped call futures; caller-owned output
 roots remain. Commands are trusted read-only programs, not sandboxed.
@@ -193,7 +193,8 @@ The harness implements this start contract:
 - Keep the start process running for the whole session. Its exit ends the session.
 
 Bound tools, whether `json` or `plain`, and stop receive the same
-`ARTIFACTIZE_SESSION_DIR` and share the start command's private home and cache.
+`ARTIFACTIZE_SESSION_DIR` and run in the author's environment, real home included, like
+every command.
 Each invocation still has its own private output and temporary directories.
 Concurrent reviews have independent session directories and environments, even
 on the same Artifact. Choose ports/displays through standard OS mechanisms
@@ -274,7 +275,7 @@ selects one Agent/Human eval and cannot be combined with `--artifact`, `--audien
 and tool flags; the short operation name or its published name is accepted.
 `--args` is valid only for Agent execution; Human schemas admit only an empty
 object and Human commands take no free arguments. A check never creates a Run,
-verdict or cache entry. Agent calls use isolated temporary output (removed after
+verdict or cache entry. Agent calls run in the author's environment with private temporary output (removed after
 execution); Human calls use the reviewer's real environment. Exit codes are
 0 for ready/success, 1 for declaration/preflight/tool/cleanup failure, and 2 for
 invalid invocation. `--repo`, `--state-dir` and `--json` are accepted; reports are

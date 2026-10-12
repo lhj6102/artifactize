@@ -291,7 +291,9 @@ fn prune_removes_only_finished_output_and_dry_run_preserves_everything() {
     let repo_before = fs::read(repo.join("index.artf")).unwrap();
     let dry = result(command(&state).args(["prune", "--dry-run"]), 0);
     assert_eq!(dry["removed"], json!([]));
-    assert_eq!(dry["wouldRemove"].as_array().unwrap().len(), 6);
+    // The two leftover tool folders and the finished Run's output; a command's temporary
+    // directory is already gone with its run.
+    assert_eq!(dry["wouldRemove"].as_array().unwrap().len(), 3);
     assert!(
         dry["wouldRemove"]
             .as_array()

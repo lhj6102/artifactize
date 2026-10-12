@@ -316,7 +316,7 @@ consistently `{"backend":"openai","models":[{"slug":"model-id","display_name":"m
 Listings preserve provider order.
 
 Only known scratch directories below `state/runs/<run-id>` are removed: runtime
-`output`/`tmp`/`home`/`cache` and leftover tool output.
+`output` (and `tmp`, `home` and `cache` left by older versions) and leftover tool output.
 Run roots, unknown files/directories, database rows, results and reuse records
 remain. Symlinks (including nested links), non-directory targets and
 repository content are refused before deletion. `.git` and the current/legacy

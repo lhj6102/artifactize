@@ -29,7 +29,8 @@ Executable lookup does not expand built-in-tool or argv-reference access. No she
 Artifact's working directory (the containing folder for a file Artifact).
 Human commands inherit the reviewer's **complete real
 environment**, including HOME, DISPLAY/WAYLAND_DISPLAY, XDG settings and config.
-They do not use Agent isolation or create private HOME/TMP/output directories.
+Unlike runtime evals and Agent tools, they get no private TMP/output directories and keep
+every variable, `ARTIFACTIZE_*` included.
 Only declare trusted commands: they have the reviewer's ordinary permissions and
 environment, including any credentials already present there.
 

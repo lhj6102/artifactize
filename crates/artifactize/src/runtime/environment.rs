@@ -24,38 +24,22 @@ pub(super) fn prepare(
 
     let directory = platform::private_tempdir_in("runtime-", &output_root)?;
     let root = directory.path();
-    for name in ["output", "tmp", "home", "cache"] {
+    for name in ["output", "tmp"] {
         platform::create_private_dir(&root.join(name))?;
     }
-    let mut environment = BTreeMap::from([
-        (
-            "PATH".into(),
-            platform::environment::var("PATH").unwrap_or_default(),
-        ),
-        (
-            "LANG".into(),
-            platform::environment::var("LANG").unwrap_or_else(|| "en_US.UTF-8".into()),
-        ),
-        ("ARTIFACTIZE_WORKSPACE_DIR".into(), workspace.clone().into()),
-    ]);
-    // The child's home, cache and temporary directories are private ones, under every
-    // variable the platform's programs read them from.
-    let private = [
+    // The command runs in the author's own environment, as in their terminal. Only what is
+    // artifactize's own differs: its variables stay out, and the command gets its per-run
+    // output and temporary directories.
+    let mut environment = platform::environment::for_command();
+    platform::environment::set(&mut environment, "ARTIFACTIZE_WORKSPACE_DIR", &workspace);
+    for (key, name) in [
         ("ARTIFACTIZE_OUTPUT_DIR", "output"),
         ("ARTIFACTIZE_TMP_DIR", "tmp"),
     ]
     .into_iter()
     .chain(platform::TEMP_VARIABLES.iter().map(|key| (*key, "tmp")))
-    .chain(platform::HOME_VARIABLES.iter().map(|key| (*key, "home")))
-    .chain(platform::CACHE_VARIABLES.iter().map(|key| (*key, "cache")));
-    for (key, name) in private {
-        environment.insert(key.into(), root.join(name).into());
-    }
-    // Some systems' programs cannot start without a few system variables.
-    for key in platform::SYSTEM_VARIABLES {
-        if let Some(value) = platform::environment::var(key) {
-            environment.insert(key.into(), value);
-        }
+    {
+        platform::environment::set(&mut environment, key, root.join(name));
     }
     Ok((workspace, directory.keep(), environment))
 }

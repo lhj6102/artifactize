@@ -120,7 +120,7 @@ protocol = "json"
 
 The start command receives the usual JSON envelope and `ARTIFACTIZE_SESSION_DIR`,
 prints one line when ready, and stays running. Bound tools and stop use the same
-private directory. Cleanup cancels in-flight calls, runs stop and reaps owned
+session directory and the author's environment. Cleanup cancels in-flight calls, runs stop and reaps owned
 process groups/Jobs before the result is published, for GREEN and RED alike.
 Dropped reviews, panics and caller-runtime shutdown also release the session.
 Abrupt process death cannot run stop: the next session start recovers abandoned
@@ -204,8 +204,8 @@ Stopped backend openai after AUTHENTICATION in docs/review: 2 reviews not starte
 
 The next Run admits the backend again.
 
-Only tools from the eval's scope are exposed. They run sequentially with private
-runtime environments. Tool results keep text, JSON and validated base64 image blocks rather than flattening
+Only tools from the eval's scope are exposed. They run sequentially in the author's
+[environment](../reference/declarations.md#runtime-execution-library), each call with its own private output and temporary directories. Tool results keep text, JSON and validated base64 image blocks rather than flattening
 structured data. PNG/JPEG/WebP results reach both provider wires; unsupported-model
 image requests fail with the provider error. Duplicate provider call IDs fail
 closed. Per-request-attempt `usage` is saved on both success and ERROR; on cache hits

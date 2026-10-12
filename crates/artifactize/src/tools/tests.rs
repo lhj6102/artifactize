@@ -202,7 +202,7 @@ print(json.dumps({'content':[{'type':'text','text':'ok'},{'type':'json','data':c
 "#
         .replace(
             "{PRIVATE_ENVIRONMENT}",
-            crate::test_os::PYTHON_PRIVATE_ENVIRONMENT,
+            crate::test_os::PYTHON_AUTHORS_ENVIRONMENT,
         ),
     );
     let result = fixture.call(json!({})).await;

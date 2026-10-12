@@ -16,10 +16,6 @@ pub(crate) fn is_executable(path: &Path) -> bool {
     })
 }
 
-/// Variables, besides `PATH` and the locale, that programs need to start: the home and
-/// temporary directories.
-pub const SYSTEM_VARIABLES: &[&str] = &["HOME", "TMPDIR"];
-
 /// A started program in a process group of its own, so that its children can be killed
 /// with it.
 pub(crate) struct Tree {

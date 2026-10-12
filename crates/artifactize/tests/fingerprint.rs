@@ -45,7 +45,7 @@ impl Fixture {
             .arg(&self.repo)
             .arg("--state-dir")
             .arg(&self.state)
-            .env("FINGERPRINT_SECRET", "must-not-leak");
+            .env("FINGERPRINT_MARKER", "from-the-terminal");
         command
     }
 
@@ -190,7 +190,8 @@ fn fingerprint_process_failures_missing_files_and_links_never_fall_back() {
 }
 
 #[test]
-fn protocol_uses_owner_cwd_literal_argv_and_disposable_private_environment() {
+fn protocol_uses_owner_cwd_literal_argv_and_disposable_private_directories_in_the_authors_environment()
+ {
     let fixture = Fixture::new();
     let probe = fixture.root.path().join("probe");
     let script = r#"import json, os, pathlib, stat, sys
@@ -198,7 +199,7 @@ context = json.load(sys.stdin)
 assert context == {'version': 1, 'artifactId': 'test'}
 assert type(context['version']) is int
 assert pathlib.Path.cwd().name == 'owner'
-assert 'FINGERPRINT_SECRET' not in os.environ
+assert os.environ['FINGERPRINT_MARKER'] == 'from-the-terminal'
 assert sys.argv[2] == '$HOME; ../literal $(touch executed)'
 assert pathlib.Path(sys.argv[3]) == pathlib.Path.cwd() / 'key'
 PRIVATE_DIRECTORY_CHECK

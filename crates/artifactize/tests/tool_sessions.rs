@@ -181,6 +181,21 @@ fn two_calls_share_one_started_session_and_cleanup_precedes_green_publication() 
 }
 
 #[test]
+fn session_commands_share_the_session_directory_and_run_in_the_authors_home() {
+    let fixture = Fixture::new("start", "stop", "act", 1);
+    let run = fixture.json(&["verify", "--all"], 0);
+    assert_eq!(run["requests"][0]["status"], "GREEN", "{run}");
+    let home = fixture.root.path().join("home");
+    let start = harness::records(&fixture.log(), "start").pop().unwrap();
+    let call = harness::records(&fixture.log(), "call").pop().unwrap();
+    let stop = harness::records(&fixture.log(), "stop").pop().unwrap();
+    for record in [&start, &call, &stop] {
+        assert_eq!(record["home"], home.to_str().unwrap(), "{record}");
+        assert_eq!(record["directory"], start["directory"], "{record}");
+    }
+}
+
+#[test]
 fn execute_diagnostic_and_follow_up_get_their_own_sessions() {
     let mut fixture = Fixture::new("start", "stop", "act", 0);
     fixture.json(

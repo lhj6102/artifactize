@@ -286,9 +286,9 @@ flags, wrappers or entry-file rules.
 
 `fingerprint.script.files` accepts up to 64 unique owner-relative literal
 file/directory paths. They must exist without symlink traversal on every call;
-their contents are never hashed. Commands share runtime isolation, cancellation,
+their contents are never hashed. Commands share the runtime environment, cancellation,
 bounded raw output and a 30,000 ms default timeout (`timeout_ms` accepts
-1–2,147,483,647). Private output, HOME and temporary directories are removed after
+1–2,147,483,647). Private output and temporary directories are removed after
 each invocation. Stdout must be exactly 1–128 ASCII characters from
 `[A-Za-z0-9._:-]`, optionally followed by one LF, or one CRLF on Windows. No other
 whitespace is allowed; the value is not trimmed. Nonzero exit, malformed output,
@@ -340,19 +340,30 @@ a shell. The default cwd is the canonical workspace; a scoped caller can set
 file Artifact). `process::run` is the lower-level API for resolved commands with
 a complete explicit environment. `verify` uses the owner working directory as cwd.
 
-`PATH` and `LANG` are inherited (`LANG` defaults to `en_US.UTF-8`); Windows also
-inherits `SystemRoot`, `ComSpec` and `PATHEXT` when set, so its programs can start
-and find executable suffixes. Each prepared runtime command gets a fresh
-owner-only directory below the caller's external `run_dir`, with owner-only
-`output`, `tmp`, `home`, and `cache` subdirectories (0700 on Unix, a protected
+Commands run in the author's own terminal environment, so a project declares them as
+it would type them: the whole environment of the `artifactize` process is passed on,
+including the real home and cache locations (`HOME`, `XDG_*`, and on Windows
+`USERPROFILE`, `APPDATA`, `LOCALAPPDATA` and the system variables), so toolchains
+that resolve through them, such as `cargo` or `pnpm` behind a version manager, work as
+in a terminal. What is artifactize's own stays out: every `ARTIFACTIZE_*` variable of the
+caller (its credentials such as `ARTIFACTIZE_REMOTE_TOKEN`, and its settings) is
+removed, and the command receives only the variables artifactize sets for it. Each
+prepared runtime command gets a fresh owner-only directory below the caller's external
+`run_dir`, with owner-only `output` and `tmp` subdirectories (0700 on Unix, a protected
 owner-only DACL on Windows). Children receive
-`ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR`, `ARTIFACTIZE_TMP_DIR`, private
-`HOME` and `XDG_CACHE_HOME`, and `TMPDIR`/`TMP`/`TEMP` pointing at private temporary
-storage. Existing output ancestors are canonicalized before creation; output
+`ARTIFACTIZE_WORKSPACE_DIR`, `ARTIFACTIZE_OUTPUT_DIR`, `ARTIFACTIZE_TMP_DIR`, and
+`TMPDIR`/`TMP`/`TEMP` pointing at the private temporary directory, which is removed
+when the command ends. Existing output ancestors are canonicalized before creation; output
 inside the canonical workspace, including through symlinks, is rejected. The
 caller owns the run directory; prepared output persists after execution for
 receipts and explicit pruning. Failed preparation removes its newly owned
 invocation directory, not the caller's root.
+
+Because commands see the author's environment, a result depends on it like any
+terminal command does, and it is not part of the
+[reuse key](../concepts/fingerprints-and-reuse.md#the-reuse-key): a toolchain upgrade
+does not invalidate a cached result. A fingerprint that must change with a tool's
+version has to read that version.
 
 The runtime deadline defaults to 30,000 ms and accepts 1 through 2,147,483,647 ms.
 It covers inert-child registration and execution without a reset. Each raw stdout

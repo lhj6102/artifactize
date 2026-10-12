@@ -140,18 +140,9 @@ pub(crate) const ENV_NAMES_IGNORE_CASE: bool = false;
 /// The variable naming the user's home directory.
 pub(crate) const HOME_VARIABLE: &str = "HOME";
 
-/// Variables programs read their home directory from.
-pub(crate) const HOME_VARIABLES: &[&str] = &[HOME_VARIABLE];
-
-/// Variables programs read their cache directory from.
-pub(crate) const CACHE_VARIABLES: &[&str] = &["XDG_CACHE_HOME"];
-
 /// Variables programs read their temporary directory from. `TMP` and `TEMP` are set too, for
 /// programs written for Windows.
 pub(crate) const TEMP_VARIABLES: &[&str] = &["TMPDIR", "TMP", "TEMP"];
-
-/// System variables a child cannot start without; none beyond `PATH` here.
-pub(crate) const SYSTEM_VARIABLES: &[&str] = &[];
 
 /// Variables naming a per-user state directory, in order; artifactize keeps its state in an
 /// `artifactize` folder below the first one set, and otherwise below `HOME`.
