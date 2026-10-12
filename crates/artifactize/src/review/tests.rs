@@ -523,7 +523,7 @@ fn requests_claimed_by_others_or_settled_are_read_only() {
 fn review_keys_need_detail_focus_and_an_owned_request() {
     // On the list, review letters do nothing; c never claims there.
     let mut review = Review::new("/state".into(), None, "alice".parse().unwrap(), None);
-    review.set_waiting(vec![view("WAITING_HUMAN", None, demo())]);
+    review.set_listed(vec![view("WAITING_HUMAN", None, demo())]);
     for key in ['c', 'g', 'u', 'i', 't'] {
         assert_eq!(
             press(&mut review, KeyCode::Char(key)),
@@ -593,7 +593,7 @@ fn review_keys_need_detail_focus_and_an_owned_request() {
     assert_eq!(review.focus(), Focus::List);
     assert_eq!(press(&mut review, KeyCode::Esc), Action::None);
     // The draft survives for the next open of the same request.
-    review.set_waiting(vec![view("WAITING_HUMAN", Some("alice"), demo())]);
+    review.set_listed(vec![view("WAITING_HUMAN", Some("alice"), demo())]);
     assert_eq!(press(&mut review, KeyCode::Enter), Action::Refresh);
     press(&mut review, KeyCode::Char('r'));
     assert_eq!(form(&review).fields[0].display(), "qcit");
@@ -1042,7 +1042,7 @@ fn listed() -> Review {
     let mut other = view("WAITING_HUMAN", Some("bob"), demo());
     other.request.id = "run-2-1".parse().unwrap();
     other.request.eval_id = "docs/check".parse().unwrap();
-    review.set_waiting(vec![other, view("WAITING_HUMAN", Some("alice"), demo())]);
+    review.set_listed(vec![other, view("WAITING_HUMAN", Some("alice"), demo())]);
     review.refreshed = Some(OffsetDateTime::now_utc());
     review
 }
@@ -1051,7 +1051,7 @@ fn listed() -> Review {
 fn list_opens_requests_and_esc_steps_back_without_quitting() {
     let mut review = listed();
     let text = screen(&mut review);
-    assert!(text.contains("Waiting Human reviews (2)") && text.contains("all repositories"));
+    assert!(text.contains("Waiting Human reviews (2)") && text.contains("waiting Human reviews"));
     assert!(
         text.contains("alice (you)") && text.contains("bob"),
         "{text}"
@@ -1067,7 +1067,7 @@ fn list_opens_requests_and_esc_steps_back_without_quitting() {
     assert_eq!(review.focus(), Focus::Detail);
     let text = screen(&mut review);
     assert!(
-        text.contains("artifactize review › all repositories › release/signoff"),
+        text.contains("artifactize review › waiting Human reviews › release/signoff"),
         "{text}"
     );
     assert!(text.contains("REVIEW (yours)"), "{text}");
@@ -1221,7 +1221,7 @@ fn json_cursors_stay_on_utf8_boundaries_when_the_text_is_replaced() {
 #[test]
 fn control_characters_never_break_one_row_texts() {
     let mut review = listed();
-    for view in &mut review.waiting {
+    for view in &mut review.listed {
         assert!(
             format!("{}\n\tx", view.request.eval_id)
                 .parse::<crate::types::EvalId>()
@@ -1306,7 +1306,7 @@ fn review_uses_the_reactive_layout_of_monitor() {
             "{width}\n{text}"
         );
         assert!(
-            text.contains("artifactize review › all repositories › release/signoff"),
+            text.contains("artifactize review › waiting Human reviews › release/signoff"),
             "{width}\n{text}"
         );
     }
@@ -1327,7 +1327,7 @@ fn every_focus_names_the_way_to_the_tools_and_how_to_run_one() {
     let mut review = listed();
     let text = screen(&mut review);
     assert!(
-        text.contains("↑↓ request · Enter open review · Tab tools"),
+        text.contains("↑↓ request · Enter open · Tab tools"),
         "{text}"
     );
     assert!(text.contains("Enter: open review · Tab: tools"), "{text}");

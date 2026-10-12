@@ -7,7 +7,12 @@ mod embedded_tests;
 mod form;
 #[cfg(test)]
 mod identity_tests;
+mod list;
+#[cfg(test)]
+mod list_tests;
+mod record;
 mod runs;
+pub mod search;
 #[cfg(test)]
 pub(crate) mod tests;
 mod view;
@@ -239,7 +244,20 @@ type Commands = std::collections::BTreeMap<ToolName, Result<CommandLine, String>
 /// Screen state over saved data; only jobs write, through the `human` lifecycle API.
 pub struct Review {
     state: PathBuf,
-    repo: Option<PathBuf>,
+    /// The standalone list's search: its text, what it parsed to, and while `/` edits it the
+    /// text it had before.
+    query: String,
+    filter: Result<search::Query, String>,
+    editing_query: Option<String>,
+    /// Completion candidates of the query's last term, after Tab.
+    candidates: Vec<String>,
+    /// Where each page shown so far starts, the current one last, and where the next starts.
+    pages: Vec<u64>,
+    next: Option<u64>,
+    /// The read-only Detail of a request that is not a Human review.
+    record: Option<record::Record>,
+    /// Numbers each session reader, so a stale reader job is recognised.
+    serial: u64,
     reviewer: crate::types::ReviewerId,
     mode: Mode,
     /// The standalone level with focus; monitor keeps its own panes.
@@ -249,7 +267,9 @@ pub struct Review {
     technical: bool,
     /// The standalone `review` owns the waiting list and may suspend for `$EDITOR`.
     standalone: bool,
-    waiting: Vec<RequestView>,
+    /// The requests the query found on the current page, and their searchable facts.
+    listed: Vec<RequestView>,
+    entries: Vec<search::Entry>,
     list: TableState,
     /// The open request, if any, and its last successfully loaded view.
     open: Option<RequestId>,
@@ -281,16 +301,26 @@ pub struct Review {
 }
 
 impl Review {
-    /// `repo: None` lists waiting requests from every repository; `open` starts on one request.
+    /// The list starts on the waiting Human reviews of every repository, or with `repo` of that
+    /// repository only (its term in the query); `open` starts on one request.
     pub fn new(
         state: PathBuf,
         repo: Option<PathBuf>,
         reviewer: crate::types::ReviewerId,
         open: Option<RequestId>,
     ) -> Self {
+        let repo = repo.map(|path| crate::workspace::canonical_target(&path).unwrap_or(path));
+        let query = search::Query::text_for(repo.as_deref());
         Self {
             state,
-            repo,
+            filter: query.parse(),
+            query,
+            editing_query: None,
+            candidates: Vec::new(),
+            pages: vec![0],
+            next: None,
+            record: None,
+            serial: 0,
             reviewer,
             mode: Mode::Request,
             focus: if open.is_some() {
@@ -301,7 +331,8 @@ impl Review {
             area: Area::Fields,
             technical: false,
             standalone: true,
-            waiting: Vec::new(),
+            listed: Vec::new(),
+            entries: Vec::new(),
             list: TableState::default(),
             open,
             request: None,
@@ -345,22 +376,40 @@ impl Review {
         // Followers of later Runs collapse onto the original request, which records the Human
         // definition (tools and owner schemas) and receives every action, as in monitor.
         let mut result = Ok(());
+        // Boxed: the search and Detail reads are deep futures, and refresh runs on test and
+        // terminal stacks alike.
         if self.standalone {
-            result = store::read_waiting_originals(&self.state, self.repo.as_deref())
-                .await
-                .map(|waiting| self.set_waiting(waiting));
+            result = Box::pin(self.search()).await;
         }
         if let (Ok(()), Some(id)) = (&result, self.open.clone()) {
-            result = match store::read_request(&self.state, &id).await {
+            let read = match store::read_request(&self.state, &id).await {
                 Ok(view) if view.request.status() == crate::types::RequestStatus::WaitingHuman => {
                     store::read_original(&self.state, &view).await
                 }
                 other => other,
-            }
-            .map(|view| {
-                self.open = Some(view.request.id.clone());
-                self.show(view)
-            });
+            };
+            result = match read {
+                // A Human review opens the shared Human Detail; any other request is read-only.
+                Ok(view) if view.request.profile.kind() == crate::config::ProfileKind::Human => {
+                    self.open = Some(view.request.id.clone());
+                    self.record = None;
+                    self.show(view);
+                    Ok(())
+                }
+                Ok(view) => {
+                    self.serial += 1;
+                    let previous = self.record.take();
+                    Box::pin(record::Record::load(
+                        &self.state,
+                        view,
+                        previous,
+                        self.serial,
+                    ))
+                    .await
+                    .map(|record| self.record = Some(record))
+                }
+                Err(error) => Err(error),
+            };
         }
         let now = OffsetDateTime::now_utc();
         match result {
@@ -380,7 +429,8 @@ impl Review {
         self.tool = self.tool.min(self.tools().len().saturating_sub(1));
         if self.submitted && self.open.is_none() {
             self.submitted = false;
-            if self.waiting.is_empty() {
+            // Nothing left to list after the submission: the review is done.
+            if self.listed.is_empty() {
                 return Action::Quit;
             }
         }
@@ -414,26 +464,6 @@ impl Review {
         self.commands
             .as_ref()
             .and_then(|(_, commands)| commands.get(tool))
-    }
-
-    fn set_waiting(&mut self, waiting: Vec<RequestView>) {
-        let selected = self.selected().map(|view| view.request.id.clone());
-        let index = selected
-            .and_then(|id| waiting.iter().position(|view| view.request.id == id))
-            .or(self.list.selected());
-        self.waiting = waiting;
-        self.list.select(
-            index
-                .map(|index| index.min(self.waiting.len().saturating_sub(1)))
-                .or(Some(0))
-                .filter(|_| !self.waiting.is_empty()),
-        );
-    }
-
-    fn selected(&self) -> Option<&RequestView> {
-        self.list
-            .selected()
-            .and_then(|index| self.waiting.get(index))
     }
 
     /// Tools of the open request, from its saved Human definition.
@@ -536,7 +566,11 @@ impl Review {
             };
         }
         match self.focus {
+            Focus::List if self.editing_query.is_some() => self.query_key(key),
             Focus::List => self.list_key(key),
+            Focus::Detail if self.record.is_some() || self.request.is_none() => {
+                self.record_key(key)
+            }
             Focus::Detail => match self.key_detail(key) {
                 Handled::Action(action) => action,
                 Handled::Back => {
@@ -547,38 +581,6 @@ impl Review {
                 // The standalone review has no help overlay or attention order.
                 Handled::Pass => Action::None,
             },
-        }
-    }
-
-    fn list_key(&mut self, key: KeyEvent) -> Action {
-        match key.code {
-            KeyCode::Char('q') => self.quit(),
-            KeyCode::Char('r') => Action::Refresh,
-            KeyCode::Down | KeyCode::Char('j') => {
-                let next = self.list.selected().map_or(0, |index| index + 1);
-                if next < self.waiting.len() {
-                    self.list.select(Some(next));
-                }
-                Action::None
-            }
-            KeyCode::Up | KeyCode::Char('k') => {
-                self.list.select_previous();
-                Action::None
-            }
-            KeyCode::Enter | KeyCode::Right => match self.selected().cloned() {
-                Some(view) => self.open_view(view),
-                None => Action::None,
-            },
-            // Straight to the tools of the selected request.
-            KeyCode::Tab => match self.selected().cloned() {
-                Some(view) => {
-                    let action = self.open_view(view);
-                    self.area = Area::Tools;
-                    action
-                }
-                None => Action::None,
-            },
-            _ => Action::None,
         }
     }
 
@@ -655,7 +657,7 @@ impl Review {
                 let open = self.focus == Focus::List && self.list.selected() == Some(index);
                 self.focus = Focus::List;
                 self.list.select(Some(index));
-                match (open, self.waiting.get(index).cloned()) {
+                match (open, self.listed.get(index).cloned()) {
                     (true, Some(view)) => self.open_view(view),
                     _ => Action::None,
                 }
@@ -666,6 +668,17 @@ impl Review {
 
     /// Open a listed request in Detail; another request starts from a clean review.
     fn open_view(&mut self, view: RequestView) -> Action {
+        if view.request.profile.kind() != crate::config::ProfileKind::Human {
+            // Read-only: the record loads with the refresh this returns.
+            if self.open.as_ref() != Some(&view.request.id) {
+                self.record = None;
+            }
+            self.open = Some(view.request.id.clone());
+            self.request = None;
+            self.focus = Focus::Detail;
+            return Action::Refresh;
+        }
+        self.record = None;
         if self.open.as_ref() != Some(&view.request.id) {
             self.mode = Mode::Request;
             self.area = Area::Fields;
@@ -863,7 +876,10 @@ impl Review {
 
     /// A bracketed paste goes to the focused field of the open review, as in monitor.
     pub fn paste(&mut self, text: &str) {
-        if self.focus == Focus::Detail && self.area == Area::Fields {
+        if self.focus == Focus::List && self.editing_query.is_some() {
+            self.query.push_str(text);
+            self.filter = self.query.parse();
+        } else if self.focus == Focus::Detail && self.area == Area::Fields {
             self.paste_single(text);
         }
     }
@@ -1154,6 +1170,15 @@ async fn drive(
     let mut spin = tokio::time::interval(SPIN);
     let mut pending: Option<Pin<Box<dyn Future<Output = Outcome>>>> = None;
     let mut action = Action::Refresh;
+    // A read-only Agent Detail reads its session with the monitor's bounded reader jobs.
+    let mut session_job: Option<
+        tokio::task::JoinHandle<(
+            crate::monitor::session::Job,
+            crate::agent::session::live::Window,
+        )>,
+    > = None;
+    let mut session_probe = tokio::time::interval(crate::monitor::SESSION_PROBE);
+    session_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         loop {
             action = match action {
@@ -1184,8 +1209,41 @@ async fn drive(
         terminal
             .draw(|frame| review.draw(frame))
             .map_err(|e| e.to_string())?;
+        if session_job.is_none()
+            && let Some(job) = review
+                .record_live()
+                .and_then(crate::monitor::session::Live::job)
+        {
+            session_job = Some(tokio::task::spawn_blocking(move || {
+                let mut job = job;
+                let window =
+                    job.reader
+                        .step_expanded(job.width, job.height, job.position, &job.expanded);
+                (job, window)
+            }));
+        }
         action = tokio::select! {
             _ = cancellation.cancelled() => Action::Quit,
+            outcome = async { session_job.as_mut().expect("active session job").await },
+                if session_job.is_some() =>
+            {
+                session_job = None;
+                let (job, window) = crate::task::joined(outcome)
+                    .map_err(|error| format!("Session reader job failed: {error}"))?;
+                if let Some(live) = review.record_live()
+                    && live.serial == job.serial
+                    && live.source.reference == job.reader.source.reference
+                {
+                    live.finish(job, window);
+                }
+                Action::None
+            }
+            _ = session_probe.tick() => {
+                if let Some(live) = review.record_live() {
+                    live.invalidate();
+                }
+                Action::None
+            }
             outcome = async { pending.as_mut().expect("pending job").await },
                 if pending.is_some() =>
             {
@@ -1202,7 +1260,14 @@ async fn drive(
                 crate::changes::Change::StateInvalidated | crate::changes::Change::Resync => {
                     Action::Refresh
                 }
-                crate::changes::Change::SessionInvalidated(_) => Action::None,
+                crate::changes::Change::SessionInvalidated(id) => {
+                    if let Some(live) = review.record_live()
+                        && live.source.reference.session_id == id
+                    {
+                        live.invalidate();
+                    }
+                    Action::None
+                }
             },
             event = events.next() => match event {
                 Some(Ok(Event::Key(key))) if key.kind == KeyEventKind::Press => review.key(key),

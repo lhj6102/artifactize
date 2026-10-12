@@ -15,8 +15,8 @@ earlier GREEN/RED result, and `verify` shows what it executed, what it reused an
 the tokens reuse saved: review cost follows the size of a change. `status`
 predicts what a change will re-review. A team review store (`artifactize server`) shares
 verdicts across teammates' checkouts and CI. The CLI drives reviews, `artifactize monitor`
-shows their progress and `artifactize review` works through waiting Human sign-offs. It runs
-on Linux, macOS and Windows.
+shows their progress and `artifactize review` searches saved requests and works through
+waiting Human sign-offs. It runs on Linux, macOS and Windows.
 
 Start with [Install](getting-started/install.md): prerequisites, backend setup, a 5-minute
 [quick start](getting-started/quick-start.md), the monitor and cleanup.

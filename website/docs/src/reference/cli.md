@@ -54,7 +54,7 @@ to that program, not artifactize.
 | `doctor` | | text or JSON | 0 ready, 1 hard error |
 | `prune` | `--older-than DURATION`, `--dry-run` | text or JSON | 0 |
 | `monitor` | `--all` (not with `--repo`) | terminal UI | 0 |
-| `review [REQUEST_ID]` | `--all` (not with `--repo`), `--reviewer NAME` (`$USER`) | terminal UI | 0 |
+| `review [REQUEST_ID]` | `--repo PATH` (a `repo:` search term), `--all` (the default; not with `--repo`), `--reviewer NAME` (`$USER`) | terminal UI | 0 |
 | `server run` | `--listen ADDR` (`127.0.0.1:8417`) | listening address | 0 |
 | `server token add NAME` | `--scopes read,publish,human` | the token, once | 0 |
 | `server token list` | | text or JSON | 0 |

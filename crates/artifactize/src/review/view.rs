@@ -32,8 +32,10 @@ const CLAIM_WIDTH: u16 = 16;
 const WAITING_WIDTH: u16 = 8;
 /// A popup takes this share of the terminal's width, leaving the review visible around it.
 const POPUP_WIDTH: u16 = 80;
-/// The Full waiting list's column titles; a column is never narrower than its title.
-const HEADERS: [&str; 5] = ["EVAL", "REQUEST", "CLAIM", "WAITING", "REPO"];
+/// The Full list's column titles; a column is never narrower than its title.
+const HEADERS: [&str; 6] = ["EVAL", "REQUEST", "STATUS", "CLAIM", "AGE", "REPO"];
+/// The status column fits the longest request status, `BUDGET_EXHAUSTED`, and its glyph.
+const STATUS_WIDTH: u16 = 18;
 
 const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -118,7 +120,10 @@ impl Review {
                 }
                 (_, Density::Full) => {
                     hits.detail = area;
-                    hits.review = self.draw_detail(frame, area, true);
+                    match &mut self.record {
+                        Some(record) => record.draw(frame, area, true),
+                        None => hits.review = self.draw_detail(frame, area, true),
+                    }
                 }
                 _ => {
                     hits.preview = area;
@@ -144,19 +149,20 @@ impl Review {
         }
     }
 
-    /// `artifactize review › scope › eval` and the reviewer.
+    /// `artifactize review › query › eval` and the reviewer.
     fn draw_header(&self, frame: &mut Frame, area: Rect) {
-        let scope = self
-            .repo
-            .as_ref()
-            .map_or("all repositories".into(), |repo| {
-                format!("repo {}", crate::platform::path_text(repo))
-            });
+        // The query itself shows under the list; the breadcrumb names the usual one in words.
+        let scope = match self.query.trim() {
+            "" => "all requests".to_owned(),
+            super::search::DEFAULT => "waiting Human reviews".to_owned(),
+            query => query.to_owned(),
+        };
         let mut segments = vec![scope];
         if self.focus == Focus::Detail {
-            match (&self.request, &self.open) {
-                (Some(view), _) => segments.push(view.request.eval_id.to_string()),
-                (None, Some(id)) => segments.push(id.to_string()),
+            match (&self.request, &self.record, &self.open) {
+                (Some(view), _, _) => segments.push(view.request.eval_id.to_string()),
+                (None, Some(record), _) => segments.push(record.view.request.eval_id.to_string()),
+                (None, None, Some(id)) => segments.push(id.to_string()),
                 _ => {}
             }
         }
@@ -217,17 +223,32 @@ impl Review {
             return "k keep claims and quit · u release and quit · Esc stay".into();
         }
         match self.focus {
-            Focus::List => "↑↓ request · Enter open review · Tab tools · r refresh · q quit".into(),
-            Focus::Detail => self.detail_hints(),
+            Focus::List if self.editing_query.is_some() => {
+                let candidates = self.candidates();
+                if candidates.is_empty() {
+                    "type to search · Tab complete · Enter done · Esc cancel · Ctrl-U clear".into()
+                } else {
+                    format!("Tab {candidates} · Enter done · Esc cancel")
+                }
+            }
+            Focus::List => {
+                "↑↓ request · Enter open · Tab tools · / search · PgUp/PgDn page · r refresh · q quit"
+                    .into()
+            }
+            Focus::Detail => match &self.record {
+                Some(record) => record.hints().into(),
+                None => self.detail_hints(),
+            },
         }
     }
 
-    /// Cells of the waiting list: eval, request, claim, waiting time and repository, as one-row
+    /// Cells of the list: eval, request, status, claim, age and repository, as one-row
     /// [`plain`] text so widths are measured on what the terminal shows.
-    fn list_rows(&self, now: OffsetDateTime) -> Vec<[String; 5]> {
-        self.waiting
+    fn list_rows(&self, now: OffsetDateTime) -> Vec<[String; 6]> {
+        self.listed
             .iter()
-            .map(|view| {
+            .zip(&self.entries)
+            .map(|(view, entry)| {
                 let request = &view.request;
                 let claim = view.claim.as_ref().map_or("-".into(), |claim| {
                     if claim.reviewer == self.reviewer {
@@ -236,17 +257,15 @@ impl Review {
                         claim.reviewer.to_string()
                     }
                 });
+                let status = crate::monitor::Status::from(request.status());
                 let age = duration((now - request.created_at.time()).whole_seconds());
-                let repo = request.human_definition.as_ref();
-                let repo = repo
-                    .and_then(|definition| definition.repo.value())
-                    .map(|repo| crate::platform::path_text(repo));
                 [
                     request.eval_id.to_string(),
                     request.id.to_string(),
+                    format!("{} {status}", status.glyph()),
                     claim,
                     age,
-                    repo.unwrap_or_else(|| "-".into()),
+                    entry.repository.clone(),
                 ]
                 .map(|cell| plain(&cell).into_owned())
             })
@@ -258,21 +277,33 @@ impl Review {
         frame: &mut Frame,
         area: Rect,
         density: Density,
-        rows: Vec<[String; 5]>,
+        rows: Vec<[String; 6]>,
     ) -> Vec<(Rect, usize)> {
         let focused = density == Density::Full;
+        let name = if self.waiting_query() {
+            "Waiting Human reviews"
+        } else {
+            "Requests"
+        };
+        let page = match (self.page(), self.next.is_some()) {
+            (1, false) => String::new(),
+            (page, more) => format!(" · page {page}{}", if more { ", PgDn more" } else { "" }),
+        };
+        let (query, error) = self.query_line();
         let block = Block::bordered()
-            .title(format!(" Waiting Human reviews ({}) ", self.waiting.len()))
+            .title(format!(" {name} ({}){page} ", self.listed.len()))
+            .title_bottom(Line::from(format!(" {query} ")))
             .border_style(if focused {
                 Style::new().cyan()
             } else {
                 Style::default()
             });
-        if self.waiting.is_empty() {
-            let text = if self.refreshed.is_some() {
-                "No Human reviews are waiting."
-            } else {
-                "Loading…"
+        if self.listed.is_empty() {
+            let text = match error {
+                Some(error) => error,
+                None if self.refreshed.is_none() => "Loading…",
+                None if self.waiting_query() => "No Human reviews are waiting.",
+                None => "No request matches the search.",
             };
             frame.render_widget(
                 Paragraph::new(text).wrap(Wrap { trim: false }).block(block),
@@ -288,7 +319,7 @@ impl Review {
         };
         if density == Density::Compact {
             let room = usize::from(area.width.saturating_sub(BORDER_CELLS));
-            let rows = rows.into_iter().zip(&self.waiting).map(|(cells, view)| {
+            let rows = rows.into_iter().zip(&self.listed).map(|(cells, view)| {
                 let mark = match &view.claim {
                     Some(claim) if claim.reviewer == self.reviewer => " (you)",
                     Some(_) => " (claimed)",
@@ -302,14 +333,15 @@ impl Review {
             frame.render_stateful_widget(table, area, &mut self.list);
             return self.row_hits(area, 0);
         }
-        let [eval, request, claim, waiting] = column_widths(&rows);
+        let [eval, request, status, claim, age] = column_widths(&rows);
         let table = Table::new(
             rows.into_iter().map(Row::new),
             [
                 Constraint::Length(eval),
                 Constraint::Length(request),
+                Constraint::Length(status),
                 Constraint::Length(claim),
-                Constraint::Length(waiting),
+                Constraint::Length(age),
                 Constraint::Fill(1),
             ],
         )
@@ -325,7 +357,7 @@ impl Review {
     fn row_hits(&self, area: Rect, header: u16) -> Vec<(Rect, usize)> {
         let inner = area.inner(ratatui::layout::Margin::new(1, 1));
         let top = inner.y.saturating_add(header);
-        (self.list.offset()..self.waiting.len())
+        (self.list.offset()..self.listed.len())
             .zip(top..inner.bottom())
             .map(|(index, y)| (Rect::new(inner.x, y, inner.width, 1), index))
             .collect()
@@ -336,7 +368,7 @@ impl Review {
         match self
             .list
             .selected()
-            .and_then(|index| self.waiting.get(index))
+            .and_then(|index| self.listed.get(index))
         {
             Some(view) => detail::draw_peek(frame, area, view, &self.reviewer),
             None => frame.render_widget(
@@ -380,10 +412,11 @@ impl Review {
 
 /// Widths of the Full list's non-flexible columns; claim and waiting time keep fixed widths.
 /// The repository column fills the remaining space rather than contributing a natural width.
-fn column_widths(rows: &[[String; 5]]) -> [u16; 4] {
+fn column_widths(rows: &[[String; 6]]) -> [u16; 5] {
     let mut widths = [
         text_width(HEADERS[0]),
         text_width(HEADERS[1]),
+        STATUS_WIDTH,
         CLAIM_WIDTH,
         WAITING_WIDTH,
     ];

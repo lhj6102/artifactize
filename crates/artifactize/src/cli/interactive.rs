@@ -39,7 +39,9 @@ pub(super) async fn review(
     if let Some(id) = &request {
         crate::store::read_request(&state, id).await?;
     }
-    let repo = (!all).then(|| context.repo.unwrap_or_else(|| PathBuf::from(".")));
+    // The list searches every repository; --repo starts it on that repository's term, and
+    // --all (the default) stays accepted.
+    let repo = context.repo;
     let (cancellation, listener) = cancellation_listener()?;
     let result = crate::review::run(state, repo, reviewer, request, cancellation).await;
     listener.abort();

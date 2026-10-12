@@ -105,7 +105,7 @@ fn waits_lines(value: &str, pending: bool, indent: &str) -> Vec<Line<'static>> {
 }
 /// Outcome → Waits for → What → Provenance → Technical. A peek shows the Outcome and the
 /// Artifacts the eval waits for.
-fn section_lines(
+pub(crate) fn section_lines(
     detail: &model::Detail,
     technical: bool,
     pending: bool,
@@ -168,6 +168,33 @@ fn section_lines(
         );
     }
     lines
+}
+/// The visible rows of an Agent session: thinking and tool activity dimmed, or why there are
+/// none.
+pub(crate) fn transcript_lines(live: &super::session::Live) -> Vec<Line<'static>> {
+    if let Some(status) = &live.window.status {
+        return vec![Line::from(status.clone())];
+    }
+    if live.window.rows.is_empty() {
+        return vec![Line::from(
+            "Waiting for provider text; public thinking summary may be unavailable.",
+        )];
+    }
+    live.window
+        .rows
+        .iter()
+        .enumerate()
+        .map(|(row, text)| {
+            let line = Line::from(text.clone());
+            if live.window.thinking.contains(&row)
+                || live.window.groups.iter().any(|(group, _)| *group == row)
+            {
+                line.dark_gray()
+            } else {
+                line
+            }
+        })
+        .collect()
 }
 fn block(title: String, focused: bool) -> Block<'static> {
     Block::bordered().title(title).border_style(if focused {
@@ -742,30 +769,7 @@ impl Monitor {
                         ))
                     })
                     .collect();
-                let rows = if let Some(status) = &live.window.status {
-                    vec![Line::from(status.as_str())]
-                } else if live.window.rows.is_empty() {
-                    vec![Line::from(
-                        "Waiting for provider text; public thinking summary may be unavailable.",
-                    )]
-                } else {
-                    live.window
-                        .rows
-                        .iter()
-                        .enumerate()
-                        .map(|(row, text)| {
-                            let line = Line::from(text.as_str());
-                            if live.window.thinking.contains(&row)
-                                || live.window.groups.iter().any(|(group, _)| *group == row)
-                            {
-                                line.dark_gray()
-                            } else {
-                                line
-                            }
-                        })
-                        .collect()
-                };
-                frame.render_widget(Paragraph::new(rows), transcript);
+                frame.render_widget(Paragraph::new(transcript_lines(live)), transcript);
             }
             self.draw_buttons(
                 frame,

@@ -179,13 +179,14 @@ pub enum Command {
         #[arg(long)]
         all: bool,
     },
-    /// Claim, run tools for and submit waiting Human reviews in a terminal UI; defaults to the
-    /// current repository.
+    /// Search saved requests and claim, run tools for and submit Human reviews in a terminal
+    /// UI; the search starts on the waiting Human reviews of every repository.
     Review {
-        /// Open this request instead of the waiting list.
+        /// Open this request instead of the list.
         #[arg(value_name = "REQUEST_ID")]
         request: Option<RequestId>,
-        /// List waiting requests from every repository in the shared state.
+        /// Search every repository (the default); with --repo the search starts on that
+        /// repository's term instead.
         #[arg(long)]
         all: bool,
         /// Reviewer name (defaults to USER).

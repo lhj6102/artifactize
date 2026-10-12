@@ -774,7 +774,7 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
     );
     review.refresh().await;
     let listed: Vec<_> = review
-        .waiting
+        .listed
         .iter()
         .map(|view| view.request.id.clone())
         .collect();

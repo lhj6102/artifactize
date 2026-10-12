@@ -108,28 +108,63 @@ Placeholders, executable resolution and the `launch` and `output` kinds are in t
 artifactize review [REQUEST_ID] [--repo PATH | --all] [--state-dir PATH] [--reviewer NAME]
 ```
 
-A terminal UI for waiting Human reviews with the same lifecycle as `request`: it
-claims, runs tools, unclaims and submits in-process, and
-publishes a submission to the remote review store exactly like `request submit`.
-Without an ID it lists the WAITING_HUMAN requests of the canonical `--repo`
-(default: the current directory) or, with `--all`, of every repository (newest
-Run first: eval, request, claim, waiting time, repository); Enter opens one. The
-list holds one entry per waiting sign-off: followers that later Runs join to a
-waiting Human execution collapse onto its original request, which records the
-Human tools and owner schemas and receives every action, as in the monitor. With
-an ID it opens that request in any repository; a waiting follower's ID opens its
-original. It also runs on its own, for example in a second terminal or tmux pane.
+A terminal UI that searches saved requests and reviews the waiting Human ones, with the
+same lifecycle as `request`: it claims, runs tools, unclaims and submits in-process, and
+publishes a submission to the remote review store exactly like `request submit`. It also
+runs on its own, for example in a second terminal or tmux pane.
 
-The waiting list and Detail use the monitor's reactive layout. With the list
-focused, it is Full and the selected request has a read-only Preview. Enter or →
-opens Detail. With Detail focused, the Compact list sits beside it. Both panes
-remain at every terminal width: the side pane takes 16 columns below 100, 28 at
-100–139, and 36 at 140 or more, borders included; Full fills the rest. Extremely
-small terminals clip the side pane rather than dropping a level. The breadcrumb is `artifactize review › scope › eval`. ↑/↓ or `j`/`k` selects a
-request; `r` refreshes the list. Tab opens the selected request with its Tools
-focused. Esc on the list
-stays there, never quits. The standalone UI has no `?` help overlay or `!`
-attention navigation; those keys belong to the monitor.
+Without an ID it lists the requests its search finds across every repository in the state,
+newest Run first, with their eval, request, status, claim, age and repository; Enter opens
+one. The search starts as `kind:human status:waiting_human`, the waiting Human sign-offs.
+`--repo PATH` adds that repository's `repo:` term to it; `--all` is accepted and is the
+default. With an ID it opens that request in any repository; a waiting follower's ID opens
+its original.
+
+A search is free text and `key:value` terms; every term must match. A plain word matches,
+case-insensitively, part of the repository, eval, request ID or claimant. A key restricts a
+term to one field; quote a value with spaces (`repo:"/work/my repo"`), and quote a word to
+search for it literally (`"type:style"`):
+
+| Term | Matches |
+|---|---|
+| `repo:` | part of the repository path |
+| `eval:` | part of the eval ID |
+| `request:` | part of the request ID |
+| `reviewer:` | part of the claimant's name; unclaimed requests never match |
+| `tag:` | part of a tag of the eval's Artifact (`tags` in its declaration, as saved with the Run) |
+| `kind:` | the eval kind: `runtime`, `agent`, `human` or `dependency` |
+| `status:` | the request status, such as `waiting_human`, `green`, `red` or `error` |
+| `is:mine` | claimed by you (`$USER` or `--reviewer`) |
+| `is:claimed` | claimed by anyone |
+| `is:unclaimed` | a waiting Human request no one has claimed |
+
+Claims exist only on waiting Human requests, so `is:` matches nothing else. An unknown key
+or value is an error that names the choices, and lists nothing.
+
+`/` edits the search; the list follows as you type. Tab completes the last term: a key, or
+after a key a value from the requests listed (repositories, evals, requests, claimants,
+tags), or a kind, status or `is:` value; the footer names the candidates. Enter keeps the
+search, Esc restores the one before editing, and Ctrl-U clears it. A page lists 100 requests;
+PgDn shows older ones and PgUp newer.
+
+The list holds one entry per waiting sign-off: followers that later Runs join to a waiting
+Human execution are listed once, as the original request, which records the Human tools and
+owner schemas and receives every action, as in the monitor. The search matches that entry, so
+a follower's own repository does not find it; a follower whose original no longer waits is
+listed as itself. A Human request opens the Human Detail below, read-only once settled. Any
+other request opens a read-only Detail: the monitor's sections of its eval in its Run, its
+saved runtime output, or its Agent session read as the monitor reads it (`d` shows the
+sections); it has no claim, tools or forms.
+
+The list and Detail use the monitor's reactive layout. With the list focused, it is Full and
+the selected request has a read-only Preview. Enter or → opens Detail. With Detail focused,
+the Compact list sits beside it. Both panes remain at every terminal width: the side pane
+takes 16 columns below 100, 28 at 100–139, and 36 at 140 or more, borders included; Full
+fills the rest. Extremely small terminals clip the side pane rather than dropping a level.
+The breadcrumb is `artifactize review › search › eval`. ↑/↓ or `j`/`k` selects a request;
+`r` refreshes the list. Tab opens the selected request with its Tools focused. Esc on the
+list stays there, never quits. The standalone UI has no `?` help overlay or `!` attention
+navigation; those keys belong to the monitor.
 
 The mouse works as in the monitor and is captured by default: a click selects a
 list row and a click on the selected row opens it, clicks in Detail act like the
@@ -221,8 +256,8 @@ and quits, and Esc stays. The quit prompt sets a form aside without dropping its
 draft. Monitor keeps claims on exit; release with `u` first if you want to give
 one back. Esc never quits either UI.
 
-After a standalone submission the list returns if more requests wait; otherwise
-`review` exits. Monitor keeps the completed result open in Detail. Both use the
+After a standalone submission the list returns if the search still lists requests;
+otherwise `review` exits. Monitor keeps the completed result open in Detail. Both use the
 same in-process lifecycle jobs; monitor does not launch the standalone command.
 
 ## Monitor

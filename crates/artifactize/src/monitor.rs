@@ -37,7 +37,7 @@ pub use model::{
 pub(crate) use rows::{fit, plain, width};
 pub use terminal::run;
 pub(crate) use terminal::{InputGuard, repaint, suspend};
-pub(crate) use view::{clock, crumbs};
+pub(crate) use view::{clock, crumbs, section_lines, transcript_lines};
 
 use crate::{
     config::ProfileKind,
@@ -61,7 +61,7 @@ const REFRESH: Duration = Duration::from_secs(1);
 const SPIN: Duration = Duration::from_millis(100);
 /// Check an open Agent conversation for new events: often enough that a live session
 /// follows within seconds, rarely enough that reading the session file stays cheap.
-const SESSION_PROBE: Duration = Duration::from_secs(5);
+pub(crate) const SESSION_PROBE: Duration = Duration::from_secs(5);
 /// Bound retained Run pages while allowing the selected scope to page older records.
 pub const PAGE: u32 = 100;
 
