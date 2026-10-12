@@ -396,6 +396,12 @@ pub fn sign_in_as<'a>(command: &'a mut Command, name: &str) -> &'a mut Command {
         .env("USERNAME", name)
 }
 
+/// The value of the environment variable `name` in this process (Windows ignores the name's
+/// case), for tests that run as a probe a parent test starts with a prepared environment.
+pub fn environment_variable(name: &str) -> Option<std::ffi::OsString> {
+    std::env::var_os(name)
+}
+
 /// Run `command` to its end and collect its output.
 pub fn run(command: &mut Command) -> std::process::Output {
     command.output().expect("the command runs")

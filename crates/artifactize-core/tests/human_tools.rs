@@ -430,7 +430,7 @@ fn launch_outlives_host_and_an_agent_tool_sees_the_real_home_without_artifactize
 
 #[tokio::test]
 async fn human_environment_and_launch_probe() {
-    let Some(repo) = std::env::var_os("ARTIFACTIZE_HUMAN_PROBE") else {
+    let Some(repo) = support::os::environment_variable("ARTIFACTIZE_HUMAN_PROBE") else {
         return;
     };
     let repo = Path::new(&repo);

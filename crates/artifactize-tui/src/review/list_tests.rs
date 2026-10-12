@@ -242,9 +242,12 @@ async fn an_agent_or_settled_request_opens_a_read_only_detail_with_its_evidence(
     type_text(&mut review, "kind:agent").await;
     press(&mut review, KeyEvent::from(KeyCode::Enter)).await;
     press(&mut review, KeyEvent::from(KeyCode::Enter)).await;
-    let record = review.record.as_ref().expect("a read-only Detail");
+    let record = review.shown.record().expect("a read-only Detail");
     assert_eq!(record.view.request.eval_id.as_str(), "app/agent");
-    assert!(review.request.is_none(), "no Human Detail, claim or form");
+    assert!(
+        review.shown.request().is_none(),
+        "no Human Detail, claim or form"
+    );
     // Read the session as the driver's reader job would.
     screen(&mut review);
     let live = review.record_live().expect("the Agent session");

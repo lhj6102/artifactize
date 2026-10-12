@@ -398,11 +398,11 @@ fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables()
 
 #[tokio::test]
 async fn environment_subprocess_probe() {
-    if std::env::var_os("ARTIFACTIZE_ENV_PROBE").is_none() {
+    if support::os::environment_variable("ARTIFACTIZE_ENV_PROBE").is_none() {
         return;
     }
     assert_eq!(
-        std::env::var("ARTIFACTIZE_REMOTE_TOKEN").unwrap(),
+        support::os::environment_variable("ARTIFACTIZE_REMOTE_TOKEN").unwrap(),
         "azt_not-for-the-command"
     );
     let scratch = Scratch::new();

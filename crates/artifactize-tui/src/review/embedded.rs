@@ -36,7 +36,7 @@ impl Review {
         {
             self.commands = None;
         }
-        self.request = Some(view);
+        self.shown = super::Shown::Human(Box::new(view));
         if self.settled() {
             self.stop_editing();
         }
@@ -46,8 +46,8 @@ impl Review {
         self.mine()
     }
     pub(crate) fn settled(&self) -> bool {
-        self.request
-            .as_ref()
+        self.shown
+            .request()
             .is_some_and(|view| view.request.status() != RequestStatus::WaitingHuman)
     }
     /// A form takes the keys only while the request can still be reviewed.
@@ -129,7 +129,7 @@ impl Review {
                 if matches!(&self.mode, Mode::Form(form) if form.verdict == verdict) {
                     return Action::None;
                 }
-                let schema = match self.request.as_ref() {
+                let schema = match self.shown.request() {
                     Some(view) => super::schema(&view.request, verdict),
                     None => return Action::None,
                 };
@@ -179,7 +179,7 @@ impl Review {
             } => Some((**request).clone()),
             _ => None,
         };
-        let old = self.request.clone();
+        let old = self.shown.request().cloned();
         let action = self.finish(outcome);
         if let Some(request) = submitted
             && let Some(mut view) = old

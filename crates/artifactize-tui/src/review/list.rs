@@ -244,7 +244,7 @@ impl Review {
 
     /// Keys of a read-only Detail: Esc or ← back to the list, q quits.
     pub(super) fn record_key(&mut self, key: KeyEvent) -> Action {
-        if let Some(record) = &mut self.record
+        if let Some(record) = self.shown.record_mut()
             && record.key(key)
         {
             return Action::None;
@@ -261,8 +261,8 @@ impl Review {
 
     /// The read-only Detail's reader, for the driver's session jobs.
     pub(super) fn record_live(&mut self) -> Option<&mut crate::monitor::session::Live> {
-        self.record
-            .as_mut()
+        self.shown
+            .record_mut()
             .filter(|_| self.focus == Focus::Detail)
             .and_then(|record| record.live.as_mut())
     }

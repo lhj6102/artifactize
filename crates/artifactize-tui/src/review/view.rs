@@ -120,7 +120,7 @@ impl Review {
                 }
                 (_, Density::Full) => {
                     hits.detail = area;
-                    match &mut self.record {
+                    match self.shown.record_mut() {
                         Some(record) => record.draw(frame, area, true),
                         None => hits.review = self.draw_detail(frame, area, true),
                     }
@@ -159,7 +159,7 @@ impl Review {
         };
         let mut segments = vec![scope];
         if self.focus == Focus::Detail {
-            match (&self.request, &self.record, &self.open) {
+            match (self.shown.request(), self.shown.record(), &self.open) {
                 (Some(view), _, _) => segments.push(view.request.eval_id.to_string()),
                 (None, Some(record), _) => segments.push(record.view.request.eval_id.to_string()),
                 (None, None, Some(id)) => segments.push(id.to_string()),
@@ -235,7 +235,7 @@ impl Review {
                 "↑↓ request · Enter open · Tab tools · / search · PgUp/PgDn page · r refresh · q quit"
                     .into()
             }
-            Focus::Detail => match &self.record {
+            Focus::Detail => match self.shown.record() {
                 Some(record) => record.hints().into(),
                 None => self.detail_hints(),
             },

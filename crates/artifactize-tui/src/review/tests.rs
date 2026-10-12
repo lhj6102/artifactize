@@ -208,14 +208,14 @@ pub(crate) fn opened(reviewer: Option<&str>, definition: Value) -> Review {
         "alice".parse().unwrap(),
         Some(ID.parse().unwrap()),
     );
-    review.request = Some(view("WAITING_HUMAN", reviewer, definition));
+    review.shown = Shown::Human(Box::new(view("WAITING_HUMAN", reviewer, definition)));
     review
 }
 
 /// The same request as monitor opens it: a single-request review without `$EDITOR`.
 pub(crate) fn embedded(reviewer: Option<&str>, definition: Value) -> Review {
     let mut review = opened(reviewer, definition);
-    let view = review.request.clone().unwrap();
+    let view = review.shown.request().cloned().unwrap();
     review.load_single(view);
     review
 }
@@ -394,10 +394,10 @@ fn shared_requests_name_where_actions_go_in_the_metadata() {
         .unwrap()
     };
     // The request's own execution is not shared.
-    review.request.as_mut().unwrap().execution = Some(execution(ID));
+    review.shown.request_mut().unwrap().execution = Some(execution(ID));
     let text = screen(&mut review);
     assert!(!text.contains("actions go to"), "{text}");
-    review.request.as_mut().unwrap().execution = Some(execution("run-0-9"));
+    review.shown.request_mut().unwrap().execution = Some(execution("run-0-9"));
     let text = screen(&mut review);
     assert!(text.contains("actions go to run-0-9 in /origin"), "{text}");
 }
@@ -510,7 +510,7 @@ fn requests_claimed_by_others_or_settled_are_read_only() {
         assert!(screen(&mut review).contains("Claim this request before reviewing it."));
     }
     let mut review = opened(None, demo());
-    review.request = Some(view("GREEN", None, demo()));
+    review.shown = Shown::Human(Box::new(view("GREEN", None, demo())));
     for key in [KeyCode::Char('c'), KeyCode::Char('g')] {
         assert_eq!(press(&mut review, key), Action::None);
         assert_eq!(review.mode(), &Mode::Request);
@@ -609,7 +609,7 @@ fn i_expands_the_instruction_and_tools_focus_widens_the_tools() {
     let instruction = (0..30)
         .map(|n| format!("criterion-{n}\n"))
         .collect::<String>();
-    review.request.as_mut().unwrap().request.payload =
+    review.shown.request_mut().unwrap().request.payload =
         serde_json::from_value(json!({"instruction":instruction})).unwrap();
     let hits = |review: &mut Review| {
         let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
@@ -654,7 +654,7 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
         "alice".parse().unwrap(),
         Some(ID.parse().unwrap()),
     );
-    review.request = Some(view("WAITING_HUMAN", None, demo()));
+    review.shown = Shown::Human(Box::new(view("WAITING_HUMAN", None, demo())));
     claimed(&mut review);
     assert_eq!(press(&mut review, KeyCode::Char('g')), Action::None);
     let green = form(&review);

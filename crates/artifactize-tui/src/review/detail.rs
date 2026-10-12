@@ -417,7 +417,7 @@ impl Review {
     /// Draw the Full Detail of the open request into `area`, borders included.
     pub(crate) fn draw_detail(&mut self, frame: &mut Frame, area: Rect, focused: bool) -> Hits {
         let mut hits = Hits::default();
-        let Some(view) = self.request.clone() else {
+        let Some(view) = self.shown.request().cloned() else {
             let text = self.error.clone().unwrap_or_else(|| "Loading…".into());
             frame.render_widget(
                 Paragraph::new(text)
@@ -583,8 +583,8 @@ impl Review {
             .border_style(focused_border(focused));
         if tools.is_empty() {
             let recorded = self
-                .request
-                .as_ref()
+                .shown
+                .request()
                 .is_some_and(|view| view.request.human_definition.is_some());
             let text = if recorded {
                 "No Human tools are declared in this eval's scope."

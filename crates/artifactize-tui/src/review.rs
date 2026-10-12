@@ -127,6 +127,49 @@ impl Drop for Busy {
 /// Resolved command lines by tool name; a tool that cannot be resolved carries its error.
 type Commands = std::collections::BTreeMap<ToolName, Result<CommandLine, String>>;
 
+/// What the Detail holds. A Human request is a review; any other kind of request is only read.
+enum Shown {
+    Nothing,
+    Human(Box<RequestView>),
+    Record(Box<record::Record>),
+}
+
+impl Shown {
+    fn request(&self) -> Option<&RequestView> {
+        match self {
+            Self::Human(view) => Some(view.as_ref()),
+            _ => None,
+        }
+    }
+    fn request_mut(&mut self) -> Option<&mut RequestView> {
+        match self {
+            Self::Human(view) => Some(view.as_mut()),
+            _ => None,
+        }
+    }
+    fn record(&self) -> Option<&record::Record> {
+        match self {
+            Self::Record(record) => Some(record.as_ref()),
+            _ => None,
+        }
+    }
+    fn record_mut(&mut self) -> Option<&mut record::Record> {
+        match self {
+            Self::Record(record) => Some(record.as_mut()),
+            _ => None,
+        }
+    }
+    fn take_record(&mut self) -> Option<record::Record> {
+        match std::mem::replace(self, Self::Nothing) {
+            Self::Record(record) => Some(*record),
+            other => {
+                *self = other;
+                None
+            }
+        }
+    }
+}
+
 /// Screen state over saved data; only jobs write, through the `human` lifecycle API.
 pub struct Review {
     state: PathBuf,
@@ -142,8 +185,6 @@ pub struct Review {
     /// Where each page shown so far starts, the current one last, and where the next starts.
     pages: Vec<u64>,
     next: Option<u64>,
-    /// The read-only Detail of a request that is not a Human review.
-    record: Option<record::Record>,
     /// Numbers each session reader, so a stale reader job is recognised.
     serial: u64,
     reviewer: crate::types::ReviewerId,
@@ -161,8 +202,8 @@ pub struct Review {
     list: TableState,
     /// The open request, if any, and its last successfully loaded view.
     open: Option<RequestId>,
-    /// An invalid compatibility constructor ID never enters state reads or jobs.
-    request: Option<RequestView>,
+    /// What the Detail holds: the open Human request, or a read-only record of another kind.
+    shown: Shown,
     tool: usize,
     output: Option<Output>,
     scroll: u16,
@@ -208,7 +249,6 @@ impl Review {
             completing: false,
             pages: vec![0],
             next: None,
-            record: None,
             serial: 0,
             reviewer,
             mode: Mode::Request,
@@ -224,7 +264,7 @@ impl Review {
             entries: Vec::new(),
             list: TableState::default(),
             open,
-            request: None,
+            shown: Shown::Nothing,
             tool: 0,
             output: None,
             scroll: 0,
@@ -281,13 +321,12 @@ impl Review {
                 // A Human review opens the shared Human Detail; any other request is read-only.
                 Ok(view) if view.request.profile.kind() == crate::config::ProfileKind::Human => {
                     self.open = Some(view.request.id.clone());
-                    self.record = None;
                     self.show(view);
                     Ok(())
                 }
                 Ok(view) => {
                     self.serial += 1;
-                    let previous = self.record.take();
+                    let previous = self.shown.take_record();
                     Box::pin(record::Record::load(
                         &self.state,
                         view,
@@ -295,7 +334,7 @@ impl Review {
                         self.serial,
                     ))
                     .await
-                    .map(|record| self.record = Some(record))
+                    .map(|record| self.shown = Shown::Record(Box::new(record)))
                 }
                 Err(error) => Err(error),
             };
@@ -329,7 +368,7 @@ impl Review {
     /// Resolve the open waiting request's tool command lines once per request (and again after
     /// a run), so the Tools pane shows what Enter runs. Reads declarations; runs nothing.
     pub(crate) async fn resolve_commands(&mut self) {
-        let Some(view) = &self.request else {
+        let Some(view) = self.shown.request() else {
             return;
         };
         let id = view.request.id.clone();
@@ -357,19 +396,19 @@ impl Review {
 
     /// Tools of the open request, from its saved Human definition.
     pub fn tools(&self) -> Vec<Tool> {
-        self.request
-            .as_ref()
+        self.shown
+            .request()
             .map_or_else(Vec::new, |view| tools(&view.request))
     }
 
     fn mine(&self) -> bool {
-        let claim = self.request.as_ref().and_then(|view| view.claim.as_ref());
+        let claim = self.shown.request().and_then(|view| view.claim.as_ref());
         claim.is_some_and(|claim| claim.reviewer == self.reviewer)
     }
 
     /// The open request when this reviewer may act on it.
     fn actionable(&self) -> Result<(RequestId, bool), String> {
-        actionable(self.request.as_ref(), &self.reviewer)
+        actionable(self.shown.request(), &self.reviewer)
     }
 
     fn notify(&mut self, message: impl Into<String>, error: bool) -> Action {
@@ -441,7 +480,7 @@ impl Review {
         match self.focus {
             Focus::List if self.editing_query.is_some() => self.query_key(key),
             Focus::List => self.list_key(key),
-            Focus::Detail if self.record.is_some() || self.request.is_none() => {
+            Focus::Detail if self.shown.record().is_some() || self.shown.request().is_none() => {
                 self.record_key(key)
             }
             Focus::Detail => match self.key_detail(key) {
@@ -543,15 +582,14 @@ impl Review {
     fn open_view(&mut self, view: RequestView) -> Action {
         if view.request.profile.kind() != crate::config::ProfileKind::Human {
             // Read-only: the record loads with the refresh this returns.
-            if self.open.as_ref() != Some(&view.request.id) {
-                self.record = None;
+            // A record of the same request stays, to be read again by the refresh.
+            if self.open.as_ref() != Some(&view.request.id) || self.shown.request().is_some() {
+                self.shown = Shown::Nothing;
             }
             self.open = Some(view.request.id.clone());
-            self.request = None;
             self.focus = Focus::Detail;
             return Action::Refresh;
         }
-        self.record = None;
         if self.open.as_ref() != Some(&view.request.id) {
             self.mode = Mode::Request;
             self.area = Area::Fields;
@@ -563,7 +601,7 @@ impl Review {
             self.drafts.clear();
         }
         self.open = Some(view.request.id.clone());
-        self.request = Some(view);
+        self.shown = Shown::Human(Box::new(view));
         self.focus = Focus::Detail;
         Action::Refresh
     }
@@ -671,7 +709,7 @@ impl Review {
         match outcome {
             Outcome::SavedLocally { request, .. } => {
                 self.taken.retain(|id| id != &request.id);
-                if let Some(view) = &mut self.request {
+                if let Some(view) = self.shown.request_mut() {
                     view.request = *request;
                     view.claim = None;
                 }
@@ -682,7 +720,7 @@ impl Review {
             Outcome::Claimed { result } => {
                 if let Ok(claim) = result {
                     self.took(Some(claim.clone()));
-                    if let Some(view) = &mut self.request {
+                    if let Some(view) = self.shown.request_mut() {
                         view.claim = Some(claim);
                     }
                     if !matches!(self.mode, Mode::Form(_)) {
@@ -716,7 +754,7 @@ impl Review {
                         self.taken.retain(|taken| *taken != id);
                         self.notice = Some(notice);
                         self.open = None;
-                        self.request = None;
+                        self.shown = Shown::Nothing;
                         self.output = None;
                         self.mode = Mode::Request;
                         self.focus = Focus::List;

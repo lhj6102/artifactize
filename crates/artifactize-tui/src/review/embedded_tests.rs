@@ -602,7 +602,7 @@ fn human_instruction_is_visible_and_scrollable_before_and_after_claim() {
     let instruction = (0..40)
         .map(|n| format!("criterion-{n}\n"))
         .collect::<String>();
-    review.request.as_mut().unwrap().request.payload =
+    review.shown.request_mut().unwrap().request.payload =
         serde_json::from_value(json!({"instruction":instruction})).unwrap();
     let draw = |review: &mut Review| {
         let mut terminal =
@@ -629,7 +629,7 @@ fn human_instruction_is_visible_and_scrollable_before_and_after_claim() {
     review.scroll_instruction(15);
     assert!(draw(&mut review).contains("criterion-39"));
     // In REVIEW it folds to two rows above the tools and fields, and keeps its scroll.
-    review.request.as_mut().unwrap().claim = Some(super::tests::claim("alice"));
+    review.shown.request_mut().unwrap().claim = Some(super::tests::claim("alice"));
     review.control(Control::Red);
     let text = draw(&mut review);
     assert!(
@@ -861,7 +861,7 @@ async fn followers_of_later_runs_review_the_original_with_its_file_tools_and_con
 #[test]
 fn a_request_without_a_recorded_definition_never_offers_an_empty_form() {
     let mut review = super::tests::opened(Some("alice"), super::tests::demo());
-    review.request.as_mut().unwrap().request.human_definition = None;
+    review.shown.request_mut().unwrap().request.human_definition = None;
     assert_eq!(review.control(Control::Green), Action::None);
     assert!(!review.editing());
     let screen = drawn(&mut review);
