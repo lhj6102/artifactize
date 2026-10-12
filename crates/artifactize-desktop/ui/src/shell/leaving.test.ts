@@ -1,4 +1,4 @@
-// Closing the window with the standalone review's claims: every close request is held until
+// Closing the window with the window's claims: every close request is held until
 // the prompt is answered, however often the window asks.
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { afterEach, describe, expect, it } from "vitest";

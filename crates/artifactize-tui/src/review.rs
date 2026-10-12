@@ -189,7 +189,7 @@ pub struct Review {
     serial: u64,
     reviewer: crate::types::ReviewerId,
     mode: Mode,
-    /// The standalone level with focus; monitor keeps its own panes.
+    /// The standalone level with focus; the Monitor keeps its own panes.
     focus: Focus,
     area: Area,
     /// The folded Technical section is shown.

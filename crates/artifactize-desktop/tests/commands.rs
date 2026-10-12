@@ -285,12 +285,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     assert_eq!(refused["message"], artifactize_core::review::CLAIM_FIRST);
     assert!(saved(&fixture, "release/signoff").claim.is_none());
 
-    let claimed = invoke(
-        &window,
-        "human_claim",
-        json!({"id": id, "job": 2, "standalone": true}),
-    )
-    .unwrap();
+    let claimed = invoke(&window, "human_claim", json!({"id": id, "job": 2})).unwrap();
     assert_eq!(claimed["view"]["stage"], "review");
     assert_eq!(
         invoke(&window, "human_taken", json!({})).unwrap(),
@@ -385,12 +380,7 @@ fn a_replaced_state_drops_the_old_reviews_claims_and_cached_views() {
     let old = saved(&fixture, "release/signoff").request.id.to_string();
     assert_eq!(waiting(true)["generation"], 0);
     invoke(&window, "human_open", json!({"id": old, "reload": true})).unwrap();
-    invoke(
-        &window,
-        "human_claim",
-        json!({"id": old, "job": 1, "standalone": true}),
-    )
-    .unwrap();
+    invoke(&window, "human_claim", json!({"id": old, "job": 1})).unwrap();
     // An ordinary refresh keeps the generation, the claim taken here and the cached view.
     assert_eq!(waiting(true)["generation"], 0);
     assert_eq!(
@@ -441,12 +431,7 @@ fn a_publication_failure_after_local_settlement_is_saved_locally() {
     let window = window(&fixture, Mode::Review);
     let id = saved(&fixture, "release/signoff").request.id.to_string();
     invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
-    invoke(
-        &window,
-        "human_claim",
-        json!({"id": id, "job": 1, "standalone": true}),
-    )
-    .unwrap();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
     let submitted = invoke(
         &window,
         "human_submit",
@@ -516,12 +501,7 @@ fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
     let backup = fixture._root.path().join("backup");
     back_up(&fixture.state, &backup);
     invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
-    invoke(
-        &window,
-        "human_claim",
-        json!({"id": id, "job": 1, "standalone": true}),
-    )
-    .unwrap();
+    invoke(&window, "human_claim", json!({"id": id, "job": 1})).unwrap();
     assert_eq!(
         invoke(&window, "human_taken", json!({})).unwrap(),
         json!([id])
@@ -820,12 +800,7 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
 
     let id = saved(&fixture, "release/signoff").request.id.to_string();
     let human = window(&fixture, Mode::Review);
-    invoke(
-        &human,
-        "human_claim",
-        json!({"id": id, "job": 1, "standalone": true}),
-    )
-    .unwrap();
+    invoke(&human, "human_claim", json!({"id": id, "job": 1})).unwrap();
     invoke(
         &human,
         "human_submit",

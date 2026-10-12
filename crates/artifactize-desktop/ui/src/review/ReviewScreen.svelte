@@ -138,7 +138,7 @@
 
   /** Open a Human request; another request than the open one starts from a clean review. */
   function open(id: string, tools = false) {
-    if (r.review?.id !== id) r.review = new Review(id, true);
+    if (r.review?.id !== id) r.review = new Review(id);
     if (tools) r.review.area = "tools";
     r.record = null;
     r.focus = "detail";

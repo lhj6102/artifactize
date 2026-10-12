@@ -112,12 +112,8 @@ export class Review {
   /** A form takes the keys only while the request can still be reviewed. */
   readonly editing = $derived(this.form !== null && !this.settled);
 
-  /** The standalone review offers its claims for release on quit; the monitor keeps them. */
-  readonly standalone: boolean;
-
-  constructor(id: string, standalone: boolean) {
+  constructor(id: string) {
     this.id = id;
-    this.standalone = standalone;
   }
 
   /** Read the request (or, without `reload`, redraw its waiting time from the last read). */
@@ -158,7 +154,7 @@ export class Review {
     if (this.busy || this.settled) return;
     try {
       const acted = await this.#job("Claiming the review", (job) =>
-        call(commands.humanClaim(this.id, job, this.standalone)),
+        call(commands.humanClaim(this.id, job)),
       );
       if (acted) this.#acted(acted);
     } catch (error) {

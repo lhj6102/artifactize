@@ -56,7 +56,7 @@
   const review = (id: string): Review | undefined => reviews[id];
   /** Open the Review of a request when its Detail arrives, never while rendering. */
   function openReview(id: string): void {
-    reviews[id] ??= new Review(id, false);
+    reviews[id] ??= new Review(id);
   }
 
   /** Move focus to a pane's list, tree or review, or else to the pane itself. */

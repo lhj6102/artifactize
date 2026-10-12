@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Quitting with claims the standalone review took and did not submit: keep or release them.
+  // Quitting with claims this window took and did not submit: keep or release them.
   import { LeaveDialogState, setLeaveDialogState } from "./leaveDialog.svelte";
   import { AlertDialog } from "bits-ui";
   import { commands, call, message, nextJob } from "../ipc/client";

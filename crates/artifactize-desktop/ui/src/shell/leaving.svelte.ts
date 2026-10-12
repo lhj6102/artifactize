@@ -1,4 +1,4 @@
-// Leaving the window with claims the standalone review took: every way out (q, the window's
+// Leaving the window with claims this window took: every way out (q, the window's
 // close button, repeated close requests) asks once and waits for the answer; only the
 // prompt's keep or release ends the window.
 import { commands } from "../ipc/client";

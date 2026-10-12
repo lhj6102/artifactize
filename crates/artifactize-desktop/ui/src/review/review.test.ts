@@ -42,7 +42,7 @@ afterEach(() => clearMocks());
 describe("Review", () => {
   it("shows the verdict chosen last when its form arrives before the earlier one", async () => {
     const { pending } = backend();
-    const review = new Review("run-a-2", false);
+    const review = new Review("run-a-2");
     await review.load();
     const green = review.choose("GREEN");
     const red = review.choose("RED");
@@ -56,7 +56,7 @@ describe("Review", () => {
 
   it("opens no form that arrives after editing stopped", async () => {
     const { pending } = backend();
-    const review = new Review("run-a-2", false);
+    const review = new Review("run-a-2");
     await review.load();
     const green = review.choose("GREEN");
     await settle();
@@ -68,7 +68,7 @@ describe("Review", () => {
 
   it("edits a typed form as JSON and keeps that JSON as the verdict's draft", async () => {
     const { pending, drafts } = backend();
-    const review = new Review("run-a-2", false);
+    const review = new Review("run-a-2");
     await review.load();
     const green = review.choose("GREEN");
     await settle();
@@ -116,7 +116,7 @@ describe("Review", () => {
       }
       return null;
     });
-    const review = new Review("run-a-2", false);
+    const review = new Review("run-a-2");
     await review.load();
     await review.choose("GREEN");
     await review.form!.set("comment", { kind: "text", value: "before" });

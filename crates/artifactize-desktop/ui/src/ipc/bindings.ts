@@ -40,10 +40,10 @@ export const commands = {
 	/**  `draft` of request `id` with its owner-fields JSON replaced. */
 	humanEditJson: (id: string, draft: Draft, json: string) => typedError<Draft, Failure>(__TAURI_INVOKE("human_edit_json", { id, draft, json })),
 	/**
-	 *  Claim request `id` for this reviewer; nothing else claims. The standalone review offers
-	 *  its claims for release on quit; the monitor keeps them, as in the terminal.
+	 *  Claim request `id` for this reviewer; nothing else claims. A claim of this window is offered
+	 *  for release on quit, whichever screen took it.
 	 */
-	humanClaim: (id: string, job: JobId, standalone: boolean) => typedError<Acted, Failure>(__TAURI_INVOKE("human_claim", { id, job, standalone })),
+	humanClaim: (id: string, job: JobId) => typedError<Acted, Failure>(__TAURI_INVOKE("human_claim", { id, job })),
 	/**
 	 *  Run tool `tool` of request `id`; job number `job` cancels it. The run needs this
 	 *  reviewer's claim on a request that still waits and unchanged declarations.
@@ -72,10 +72,7 @@ export const commands = {
 	reviewComplete: (query: string) => typedError<Completion, Failure>(__TAURI_INVOKE("review_complete", { query })),
 	/**  The read-only Detail of request `id` in its Run, as the monitor shows it. */
 	reviewDetail: (id: string) => typedError<DetailView, Failure>(__TAURI_INVOKE("review_detail", { id })),
-	/**
-	 *  Claims the standalone review took and has neither submitted nor released, for the quit
-	 *  prompt.
-	 */
+	/**  Claims this window took and has neither submitted nor released, for the quit prompt. */
 	humanTaken: () => __TAURI_INVOKE<string[]>("human_taken"),
 	/**
 	 *  Resolve request `id`'s session and open a reader for it. With the `handle` already open

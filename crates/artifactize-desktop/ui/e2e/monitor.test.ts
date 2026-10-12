@@ -213,3 +213,66 @@ describe("monitor", () => {
     await eventually(async () => (await width()) > before + 60, "a wider Run tree");
   });
 });
+
+describe("quitting the Monitor with a claim", () => {
+  let fixture: Fixture;
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+  const text = () => browser.execute(() => document.body.innerText);
+
+  before(async () => {
+    fixture = create();
+    session = await start(fixture);
+    browser = session.browser;
+    await eventually(async () => (await text()).includes("signoff"), "the Run tree");
+  });
+
+  after(async () => {
+    await session?.stop();
+  });
+
+  // UX edges: E-QUIT-ASK E-QUIT-STAY E-QUIT-RELEASE
+  it("asks before quitting with a claim taken here: Esc stays, u releases and quits", async () => {
+    // The Runs pane has focus first: Enter steps into the tree, which starts on the sign-off.
+    await browser.keys(["Enter"]);
+    await eventually(() => browser.$('[role="tree"]').isFocused(), "tree focus");
+    await browser.keys(["Enter"]);
+    await eventually(() => browser.$('[aria-label="Human review"]').isExisting(), "Human Detail");
+    await eventually(async () => (await text()).includes("Unclaimed. c claims it for alice"), "the claim stage");
+    await browser.keys(["c"]);
+    await eventually(async () => signoff(fixture).claim?.reviewer === "alice", "claimed");
+    await eventually(async () => (await text()).includes("REVIEW (yours)"), "the review stage");
+    // Back out of the Detail to the tree, then q outside any field.
+    await browser.keys(["Escape"]);
+    await browser.$('[aria-label="Human review"]').waitForExist({ reverse: true, timeout: 10000 });
+    const dialog = await browser.$('[role="alertdialog"]');
+    await browser.keys(["q"]);
+    await dialog.waitForExist({ timeout: 10000 });
+    await eventually(
+      () => browser.execute(() => !!document.activeElement?.closest('[role="alertdialog"]')),
+      "focus in the prompt",
+    );
+    await browser.keys(["Escape"]);
+    await dialog.waitForExist({ reverse: true, timeout: 10000 });
+    assert.equal(signoff(fixture).claim?.reviewer, "alice", "staying keeps the claim");
+
+    await browser.keys(["q"]);
+    await dialog.waitForExist({ timeout: 10000 });
+    await eventually(
+      () => browser.execute(() => !!document.activeElement?.closest('[role="alertdialog"]')),
+      "focus in the prompt again",
+    );
+    // Releasing quits: the window, and with it the WebDriver session, may end mid-keystroke.
+    await browser.keys(["u"]).catch(() => {});
+    await eventually(() => signoff(fixture).claim === null, "released on quit");
+    assert.equal(signoff(fixture).status, "WAITING_HUMAN");
+    await eventually(async () => {
+      try {
+        await browser.getTitle();
+        return false;
+      } catch {
+        return true;
+      }
+    }, "the window closed after releasing");
+  });
+});

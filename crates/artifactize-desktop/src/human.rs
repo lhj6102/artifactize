@@ -378,22 +378,21 @@ async fn run_job(app: &App, job: JobId, work: Job) -> Outcome {
     outcome
 }
 
-/// Claim request `id` for this reviewer; nothing else claims. The standalone review offers
-/// its claims for release on quit; the monitor keeps them, as in the terminal.
+/// Claim request `id` for this reviewer; nothing else claims. A claim of this window is offered
+/// for release on quit, whichever screen took it.
 #[tauri::command]
 #[specta::specta]
 pub async fn human_claim(
     app: tauri::State<'_, App>,
     id: RequestKey,
     job: JobId,
-    standalone: bool,
 ) -> Result<Acted, Failure> {
     let id = id.into_inner();
     // Someone else's claim, or a settled request, is refused in the library's words.
     let view = read(&app, &id).await?;
     review::actionable(Some(&view), &app.launch.reviewer).map_err(Failure::Action)?;
     let outcome = run_job(&app, job, Job::Claim { id: id.clone() }).await;
-    if standalone && let Outcome::Claimed { result: Ok(_) } = &outcome {
+    if let Outcome::Claimed { result: Ok(_) } = &outcome {
         app.human.took(&id, true);
     }
     acted(&app, &id, outcome).await
@@ -628,8 +627,7 @@ pub async fn human_release(
     Ok(Acted { notice, view })
 }
 
-/// Claims the standalone review took and has neither submitted nor released, for the quit
-/// prompt.
+/// Claims this window took and has neither submitted nor released, for the quit prompt.
 #[tauri::command]
 #[specta::specta]
 pub fn human_taken(app: tauri::State<'_, App>) -> Vec<RequestKey> {
