@@ -128,5 +128,14 @@ describe("review", () => {
     await browser.keys(["u"]).catch(() => {});
     await eventually(() => signoff(fixture).claim === null, "released on quit");
     assert.equal(signoff(fixture).status, "WAITING_HUMAN");
+    // And the window is gone: the driver's session can no longer answer.
+    await eventually(async () => {
+      try {
+        await browser.getTitle();
+        return false;
+      } catch {
+        return true;
+      }
+    }, "the window closed after releasing");
   });
 });

@@ -54,4 +54,20 @@ describe("neighbor", () => {
     expect(neighbor(graph, at, "a:docs", "ArrowDown")).toBeNull();
     expect(neighbor(graph, at, "a:app", "ArrowUp")).toBeNull();
   });
+
+  it("↑ and ↓ reach an unrelated Artifact of the column from one that has a dependent", () => {
+    //   red ──> down       fine
+    const lone: RunGraph = {
+      run: "run-b",
+      nodes: ["red", "down", "fine"].map((name) => ({ id: `a:${name}`, name, light: "green" })),
+      edges: [{ source: "a:red", target: "a:down", light: "green", dependency: false }],
+    };
+    const placed = new Map<string, Point>([
+      ["a:fine", { x: 0, y: 0 }],
+      ["a:red", { x: 0, y: 100 }],
+      ["a:down", { x: 240, y: 100 }],
+    ]);
+    expect(neighbor(lone, placed, "a:red", "ArrowUp")).toBe("a:fine");
+    expect(neighbor(lone, placed, "a:fine", "ArrowDown")).toBe("a:red");
+  });
 });

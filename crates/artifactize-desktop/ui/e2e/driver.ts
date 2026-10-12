@@ -41,6 +41,13 @@ export function assertFresh() {
 }
 let checked = false;
 
+/** The names of the windows on a session's private display (the app's title bar is one). */
+export function windowTitles(display: string): string[] {
+  const tree = spawnSync("xwininfo", ["-display", display, "-root", "-tree"], { encoding: "utf8" });
+  if (tree.status !== 0) throw new Error(`xwininfo failed: ${tree.stderr}`);
+  return [...tree.stdout.matchAll(/^\s+0x[0-9a-f]+ "([^"]+)"/gm)].map((match) => match[1]);
+}
+
 export type Session = {
   browser: WebdriverIO.Browser;
   /** The private X display, on Linux. */
@@ -212,7 +219,8 @@ async function connect(port: number, args: string[], fixture: Fixture): Promise<
       // tauri-driver turns these into WebKitWebDriver's browser options.
       "tauri:options": {
         application: app,
-        args: [...args, "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"],
+        // `--all` replaces `--repo`: the app then lists every repository in the state.
+        args: [...args, ...(args.includes("--all") ? [] : ["--repo", fixture.repo]), "--state-dir", fixture.state, "--reviewer", "alice"],
       },
     } as WebdriverIO.Capabilities,
   });

@@ -90,6 +90,8 @@ describe("settings", () => {
     await typeText(browser, url);
     await browser.$("#remote-token").click();
     await typeText(browser, TOKEN);
+    // Not the default share level: it is saved with the store.
+    await browser.$('input[name="share"][value="full"]').click();
     assert.equal(await browser.$("#remote-token").getAttribute("type"), "password");
     await browser.$("button=Sign in to the store").click();
     await eventually(async () => (await text()).includes("alice-laptop (scopes: read, publish)"), "the principal");
@@ -102,6 +104,8 @@ describe("settings", () => {
     const parsed = JSON.parse(status.stdout);
     assert.equal(parsed.principal, "alice-laptop");
     assert.equal(parsed.tokenSource, "file");
+    assert.equal(parsed.share, "full", "the chosen share level was saved");
+    assert.ok((await text()).includes("full"), "and shown");
     assert.ok(!status.stdout.includes(TOKEN));
 
     await browser.$("button=Check status").click();

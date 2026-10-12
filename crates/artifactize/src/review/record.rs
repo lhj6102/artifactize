@@ -18,6 +18,10 @@ use ratatui::{
 use std::path::Path;
 use time::OffsetDateTime;
 
+/// The share of a record's height its sections take when evidence is shown beside them: half,
+/// so a long evidence text and a long list of sections each stay readable.
+const SECTIONS_SHARE: u16 = 50;
+
 /// Rows a page key scrolls the sections, as in the Human Detail.
 const PAGE: u16 = 10;
 
@@ -178,7 +182,7 @@ impl Record {
             _ if self.evidence.is_empty() => frame.render_widget(sections(), inner),
             _ => {
                 let [left, right] =
-                    Layout::vertical([Constraint::Percentage(50), Constraint::Fill(1)])
+                    Layout::vertical([Constraint::Percentage(SECTIONS_SHARE), Constraint::Fill(1)])
                         .areas(inner);
                 frame.render_widget(sections(), left);
                 frame.render_widget(

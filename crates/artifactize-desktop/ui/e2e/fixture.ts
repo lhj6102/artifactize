@@ -38,6 +38,7 @@ function newRoot(): string {
 export type Fixture = { root: string; repo: string; state: string };
 
 const RELEASE = `name = "release"
+tags = ["type:release"]
 fingerprint = { files = ["."] }
 
 [views.human_tools]
@@ -197,6 +198,43 @@ Check ${reference}."""
   const fixture = { root, repo, state };
   const status = artifactize(fixture, "verify", "--all", "--json");
   if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+  return fixture;
+}
+
+/**
+ * A fresh repository with one Artifact in each state of a finished Run that is not GREEN
+ * or waiting: `red` fails, `crash` dies by a signal (ERROR), `down` is blocked by `red`, and
+ * `fine` is GREEN. Three of them have no dependency, so they share the graph's first column.
+ */
+export function createStates(): Fixture {
+  const root = newRoot();
+  const repo = join(root, "repo");
+  const state = join(root, "state");
+  const artifact = (name: string, command: string, args: string, instruction: string) => {
+    mkdirSync(join(repo, name), { recursive: true });
+    writeFileSync(
+      join(repo, name, "index.artf"),
+      `name = "${name}"
+
+[evals.check]
+title = "Check ${name}"
+profile = { kind = "runtime", command = "${command}", args = ${args} }
+
+[evals.check.payload]
+instruction = """
+${instruction}"""
+`,
+    );
+  };
+  artifact("red", "false", "[]", "Fail.");
+  artifact("crash", "sh", '["-c", "kill -TERM $$"]', "Die by a signal.");
+  artifact("down", "true", "[]", "Run after {red}.");
+  artifact("fine", "true", "[]", "Pass.");
+  execFileSync("git", ["init", "-q", repo]);
+  const fixture = { root, repo, state };
+  // RED and ERROR end the Run unsatisfied: any exit status but a crash of the CLI itself.
+  const status = artifactize(fixture, "verify", "--all", "--json");
+  if (status === -1) throw new Error("verify did not run");
   return fixture;
 }
 

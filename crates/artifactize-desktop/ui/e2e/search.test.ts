@@ -106,7 +106,14 @@ describe("review search", () => {
       const shown = await rows();
       return shown.length === 1 && shown[0].includes("docs/lint") && shown[0].includes("third");
     }, "the third repository's docs eval");
+    const listed = (await rows())[0];
+    const requestId = /run-\S+/.exec(listed)?.[0];
+    assert.ok(requestId, `the row names its request: ${listed}`);
     await press(browser, ["Enter"], readOnly, "the read-only Detail");
+    // The opened Detail is of the listed request, not the preview of another.
+    const detail = await browser.execute(() => document.body.innerText);
+    assert.ok(detail.includes(requestId), "the Detail names the request");
+    assert.match(detail, /docs\/lint/);
     assert.ok(!(await browser.$('[aria-label="Human review"]').isExisting()), "no Human review");
     await press(browser, ["Escape"], async () => !(await readOnly()), "back on the list");
   });

@@ -55,7 +55,8 @@ export function neighbor(graph: RunGraph, at: Map<string, Point>, id: string, ke
   if (key === "ArrowLeft") return nearest(upstream(id), vertical);
   const column = [...at.entries()].filter(([, point]) => Math.abs(point.x - here.x) < 1).map(([other]) => other);
   const related = new Set([...upstream(id).flatMap(downstream), ...downstream(id).flatMap(upstream)]);
-  const siblings = column.filter((other) => related.has(other));
+  // The node itself is its own sibling through its neighbours: it never counts.
+  const siblings = column.filter((other) => other !== id && related.has(other));
   const pool = siblings.length > 0 ? siblings : column;
   const below = key === "ArrowDown";
   return nearest(pool, (point) => {
