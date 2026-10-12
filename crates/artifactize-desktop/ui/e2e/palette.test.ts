@@ -22,9 +22,28 @@ describe("command palette", () => {
     browser.execute(() => !!document.querySelector('[aria-label="Command palette"][data-state="open"]'));
   const opened = (how: string) => eventually(shown, `the palette opens (${how})`);
   const closed = (how: string) => eventually(async () => !(await shown()), `the palette closes (${how})`);
+  /**
+   * Type `text` into the focused field one key at a time and check it arrived: under load
+   * WebKitWebDriver can drop a key of a burst, which a person's typing never does. A field
+   * that lost a key is cleared and typed again.
+   */
+  const type = async (text: string) => {
+    const value = () => browser.execute(() => (document.activeElement as HTMLInputElement | null)?.value ?? "");
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      for (const key of text) await browser.keys([key]);
+      if ((await value()).endsWith(text)) return;
+      await browser.execute(() => {
+        const field = document.activeElement as HTMLInputElement | null;
+        if (!field) return;
+        field.value = "";
+        field.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    assert.fail(`typed "${text}" but the field holds "${await value()}"`);
+  };
   /** Run the command labelled `label` from the open palette by typing and Enter. */
   const run = async (label: string) => {
-    await browser.keys([...label]);
+    await type(label);
     await browser.keys(["Enter"]);
   };
 
@@ -131,9 +150,8 @@ describe("command palette", () => {
         "focus in the search",
       );
       await browser.keys(["Escape"]);
-      // One key at a time: WebKitWebDriver drops some keys of a long burst while the list
-      // re-renders. A space ends the term and closes the suggestions, so Enter leaves the field.
-      for (const key of "kind:human status:waiting_human ") await browser.keys([key]);
+      // A space ends the term and closes the suggestions, so Enter leaves the field.
+      await type("kind:human status:waiting_human ");
       await eventually(async () => (await listed()) === 2, "the sign-offs of both repositories");
       await browser.keys(["Enter"]);
       await browser.$("button*=Commands").click();
