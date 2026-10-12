@@ -220,6 +220,14 @@ fn browse_reads_the_catalog_runs_and_tree_and_detail_reads_the_snapshot() {
         detail["sections"][0]["fields"][0],
         json!({"key": "Status", "value": "WAITING_HUMAN — waiting for a Human submission"})
     );
+    // A request without an Agent session has no transcript to open, and says why.
+    let request = detail["request"].as_str().unwrap();
+    let opened = invoke(&window, "transcript_open", json!({"id": request})).unwrap();
+    assert_eq!(opened["handle"], Value::Null);
+    assert!(
+        opened["text"].as_str().is_some_and(|text| !text.is_empty()),
+        "{opened}"
+    );
     let missing = invoke(
         &window,
         "detail",
