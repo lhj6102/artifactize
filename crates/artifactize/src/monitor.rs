@@ -26,7 +26,7 @@ mod view;
 pub use catalog::{Badge, Catalog, CatalogRow, Repository, Scope};
 #[cfg(test)]
 pub(crate) use evidence::original as test_original;
-pub use evidence::{Evidence, evidence};
+pub use evidence::{Evidence, EvidenceStamp, evidence};
 pub use fold::upstream;
 pub use loader::{Input, Loader, Origin, Page, Snapshot};
 pub use model::{

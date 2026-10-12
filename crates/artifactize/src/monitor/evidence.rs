@@ -8,8 +8,10 @@ use crate::{
 
 use std::path::Path;
 
+/// The session facts of a request: when they change, its evidence (an Agent session) is
+/// resolved again; while they hold, an open reader keeps reading.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EvidenceStamp {
+pub struct EvidenceStamp {
     status: RequestStatus,
     completed_at: Option<crate::types::Timestamp>,
     session: Option<session::SessionRef>,
