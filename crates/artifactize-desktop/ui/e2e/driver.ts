@@ -1,0 +1,72 @@
+// Drive the real app through tauri-driver and WebKitWebDriver.
+import { type ChildProcess, spawn } from "node:child_process";
+import { createConnection } from "node:net";
+import { remote } from "webdriverio";
+import { app, type Fixture } from "./fixture.ts";
+
+export type Session = { browser: WebdriverIO.Browser; stop: () => Promise<void> };
+
+// Ports per process, so a run never meets a leftover driver of another.
+let next = 4600 + (process.pid % 200) * 2;
+
+function listening(port: number): Promise<boolean> {
+  return new Promise((done) => {
+    const socket = createConnection({ port, host: "127.0.0.1" });
+    socket.once("connect", () => (socket.end(), done(true)));
+    socket.once("error", () => done(false));
+  });
+}
+
+async function until(check: () => Promise<boolean>, what: string, ms = 20000): Promise<void> {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (await check()) return;
+    await new Promise((done) => setTimeout(done, 100));
+  }
+  throw new Error(`timed out waiting for ${what}`);
+}
+
+/**
+ * Typed keys reach the app through GTK's input method. The tests type literal text with GTK's
+ * built-in method; `desktop` keeps the desktop's own (for example fcitx5 Hangul) for the IME
+ * test, which then composes what WebDriver types.
+ */
+export type Ime = "literal" | "desktop";
+
+/** Start the app on `fixture` with `args` (such as `review`) and connect to its webview. */
+export async function start(fixture: Fixture, ...args: string[]): Promise<Session> {
+  return startWith("literal", fixture, ...args);
+}
+
+export async function startWith(ime: Ime, fixture: Fixture, ...args: string[]): Promise<Session> {
+  const port = next;
+  next += 2;
+  const driver: ChildProcess = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1)], {
+    env: {
+      ...process.env,
+      ARTIFACTIZE_REMOTE: "off",
+      ...(ime === "literal" ? { GTK_IM_MODULE: "gtk-im-context-simple", XMODIFIERS: "" } : {}),
+    },
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  await until(() => listening(port), "tauri-driver");
+  const browser = await remote({
+    hostname: "127.0.0.1",
+    port,
+    logLevel: "error",
+    capabilities: {
+      // tauri-driver turns these into WebKitWebDriver's browser options.
+      "tauri:options": {
+        application: app,
+        args: [...args, "--repo", fixture.repo, "--state-dir", fixture.state, "--reviewer", "alice"],
+      },
+    } as WebdriverIO.Capabilities,
+  });
+  return {
+    browser,
+    stop: async () => {
+      await browser.deleteSession().catch(() => {});
+      driver.kill();
+    },
+  };
+}
