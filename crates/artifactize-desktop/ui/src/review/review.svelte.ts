@@ -199,13 +199,21 @@ export class Review {
   }
 
   /** Edit the open typed form as owner-fields JSON, as the terminal review does in `$EDITOR`;
-   * the JSON stays this verdict's draft. */
+   * the JSON stays this verdict's draft. Values typed while the conversion was on its way are
+   * converted again, never dropped. */
   async editJson(): Promise<void> {
     const form = this.form;
     if (this.busy || !form || form.json !== null) return;
     try {
-      const json = await call(commands.humanJson(this.id, form.draft()));
-      if (this.form === form && form.json === null) form.json = json;
+      for (;;) {
+        const draft = form.draft();
+        const json = await call(commands.humanJson(this.id, draft));
+        if (this.form !== form || form.json !== null) return;
+        if (JSON.stringify(form.draft()) === JSON.stringify(draft)) {
+          form.json = json;
+          return;
+        }
+      }
     } catch (error) {
       form.error = message(error);
     }

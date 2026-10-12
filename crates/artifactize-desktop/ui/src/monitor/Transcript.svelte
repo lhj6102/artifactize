@@ -59,12 +59,21 @@
       return;
     }
     asking = true;
+    // A reader replaced while this request was pending makes its answer, rows or failure,
+    // obsolete; only the current reader's answers are shown.
+    const reader = handle;
+    let loading = false;
     try {
-      view = await call(
-        commands.transcriptWindow(handle, size.columns, size.rows, movement, toggle, changed),
+      const next = await call(
+        commands.transcriptWindow(reader, size.columns, size.rows, movement, toggle, changed),
       );
+      if (reader === handle) {
+        view = next;
+        unavailable = null;
+        loading = next.loading;
+      }
     } catch (error) {
-      unavailable = message(error);
+      if (reader === handle) unavailable = message(error);
     } finally {
       asking = false;
     }
@@ -72,7 +81,7 @@
     again = null;
     if (next) void ask(next.movement, next.toggle, next.changed);
     // Bounded indexing continues in the next window.
-    else if (view?.loading) setTimeout(() => void ask(), 30);
+    else if (loading) setTimeout(() => void ask(), 30);
   }
 
   let resolving = false;

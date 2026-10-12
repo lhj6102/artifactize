@@ -26,6 +26,8 @@ function backend(stage: "claim" | "review", submit?: (args: Record<string, unkno
         return (args as { verdict: string }).verdict === "RED" ? redForm : greenForm;
       case "human_submit":
         return submit?.(args as Record<string, unknown>);
+      case "human_json":
+        return '{\n  "approved": true,\n  "comment": ""\n}';
       default:
         return null;
     }
@@ -96,6 +98,19 @@ describe("HumanDetail", () => {
     await fireEvent.keyDown(region, { key: "Escape", keyCode: 229 });
     expect(screen.queryByLabelText(/comment/)).not.toBeNull();
     expect(left).toBe(0);
+  });
+
+  it("moves focus into the JSON text when Ctrl+E turns the typed form into JSON", async () => {
+    backend("review");
+    render(HumanDetail, { review: new Review("run-a-2", false), onback: () => {} });
+    const region = await screen.findByLabelText("Human review");
+    await screen.findByText("REVIEW (yours)");
+    await fireEvent.keyDown(region, { key: "g" });
+    const comment = await screen.findByLabelText(/comment/);
+    await waitFor(() => expect(document.activeElement).toBe(comment));
+    await fireEvent.keyDown(comment, { key: "e", ctrlKey: true });
+    const json = await screen.findByLabelText(/Owner fields \(JSON\)/);
+    await waitFor(() => expect(document.activeElement).toBe(json));
   });
 
   it("Esc stops editing first, then leaves", async () => {

@@ -9,9 +9,14 @@
 
   let root = $state<HTMLElement>();
 
+  /** Typed fields or JSON text: switching either way moves focus like opening a form does. */
+  const mode = $derived(form.json === null ? "fields" : "json");
+
   $effect(() => {
-    // Typing goes to the form: the first editable field takes focus when a verdict opens.
+    // Typing goes to the form: the first editable field takes focus when a verdict opens or
+    // its typed fields become JSON.
     void form;
+    void mode;
     queueMicrotask(() =>
       root?.querySelector<HTMLElement>("input:not([readonly]), textarea, select")?.focus(),
     );
