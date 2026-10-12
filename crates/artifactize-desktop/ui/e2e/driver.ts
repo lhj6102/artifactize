@@ -40,12 +40,29 @@ export async function start(fixture: Fixture, ...args: string[]): Promise<Sessio
 }
 
 export async function startWith(ime: Ime, fixture: Fixture, ...args: string[]): Promise<Session> {
+  return launch(ime, fixture, {}, args);
+}
+
+/**
+ * Start the app with `env` over the test environment: a value replaces, `undefined` removes
+ * (for example `ARTIFACTIZE_REMOTE`, which the other tests turn off).
+ */
+export async function startEnv(fixture: Fixture, env: Record<string, string | undefined>, ...args: string[]): Promise<Session> {
+  return launch("literal", fixture, env, args);
+}
+
+async function launch(ime: Ime, fixture: Fixture, overrides: Record<string, string | undefined>, args: string[]): Promise<Session> {
   const port = next;
   next += 2;
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    ARTIFACTIZE_REMOTE: "off",
+    ...overrides,
+  };
+  for (const [name, value] of Object.entries(env)) if (value === undefined) delete env[name];
   const driver: ChildProcess = spawn("tauri-driver", ["--port", String(port), "--native-port", String(port + 1)], {
     env: {
-      ...process.env,
-      ARTIFACTIZE_REMOTE: "off",
+      ...env,
       // A fresh WebView profile per run: no pane sizes or other storage from earlier runs.
       XDG_DATA_HOME: join(fixture.root, "data"),
       ...(ime === "literal" ? { GTK_IM_MODULE: "gtk-im-context-simple", XMODIFIERS: "" } : {}),

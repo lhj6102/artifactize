@@ -13,6 +13,7 @@ mod graph;
 mod human;
 mod launch;
 mod search;
+mod settings;
 mod status;
 mod transcript;
 mod watch;
@@ -53,6 +54,18 @@ pub fn bindings<R: tauri::Runtime>() -> Builder<R> {
             transcript::transcript_open,
             transcript::transcript_window,
             transcript::transcript_close,
+            settings::settings_keys,
+            settings::codex_status,
+            settings::codex_login_start,
+            settings::codex_login_wait,
+            settings::codex_login_paste,
+            settings::codex_login_cancel,
+            settings::codex_logout,
+            settings::models_list,
+            settings::remote_status,
+            settings::remote_login,
+            settings::remote_logout,
+            settings::remote_push,
         ])
         .events(collect_events![watch::StateChanged, watch::SessionChanged])
 }
@@ -74,6 +87,7 @@ pub struct App {
     human: human::Reviews,
     transcripts: transcript::Transcripts,
     searches: search::Searches,
+    settings: settings::Settings,
     generation: generation::Generation,
 }
 
@@ -85,6 +99,7 @@ impl App {
             human: human::Reviews::default(),
             transcripts: transcript::Transcripts::default(),
             searches: search::Searches::default(),
+            settings: settings::Settings::default(),
             generation: generation::Generation::default(),
         }
     }

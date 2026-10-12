@@ -17,4 +17,7 @@ pub enum Failure {
     /// What the call names is not loaded or no longer exists.
     #[error("{0}")]
     Missing(String),
+    /// A sign-in, sign-out, listing or store call failed, with the CLI's own message.
+    #[error("{0}")]
+    Account(String),
 }

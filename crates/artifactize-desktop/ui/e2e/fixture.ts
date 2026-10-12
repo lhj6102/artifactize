@@ -2,7 +2,8 @@
 // a release Artifact with a waiting Human sign-off, its tools and owner schemas, and a
 // dependent Artifact that waits for it.
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const crate = resolve(import.meta.dirname, "../..");
@@ -177,6 +178,18 @@ Check ${reference}."""
   const status = artifactize(fixture, "verify", "--all", "--json");
   if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
   return fixture;
+}
+
+/**
+ * An empty repository and state outside any Git work tree (the system temporary directory,
+ * or TMPDIR): token storage refuses a state inside a repository, as the CLI does. `remove`
+ * deletes it.
+ */
+export function createOutside(): Fixture & { remove: () => void } {
+  const root = mkdtempSync(join(tmpdir(), "artifactize-e2e-"));
+  const repo = join(root, "repo");
+  mkdirSync(repo, { recursive: true });
+  return { root, repo, state: join(root, "state"), remove: () => rmSync(root, { recursive: true, force: true }) };
 }
 
 if (import.meta.main) {

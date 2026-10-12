@@ -6,6 +6,7 @@ const COMMON: Section = {
   keys: [
     ["Ctrl+K", "Command palette"],
     ["Ctrl+1 / Ctrl+2", "Monitor / Review"],
+    ["Ctrl+,", "Settings"],
     ["Ctrl+R / F5", "Refresh"],
     ["?", "These shortcuts"],
     ["q", "Quit (outside fields)"],
@@ -29,7 +30,7 @@ const HUMAN: Section = {
   ],
 };
 
-export const HELP: Record<"monitor" | "review", Section[]> = {
+export const HELP: Record<"monitor" | "review" | "settings", Section[]> = {
   monitor: [
     {
       title: "Navigate",
@@ -84,6 +85,19 @@ export const HELP: Record<"monitor" | "review", Section[]> = {
       ],
     },
     HUMAN,
+    COMMON,
+  ],
+  settings: [
+    {
+      title: "Settings",
+      keys: [
+        ["Codex", "Sign in through the browser as `artifactize login codex`; paste the redirect URL if it cannot return"],
+        ["Keys", "OPENAI_API_KEY and ANTHROPIC_API_KEY come from the environment only; shown as set or not"],
+        ["Models", "List what a backend offers, as `artifactize models`"],
+        ["Remote", "Sign in with a store URL and token, check status, sign out or push, as `artifactize remote`"],
+        ["Tab / Shift+Tab", "Next / previous control"],
+      ],
+    },
     COMMON,
   ],
 };

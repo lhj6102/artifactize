@@ -81,6 +81,39 @@ export const commands = {
 	transcriptWindow: (handle: number, columns: number, rows: number, movement: { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" } | null, toggle: number | null, changed: boolean) => typedError<TranscriptView, Failure>(__TAURI_INVOKE("transcript_window", { handle, columns, rows, movement, toggle, changed })),
 	/**  Close transcript `handle`; its reader removes its temporary files. */
 	transcriptClose: (handle: number) => __TAURI_INVOKE<void>("transcript_close", { handle }),
+	/**  The OpenAI and Anthropic keys, as `doctor` reports them. */
+	settingsKeys: () => __TAURI_INVOKE<KeyStatus[]>("settings_keys"),
+	/**  The Codex sign-in state, offline. */
+	codexStatus: () => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_status")),
+	/**
+	 *  Start `login codex`: the sign-in URL to show (the system browser gets it too when
+	 *  `browser`), and whether the browser can return here. Finish with [`codex_login_wait`].
+	 */
+	codexLoginStart: (browser: boolean) => typedError<CodexPrompt, Failure>(__TAURI_INVOKE("codex_login_start", { browser })),
+	/**  Wait for the sign-in started by [`codex_login_start`] to finish; returns the new state. */
+	codexLoginWait: () => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_login_wait")),
+	/**  Finish the sign-in with the URL the browser was sent to, as the CLI accepts on stdin. */
+	codexLoginPaste: (redirect: string) => typedError<null, Failure>(__TAURI_INVOKE("codex_login_paste", { redirect })),
+	/**  Stop the sign-in in progress; nothing is saved. */
+	codexLoginCancel: () => __TAURI_INVOKE<void>("codex_login_cancel"),
+	/**  `logout codex`: revoke and remove artifactize's own tokens. */
+	codexLogout: () => typedError<SignedOut, Failure>(__TAURI_INVOKE("codex_logout")),
+	/**  `models <provider>`: what the backend offers to this key or account. */
+	modelsList: (provider: Provider) => typedError<Model[], Failure>(__TAURI_INVOKE("models_list", { provider })),
+	/**  `remote status`: URL, share level, token source, reachability, principal and scopes. */
+	remoteStatus: () => typedError<RemoteStatus, Failure>(__TAURI_INVOKE("remote_status")),
+	/**
+	 *  `remote login`: verify `token` with the store, then save it with remote.json. The token
+	 *  arrives in the IPC body only; it is never logged, echoed or returned.
+	 */
+	remoteLogin: (url: string, share: Share, token: string) => typedError<RemoteStatus, Failure>(__TAURI_INVOKE("remote_login", { url, share, token })),
+	/**
+	 *  `remote logout`: forget the stored token and remote.json; the server keeps the token
+	 *  valid until it is revoked there.
+	 */
+	remoteLogout: () => typedError<RemoteStatus, Failure>(__TAURI_INVOKE("remote_logout")),
+	/**  `remote push`: re-send local GREEN/RED results the store does not have yet. */
+	remotePush: (dryRun: boolean) => typedError<Pushed, Failure>(__TAURI_INVOKE("remote_push", { dryRun })),
 };
 
 /** Events */
@@ -131,6 +164,29 @@ export type Claimant = {
 	reviewer: string,
 	mine: boolean,
 };
+
+/**
+ *  What the sign-in asks for: open `url`; `callback` says whether the browser can return
+ *  here (when the port is taken, only pasting the redirect URL finishes it).
+ */
+export type CodexPrompt = {
+	url: string,
+	callback: boolean,
+};
+
+/**  How Codex is signed in, read offline as the CLI does. */
+export type CodexStatus = 
+/**  Not signed in. */
+{ state: "absent" } | 
+/**
+ *  artifactize's own sign-in; `expired` once its access token ran out (it refreshes on
+ *  use unless the refresh token was revoked).
+ */
+{ state: "stored"; expiresAt: string; expired: boolean } | 
+/**  A read-only Codex auth file from ARTIFACTIZE_CODEX_AUTH_FILE; never written here. */
+{ state: "file"; path: string; expiresAt: string | null; expired: boolean } | 
+/**  Tokens cannot be stored where this state lives, and why. */
+{ state: "refused"; reason: string };
 
 /**  The completion of a query's last term. */
 export type Completion = {
@@ -183,7 +239,9 @@ export type Failure =
 /**  Owner fields are not a valid result yet; the request stays waiting and correctable. */
 { kind: "invalid"; message: string } | 
 /**  What the call names is not loaded or no longer exists. */
-{ kind: "missing"; message: string };
+{ kind: "missing"; message: string } | 
+/**  A sign-in, sign-out, listing or store call failed, with the CLI's own message. */
+{ kind: "account"; message: string };
 
 export type Field = {
 	key: string,
@@ -258,6 +316,14 @@ export type HumanView = {
 	generation: number,
 };
 
+/**  Whether an API-key backend's key is in the environment; never its value. */
+export type KeyStatus = {
+	provider: Provider,
+	/**  The environment variable the CLI reads. */
+	variable: string,
+	present: boolean,
+};
+
 /**  What the frontend needs to know about this launch. */
 export type LaunchView = {
 	mode: Mode,
@@ -306,6 +372,11 @@ export type Mark = {
 /**  The screen the app opens on; both stay reachable. */
 export type Mode = "monitor" | "review";
 
+export type Model = {
+	slug: string,
+	displayName: string,
+};
+
 export type Movement = { kind: "up"; rows: number } | { kind: "down"; rows: number } | { kind: "top" } | { kind: "bottom" };
 
 /**  A navigation step and how to read the state for it. */
@@ -347,6 +418,28 @@ export type Output = {
 export type Paging = "older" | "newer";
 
 export type Profile = "runtime" | "agent" | "human" | "dependency";
+
+/**  A backend, as the CLI names it. */
+export type Provider = "openai" | "anthropic" | "codex";
+
+export type Pushed = {
+	dryRun: boolean,
+	pushed: number,
+	existing: number,
+	skipped: number,
+};
+
+/**  `remote status`: never the token. */
+export type RemoteStatus = {
+	configured: boolean,
+	url: string | null,
+	share: Share | null,
+	tokenSource: TokenSource | null,
+	reachable: boolean,
+	principal: string | null,
+	scopes: string[],
+	error: string | null,
+};
 
 /**  A repository as the catalog groups Runs: Git clones by their common directory. */
 export type RepositoryKey = 
@@ -461,6 +554,18 @@ export type Settled =
  */
 "savedLocally";
 
+export type Share = 
+/**  Reduced records without argv, captured output, tool calls or paths. */
+"summary" | 
+/**  Also the saved execution as is. */
+"full";
+
+export type SignedOut = {
+	/**  The store confirmed the revocation; otherwise only the local tokens were removed. */
+	revoked: boolean,
+	status: CodexStatus,
+};
+
 export type Stage = 
 /**  Waiting and not claimed by this reviewer: read-only until claimed. */
 "claim" | 
@@ -481,6 +586,12 @@ export type Submitted = {
 	notice: Notice,
 	view: HumanView | null,
 };
+
+export type TokenSource = 
+/**  ARTIFACTIZE_REMOTE_TOKEN. */
+"env" | 
+/**  Saved by `remote login`. */
+"file" | "none";
 
 export type Tone = "green" | "red" | "error" | "running" | "human" | "queued" | "blocked" | "muted";
 

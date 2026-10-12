@@ -8,6 +8,7 @@
   import { Browse } from "./monitor/browse.svelte";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewScreen from "./review/ReviewScreen.svelte";
+  import Settings from "./settings/Settings.svelte";
   import LeaveDialog from "./review/LeaveDialog.svelte";
   import Palette from "./shell/Palette.svelte";
   import Help from "./shell/Help.svelte";
@@ -19,7 +20,7 @@
 
   let launch = $state<LaunchView | null>(null);
   let failure = $state<string | null>(null);
-  let screen = $state<"monitor" | "review">("monitor");
+  let screen = $state<"monitor" | "review" | "settings">("monitor");
   let palette = $state(false);
   let help = $state(false);
   const leaving = new Leaving();
@@ -58,6 +59,7 @@
     { id: "app.help", group: "App", label: "Keyboard shortcuts", keys: "?", run: () => (help = true) },
     { id: "app.monitor", group: "App", label: "Show Monitor", keys: "Ctrl+1", run: () => (screen = "monitor") },
     { id: "app.review", group: "App", label: "Show Review", keys: "Ctrl+2", run: () => (screen = "review") },
+    { id: "app.settings", group: "App", label: "Show Settings", keys: "Ctrl+,", run: () => (screen = "settings") },
     { id: "app.quit", group: "App", label: "Quit", keys: "q", run: () => void quit() },
   ]);
 
@@ -68,7 +70,10 @@
       palette = true;
     } else if (chord(event, "1") || chord(event, "2")) {
       event.preventDefault();
-      screen = event.key === "1" ? "monitor" : "review";
+      screen = chord(event, "1") ? "monitor" : "review";
+    } else if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key === "," || event.code === "Comma")) {
+      event.preventDefault();
+      screen = "settings";
     } else if (plain(event, "?")) {
       event.preventDefault();
       help = true;
@@ -98,6 +103,12 @@
     {#if browse.view && !browse.view.refreshed}<span class="muted">loading…</span>{/if}
     <Badge counts={browse.view?.badge ?? []} />
     {#if launch}<span class="muted" title="Reviewer">{launch.reviewer}</span>{/if}
+    <button
+      class="button"
+      aria-pressed={screen === "settings"}
+      onclick={() => (screen = "settings")}
+      title="Accounts, keys, models and the remote store (Ctrl+,)">Settings</button
+    >
     <button class="button" onclick={() => (palette = true)} title="Command palette">
       Commands <kbd>Ctrl+K</kbd>
     </button>
@@ -111,6 +122,9 @@
       </div>
       <div class="screen" hidden={screen !== "review"}>
         <ReviewScreen {launch} active={screen === "review"} />
+      </div>
+      <div class="screen" hidden={screen !== "settings"}>
+        <Settings active={screen === "settings"} />
       </div>
     </main>
   {/if}
