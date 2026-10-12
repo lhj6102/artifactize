@@ -63,9 +63,11 @@ impl Command {
     }
 
     pub(crate) fn session_environment(&mut self, directory: &Path) {
-        self.command
-            .env
-            .insert("ARTIFACTIZE_SESSION_DIR".into(), directory.into());
+        crate::platform::environment::set(
+            &mut self.command.env,
+            "ARTIFACTIZE_SESSION_DIR",
+            directory,
+        );
     }
 
     /// Share the session directory of the environment a tool session's start ran in.
@@ -73,10 +75,14 @@ impl Command {
         &mut self,
         environment: &std::collections::BTreeMap<OsString, OsString>,
     ) {
-        if let Some(value) = environment.get(std::ffi::OsStr::new("ARTIFACTIZE_SESSION_DIR")) {
-            self.command
-                .env
-                .insert("ARTIFACTIZE_SESSION_DIR".into(), value.clone());
+        if let Some(value) =
+            crate::platform::environment::lookup(environment, "ARTIFACTIZE_SESSION_DIR")
+        {
+            crate::platform::environment::set(
+                &mut self.command.env,
+                "ARTIFACTIZE_SESSION_DIR",
+                value,
+            );
         }
     }
 

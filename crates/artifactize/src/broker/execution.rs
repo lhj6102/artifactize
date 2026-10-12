@@ -275,6 +275,8 @@ pub(super) fn prepare(
     .map_err(|e| e.to_string())?;
     prepared.cwd = cwd;
     request.run_dir = Some(prepared.directory().to_path_buf());
-    request.argv = Some(std::iter::once(command.clone()).chain(args).collect());
+    // Stored as text, so with `/` on every system.
+    let program_text = crate::platform::path_text(std::path::Path::new(command));
+    request.argv = Some(std::iter::once(program_text).chain(args).collect());
     Ok(Prepared::Runtime(prepared))
 }
