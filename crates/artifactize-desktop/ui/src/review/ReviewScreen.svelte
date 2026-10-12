@@ -217,7 +217,7 @@
       <Panel title={focus === "detail" ? "Review" : "Preview"} focused={focus === "detail"} onfocus={() => review && (focus = "detail")}>
         {#if focus === "detail" && review}
           {#key review}
-            <HumanDetail {review} onback={() => void back()} onsubmitted={() => void submitted()} />
+            <HumanDetail {review} {active} onback={() => void back()} onsubmitted={() => void submitted()} />
           {/key}
         {:else if preview && selected}
           <!-- svelte-ignore a11y_click_events_have_key_events -->

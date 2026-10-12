@@ -17,6 +17,7 @@
     node,
     full,
     focused,
+    active,
     review,
     element = $bindable(),
     onfocus,
@@ -28,6 +29,8 @@
     node: string | null;
     full: boolean;
     focused: boolean;
+    /** The Monitor is the shown screen; only then its review offers palette commands. */
+    active: boolean;
     review: (id: string) => Review;
     element?: HTMLElement;
     onfocus: () => void;
@@ -110,7 +113,7 @@
     <p class="empty">Select a node.</p>
   {:else if human && detail.request}
     {#key detail.request}
-      <HumanDetail review={review(detail.request)} {onback} />
+      <HumanDetail review={review(detail.request)} {active} {onback} />
     {/key}
   {:else if full}
     <!-- Focusable so the arrows and PgUp/PgDn scroll the sections. -->

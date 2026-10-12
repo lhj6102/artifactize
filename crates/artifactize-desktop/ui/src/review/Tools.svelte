@@ -117,7 +117,7 @@
     margin: 0 0 8px;
     padding: 0;
     outline: none;
-    max-height: 50%;
+    max-height: 30vh;
     overflow: auto;
   }
   li {

@@ -13,10 +13,13 @@
 
   let {
     review,
+    active = true,
     onback,
     onsubmitted,
   }: {
     review: Review;
+    /** Its screen is shown: only then it offers palette commands. */
+    active?: boolean;
     onback: () => void;
     onsubmitted?: () => void;
   } = $props();
@@ -77,6 +80,8 @@
       back();
       return handled();
     }
+    // `q` quits only outside a form or work, as in the terminal.
+    if ((review.busy || review.editing) && plain(event, "q")) return handled();
     if (review.busy) return;
     if (chord(event, "g")) void review.choose("GREEN");
     else if (chord(event, "r")) void review.choose("RED");
@@ -114,6 +119,7 @@
   });
 
   useCommands(() => {
+    if (!active) return [];
     const ready = () => !review.busy && !review.settled;
     return [
       { id: "human.claim", group: "Human review", label: "Claim", keys: "c", enabled: () => ready() && review.claimable, run: () => void review.claim() },

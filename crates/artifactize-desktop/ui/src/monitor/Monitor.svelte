@@ -108,10 +108,11 @@
     }
   });
 
+  /** `artifactize › scope › Run › node`, up to the focused level, as in the terminal. */
   const crumbs = $derived.by(() => {
     const parts = [view?.scopeLabel ?? "…"];
-    if ((focus === "tree" || focus === "detail") && view?.selectedRun) parts.push(view.selectedRun);
-    if (focus === "detail" && run && opened) {
+    if (focus !== "scope" && view?.selectedRun) parts.push(view.selectedRun);
+    if ((focus === "tree" || focus === "detail") && run) {
       const node = find(run.tree, tree.selected);
       if (node) parts.push(node.kind === "run" ? "Run" : node.name);
     }
@@ -197,6 +198,7 @@
         node={opened?.node ?? selectedNode}
         full={opened !== null}
         focused={focus === "detail"}
+        {active}
         {review}
         bind:element={panes.detail}
         onfocus={() => (focus = "detail")}
