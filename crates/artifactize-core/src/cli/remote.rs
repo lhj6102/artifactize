@@ -121,24 +121,22 @@ pub(super) async fn execute(
                     status.url,
                     json!(status.share).as_str().unwrap_or_default(),
                     json!(status.token_source).as_str().unwrap_or_default(),
-                    if status.reachable { "yes" } else { "no" }
+                    if status.reachable() { "yes" } else { "no" }
                 )
                 .map_err(|e| e.to_string())?;
-                match (&status.principal, &status.error) {
-                    (Some(principal), _) => writeln!(
+                match &status.connection {
+                    remote::Connection::SignedIn { principal, scopes } => writeln!(
                         out,
                         "Principal: {} (scopes: {})",
                         principal,
-                        status
-                            .scopes
+                        scopes
                             .iter()
-                            .flatten()
                             .map(ToString::to_string)
                             .collect::<Vec<_>>()
                             .join(", ")
                     ),
-                    (_, Some(error)) => writeln!(out, "Error: {error}"),
-                    _ => Ok(()),
+                    remote::Connection::Refused { error }
+                    | remote::Connection::Unreachable { error } => writeln!(out, "Error: {error}"),
                 }
                 .map_err(|e| e.to_string())?;
             }

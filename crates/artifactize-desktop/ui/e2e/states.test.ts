@@ -137,3 +137,33 @@ describe("the Detail of a finished eval", () => {
     assert.equal((await text()).length, plain, "and takes them away again");
   });
 });
+
+describe("a blocked eval", () => {
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+
+  before(async () => {
+    session = await start(createStates());
+    browser = session.browser;
+    await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("down"), "the Run tree");
+  });
+
+  after(async () => {
+    await session?.stop();
+  });
+
+  // UX edges: E-MON-BLOCKER
+  it("jumps from the eval blocked by a RED Artifact to that Artifact with b", async () => {
+    const down = '//li[@role="treeitem"][@aria-level="1"][.//span[contains(@class,"name")][starts-with(normalize-space(.), "down")]]';
+    // `down` waits on `red`, which failed: its eval is the row after it.
+    await browser.$(`${down}/following-sibling::li[@role="treeitem"][1]`).click();
+    const selected = () => browser.$('[role="treeitem"][aria-selected="true"]');
+    assert.match(await selected().getText(), /blocked by red/);
+    await press(
+      browser,
+      ["b"],
+      async () => (await selected().getAttribute("aria-level")) === "1" && /\bred\b/.test(await selected().getText()),
+      "the RED Artifact selected",
+    );
+  });
+});

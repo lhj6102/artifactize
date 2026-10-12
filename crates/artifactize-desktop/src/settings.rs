@@ -491,20 +491,19 @@ impl From<Option<remote::Status>> for RemoteStatus {
         let Some(status) = status else {
             return Self::Unconfigured;
         };
-        let connection = if status.reachable {
-            Connection::Reachable {
-                principal: status.principal.map(|principal| principal.to_string()),
-                scopes: status
-                    .scopes
-                    .into_iter()
-                    .flatten()
-                    .map(|scope| scope.to_string())
-                    .collect(),
-                error: status.error,
-            }
-        } else {
-            Connection::Unreachable {
-                error: status.error,
+        let connection = match status.connection {
+            remote::Connection::SignedIn { principal, scopes } => Connection::Reachable {
+                principal: Some(principal.to_string()),
+                scopes: scopes.into_iter().map(|scope| scope.to_string()).collect(),
+                error: None,
+            },
+            remote::Connection::Refused { error } => Connection::Reachable {
+                principal: None,
+                scopes: Vec::new(),
+                error: Some(error),
+            },
+            remote::Connection::Unreachable { error } => {
+                Connection::Unreachable { error: Some(error) }
             }
         };
         Self::Configured {

@@ -452,23 +452,78 @@ pub async fn login(
 
 /// What `remote status` reports: where the remote is, what it shares, where its token comes
 /// from, and whether the store answers to it. Never the token.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone)]
 pub struct Status {
     pub url: String,
     pub share: Share,
     pub token_source: TokenSource,
-    /// The store sent an HTTP response, whether or not it accepted the token.
-    pub reachable: bool,
-    pub principal: Option<crate::types::TokenName>,
-    pub scopes: Option<Vec<Scope>>,
-    pub error: Option<String>,
+    pub connection: Connection,
+}
+
+/// What asking the store who the token belongs to came to.
+#[derive(Debug, Clone)]
+pub enum Connection {
+    /// The token was accepted.
+    SignedIn {
+        principal: crate::types::TokenName,
+        scopes: Vec<Scope>,
+    },
+    /// The store answered with an HTTP response, but not with an accepted token.
+    Refused { error: String },
+    /// The store sent no HTTP response.
+    Unreachable { error: String },
 }
 
 impl Status {
     /// The token was accepted.
     pub fn signed_in(&self) -> bool {
-        self.principal.is_some()
+        matches!(self.connection, Connection::SignedIn { .. })
+    }
+
+    /// The store sent an HTTP response, whether or not it accepted the token.
+    pub fn reachable(&self) -> bool {
+        !matches!(self.connection, Connection::Unreachable { .. })
+    }
+
+    /// Why the token was not accepted.
+    pub fn error(&self) -> Option<&str> {
+        match &self.connection {
+            Connection::SignedIn { .. } => None,
+            Connection::Refused { error } | Connection::Unreachable { error } => Some(error),
+        }
+    }
+}
+
+/// The fields of `remote status --json`, which stay as they were.
+impl Serialize for Status {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(Serialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Wire<'a> {
+            url: &'a str,
+            share: Share,
+            token_source: TokenSource,
+            reachable: bool,
+            principal: Option<&'a crate::types::TokenName>,
+            scopes: Option<&'a [Scope]>,
+            error: Option<&'a str>,
+        }
+        let (principal, scopes) = match &self.connection {
+            Connection::SignedIn { principal, scopes } => {
+                (Some(principal), Some(scopes.as_slice()))
+            }
+            _ => (None, None),
+        };
+        Wire {
+            url: &self.url,
+            share: self.share,
+            token_source: self.token_source,
+            reachable: self.reachable(),
+            principal,
+            scopes,
+            error: self.error(),
+        }
+        .serialize(serializer)
     }
 }
 
@@ -478,18 +533,23 @@ pub async fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<
     let Some(remote) = remote(state, repo)? else {
         return Ok(None);
     };
-    let (principal, failure) = match remote.whoami().await {
-        Ok(principal) => (Some(principal), None),
-        Err(failure) => (None, Some(failure)),
+    let connection = match remote.whoami().await {
+        Ok(principal) => Connection::SignedIn {
+            principal: principal.principal,
+            scopes: principal.scopes,
+        },
+        Err(failure) if failure.responded => Connection::Refused {
+            error: failure.message,
+        },
+        Err(failure) => Connection::Unreachable {
+            error: failure.message,
+        },
     };
     Ok(Some(Status {
         url: remote.url.to_string(),
         share: remote.share,
         token_source: remote.token_source,
-        reachable: principal.is_some() || failure.as_ref().is_some_and(|failure| failure.responded),
-        scopes: principal.as_ref().map(|principal| principal.scopes.clone()),
-        principal: principal.map(|principal| principal.principal),
-        error: failure.map(|failure| failure.message),
+        connection,
     }))
 }
 

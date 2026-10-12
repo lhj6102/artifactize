@@ -379,19 +379,37 @@ fn clip(text: &str) -> String {
     )
 }
 
+/// The backend, model and reasoning a session ran with.
+struct Engine {
+    backend: Option<crate::config::Backend>,
+    model: Option<crate::config::ModelId>,
+    reasoning: Option<crate::config::Reasoning>,
+}
+
+/// An enum's name as its wire form spells it.
+fn json_word(value: &impl serde::Serialize) -> String {
+    serde_json::to_value(value)
+        .ok()
+        .and_then(|word| word.as_str().map(str::to_owned))
+        .unwrap_or_else(|| "?".into())
+}
+
 /// The session, its backend and model, and the request whose review it is.
-fn heading(out: &mut impl Write, located: &Located, header: &serde_json::Value) -> io::Result<()> {
+fn heading(out: &mut impl Write, located: &Located, engine: &Engine) -> io::Result<()> {
     let request = &located.request.request;
+    let word = |value: Option<String>| value.unwrap_or_else(|| "?".into());
     writeln!(
         out,
         "Session {} · {} {}{}",
         located.id,
-        header["backend"].as_str().unwrap_or("?"),
-        header["model"].as_str().unwrap_or("?"),
-        header["reasoning"]
-            .as_str()
+        word(engine.backend.as_ref().map(json_word)),
+        word(engine.model.as_ref().map(ToString::to_string)),
+        engine
+            .reasoning
+            .as_ref()
             .map_or(String::new(), |reasoning| format!(
-                " (reasoning {reasoning})"
+                " (reasoning {})",
+                json_word(reasoning)
             ))
     )?;
     if let Some(reference) = &located.reference {
@@ -413,10 +431,12 @@ fn heading(out: &mut impl Write, located: &Located, header: &serde_json::Value) 
 
 fn show_summary(located: &Located, summary: &Summary) -> io::Result<()> {
     let mut out = io::stdout().lock();
-    let header = serde_json::json!({
-        "backend": summary.backend, "model": summary.model, "reasoning": summary.reasoning,
-    });
-    heading(&mut out, located, &header)?;
+    let engine = Engine {
+        backend: summary.backend,
+        model: summary.model.clone(),
+        reasoning: summary.reasoning,
+    };
+    heading(&mut out, located, &engine)?;
     if let (Some(start), Some(end)) = (&summary.started_at, &summary.ended_at) {
         let took = summary.duration_ms.map_or(String::new(), |duration| {
             format!(" ({:.1} s)", duration.as_secs_f64())
@@ -472,10 +492,15 @@ fn show_summary(located: &Located, summary: &Summary) -> io::Result<()> {
 
 fn show(located: &Located, conversation: &Conversation) -> io::Result<()> {
     let mut out = io::stdout().lock();
+    let header = conversation.header();
     heading(
         &mut out,
         located,
-        &serde_json::to_value(conversation.header()).expect("header is JSON"),
+        &Engine {
+            backend: header.backend,
+            model: header.model.clone(),
+            reasoning: header.reasoning,
+        },
     )?;
     for event in &conversation.events {
         let send = event
