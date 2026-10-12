@@ -1,14 +1,14 @@
 # Desktop app: user journeys
 
 What a person can do in the desktop app, from the app's real behaviour. Each journey has an id
-(`J-...`) and ends in something visible. The app is about this machine, not about one
-repository: it shows every repository and worktree whose reviews are in this machine's state,
-and the person narrows it inside the app. It shows and changes the same state as the
+(`J-...`) and ends in something visible. It is the artifactize app of this
+machine, not of one repository: its Scope pane starts from ALL and narrows to a repository or
+a worktree, and its Review search reaches every repository. It shows and changes the same state as the
 `artifactize` CLI; a change made by either shows in the other.
 
 ## Window
 
-- **J-LAUNCH**: the app opens on the Monitor, or on Review when started with `review`, showing everything on this machine (the ALL scope), whichever folder it was started from. The window is titled "Artifactize".
+- **J-LAUNCH**: the app opens on the Monitor, or on Review when started with `review`, The window is titled "Artifactize".
 - **J-SWITCH-SCREEN**: Ctrl+1 shows the Monitor, Ctrl+2 Review, Ctrl+, Settings.
 - **J-PALETTE**: Ctrl+K or the palette button opens the command palette; typing filters commands, Enter runs one, Esc closes it. It opens again after any use.
 - **J-HELP**: `?` lists the keys of the current screen.
