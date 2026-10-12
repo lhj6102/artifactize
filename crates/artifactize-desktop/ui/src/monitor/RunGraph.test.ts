@@ -6,6 +6,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/sv
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RunGraph as Graph, TreeNode } from "../ipc/client";
 import RunGraph from "./RunGraph.svelte";
+import { LIMIT } from "./graph";
 
 const layout = vi.hoisted(() => vi.fn());
 vi.mock("./layout", () => ({ NODE: { width: 168, height: 44 }, layout }));
@@ -181,5 +182,59 @@ describe("RunGraph", () => {
     await fireEvent.keyDown(list, { key: "Enter" });
     expect(onselect).toHaveBeenCalledWith(["a:release", "e:release/signoff"]);
     expect(onselect.mock.invocationCallOrder[0]).toBeLessThan(onopen.mock.invocationCallOrder[0]);
+  });
+
+  it("asks before laying out more than the limit, once per Run", async () => {
+    const many = (run: string): Graph => ({
+      run,
+      nodes: Array.from({ length: LIMIT + 1 }, (_, index) => ({ id: `a:${run}-${index}`, name: `${run}-${index}`, light: "green" })),
+      edges: [],
+    });
+    mockIPC((cmd, args) => (cmd === "run_graph" ? many((args as { run: string }).run) : null));
+    layout.mockImplementation(async (laid: Graph) => new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }])));
+    const props = { run: "run-a", revision: 1, tree, selected: [], onselect: vi.fn(), onopen: vi.fn() };
+    const { rerender } = render(RunGraph, props);
+    await screen.findByText(new RegExp(`has ${LIMIT + 1} Artifacts`));
+    expect(layout).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole("button", { name: `Lay out all ${LIMIT + 1}` }));
+    await waitFor(() => expect(node("a:run-a-0")).not.toBeNull());
+    expect(layout).toHaveBeenCalledOnce();
+    // A new snapshot of the same Run keeps the answer; another Run asks again.
+    await rerender({ revision: 2 });
+    await new Promise((done) => setTimeout(done, 20));
+    expect(screen.queryByRole("button", { name: /Lay out all/ })).toBeNull();
+    await rerender({ run: "run-b", revision: 3 });
+    await screen.findByRole("button", { name: `Lay out all ${LIMIT + 1}` });
+    expect(layout).toHaveBeenCalledOnce();
+  });
+
+  it("lays out again after a failed layout, and after the layout cache dropped a Run", async () => {
+    const small = (run: string): Graph => ({ ...graph("green"), run });
+    mockIPC((cmd, args) => (cmd === "run_graph" ? small((args as { run: string }).run) : null));
+    let failing = true;
+    layout.mockImplementation(async (laid: Graph) => {
+      if (failing) throw new Error("layout failed");
+      return new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }]));
+    });
+    const props = { run: "run-0", revision: 1, tree, selected: [], onselect: vi.fn(), onopen: vi.fn() };
+    const { rerender } = render(RunGraph, props);
+    await screen.findByText("layout failed");
+    // A failed layout is not kept: the next snapshot tries again.
+    failing = false;
+    await rerender({ revision: 2 });
+    await waitFor(() => expect(node("a:release")).not.toBeNull());
+    expect(layout).toHaveBeenCalledTimes(2);
+    // Eight more Runs push run-0's layout out of the cache; back on run-0 it is laid out again.
+    let revision = 3;
+    for (let run = 1; run <= 8; run += 1) {
+      await rerender({ run: `run-${run}`, revision: revision++ });
+      await waitFor(() => expect(layout).toHaveBeenCalledTimes(2 + run));
+    }
+    await rerender({ run: "run-8", revision: revision++ });
+    await rerender({ run: "run-1", revision: revision++ });
+    await new Promise((done) => setTimeout(done, 20));
+    expect(layout).toHaveBeenCalledTimes(10);
+    await rerender({ run: "run-0", revision: revision++ });
+    await waitFor(() => expect(layout).toHaveBeenCalledTimes(11));
   });
 });
