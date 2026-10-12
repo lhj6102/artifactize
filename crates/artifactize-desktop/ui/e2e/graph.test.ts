@@ -133,30 +133,45 @@ describe("run graph of many Artifacts", () => {
     await session?.stop();
   });
 
-  it("moves along the chain beyond the drawn nodes, the camera and focus following", async () => {
+  it("walks the whole chain beyond the drawn nodes, through a zoom in and out, focus following", async () => {
     await browser.$("button*=Graph").click();
     await eventually(async () => (await mounted()) > 0, "the graph", 30000);
     // Zoom in until only part of the chain is drawn.
     const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
     for (let step = 0; step < 12; step += 1) await zoomIn.click();
     await eventually(async () => (await mounted()) < 85, "nodes outside the view are not drawn");
-    const first = await browser.execute(() => {
+    await browser.execute(() => {
       const node = [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].sort((a, b) =>
         (a.dataset.id ?? "").localeCompare(b.dataset.id ?? ""),
       )[0];
       node.focus();
-      return node.dataset.id ?? "";
     });
-    const start = Number(first.slice(3));
-    const steps = 30;
-    for (let step = 1; step <= steps; step += 1) {
-      await browser.keys(["ArrowRight"]);
-      const want = `a:n${String(start + step).padStart(3, "0")}`;
+    const name = (index: number) => `a:n${String(index).padStart(3, "0")}`;
+    /** Press `key` and wait for focus on `want`; it must still hold a moment later. */
+    const step = async (key: string, want: string) => {
+      await browser.keys([key]);
       await eventually(async () => (await focused()) === want, `focus on ${want}`);
+    };
+    // Back to the start of the chain, then along all of it.
+    let at = Number(((await focused()) ?? "").slice(3));
+    while (at > 0) await step("ArrowLeft", name((at -= 1)));
+    for (let index = 1; index < 85; index += 1) {
+      await step("ArrowRight", name(index));
+      if (index === 40) {
+        // Into the revealed Artifact's evals and back out: focus returns to it and stays
+        // through the camera's move, and the keys go on from it.
+        await browser.keys(["Enter"]);
+        await eventually(() => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"), "the evals");
+        await browser.pause(400);
+        await browser.keys(["Escape"]);
+        await eventually(async () => (await focused()) === name(40), "focus back on n040");
+        await browser.pause(800);
+        assert.equal(await focused(), name(40), "focus held through the transition");
+      }
     }
     // The tree's selection is the focused node: the breadcrumb names it.
     const crumbs = await browser.$('nav[aria-label="Breadcrumb"]').getText();
-    assert.match(crumbs, new RegExp(`n${String(start + steps).padStart(3, "0")}`));
+    assert.match(crumbs, /n084/);
     assert.ok((await mounted()) < 85, "still drawing only part of the chain");
   });
 });

@@ -93,7 +93,89 @@
     return canvas?.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${CSS.escape(id)}"]`) ?? null;
   }
 
+  /** The node is drawn and wholly inside the canvas. */
+  function inView(id: string): boolean {
+    const box = element(id)?.getBoundingClientRect();
+    const view = canvas?.getBoundingClientRect();
+    return !!box && !!view && box.left >= view.left && box.right <= view.right && box.top >= view.top && box.bottom <= view.bottom;
+  }
+
+  /** Centre the camera on `id` at the current zoom unless it is wholly in view. */
+  async function centre(id: string) {
+    const at = positions.get(id);
+    if (!at || inView(id)) return;
+    const { zoom } = flow.getViewport();
+    await flow.setCenter(at.x + NODE.width / 2, at.y + NODE.height / 2, { zoom, duration: 0 });
+  }
+
+  // Graph keyboard focus has one owner: `held` is the Artifact node that should have focus
+  // while the graph has the keyboard. Camera moves and culling (only visible nodes are drawn
+  // above 80 Artifacts) can remove the focused node and drop focus to the page; a watch puts it
+  // back every frame, or on the canvas itself while the node is not drawn, so keys keep
+  // reaching the graph. Each handoff is numbered; a newer one voids older ones. Focus that
+  // moves anywhere else (the eval list, another pane, a press outside) ends the hold.
+  let held: string | null = null;
+  let handoff = 0;
+  let watching = false;
+
+  const lost = () => document.activeElement === null || document.activeElement === document.body;
+
+  function watch() {
+    if (watching) return;
+    watching = true;
+    const step = () => {
+      if (held === null || !canvas?.isConnected) {
+        watching = false;
+        return;
+      }
+      const target = element(held);
+      const active = document.activeElement;
+      if (target && (lost() || active === canvas)) target.focus({ preventScroll: true });
+      else if (!target && lost()) canvas.focus({ preventScroll: true });
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  /** Give graph focus to `id` from now on; returns this handoff's number. */
+  function hold(id: string): number {
+    held = id;
+    handoff += 1;
+    if (document.activeElement !== element(id)) element(id)?.focus({ preventScroll: true });
+    watch();
+    return handoff;
+  }
+
+  function release() {
+    held = null;
+    handoff += 1;
+  }
+
+  $effect(() => {
+    // Focus or a press anywhere outside the graph's nodes and canvas ends the hold.
+    const focusin = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target || !canvas || target === canvas) return;
+      const id = canvas.contains(target) ? target.closest<HTMLElement>(".svelte-flow__node")?.dataset.id : undefined;
+      if (!id) return release();
+      if (id !== held) hold(id);
+      // Focus is the graph's selection, so the keys always start from the node in focus.
+      if (id !== selected[0] && !zoomed) onselect([id]);
+    };
+    const pointerdown = (event: PointerEvent) => {
+      if (!canvas?.contains(event.target as HTMLElement | null)) release();
+    };
+    document.addEventListener("focusin", focusin);
+    document.addEventListener("pointerdown", pointerdown, true);
+    return () => {
+      document.removeEventListener("focusin", focusin);
+      document.removeEventListener("pointerdown", pointerdown, true);
+      release();
+    };
+  });
+
   async function zoomIn(id: string) {
+    release();
     zoomed = id;
     const at = evals.findIndex((node) => node.id === selected[1]);
     index = Math.max(at, 0);
@@ -103,13 +185,18 @@
     list?.focus();
   }
 
+  /** Back to the whole graph, keyboard focus on the Artifact through the camera's move. */
   async function zoomOut() {
     const id = zoomed;
     zoomed = null;
-    if (id) onselect([id]);
-    void flow.fitView({ duration: 250 });
+    if (!id) return;
+    onselect([id]);
+    // Hold focus at once, so nothing during the transition can leave it on the page.
     await tick();
-    if (id) element(id)?.focus();
+    const mine = hold(id);
+    await flow.fitView({ duration: 250 });
+    // Too many Artifacts to fit: bring this one into view, unless keys moved on meanwhile.
+    if (mine === handoff) await centre(id);
   }
 
   /** The Artifact node `event` happened on. */
@@ -117,47 +204,21 @@
     return (event.target as HTMLElement | null)?.closest<HTMLElement>(".svelte-flow__node")?.dataset.id;
   }
 
-  /** The node is drawn and wholly inside the canvas. */
-  function inView(id: string): boolean {
-    const box = element(id)?.getBoundingClientRect();
-    const view = canvas?.getBoundingClientRect();
-    return !!box && !!view && box.left >= view.left && box.right <= view.right && box.top >= view.top && box.bottom <= view.bottom;
-  }
-
-  const frame = () => new Promise((done) => requestAnimationFrame(done));
-
   /**
-   * Select and focus `id`, centring it first when it is not in view: with many Artifacts only
-   * the visible ones are drawn, so a node beyond the view mounts only once the camera reaches
-   * it. Redrawing the visible set can drop focus, so it is put back until it holds.
+   * Select `id` and give it keyboard focus, centring it first when it is not in view: with
+   * many Artifacts only the visible ones are drawn, so a node beyond the view mounts only once
+   * the camera reaches it; the hold focuses it then.
    */
   async function reveal(id: string) {
     onselect([id]);
-    const at = positions.get(id);
-    if (at && !inView(id)) {
-      const { zoom } = flow.getViewport();
-      await flow.setCenter(at.x + NODE.width / 2, at.y + NODE.height / 2, { zoom, duration: 0 });
-    }
-    for (let tries = 0; tries < 30; tries += 1) {
-      const target = element(id);
-      if (target && document.activeElement === target) {
-        await frame();
-        if (document.activeElement === element(id)) return;
-      }
-      element(id)?.focus({ preventScroll: true });
-      await frame();
-    }
-  }
-
-  /** Focus is the graph's selection, so the keys always start from the node in focus. */
-  function focusin(event: FocusEvent) {
-    const id = nodeOf(event);
-    if (id && id !== selected[0] && !zoomed) onselect([id]);
+    hold(id);
+    await centre(id);
   }
 
   /** Keys on the canvas: arrows move along edges, Enter zooms in, Esc zooms out. */
   function keydown(event: KeyboardEvent) {
-    const focused = nodeOf(event);
+    // On a node, or on the canvas while the held node is not drawn.
+    const focused = nodeOf(event) ?? (event.target === canvas ? (held ?? undefined) : undefined);
     if (!focused) return;
     // From the selected Artifact, which focus follows; the focused node if they differ.
     const id = selected[0] && positions.has(selected[0]) && !zoomed ? selected[0] : focused;
@@ -190,7 +251,7 @@
 
 <div class="graph" class:split={zoomed !== null}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="canvas" bind:this={canvas} onkeydown={keydown} onfocusin={focusin}>
+  <div class="canvas" bind:this={canvas} onkeydown={keydown} tabindex="-1">
     <SvelteFlow
       bind:nodes
       bind:edges
