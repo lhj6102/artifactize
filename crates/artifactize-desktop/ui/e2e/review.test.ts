@@ -61,6 +61,23 @@ describe("review", () => {
     await eventually(async () => signoff(fixture).claim?.reviewer === "alice", "claimed");
   });
 
+  it("leaves a field's form with Esc, then the Detail with the next Esc, keyboard only", async () => {
+    await eventually(async () => (await text()).includes("REVIEW (yours)"), "the review stage");
+    await browser.keys(["g"]);
+    await eventually(
+      () => browser.execute(() => document.activeElement?.id === "field-comment"),
+      "focus in the comment field",
+    );
+    await browser.keys(["Escape"]);
+    await browser.$("#field-comment").waitForExist({ reverse: true, timeout: 10000 });
+    assert.ok(await browser.$('[aria-label="Human review"]').isExisting(), "the Detail stays");
+    await browser.keys(["Escape"]);
+    await browser.$('[aria-label="Human review"]').waitForExist({ reverse: true, timeout: 10000 });
+    // Back on the list: Enter opens the same request again, its claim kept.
+    await browser.keys(["Enter"]);
+    await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 10000 });
+  });
+
   it("asks before quitting with the claim: Esc stays, u releases and quits", async () => {
     await eventually(async () => (await text()).includes("REVIEW (yours)"), "the review stage");
     const dialog = await browser.$('[role="alertdialog"]');
