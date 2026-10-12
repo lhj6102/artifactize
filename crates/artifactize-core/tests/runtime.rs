@@ -410,12 +410,22 @@ async fn environment_subprocess_probe() {
     let output = String::from_utf8(result.output.stdout).unwrap();
     let lines: Vec<&str> = output.lines().collect();
     // The author's own environment: path, locale, real home and any variable of theirs.
-    assert!(
-        lines.contains(&format!("PATH={}", support::os::system_path().to_str().unwrap()).as_str())
-    );
-    assert!(lines.contains(&"LANG=C"));
-    assert!(lines.contains(&"AUTHOR_VARIABLE=from-the-terminal"));
-    assert!(lines.contains(&format!("{}=/the-authors-home", support::os::home_env()).as_str()));
+    assert!(support::os::has_variable(
+        &lines,
+        "PATH",
+        support::os::system_path().to_str().unwrap()
+    ));
+    assert!(support::os::has_variable(&lines, "LANG", "C"));
+    assert!(support::os::has_variable(
+        &lines,
+        "AUTHOR_VARIABLE",
+        "from-the-terminal"
+    ));
+    assert!(support::os::has_variable(
+        &lines,
+        support::os::home_env(),
+        "/the-authors-home"
+    ));
     // Artifactize's credentials and settings stay out; only its per-run variables are set.
     for forbidden in [
         "ARTIFACTIZE_REMOTE_TOKEN",

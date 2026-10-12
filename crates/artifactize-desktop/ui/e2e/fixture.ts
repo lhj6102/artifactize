@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 const crate = resolve(import.meta.dirname, "../..");
-const target = resolve(crate, "../../target");
+const target = process.env.CARGO_TARGET_DIR ?? resolve(crate, "../../target");
 /** The CLI and the app the tests run; `cargo build -p artifactize -p artifactize-desktop`. */
 export const cli = join(target, "debug", "artifactize");
 export const app = join(target, "debug", "artifactize-desktop");

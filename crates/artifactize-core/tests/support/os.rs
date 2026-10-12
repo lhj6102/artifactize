@@ -11,10 +11,10 @@ use std::{path::Path, process::Command};
 /// The built `artifactize` binary. Cargo builds it for the tests of its own package and names it
 /// in `CARGO_BIN_EXE_artifactize`, so only tests there can start it.
 pub fn cli() -> std::path::PathBuf {
-    std::path::PathBuf::from(
-        option_env!("CARGO_BIN_EXE_artifactize")
-            .expect("tests that start the CLI live in the artifactize package"),
-    )
+    match option_env!("CARGO_BIN_EXE_artifactize") {
+        Some(path) => std::path::PathBuf::from(path),
+        None => panic!("tests that start the CLI live in the artifactize package"),
+    }
 }
 
 /// A semantic snapshot, without struct padding, of the input terminal's current modes.
@@ -2079,6 +2079,21 @@ pub fn runtime_directories() -> Vec<(&'static str, &'static str)> {
 /// Portable executable fixture name; Windows uses its adjacent executable stand-in.
 pub const TOOL: &str = "env-tool";
 
+/// Whether `lines` of environment output (`NAME=value`) hold `name` set to `value`; Windows
+/// compares names without regard to case, and keeps the casing the system first gave a name.
+pub fn has_variable(lines: &[&str], name: &str, value: &str) -> bool {
+    lines.iter().any(|line| {
+        line.split_once('=').is_some_and(|(found, text)| {
+            text == value
+                && if cfg!(windows) {
+                    found.eq_ignore_ascii_case(name)
+                } else {
+                    found == name
+                }
+        })
+    })
+}
+
 /// A search path for the explicit-environment probe, without its build tools.
 pub fn system_path() -> std::ffi::OsString {
     if cfg!(windows) {
@@ -2311,13 +2326,13 @@ pub fn write_python_script(path: &Path, code: &str) {
 /// and output directories, and none of artifactize's own variables.
 pub fn python_authors_environment() -> String {
     r#"
-assert os.environ['HOME_NAME'] != os.environ['TMPDIR']
+assert os.path.expanduser('~') != os.environ['TMPDIR']
 assert context['tmpDir'] == os.environ['TMPDIR'].replace('\\', '/')
 assert context['outputDir'] == os.environ['ARTIFACTIZE_OUTPUT_DIR'].replace('\\', '/')
 own = ('ARTIFACTIZE_WORKSPACE_DIR', 'ARTIFACTIZE_OUTPUT_DIR', 'ARTIFACTIZE_TMP_DIR', 'ARTIFACTIZE_SESSION_DIR')
 assert not [name for name in os.environ if name.upper().startswith('ARTIFACTIZE_') and name not in own]
 "#
-    .replace("HOME_NAME", home_env())
+    .to_owned()
 }
 
 /// A file/directory redirection in an output fixture: Windows junctions need no privilege.
