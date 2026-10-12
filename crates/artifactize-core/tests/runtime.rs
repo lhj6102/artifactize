@@ -377,17 +377,18 @@ fn runtime_child_runs_in_the_authors_environment_without_artifactize_variables()
     // The probe's PATH has no compiler, so build the Windows stand-ins first.
     support::os::env_program();
     // Set the parent environment in another process, never mutate this test runner's env.
-    let result = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "environment_subprocess_probe", "--nocapture"])
-        .env("ARTIFACTIZE_ENV_PROBE", "enabled")
-        .env("ARTIFACTIZE_REMOTE_TOKEN", "azt_not-for-the-command")
-        .env("ARTIFACTIZE_REMOTE", "https://store.invalid")
-        .env("AUTHOR_VARIABLE", "from-the-terminal")
-        .env(support::os::home_env(), "/the-authors-home")
-        .env("PATH", support::os::system_path())
-        .env("LANG", "C")
-        .output()
-        .unwrap();
+    let result = support::os::run_test(
+        "environment_subprocess_probe",
+        &[
+            ("ARTIFACTIZE_ENV_PROBE", "enabled".into()),
+            ("ARTIFACTIZE_REMOTE_TOKEN", "azt_not-for-the-command".into()),
+            ("ARTIFACTIZE_REMOTE", "https://store.invalid".into()),
+            ("AUTHOR_VARIABLE", "from-the-terminal".into()),
+            (support::os::home_env(), "/the-authors-home".into()),
+            ("PATH", support::os::system_path()),
+            ("LANG", "C".into()),
+        ],
+    );
     assert!(
         result.status.success(),
         "{}{}",

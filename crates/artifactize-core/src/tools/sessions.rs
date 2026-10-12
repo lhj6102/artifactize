@@ -122,7 +122,16 @@ impl Registry<'_> {
                         owner.clone(),
                         send,
                     ));
-                match receive.await.map_err(|error| error.to_string())? {
+                let ready = match receive.await {
+                    Ok(ready) => ready,
+                    Err(error) => {
+                        // The supervisor ended without reporting; a panic in it continues here.
+                        crate::task::joined(finished.await)
+                            .map_err(|error| error.to_string())??;
+                        return Err(error.to_string());
+                    }
+                };
+                match ready {
                     Ok(environment) => {
                         sessions.0.insert(
                             key,
@@ -351,9 +360,10 @@ async fn supervise_inner(
     feed.abort();
     drain_stdout.abort();
     drain_stderr.abort();
-    let _ = feed.await;
-    let _ = drain_stdout.await;
-    let _ = drain_stderr.await;
+    // Aborted tasks end cancelled, which is expected; a panic in one continues here.
+    let _ = crate::task::joined(feed.await);
+    let _ = crate::task::joined(drain_stdout.await);
+    let _ = crate::task::joined(drain_stderr.await);
     cleanup
 }
 
