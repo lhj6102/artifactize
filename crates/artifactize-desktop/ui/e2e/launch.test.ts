@@ -114,16 +114,26 @@ describe("launching the Review screen for every repository", () => {
     await eventually(() => browser.$('[aria-label="Requests"]').isFocused(), "focus on the list");
     const first = await preview();
     assert.match(first, /release\/signoff/);
-    const before = (await rows())[0];
-    await press(browser, ["j"], async () => (await browser.$('[aria-label="Requests"] [aria-selected="true"]').getText()) !== before, "another row selected");
-    await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("Enter or click: open review"), "the preview");
-    for (const request of requests(fixture)) assert.equal(request.claim, null, "previewing claims nothing");
+    /** The Preview pane's text: the last pane of the window. */
+    const pane = () => browser.execute(() => (document.querySelectorAll("section.panel")[5] as HTMLElement).innerText);
+    const idOf = (row: string) => /run-\S+/.exec(row)![0];
+    const [top, below] = await rows();
+    // The request below is claimed by someone else: its Preview says so, the first one's does not.
+    assert.equal(artifactize(fixture, "request", "claim", idOf(below), "--reviewer", "bob"), 0);
+    assert.doesNotMatch(await pane(), /claimed by bob/, "the first request's Preview");
+    assert.match(await pane(), /unclaimed/);
+    await press(browser, ["j"], async () => (await browser.$('[aria-label="Requests"] [aria-selected="true"]').getText()) !== top, "another row selected");
+    await eventually(async () => /claimed by bob · read-only/.test(await pane()), "the Preview of the other request, read-only");
+    await press(browser, ["k"], async () => !/claimed by bob/.test(await pane()), "back on the first request's Preview");
+    const claims = Object.fromEntries(requests(fixture).map((request) => [request.id, request.claim?.reviewer ?? null]));
+    assert.equal(claims[idOf(top)], null, "previewing claims nothing");
+    assert.equal(claims[idOf(below)], "bob");
   });
 
   // UX edges: E-REVIEW-SEARCH-TERMS
   it("matches every term of a search: text, request, reviewer, tag, status and mine", async () => {
     // The first repository's sign-off is claimed by alice, so the claim terms tell them apart.
-    const mine = requests(fixture).find((request) => request.evalId === "release/signoff");
+    const mine = requests(fixture).find((request) => request.evalId === "release/signoff" && request.claim === null);
     assert.ok(mine);
     assert.equal(artifactize(fixture, "request", "claim", mine.id, "--reviewer", "alice"), 0);
     const search = async (text: string, want: (shown: string[]) => boolean, what: string) => {

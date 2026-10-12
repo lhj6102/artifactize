@@ -50,9 +50,26 @@ describe("monitor navigation", () => {
 
   // UX edges: E-REFRESH
   it("reads the state again with F5", async () => {
-    // A Run another process starts is listed after a refresh at the latest.
+    // F5 itself asks the backend for a full read: count the app's own full reads of the
+    // snapshot, which the webview sends to the backend as `browse` requests.
+    await browser.execute(() => {
+      const page = window as unknown as { reads?: number };
+      page.reads = 0;
+      const fetched = window.fetch.bind(window);
+      window.fetch = (input, init) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        if (url.endsWith("/browse") && typeof init?.body === "string" && init.body.includes('"full":true')) page.reads = (page.reads ?? 0) + 1;
+        return fetched(input, init);
+      };
+    });
+    const reads = () => browser.execute(() => (window as unknown as { reads: number }).reads);
+    // Let the live updates settle, then press F5 with nothing changing.
+    await browser.pause(1500);
+    const before = (await reads()) as number;
+    await press(browser, ["F5"], async () => ((await reads()) as number) > before, "a full read after F5");
+    // And a Run another process starts is listed.
     assert.equal(artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json"), 3);
-    await press(browser, ["F5"], async () => /Runs \(2\)/i.test(await text()), "the second Run listed");
+    await eventually(async () => /Runs \(2\)/i.test(await text()), "the second Run listed");
   });
 
   // UX edges: E-MON-TREE-FOLD

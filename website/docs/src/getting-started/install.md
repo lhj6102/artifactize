@@ -222,8 +222,7 @@ claims for you. Removed keys and behavior:
 0.5.0 removes the `chatgpt` and `claude` Agent backends, with `login chatgpt`,
 `logout chatgpt` and the internal `mcp` command, and adds `codex` for ChatGPT plan
 users. `config check` names the replacements for each eval or profile variant that
-still declares a removed backend. Saved Runs
-and results of those backends stay readable. artifactize no longer uses ChatGPT
+still declares a removed backend. artifactize no longer uses ChatGPT
 tokens saved by an earlier release: disconnect artifactize in ChatGPT Settings, then
 delete `auth/chatgpt.json`, `auth/chatgpt-registration.json` and `auth/chatgpt.lock`
 from the state directory.
