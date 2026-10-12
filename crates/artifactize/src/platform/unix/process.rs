@@ -167,11 +167,48 @@ const START_TIME_AFTER_NAME: usize = 22 - 3;
 /// Field 22 of /proc/PID/stat: the start time in clock ticks since boot.
 #[cfg(not(target_os = "macos"))]
 pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
+    process_stat(pid).map(|(_, start)| start)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn process_stat(pid: u32) -> io::Result<(char, u64)> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat"))?;
-    stat.rsplit_once(')')
-        .and_then(|(_, fields)| fields.split_whitespace().nth(START_TIME_AFTER_NAME))
-        .and_then(|value| value.parse().ok())
-        .ok_or_else(|| io::Error::other("invalid child process start time"))
+    let mut fields = stat
+        .rsplit_once(')')
+        .ok_or_else(|| io::Error::other("invalid process stat"))?
+        .1
+        .split_whitespace();
+    let state = fields
+        .next()
+        .and_then(|field| field.chars().next())
+        .ok_or_else(|| io::Error::other("invalid process state"))?;
+    let start = fields
+        .nth(START_TIME_AFTER_NAME - 1)
+        .and_then(|field| field.parse().ok())
+        .ok_or_else(|| io::Error::other("invalid child process start time"))?;
+    Ok((state, start))
+}
+
+/// An unreaped zombie still has an identity, but cannot own live execution.
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
+    let (state, start) = process_stat(pid)?;
+    if matches!(state, 'Z' | 'X' | 'x') {
+        Err(io::ErrorKind::NotFound.into())
+    } else {
+        Ok(start)
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
+    let pid = i32::try_from(pid).map_err(|_| io::ErrorKind::InvalidInput)?;
+    let info = process_info(pid, 1)?;
+    if info.pbi_status == libc::SZOMB || info.pbi_flags & PROC_FLAG_INEXIT != 0 {
+        Err(io::ErrorKind::NotFound.into())
+    } else {
+        process_birth_time(info)
+    }
 }
 
 /// macOS exposes the kernel's process birth timestamp, in microseconds since the epoch.
@@ -182,7 +219,11 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     if pid <= 0 {
         return Err(io::ErrorKind::InvalidInput.into());
     }
-    let info = process_info(pid, 0)?;
+    process_birth_time(process_info(pid, 1)?)
+}
+
+#[cfg(target_os = "macos")]
+fn process_birth_time(info: libc::proc_bsdinfo) -> io::Result<u64> {
     const MICROSECONDS_PER_SECOND: u64 = 1_000_000;
     info.pbi_start_tvsec
         .checked_mul(MICROSECONDS_PER_SECOND)
@@ -342,7 +383,7 @@ fn signal_saved_group(leader: crate::process::ChildIdentity, signal: i32) -> io:
     let pgid = i32::try_from(leader.pid.get()).map_err(|_| io::ErrorKind::InvalidInput)?;
     // SAFETY: the nonzero saved PID names a group owned by the dead artifactize owner;
     // the preceding identity check excludes a known reused leader.
-    if unsafe { libc::killpg(pgid, signal) } == 0 {
+    if signal_group(pgid, signal) == 0 {
         return Ok(());
     }
     let error = io::Error::last_os_error();
@@ -354,6 +395,18 @@ fn signal_saved_group(leader: crate::process::ChildIdentity, signal: i32) -> io:
         return Ok(());
     }
     Err(error)
+}
+
+// Observe actual OS-boundary signal attempts, not private Child fields. The
+// test catches an extra syscall even when the kernel answers ESRCH successfully.
+#[cfg(test)]
+thread_local! { static GROUP_SIGNALS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
+
+fn signal_group(pgid: i32, signal: i32) -> i32 {
+    #[cfg(test)]
+    GROUP_SIGNALS.with(|count| count.set(count.get() + 1));
+    // SAFETY: the caller identity-checked a nonzero, owned group before signalling.
+    unsafe { libc::killpg(pgid, signal) }
 }
 
 #[cfg(test)]
@@ -402,11 +455,17 @@ mod tests {
         drop(gate);
         let mut child = spawning.await.unwrap().unwrap();
         assert!(child.wait_leader().await.unwrap().success());
+        GROUP_SIGNALS.with(|count| count.set(0));
         child.cleanup().await.unwrap();
-        // A signal to the old (now absent) numeric group would report ESRCH.
-        // Disarmed cleanup must instead be a no-op, including on later Drop.
+        assert_eq!(GROUP_SIGNALS.with(std::cell::Cell::get), 1);
         child.interrupt().unwrap();
         child.cleanup().await.unwrap();
+        drop(child);
+        assert_eq!(
+            GROUP_SIGNALS.with(std::cell::Cell::get),
+            1,
+            "a cleaned group must never be signalled again"
+        );
     }
 
     #[tokio::test]

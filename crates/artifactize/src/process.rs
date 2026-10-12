@@ -173,6 +173,8 @@ pub enum Error {
     Registration(#[source] io::Error),
     #[error("process supervision failed: {0}")]
     Io(#[from] io::Error),
+    #[error("process cleanup could not be confirmed: {0}")]
+    Cleanup(#[source] io::Error),
     #[error("process supervision task failed: {0}")]
     Task(#[from] tokio::task::JoinError),
     #[error("process timed out")]
@@ -184,6 +186,20 @@ pub enum Error {
 }
 
 impl Error {
+    /// Every ordinary run error is returned only after cleanup or before admission.
+    /// Cleanup/task failures are the exceptions: retain any admission record.
+    pub(crate) fn cleanup_confirmed(&self) -> bool {
+        match self {
+            Self::Cleanup(_) | Self::Task(_) => false,
+            Self::Spawn(_)
+            | Self::Registration(_)
+            | Self::Io(_)
+            | Self::Timeout
+            | Self::Cancelled
+            | Self::OutputDidNotClose => true,
+        }
+    }
+
     pub(crate) fn argument_refusal(&self) -> Option<String> {
         match self {
             Self::Spawn(error) if error.kind() == io::ErrorKind::InvalidInput => Some(format!(
@@ -310,7 +326,7 @@ where
             child.cleanup().await.map(|_| ())
         };
         reaped.cancel();
-        cleanup?;
+        cleanup.map_err(Error::Cleanup)?;
         result
     };
     let capture = async {
@@ -401,7 +417,7 @@ where
         }
     };
     if let Err(error) = admission {
-        terminate(&mut child).await?;
+        terminate(&mut child).await.map_err(Error::Cleanup)?;
         return Err(error);
     }
 
@@ -451,8 +467,8 @@ pub(crate) fn is_alive(owner: Option<ChildIdentity>) -> io::Result<bool> {
     let Some(owner) = owner else {
         return Ok(false);
     };
-    match child_identity(owner.pid.get()) {
-        Ok(current) => Ok(current == owner),
+    match platform::running_process_start_time(owner.pid.get()) {
+        Ok(start_time) => Ok(start_time == owner.start_time),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }

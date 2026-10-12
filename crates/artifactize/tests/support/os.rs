@@ -446,7 +446,7 @@ pub fn leads_session(pid: u32) -> bool {
 
 /// Block until `pid` exits, without reaping it: `waitid` with `WNOWAIT`, so a caller can
 /// still probe the zombie afterward.
-#[cfg(target_os = "macos")]
+#[cfg(unix)]
 pub fn wait_for_zombie(pid: u32) {
     let mut info = std::mem::MaybeUninit::<libc::siginfo_t>::uninit();
     // SAFETY: waitid writes a full siginfo_t for our child; WNOWAIT synchronizes on exit
@@ -876,7 +876,7 @@ fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
         libc::proc_pidinfo(
             i32::try_from(pid).ok()?,
             libc::PROC_PIDTBSDINFO,
-            0,
+            1,
             info.as_mut_ptr().cast(),
             size,
         )
@@ -2380,4 +2380,43 @@ pub fn assert_delete_blocked(path: &Path) {
         fs::remove_file(path).is_err(),
         "descendant must deny delete sharing"
     );
+}
+
+/// The interrupted fixture records a handshake before returning from its handler.
+/// Freezing the owner in that handler makes crash-during-cleanup deterministic:
+/// its grace-period timer cannot run before the test kills the frozen owner.
+pub fn session_interrupt_observer() -> &'static str {
+    #[cfg(unix)]
+    {
+        r#"def observe_session_interrupt(log, freeze):
+    import signal
+    def interrupted(signum, frame):
+        if freeze: os.kill(int((log / 'owner').read_text()), signal.SIGSTOP)
+        (log / 'interrupted').write_text(str(os.getpid()))
+    signal.signal(signal.SIGTERM, interrupted)
+"#
+    }
+    #[cfg(windows)]
+    {
+        "def observe_session_interrupt(log, freeze):\n    pass\n"
+    }
+}
+
+/// Unix directory write permission creates a cleanup I/O failure without keeping
+/// any process alive. Windows directory attributes do not model this permission.
+pub fn session_directory_write_denial() -> &'static str {
+    #[cfg(unix)]
+    {
+        "def deny_session_directory_writes(path):\n    os.chmod(path, 0o500)\n"
+    }
+    #[cfg(windows)]
+    {
+        "def deny_session_directory_writes(path):\n    pass\n"
+    }
+}
+
+#[cfg(unix)]
+pub fn restore_directory_writes(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
 }

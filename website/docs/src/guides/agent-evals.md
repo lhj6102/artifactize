@@ -101,7 +101,8 @@ tools and runs one without a review.
 ### Keep a harness running across tool calls
 
 Declare a [tool session](../reference/agent-tools.md#tool-sessions) and bind tools to
-it. artifactize starts it before the Agent and always stops it after the review;
+it. artifactize starts it before the Agent and attempts stop and owned-process
+cleanup after the review;
 the Agent never calls start/stop or supplies a session ID.
 
 ```toml
@@ -124,6 +125,10 @@ process groups/Jobs before the result is published, for GREEN and RED alike.
 Dropped reviews, panics and caller-runtime shutdown also release the session.
 Abrupt process death cannot run stop: the next session start recovers abandoned
 state and, on Unix, identity-checks every recorded start, stop and bound-call group.
+Exited zombie owners do not prevent recovery. Retirement errors still run mandatory
+cleanup; unconfirmed termination keeps admission records and reports an error rather
+than a verdict. Released supervisor leases also permit recovery of failed cleanup
+while the caller process is still alive.
 Windows Jobs terminate with their owner, and normal cleanup waits for descendants
 before removing their files. These are tool sessions, not the saved conversations
 below; commands remain trusted and can deliberately detach from cleanup.

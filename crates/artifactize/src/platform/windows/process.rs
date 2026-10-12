@@ -389,6 +389,11 @@ pub(crate) fn process_start_time(pid: u32) -> io::Result<u64> {
     Ok((u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime))
 }
 
+/// Windows identity lookup already excludes a signalled (terminated) process.
+pub(crate) fn running_process_start_time(pid: u32) -> io::Result<u64> {
+    process_start_time(pid)
+}
+
 /// A dead owner has already closed its kill-on-close Job handle.
 pub(crate) fn kill_saved_group(_leader: crate::process::ChildIdentity) -> io::Result<()> {
     Ok(())

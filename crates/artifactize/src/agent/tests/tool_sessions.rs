@@ -193,3 +193,42 @@ fn panic_and_caller_runtime_shutdown_still_run_stop_and_cleanup_bound_calls() {
         }
     }
 }
+
+// This fixture uses Unix directory write permission; Windows directory attributes
+// are not equivalent. Windows pending-delete sharing has its own CLI seam.
+#[cfg(unix)]
+#[tokio::test]
+async fn directory_cleanup_failure_is_recovered_after_lease_release_even_with_a_live_owner() {
+    let _clock = CLOCK.lock().await;
+    let mut fixture = fixture("readonly-stop");
+    let log = fixture.directory.path().join("log");
+    let state = fixture.state();
+    let registry = Registry::new(&fixture.config, &fixture.config.evals[0].id).unwrap();
+    let sessions = registry
+        .start_sessions(&state, None, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(sessions.close().await.is_err());
+    let start = harness::records(&log, "start").pop().unwrap();
+    let directory = PathBuf::from(start["directory"].as_str().unwrap());
+    assert!(directory.join("owner.json").is_file());
+    os::wait_until(std::time::Duration::from_secs(10), || {
+        !os::running(start["pid"].as_u64().unwrap() as u32)
+            && !os::running(start["child"].as_u64().unwrap() as u32)
+    });
+    // The caller process remains alive, but the failed supervisor's lease is gone.
+    os::restore_directory_writes(&directory);
+    let path = fixture.config.root.join("index.artf");
+    let mut declaration = crate::test_declaration::read(fs::read(&path).unwrap()).unwrap();
+    declaration["views"]["agent_sessions"]["app"]["stop"]["args"][1] = json!("stop");
+    crate::test_declaration::write(&path, declaration.to_string()).unwrap();
+    fixture.config = read_workspace_config(&fixture.config.root).unwrap();
+    let registry = Registry::new(&fixture.config, &fixture.config.evals[0].id).unwrap();
+    let next = registry
+        .start_sessions(&state, None, CancellationToken::new())
+        .await
+        .unwrap();
+    assert!(!directory.exists());
+    next.close().await.unwrap();
+    harness::assert_cleaned(&state, &log, 2);
+}

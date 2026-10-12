@@ -205,33 +205,42 @@ After execution-path pinning, artifactize starts only the sessions referenced by
 the eval's admitted tools, while holding the review's backend slot. Every session
 must be ready before the first model request. Spawn failure, exit before readiness,
 or readiness timeout produces `PREPARATION_FAILED` with no model request; already
-started sessions are stopped and cleaned up. Readiness has an internal 30-second
-bound. After readiness, stdout and stderr are drained and discarded.
+started sessions undergo stop and cleanup rollback. Any cleanup failure is also
+reported, with unconfirmed state retained for recovery. Readiness has an internal
+30-second bound. After readiness, stdout and stderr are drained and discarded.
 
 If the start process exits during the review, artifactize immediately kills its
 remaining process group/Job and cancels in-flight bound calls. The cleaned group
-is released immediately, so later review cleanup does not signal its old numeric
-process-group ID. Later bound calls return
+is released once termination is confirmed, so later review cleanup does not signal
+its old numeric process-group ID. A failure to retire its saved identity is reported
+without skipping cancellation/join of bound calls or stop. Later bound calls return
 ``The tool session `app` ended.``; there is no restart. This is an ordinary tool
 error in the saved conversation, not a new event kind.
 
-Stop runs after the Agent loop and before input revalidation, fingerprint recheck
+Stop is attempted after the Agent loop and before input revalidation, fingerprint recheck
 and result commit, on every ending: verdict, error, timeout, cancellation or dropped
 review future, including a review panic. Cleanup cancels and awaits in-flight bound
 calls before running stop. Stop uses its own cancellation token and an internal
-30-second bound, then artifactize kills and reaps the session group/Job before
-removing its directory, even if stop fails or hangs. Windows cleanup waits for all
+30-second bound, then artifactize kills and reaps the session group/Job. Its
+directory and admission records are removed only after all owned-process cleanup
+is confirmed, even when stop itself fails or hangs. Windows cleanup waits for all
 Job descendants, with a separate internal 30-second termination bound.
 
 A lazy cleanup executor owns session lifetimes independently of the caller's
 runtime: dropping that runtime still runs stop and cleanup. Process termination
 cannot run stop. Before the next tool session starts, artifactize sweeps directories
-whose saved owner identity is dead. On Unix, start, stop and bound invocation groups
-are recorded before admission and each saved PID/start-time identity is checked
+whose saved owner identity has exited (including an unreaped zombie), or whose
+supervisor lease has been released after a cleanup failure even while its owner
+process remains alive. Active leases protect concurrent reviews. On Unix, start,
+stop and bound invocation groups are recorded before admission and each saved PID/start-time identity is checked
 before signalling, including when the group leader is already gone. Windows Jobs
 terminate when their owner dies; recovery waits up to 30 seconds for pending file
-sharing dispositions to clear. Cleanup failures are reported instead of publishing
-a successful result. A reused or waited-on result starts nothing.
+sharing dispositions to clear. Cleanup or record-retirement failures are reported
+instead of publishing a successful result. Unconfirmed process cleanup retains its
+journals for recovery; failed directory removal leaves the remaining state for the
+next start to sweep after the lease is released. Sweep errors preserve the journals
+and refuse the new session instead of admitting it. A reused or waited-on result
+starts nothing.
 
 Start/stop execution-path pins use `<session>_<artifact>.start` and `.stop` keys
 in the result's existing `executionPaths` provenance, including remote records.

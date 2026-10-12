@@ -6,9 +6,11 @@ use std::{collections::BTreeMap, ffi::OsString, io, path::Path, time::Duration};
 use tokio::{io::AsyncReadExt, sync::oneshot, task::JoinHandle, time::Instant};
 use tokio_util::sync::{CancellationToken, DropGuard};
 
+mod journal;
 pub(super) mod ownership;
+use journal::{Record, allocate};
 pub(crate) use ownership::executor;
-use ownership::{Ownership, Record, allocate, save_owner};
+use ownership::{Cleanup, Ownership};
 
 use super::{Invocation, Registry};
 use crate::{
@@ -100,13 +102,13 @@ impl Registry<'_> {
                 let stop = self.prepare_session(owner, &declaration.stop)?;
                 let workspace = self.config.root.clone();
                 let root = root.clone();
-                let directory =
+                let (directory, lease) =
                     crate::task::joined(tokio::task::spawn_blocking(move || allocate(&root)).await)
                         .map_err(|error| error.to_string())?
                         .map_err(|error| error.to_string())?;
                 let stop_token = CancellationToken::new();
                 let guard = stop_token.clone().drop_guard();
-                let owner = Ownership::new(directory.path());
+                let owner = Ownership::new(directory.path(), lease);
                 let (send, receive) = oneshot::channel();
                 let finished = executor()
                     .map_err(|error| error.to_string())?
@@ -134,8 +136,13 @@ impl Registry<'_> {
                     }
                     Err(error) => {
                         drop(guard);
-                        let _ = crate::task::joined(finished.await);
-                        return Err(format!("Tool session {name}: {error}"));
+                        let cleaned = crate::task::joined(finished.await)
+                            .map_err(|error| error.to_string())
+                            .and_then(|result| result);
+                        return Err(format!(
+                            "Tool session {name}: {}",
+                            cleanup_message(error, cleaned)
+                        ));
                     }
                 }
             }
@@ -144,11 +151,15 @@ impl Registry<'_> {
         .await;
         match result {
             Ok(()) => Ok(sessions),
-            Err(error) => {
-                let _ = sessions.close().await;
-                Err(error)
-            }
+            Err(error) => Err(cleanup_message(error, sessions.close().await)),
         }
+    }
+}
+
+fn cleanup_message(error: String, cleanup: Result<(), String>) -> String {
+    match cleanup {
+        Err(cleanup) if cleanup != error => format!("{error}; {cleanup}"),
+        _ => error,
     }
 }
 
@@ -173,20 +184,27 @@ async fn supervise(
     owner: std::sync::Arc<Ownership>,
     send: oneshot::Sender<Result<BTreeMap<OsString, OsString>, String>>,
 ) -> Result<(), String> {
-    let result = supervise_inner(
+    // Once a supervisor may admit a process, only confirmed cleanup may delete
+    // its journal. Panic or an unexpected return must not invoke TempDir::drop.
+    let path = directory.keep();
+    let mut cleanup = supervise_inner(
         start,
         stop,
         &workspace,
-        directory.path(),
+        &path,
         cancellation,
         stop_token,
         owner,
         send,
     )
     .await;
-    let path = directory.keep();
-    let cleaned = std::fs::remove_dir_all(path).map_err(|error| error.to_string());
-    result.and(cleaned)
+    if cleanup.confirmed()
+        && let Err(error) = std::fs::remove_dir_all(&path)
+        && error.kind() != io::ErrorKind::NotFound
+    {
+        cleanup.merge(Cleanup::error(error));
+    }
+    cleanup.result()
 }
 
 #[expect(
@@ -202,36 +220,36 @@ async fn supervise_inner(
     stop_token: CancellationToken,
     owner: std::sync::Arc<Ownership>,
     send: oneshot::Sender<Result<BTreeMap<OsString, OsString>, String>>,
-) -> Result<(), String> {
+) -> Cleanup {
     let prepared = prepare(start, workspace, directory, None);
     let (command, input) = match prepared {
         Ok(prepared) => prepared,
         Err(error) => {
             let _ = send.send(Err(error.clone()));
-            return Err(error);
+            return Cleanup::error(error);
         }
     };
     let environment = command.env.clone();
-    let owner_path = directory.to_owned();
+    let record = Record::start(directory);
+    let admitted = record.clone();
     let deadline = Instant::now() + LIFECYCLE_TIMEOUT;
     let child = process::spawn_owned(
         &command,
         true,
         cancellation.clone(),
         deadline,
-        move |leader| async move {
-            crate::task::joined(
-                tokio::task::spawn_blocking(move || save_owner(&owner_path, Some(leader))).await,
-            )
-            .map_err(io::Error::other)?
-        },
+        move |leader| async move { admitted.register(leader).await },
     )
     .await;
     let mut child = match child {
         Ok(child) => child,
         Err(error) => {
-            let _ = send.send(Err(error.to_string()));
-            return Err(error.to_string());
+            let message = error.to_string();
+            let _ = send.send(Err(message.clone()));
+            record.after_run::<()>(&Err(error));
+            let mut cleanup = record.finish();
+            cleanup.merge(Cleanup::error(message));
+            return cleanup;
         }
     };
     let mut stdout = child.stdout().take().expect("stdout is piped");
@@ -279,6 +297,7 @@ async fn supervise_inner(
         }
     };
     let mut child = Some(child);
+    let mut cleanup = Cleanup::default();
     let started = ready.is_ok();
     let _ = send.send(ready.map(|()| environment.clone()));
     if started {
@@ -286,24 +305,27 @@ async fn supervise_inner(
             biased;
             status = child.as_mut().expect("owned start").wait_leader() => {
                 owner.ended.cancel();
-                let mut exited = child.take().expect("owned start");
-                let cleanup = exited.cleanup().await;
-                drop(exited);
-                cleanup.map_err(|error| error.to_string())?;
-                save_owner(directory, None).map_err(|error| error.to_string())?;
+                match child.as_mut().expect("owned start").cleanup().await {
+                    Ok(_) => {
+                        record.confirm();
+                        drop(child.take());
+                        cleanup.merge(record.finish());
+                    },
+                    Err(error) => cleanup.merge(Cleanup::error(error)),
+                }
                 let _ = status;
                 stop_token.cancelled().await;
             },
             _ = stop_token.cancelled() => {},
         }
     }
-    owner.finish_calls().await;
+    cleanup.merge(owner.finish_calls().await);
     // Stop ignores the review's cancelled token. Its own one-shot supervisor bounds
     // the command, then the session group is killed regardless of its outcome.
     if let Ok((command, input)) = prepare(stop, workspace, directory, Some(&environment)) {
-        let record = Record::new(directory);
-        let admitted = record.clone();
-        let _ = process::run_with_input_limit(
+        let stopped = Record::new(directory);
+        let admitted = stopped.clone();
+        let result = process::run_with_input_limit(
             command,
             Some(input),
             0,
@@ -311,25 +333,25 @@ async fn supervise_inner(
             move |child| async move { admitted.register(child).await },
         )
         .await;
+        stopped.after_run(&result);
+        cleanup.merge(stopped.finish());
     }
-    let cleaned = match child {
-        Some(mut child) => child
-            .cleanup()
-            .await
-            .map(|_| ())
-            .map_err(|error| error.to_string()),
-        None => Ok(()),
-    };
-    if cleaned.is_ok() {
-        save_owner(directory, None).map_err(|error| error.to_string())?;
+    if let Some(mut child) = child {
+        match child.cleanup().await {
+            Ok(_) => record.confirm(),
+            Err(error) => cleanup.merge(Cleanup::error(error)),
+        }
     }
+    // A failed signal/wait leaves Record owned; finish marks cleanup incomplete
+    // and keeps every journal even after this supervisor/lease is released.
+    cleanup.merge(record.finish());
     feed.abort();
     drain_stdout.abort();
     drain_stderr.abort();
     let _ = feed.await;
     let _ = drain_stdout.await;
     let _ = drain_stderr.await;
-    cleaned
+    cleanup
 }
 
 fn prepare(

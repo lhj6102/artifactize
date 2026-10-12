@@ -285,7 +285,7 @@ fn leader_exit_is_not_restarted_and_later_calls_report_session_ended() {
 #[cfg(unix)]
 #[test]
 fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders() {
-    for variant in ["live", "leaderless", "mismatch"] {
+    for variant in ["live", "leaderless", "mismatch", "zombie"] {
         let fixture = Fixture::new("start", "stop", "hold", 0);
         let mut owner = fixture
             .command(&[
@@ -311,7 +311,16 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
         let descendant = started["child"].as_u64().unwrap() as u32;
         let directory = PathBuf::from(started["directory"].as_str().unwrap());
         support::os::kill(owner.id());
-        owner.wait().unwrap();
+        support::os::wait_for_zombie(owner.id());
+        if variant == "zombie" {
+            assert!(support::os::exists(owner.id()));
+            assert!(!support::os::running(owner.id()));
+            // Also exercise pre-lease journal compatibility. Zombie identity must
+            // not keep this abandoned directory alive merely because it exists.
+            fs::remove_file(directory.join("lease")).unwrap();
+        } else {
+            owner.wait().unwrap();
+        }
         assert!(support::os::running(descendant));
         if variant == "leaderless" {
             support::os::kill(leader);
@@ -343,6 +352,14 @@ fn next_session_start_sweeps_live_or_leaderless_orphans_but_never_reused_leaders
         );
         assert!(!directory.exists());
         assert!(harness::directories(&fixture.state()).is_empty());
+        if variant == "zombie" {
+            assert!(
+                support::os::exists(owner.id()),
+                "sweep happened before reaping the owner"
+            );
+        }
+        // Always reap here; non-zombie variants already have a cached exit status.
+        owner.wait().unwrap();
         if variant == "mismatch" {
             assert!(support::os::running(leader));
             assert!(support::os::running(descendant));
@@ -460,7 +477,7 @@ fn descendant_held_session_files_are_closed_before_green_cleanup() {
         .spawn()
         .unwrap();
     support::os::wait_until(Duration::from_secs(10), || {
-        !fixture.provider.requests().is_empty()
+        !harness::records(&fixture.log(), "start").is_empty()
     });
     let start = harness::records(&fixture.log(), "start").pop().unwrap();
     let directory = PathBuf::from(start["directory"].as_str().unwrap());
@@ -522,6 +539,176 @@ fn an_ended_session_retires_group_ownership_before_delayed_review_cleanup() {
         output.status.success(),
         "{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+    harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
+}
+
+#[test]
+fn leader_retirement_io_error_still_cancels_bound_calls_and_runs_stop() {
+    let fixture = Fixture::new("start", "stop", "ignore-term", 0);
+    let owner = fixture
+        .command(&[
+            "tools",
+            "check",
+            "--execute",
+            "--artifact",
+            "app",
+            "--audience",
+            "agent",
+            "--tool",
+            "act",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    support::os::wait_until(Duration::from_secs(10), || {
+        !harness::records(&fixture.log(), "call").is_empty()
+    });
+    let start = harness::records(&fixture.log(), "start").pop().unwrap();
+    let call = harness::records(&fixture.log(), "call").pop().unwrap();
+    let directory = PathBuf::from(start["directory"].as_str().unwrap());
+    // A directory at this filename fails the atomic retirement write on every OS,
+    // including privileged CI, without denying admission of stop or bound calls.
+    fs::create_dir(directory.join("owner.next")).unwrap();
+    fs::write(directory.join("exit"), "").unwrap();
+    let output = owner.wait_with_output().unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["ok"], false);
+    assert!(!report["checks"].as_array().unwrap().last().unwrap()["message"].is_null());
+    harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
+    support::os::wait_until(Duration::from_secs(10), || {
+        !support::os::running(call["pid"].as_u64().unwrap() as u32)
+            && !support::os::running(call["child"].as_u64().unwrap() as u32)
+    });
+}
+
+// Only Unix SIGSTOP can freeze the owner from the interrupted bound tool before
+// its grace timer fires; Windows Job owner-death behavior is covered separately.
+#[cfg(unix)]
+#[test]
+fn crash_during_failed_leader_retirement_keeps_bound_call_journals_recoverable() {
+    let fixture = Fixture::new("start", "stop", "freeze-cleanup", 0);
+    let mut owner = fixture
+        .command(&[
+            "tools",
+            "check",
+            "--execute",
+            "--artifact",
+            "app",
+            "--audience",
+            "agent",
+            "--tool",
+            "act",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    fs::write(fixture.log().join("owner"), owner.id().to_string()).unwrap();
+    support::os::wait_until(Duration::from_secs(10), || {
+        !harness::records(&fixture.log(), "call").is_empty()
+    });
+    let start = harness::records(&fixture.log(), "start").pop().unwrap();
+    let call = harness::records(&fixture.log(), "call").pop().unwrap();
+    let directory = PathBuf::from(start["directory"].as_str().unwrap());
+    fs::create_dir(directory.join("owner.next")).unwrap();
+    fs::write(directory.join("exit"), "").unwrap();
+    support::os::wait_until(Duration::from_secs(10), || {
+        fixture.log().join("interrupted").exists()
+    });
+    let bound = call["pid"].as_u64().unwrap() as u32;
+    let descendant = call["child"].as_u64().unwrap() as u32;
+    assert!(support::os::running(bound));
+    assert!(directory.join(format!("process-{bound}.json")).is_file());
+    assert!(directory.join("owner.json").is_file());
+    support::os::kill(owner.id());
+    support::os::wait_for_zombie(owner.id());
+    assert!(directory.exists());
+    assert!(support::os::running(bound));
+    fixture
+        .rewrite(|definition| definition["views"]["agent_tools"]["act"]["args"][1] = json!("act"));
+    fixture.json(
+        &[
+            "tools",
+            "check",
+            "--execute",
+            "--artifact",
+            "app",
+            "--audience",
+            "agent",
+            "--tool",
+            "act",
+        ],
+        0,
+    );
+    assert!(
+        support::os::exists(owner.id()),
+        "recovery happened before owner reaping"
+    );
+    owner.wait().unwrap();
+    assert!(!directory.exists());
+    support::os::wait_until(Duration::from_secs(10), || {
+        !support::os::running(bound) && !support::os::running(descendant)
+    });
+    assert!(harness::directories(&fixture.state()).is_empty());
+}
+
+// Unix directory modes can reject admission writes; the Windows directory readonly
+// attribute does not reject file creation and is not an equivalent setup.
+#[cfg(unix)]
+#[test]
+fn bound_call_admission_io_failure_never_executes_the_tool_or_skips_session_cleanup() {
+    let mut fixture = Fixture::new("start", "stop", "act", 0);
+    let log = fixture.log();
+    let calls = AtomicUsize::new(0);
+    fixture.provider = FakeProvider::start(move |request| {
+        let content = if calls.fetch_add(1, Ordering::SeqCst) == 0 {
+            support::os::wait_until(Duration::from_secs(10), || log.join("admit").exists());
+            openai::function_call("failed_call", "act_app", &json!({}))
+        } else {
+            fs::write(log.join("rejected"), "").unwrap();
+            support::os::wait_until(Duration::from_secs(10), || log.join("verdict").exists());
+            openai::message(&json!({"verdict":"GREEN"}).to_string())
+        };
+        openai::completed(request, vec![content], openai::usage(10, 5))
+    });
+    let owner = fixture
+        .command(&["verify", "--all"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    support::os::wait_until(Duration::from_secs(10), || {
+        !harness::records(&fixture.log(), "start").is_empty()
+    });
+    let start = harness::records(&fixture.log(), "start").pop().unwrap();
+    let directory = PathBuf::from(start["directory"].as_str().unwrap());
+    let denied = support::os::read_only(&directory);
+    fs::write(fixture.log().join("admit"), "").unwrap();
+    support::os::wait_until(Duration::from_secs(10), || {
+        fixture.log().join("rejected").exists()
+    });
+    assert!(harness::records(&fixture.log(), "call").is_empty());
+    drop(denied);
+    fs::write(fixture.log().join("verdict"), "").unwrap();
+    let output = owner.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        fixture.provider.requests()[1]
+            .body
+            .to_string()
+            .contains("Agent tool execution failed.")
     );
     harness::assert_cleaned(&fixture.state(), &fixture.log(), 1);
 }

@@ -50,9 +50,12 @@ by ID, not by their position in the TOML source.
 [Tool sessions](agent-tools.md#tool-sessions) own start, stop and bound-call
 processes for one review. Stop runs on normal release, panic and caller-runtime
 shutdown; abrupt owner death instead uses identity-checked crash recovery before
-the next session starts. There are no declaration options for these lifetimes or
-cleanup bounds. Job descendants finish terminating before their session files are
-removed.
+the next session starts, including when the exited owner is an unreaped zombie.
+Retirement errors do not skip stop or bound-call cleanup, and unconfirmed process
+cleanup keeps its journals instead of deleting them. A released supervisor lease
+makes failed cleanup recoverable even while the owner process remains alive. There
+are no declaration options for these lifetimes or cleanup bounds. Job descendants
+finish terminating before their session files are removed.
 
 All declaration keys are snake_case: `timeout_ms`, `max_tool_calls`, `max_tokens`,
 `input_schema`, `execution_paths`, `pass_schema`, `fail_schema`,

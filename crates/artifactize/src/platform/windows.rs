@@ -24,7 +24,8 @@ use windows_sys::Win32::{
 };
 
 pub(crate) use process::{
-    Child, kill_saved_group, process_start_time, spawn_detached, spawn_gated,
+    Child, kill_saved_group, process_start_time, running_process_start_time, spawn_detached,
+    spawn_gated,
 };
 pub(crate) use security::{
     PrivateTempDir, create_private_dir, create_private_dir_all, is_private_dir, is_private_file,
