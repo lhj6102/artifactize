@@ -48,7 +48,8 @@
     }, 1000);
     // A settlement or claim elsewhere shows on the next read; an open form is set aside.
     const stop = onStateChanged(() => void review.load());
-    root?.focus();
+    // Tools that already took focus (a reopened request with Tools focused) keep it.
+    if (root && !root.contains(document.activeElement)) root.focus();
     return () => {
       clearInterval(clock);
       stop();

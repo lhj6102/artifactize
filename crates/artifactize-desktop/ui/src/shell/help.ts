@@ -70,7 +70,7 @@ export const HELP: Record<"monitor" | "review" | "settings", Section[]> = {
       keys: [
         ["↑ / ↓ · j / k", "Select a request"],
         ["Enter / →", "Open it: a Human review, or any other request read-only"],
-        ["Tab", "Open a Human review with Tools focused"],
+        ["Right-click · Ctrl+K", "Open a Human review with Tools focused (palette: Open the selected request with Tools focused)"],
         ["PgDn / PgUp", "Older / newer page"],
         ["Ctrl+O", "Open a request by ID"],
       ],

@@ -1,20 +1,16 @@
 name = "desktop"
-fingerprint = { files = [
-  "Cargo.toml",
-  "build.rs",
-  "tauri.conf.json",
-  "capabilities",
-  "tests",
-  "harness",
-  "ui/package.json",
-  "ui/pnpm-lock.yaml",
-  "ui/eslint.config.js",
-  "ui/lint",
-  "ui/svelte.config.js",
-  "ui/vite.config.ts",
-  "ui/tsconfig.json",
-  "ui/index.html",
-] }
+# The journeys are checked in the running app, built from this crate and the library it calls:
+# all of it is an input, not only the files this declaration owns.
+[fingerprint.script]
+command = "node"
+args = [
+  "fingerprint.mjs",
+  ".",
+  "{cli}/src",
+  "{cli}/Cargo.toml",
+  "{tools}/src",
+  "{tools}/Cargo.toml",
+]
 
 # The app runs headless for the whole review: `start` builds nothing, it needs the normal
 # builds (cargo build -p artifactize -p artifactize-desktop, after pnpm build in ui/).

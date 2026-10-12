@@ -1,5 +1,23 @@
 name = "desktop-ui"
 
+# The lint and type check read the folder's configuration, the end-to-end tests and the
+# harness besides these files: a change to any of them is a change to the result.
+[fingerprint.script]
+command = "node"
+args = [
+  "{desktop}/fingerprint.mjs",
+  ".",
+  "{desktop}/ui/eslint.config.js",
+  "{desktop}/ui/lint",
+  "{desktop}/ui/package.json",
+  "{desktop}/ui/pnpm-lock.yaml",
+  "{desktop}/ui/tsconfig.json",
+  "{desktop}/ui/svelte.config.js",
+  "{desktop}/ui/vite.config.ts",
+  "{desktop}/ui/e2e",
+  "{desktop}/harness",
+]
+
 [views.agent_tools]
 list = { builtin = "list" }
 glob = { builtin = "glob" }

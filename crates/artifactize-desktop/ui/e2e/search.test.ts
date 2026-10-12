@@ -53,7 +53,7 @@ describe("review search", () => {
     assert.match(await query(), /^kind:human status:waiting_human repo:/);
   });
 
-  // UX edges: E-REVIEW-SEARCH E-REVIEW-SUGGEST
+  // UX edges: E-REVIEW-SEARCH E-REVIEW-SUGGEST E-REVIEW-SEARCH-ESC
   it("filters every repository's requests and takes suggestions for a partial key and value", async () => {
     await press(browser, ["/"], focused("Search requests"), "focus in the search");
     // Esc clears the query: every request of every repository.

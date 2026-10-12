@@ -83,7 +83,7 @@ describe("settings", () => {
     assert.ok(!(await html()).includes(KEY), "the key's value is nowhere on the page");
   });
 
-  // UX edges: E-SET-REMOTE-LOGIN E-SET-REMOTE-STATUS E-SET-REMOTE-LOGOUT
+  // UX edges: E-SET-REMOTE-LOGIN E-SET-REMOTE-STATUS E-SET-REMOTE-PUSH E-SET-REMOTE-LOGOUT
   it("signs in to a remote store, shows its status, and signs out", async () => {
     await eventually(async () => (await text()).includes("No remote review store is configured."), "no store yet");
     await browser.$("#remote-url").click();
@@ -109,6 +109,9 @@ describe("settings", () => {
       () => browser.execute(() => [...document.querySelectorAll("dt")].some((term) => term.textContent === "Reachable" && term.nextElementSibling?.textContent === "yes")),
       "reachable",
     );
+    // A dry run reports what a push would do and changes nothing in the store.
+    await browser.$("button=Push (dry run)").click();
+    await eventually(async () => /Would push \d+, already in the store \d+, skipped \d+\./.test(await text()), "the dry run's report");
     await browser.$("button=Sign out of the store").click();
     await eventually(async () => (await text()).includes("No remote review store is configured."), "signed out");
     const after = await cliStatus(fixture.state, fixture.repo);

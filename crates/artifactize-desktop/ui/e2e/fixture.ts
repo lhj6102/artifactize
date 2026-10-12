@@ -2,7 +2,7 @@
 // a release Artifact with a waiting Human sign-off, its tools and owner schemas, and a
 // dependent Artifact that waits for it.
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -13,6 +13,27 @@ export const cli = join(target, "debug", "artifactize");
 export const app = join(target, "debug", "artifactize-desktop");
 /** Scratch space inside the build directory, never the system temporary root. */
 const scratch = join(target, "e2e");
+
+/** Every fixture root made by this process: all of them go when it ends, however its tests
+ * ended, so a run leaves nothing in the build directory. */
+const made: string[] = [];
+process.on("exit", () => {
+  for (const root of made) rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  // The scratch directory itself goes too, when nothing else is left in it.
+  try {
+    rmdirSync(scratch);
+  } catch {
+    // Not empty (another process's fixtures), or already gone.
+  }
+});
+
+/** A new fixture root below the scratch space, removed when this process ends. */
+function newRoot(): string {
+  mkdirSync(scratch, { recursive: true });
+  const root = mkdtempSync(join(scratch, "fixture-"));
+  made.push(root);
+  return root;
+}
 
 export type Fixture = { root: string; repo: string; state: string };
 
@@ -127,8 +148,7 @@ function verify(fixture: Fixture) {
 
 /** A fresh repository and state with one Run waiting for the Human sign-off. */
 export function create(): Fixture {
-  mkdirSync(scratch, { recursive: true });
-  const root = mkdtempSync(join(scratch, "fixture-"));
+  const root = newRoot();
   const repo = join(root, "repo");
   const state = join(root, "state");
   declare(repo);
@@ -153,8 +173,7 @@ export function addRepository(fixture: Fixture, name: string): string {
  * before it, all verified GREEN: a Run too large for the graph to draw every node at once.
  */
 export function createChain(count: number): Fixture {
-  mkdirSync(scratch, { recursive: true });
-  const root = mkdtempSync(join(scratch, "fixture-"));
+  const root = newRoot();
   const repo = join(root, "repo");
   const state = join(root, "state");
   const name = (index: number) => `n${String(index).padStart(3, "0")}`;

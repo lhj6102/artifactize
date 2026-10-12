@@ -1,5 +1,19 @@
 name = "desktop-e2e"
 
+# The suite drives the built app: it depends on the whole desktop crate (backend, UI, harness
+# configuration) and on the library the backend calls, not only on the tests.
+[fingerprint.script]
+command = "node"
+args = [
+  "{desktop}/fingerprint.mjs",
+  ".",
+  "{desktop}",
+  "{cli}/src",
+  "{cli}/Cargo.toml",
+  "{tools}/src",
+  "{tools}/Cargo.toml",
+]
+
 [views.agent_tools]
 list = { builtin = "list" }
 glob = { builtin = "glob" }

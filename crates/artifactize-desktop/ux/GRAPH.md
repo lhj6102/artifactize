@@ -79,7 +79,7 @@ end-to-end tests cite them.
 | --- | --- | --- | --- |
 | E-REVIEW-PREVIEW | Requests | select a request | Requests, read-only preview shown |
 | E-REVIEW-OPEN | Requests | Enter or → | request open |
-| E-REVIEW-OPEN-TOOLS | Requests | Tab on a Human review | Human review open, Tools focused |
+| E-REVIEW-OPEN-TOOLS | Requests | the context menu or the palette command "Open the selected request with Tools focused" | Human review open, Tools focused |
 | E-REVIEW-OPEN-ID | Requests | Ctrl+O and an ID | request open |
 | E-REVIEW-READONLY | Requests | Enter on a non-Human request | request open, read-only |
 | E-REVIEW-SEARCH | Requests | `/` or Ctrl+F, then terms | Requests, filtered |

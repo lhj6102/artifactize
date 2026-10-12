@@ -3,11 +3,11 @@
 // tauri-driver, WebKitWebDriver and the app.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { describe, it } from "node:test";
 
-type Held = { display: string | null; groups: number[] };
+type Held = { display: string | null; groups: number[]; root: string };
 
 /** A test process holding a session, and what it owns. */
 async function hold(): Promise<{ owner: ReturnType<typeof spawn>; held: Held }> {
@@ -53,9 +53,14 @@ describe("an interrupted test process", { skip: process.platform !== "linux" && 
       for (const group of held.groups) assert.ok(alive(group), `group ${group} runs`);
       assert.ok(listening(held.display), "the display listens");
       owner.kill(signal);
-      for (const group of held.groups) await eventually(() => !alive(group), `group ${group} gone after ${signal}`);
-      await eventually(() => !listening(held.display!), `display ${held.display} closed`);
-      await eventually(() => !existsSync(`/tmp/.X${held.display!.slice(1)}-lock`), `display ${held.display} unlocked`);
+      try {
+        for (const group of held.groups) await eventually(() => !alive(group), `group ${group} gone after ${signal}`);
+        await eventually(() => !listening(held.display!), `display ${held.display} closed`);
+        await eventually(() => !existsSync(`/tmp/.X${held.display!.slice(1)}-lock`), `display ${held.display} unlocked`);
+      } finally {
+        // A killed process runs no exit hook: the test removes the fixture it left.
+        rmSync(held.root, { recursive: true, force: true });
+      }
     });
   }
 });

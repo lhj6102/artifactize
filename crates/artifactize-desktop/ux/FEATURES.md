@@ -42,7 +42,7 @@ What a person can do in the desktop app, from the app's real behaviour. Each jou
 ## Review
 
 - **J-REVIEW-LIST**: the Review screen lists saved requests, starting on the waiting Human reviews of every repository; the selected request previews read-only.
-- **J-REVIEW-OPEN**: Enter opens a request (a Human review is actionable, any other request read-only); Tab opens a Human review with Tools focused; Ctrl+O opens a request by ID.
+- **J-REVIEW-OPEN**: Enter opens a request (a Human review is actionable, any other request read-only); the context menu or the palette opens a Human review with Tools focused; Ctrl+O opens a request by ID.
 - **J-REVIEW-SEARCH**: `/` or Ctrl+F searches: free text and `key:value` terms (repo, eval, request, reviewer, tag, kind, status, is), all of which must match; suggestions complete keys and values; Esc closes suggestions, then clears, then returns to the list.
 - **J-REVIEW-PAGE**: PgDn and PgUp page through older and newer requests.
 
