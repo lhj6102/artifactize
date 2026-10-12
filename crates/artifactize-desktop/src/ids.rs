@@ -52,9 +52,21 @@ impl TranscriptHandle {
 macro_rules! key {
     ($(#[$meta:meta])* $name:ident, $inner:ty) => {
         $(#[$meta])*
-        #[derive(Debug, Clone, Deserialize)]
-        #[serde(try_from = "String")]
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        #[serde(try_from = "String", into = "String")]
         pub struct $name($inner);
+
+        impl From<$inner> for $name {
+            fn from(id: $inner) -> Self {
+                Self(id)
+            }
+        }
+
+        impl From<$name> for String {
+            fn from(key: $name) -> Self {
+                key.0.to_string()
+            }
+        }
 
         impl TryFrom<String> for $name {
             type Error = String;
@@ -92,4 +104,9 @@ key!(
     /// A tree node id as an IPC argument, checked where it arrives.
     NodeKey,
     artifactize_core::monitor::NodeId
+);
+key!(
+    /// A saved session id in IPC, which change hints name.
+    SessionKey,
+    artifactize_core::types::SessionId
 );

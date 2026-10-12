@@ -40,7 +40,7 @@ impl From<monitor::Light> for Light {
 #[serde(rename_all = "camelCase")]
 pub struct GraphNode {
     /// The Artifact row's tree id, `a:<artifact>`.
-    pub id: String,
+    pub id: crate::ids::NodeKey,
     pub name: String,
     pub light: Light,
 }
@@ -49,8 +49,8 @@ pub struct GraphNode {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct GraphEdge {
-    pub source: String,
-    pub target: String,
+    pub source: crate::ids::NodeKey,
+    pub target: crate::ids::NodeKey,
     pub light: Light,
     /// A dependency eval of the target names the source and lights the edge.
     pub dependency: bool,
@@ -59,7 +59,7 @@ pub struct GraphEdge {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RunGraph {
-    pub run: String,
+    pub run: crate::ids::RunKey,
     /// Upstream first, in the tree's order.
     pub nodes: Vec<GraphNode>,
     pub edges: Vec<GraphEdge>,
@@ -71,15 +71,15 @@ pub struct RunGraph {
 pub fn run_graph(app: tauri::State<'_, App>, run: crate::ids::RunKey) -> Result<RunGraph, Failure> {
     let run = run.into_inner();
     let graph = app.browse.with_tree(&run, monitor::graph)?;
-    let id = |name: &artifactize_core::types::ArtifactName| {
-        monitor::NodeId::artifact(name.clone()).to_string()
+    let id = |name: &artifactize_core::types::ArtifactName| -> crate::ids::NodeKey {
+        monitor::NodeId::artifact(name.clone()).into()
     };
     Ok(RunGraph {
         nodes: graph
             .nodes
             .iter()
             .map(|node| GraphNode {
-                id: node.id.to_string(),
+                id: node.id.clone().into(),
                 name: node.name.to_string(),
                 light: node.light.into(),
             })
@@ -94,6 +94,6 @@ pub fn run_graph(app: tauri::State<'_, App>, run: crate::ids::RunKey) -> Result<
                 dependency: edge.dependency,
             })
             .collect(),
-        run: run.to_string(),
+        run: run.into(),
     })
 }

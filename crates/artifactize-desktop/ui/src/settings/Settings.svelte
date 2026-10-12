@@ -13,11 +13,12 @@
   } from "../ipc/client";
   import { untrack } from "svelte";
   import type { Attachment } from "svelte/attachments";
-  import { SettingsState } from "./settings.svelte";
+  import { SettingsState, setSettingsState } from "./settings.svelte";
   import { useCommands } from "../shell/commands.svelte";
 
   let { active }: { active: boolean } = $props();
   const s = new SettingsState();
+  setSettingsState(s);
 
   
   

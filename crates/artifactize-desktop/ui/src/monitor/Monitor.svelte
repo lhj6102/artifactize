@@ -7,7 +7,7 @@
   import type { BrowseView } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import { MonitorState, setMonitorState, type Focus } from "./monitor.svelte";
-  import { Tree, find } from "./tree.svelte";
+  import { find } from "./tree.svelte";
   import ScopePane from "./ScopePane.svelte";
   import RunsPane from "./RunsPane.svelte";
   import RunPane from "./RunPane.svelte";
@@ -21,10 +21,7 @@
 
   const m = new MonitorState();
   setMonitorState(m);
-  const tree = new Tree();
-  /** Human reviews by request: leaving and reopening a request keeps its drafts. */
-  const reviews: Record<string, Review> = {};
-  const panes: Partial<Record<Focus, HTMLElement>> = $state({});
+  const { tree, reviews, panes } = m;
 
   const view = $derived(browse.view);
   const run = $derived(view?.run ?? null);

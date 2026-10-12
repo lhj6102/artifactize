@@ -2,9 +2,10 @@
   // The Detail of the selected tree row: a peek that follows the selection, or the opened
   // Detail — sections and saved logs, an Agent transcript, or the shared Human Detail.
   import type { Attachment } from "svelte/attachments";
-  import { call, commands, message, type DetailView } from "../ipc/client";
+  import { call, commands, message } from "../ipc/client";
   import { getAppState } from "../shell/app.svelte";
   import type { Review } from "../review/review.svelte";
+  import { DetailPaneState, setDetailPaneState } from "./detailPane.svelte";
   import Panel from "../shell/Panel.svelte";
   import RecordDetail from "./RecordDetail.svelte";
   import Sections from "./Sections.svelte";
@@ -40,19 +41,21 @@
     onopen: () => void;
     onback: () => void;
   } = $props();
+  const d = new DetailPaneState();
+  setDetailPaneState(d);
   const { browse } = getAppState();
 
-  let detail = $state.raw<DetailView | null>(null);
-  let error = $state<string | null>(null);
+  
+  
   /** The folds belong to one row: another opened row starts folded, as the terminal's Detail
    * does. */
-  let folds = $state({ node: null as string | null, technical: false, pending: false, details: false });
-  const technical = $derived(folds.node === node && folds.technical);
-  const pending = $derived(folds.node === node && folds.pending);
+  
+  const technical = $derived(d.folds.node === node && d.folds.technical);
+  const pending = $derived(d.folds.node === node && d.folds.pending);
   /** An Agent's summary sections instead of its transcript. */
-  const details = $derived(folds.node === node && folds.details);
+  const details = $derived(d.folds.node === node && d.folds.details);
   function fold(change: Partial<{ technical: boolean; pending: boolean; details: boolean }>) {
-    folds = { node, technical, pending, details, ...change };
+    d.folds = { node, technical, pending, details, ...change };
   }
 
   /** Read again for every accepted snapshot; the Detail comes from the backend's copy. */
@@ -60,7 +63,7 @@
     void browse.revision;
     const [at, target] = [run, node];
     if (!at || !target) {
-      detail = null;
+      d.detail = null;
       return;
     }
     let current = true;
@@ -69,12 +72,12 @@
         if (current) {
           // A Human review gets its owner now, so rendering never has to make one.
           if (view.profile === "human" && view.request) openReview(view.request);
-          detail = view;
-          error = null;
+          d.detail = view;
+          d.error = null;
         }
       },
       (failure) => {
-        if (current) error = message(failure);
+        if (current) d.error = message(failure);
       },
     );
     return () => {
@@ -82,8 +85,8 @@
     };
   };
 
-  const human = $derived(full && detail?.profile === "human" && detail.request !== null);
-  const agent = $derived(detail?.profile === "agent" && detail.request !== null);
+  const human = $derived(full && d.detail?.profile === "human" && d.detail.request !== null);
+  const agent = $derived(d.detail?.profile === "agent" && d.detail.request !== null);
 
   function keydown(event: KeyboardEvent) {
     if (human) return;
@@ -98,7 +101,7 @@
   }
 </script>
 
-<Panel title={human ? "Human review" : (detail?.title ?? "Detail")} focused={focused} bind:element {onfocus} onkeydown={keydown} attach={read}>
+<Panel title={human ? "Human review" : (d.detail?.title ?? "Detail")} focused={focused} bind:element {onfocus} onkeydown={keydown} attach={read}>
   {#snippet actions()}
     {#if full && !human}
       {#if agent}
@@ -109,18 +112,18 @@
       <button class="button small" onclick={onback} title="Back to the tree">Close <kbd>Esc</kbd></button>
     {/if}
   {/snippet}
-  {#if error}
-    <p class="error">{error}</p>
-  {:else if !detail}
+  {#if d.error}
+    <p class="error">{d.error}</p>
+  {:else if !d.detail}
     <p class="empty">Select a node.</p>
-  {:else if human && detail.request}
-    {#key detail.request}
-      {@const reviewing = review(detail.request)}
+  {:else if human && d.detail.request}
+    {#key d.detail.request}
+      {@const reviewing = review(d.detail.request)}
       {#if reviewing}<HumanDetail review={reviewing} {active} {onback} />{/if}
     {/key}
   {:else if full}
     <RecordDetail
-      {detail}
+      detail={d.detail}
       bind:technical={() => technical, (value) => fold({ technical: value })}
       bind:pending={() => pending, (value) => fold({ pending: value })}
       bind:details={() => details, (value) => fold({ details: value })}
@@ -128,11 +131,11 @@
   {:else}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="peek" role="button" tabindex="-1" onclick={onopen} title="Open">
-      {#if detail.summary}<p class="summary {tone(detail.mark?.status)}">{detail.summary}</p>{/if}
-      <Sections sections={detail.sections} peek />
-      {#if agent && detail.running && detail.request}
-        {#key detail.request}
-          <Transcript id={detail.request} peek />
+      {#if d.detail.summary}<p class="summary {tone(d.detail.mark?.status)}">{d.detail.summary}</p>{/if}
+      <Sections sections={d.detail.sections} peek />
+      {#if agent && d.detail.running && d.detail.request}
+        {#key d.detail.request}
+          <Transcript id={d.detail.request} peek />
         {/key}
       {/if}
       <p class="hint">Enter or click: open</p>

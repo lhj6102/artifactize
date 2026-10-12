@@ -109,7 +109,7 @@ pub struct ScopeRow {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RunItem {
-    pub id: String,
+    pub id: crate::ids::RunKey,
     pub repository: String,
     pub mark: Mark,
     /// Request glyph counts, most urgent first: `✗1 ✓2`.
@@ -127,7 +127,7 @@ pub struct RunItem {
 #[serde(rename_all = "camelCase")]
 pub struct UpstreamMark {
     /// The Artifact row's tree id.
-    pub node: String,
+    pub node: crate::ids::NodeKey,
     pub complete: bool,
 }
 
@@ -151,7 +151,7 @@ pub struct Segment {
 #[serde(rename_all = "camelCase")]
 pub struct TreeNode {
     /// Stable tree id: `run:<id>`, `a:<artifact>` or `e:<eval>`.
-    pub id: String,
+    pub id: crate::ids::NodeKey,
     pub kind: NodeKind,
     pub glyph: String,
     pub tone: Tone,
@@ -186,7 +186,7 @@ pub struct Attention {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct RunPanel {
-    pub id: String,
+    pub id: crate::ids::RunKey,
     pub mark: Mark,
     /// Validation at Run end, counts, time and tokens.
     pub headline: String,
@@ -208,7 +208,7 @@ pub struct BrowseView {
     /// The catalog's attention counters for the header: `!N ✗N ◐N ?N`.
     pub badge: Vec<Count>,
     pub runs: Vec<RunItem>,
-    pub selected_run: Option<String>,
+    pub selected_run: Option<crate::ids::RunKey>,
     /// More Runs on an older page, or on a newer one.
     pub older: bool,
     pub newer: bool,
@@ -234,7 +234,7 @@ fn badge(row: &monitor::CatalogRow) -> Vec<Count> {
 
 fn node(node: &Node, kind: NodeKind, now: OffsetDateTime, upstream: Vec<UpstreamMark>) -> TreeNode {
     TreeNode {
-        id: node.id.to_string(),
+        id: node.id.clone().into(),
         kind,
         glyph: node.glyph.into(),
         tone: node.tone.into(),
@@ -263,7 +263,7 @@ fn marks(nodes: &[Node], path: &[NodeId]) -> Vec<UpstreamMark> {
     monitor::upstream(nodes, path)
         .into_iter()
         .map(|up| UpstreamMark {
-            node: NodeId::artifact(up.artifact).to_string(),
+            node: NodeId::artifact(up.artifact).into(),
             complete: up.completion == Completion::Complete,
         })
         .collect()
@@ -303,7 +303,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         let progress = monitor::progress(run, requests, now);
         let strip = monitor::strip(&progress);
         RunPanel {
-            id: run.run.id.to_string(),
+            id: run.run.id.clone().into(),
             mark: strip.status.into(),
             headline: strip.headline.clone(),
             counts: monitor::counts(progress.counts.iter().copied()),
@@ -323,7 +323,7 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
         .into_iter()
         .zip(&shown.runs)
         .map(|(row, summary)| RunItem {
-            id: row.id.to_string(),
+            id: row.id.clone().into(),
             repository: path_text(&row.repo),
             mark: monitor::Status::from(row.status).into(),
             counts: row.counts,
@@ -357,9 +357,10 @@ pub(super) fn build(shown: &Shown, now: OffsetDateTime) -> BrowseView {
             .map(badge)
             .unwrap_or_default(),
         runs,
-        selected_run: shown.page.open.as_ref().map(ToString::to_string),
-        older: shown.runs.len() as u32 >= shown.page.limit,
-        newer: shown.page.offset > 0,
+        selected_run: shown.page.open.clone().map(Into::into),
+        older: monitor::older_offset(shown.page.offset, shown.page.limit, shown.runs.len() as u32)
+            .is_some(),
+        newer: monitor::newer_offset(shown.page.offset, shown.page.limit).is_some(),
         run,
         error: shown.error.clone(),
         refreshed: shown.refreshed,

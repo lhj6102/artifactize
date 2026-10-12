@@ -3,6 +3,7 @@
   // dropdown. ↑/↓ choose a suggestion, Tab or Enter take it, Esc closes the dropdown, then
   // clears the query, then leaves for the list. Keys mid-composition belong to the input method.
   import type { Completion } from "../ipc/client";
+  import { SearchFieldState, setSearchFieldState } from "./searchField.svelte";
   import { composing } from "../shell/keys";
 
   let {
@@ -18,13 +19,15 @@
     /** Leave the field for the list. */
     onleave: () => void;
   } = $props();
+  const q = new SearchFieldState();
+  setSearchFieldState(q);
 
-  let completion = $state.raw<Completion | null>(null);
-  let active = $state(-1);
+  
+  
   /** Each request supersedes the ones before it, so a slow answer never reopens the dropdown. */
   let asked = 0;
 
-  const open = $derived(completion !== null && completion.candidates.length > 0);
+  const open = $derived(q.completion !== null && q.completion.candidates.length > 0);
 
   /**
    * Ask for candidates of the last term. An empty term, as after a space, offers every key
@@ -34,35 +37,35 @@
     const ask = ++asked;
     const answer = await complete(value);
     if (ask !== asked || document.activeElement !== input) return;
-    completion = always || answer.keep !== value ? answer : null;
-    active = -1;
+    q.completion = always || answer.keep !== value ? answer : null;
+    q.active = -1;
   }
 
   function close() {
     asked++;
-    completion = null;
-    active = -1;
+    q.completion = null;
+    q.active = -1;
   }
 
   /** Put `candidate` in place of the last term; a key keeps the dropdown open for its values. */
   function accept(candidate: string) {
-    if (!completion) return;
+    if (!q.completion) return;
     const key = candidate.endsWith(":");
-    value = completion.keep + candidate + (key ? "" : " ");
+    value = q.completion.keep + candidate + (key ? "" : " ");
     close();
     if (key) void suggest(true);
   }
 
   function keydown(event: KeyboardEvent) {
     if (composing(event)) return;
-    const candidates = completion?.candidates ?? [];
+    const candidates = q.completion?.candidates ?? [];
     if (event.key === "ArrowDown") {
-      if (open) active = (active + 1) % candidates.length;
+      if (open) q.active = (q.active + 1) % candidates.length;
       else void suggest(true);
     } else if (event.key === "ArrowUp" && open) {
-      active = active <= 0 ? candidates.length - 1 : active - 1;
+      q.active = q.active <= 0 ? candidates.length - 1 : q.active - 1;
     } else if ((event.key === "Tab" || event.key === "Enter") && open && !event.shiftKey) {
-      accept(candidates[Math.max(active, 0)]);
+      accept(candidates[Math.max(q.active, 0)]);
     } else if (event.key === "Enter") {
       onleave();
     } else if (event.key === "Escape") {
@@ -87,7 +90,7 @@
     aria-autocomplete="list"
     aria-expanded={open}
     aria-controls="search-suggestions"
-    aria-activedescendant={open && active >= 0 ? `search-suggestion-${active}` : undefined}
+    aria-activedescendant={open && q.active >= 0 ? `search-suggestion-${q.active}` : undefined}
     bind:value
     bind:this={input}
     // Whether a term is still being typed (a space inside a quoted value does not end it) is
@@ -96,14 +99,14 @@
     onkeydown={keydown}
     onblur={close}
   />
-  {#if open && completion}
+  {#if open && q.completion}
     <ul class="suggestions" id="search-suggestions" role="listbox" aria-label="Suggestions">
-      {#each completion.candidates as candidate, at (candidate)}
+      {#each q.completion.candidates as candidate, at (candidate)}
         <li
           id="search-suggestion-{at}"
           role="option"
-          aria-selected={at === active}
-          class:active={at === active}
+          aria-selected={at === q.active}
+          class:active={at === q.active}
           onmousedown={(event) => {
             // Keep focus in the field; the click takes the suggestion.
             event.preventDefault();

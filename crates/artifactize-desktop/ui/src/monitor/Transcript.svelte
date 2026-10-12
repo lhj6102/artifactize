@@ -1,6 +1,7 @@
 <script lang="ts">
   // An Agent request's live transcript. The backend's session reader lays it out in the
   // columns and rows this monospace pane fits; scrolling asks for another window.
+  import { TranscriptState, setTranscriptState } from "./transcript.svelte";
   import { onDestroy, onMount } from "svelte";
   import {
     call,
@@ -9,11 +10,13 @@
     onSessionChanged,
     onStateChanged,
     type Movement,
-    type TranscriptView,
+    
   } from "../ipc/client";
   import { plain } from "../shell/keys";
 
   let { id, peek = false }: { id: string; peek?: boolean } = $props();
+  const t = new TranscriptState();
+  setTranscriptState(t);
 
   /** Rows of a peek: enough to find the last line of a running Agent. */
   const PEEK_ROWS = 6;
@@ -24,22 +27,22 @@
 
   let handle: number | null = null;
   let session: string | null = null;
-  let unavailable = $state<string | null>(null);
-  let view = $state.raw<TranscriptView | null>(null);
-  let pane = $state<HTMLElement>();
-  let probe = $state<HTMLElement>();
+  
+  
+  
+  
   let size = { columns: 0, rows: 0 };
   let asking = false;
   let again: { movement: Movement | null; toggle: number | null; changed: boolean } | null = null;
   let closed = false;
 
   function measure(): boolean {
-    if (!pane || !probe) return false;
-    const cell = probe.getBoundingClientRect();
+    if (!t.pane || !t.probe) return false;
+    const cell = t.probe.getBoundingClientRect();
     // Before layout (or without one) a cell is assumed 7 × 18 pixels.
     const width = cell.width / 10 || 7;
     const height = cell.height || 18;
-    const box = pane.getBoundingClientRect();
+    const box = t.pane.getBoundingClientRect();
     const columns = Math.max(Math.floor(box.width / width) - 1, 10) || 10;
     const rows = peek ? PEEK_ROWS : Math.max(Math.floor(box.height / height), 3);
     const changed = columns !== size.columns || rows !== size.rows;
@@ -68,12 +71,12 @@
         commands.transcriptWindow(reader, size.columns, size.rows, movement, toggle, changed),
       );
       if (reader === handle) {
-        view = next;
-        unavailable = null;
+        t.view = next;
+        t.unavailable = null;
         loading = next.loading;
       }
     } catch (error) {
-      if (reader === handle) unavailable = message(error);
+      if (reader === handle) t.unavailable = message(error);
     } finally {
       asking = false;
     }
@@ -103,11 +106,11 @@
       const replaced = next !== handle;
       handle = next;
       session = opened.kind === "local" ? opened.session : null;
-      unavailable = opened.kind === "unavailable" ? opened.text : null;
-      if (replaced) view = null;
+      t.unavailable = opened.kind === "unavailable" ? opened.text : null;
+      if (replaced) t.view = null;
       if (handle !== null) void ask(null, null, true);
     } catch (error) {
-      unavailable = message(error);
+      t.unavailable = message(error);
     } finally {
       resolving = false;
     }
@@ -119,7 +122,7 @@
     const observer = new ResizeObserver(() => {
       if (measure()) void ask();
     });
-    if (pane) observer.observe(pane);
+    if (t.pane) observer.observe(t.pane);
     // Missed appends and removals show within the probe; without a session yet, resolve again.
     const timer = setInterval(() => (handle === null ? void resolve() : void ask(null, null, true)), PROBE_MS);
     const stopSession = onSessionChanged((changed) => {
@@ -155,7 +158,7 @@
     if (movement) {
       void ask(movement);
     } else if (plain(event, "Enter") || plain(event, " ")) {
-      const first = view?.rows.findIndex((row) => row.group) ?? -1;
+      const first = t.view?.rows.findIndex((row) => row.group) ?? -1;
       if (first >= 0) void ask(null, first);
     } else return;
     event.preventDefault();
@@ -169,14 +172,14 @@
   }
 
   const last = $derived(
-    view?.status ?? view?.rows.map((row) => row.text.trim()).findLast((text) => text) ?? "reading the session…",
+    t.view?.status ?? t.view?.rows.map((row) => row.text.trim()).findLast((text) => text) ?? "reading the session…",
   );
 </script>
 
 {#if peek}
-  <p class="last" bind:this={pane}>
-    <span class="probe" bind:this={probe} aria-hidden="true">MMMMMMMMMM</span>
-    <strong>Last:</strong> {unavailable ?? last}
+  <p class="last" bind:this={t.pane}>
+    <span class="probe" bind:this={t.probe} aria-hidden="true">MMMMMMMMMM</span>
+    <strong>Last:</strong> {t.unavailable ?? last}
   </p>
 {:else}
   <div class="transcript">
@@ -187,17 +190,17 @@
       tabindex="0"
       role="log"
       aria-label="Agent transcript"
-      bind:this={pane}
+      bind:this={t.pane}
       onkeydown={keydown}
       onwheel={wheel}
     >
-      <span class="probe" bind:this={probe} aria-hidden="true">MMMMMMMMMM</span>
-      {#if unavailable}
-        <p class="status">{unavailable}</p>
-      {:else if view?.status && view.rows.length === 0}
-        <p class="status">{view.status}</p>
-      {:else if view}
-        {#each view.rows as row, at (at)}
+      <span class="probe" bind:this={t.probe} aria-hidden="true">MMMMMMMMMM</span>
+      {#if t.unavailable}
+        <p class="status">{t.unavailable}</p>
+      {:else if t.view?.status && t.view.rows.length === 0}
+        <p class="status">{t.view.status}</p>
+      {:else if t.view}
+        {#each t.view.rows as row, at (at)}
           {#if row.group}
             <button class="row group" onclick={() => void ask(null, at)}>{row.text || " "}</button>
           {:else}
@@ -211,7 +214,7 @@
     <footer>
       <button class="button small" onclick={() => void ask({ kind: "top" })}>Top <kbd>Home</kbd></button>
       <button class="button small" onclick={() => void ask({ kind: "bottom" })}>Bottom <kbd>End</kbd></button>
-      <span class="indicator">{view?.indicator ?? ""}</span>
+      <span class="indicator">{t.view?.indicator ?? ""}</span>
     </footer>
   </div>
 {/if}

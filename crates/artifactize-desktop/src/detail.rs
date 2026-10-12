@@ -89,13 +89,13 @@ pub struct Evidence {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct DetailView {
-    pub run: String,
-    pub node: String,
+    pub run: RunKey,
+    pub node: NodeKey,
     pub title: String,
     /// One-line outcome: state, elapsed time, profile and dependencies.
     pub summary: String,
     /// The eval's request, when it has one in this Run.
-    pub request: Option<String>,
+    pub request: Option<crate::ids::RequestKey>,
     pub profile: Option<Profile>,
     pub mark: Option<Mark>,
     /// Outcome → Waits for → What → Provenance → Technical; empty sections are left out.
@@ -168,11 +168,11 @@ pub fn view(
             text: evidence.text,
         });
     DetailView {
-        run: run.run.id.to_string(),
-        node: id.to_string(),
+        run: run.run.id.clone().into(),
+        node: id.clone().into(),
         title: detail.title.clone(),
         summary: detail.summary.clone(),
-        request: request.map(|view| view.request.id.to_string()),
+        request: request.map(|view| view.request.id.clone().into()),
         profile: request.map(|view| view.request.profile.kind().into()),
         mark: request.map(|view| monitor::Status::from(view.request.status()).into()),
         running: request.is_some_and(|view| {

@@ -7,6 +7,7 @@
   import { SvelteMap } from "svelte/reactivity";
   import "@xyflow/svelte/dist/style.css";
   import { call, commands, message, type RunGraph, type TreeNode } from "../ipc/client";
+  import { RunGraphState, setRunGraphState } from "./runGraph.svelte";
   import GraphView from "./GraphView.svelte";
   import { LIMIT, shape, type Point } from "./graph";
   import { layout } from "./layout";
@@ -32,12 +33,14 @@
     onselect: (path: string[]) => void;
     onopen: () => void;
   } = $props();
+  const g = new RunGraphState();
+  setRunGraphState(g);
 
-  let shown = $state.raw<{ graph: RunGraph; positions: Map<string, Point>; shape: string } | null>(null);
-  let pending = $state.raw<RunGraph | null>(null);
-  let error = $state<string | null>(null);
+  
+  
+  
   /** Lay out a graph above the limit anyway, for this Run. */
-  let forced = $state(false);
+  
   /** Each read of the graph; only the newest one may show what it read. */
   let reads = 0;
   /** Layouts by Run and shape, finished or in flight, so returning to a Run reuses its own. */
@@ -61,19 +64,19 @@
    * its layout finishes, unless a newer read came meanwhile. */
   async function place(graph: RunGraph, read: number) {
     const key = shape(graph);
-    if (shown && shown.shape === key && shown.graph.run === graph.run) {
-      shown = { ...shown, graph };
-      pending = null;
+    if (g.shown && g.shown.shape === key && g.shown.graph.run === graph.run) {
+      g.shown = { ...g.shown, graph };
+      g.pending = null;
       return;
     }
-    if (graph.nodes.length > LIMIT && !forced) {
-      pending = graph;
+    if (graph.nodes.length > LIMIT && !g.forced) {
+      g.pending = graph;
       return;
     }
-    pending = null;
+    g.pending = null;
     const laid = await positions(graph, key);
     if (read !== reads) return;
-    shown = { graph, positions: laid, shape: key };
+    g.shown = { graph, positions: laid, shape: key };
   }
 
   let last: string | null = null;
@@ -84,46 +87,46 @@
     const read = ++reads;
     if (at !== last) {
       last = at;
-      forced = false;
+      g.forced = false;
     }
     call(commands.runGraph(at)).then(
       (graph) => {
         if (read !== reads) return;
-        error = null;
-        void place(graph, read).catch((failure) => read === reads && (error = message(failure)));
+        g.error = null;
+        void place(graph, read).catch((failure) => read === reads && (g.error = message(failure)));
       },
       (failure) => {
-        if (read === reads) error = message(failure);
+        if (read === reads) g.error = message(failure);
       },
     );
   };
 </script>
 
 <div class="host" {@attach reread}>
-{#if error}
-  <p class="note error">{error}</p>
-{:else if pending}
+{#if g.error}
+  <p class="note error">{g.error}</p>
+{:else if g.pending}
   <div class="note">
     <p>
-      This Run has {pending.nodes.length} Artifacts; the graph lays out at most {LIMIT} at once, which can take a while.
+      This Run has {g.pending.nodes.length} Artifacts; the graph lays out at most {LIMIT} at once, which can take a while.
       The tree shows every Run at once (<kbd>v</kbd>).
     </p>
     <button
       class="button"
       onclick={() => {
-        forced = true;
-        if (pending) void place(pending, reads);
-      }}>Lay out all {pending.nodes.length}</button
+        g.forced = true;
+        if (g.pending) void place(g.pending, reads);
+      }}>Lay out all {g.pending.nodes.length}</button
     >
   </div>
-{:else if !shown}
+{:else if !g.shown}
   <p class="note">Laying out…</p>
-{:else if shown.graph.nodes.length === 0}
+{:else if g.shown.graph.nodes.length === 0}
   <p class="note">This Run has no Artifacts.</p>
 {:else}
-  {#key shown.graph.run}
+  {#key g.shown.graph.run}
     <SvelteFlowProvider>
-      <GraphView graph={shown.graph} positions={shown.positions} {tree} {selected} bind:zoomed {active} {onselect} {onopen} />
+      <GraphView graph={g.shown.graph} positions={g.shown.positions} {tree} {selected} bind:zoomed {active} {onselect} {onopen} />
     </SvelteFlowProvider>
   {/key}
 {/if}

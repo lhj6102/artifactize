@@ -17,7 +17,7 @@ pub struct StateChanged {
 #[derive(Debug, Clone, Serialize, Deserialize, Type, Event)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionChanged {
-    pub session: String,
+    pub session: crate::ids::SessionKey,
 }
 
 /// Forward the hub's hints to every window until the app exits. The subscription itself
@@ -30,7 +30,7 @@ pub fn spawn<R: tauri::Runtime>(app: tauri::AppHandle<R>, state: PathBuf) {
                 Change::StateInvalidated => StateChanged { resync: false }.emit(&app),
                 Change::Resync => StateChanged { resync: true }.emit(&app),
                 Change::SessionInvalidated(id) => SessionChanged {
-                    session: id.to_string(),
+                    session: id.clone().into(),
                 }
                 .emit(&app),
             };

@@ -36,7 +36,7 @@ struct Page {
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub struct Listed {
-    pub id: String,
+    pub id: crate::ids::RequestKey,
     pub eval: String,
     pub title: String,
     pub kind: Profile,
@@ -75,7 +75,7 @@ pub struct Completion {
 fn row(view: &RequestView, entry: &Entry, now: OffsetDateTime) -> Listed {
     let request = &view.request;
     Listed {
-        id: entry.request.clone(),
+        id: request.id.clone().into(),
         eval: entry.eval.clone(),
         title: request.title.clone(),
         kind: entry.kind.into(),

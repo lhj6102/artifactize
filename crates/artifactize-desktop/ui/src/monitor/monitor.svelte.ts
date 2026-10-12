@@ -2,6 +2,8 @@
 // the notice in the breadcrumb, the Run view and the zoomed Artifact. One owner, shared with
 // createContext; the snapshot it shows is the Browse of the window.
 import { createContext } from "svelte";
+import type { Review } from "../review/review.svelte";
+import { Tree } from "./tree.svelte";
 
 export type Focus = "scope" | "runs" | "tree" | "detail";
 
@@ -14,6 +16,12 @@ export class MonitorState {
   runView = $state<"tree" | "graph">("tree");
   /** The Artifact the graph is zoomed into. */
   zoomed = $state<string | null>(null);
+  /** The Run tree's folds and selection. */
+  readonly tree = new Tree();
+  /** Human reviews by request: leaving and reopening a request keeps its drafts. */
+  readonly reviews: Record<string, Review> = {};
+  /** The panes' elements, to move focus into. */
+  readonly panes: Partial<Record<Focus, HTMLElement>> = $state({});
 }
 
 export const [getMonitorState, setMonitorState] = createContext<MonitorState>();

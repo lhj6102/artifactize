@@ -20,7 +20,7 @@
   import RecordDetail from "../monitor/RecordDetail.svelte";
   import Sections from "../monitor/Sections.svelte";
   import Panel from "../shell/Panel.svelte";
-  import { ReviewScreenState } from "./reviewScreen.svelte";
+  import { ReviewScreenState, setReviewScreenState } from "./reviewScreen.svelte";
   import { scrollTo } from "../shell/attach";
   import { useCommands } from "../shell/commands.svelte";
   import { chord, plain } from "../shell/keys";
@@ -30,6 +30,7 @@
   // The launch is fixed for the window's life: its search is where the screen starts.
   // svelte-ignore state_referenced_locally
   const r = new ReviewScreenState(launch.search);
+  setReviewScreenState(r);
 
   /** The search every launch starts from: waiting Human reviews, of `--repo` when given. */
   const WAITING = "kind:human status:waiting_human";

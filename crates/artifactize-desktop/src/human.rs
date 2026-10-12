@@ -145,7 +145,7 @@ pub struct Claimant {
 #[serde(rename_all = "camelCase")]
 pub struct HumanView {
     /// The request every action goes to: a waiting follower's original.
-    pub id: String,
+    pub id: RequestKey,
     pub title: String,
     /// Status, claim and waiting time in one line.
     pub meta: String,
@@ -226,7 +226,7 @@ fn view(
     });
     let mine = claim.as_ref().is_some_and(|claim| claim.mine);
     HumanView {
-        id: request.id.to_string(),
+        id: request.id.clone().into(),
         title: format!("{} · {}", request.eval_id, request.title),
         meta: review::meta(view, reviewer, now),
         shared: review::shared(view),
@@ -559,7 +559,8 @@ pub async fn human_submit(
             result: Err(error), ..
         } => return Err(Failure::Invalid(error.clone())),
         Outcome::SavedLocally { .. } => Settled::SavedLocally,
-        _ => Settled::Published,
+        Outcome::Submitted { result: Ok(_), .. } => Settled::Published,
+        other => unreachable!("a submit job ends in Submitted or SavedLocally, not {other:?}"),
     };
     app.human.took(&id, false);
     let Acted { notice, view } = acted(&app, &id, outcome).await?;
