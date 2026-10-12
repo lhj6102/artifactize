@@ -1,5 +1,6 @@
 <script lang="ts">
-  // The selected Run: its headline, what needs attention, and the Artifacts and evals tree.
+  // The selected Run: its headline, what needs attention, and the Artifacts and evals as a tree
+  // or as a graph of Artifacts (`v` switches; the tree is the fully keyboard-driven view).
   import { ContextMenu } from "bits-ui";
   import type { Browse } from "./browse.svelte";
   import { type Tree, visible, find } from "./tree.svelte";
@@ -11,6 +12,8 @@
     browse,
     tree,
     focused,
+    view = $bindable("tree"),
+    zoomed = $bindable(null),
     element = $bindable(),
     onfocus,
     onopen,
@@ -20,6 +23,10 @@
     browse: Browse;
     tree: Tree;
     focused: boolean;
+    /** The tree, or the graph of Artifacts. */
+    view?: "tree" | "graph";
+    /** The Artifact the graph is zoomed into. */
+    zoomed?: string | null;
     element?: HTMLElement;
     onfocus: () => void;
     onopen: () => void;
@@ -64,7 +71,13 @@
   });
 
   function keydown(event: KeyboardEvent) {
-    if (plain(event, "ArrowDown") || plain(event, "j")) tree.move(rows, 1);
+    if (plain(event, "v")) view = view === "tree" ? "graph" : "tree";
+    else if (view === "graph") {
+      // The graph handles its own keys; what reaches here steps back or refreshes.
+      if (plain(event, "Escape")) onback();
+      else if (plain(event, "r")) browse.refresh();
+      else return;
+    } else if (plain(event, "ArrowDown") || plain(event, "j")) tree.move(rows, 1);
     else if (plain(event, "ArrowUp") || plain(event, "k")) tree.move(rows, -1);
     else if (plain(event, "h")) tree.left(nodes);
     else if (plain(event, "l")) tree.right(nodes);
@@ -82,8 +95,37 @@
 </script>
 
 <Panel title={run ? `Run ${run.id}` : "Run"} {focused} bind:element {onfocus} onkeydown={keydown}>
+  {#snippet actions()}
+    <div class="views" role="group" aria-label="Run view">
+      <button class="button small" aria-pressed={view === "tree"} onclick={() => (view = "tree")} title="Artifacts and evals (v)">Tree</button>
+      <button class="button small" aria-pressed={view === "graph"} onclick={() => (view = "graph")} title="Graph of Artifacts (v)">Graph <kbd>v</kbd></button>
+    </div>
+  {/snippet}
   {#if !run}
     <p class="empty">Select a Run.</p>
+  {:else if view === "graph"}
+    <div class="graphmode">
+    <div class="headline">
+      <span class="status {tone(run.mark.status)}">{run.mark.glyph} {run.mark.status}</span>
+      <span class="text">{run.headline}</span>
+    </div>
+    <div class="graph">
+      <!-- Loaded on first use: the graph's libraries stay out of the tree's start-up. -->
+      {#await import("./RunGraph.svelte")}
+        <p class="empty">Loading the graph…</p>
+      {:then { default: RunGraph }}
+        <RunGraph
+          run={run.id}
+          revision={browse.revision}
+          tree={nodes}
+          selected={tree.selected}
+          bind:zoomed
+          onselect={(path) => tree.select(path)}
+          {onopen}
+        />
+      {/await}
+    </div>
+    </div>
   {:else}
     <div class="headline">
       <span class="status {tone(run.mark.status)}">{run.mark.glyph} {run.mark.status}</span>
@@ -194,6 +236,23 @@
 </Panel>
 
 <style>
+  .views {
+    display: flex;
+    gap: 4px;
+  }
+  .views [aria-pressed="true"] {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+  .graphmode {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+  .graph {
+    flex: 1;
+    min-height: 240px;
+  }
   .empty {
     color: var(--muted);
     padding: 0 var(--pad);

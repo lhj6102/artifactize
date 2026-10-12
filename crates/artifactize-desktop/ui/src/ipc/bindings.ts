@@ -47,6 +47,8 @@ export const commands = {
 	humanSubmit: (id: string, draft: Draft, job: number) => typedError<Submitted, Failure>(__TAURI_INVOKE("human_submit", { id, draft, job })),
 	/**  Release this reviewer's claims on `ids` without a verdict. */
 	humanRelease: (ids: string[], job: number) => typedError<Acted, Failure>(__TAURI_INVOKE("human_release", { ids, job })),
+	/**  The selected Run `run` as a graph of its Artifacts, from the shown snapshot. */
+	runGraph: (run: string) => typedError<RunGraph, Failure>(__TAURI_INVOKE("run_graph", { run })),
 	/**
 	 *  Requests matching `query` from position `start` (0 for the newest). `reload: false`
 	 *  redraws the last page of the same query and start without reading the state.
@@ -215,6 +217,22 @@ export type FormView = {
 	json: string | null,
 };
 
+/**  `target`'s evals depend on `source`; both are tree ids. */
+export type GraphEdge = {
+	source: string,
+	target: string,
+	light: Light,
+	/**  A dependency eval of the target names the source and lights the edge. */
+	dependency: boolean,
+};
+
+export type GraphNode = {
+	/**  The Artifact row's tree id, `a:<artifact>`. */
+	id: string,
+	name: string,
+	light: Light,
+};
+
 /**  One request in the shared Human Detail. */
 export type HumanView = {
 	/**  The request every action goes to: a waiting follower's original. */
@@ -249,6 +267,19 @@ export type LaunchView = {
 	search: string,
 	request: string | null,
 };
+
+/**  How a node or edge is lit; the frontend maps each to one colour. */
+export type Light = 
+/**  An eval is RED or ERROR. */
+"failed" | 
+/**  Cannot proceed: an upstream Artifact failed or is itself blocked. */
+"blocked" | 
+/**  Running, or waiting for its Human. */
+"active" | 
+/**  Runnable but still waiting: queued, or for upstream Artifacts not done yet. */
+"waiting" | 
+/**  Every eval is GREEN. */
+"green";
 
 /**  One request the search found. */
 export type Listed = {
@@ -341,6 +372,13 @@ export type Row = {
 	group: boolean,
 	/**  Under the subdued Thinking label. */
 	thinking: boolean,
+};
+
+export type RunGraph = {
+	run: string,
+	/**  Upstream first, in the tree's order. */
+	nodes: GraphNode[],
+	edges: GraphEdge[],
 };
 
 export type RunItem = {

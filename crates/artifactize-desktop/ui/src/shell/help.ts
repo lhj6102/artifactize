@@ -45,6 +45,17 @@ export const HELP: Record<"monitor" | "review", Section[]> = {
         ["t / w / d", "Technical / pending evals / Agent details"],
       ],
     },
+    {
+      title: "Run graph",
+      keys: [
+        ["v", "Switch the Run between tree and graph"],
+        ["← / →", "Upstream / downstream Artifact"],
+        ["↑ / ↓", "Artifact above / below in the same column"],
+        ["Enter / click", "Zoom into the Artifact: its evals"],
+        ["↑ / ↓ · Enter", "In the evals: select (Detail follows) / open Detail"],
+        ["Esc", "Zoom out, then step back"],
+      ],
+    },
     HUMAN,
     COMMON,
   ],

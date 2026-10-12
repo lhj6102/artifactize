@@ -19,6 +19,10 @@
   let focus = $state<Focus>("runs");
   let opened = $state<{ run: string; node: string } | null>(null);
   let notice = $state<string | null>(null);
+  /** The Run as a tree, or as a graph of Artifacts. */
+  let runView = $state<"tree" | "graph">("tree");
+  /** The Artifact the graph is zoomed into. */
+  let zoomed = $state<string | null>(null);
   const tree = new Tree();
   /** Human reviews by request: leaving and reopening a request keeps its drafts. */
   const reviews = new Map<string, Review>();
@@ -44,6 +48,16 @@
   $effect(() => {
     // Leaving the selected Run (or losing it) closes its Detail.
     if (opened && opened.run !== run?.id) opened = null;
+  });
+
+  let graphRun: string | null = null;
+  $effect(() => {
+    // Another Run's graph starts zoomed out.
+    const id = run?.id ?? null;
+    if (id !== graphRun) {
+      graphRun = id;
+      zoomed = null;
+    }
   });
 
   function review(id: string): Review {
@@ -128,6 +142,16 @@
           { id: "monitor.runs", group: "Monitor", label: "Focus Runs", run: () => void move("runs") },
           { id: "monitor.tree", group: "Monitor", label: "Focus Run tree", run: () => void move("tree") },
           {
+            id: "monitor.view",
+            group: "Monitor",
+            label: runView === "tree" ? "Show the Run graph" : "Show the Run tree",
+            keys: "v",
+            run: () => {
+              runView = runView === "tree" ? "graph" : "tree";
+              void move("tree");
+            },
+          },
+          {
             id: "monitor.open",
             group: "Monitor",
             label: "Open Detail of the selected row",
@@ -182,6 +206,8 @@
       <RunPane
         {browse}
         {tree}
+        bind:view={runView}
+        bind:zoomed
         focused={focus === "tree"}
         bind:element={panes.tree}
         onfocus={() => (focus = "tree")}

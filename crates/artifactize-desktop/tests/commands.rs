@@ -775,3 +775,54 @@ fn an_agent_request_found_by_the_search_opens_read_only_with_its_session() {
     let rows = window_of(&window, &opened["handle"], Value::Null);
     assert!(rows["rows"].to_string().contains("row 2"), "{rows}");
 }
+
+#[test]
+fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
+    let fixture = fixture();
+    let monitor = window(&fixture, Mode::Monitor);
+    let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
+    let run = view["selectedRun"].as_str().unwrap().to_owned();
+    let graph = |window: &WebviewWindow<MockRuntime>| {
+        invoke(window, "run_graph", json!({"run": run})).unwrap()
+    };
+    // release waits for its Human; ship's dependency eval waits for release and lights the
+    // edge itself (waiting), not with release's own light (active).
+    let before = graph(&monitor);
+    assert_eq!(
+        before["nodes"],
+        json!([
+            {"id": "a:release", "name": "release", "light": "active"},
+            {"id": "a:ship", "name": "ship", "light": "waiting"},
+        ])
+    );
+    assert_eq!(
+        before["edges"],
+        json!([{"source": "a:release", "target": "a:ship", "light": "waiting", "dependency": true}])
+    );
+
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    let human = window(&fixture, Mode::Review);
+    invoke(
+        &human,
+        "human_claim",
+        json!({"id": id, "job": 1, "standalone": true}),
+    )
+    .unwrap();
+    invoke(
+        &human,
+        "human_submit",
+        json!({"id": id, "job": 2, "draft": {"verdict": "GREEN", "fields": [["approved", {"kind": "fixed"}], ["comment", {"kind": "text", "value": "ok"}]], "json": null}}),
+    )
+    .unwrap();
+    invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
+    let after = graph(&monitor);
+    assert_eq!(after["nodes"][0]["light"], "green");
+    assert_eq!(
+        after["nodes"][1]["light"], "green",
+        "the derived eval follows"
+    );
+    assert_eq!(after["edges"][0]["light"], "green");
+    // Another Run than the shown one is refused.
+    let missing = invoke(&monitor, "run_graph", json!({"run": "run-gone"}));
+    assert_eq!(missing.unwrap_err()["kind"], "missing");
+}
