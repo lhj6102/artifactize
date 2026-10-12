@@ -16,7 +16,7 @@ const signedIn: RemoteStatus = {
   url: STORE,
   share: "summary",
   tokenSource: "file",
-  connection: { state: "reachable", principal: "alice-laptop", scopes: ["read", "publish"], error: null },
+  connection: { state: "signedIn", principal: "alice-laptop", scopes: ["read", "publish"] },
 };
 
 type Calls = { cmd: string; args: Record<string, unknown> }[];
@@ -42,7 +42,7 @@ function backend(options: {
       case "codex_login_start":
         return { url: "http://127.0.0.1:9/oauth/authorize?state=s", callback: false, signIn: 7 };
       case "codex_login_wait":
-        return options.wait?.() ?? { state: "stored", expiresAt: "2030-01-01T00:00:00Z", expired: false };
+        return options.wait?.() ?? { state: "stored", expiry: { state: "usable", expiresAt: "1893456000" } };
       case "codex_login_paste":
       case "codex_login_cancel":
         return null;
@@ -102,7 +102,7 @@ describe("Settings", () => {
     expect(calls.find((call) => call.cmd === "codex_login_paste")?.args).toEqual({
       redirect: "http://localhost:1455/auth/callback?code=c&state=s",
     });
-    finish({ state: "stored", expiresAt: "2030-01-01T00:00:00Z", expired: false });
+    finish({ state: "stored", expiry: { state: "usable", expiresAt: "1893456000" } });
     await screen.findByText("Signed in with Codex.");
     expect(screen.getByTestId("codex-status").textContent).toMatch(/Signed in/);
     expect(screen.queryByText(/Waiting for the browser/)).toBeNull();
@@ -113,7 +113,7 @@ describe("Settings", () => {
 
   it("reports a cancelled sign-in and offers signing in again when signed in", async () => {
     let fail: (error: unknown) => void = () => {};
-    let state: CodexStatus = { state: "stored", expiresAt: "2030-01-01T00:00:00Z", expired: false };
+    let state: CodexStatus = { state: "stored", expiry: { state: "usable", expiresAt: "1893456000" } };
     const calls = backend({
       codex: () => state,
       wait: () => new Promise((_, reject) => (fail = reject)),
@@ -124,7 +124,7 @@ describe("Settings", () => {
     expect(calls.some((call) => call.cmd === "codex_login_cancel")).toBe(true);
     fail({ kind: "account", message: "Codex sign-in was cancelled." });
     await screen.findByText("Codex sign-in was cancelled.");
-    state = { state: "file", path: "/home/a/.codex/auth.json", expiresAt: null, expired: false };
+    state = { state: "file", path: "/home/a/.codex/auth.json", expiry: { state: "usable", expiresAt: null } };
     await fireEvent.click(screen.getByRole("button", { name: "Sign in again" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Cancel sign-in" }));
     fail({ kind: "account", message: "Codex sign-in was cancelled." });

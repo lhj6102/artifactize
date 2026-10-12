@@ -183,17 +183,19 @@
     }
   }
 
-  function when(iso: string | null): string {
-    if (!iso) return "no expiry";
-    const date = new Date(iso);
-    return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  /** A moment the library counts in whole seconds, as text: shown in the person's locale when
+   * the calendar reaches it, else as the count itself. */
+  function when(seconds: string | null): string {
+    if (!seconds) return "no expiry";
+    const date = new Date(Number(seconds) * 1000);
+    return Number.isNaN(date.getTime()) ? `${seconds} s` : date.toLocaleString();
   }
 
   const signedIn = $derived(codex?.state === "stored");
 
   /** The principal the store named, when it was reachable and named one. */
   const principalOf = (status: RemoteStatus | null) =>
-    status?.state === "configured" && status.connection.state === "reachable" ? status.connection.principal : null;
+    status?.state === "configured" && status.connection.state === "signedIn" ? status.connection.principal : null;
   const principal = $derived(principalOf(remote));
 
   useCommands(() =>
@@ -227,9 +229,9 @@
         {:else if codex.state === "absent"}
           Not signed in
         {:else if codex.state === "stored"}
-          Signed in{codex.expired ? "; the access token expired and refreshes on next use" : ""} · token until {when(codex.expiresAt)}
+          Signed in{codex.expiry.state === "expired" ? "; the access token expired and refreshes on next use" : ""} · token until {when(codex.expiry.expiresAt)}
         {:else if codex.state === "file"}
-          Read-only Codex auth file {codex.path}{codex.expired ? " (expired; sign in with Codex again)" : ""}
+          Read-only Codex auth file {codex.path}{codex.expiry.state === "expired" ? " (expired; sign in with Codex again)" : ""}
         {:else}
           Cannot store tokens here: {codex.reason}
         {/if}
@@ -322,11 +324,11 @@
         <dt>Token</dt>
         <dd>{remote.tokenSource}</dd>
         <dt>Reachable</dt>
-        <dd>{remote.connection.state === "reachable" ? "yes" : "no"}</dd>
-        {#if remote.connection.state === "reachable" && remote.connection.principal}
+        <dd>{remote.connection.state === "unreachable" ? "no" : "yes"}</dd>
+        {#if remote.connection.state === "signedIn"}
           <dt>Principal</dt>
           <dd data-testid="remote-principal">{remote.connection.principal} (scopes: {remote.connection.scopes.join(", ")})</dd>
-        {:else if remote.connection.error}
+        {:else}
           <dt>Error</dt>
           <dd class="error">{remote.connection.error}</dd>
         {/if}

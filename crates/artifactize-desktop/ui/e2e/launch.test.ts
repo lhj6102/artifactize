@@ -50,10 +50,20 @@ describe("launching the Monitor", () => {
     for (const name of ["release", "ship", "docs"]) assert.match(tree, new RegExp(name));
     assert.match(await text(), /WAITING_HUMAN — waiting for a Human submission/);
     // Another scope lists its own Runs.
+    const runIds = () =>
+      browser.execute(() =>
+        [...document.querySelectorAll('[aria-label="Runs"] [role="option"]')].map((row) => /run-\S+/.exec((row as HTMLElement).innerText)?.[0] ?? ""),
+      );
+    const before = await runIds();
     const other = await browser.$('//ul[@aria-label="Scope"]//li[contains(., "other")]');
     await other.click();
     await eventually(async () => (await browser.$('nav[aria-label="Breadcrumb"]').getText()).includes("other"), "the other scope selected");
     await eventually(async () => /Runs \(1\)/i.test(await text()), "its one Run");
+    // The Runs pane now lists that repository's own Run, not the earlier scope's.
+    await eventually(async () => {
+      const now = await runIds();
+      return now.length === 1 && !before.includes(now[0]);
+    }, "the other repository's Run replaces the Runs");
   });
 
   // UX edges: E-SCREEN-SETTINGS E-SCREEN-REVIEW E-SCREEN-MONITOR

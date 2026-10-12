@@ -1,6 +1,6 @@
 <script lang="ts">
   // Every repository and worktree in the state; selecting one reads its Runs.
-  import type { Browse } from "./browse.svelte";
+  import { getAppState } from "../shell/app.svelte";
   import type { ScopeRow } from "../ipc/client";
   import Panel from "../shell/Panel.svelte";
   import { scrollTo } from "../shell/attach";
@@ -8,18 +8,17 @@
   import { plain } from "../shell/keys";
 
   let {
-    browse,
     focused,
     element = $bindable(),
     onfocus,
     onnext,
   }: {
-    browse: Browse;
     focused: boolean;
     element?: HTMLElement;
     onfocus: () => void;
     onnext: () => void;
   } = $props();
+  const { browse } = getAppState();
 
   const rows = $derived(browse.view?.scopes ?? []);
   /** The highlighted row: the selected scope, or a fold row the keys moved to. */

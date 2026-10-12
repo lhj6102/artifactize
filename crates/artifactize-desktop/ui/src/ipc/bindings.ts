@@ -188,13 +188,10 @@ export type CodexPrompt = {
 export type CodexStatus = 
 /**  Not signed in. */
 { state: "absent" } | 
-/**
- *  artifactize's own sign-in; `expired` once its access token ran out (it refreshes on
- *  use unless the refresh token was revoked).
- */
-{ state: "stored"; expiresAt: string; expired: boolean } | 
+/**  artifactize's own sign-in. */
+{ state: "stored"; expiry: Expiry } | 
 /**  A read-only Codex auth file from ARTIFACTIZE_CODEX_AUTH_FILE; never written here. */
-{ state: "file"; path: string; expiresAt: string | null; expired: boolean } | 
+{ state: "file"; path: string; expiry: FileExpiry } | 
 /**  Tokens cannot be stored where this state lives, and why. */
 { state: "refused"; reason: string };
 
@@ -206,9 +203,13 @@ export type Completion = {
 };
 
 /**  What asking the store answered. */
-export type Connection = { state: "reachable"; principal: string | null; scopes: string[]; 
-/**  What the store said when it named no principal. */
-error: string | null } | { state: "unreachable"; error: string | null };
+export type Connection = 
+/**  The token was accepted. */
+{ state: "signedIn"; principal: string; scopes: string[] } | 
+/**  The store answered, but not with an accepted token. */
+{ state: "refused"; error: string } | 
+/**  The store sent no HTTP response. */
+{ state: "unreachable"; error: string };
 
 /**  A badge part such as `!2`: a status and how many. */
 export type Count = {
@@ -246,6 +247,13 @@ export type Evidence = {
 	text: string,
 };
 
+/**  How long a stored sign-in's access token lasts. */
+export type Expiry = 
+/**  It still works. */
+{ state: "usable"; expiresAt: UnixSeconds } | 
+/**  It ran out; it refreshes on use unless the refresh token was revoked. */
+{ state: "expired"; expiresAt: UnixSeconds };
+
 export type Failure = 
 /**  Reading the state failed; the last snapshot stays on screen. */
 { kind: "read"; message: string } | 
@@ -274,6 +282,9 @@ export type FieldInput =
 export type FieldValue = { kind: "fixed" } | { kind: "bool"; value: boolean | null } | 
 /**  The chosen option's index. */
 { kind: "choice"; value: number | null } | { kind: "text"; value: string } | { kind: "integer"; value: string } | { kind: "number"; value: string };
+
+/**  What a read-only Codex auth file says of its token. */
+export type FileExpiry = { state: "usable"; expiresAt: UnixSeconds | null } | { state: "expired" };
 
 export type FormField = {
 	name: string,
@@ -678,6 +689,12 @@ export type TreeNode = {
 	upstream: UpstreamMark[],
 	children: TreeNode[],
 };
+
+/**
+ *  A moment as the library counts it: whole seconds since 1970, as decimal text so no value of
+ *  the library's range is rounded on the way to the frontend.
+ */
+export type UnixSeconds = string;
 
 /**  The Artifacts a row depends on, with whether each is complete (dim) or unmet (bright). */
 export type UpstreamMark = {

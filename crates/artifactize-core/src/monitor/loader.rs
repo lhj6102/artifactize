@@ -22,6 +22,16 @@ pub struct Page {
     pub limit: u32,
 }
 
+/// Where the page of older Runs starts, when the page shown (`shown` Runs of `limit`) is full.
+pub fn older_offset(offset: u32, limit: u32, shown: u32) -> Option<u32> {
+    (shown >= limit).then(|| offset.saturating_add(limit))
+}
+
+/// Where the page of newer Runs starts, when this one is not the first.
+pub fn newer_offset(offset: u32, limit: u32) -> Option<u32> {
+    (offset > 0).then(|| offset.saturating_sub(limit))
+}
+
 /// The monitor's page plus what tells an obsolete job from a current one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Selection {

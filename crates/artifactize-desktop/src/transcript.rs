@@ -79,10 +79,10 @@ pub struct TranscriptView {
 #[specta::specta]
 pub async fn transcript_open(
     app: tauri::State<'_, App>,
-    id: String,
+    id: crate::ids::RequestKey,
     handle: Option<TranscriptHandle>,
 ) -> Result<Opened, Failure> {
-    let view = store::read_request(&app.launch.state, &id)
+    let view = store::read_request(&app.launch.state, &id.into_inner())
         .await
         .map_err(Failure::Read)?;
     let stamp = EvidenceStamp::new(&view);

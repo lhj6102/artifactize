@@ -134,16 +134,25 @@ impl Browse {
                 .is_some_and(|run| !run.unreadable.iter().any(|record| record.kind == "run"));
             shown.page.open = readable.then_some(id);
         }
+        let limit = shown.page.limit;
         match step.paging {
-            Some(Paging::Older) if shown.runs.len() as u32 >= shown.page.limit => {
-                shown.page.offset = shown.page.offset.saturating_add(shown.page.limit);
+            Some(Paging::Older) => {
+                let Some(offset) =
+                    monitor::older_offset(shown.page.offset, limit, shown.runs.len() as u32)
+                else {
+                    return Ok(());
+                };
+                shown.page.offset = offset;
                 shown.page.tail = false;
             }
-            Some(Paging::Newer) if shown.page.offset > 0 => {
-                shown.page.offset = shown.page.offset.saturating_sub(shown.page.limit);
+            Some(Paging::Newer) => {
+                let Some(offset) = monitor::newer_offset(shown.page.offset, limit) else {
+                    return Ok(());
+                };
+                shown.page.offset = offset;
                 shown.page.tail = true;
             }
-            _ => return Ok(()),
+            None => return Ok(()),
         }
         shown.runs.clear();
         shown.page.open = None;

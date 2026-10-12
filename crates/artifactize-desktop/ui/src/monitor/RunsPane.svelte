@@ -1,26 +1,25 @@
 <script lang="ts">
   // The selected scope's Runs, newest first; moving past either end pages.
-  import type { Browse } from "./browse.svelte";
+  import { getAppState } from "../shell/app.svelte";
   import Panel from "../shell/Panel.svelte";
   import { scrollTo } from "../shell/attach";
   import { plain } from "../shell/keys";
   import { tone } from "../shell/tone";
 
   let {
-    browse,
     focused,
     element = $bindable(),
     onfocus,
     onnext,
     onback,
   }: {
-    browse: Browse;
     focused: boolean;
     element?: HTMLElement;
     onfocus: () => void;
     onnext: () => void;
     onback: () => void;
   } = $props();
+  const { browse } = getAppState();
 
   const view = $derived(browse.view);
   const runs = $derived(view?.runs ?? []);

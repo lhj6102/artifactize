@@ -48,3 +48,48 @@ impl TranscriptHandle {
         u64::from(self.0)
     }
 }
+
+macro_rules! key {
+    ($(#[$meta:meta])* $name:ident, $inner:ty) => {
+        $(#[$meta])*
+        #[derive(Debug, Clone, Deserialize)]
+        #[serde(try_from = "String")]
+        pub struct $name($inner);
+
+        impl TryFrom<String> for $name {
+            type Error = String;
+            fn try_from(text: String) -> Result<Self, String> {
+                text.parse().map(Self)
+            }
+        }
+
+        impl $name {
+            pub fn into_inner(self) -> $inner {
+                self.0
+            }
+        }
+
+        /// Text on the wire, as the library's own identifier is.
+        impl Type for $name {
+            fn definition(types: &mut specta::Types) -> specta::datatype::DataType {
+                String::definition(types)
+            }
+        }
+    };
+}
+
+key!(
+    /// A request id as an IPC argument, checked where it arrives.
+    RequestKey,
+    artifactize_core::types::RequestId
+);
+key!(
+    /// A Run id as an IPC argument, checked where it arrives.
+    RunKey,
+    artifactize_core::types::RunId
+);
+key!(
+    /// A tree node id as an IPC argument, checked where it arrives.
+    NodeKey,
+    artifactize_core::monitor::NodeId
+);

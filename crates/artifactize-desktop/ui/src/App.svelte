@@ -5,7 +5,6 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
   import { call, commands, message, onStateChanged } from "./ipc/client";
-  import { Browse } from "./monitor/browse.svelte";
   import Monitor from "./monitor/Monitor.svelte";
   import ReviewScreen from "./review/ReviewScreen.svelte";
   import Settings from "./settings/Settings.svelte";
@@ -17,12 +16,10 @@
   import { chord, composing, plain } from "./shell/keys";
   import { HELP } from "./shell/help";
   import { AppState, setAppState } from "./shell/app.svelte";
-  import { Leaving } from "./shell/leaving.svelte";
 
   const app = new AppState();
   setAppState(app);
-  const leaving = new Leaving();
-  const browse = new Browse();
+  const { browse, leaving } = app;
 
   onMount(() => {
     call(commands.launch()).then(
@@ -116,7 +113,7 @@
   {:else if app.launch}
     <main>
       <div class="screen" hidden={app.screen !== "monitor"}>
-        <Monitor {browse} active={app.screen === "monitor"} />
+        <Monitor active={app.screen === "monitor"} />
       </div>
       <div class="screen" hidden={app.screen !== "review"}>
         <ReviewScreen launch={app.launch} active={app.screen === "review"} />

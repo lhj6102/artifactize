@@ -1,6 +1,7 @@
 //! The Detail of a tree row: the monitor's sections in their order, and saved runtime logs.
 //! Human requests open the shared Human Detail ([`crate::human`]); Agent requests read their
 //! session ([`crate::transcript`]).
+use crate::ids::{NodeKey, RunKey};
 use crate::{App, Failure, status::Mark};
 use artifactize_core::types::RunId;
 use artifactize_core::{
@@ -187,11 +188,11 @@ pub fn view(
 #[specta::specta]
 pub fn detail(
     app: tauri::State<'_, App>,
-    run: String,
-    node: String,
+    run: RunKey,
+    node: NodeKey,
 ) -> Result<DetailView, Failure> {
-    let id: NodeId = node.parse().map_err(Failure::Missing)?;
-    let run: RunId = run.parse().map_err(Failure::Missing)?;
+    let id: NodeId = node.into_inner();
+    let run: RunId = run.into_inner();
     app.browse.with_run(&run, |run, requests| {
         view(
             &app.launch.state,

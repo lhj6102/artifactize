@@ -18,15 +18,25 @@ import type {
 
 export type Area = "instruction" | "tools" | "fields";
 
+const NO_DRAFT: Draft = { verdict: "GREEN", fields: [], json: null };
+
 /** The draft of one verdict; it survives switching verdicts and leaving the Detail. The library
- * owns what an edit means: every edit is sent to it and the answer replaces the draft. What was
- * typed shows at once meanwhile, and is rolled back if the library refuses it. */
+ * owns what an edit means: every edit is sent to it and its answer replaces the draft whole.
+ * What was typed shows over the draft meanwhile and is dropped when the answer, or a refusal,
+ * comes. */
 export class FormDraft {
   readonly id: string;
   readonly verdict: Verdict;
   readonly fields: FormField[];
-  values = $state<Record<string, FieldValue>>({});
-  json = $state<string | null>(null);
+  /** The library's draft. */
+  snapshot = $state.raw<Draft>(NO_DRAFT);
+  /** What was typed and has no answer yet. */
+  #typed = $state.raw<{ fields: Record<string, FieldValue>; json: string | null }>({ fields: {}, json: null });
+  readonly values = $derived<Record<string, FieldValue>>({
+    ...Object.fromEntries(this.snapshot.fields),
+    ...this.#typed.fields,
+  });
+  readonly json = $derived(this.#typed.json ?? this.snapshot.json);
   error = $state<string | null>(null);
   /** Counts edits: only the newest answer replaces the draft. */
   #edits = 0;
@@ -35,46 +45,43 @@ export class FormDraft {
     this.id = id;
     this.verdict = view.verdict;
     this.fields = view.fields;
-    this.#adopt(view.draft);
-  }
-
-  #adopt(draft: Draft) {
-    this.json = draft.json;
-    this.values = Object.fromEntries(draft.fields);
+    this.snapshot = view.draft;
   }
 
   draft(): Draft {
     return {
       verdict: this.verdict,
-      fields: Object.entries($state.snapshot(this.values)) as [string, FieldValue][],
+      fields: this.snapshot.fields.map(([name]) => [name, this.values[name]] as [string, FieldValue]),
       json: this.json,
     };
   }
 
-  /** Set field `name`: shown now, then as the library's form takes it. */
+  /** The owner-fields JSON the library produced for this form, now the draft. */
+  adoptJson(json: string): void {
+    this.snapshot = { ...this.snapshot, json };
+  }
+
+  /** Set field `name`. */
   async set(name: string, value: FieldValue): Promise<void> {
-    const before = this.draft();
-    this.values[name] = value;
-    await this.#ask(before, (draft) => call(commands.humanEditField(this.id, draft, name, value)));
+    this.#typed = { ...this.#typed, fields: { ...this.#typed.fields, [name]: value } };
+    await this.#ask((draft) => call(commands.humanEditField(this.id, draft, name, value)));
   }
 
   /** Replace the owner-fields JSON text. */
   async setJson(text: string): Promise<void> {
-    const before = this.draft();
-    this.json = text;
-    await this.#ask(before, (draft) => call(commands.humanEditJson(this.id, draft, text)));
+    this.#typed = { ...this.#typed, json: text };
+    await this.#ask((draft) => call(commands.humanEditJson(this.id, draft, text)));
   }
 
-  async #ask(before: Draft, edit: (draft: Draft) => Promise<Draft>): Promise<void> {
+  async #ask(edit: (draft: Draft) => Promise<Draft>): Promise<void> {
     const mine = ++this.#edits;
     try {
       const answer = await edit(this.draft());
-      if (mine === this.#edits) this.#adopt(answer);
+      if (mine === this.#edits) this.snapshot = answer;
     } catch (error) {
-      if (mine === this.#edits) {
-        this.#adopt(before);
-        this.error = message(error);
-      }
+      if (mine === this.#edits) this.error = message(error);
+    } finally {
+      if (mine === this.#edits) this.#typed = { fields: {}, json: null };
     }
   }
 }
@@ -211,7 +218,7 @@ export class Review {
         const json = await call(commands.humanJson(this.id, draft));
         if (this.form !== form || form.json !== null) return;
         if (JSON.stringify(form.draft()) === JSON.stringify(draft)) {
-          form.json = json;
+          form.adoptJson(json);
           return;
         }
       }

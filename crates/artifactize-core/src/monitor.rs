@@ -28,7 +28,7 @@ pub use catalog::{Badge, Catalog, CatalogRow, Repository, Scope};
 pub(crate) use evidence::original as test_original;
 pub use evidence::{Evidence, EvidenceStamp, evidence};
 pub use fold::upstream;
-pub use loader::{Input, Loader, Origin, Page, Snapshot};
+pub use loader::{Input, Loader, Origin, Page, Snapshot, newer_offset, older_offset};
 pub use model::{
     Activity, Busy, Clock, Completion, Detail, EvalView, Graph, GraphEdge, GraphNode, Kind, Light,
     Node, NodeId, NotRun, Progress, Queue, RunRow, Section, Segment, Source, Status, Strip, Target,
@@ -684,8 +684,10 @@ impl Monitor {
                     if next < self.runs.len() {
                         return self.select_run(next);
                     }
-                    if self.runs.len() as u32 >= self.limit {
-                        self.offset = self.offset.saturating_add(self.limit);
+                    if let Some(offset) =
+                        loader::older_offset(self.offset, self.limit, self.runs.len() as u32)
+                    {
+                        self.offset = offset;
                         self.page_tail = false;
                         self.load_revision += 1;
                         self.navigation = true;
@@ -696,8 +698,10 @@ impl Monitor {
                     }
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
-                    if self.list.selected().unwrap_or(0) == 0 && self.offset > 0 {
-                        self.offset = self.offset.saturating_sub(self.limit);
+                    if self.list.selected().unwrap_or(0) == 0
+                        && let Some(offset) = loader::newer_offset(self.offset, self.limit)
+                    {
+                        self.offset = offset;
                         self.page_tail = true;
                         self.load_revision += 1;
                         self.navigation = true;

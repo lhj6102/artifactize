@@ -68,8 +68,8 @@ pub struct RunGraph {
 /// The selected Run `run` as a graph of its Artifacts, from the shown snapshot.
 #[tauri::command]
 #[specta::specta]
-pub fn run_graph(app: tauri::State<'_, App>, run: String) -> Result<RunGraph, Failure> {
-    let run: artifactize_core::types::RunId = run.parse().map_err(Failure::Missing)?;
+pub fn run_graph(app: tauri::State<'_, App>, run: crate::ids::RunKey) -> Result<RunGraph, Failure> {
+    let run = run.into_inner();
     let graph = app.browse.with_tree(&run, monitor::graph)?;
     let id = |name: &artifactize_core::types::ArtifactName| {
         monitor::NodeId::artifact(name.clone()).to_string()

@@ -2,7 +2,7 @@
   // The selected Run: its headline, what needs attention, and the Artifacts and evals as a tree
   // or as a graph of Artifacts (`v` switches; the tree is the fully keyboard-driven view).
   import { ContextMenu } from "bits-ui";
-  import type { Browse } from "./browse.svelte";
+  import { getAppState } from "../shell/app.svelte";
   import { type Tree, visible, find } from "./tree.svelte";
   import type { Attachment } from "svelte/attachments";
   import Panel from "../shell/Panel.svelte";
@@ -11,7 +11,6 @@
   import { tone } from "../shell/tone";
 
   let {
-    browse,
     tree,
     focused,
     view = $bindable("tree"),
@@ -23,7 +22,6 @@
     onback,
     onattention,
   }: {
-    browse: Browse;
     tree: Tree;
     focused: boolean;
     /** The tree, or the graph of Artifacts. */
@@ -38,6 +36,7 @@
     onback: () => void;
     onattention: () => void;
   } = $props();
+  const { browse } = getAppState();
 
   const run = $derived(browse.view?.run ?? null);
   const nodes = $derived(run?.tree ?? []);

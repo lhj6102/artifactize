@@ -2,6 +2,8 @@
 // start, the shown screen and the two dialogs. Shared with createContext.
 import { createContext } from "svelte";
 import type { LaunchView } from "../ipc/client";
+import { Browse } from "../monitor/browse.svelte";
+import { Leaving } from "./leaving.svelte";
 
 export type Screen = "monitor" | "review" | "settings";
 
@@ -10,6 +12,9 @@ export class AppState {
   launch = $state.raw<LaunchView | null>(null);
   failure = $state<string | null>(null);
   screen = $state<Screen>("monitor");
+  /** The monitor's snapshot. */
+  readonly browse = new Browse();
+  readonly leaving = new Leaving();
   palette = $state(false);
   help = $state(false);
 }

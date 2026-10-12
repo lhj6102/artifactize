@@ -153,6 +153,10 @@ describe("monitor", () => {
     await alert.waitForExist({ timeout: 15000 });
     assert.match(await alert.getText(), /reason/);
     assert.equal(signoff(fixture).status, "WAITING_HUMAN");
+    // The form keeps what was entered and stays editable, to be corrected.
+    assert.equal(await reason.getValue(), "no");
+    await reason.setValue("not good enough");
+    assert.equal(await reason.getValue(), "not good enough");
   });
 
   // UX edges: E-HUMAN-GREEN E-HUMAN-TEXT E-HUMAN-SUBMIT

@@ -192,7 +192,7 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     })
     .unwrap();
     assert_eq!(status["state"], "stored");
-    assert_eq!(status["expired"], json!(false));
+    assert_eq!(status["expiry"]["state"], json!("usable"));
     secret_free(&status);
     assert!(!status.to_string().contains("refresh-1"));
     let exchange = provider
@@ -347,10 +347,9 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
             "share": "full",
             "tokenSource": "file",
             "connection": {
-                "state": "reachable",
+                "state": "signedIn",
                 "principal": "alice-laptop",
                 "scopes": ["read", "publish"],
-                "error": null,
             },
         })
     );
@@ -360,8 +359,7 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     ECHO.store(true, Ordering::SeqCst);
     let echoed = call("remote_status", json!({})).unwrap();
     secret_free(&echoed);
-    assert_eq!(echoed["connection"]["state"], json!("reachable"));
-    assert_eq!(echoed["connection"]["principal"], Value::Null);
+    assert_eq!(echoed["connection"]["state"], json!("refused"));
     assert_eq!(
         echoed["connection"]["error"],
         "The remote store answered HTTP 400: [withheld: it contained part of the credential sent]"

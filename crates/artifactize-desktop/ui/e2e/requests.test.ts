@@ -163,6 +163,8 @@ describe("a GREEN submission from the start", () => {
     await press(browser, ["Enter"], () => human().isExisting(), "the Human review");
     await human().click();
     await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed");
+    // The window shows the claim before a verdict can be chosen.
+    await eventually(async () => (await text()).includes("claimed by you"), "the claim shown");
     await press(browser, ["g"], () => browser.$("#field-comment").isExisting(), "the GREEN form of the pass schema");
     assert.ok(await browser.$("#field-approved").isExisting(), "the schema's approved field");
     const comment = browser.$("#field-comment");

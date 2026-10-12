@@ -18,17 +18,26 @@
     onpending?: () => void;
   } = $props();
 
+  /** What each shown section lists: its waits (the pending ones only on request) with how many
+   * are pending, and the keys its folded technical summary names. */
   const shown = $derived(
-    peek ? sections.filter((section) => section.name === "outcome" || section.name === "waits") : sections,
+    (peek ? sections.filter((section) => section.name === "outcome" || section.name === "waits") : sections).map(
+      (section) => ({
+        section,
+        waits: section.waits.filter((line) => pending || !line.pending),
+        pendingCount: section.waits.filter((line) => line.pending).length,
+        keys: section.fields.map((field) => field.key).join(", "),
+      }),
+    ),
   );
 </script>
 
-{#each shown as section (section.name)}
+{#each shown as { section, waits, pendingCount, keys } (section.name)}
   <section class="section">
     {#if section.name === "technical" && !peek}
       <button class="heading toggle" aria-expanded={technical} onclick={ontechnical}>
         {technical ? "▾" : "▸"} Technical
-        {#if !technical}<span class="keys">{section.fields.map((field) => field.key).join(", ")} · t shows</span>{/if}
+        {#if !technical}<span class="keys">{keys} · t shows</span>{/if}
       </button>
     {:else if !peek}
       <h3 class="heading">{section.title}</h3>
@@ -36,13 +45,13 @@
     {#if section.name === "waits"}
       {#if peek}<h3 class="heading inline">Waits for</h3>{/if}
       <ul class="waits">
-        {#each section.waits.filter((line) => pending || !line.pending) as line, at (at)}
+        {#each waits as line, at (at)}
           <li class:pending={line.pending}>{line.text}</li>
         {/each}
       </ul>
-      {#if !pending && section.waits.some((line) => line.pending)}
+      {#if !pending && pendingCount > 0}
         <button class="link" onclick={onpending}>
-          {section.waits.filter((line) => line.pending).length} pending evals · w shows
+          {pendingCount} pending evals · w shows
         </button>
       {/if}
     {:else if section.name !== "technical" || technical}

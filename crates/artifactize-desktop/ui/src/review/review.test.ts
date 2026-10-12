@@ -14,6 +14,11 @@ function backend() {
   mockIPC(async (cmd, args) => {
     const payload = args as Record<string, unknown>;
     if (cmd === "human_open") return humanView("review");
+    if (cmd === "human_edit_field") {
+      // The library's form takes the value as typed.
+      const edit = payload as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
+      return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
+    }
     if (cmd === "human_json") {
       drafts.push(payload.draft);
       return '{\n  "approved": true,\n  "comment": ""\n}';
@@ -67,7 +72,7 @@ describe("Review", () => {
     await settle();
     pending[0].answer();
     await green;
-    review.form!.values.comment = { kind: "text", value: "x" };
+    await review.form!.set("comment", { kind: "text", value: "x" });
     await review.editJson();
     expect(drafts[0]).toEqual({
       verdict: "GREEN",
@@ -92,6 +97,11 @@ describe("Review", () => {
     mockIPC(async (cmd, args) => {
       const payload = args as Record<string, unknown>;
       if (cmd === "human_open") return humanView("review");
+      if (cmd === "human_edit_field") {
+        // The library's form takes the value as typed.
+        const edit = payload as { draft: { fields: [string, unknown][] }; name: string; value: unknown };
+        return { ...edit.draft, fields: edit.draft.fields.map(([name, value]) => [name, name === edit.name ? edit.value : value]) };
+      }
       if (cmd === "human_form") return greenForm;
       if (cmd === "human_json") {
         const draft = payload.draft as { fields: [string, { value?: string }][] };
@@ -104,10 +114,10 @@ describe("Review", () => {
     const review = new Review("run-a-2", false);
     await review.load();
     await review.choose("GREEN");
-    review.form!.values.comment = { kind: "text", value: "before" };
+    await review.form!.set("comment", { kind: "text", value: "before" });
     const converting = review.editJson();
     await settle();
-    review.form!.values.comment = { kind: "text", value: "after" };
+    void review.form!.set("comment", { kind: "text", value: "after" });
     pending[0].answer();
     await settle();
     pending[1].answer();

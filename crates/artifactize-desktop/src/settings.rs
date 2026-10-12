@@ -11,7 +11,6 @@ use artifactize_core::{
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::sync::Mutex;
-use time::OffsetDateTime;
 use tokio::sync::oneshot;
 
 /// The Codex sign-in in progress, if any.
@@ -207,36 +206,56 @@ pub fn settings_keys() -> Vec<KeyStatus> {
         .collect()
 }
 
+/// A moment as the library counts it: whole seconds since 1970, as decimal text so no value of
+/// the library's range is rounded on the way to the frontend.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(transparent)]
+pub struct UnixSeconds(String);
+
+impl From<codex::Timestamp> for UnixSeconds {
+    fn from(time: codex::Timestamp) -> Self {
+        Self(time.seconds().to_string())
+    }
+}
+
+/// How long a stored sign-in's access token lasts.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum Expiry {
+    /// It still works.
+    Usable { expires_at: UnixSeconds },
+    /// It ran out; it refreshes on use unless the refresh token was revoked.
+    Expired { expires_at: UnixSeconds },
+}
+
+/// What a read-only Codex auth file says of its token.
+#[derive(Debug, Clone, Serialize, Type)]
+#[serde(
+    tag = "state",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum FileExpiry {
+    Usable { expires_at: Option<UnixSeconds> },
+    Expired,
+}
+
 /// How Codex is signed in, read offline as the CLI does.
 #[derive(Debug, Clone, Serialize, Type)]
 #[serde(tag = "state", rename_all = "camelCase")]
 pub enum CodexStatus {
     /// Not signed in.
     Absent,
-    /// artifactize's own sign-in; `expired` once its access token ran out (it refreshes on
-    /// use unless the refresh token was revoked).
-    #[serde(rename_all = "camelCase")]
-    Stored { expires_at: String, expired: bool },
+    /// artifactize's own sign-in.
+    Stored { expiry: Expiry },
     /// A read-only Codex auth file from ARTIFACTIZE_CODEX_AUTH_FILE; never written here.
-    #[serde(rename_all = "camelCase")]
-    File {
-        path: String,
-        expires_at: Option<String>,
-        expired: bool,
-    },
+    File { path: String, expiry: FileExpiry },
     /// Tokens cannot be stored where this state lives, and why.
     Refused { reason: String },
-}
-
-fn timestamp(time: codex::Timestamp) -> String {
-    let seconds = i64::try_from(time.seconds()).unwrap_or(i64::MAX);
-    OffsetDateTime::from_unix_timestamp(seconds)
-        .ok()
-        .and_then(|time| {
-            time.format(&time::format_description::well_known::Rfc3339)
-                .ok()
-        })
-        .unwrap_or_default()
 }
 
 fn read_codex(app: &App) -> Result<CodexStatus, Failure> {
@@ -245,23 +264,24 @@ fn read_codex(app: &App) -> Result<CodexStatus, Failure> {
     Ok(match status {
         codex::Status::Absent => CodexStatus::Absent,
         codex::Status::Refused { reason } => CodexStatus::Refused { reason },
-        codex::Status::Stored { expiry } => match expiry {
-            codex::StoredExpiry::Usable { expires_at } => CodexStatus::Stored {
-                expires_at: timestamp(expires_at),
-                expired: false,
-            },
-            codex::StoredExpiry::Expired { expires_at } => CodexStatus::Stored {
-                expires_at: timestamp(expires_at),
-                expired: true,
+        codex::Status::Stored { expiry } => CodexStatus::Stored {
+            expiry: match expiry {
+                codex::StoredExpiry::Usable { expires_at } => Expiry::Usable {
+                    expires_at: expires_at.into(),
+                },
+                codex::StoredExpiry::Expired { expires_at } => Expiry::Expired {
+                    expires_at: expires_at.into(),
+                },
             },
         },
         codex::Status::File { path, expiry } => CodexStatus::File {
             path: artifactize_tools::files::path_text(&path),
-            expires_at: match expiry {
-                codex::FileExpiry::Usable { expires_at } => expires_at.map(timestamp),
-                codex::FileExpiry::Expired => None,
+            expiry: match expiry {
+                codex::FileExpiry::Usable { expires_at } => FileExpiry::Usable {
+                    expires_at: expires_at.map(Into::into),
+                },
+                codex::FileExpiry::Expired => FileExpiry::Expired,
             },
-            expired: matches!(expiry, codex::FileExpiry::Expired),
         },
     })
 }
@@ -475,15 +495,15 @@ pub enum RemoteStatus {
     rename_all_fields = "camelCase"
 )]
 pub enum Connection {
-    Reachable {
-        principal: Option<String>,
+    /// The token was accepted.
+    SignedIn {
+        principal: String,
         scopes: Vec<String>,
-        /// What the store said when it named no principal.
-        error: Option<String>,
     },
-    Unreachable {
-        error: Option<String>,
-    },
+    /// The store answered, but not with an accepted token.
+    Refused { error: String },
+    /// The store sent no HTTP response.
+    Unreachable { error: String },
 }
 
 impl From<Option<remote::Status>> for RemoteStatus {
@@ -492,19 +512,12 @@ impl From<Option<remote::Status>> for RemoteStatus {
             return Self::Unconfigured;
         };
         let connection = match status.connection {
-            remote::Connection::SignedIn { principal, scopes } => Connection::Reachable {
-                principal: Some(principal.to_string()),
+            remote::Connection::SignedIn { principal, scopes } => Connection::SignedIn {
+                principal: principal.to_string(),
                 scopes: scopes.into_iter().map(|scope| scope.to_string()).collect(),
-                error: None,
             },
-            remote::Connection::Refused { error } => Connection::Reachable {
-                principal: None,
-                scopes: Vec::new(),
-                error: Some(error),
-            },
-            remote::Connection::Unreachable { error } => {
-                Connection::Unreachable { error: Some(error) }
-            }
+            remote::Connection::Refused { error } => Connection::Refused { error },
+            remote::Connection::Unreachable { error } => Connection::Unreachable { error },
         };
         Self::Configured {
             url: status.url,

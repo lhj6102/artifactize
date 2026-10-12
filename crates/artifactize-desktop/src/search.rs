@@ -167,8 +167,11 @@ pub async fn review_complete(
 /// The read-only Detail of request `id` in its Run, as the monitor shows it.
 #[tauri::command]
 #[specta::specta]
-pub async fn review_detail(app: tauri::State<'_, App>, id: String) -> Result<DetailView, Failure> {
-    let view = store::read_request(&app.launch.state, &id)
+pub async fn review_detail(
+    app: tauri::State<'_, App>,
+    id: crate::ids::RequestKey,
+) -> Result<DetailView, Failure> {
+    let view = store::read_request(&app.launch.state, &id.into_inner())
         .await
         .map_err(Failure::Read)?;
     let (run, requests) = store::read_run_requests(&app.launch.state, &view.request.run_id)

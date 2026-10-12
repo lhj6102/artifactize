@@ -3,7 +3,7 @@
   // Detail — sections and saved logs, an Agent transcript, or the shared Human Detail.
   import type { Attachment } from "svelte/attachments";
   import { call, commands, message, type DetailView } from "../ipc/client";
-  import type { Browse } from "./browse.svelte";
+  import { getAppState } from "../shell/app.svelte";
   import type { Review } from "../review/review.svelte";
   import Panel from "../shell/Panel.svelte";
   import RecordDetail from "./RecordDetail.svelte";
@@ -14,7 +14,6 @@
   import { tone } from "../shell/tone";
 
   let {
-    browse,
     run,
     node,
     full,
@@ -27,7 +26,6 @@
     onopen,
     onback,
   }: {
-    browse: Browse;
     run: string | null;
     node: string | null;
     full: boolean;
@@ -42,6 +40,7 @@
     onopen: () => void;
     onback: () => void;
   } = $props();
+  const { browse } = getAppState();
 
   let detail = $state.raw<DetailView | null>(null);
   let error = $state<string | null>(null);

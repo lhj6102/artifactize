@@ -5,7 +5,7 @@
   import { onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
   import type { BrowseView } from "../ipc/client";
-  import type { Browse } from "./browse.svelte";
+  import { getAppState } from "../shell/app.svelte";
   import { Tree, find } from "./tree.svelte";
   import ScopePane from "./ScopePane.svelte";
   import RunsPane from "./RunsPane.svelte";
@@ -15,7 +15,8 @@
   import { useCommands } from "../shell/commands.svelte";
   import { plain } from "../shell/keys";
 
-  let { browse, active }: { browse: Browse; active: boolean } = $props();
+  let { active }: { active: boolean } = $props();
+  const { browse } = getAppState();
 
   type Focus = "scope" | "runs" | "tree" | "detail";
   let focus = $state<Focus>("runs");
@@ -180,7 +181,6 @@
       <PaneGroup direction="vertical" autoSaveId="monitor-sidebar">
         <Pane defaultSize={38} minSize={15}>
           <ScopePane
-            {browse}
             focused={focus === "scope"}
             bind:element={panes.scope}
             onfocus={() => (focus = "scope")}
@@ -190,7 +190,6 @@
         <PaneResizer class="resizer" />
         <Pane defaultSize={62} minSize={15}>
           <RunsPane
-            {browse}
             focused={focus === "runs"}
             bind:element={panes.runs}
             onfocus={() => (focus = "runs")}
@@ -203,7 +202,6 @@
     <PaneResizer class="resizer" />
     <Pane defaultSize={36} minSize={18}>
       <RunPane
-        {browse}
         {tree}
         bind:view={runView}
         bind:zoomed
@@ -219,7 +217,6 @@
     <PaneResizer class="resizer" />
     <Pane defaultSize={40} minSize={20}>
       <DetailPane
-        {browse}
         run={run?.id ?? null}
         node={selectedNode}
         full={opened !== null}

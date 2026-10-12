@@ -127,8 +127,8 @@ Recording a new reusable result triggers LRU GC over every record of every key: 
 most 10,000 records and 1 GiB of retained execution JSON, with a 16 MiB per-record
 limit. Oversized results still reach their Run and existing waiters through the
 saved execution, but later calls execute again. A reuse hit updates the last use of
-the record it reused; inspection does not. A key's older records are therefore
-evicted before its latest. GC evicts the least recently used eligible records first,
+the record it reused; inspection does not. GC evicts the least recently used eligible
+records first (a reuse can refresh an older record after a newer one completed),
 using the key then the completion time to break ties, and skips keys with an active
 execution and records an in-flight waiter needs. Protected entries can temporarily exceed the caps, and
 automatic maintenance failures are reported on stderr without replacing an already

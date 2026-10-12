@@ -11,14 +11,14 @@ pub use form::{Draft, FormView, Verdict};
 /// The state's origin right now, noted as the generation every Human view belongs to.
 pub(crate) async fn current(app: &App) -> Result<u32, Failure> {
     let state = app.launch.state.clone();
-    let origin = tokio::task::spawn_blocking(move || monitor::Origin::read(&state))
-        .await
-        .map_err(|error| Failure::Read(error.to_string()))?
-        .map_err(Failure::Read)?;
+    let origin = crate::failure::joined(
+        tokio::task::spawn_blocking(move || monitor::Origin::read(&state)).await,
+    )?
+    .map_err(Failure::Read)?;
     Ok(app.observe(origin))
 }
 
-use crate::ids::JobId;
+use crate::ids::{JobId, RequestKey};
 use crate::{App, Failure, detail::Field, status::Mark};
 use artifactize_core::{
     config::{HumanToolKind, ToolName},
@@ -204,10 +204,6 @@ pub struct Acted {
     pub view: Option<HumanView>,
 }
 
-fn parse(id: &str) -> Result<RequestId, Failure> {
-    id.parse().map_err(Failure::Missing)
-}
-
 fn kind(kind: HumanToolKind) -> ToolKind {
     match kind {
         HumanToolKind::Launch => ToolKind::Launch,
@@ -333,10 +329,10 @@ fn show(app: &App, request: &RequestView) -> HumanView {
 #[specta::specta]
 pub async fn human_open(
     app: tauri::State<'_, App>,
-    id: String,
+    id: RequestKey,
     reload: bool,
 ) -> Result<HumanView, Failure> {
-    let id = parse(&id)?;
+    let id = id.into_inner();
     let cached = (!reload)
         .then(|| {
             app.human
@@ -359,10 +355,10 @@ pub async fn human_open(
 #[specta::specta]
 pub async fn human_form(
     app: tauri::State<'_, App>,
-    id: String,
+    id: RequestKey,
     verdict: Verdict,
 ) -> Result<FormView, Failure> {
-    let id = parse(&id)?;
+    let id = id.into_inner();
     guard(&app, &id, review::review_refusal).await?;
     form::template(&opened(&app, &id)?.request, verdict)
 }
@@ -386,11 +382,11 @@ async fn run_job(app: &App, job: JobId, work: Job) -> Outcome {
 #[specta::specta]
 pub async fn human_claim(
     app: tauri::State<'_, App>,
-    id: String,
+    id: RequestKey,
     job: JobId,
     standalone: bool,
 ) -> Result<Acted, Failure> {
-    let id = parse(&id)?;
+    let id = id.into_inner();
     // Someone else's claim, or a settled request, is refused in the library's words.
     let view = read(&app, &id).await?;
     review::actionable(Some(&view), &app.launch.reviewer).map_err(Failure::Action)?;
@@ -415,11 +411,11 @@ async fn acted(app: &App, id: &RequestId, outcome: Outcome) -> Result<Acted, Fai
 #[specta::specta]
 pub async fn human_run(
     app: tauri::State<'_, App>,
-    id: String,
+    id: RequestKey,
     tool: String,
     job: JobId,
 ) -> Result<ToolRun, Failure> {
-    let id = parse(&id)?;
+    let id = id.into_inner();
     let tool: ToolName = tool.parse().map_err(Failure::Missing)?;
     guard(&app, &id, review::review_refusal).await?;
     let outcome = run_job(
@@ -512,12 +508,12 @@ fn opened(app: &App, id: &RequestId) -> Result<RequestView, Failure> {
 #[specta::specta]
 pub async fn human_edit_field(
     app: tauri::State<'_, App>,
-    id: String,
+    id: RequestKey,
     draft: Draft,
     name: String,
     value: form::FieldValue,
 ) -> Result<Draft, Failure> {
-    let id = parse(&id)?;
+    let id = id.into_inner();
     form::edit_field(&opened(&app, &id)?.request, draft, &name, value)
 }
 
@@ -526,11 +522,11 @@ pub async fn human_edit_field(
 #[specta::specta]
 pub async fn human_edit_json(
     app: tauri::State<'_, App>,
-    id: String,
+    id: RequestKey,
     draft: Draft,
     json: String,
 ) -> Result<Draft, Failure> {
-    let id = parse(&id)?;
+    let id = id.into_inner();
     form::edit_json(&opened(&app, &id)?.request, draft, json)
 }
 
@@ -540,11 +536,11 @@ pub async fn human_edit_json(
 #[specta::specta]
 pub async fn human_submit(
     app: tauri::State<'_, App>,
-    id: String,
+    id: RequestKey,
     draft: Draft,
     job: JobId,
 ) -> Result<Submitted, Failure> {
-    let id = parse(&id)?;
+    let id = id.into_inner();
     guard(&app, &id, review::review_refusal).await?;
     let request = opened(&app, &id)?;
     let result = form::result(&request.request, draft)?;
@@ -578,8 +574,12 @@ pub async fn human_submit(
 /// hands to `$EDITOR`.
 #[tauri::command]
 #[specta::specta]
-pub fn human_json(app: tauri::State<'_, App>, id: String, draft: Draft) -> Result<String, Failure> {
-    let request = opened(&app, &parse(&id)?)?;
+pub fn human_json(
+    app: tauri::State<'_, App>,
+    id: RequestKey,
+    draft: Draft,
+) -> Result<String, Failure> {
+    let request = opened(&app, &id.into_inner())?;
     form::json(&request.request, draft)
 }
 
@@ -588,13 +588,10 @@ pub fn human_json(app: tauri::State<'_, App>, id: String, draft: Draft) -> Resul
 #[specta::specta]
 pub async fn human_release(
     app: tauri::State<'_, App>,
-    ids: Vec<String>,
+    ids: Vec<RequestKey>,
     job: JobId,
 ) -> Result<Acted, Failure> {
-    let ids = ids
-        .iter()
-        .map(|id| parse(id))
-        .collect::<Result<Vec<_>, _>>()?;
+    let ids: Vec<RequestId> = ids.into_iter().map(RequestKey::into_inner).collect();
     if let [id] = ids.as_slice() {
         guard(&app, id, review::release_refusal).await?;
     }
