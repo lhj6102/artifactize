@@ -185,9 +185,10 @@ describe("RunGraph", () => {
   });
 
   it("asks before laying out more than the limit, once per Run", async () => {
+    let size = LIMIT + 1;
     const many = (run: string): Graph => ({
       run,
-      nodes: Array.from({ length: LIMIT + 1 }, (_, index) => ({ id: `a:${run}-${index}`, name: `${run}-${index}`, light: "green" })),
+      nodes: Array.from({ length: size }, (_, index) => ({ id: `a:${run}-${index}`, name: `${run}-${index}`, light: "green" })),
       edges: [],
     });
     mockIPC((cmd, args) => (cmd === "run_graph" ? many((args as { run: string }).run) : null));
@@ -199,13 +200,16 @@ describe("RunGraph", () => {
     await fireEvent.click(screen.getByRole("button", { name: `Lay out all ${LIMIT + 1}` }));
     await waitFor(() => expect(node("a:run-a-0")).not.toBeNull());
     expect(layout).toHaveBeenCalledOnce();
-    // A new snapshot of the same Run keeps the answer; another Run asks again.
+    // A new snapshot of the same Run with another Artifact (a new shape, still above the
+    // limit) keeps the answer and lays out again; another Run asks again.
+    size = LIMIT + 2;
     await rerender({ revision: 2 });
-    await new Promise((done) => setTimeout(done, 20));
+    await waitFor(() => expect(node(`a:run-a-${LIMIT + 1}`)).not.toBeNull());
+    expect(layout).toHaveBeenCalledTimes(2);
     expect(screen.queryByRole("button", { name: /Lay out all/ })).toBeNull();
     await rerender({ run: "run-b", revision: 3 });
-    await screen.findByRole("button", { name: `Lay out all ${LIMIT + 1}` });
-    expect(layout).toHaveBeenCalledOnce();
+    await screen.findByRole("button", { name: `Lay out all ${LIMIT + 2}` });
+    expect(layout).toHaveBeenCalledTimes(2);
   });
 
   it("lays out again after a failed layout, and after the layout cache dropped a Run", async () => {
@@ -236,5 +240,47 @@ describe("RunGraph", () => {
     expect(layout).toHaveBeenCalledTimes(10);
     await rerender({ run: "run-0", revision: revision++ });
     await waitFor(() => expect(layout).toHaveBeenCalledTimes(11));
+  });
+
+  it("lets go of keyboard focus when its screen hides and does not take it back unasked", async () => {
+    const { rerender } = setup(() => graph("active"));
+    await waitFor(() => expect(node("a:release")).not.toBeNull());
+    node("a:release")!.focus();
+    expect(document.activeElement).toBe(node("a:release"));
+    const frames = vi.spyOn(window, "requestAnimationFrame");
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    const settle = () => new Promise((done) => setTimeout(done, 120));
+    const nodeFocus = () => focus.mock.contexts.filter((element) => (element as HTMLElement).classList.contains("svelte-flow__node")).length;
+
+    // Another screen shows an already open Detail: nothing there takes focus.
+    await rerender({ active: false });
+    (document.activeElement as HTMLElement).blur();
+    await settle();
+    const called = frames.mock.calls.length;
+    await settle();
+    expect(frames.mock.calls.length).toBe(called);
+    expect(nodeFocus()).toBe(0);
+    expect(document.activeElement).toBe(document.body);
+
+    // Back on the graph's screen: no hold returns until a node is focused afresh.
+    await rerender({ active: true });
+    await settle();
+    expect(nodeFocus()).toBe(0);
+    expect(document.activeElement).toBe(document.body);
+
+    // A hidden ancestor (the screen's hidden attribute) ends a fresh hold the same way.
+    node("a:release")!.focus();
+    const screenElement = node("a:release")!.closest(".graph")!.parentElement!;
+    screenElement.setAttribute("hidden", "");
+    (document.activeElement as HTMLElement).blur();
+    focus.mockClear();
+    await settle();
+    const hiddenCalls = frames.mock.calls.length;
+    await settle();
+    expect(frames.mock.calls.length).toBe(hiddenCalls);
+    expect(nodeFocus()).toBe(0);
+    screenElement.removeAttribute("hidden");
+    frames.mockRestore();
+    focus.mockRestore();
   });
 });
