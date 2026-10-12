@@ -12,7 +12,6 @@
     onStateChanged,
     type LaunchView,
     type Listed,
-    type Settled,
   } from "../ipc/client";
   import { Review } from "./review.svelte";
   import HumanDetail from "./HumanDetail.svelte";
@@ -194,16 +193,6 @@
     await tick();
     r.list?.focus();
     void load();
-  }
-
-  async function submitted(settled: Settled) {
-    await load();
-    // A result saved locally whose publication failed stays open with its failure, as in the
-    // terminal review; it is never offered for submission again.
-    if (settled === "savedLocally") return;
-    r.review = null;
-    await back();
-    if (rows.length === 0) r.notice = waiting ? "No Human reviews are waiting." : "No request matches the search.";
   }
 
   async function search() {
@@ -400,7 +389,7 @@
           {/key}
         {:else if r.focus === "detail" && r.review}
           {#key r.review}
-            <HumanDetail review={r.review} {active} onback={() => void back()} onsubmitted={(settled) => void submitted(settled)} />
+            <HumanDetail review={r.review} {active} onback={() => void back()} onsubmitted={() => void load()} />
           {/key}
         {:else if r.preview && "human" in r.preview && selected}
           <!-- svelte-ignore a11y_click_events_have_key_events -->

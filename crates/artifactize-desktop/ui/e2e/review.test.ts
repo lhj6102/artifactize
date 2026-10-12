@@ -139,3 +139,47 @@ describe("review", () => {
     }, "the window closed after releasing");
   });
 });
+
+describe("a GREEN submission on the Review screen", () => {
+  let fixture: Fixture;
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+  const text = () => browser.execute(() => document.body.innerText);
+
+  before(async () => {
+    fixture = create();
+    session = await start(fixture, "review");
+    browser = session.browser;
+    await browser.$('[aria-label="Requests"]').waitForExist({ timeout: 15000 });
+  });
+
+  after(async () => {
+    await session?.stop();
+  });
+
+  // UX edges: E-HUMAN-CLAIM E-HUMAN-GREEN E-HUMAN-SUBMIT
+  it("keeps the completed result open until the reviewer leaves it", async () => {
+    await browser.keys(["Control", "o"]);
+    const input = await browser.$('[aria-label="Request ID"]');
+    await input.waitForExist();
+    await input.setValue(signoff(fixture).id);
+    await browser.keys(["Enter"]);
+    const human = await browser.$('[aria-label="Human review"]');
+    await human.waitForExist({ timeout: 15000 });
+    await eventually(async () => (await text()).includes("Unclaimed. c claims it for alice"), "the claim stage");
+    await browser.keys(["c"]);
+    await eventually(async () => signoff(fixture).claim?.reviewer === "alice", "claimed");
+    await eventually(async () => (await text()).includes("REVIEW (yours)"), "the review stage");
+    await browser.keys(["g"]);
+    const comment = await browser.$("#field-comment");
+    await comment.waitForExist({ timeout: 10000 });
+    await comment.click();
+    await browser.keys([..."looks good"]);
+    await browser.keys(["Control", "s"]);
+    await eventually(async () => signoff(fixture).status === "GREEN", "GREEN saved");
+    await eventually(async () => /completed result/i.test(await text()), "the completed result");
+    await browser.pause(1000);
+    assert.ok(await human.isExisting(), "the completed Detail stays open");
+    assert.match(await text(), /completed result/i);
+  });
+});
