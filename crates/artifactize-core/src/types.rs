@@ -13,6 +13,8 @@ pub(crate) const MAX_ID_BYTES: usize = 200;
 /// Bound provider-controlled SSE item identifiers retained by the delivery tap;
 /// 1 KiB accommodates opaque IDs without allowing unbounded per-block memory.
 pub(crate) const ITEM_ID_BYTES: usize = 1024;
+/// Bounds a tool name a model called, which the model controls.
+const MAX_CALLED_TOOL_BYTES: usize = 256;
 /// The longest Artifact name or tool name (`config::identifier`).
 const MAX_NAME_BYTES: usize = 64;
 /// 128 bits of randomness, lowercase hex-encoded: the length of a Codex OAuth `state`.
@@ -179,6 +181,27 @@ impl ExecutionId {
     }
 }
 identity!(SessionId, segment);
+// A tool name as a model called it: the model controls it, so it is only bounded and printable.
+identity!(CalledTool, |value: &str| (1..=MAX_CALLED_TOOL_BYTES)
+    .contains(&value.len())
+    && !value.chars().any(char::is_control));
+impl CalledTool {
+    /// The name as a model gave it, cut to fit when it is too long and printable always; an
+    /// empty name is recorded as `(unnamed)`.
+    pub fn called(name: &str) -> Self {
+        let mut text: String = name
+            .chars()
+            .map(|c| if c.is_control() { '?' } else { c })
+            .collect();
+        while text.len() > MAX_CALLED_TOOL_BYTES {
+            text.pop();
+        }
+        if text.is_empty() {
+            text = "(unnamed)".into();
+        }
+        text.parse().expect("a bounded printable name")
+    }
+}
 // A tool as the model sees it: the tool's name and its Artifact's, joined by `_`, each
 // `[A-Za-z0-9][A-Za-z0-9_-]{0,63}` (two names, so at most 129 bytes).
 identity!(ToolName, |value: &str| value.len()

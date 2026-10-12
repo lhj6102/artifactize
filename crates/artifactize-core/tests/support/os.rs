@@ -2424,3 +2424,8 @@ pub fn restore_directory_writes(path: &Path) {
     use std::os::unix::fs::PermissionsExt;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
 }
+
+/// A relative path that starts with a Windows drive letter, which is an ordinary name elsewhere.
+pub fn drive_relative() -> &'static str {
+    "C:relative"
+}

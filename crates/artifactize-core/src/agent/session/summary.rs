@@ -26,7 +26,7 @@ pub struct Summary {
     /// The reported token counters of every attempt, summed.
     pub tokens: BTreeMap<String, u64>,
     /// By tool name.
-    pub tool_calls: BTreeMap<String, ToolCalls>,
+    pub tool_calls: BTreeMap<crate::types::CalledTool, ToolCalls>,
 }
 
 /// One provider request and its attempts.
@@ -74,7 +74,7 @@ impl Summary {
             tool_calls: BTreeMap::new(),
         };
         // Calls by tool, then the results that answered them and those that failed.
-        let mut answered = BTreeMap::<String, (u64, u64)>::new();
+        let mut answered = BTreeMap::<crate::types::CalledTool, (u64, u64)>::new();
         for event in &conversation.events {
             match &event.kind {
                 super::Kind::Attempt(attempt) => summary.attempt(event.send, attempt),
@@ -82,7 +82,8 @@ impl Summary {
                     Message::Assistant { content, .. } => {
                         for part in content {
                             if let AssistantContent::ToolCall(call) = part {
-                                let name = call.function.name.as_str().to_owned();
+                                let name =
+                                    crate::types::CalledTool::called(call.function.name.as_str());
                                 summary.tool_calls.entry(name).or_default().calls += 1;
                             }
                         }
@@ -93,8 +94,9 @@ impl Summary {
                             _ => None,
                         });
                         for (index, result) in results.enumerate() {
-                            let (count, failed) =
-                                answered.entry(result.name.as_str().to_owned()).or_default();
+                            let (count, failed) = answered
+                                .entry(crate::types::CalledTool::called(result.name.as_str()))
+                                .or_default();
                             *count += 1;
                             *failed += u64::from(event.is_error.get(index) == Some(&true));
                         }

@@ -496,6 +496,9 @@ pub fn validate_response(response: &CompletionResponse, model: &str) -> Result<(
     Ok(())
 }
 
+/// `retry-after-ms` is read as a count of seconds first, so a thousandth of it is the wait.
+const MILLIS_PER_SECOND: u32 = 1000;
+
 /// The wait a provider asked for: `retry-after-ms`, or `Retry-After` in seconds or as an
 /// HTTP date.
 fn retry_after(error: &ProviderError) -> Option<Duration> {
@@ -518,7 +521,7 @@ fn wait_header(
             .and_then(|value| Duration::try_from_secs_f64(value).ok())
     };
     if let Some(wait) = header("retry-after-ms").and_then(seconds) {
-        return Some(wait / 1000);
+        return Some(wait / MILLIS_PER_SECOND);
     }
     let value = header("retry-after")?;
     seconds(value).or_else(|| {

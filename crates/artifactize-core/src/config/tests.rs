@@ -266,7 +266,13 @@ fn declared_paths_share_the_posix_and_windows_safe_grammar() {
             .is_err()
         );
     }
-    for path in ["file", "nested/file", "C:relative", "1:/relative", "a:b"] {
+    for path in [
+        "file",
+        "nested/file",
+        crate::test_os::drive_relative(),
+        "1:/relative",
+        "a:b",
+    ] {
         assert!(validation::path(path).is_ok(), "{path:?}");
     }
     assert!(validation::path(&"a".repeat(1024)).is_ok());
