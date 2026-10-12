@@ -5,6 +5,7 @@
   import { label } from "./keys";
 
   let { open = $bindable(false) }: { open?: boolean } = $props();
+  let input = $state<HTMLInputElement | null>(null);
 
   const groups = $derived.by(() => {
     const enabled = registry.all.filter((command) => command.enabled?.() ?? true);
@@ -26,10 +27,18 @@
 <Dialog.Root bind:open>
   <Dialog.Portal>
     <Dialog.Overlay class="overlay" />
-    <Dialog.Content class="dialog palette" aria-label="Command palette">
+    <Dialog.Content
+      class="dialog palette"
+      aria-label="Command palette"
+      onOpenAutoFocus={(event) => {
+        // However it opened (button or Ctrl+K), typing searches the commands.
+        event.preventDefault();
+        input?.focus();
+      }}
+    >
       <Dialog.Title class="sr-only">Command palette</Dialog.Title>
       <Command.Root loop>
-        <Command.Input class="palette-input" placeholder="Type a command…" />
+        <Command.Input class="palette-input" placeholder="Type a command…" bind:ref={input} />
         <Command.List class="palette-list">
           <Command.Viewport>
             <Command.Empty class="palette-empty">No matching command.</Command.Empty>

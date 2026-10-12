@@ -2,7 +2,7 @@
 // and opens again after every way of closing it, screen switches included.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { create } from "./fixture.ts";
+import { artifactize, create, type Fixture, requests } from "./fixture.ts";
 import { type Session, start } from "./driver.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 10000) {
@@ -17,6 +17,7 @@ async function eventually(check: () => Promise<boolean> | boolean, what: string,
 describe("command palette", () => {
   let session: Session;
   let browser: WebdriverIO.Browser;
+  let fixture: Fixture;
   const shown = () =>
     browser.execute(() => !!document.querySelector('[aria-label="Command palette"][data-state="open"]'));
   const opened = (how: string) => eventually(shown, `the palette opens (${how})`);
@@ -28,7 +29,10 @@ describe("command palette", () => {
   };
 
   before(async () => {
-    session = await start(create());
+    fixture = create();
+    // A second Run joins the waiting sign-off: its request is a follower of the first one.
+    assert.equal(artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json"), 3);
+    session = await start(fixture);
     browser = session.browser;
     await browser.$("button*=Commands").waitForExist({ timeout: 15000 });
     // Errors the page throws (a broken palette threw while rendering) fail the suite.
@@ -69,6 +73,36 @@ describe("command palette", () => {
       );
       await browser.$("button*=Commands").click();
       await opened(`after ${label}`);
+      await browser.keys(["Escape"]);
+      await closed("Esc");
+    }
+  });
+
+  it("opens after requests were opened by ID on the review screen, a follower included", async () => {
+    const signoffs = requests(fixture).filter((request) => request.evalId === "release/signoff");
+    const source = (request: (typeof signoffs)[number]) =>
+      (request as unknown as { execution?: { provenance?: { requestId?: string } } }).execution?.provenance?.requestId;
+    const original = signoffs.find((request) => source(request) === request.id);
+    const follower = signoffs.find((request) => source(request) !== request.id);
+    assert.ok(original && follower, "an original and its follower");
+    await browser.keys(["Control", "2"]);
+    await eventually(
+      () => browser.execute(() => document.querySelector('[role="tab"][data-state="active"]')?.textContent === "Review"),
+      "the Review screen",
+    );
+    for (const id of [original.id, follower.id, original.id]) {
+      await browser.keys(["Control", "o"]);
+      const input = await browser.$('[aria-label="Request ID"]');
+      await input.waitForExist();
+      await input.setValue(id);
+      await browser.keys(["Enter"]);
+      await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 10000 });
+      await browser.$("button*=Commands").click();
+      await opened(`button after opening ${id}`);
+      await run("Refresh waiting reviews");
+      await closed("the command ran");
+      await browser.keys(["Control", "k"]);
+      await opened(`Ctrl+K after opening ${id}`);
       await browser.keys(["Escape"]);
       await closed("Esc");
     }

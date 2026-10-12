@@ -189,7 +189,7 @@
         {#if review.technical}
           <h4>Technical</h4>
           <dl>
-            {#each view.technical as field (field.key)}
+            {#each view.technical as field, at (at)}
               <dt>{field.key}</dt>
               <dd>{field.value}</dd>
             {/each}

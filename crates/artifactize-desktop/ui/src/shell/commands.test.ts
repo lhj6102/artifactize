@@ -19,4 +19,14 @@ describe("registry", () => {
     kept();
     expect(registry.all.length).toBe(before);
   });
+
+  it("lists a command once when two scopes offer the same id", () => {
+    const before = registry.all.length;
+    const first = registry.add([command("human.claim")]);
+    const second = registry.add([{ ...command("human.claim"), label: "later" }]);
+    const listed = registry.all.slice(before);
+    expect(listed.map((entry) => [entry.id, entry.label])).toEqual([["human.claim", "later"]]);
+    first();
+    second();
+  });
 });

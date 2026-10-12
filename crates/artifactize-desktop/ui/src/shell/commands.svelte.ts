@@ -16,7 +16,8 @@ class Registry {
   // Raw state: removal compares each registered list by identity, which a deep $state proxy
   // of the lists would break (every list stayed registered and ids repeated).
   #sets = $state.raw<Command[][]>([]);
-  readonly all = $derived(this.#sets.flat());
+  /** Every registered command once: when two scopes offer the same id, the later one wins. */
+  readonly all = $derived([...new Map(this.#sets.flat().map((command) => [command.id, command])).values()]);
 
   /** Add `commands` until the returned function removes them. */
   add(commands: Command[]): () => void {
