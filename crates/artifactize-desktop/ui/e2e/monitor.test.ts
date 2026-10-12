@@ -2,6 +2,8 @@
 // Run tree → Detail, the shared Human Detail's claim, release, tool, RED validation, Korean
 // text and GREEN submission, and a live update from another process.
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { artifactize, create, type Fixture, signoff } from "./fixture.ts";
 import { type Session, start } from "./driver.ts";
@@ -110,6 +112,8 @@ describe("monitor", () => {
     await eventually(async () => (await open.getAttribute("aria-selected")) === "true", "open selected");
     await browser.keys(["Enter"]);
     await eventually(async () => /open_release (launched|started|opened)/i.test(await text()), "the launch notice");
+    // The application stand-in really ran.
+    await eventually(() => existsSync(join(fixture.root, "launched")), "the launched application");
   });
 
   // UX edges: E-HUMAN-TOOL-FAIL

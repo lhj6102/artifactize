@@ -114,8 +114,11 @@ describe("accounts and models", () => {
 
   // UX edges: E-SET-CODEX-RETURN
   it("finishes a sign-in when the browser returns to the app's loopback address", async () => {
+    // Start signed out, so only the return can make the status change.
     await eventually(async () => (await status()).includes("Signed in"), "signed in by the paste");
-    await browser.$("button=Sign in again").click();
+    await browser.$("button=Sign out of Codex").click();
+    await eventually(async () => /Not signed in/.test(await status()), "signed out");
+    await browser.$("button=Sign in with ChatGPT").click();
     await browser.$("button=Cancel sign-in").waitForExist({ timeout: 15000 });
     assert.doesNotMatch(await text(), /Port 1455 is in use/, "the app listens for the browser");
     await eventually(() => readFileSync(opened, "utf8").trim().split("\n").length >= 3, "the browser opened again");
@@ -123,8 +126,7 @@ describe("accounts and models", () => {
     const state = new URL(address).searchParams.get("state");
     const reply = await fetch(`http://localhost:1455/auth/callback?code=e2e-return&state=${state}`);
     assert.equal(reply.status, 200);
-    await eventually(async () => !(await browser.$("button=Cancel sign-in").isExisting()), "the sign-in finished");
-    assert.match(await text(), /Signed in with Codex\./);
+    await eventually(async () => (await status()).startsWith("Signed in"), "the status became signed in");
   });
 
   // UX edges: E-SET-CODEX-LOGOUT

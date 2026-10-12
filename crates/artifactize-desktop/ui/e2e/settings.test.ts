@@ -40,6 +40,8 @@ describe("settings", () => {
   let browser: WebdriverIO.Browser;
   let store: Server;
   let url = "";
+  /** Who the fake store says the token belongs to; a test changes it between checks. */
+  let principal = "alice-laptop";
   const text = () => browser.execute(() => document.body.innerText);
   const html = () => browser.execute(() => document.documentElement.outerHTML);
 
@@ -48,7 +50,7 @@ describe("settings", () => {
     store = createServer((request, response) => {
       const ok = request.url === "/v1/whoami" && request.headers.authorization === `Bearer ${TOKEN}`;
       response.writeHead(ok ? 200 : 401, { "content-type": "application/json" });
-      response.end(JSON.stringify(ok ? { principal: "alice-laptop", scopes: ["read", "publish"] } : { error: "Invalid or revoked token." }));
+      response.end(JSON.stringify(ok ? { principal, scopes: ["read", "publish"] } : { error: "Invalid or revoked token." }));
     });
     await new Promise<void>((done) => store.listen(0, "127.0.0.1", done));
     const address = store.address();
@@ -108,7 +110,10 @@ describe("settings", () => {
     assert.ok((await text()).includes("full"), "and shown");
     assert.ok(!status.stdout.includes(TOKEN));
 
+    // The store now answers differently: Check status shows the fresh answer.
+    principal = "alice-desktop";
     await browser.$("button=Check status").click();
+    await eventually(async () => (await text()).includes("alice-desktop (scopes: read, publish)"), "the fresh principal");
     await eventually(
       () => browser.execute(() => [...document.querySelectorAll("dt")].some((term) => term.textContent === "Reachable" && term.nextElementSibling?.textContent === "yes")),
       "reachable",

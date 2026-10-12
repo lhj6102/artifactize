@@ -49,9 +49,8 @@ describe("monitor navigation", () => {
   });
 
   // UX edges: E-REFRESH
-  it("reads the state again with F5", async () => {
-    // F5 itself asks the backend for a full read: count the app's own full reads of the
-    // snapshot, which the webview sends to the backend as `browse` requests.
+  it("reads the state again with F5 and shows what changed on disk on the same screen", async () => {
+    // Count the app's own full reads of the snapshot, which the webview sends as `browse`.
     await browser.execute(() => {
       const page = window as unknown as { reads?: number };
       page.reads = 0;
@@ -62,14 +61,14 @@ describe("monitor navigation", () => {
         return fetched(input, init);
       };
     });
-    const reads = () => browser.execute(() => (window as unknown as { reads: number }).reads);
-    // Let the live updates settle, then press F5 with nothing changing.
+    const reads = () => browser.execute(() => (window as unknown as { reads: number }).reads) as Promise<number>;
     await browser.pause(1500);
-    const before = (await reads()) as number;
-    await press(browser, ["F5"], async () => ((await reads()) as number) > before, "a full read after F5");
-    // And a Run another process starts is listed.
+    // A change on disk: another Run. F5 right away asks for a full read that shows it.
     assert.equal(artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json"), 3);
+    const before = await reads();
+    await press(browser, ["F5"], async () => (await reads()) > before, "a full read after F5");
     await eventually(async () => /Runs \(2\)/i.test(await text()), "the second Run listed");
+    assert.match(await text(), /Monitor/, "on the same screen");
   });
 
   // UX edges: E-MON-TREE-FOLD

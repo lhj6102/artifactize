@@ -4,7 +4,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const crate = resolve(import.meta.dirname, "../..");
 const target = resolve(crate, "../../target");
@@ -37,13 +37,13 @@ function newRoot(): string {
 
 export type Fixture = { root: string; repo: string; state: string };
 
-const RELEASE = `name = "release"
+const release = (root: string) => `name = "release"
 tags = ["type:release"]
 fingerprint = { files = ["."] }
 
 [views.human_tools]
 notes = { description = "Print the release notes of {artifactName}.", kind = "output", command = "cat", args = ["{artifactPath}/notes.md"] }
-open = { description = "Open {artifactName}.", kind = "launch", command = "true", args = ["{artifactPath}"] }
+open = { description = "Open {artifactName}.", kind = "launch", command = "sh", args = ["-c", "echo launched > \\"$0\\"", "${root}/launched"] }
 fail = { description = "Fail on purpose.", kind = "output", command = "false", args = [] }
 slow = { description = "Wait a long time.", kind = "output", command = "sleep", args = ["600"] }
 
@@ -130,7 +130,7 @@ export function signoff(fixture: Fixture): Saved {
 /** Declare the release, ship and docs Artifacts in a new Git repository at `repo`. */
 function declare(repo: string, notes = "# Release notes\n- Ready to ship.\n") {
   for (const [name, text] of [
-    ["release", RELEASE],
+    ["release", release(dirname(repo))],
     ["ship", SHIP],
     ["docs", DOCS],
   ]) {
