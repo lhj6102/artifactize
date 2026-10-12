@@ -125,4 +125,16 @@ describe("monitor", () => {
     await eventually(async () => /completed result/i.test(await text()), "completed Detail");
     assert.match(await text(), /Submitted GREEN for release\/signoff/);
   });
+
+  it("resizes a split pane by dragging its divider", async () => {
+    const width = () =>
+      browser.execute(() =>
+        (document.querySelector('[role="tree"]')?.closest("[data-pane]") as HTMLElement).getBoundingClientRect().width,
+      );
+    const before = await width();
+    const dividers = await browser.$$("[data-pane-resizer]");
+    // Scope | Runs, the sidebar | Run tree, then the Run tree | Detail divider.
+    await dividers[2].dragAndDrop({ x: 120, y: 0 });
+    await eventually(async () => (await width()) > before + 60, "a wider Run tree");
+  });
 });

@@ -1,5 +1,6 @@
 //! The command boundary: JSON in and out of the IPC handler, on state a real `verify` made.
-//! A Human sign-off with tools and owner schemas waits; a dependent Artifact waits for it.
+//! A Human sign-off with a built-in tool and owner schemas waits; a dependency eval waits for
+//! it. Built-in tools and dependency evals run alike on every OS.
 use artifactize::project::{VerifyOptions, selection::Selection};
 use artifactize_desktop::{Launch, Mode};
 use serde_json::{Value, json};
@@ -15,7 +16,7 @@ const RELEASE: &str = r#"name = "release"
 fingerprint = { files = ["."] }
 
 [views.human_tools]
-notes = { description = "Print the release notes.", kind = "output", command = "cat", args = ["{artifactPath}/notes.md"] }
+notes = { description = "Print the release notes.", builtin = "read", args = ["{artifactPath}/notes.md"] }
 
 [evals.signoff]
 title = "A person approves the release"
@@ -39,9 +40,8 @@ additionalProperties = false
 const SHIP: &str = r#"name = "ship"
 
 [evals.check]
-title = "Ship the release"
-profile = { kind = "runtime", command = "true", args = [] }
-payload = { instruction = "Ship {release}." }
+title = "The release is signed off"
+profile = { kind = "dependency", depends_on = ["release"] }
 "#;
 
 struct Fixture {
@@ -245,12 +245,7 @@ fn a_human_review_claims_runs_rejects_an_invalid_red_and_submits_green() {
     let open = invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
     assert_eq!(open["stage"], "claim");
     assert_eq!(open["tools"][0]["name"], "notes_release");
-    assert!(
-        open["tools"][0]["action"]
-            .as_str()
-            .unwrap()
-            .starts_with("$ ")
-    );
+    assert_eq!(open["tools"][0]["action"], "prints release/notes.md");
     // Tools need an explicit claim; opening claimed nothing.
     let refused = invoke(
         &window,

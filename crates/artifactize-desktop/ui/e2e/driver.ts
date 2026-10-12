@@ -1,6 +1,7 @@
 // Drive the real app through tauri-driver and WebKitWebDriver.
 import { type ChildProcess, spawn } from "node:child_process";
 import { createConnection } from "node:net";
+import { join } from "node:path";
 import { remote } from "webdriverio";
 import { app, type Fixture } from "./fixture.ts";
 
@@ -45,6 +46,8 @@ export async function startWith(ime: Ime, fixture: Fixture, ...args: string[]): 
     env: {
       ...process.env,
       ARTIFACTIZE_REMOTE: "off",
+      // A fresh WebView profile per run: no pane sizes or other storage from earlier runs.
+      XDG_DATA_HOME: join(fixture.root, "data"),
       ...(ime === "literal" ? { GTK_IM_MODULE: "gtk-im-context-simple", XMODIFIERS: "" } : {}),
     },
     stdio: ["ignore", "ignore", "inherit"],

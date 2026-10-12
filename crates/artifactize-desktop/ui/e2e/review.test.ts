@@ -76,12 +76,10 @@ describe("review", () => {
       () => browser.execute(() => !!document.activeElement?.closest('[aria-label="Human review"]')),
       "focus back in the review",
     );
-    // A `q` within ~100 ms of dismissing the prompt has intermittently ended the WebDriver
-    // session (unexplained; see the experiment report). Give the dismissal time to settle.
-    await browser.pause(300);
 
     await prompted();
-    await browser.keys(["u"]);
+    // Releasing quits: the window, and with it the WebDriver session, may end mid-keystroke.
+    await browser.keys(["u"]).catch(() => {});
     await eventually(() => signoff(fixture).claim === null, "released on quit");
     assert.equal(signoff(fixture).status, "WAITING_HUMAN");
   });
