@@ -283,4 +283,39 @@ describe("RunGraph", () => {
     frames.mockRestore();
     focus.mockRestore();
   });
+
+  it("keeps a key that lands on the page while a redraw drops the held node's focus", async () => {
+    const { rerender, onselect } = setup(() => graph("active"));
+    await waitFor(() => expect(node("a:release")).not.toBeNull());
+    node("a:release")!.focus();
+    onselect.mockClear();
+    // The redraw's gap: focus is on the page when the key arrives, before any frame.
+    (document.activeElement as HTMLElement).blur();
+    await fireEvent.keyDown(document.body, { key: "ArrowRight" });
+    expect(onselect).toHaveBeenCalledWith(["a:ship"]);
+    await waitFor(() => expect(document.activeElement).toBe(node("a:ship")));
+
+    // A hidden graph's hold is gone: a key on the page is not the graph's.
+    await rerender({ active: false });
+    (document.activeElement as HTMLElement).blur();
+    onselect.mockClear();
+    await fireEvent.keyDown(document.body, { key: "ArrowLeft" });
+    expect(onselect).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("puts focus back as soon as a redraw removes the focused node", async () => {
+    setup(() => graph("active"));
+    await waitFor(() => expect(node("a:release")).not.toBeNull());
+    node("a:release")!.focus();
+    // Culling takes the node out and draws it again in one update.
+    const element = node("a:release")!;
+    const parent = element.parentElement!;
+    const next = element.nextSibling;
+    element.remove();
+    parent.insertBefore(element, next);
+    // Before any frame or key: the observer has run by the next microtask checkpoint.
+    await Promise.resolve();
+    expect(document.activeElement).toBe(element);
+  });
 });

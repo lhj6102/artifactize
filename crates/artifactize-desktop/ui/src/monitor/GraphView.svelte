@@ -115,7 +115,10 @@
   // while the graph has the keyboard. Camera moves and culling (only visible nodes are drawn
   // above 80 Artifacts) can remove the focused node and drop focus to the page; a watch puts it
   // back every frame, or on the canvas itself while the node is not drawn, so keys keep
-  // reaching the graph. Each handoff is numbered; a newer one voids older ones. Focus that
+  // reaching the graph. A redraw that removes the focused node is caught as it happens (a
+  // mutation observer runs before the next key event), and a key that still lands on the page
+  // while the visible graph holds focus is handled for the held node. Each handoff is
+  // numbered; a newer one voids older ones. Focus that
   // moves anywhere else (the eval list, another pane, a press outside) ends the hold, and so
   // does hiding the graph's screen: a hidden graph never takes focus, and only fresh graph
   // focus holds again.
@@ -134,13 +137,19 @@
         watching = false;
         return;
       }
-      const target = element(held);
-      const active = document.activeElement;
-      if (target && (lost() || active === canvas)) target.focus({ preventScroll: true });
-      else if (!target && lost()) canvas.focus({ preventScroll: true });
+      restore();
       requestAnimationFrame(step);
     };
     requestAnimationFrame(step);
+  }
+
+  /** Put focus back on the held node, or on the canvas while it is not drawn. */
+  function restore() {
+    if (held === null || !canvas || hidden()) return;
+    const target = element(held);
+    const active = document.activeElement;
+    if (target && (lost() || active === canvas)) target.focus({ preventScroll: true });
+    else if (!target && lost()) canvas.focus({ preventScroll: true });
   }
 
   /** The graph's screen is not shown (another screen, or a hidden ancestor). */
@@ -180,11 +189,25 @@
     const pointerdown = (event: PointerEvent) => {
       if (!canvas?.contains(event.target as HTMLElement | null)) release();
     };
+    // Keys that land on the page during a redraw belong to the held node of the shown graph.
+    const pagekey = (event: KeyboardEvent) => {
+      if (held === null || hidden()) return;
+      if (event.target !== document.body && event.target !== document.documentElement) return;
+      const id = held;
+      restore();
+      handle(event, id);
+    };
+    // A redraw that removes the focused node: focus goes back before any key can arrive.
+    const redrawn = new MutationObserver(() => restore());
+    if (canvas) redrawn.observe(canvas, { childList: true, subtree: true });
     document.addEventListener("focusin", focusin);
     document.addEventListener("pointerdown", pointerdown, true);
+    document.addEventListener("keydown", pagekey);
     return () => {
       document.removeEventListener("focusin", focusin);
       document.removeEventListener("pointerdown", pointerdown, true);
+      document.removeEventListener("keydown", pagekey);
+      redrawn.disconnect();
       release();
     };
   });
@@ -234,7 +257,11 @@
   function keydown(event: KeyboardEvent) {
     // On a node, or on the canvas while the held node is not drawn.
     const focused = nodeOf(event) ?? (event.target === canvas ? (held ?? undefined) : undefined);
-    if (!focused) return;
+    if (focused) handle(event, focused);
+  }
+
+  /** A key for the Artifact node `focused`. */
+  function handle(event: KeyboardEvent, focused: string) {
     // From the selected Artifact, which focus follows; the focused node if they differ.
     const id = selected[0] && positions.has(selected[0]) && !zoomed ? selected[0] : focused;
     const arrows: Arrow[] = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
