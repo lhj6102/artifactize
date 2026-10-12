@@ -21,6 +21,7 @@
     focused,
     active,
     review,
+    openReview,
     element = $bindable(),
     onfocus,
     onopen,
@@ -33,14 +34,16 @@
     focused: boolean;
     /** The Monitor is the shown screen; only then its review offers palette commands. */
     active: boolean;
-    review: (id: string) => Review;
+    review: (id: string) => Review | undefined;
+    /** Open the Review of a request: called as its Detail arrives. */
+    openReview: (id: string) => void;
     element?: HTMLElement;
     onfocus: () => void;
     onopen: () => void;
     onback: () => void;
   } = $props();
 
-  let detail = $state<DetailView | null>(null);
+  let detail = $state.raw<DetailView | null>(null);
   let error = $state<string | null>(null);
   /** The folds belong to one row: another opened row starts folded, as the terminal's Detail
    * does. */
@@ -65,6 +68,8 @@
     call(commands.detail(at, target)).then(
       (view) => {
         if (current) {
+          // A Human review gets its owner now, so rendering never has to make one.
+          if (view.profile === "human" && view.request) openReview(view.request);
           detail = view;
           error = null;
         }
@@ -111,7 +116,8 @@
     <p class="empty">Select a node.</p>
   {:else if human && detail.request}
     {#key detail.request}
-      <HumanDetail review={review(detail.request)} {active} {onback} />
+      {@const reviewing = review(detail.request)}
+      {#if reviewing}<HumanDetail review={reviewing} {active} {onback} />{/if}
     {/key}
   {:else if full}
     <RecordDetail

@@ -18,7 +18,7 @@
   import { HELP } from "./shell/help";
   import { Leaving } from "./shell/leaving.svelte";
 
-  let launch = $state<LaunchView | null>(null);
+  let launch = $state.raw<LaunchView | null>(null);
   let failure = $state<string | null>(null);
   let screen = $state<"monitor" | "review" | "settings">("monitor");
   let palette = $state(false);

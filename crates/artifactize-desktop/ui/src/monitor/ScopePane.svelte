@@ -6,7 +6,6 @@
   import { scrollTo } from "../shell/attach";
   import Badge from "../shell/Badge.svelte";
   import { plain } from "../shell/keys";
-  import { commands } from "../ipc/client";
 
   let {
     browse,
@@ -36,7 +35,7 @@
 
   async function toggle(row: ScopeRow) {
     if (!row.fold) return;
-    browse.view = await commands.toggleWorktrees(row.fold);
+    await browse.toggleWorktrees(row.fold);
   }
 
   function keydown(event: KeyboardEvent) {

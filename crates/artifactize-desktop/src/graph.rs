@@ -69,6 +69,7 @@ pub struct RunGraph {
 #[tauri::command]
 #[specta::specta]
 pub fn run_graph(app: tauri::State<'_, App>, run: String) -> Result<RunGraph, Failure> {
+    let run: artifactize::types::RunId = run.parse().map_err(Failure::Missing)?;
     let graph = app.browse.with_tree(&run, monitor::graph)?;
     let id = |name: &artifactize::types::ArtifactName| {
         monitor::NodeId::artifact(name.clone()).to_string()

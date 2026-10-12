@@ -241,10 +241,14 @@ impl Browse {
     }
 
     /// The selected Run's tree, as the shown snapshot projected it.
-    pub fn with_tree<T>(&self, run: &str, read: impl FnOnce(&[Node]) -> T) -> Result<T, Failure> {
+    pub fn with_tree<T>(
+        &self,
+        run: &artifactize::types::RunId,
+        read: impl FnOnce(&[Node]) -> T,
+    ) -> Result<T, Failure> {
         let shown = self.shown();
         match &shown.run {
-            Some((view, _, nodes)) if view.run.id.as_str() == run => Ok(read(nodes)),
+            Some((view, _, nodes)) if &view.run.id == run => Ok(read(nodes)),
             _ => Err(Failure::Missing(format!(
                 "Run {run} is no longer selected; select it again."
             ))),
@@ -254,12 +258,12 @@ impl Browse {
     /// The selected Run's requests and target, for a Detail of it.
     pub fn with_run<T>(
         &self,
-        run: &str,
+        run: &artifactize::types::RunId,
         read: impl FnOnce(&RunView, &[RequestView]) -> T,
     ) -> Result<T, Failure> {
         let shown = self.shown();
         match &shown.run {
-            Some((view, requests, _)) if view.run.id.as_str() == run => Ok(read(view, requests)),
+            Some((view, requests, _)) if &view.run.id == run => Ok(read(view, requests)),
             _ => Err(Failure::Missing(format!(
                 "Run {run} is no longer selected; select it again."
             ))),

@@ -1,15 +1,15 @@
 // The monitor's snapshot as the frontend holds it. The backend reads the database; this only
 // asks for views, coalesces change hints and drops responses that arrive out of order.
 import { call, commands, message } from "../ipc/client";
-import type { BrowseView, Navigate } from "../ipc/client";
+import type { BrowseView, Navigate, RepositoryKey } from "../ipc/client";
 
 const still: Navigate = { scope: null, run: null, paging: null, full: false, resync: false };
 
 export class Browse {
-  view = $state<BrowseView | null>(null);
+  view = $state.raw<BrowseView | null>(null);
   error = $state<string | null>(null);
   /** The backend snapshot's revision: views derived from it (Detail) read again when it grows. */
-  revision = $state(0);
+  readonly revision = $derived(this.view?.revision ?? 0);
   #listeners: ((view: BrowseView) => void)[] = [];
   #draining = false;
   #dirty = false;
@@ -57,6 +57,11 @@ export class Browse {
     }
   }
 
+  /** Fold or unfold a worktree group of the scope list: the library answers with the snapshot. */
+  async toggleWorktrees(fold: RepositoryKey): Promise<void> {
+    this.#show(await commands.toggleWorktrees(fold));
+  }
+
   /** Redraw ages and elapsed times from the backend's snapshot; nothing is read. */
   async redraw(): Promise<void> {
     if (!this.view) return;
@@ -68,7 +73,6 @@ export class Browse {
   #show(view: BrowseView): void {
     if (this.view && view.revision < this.view.revision) return;
     this.view = view;
-    this.revision = view.revision;
     for (const listener of this.#listeners) listener(view);
   }
 }

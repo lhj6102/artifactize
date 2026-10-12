@@ -34,8 +34,9 @@ pub enum ScopeKey {
     },
 }
 
+/// A path as a key: text with `/` on every system, which `PathBuf` reads back on all of them.
 fn native(path: &std::path::Path) -> String {
-    path.to_string_lossy().into_owned()
+    artifactize_tools::files::path_text(path)
 }
 
 impl RepositoryKey {

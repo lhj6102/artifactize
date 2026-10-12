@@ -2,6 +2,7 @@
 //! Human requests open the shared Human Detail ([`crate::human`]); Agent requests read their
 //! session ([`crate::transcript`]).
 use crate::{App, Failure, status::Mark};
+use artifactize::types::RunId;
 use artifactize::{
     config::ProfileKind,
     monitor::{self, NodeId, Section, Target},
@@ -111,9 +112,10 @@ pub fn view(
     run: &artifactize::store::RunView,
     requests: &[artifactize::store::RequestView],
     id: &NodeId,
+    now: OffsetDateTime,
 ) -> DetailView {
     let target = Target::from(id);
-    let detail = monitor::detail(run, requests, &target, OffsetDateTime::now_utc());
+    let detail = monitor::detail(run, requests, &target, now);
     let request = match &target {
         Target::Eval(eval) => requests.iter().find(|view| &view.request.eval_id == eval),
         _ => None,
@@ -189,7 +191,8 @@ pub fn detail(
     node: String,
 ) -> Result<DetailView, Failure> {
     let id: NodeId = node.parse().map_err(Failure::Missing)?;
+    let run: RunId = run.parse().map_err(Failure::Missing)?;
     app.browse.with_run(&run, |run, requests| {
-        view(&app.launch.state, run, requests, &id)
+        view(&app.launch.state, run, requests, &id, OffsetDateTime::now_utc())
     })
 }

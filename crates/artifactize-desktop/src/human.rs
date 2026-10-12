@@ -217,6 +217,7 @@ fn view(
     reviewer: &str,
     commands: Option<&Commands>,
     generation: u32,
+    now: OffsetDateTime,
 ) -> HumanView {
     let request = &view.request;
     let settled = request.status() != RequestStatus::WaitingHuman;
@@ -228,7 +229,7 @@ fn view(
     HumanView {
         id: request.id.to_string(),
         title: format!("{} · {}", request.eval_id, request.title),
-        meta: review::meta(view, reviewer, OffsetDateTime::now_utc()),
+        meta: review::meta(view, reviewer, now),
         shared: review::shared(view),
         instruction: request.payload.instruction().to_owned(),
         technical: review::technical(view, reviewer)
@@ -321,6 +322,7 @@ fn show(app: &App, request: &RequestView) -> HumanView {
         app.launch.reviewer.as_str(),
         commands.get(&request.request.id),
         app.generation.current(),
+        OffsetDateTime::now_utc(),
     )
 }
 

@@ -61,8 +61,11 @@
     return browse.onShown(accept);
   });
 
-  function review(id: string): Review {
-    return (reviews[id] ??= new Review(id, false));
+  /** The Review of a request, if one was opened: rendering only looks. */
+  const review = (id: string): Review | undefined => reviews[id];
+  /** Open the Review of a request when its Detail arrives, never while rendering. */
+  function openReview(id: string): void {
+    reviews[id] ??= new Review(id, false);
   }
 
   /** Move focus to a pane's list, tree or review, or else to the pane itself. */
@@ -223,6 +226,7 @@
         focused={focus === "detail"}
         {active}
         {review}
+        {openReview}
         bind:element={panes.detail}
         onfocus={() => (focus = "detail")}
         onopen={openDetail}

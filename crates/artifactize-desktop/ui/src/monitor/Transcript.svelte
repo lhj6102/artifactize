@@ -25,7 +25,7 @@
   let handle: number | null = null;
   let session: string | null = null;
   let unavailable = $state<string | null>(null);
-  let view = $state<TranscriptView | null>(null);
+  let view = $state.raw<TranscriptView | null>(null);
   let pane = $state<HTMLElement>();
   let probe = $state<HTMLElement>();
   let size = { columns: 0, rows: 0 };

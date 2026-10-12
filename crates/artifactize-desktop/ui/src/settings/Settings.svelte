@@ -22,21 +22,21 @@
 
   let { active }: { active: boolean } = $props();
 
-  let keys = $state<KeyStatus[]>([]);
-  let codex = $state<CodexStatus | null>(null);
+  let keys = $state.raw<KeyStatus[]>([]);
+  let codex = $state.raw<CodexStatus | null>(null);
   let codexError = $state<string | null>(null);
   let codexNotice = $state<string | null>(null);
   /** A sign-in in progress: what it asked the person to open. */
-  let prompt = $state<CodexPrompt | null>(null);
+  let prompt = $state.raw<CodexPrompt | null>(null);
   let redirect = $state("");
   let busy = $state(false);
 
   let provider = $state<Provider>("openai");
-  let models = $state<Model[] | null>(null);
+  let models = $state.raw<Model[] | null>(null);
   let modelsError = $state<string | null>(null);
   let listing = $state(false);
 
-  let remote = $state<RemoteStatus | null>(null);
+  let remote = $state.raw<RemoteStatus | null>(null);
   let remoteError = $state<string | null>(null);
   let remoteNotice = $state<string | null>(null);
   let url = $state("");

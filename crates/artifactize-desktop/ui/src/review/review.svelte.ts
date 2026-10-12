@@ -67,13 +67,13 @@ type Busy = { label: string; job: number; since: number };
 export class Review {
   /** The request every action goes to; a follower's ID becomes its original's once read. */
   id = $state("");
-  view = $state<HumanView | null>(null);
+  view = $state.raw<HumanView | null>(null);
   area = $state<Area>("fields");
   /** The instruction takes most of the body (`i`); focus alone never resizes the Detail. */
   expanded = $state(false);
   technical = $state(false);
   tool = $state(0);
-  output = $state<Output | null>(null);
+  output = $state.raw<Output | null>(null);
   busy = $state<Busy | null>(null);
   notice = $state<Notice | null>(null);
   form = $state<FormDraft | null>(null);

@@ -39,19 +39,19 @@
   let previous = $state<number[]>([]);
   let next = $state<number | null>(null);
   let waiting = $state(true);
-  let rows = $state<Listed[]>([]);
+  let rows = $state.raw<Listed[]>([]);
   let loaded = $state(false);
   let error = $state<string | null>(null);
   let invalid = $state<string | null>(null);
   let index = $state(0);
   let review = $state<Review | null>(null);
   /** The read-only Detail of an open request that is not a Human review. */
-  let record = $state<DetailView | null>(null);
+  let record = $state.raw<DetailView | null>(null);
   let technical = $state(false);
   let pending = $state(false);
   let details = $state(false);
   let focus = $state<"list" | "detail">("list");
-  let preview = $state<{ human: HumanView } | { record: DetailView } | null>(null);
+  let preview = $state.raw<{ human: HumanView } | { record: DetailView } | null>(null);
   let asking = $state(false);
   let wanted = $state("");
   let list = $state<HTMLElement>();
