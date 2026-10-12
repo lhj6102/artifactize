@@ -16,21 +16,107 @@ use tokio::sync::oneshot;
 /// The Codex sign-in in progress, if any.
 #[derive(Default)]
 pub struct Settings {
-    /// The sign-in in progress. It stays here, reachable for a paste or a cancel, until it
-    /// ends; only its own waiter clears it.
-    sign_in: Mutex<Option<SignIn>>,
-    started: std::sync::atomic::AtomicU64,
+    sign_ins: SignIns,
 }
 
+type SignInTask = tokio::task::JoinHandle<Result<(), String>>;
+
 struct SignIn {
-    /// Which sign-in this is: a waiter of an older one never clears a newer one.
-    id: u64,
+    /// Which sign-in this is: its waiter names it, and a waiter of an older one never takes
+    /// or clears a newer one.
+    id: u32,
     /// Delivers a pasted redirect URL to the sign-in.
     paste: Option<oneshot::Sender<String>>,
     /// Stops the sign-in: its listener closes, the port is freed and nothing is saved.
     abort: tokio::task::AbortHandle,
-    /// The running sign-in, taken by the one waiter.
-    task: Option<tokio::task::JoinHandle<Result<(), String>>>,
+    /// The running sign-in, taken by its one waiter.
+    task: Option<SignInTask>,
+}
+
+/// The one sign-in in progress. It stays here, reachable for a paste or a cancel, until it
+/// ends; only its own waiter clears it.
+#[derive(Default)]
+struct SignIns {
+    current: Mutex<Option<SignIn>>,
+    started: std::sync::atomic::AtomicU32,
+}
+
+const CANCELLED: &str = "Codex sign-in was cancelled.";
+
+impl SignIns {
+    fn current(&self) -> std::sync::MutexGuard<'_, Option<SignIn>> {
+        self.current.lock().expect("sign-in lock")
+    }
+
+    /// Stop the sign-in in progress, before another starts and needs its port.
+    fn stop(&self) {
+        if let Some(previous) = self.current().take() {
+            previous.abort.abort();
+        }
+    }
+
+    /// Make `task` the sign-in in progress (stopping any other) and return its id.
+    fn register(&self, task: SignInTask, paste: oneshot::Sender<String>) -> u32 {
+        let id = self
+            .started
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let mut current = self.current();
+        if let Some(previous) = current.take() {
+            previous.abort.abort();
+        }
+        *current = Some(SignIn {
+            id,
+            paste: Some(paste),
+            abort: task.abort_handle(),
+            task: Some(task),
+        });
+        id
+    }
+
+    /// The task of sign-in `id` for its waiter. A sign-in another one replaced, or that was
+    /// cancelled, reads as cancelled.
+    fn take(&self, id: u32) -> Result<SignInTask, Failure> {
+        let mut current = self.current();
+        let sign_in = current
+            .as_mut()
+            .filter(|sign_in| sign_in.id == id)
+            .ok_or_else(|| Failure::Account(CANCELLED.into()))?;
+        sign_in.task.take().ok_or_else(|| {
+            Failure::Missing("The Codex sign-in is already being waited for.".into())
+        })
+    }
+
+    /// Sign-in `id` ended: forget it, unless another one replaced it meanwhile.
+    fn finish(&self, id: u32) {
+        let mut current = self.current();
+        if current.as_ref().is_some_and(|sign_in| sign_in.id == id) {
+            *current = None;
+        }
+    }
+
+    fn paste(&self, redirect: String) -> Result<(), Failure> {
+        let paste = self
+            .current()
+            .as_mut()
+            .and_then(|sign_in| sign_in.paste.take())
+            .ok_or_else(|| Failure::Missing("No Codex sign-in is waiting for a URL.".into()))?;
+        paste
+            .send(redirect)
+            .map_err(|_| Failure::Missing("The Codex sign-in already ended.".into()))
+    }
+
+    fn cancel(&self) {
+        let mut current = self.current();
+        if let Some(sign_in) = current.as_mut() {
+            sign_in.abort.abort();
+            // No paste can reach a cancelled sign-in.
+            sign_in.paste = None;
+            // Nobody waits for it: forget it now.
+            if sign_in.task.is_some() {
+                *current = None;
+            }
+        }
+    }
 }
 
 /// A backend, as the CLI names it.
@@ -154,6 +240,8 @@ pub fn codex_status(app: tauri::State<'_, App>) -> Result<CodexStatus, Failure> 
 pub struct CodexPrompt {
     pub url: String,
     pub callback: bool,
+    /// The sign-in to wait for with [`codex_login_wait`].
+    pub sign_in: u32,
 }
 
 /// Start `login codex`: the sign-in URL to show (the system browser gets it too when
@@ -164,9 +252,7 @@ pub async fn codex_login_start(
     app: tauri::State<'_, App>,
     browser: bool,
 ) -> Result<CodexPrompt, Failure> {
-    if let Some(previous) = app.settings.sign_in.lock().expect("sign-in lock").take() {
-        previous.abort.abort();
-    }
+    app.settings.sign_ins.stop();
     let (paste, pasted) = oneshot::channel();
     let (shown, prompt) = oneshot::channel();
     let state = app.launch.state.clone();
@@ -195,59 +281,30 @@ pub async fn codex_login_start(
             })));
         }
     };
-    let id = app
-        .settings
-        .started
-        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let mut current = app.settings.sign_in.lock().expect("sign-in lock");
-    // Another start meanwhile: the newer one wins.
-    if let Some(previous) = current.take() {
-        previous.abort.abort();
-    }
-    *current = Some(SignIn {
-        id,
-        paste: Some(paste),
-        abort: task.abort_handle(),
-        task: Some(task),
-    });
+    let sign_in = app.settings.sign_ins.register(task, paste);
     Ok(CodexPrompt {
         url: prompt.url,
         callback: prompt.callback,
+        sign_in,
     })
 }
 
-/// Wait for the sign-in started by [`codex_login_start`] to finish; returns the new state.
-/// The sign-in stays reachable meanwhile, so a paste or a cancel still reaches it.
+/// Wait for sign-in `sign_in` (from [`codex_login_start`]) to finish; returns the new state.
+/// The sign-in stays reachable meanwhile, so a paste or a cancel still reaches it; one that a
+/// newer start replaced reads as cancelled and never touches the newer one.
 #[tauri::command]
 #[specta::specta]
-pub async fn codex_login_wait(app: tauri::State<'_, App>) -> Result<CodexStatus, Failure> {
-    let (id, task) = {
-        let mut current = app.settings.sign_in.lock().expect("sign-in lock");
-        match current.as_mut() {
-            Some(sign_in) => match sign_in.task.take() {
-                Some(task) => (sign_in.id, task),
-                None => {
-                    return Err(Failure::Missing(
-                        "The Codex sign-in is already being waited for.".into(),
-                    ));
-                }
-            },
-            None => return Err(Failure::Missing("No Codex sign-in is in progress.".into())),
-        }
-    };
+pub async fn codex_login_wait(
+    app: tauri::State<'_, App>,
+    sign_in: u32,
+) -> Result<CodexStatus, Failure> {
+    let task = app.settings.sign_ins.take(sign_in)?;
     let ended = task.await;
-    {
-        let mut current = app.settings.sign_in.lock().expect("sign-in lock");
-        if current.as_ref().is_some_and(|sign_in| sign_in.id == id) {
-            *current = None;
-        }
-    }
+    app.settings.sign_ins.finish(sign_in);
     match ended {
         Ok(Ok(())) => read_codex(&app),
         Ok(Err(error)) => Err(Failure::Account(error)),
-        Err(error) if error.is_cancelled() => {
-            Err(Failure::Account("Codex sign-in was cancelled.".into()))
-        }
+        Err(error) if error.is_cancelled() => Err(Failure::Account(CANCELLED.into())),
         Err(error) => Err(Failure::Account(error.to_string())),
     }
 }
@@ -256,30 +313,14 @@ pub async fn codex_login_wait(app: tauri::State<'_, App>) -> Result<CodexStatus,
 #[tauri::command]
 #[specta::specta]
 pub fn codex_login_paste(app: tauri::State<'_, App>, redirect: String) -> Result<(), Failure> {
-    let mut sign_in = app.settings.sign_in.lock().expect("sign-in lock");
-    let paste = sign_in
-        .as_mut()
-        .and_then(|sign_in| sign_in.paste.take())
-        .ok_or_else(|| Failure::Missing("No Codex sign-in is waiting for a URL.".into()))?;
-    paste
-        .send(redirect)
-        .map_err(|_| Failure::Missing("The Codex sign-in already ended.".into()))
+    app.settings.sign_ins.paste(redirect)
 }
 
 /// Stop the sign-in in progress; nothing is saved, even if the browser returns later.
 #[tauri::command]
 #[specta::specta]
 pub fn codex_login_cancel(app: tauri::State<'_, App>) {
-    let mut current = app.settings.sign_in.lock().expect("sign-in lock");
-    if let Some(sign_in) = current.as_mut() {
-        sign_in.abort.abort();
-        // No paste can reach a cancelled sign-in.
-        sign_in.paste = None;
-        // Nobody waits for it: forget it now.
-        if sign_in.task.is_some() {
-            *current = None;
-        }
-    }
+    app.settings.sign_ins.cancel();
 }
 
 #[derive(Debug, Clone, Serialize, Type)]
@@ -492,4 +533,51 @@ pub async fn remote_push(app: tauri::State<'_, App>, dry_run: bool) -> Result<Pu
         existing: count(report.existing),
         skipped: count(report.skipped),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A sign-in that never ends by itself.
+    fn pending() -> (SignInTask, oneshot::Sender<String>) {
+        let (paste, pasted) = oneshot::channel::<String>();
+        let task = tokio::spawn(async move {
+            let _ = pasted.await;
+            std::future::pending::<()>().await;
+            Ok(())
+        });
+        (task, paste)
+    }
+
+    /// The older waiter holds its task when a newer sign-in registers, and ends only then:
+    /// it reads as cancelled, and the newer sign-in stays for its own waiter and paste.
+    #[tokio::test]
+    async fn an_older_waiter_ending_after_a_newer_start_leaves_it_alone() {
+        let sign_ins = SignIns::default();
+        let (task, paste) = pending();
+        let older = sign_ins.register(task, paste);
+        let held = sign_ins.take(older).unwrap();
+        // A newer start: the older one is stopped, the newer registered, in that order.
+        sign_ins.stop();
+        let (task, paste) = pending();
+        let newer = sign_ins.register(task, paste);
+        // Only now does the older sign-in end, and its waiter finish.
+        let ended = held.await;
+        assert!(ended.unwrap_err().is_cancelled());
+        sign_ins.finish(older);
+        // The newer one is untouched: a paste reaches it and its waiter takes it.
+        sign_ins
+            .paste("http://localhost:1455/auth/callback?code=c&state=s".into())
+            .unwrap();
+        let task = sign_ins.take(newer).unwrap();
+        task.abort();
+        // A late waiter of the older one reads it as cancelled and takes nothing.
+        assert_eq!(
+            sign_ins.take(older).unwrap_err(),
+            Failure::Account(CANCELLED.into())
+        );
+        sign_ins.finish(newer);
+        assert!(sign_ins.current().is_none());
+    }
 }

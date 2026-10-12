@@ -52,7 +52,7 @@ function backend(options: {
       case "codex_status":
         return options.codex?.() ?? { state: "absent" };
       case "codex_login_start":
-        return { url: "http://127.0.0.1:9/oauth/authorize?state=s", callback: false };
+        return { url: "http://127.0.0.1:9/oauth/authorize?state=s", callback: false, signIn: 7 };
       case "codex_login_wait":
         return options.wait?.() ?? { state: "stored", expiresAt: "2030-01-01T00:00:00Z", expired: false };
       case "codex_login_paste":
@@ -104,6 +104,8 @@ describe("Settings", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Sign in with ChatGPT" }));
     await screen.findByText("http://127.0.0.1:9/oauth/authorize?state=s");
     expect(calls.find((call) => call.cmd === "codex_login_start")?.args).toEqual({ browser: true });
+    // The wait names the sign-in the start returned.
+    expect(calls.find((call) => call.cmd === "codex_login_wait")?.args).toEqual({ signIn: 7 });
     // The port was taken: only a pasted URL finishes it.
     expect(screen.getByText(/Port 1455 is in use/)).not.toBeNull();
     const field = screen.getByLabelText(/paste the URL it was sent to/);

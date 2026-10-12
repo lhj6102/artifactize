@@ -183,9 +183,10 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         "http://localhost:1455/auth/callback?code=fake-code&state={}",
         oauth_state(&url)
     );
+    // The paste reaches the sign-in whether or not its waiter has taken it yet.
+    let wait = |prompt: &Value| json!({"signIn": prompt["signIn"]});
     let status = std::thread::scope(|scope| {
-        let waiting = scope.spawn(|| call("codex_login_wait", json!({})));
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        let waiting = scope.spawn(|| call("codex_login_wait", wait(&prompt)));
         call("codex_login_paste", json!({"redirect": redirect})).unwrap();
         waiting.join().unwrap()
     })
@@ -213,9 +214,9 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
     let cancel_while_waiting = |then: &dyn Fn(&str)| {
         let prompt = call("codex_login_start", json!({"browser": false})).unwrap();
         let url = prompt["url"].as_str().unwrap().to_owned();
+        // The cancel reaches the sign-in whether or not its waiter has taken it yet.
         let cancelled = std::thread::scope(|scope| {
-            let waiting = scope.spawn(|| call("codex_login_wait", json!({})));
-            std::thread::sleep(std::time::Duration::from_millis(200));
+            let waiting = scope.spawn(|| call("codex_login_wait", wait(&prompt)));
             call("codex_login_cancel", json!({})).unwrap();
             waiting.join().unwrap()
         });
@@ -256,7 +257,7 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         );
         assert_eq!(late.unwrap_err()["kind"], "missing");
     });
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    // The waiter returned once the sign-in's task was gone: nothing of it is still running.
     assert_eq!(
         exchanges(),
         before,
@@ -267,39 +268,38 @@ fn settings_use_the_clis_sign_ins_keys_listings_and_remote_store() {
         json!({"state": "absent"})
     );
 
-    // Overlapping starts: a newer start stops the older sign-in, whose waiter then finishes
-    // (cancelled) without clearing the newer one, which a paste still completes.
-    let older = std::thread::scope(|scope| {
-        call("codex_login_start", json!({"browser": false})).unwrap();
-        let waiting = scope.spawn(|| call("codex_login_wait", json!({})));
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        let newer = call("codex_login_start", json!({"browser": false})).unwrap();
-        let ended = waiting.join().unwrap();
-        (newer, ended)
-    });
-    let (newer, ended) = older;
+    // Overlapping starts, in order and without waiting on time: B's start stops A and
+    // registers B; only then does A's waiter run, so A ends after B is registered. A reads as
+    // cancelled, B is untouched, and nothing of A is exchanged or saved.
+    let older = call("codex_login_start", json!({"browser": false})).unwrap();
+    let newer = call("codex_login_start", json!({"browser": false})).unwrap();
+    assert_ne!(older["signIn"], newer["signIn"]);
     assert_eq!(
-        ended.unwrap_err(),
+        call("codex_login_wait", wait(&older)).unwrap_err(),
         json!({"kind": "account", "message": "Codex sign-in was cancelled."})
+    );
+    assert_eq!(
+        call("codex_status", json!({})).unwrap(),
+        json!({"state": "absent"})
     );
     let redirect = format!(
         "http://localhost:1455/auth/callback?code=newer-code&state={}",
         oauth_state(newer["url"].as_str().unwrap())
     );
-    let status = std::thread::scope(|scope| {
-        let waiting = scope.spawn(|| call("codex_login_wait", json!({})));
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        call("codex_login_paste", json!({"redirect": redirect})).unwrap();
-        waiting.join().unwrap()
-    })
-    .unwrap();
+    call("codex_login_paste", json!({"redirect": redirect})).unwrap();
+    let status = call("codex_login_wait", wait(&newer)).unwrap();
     assert_eq!(status["state"], "stored");
-    assert!(provider.requests().iter().any(|request| {
-        request
-            .body
-            .as_str()
-            .is_some_and(|body| body.contains("code=newer-code"))
-    }));
+    let codes: Vec<String> = provider
+        .requests()
+        .iter()
+        .filter(|request| request.path == "/oauth/token")
+        .filter_map(|request| request.body.as_str().map(str::to_owned))
+        .collect();
+    assert!(
+        codes.last().unwrap().contains("code=newer-code"),
+        "{codes:?}"
+    );
+    assert_eq!(codes.len(), before + 1, "only B's code was exchanged");
     call("codex_logout", json!({})).unwrap();
 
     // Remote: not configured, a refused token saves nothing, then login, status, logout.

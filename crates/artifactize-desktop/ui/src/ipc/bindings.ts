@@ -91,10 +91,11 @@ export const commands = {
 	 */
 	codexLoginStart: (browser: boolean) => typedError<CodexPrompt, Failure>(__TAURI_INVOKE("codex_login_start", { browser })),
 	/**
-	 *  Wait for the sign-in started by [`codex_login_start`] to finish; returns the new state.
-	 *  The sign-in stays reachable meanwhile, so a paste or a cancel still reaches it.
+	 *  Wait for sign-in `sign_in` (from [`codex_login_start`]) to finish; returns the new state.
+	 *  The sign-in stays reachable meanwhile, so a paste or a cancel still reaches it; one that a
+	 *  newer start replaced reads as cancelled and never touches the newer one.
 	 */
-	codexLoginWait: () => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_login_wait")),
+	codexLoginWait: (signIn: number) => typedError<CodexStatus, Failure>(__TAURI_INVOKE("codex_login_wait", { signIn })),
 	/**  Finish the sign-in with the URL the browser was sent to, as the CLI accepts on stdin. */
 	codexLoginPaste: (redirect: string) => typedError<null, Failure>(__TAURI_INVOKE("codex_login_paste", { redirect })),
 	/**  Stop the sign-in in progress; nothing is saved, even if the browser returns later. */
@@ -175,6 +176,8 @@ export type Claimant = {
 export type CodexPrompt = {
 	url: string,
 	callback: boolean,
+	/**  The sign-in to wait for with [`codex_login_wait`]. */
+	signIn: number,
 };
 
 /**  How Codex is signed in, read offline as the CLI does. */

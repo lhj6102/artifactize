@@ -93,7 +93,7 @@
     busy = true;
     try {
       prompt = await call(commands.codexLoginStart(true));
-      codex = await call(commands.codexLoginWait());
+      codex = await call(commands.codexLoginWait(prompt.signIn));
       codexNotice = "Signed in with Codex.";
     } catch (failure) {
       codexError = message(failure);
