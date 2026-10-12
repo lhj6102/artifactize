@@ -127,6 +127,7 @@ describe("a claim another reviewer holds", () => {
     assert.doesNotMatch(await text(), /claimed by you/);
     assert.equal(artifactize(fixture, "request", "unclaim", id, "--reviewer", "bob"), 0);
     await eventually(async () => signoff(fixture).claim === null, "released");
+    await eventually(async () => !/claimed by bob/.test(await text()), "the release shown");
     await human().click();
     await press(browser, ["c"], async () => signoff(fixture).claim?.reviewer === "alice", "claimed here after the release");
   });

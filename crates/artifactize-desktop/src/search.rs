@@ -175,5 +175,11 @@ pub async fn review_detail(app: tauri::State<'_, App>, id: String) -> Result<Det
         .await
         .map_err(Failure::Read)?;
     let node = NodeId::eval(view.request.eval_id.clone());
-    Ok(detail::view(&app.launch.state, &run, &requests, &node))
+    Ok(detail::view(
+        &app.launch.state,
+        &run,
+        &requests,
+        &node,
+        OffsetDateTime::now_utc(),
+    ))
 }

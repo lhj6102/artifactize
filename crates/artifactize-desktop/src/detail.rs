@@ -193,6 +193,12 @@ pub fn detail(
     let id: NodeId = node.parse().map_err(Failure::Missing)?;
     let run: RunId = run.parse().map_err(Failure::Missing)?;
     app.browse.with_run(&run, |run, requests| {
-        view(&app.launch.state, run, requests, &id, OffsetDateTime::now_utc())
+        view(
+            &app.launch.state,
+            run,
+            requests,
+            &id,
+            OffsetDateTime::now_utc(),
+        )
     })
 }

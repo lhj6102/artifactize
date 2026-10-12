@@ -94,6 +94,6 @@ pub fn run_graph(app: tauri::State<'_, App>, run: String) -> Result<RunGraph, Fa
                 dependency: edge.dependency,
             })
             .collect(),
-        run,
+        run: run.to_string(),
     })
 }

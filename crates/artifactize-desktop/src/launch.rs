@@ -99,7 +99,10 @@ impl Launch {
     /// The window title: the app and the repository it was started for.
     pub fn title(&self) -> String {
         match self.initial() {
-            Some(repo) => format!("Artifactize — {}", artifactize_tools::files::path_text(&repo)),
+            Some(repo) => format!(
+                "Artifactize — {}",
+                artifactize_tools::files::path_text(&repo)
+            ),
             None => "Artifactize — all repositories".into(),
         }
     }
