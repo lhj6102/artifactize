@@ -585,6 +585,7 @@ fn review_keys_need_detail_focus_and_an_owned_request() {
         control(&mut review, 's'),
         Action::Start(Job::Submit {
             id: ID.parse().unwrap(),
+            verdict: crate::runtime::Verdict::Red,
             result: json!({"verdict":"RED","reason":"qcit"}),
             claim: false
         })
@@ -665,16 +666,20 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
     assert!(text.contains("REVIEW (yours)"), "{text}");
     // A fixed field ignores typing.
     press(&mut review, KeyCode::Char('x'));
-    let submit = |result: Value| {
+    let submit = |verdict: crate::runtime::Verdict, result: Value| {
         Action::Start(Job::Submit {
             id: ID.parse().unwrap(),
+            verdict,
             result,
             claim: false,
         })
     };
     assert_eq!(
         control(&mut review, 's'),
-        submit(json!({"verdict":"GREEN","approved":true}))
+        submit(
+            crate::runtime::Verdict::Green,
+            json!({"verdict":"GREEN","approved":true})
+        )
     );
     let error = "schema_mismatch: result must match the selected verdict's owner schema\n- instancePath \"\": \"approved\" is a required property";
     assert_eq!(
@@ -707,7 +712,10 @@ async fn demo_schemas_fill_forms_and_submission_errors_return_to_them() {
     assert!(screen(&mut review).contains("reason*: Needs work▏   string, minLength 1"));
     assert_eq!(
         control(&mut review, 's'),
-        submit(json!({"verdict":"RED","reason":"Needs work"}))
+        submit(
+            crate::runtime::Verdict::Red,
+            json!({"verdict":"RED","reason":"Needs work"})
+        )
     );
     let settled = view("RED", None, demo()).request;
     assert_eq!(
@@ -781,6 +789,7 @@ fn other_schemas_edit_inline_and_ctrl_e_opens_the_editor() {
         review.edited(Ok(r#"{"approved":true,"checks":["a"]}"#.into())),
         Action::Start(Job::Submit {
             id: ID.parse().unwrap(),
+            verdict: crate::runtime::Verdict::Green,
             result: json!({"approved":true,"checks":["a"],"verdict":"GREEN"}),
             claim: false
         })

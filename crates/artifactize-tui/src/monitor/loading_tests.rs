@@ -14,11 +14,12 @@ async fn fixture(count: usize) -> (tempfile::TempDir, Receipts, Monitor) {
     fs::create_dir(&repo).unwrap();
     let receipts = Receipts::open(&state, &repo).await.unwrap();
     for n in 0..count {
-        let run: Run = serde_json::from_value(json!({
+        let saved = json!({
             "id":format!("run-{n}"),"repoPath":repo,"stateDir":state,"status":"GREEN",
             "createdAt":"2026-01-01T00:00:00Z","completedAt":"2026-01-01T00:00:01Z",
             "selection":{"kind":"all"},"definitions":{"artifacts":{"app":{"path":"app"}}},"validation":null
-        })).unwrap();
+        });
+        let run: Run = serde_json::from_value(saved).unwrap();
         receipts.create_run(&run, &[]).await.unwrap();
     }
     (root, receipts, Monitor::new(state, None))

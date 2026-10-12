@@ -35,6 +35,8 @@ const TOOLS_UNFOCUSED: u16 = 40;
 const BUTTON_GAP: u16 = 1;
 /// A wrapped builtin action continues two columns deeper than its first row.
 const WRAP_INDENT: u16 = 4;
+/// The cells a bordered box's two opposite borders take from its width or its height.
+const BORDERS: u16 = 2;
 
 /// Where a key left a Human review Detail.
 #[derive(Debug, Clone, PartialEq)]
@@ -470,14 +472,16 @@ impl Review {
         let text = instruction(&view, &self.reviewer, self.technical);
         let rows = Paragraph::new(text.clone())
             .wrap(Wrap { trim: false })
-            .line_count(body.width.saturating_sub(2));
+            .line_count(body.width.saturating_sub(BORDERS));
         let height = if expanded {
             (body.height * EXPANDED / 100).max(MIN_BOX)
         } else if summary {
-            (u16::try_from(rows).unwrap_or(u16::MAX).saturating_add(2))
-                .min(body.height.saturating_sub(2))
+            (u16::try_from(rows)
+                .unwrap_or(u16::MAX)
+                .saturating_add(BORDERS))
+            .min(body.height.saturating_sub(BORDERS))
         } else {
-            u16::try_from(rows).unwrap_or(u16::MAX).min(FOLDED) + 2
+            u16::try_from(rows).unwrap_or(u16::MAX).min(FOLDED) + BORDERS
         }
         .min(body.height);
         let [instruction_area, lower] =
@@ -554,7 +558,7 @@ impl Review {
                         }
                         // A builtin's target wraps rather than being cut off at the border.
                         _ => {
-                            let width = area.width.saturating_sub(2);
+                            let width = area.width.saturating_sub(BORDERS);
                             rows.extend(
                                 wrap(&plain(&action), width)
                                     .into_iter()
@@ -574,7 +578,7 @@ impl Review {
                 rows.push((name, index));
             }
         }
-        let height = (rows.len().max(1) as u16 + 2)
+        let height = (rows.len().max(1) as u16 + BORDERS)
             .min((area.height / TOOL_LIST_HEIGHT_DIVISOR).max(MIN_BOX));
         let [list, output] =
             Layout::vertical([Constraint::Length(height), Constraint::Fill(1)]).areas(area);

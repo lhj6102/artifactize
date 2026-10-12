@@ -87,6 +87,7 @@ pub enum Job {
     /// Claim first when `claim`, then submit and publish like `request submit`.
     Submit {
         id: RequestId,
+        verdict: crate::runtime::Verdict,
         result: Value,
         claim: bool,
     },
@@ -243,6 +244,7 @@ impl Job {
             }
             Job::Submit {
                 id,
+                verdict: _,
                 result,
                 claim: first,
             } => {
