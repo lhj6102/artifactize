@@ -1,9 +1,31 @@
 // Drive the real app through tauri-driver and WebKitWebDriver.
 import { type ChildProcess, spawn } from "node:child_process";
 import { createConnection } from "node:net";
-import { join } from "node:path";
+import { readdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { remote } from "webdriverio";
 import { app, type Fixture } from "./fixture.ts";
+
+/** The newest modification time of any file below `directory`. */
+function newest(directory: string): number {
+  return readdirSync(directory, { withFileTypes: true }).reduce((latest, entry) => {
+    const path = join(directory, entry.name);
+    return Math.max(latest, entry.isDirectory() ? newest(path) : statSync(path).mtimeMs);
+  }, 0);
+}
+
+/**
+ * The app embeds ui/dist when it compiles; one built before the last `pnpm build` shows an
+ * older frontend (or misses an asset, which then loads index.html instead). Say so at once
+ * instead of letting tests time out.
+ */
+function checkBuild() {
+  const dist = resolve(import.meta.dirname, "../dist");
+  if (statSync(app).mtimeMs < newest(dist)) {
+    throw new Error(`${app} is older than ${dist}; run \`cargo build -p artifactize -p artifactize-desktop\` after \`pnpm build\`.`);
+  }
+}
+let checked = false;
 
 export type Session = { browser: WebdriverIO.Browser; stop: () => Promise<void> };
 
@@ -52,6 +74,10 @@ export async function startEnv(fixture: Fixture, env: Record<string, string | un
 }
 
 async function launch(ime: Ime, fixture: Fixture, overrides: Record<string, string | undefined>, args: string[]): Promise<Session> {
+  if (!checked) {
+    checkBuild();
+    checked = true;
+  }
   const port = next;
   next += 2;
   const env: Record<string, string | undefined> = {
