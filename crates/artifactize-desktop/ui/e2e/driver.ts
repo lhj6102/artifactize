@@ -212,8 +212,8 @@ async function connect(port: number, args: string[], fixture: Fixture): Promise<
       // tauri-driver turns these into WebKitWebDriver's browser options.
       "tauri:options": {
         application: app,
-        // `--all` replaces `--repo`: the app then lists every repository in the state.
-        args: [...args, ...(args.includes("--all") ? [] : ["--repo", fixture.repo]), "--state-dir", fixture.state, "--reviewer", "alice"],
+        // A plain launch lists every repository in the state; tests that narrow pass `--repo`.
+        args: [...args, "--state-dir", fixture.state, "--reviewer", "alice"],
       },
     } as WebdriverIO.Capabilities,
   });

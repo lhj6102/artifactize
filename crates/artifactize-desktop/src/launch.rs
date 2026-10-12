@@ -16,7 +16,7 @@ pub enum Mode {
 pub struct Launch {
     pub mode: Mode,
     pub state: PathBuf,
-    /// `--repo` or the current directory; `None` with `--all`.
+    /// `--repo` when given; `None` (the default, or `--all`) is every repository.
     pub repo: Option<PathBuf>,
     pub reviewer: artifactize_core::types::ReviewerId,
     /// `review REQUEST_ID`: the request to open first.
@@ -65,7 +65,7 @@ impl Launch {
         let Args {
             screen,
             repo,
-            all,
+            all: _,
             state_dir: state,
             reviewer,
         } = Args::try_parse_from(args).map_err(|error| error.to_string())?;
@@ -78,7 +78,7 @@ impl Launch {
             None => artifactize_core::human::default_reviewer()?,
         };
         let state = artifactize_core::store::state_dir(state.as_deref())?;
-        // Only an explicit --repo narrows the review search; the monitor still starts on cwd.
+        // Only an explicit --repo narrows the monitor's scope and the review search.
         let search = artifactize_core::review::search::Query::text_for(
             artifactize_core::monitor::initial(repo.clone()).as_deref(),
         );
@@ -86,7 +86,7 @@ impl Launch {
             mode,
             state,
             search,
-            repo: (!all).then(|| repo.unwrap_or_else(|| PathBuf::from("."))),
+            repo,
             reviewer,
             request,
         })

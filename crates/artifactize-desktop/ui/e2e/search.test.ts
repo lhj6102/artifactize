@@ -37,7 +37,7 @@ describe("review search", () => {
     fixture = create();
     addRepository(fixture, "other");
     addRepository(fixture, "third");
-    session = await start(fixture, "review");
+    session = await start(fixture, "review", "--repo", fixture.repo);
     browser = session.browser;
     await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
   });
@@ -47,7 +47,7 @@ describe("review search", () => {
   });
 
   // UX edges: E-LAUNCH-REVIEW
-  it("starts on the launch repository's waiting sign-off", async () => {
+  it("starts on the named repository's waiting sign-off", async () => {
     await eventually(async () => (await rows()).length === 1, "one waiting row");
     assert.match((await rows())[0], /release\/signoff/);
     assert.match(await query(), /^kind:human status:waiting_human repo:/);

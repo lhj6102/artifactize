@@ -46,7 +46,7 @@ describe("command palette", () => {
     assert.equal(artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json"), 3);
     // Another repository with the same eval IDs, which the review search reaches.
     addRepository(fixture, "other");
-    session = await start(fixture);
+    session = await start(fixture, "--repo", fixture.repo);
     browser = session.browser;
     await browser.$("button*=Commands").waitForExist({ timeout: 15000 });
     // Errors the page throws (a broken palette threw while rendering) fail the suite.

@@ -30,7 +30,7 @@ describe("launching the Monitor", () => {
     fixture = create();
     addRepository(fixture, "other");
     addRepository(fixture, "third");
-    session = await start(fixture);
+    session = await start(fixture, "--repo", fixture.repo);
     browser = session.browser;
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
   });
@@ -87,8 +87,8 @@ describe("launching the Monitor for every repository", () => {
     fixture = create();
     addRepository(fixture, "other");
     addRepository(fixture, "third");
-    // No repository named: the Monitor starts on everything in the state.
-    session = await start(fixture, "--all");
+    // A plain launch, no --repo and no --all: the Monitor starts on everything in the state.
+    session = await start(fixture);
     browser = session.browser;
     await eventually(async () => (await text()).includes("signoff"), "the Run tree");
   });
@@ -130,8 +130,8 @@ describe("launching the Review screen for every repository", () => {
     fixture = create();
     addRepository(fixture, "other");
     addRepository(fixture, "third");
-    // Without --repo the search is not narrowed to one repository.
-    session = await start(fixture, "review", "--all");
+    // A plain launch, no --repo and no --all: the search is not narrowed to one repository.
+    session = await start(fixture, "review");
     browser = session.browser;
     await browser.$('[aria-label="Search requests"]').waitForExist({ timeout: 15000 });
   });

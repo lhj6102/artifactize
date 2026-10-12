@@ -177,7 +177,7 @@ describe("moving between the panes", () => {
     const fixture = create();
     // A second Run, so the Runs pane has two rows to move between.
     assert.equal(artifactize(fixture, "verify", "--all", "--timeout-ms", "1", "--json"), 3);
-    session = await start(fixture);
+    session = await start(fixture, "--repo", fixture.repo);
     browser = session.browser;
     await eventually(async () => /Runs \(2\)/i.test(await browser.execute(() => document.body.innerText)), "two Runs");
     await browser.$('[role="tree"]').click();
