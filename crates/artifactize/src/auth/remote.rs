@@ -447,6 +447,49 @@ pub async fn login(
     Ok((remote, principal))
 }
 
+/// What `remote status` reports: where the remote is, what it shares, where its token comes
+/// from, and whether the store answers to it. Never the token.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Status {
+    pub url: String,
+    pub share: Share,
+    pub token_source: TokenSource,
+    /// The store sent an HTTP response, whether or not it accepted the token.
+    pub reachable: bool,
+    pub principal: Option<crate::types::TokenName>,
+    pub scopes: Option<Vec<Scope>>,
+    pub error: Option<String>,
+}
+
+impl Status {
+    /// The token was accepted.
+    pub fn signed_in(&self) -> bool {
+        self.principal.is_some()
+    }
+}
+
+/// Resolve the remote and ask the store who its token belongs to; `None` when no remote is
+/// configured (or `ARTIFACTIZE_REMOTE=off`).
+pub async fn status(state: Option<&Path>, repo: Option<&Path>) -> Result<Option<Status>, String> {
+    let Some(remote) = remote(state, repo)? else {
+        return Ok(None);
+    };
+    let (principal, failure) = match remote.whoami().await {
+        Ok(principal) => (Some(principal), None),
+        Err(failure) => (None, Some(failure)),
+    };
+    Ok(Some(Status {
+        url: remote.url.to_string(),
+        share: remote.share,
+        token_source: remote.token_source,
+        reachable: principal.is_some() || failure.as_ref().is_some_and(|failure| failure.responded),
+        scopes: principal.as_ref().map(|principal| principal.scopes.clone()),
+        principal: principal.map(|principal| principal.principal),
+        error: failure.map(|failure| failure.message),
+    }))
+}
+
 /// Forget the stored token and `remote.json`; the server keeps the token until revoked.
 pub fn logout(state: Option<&Path>, repo: Option<&Path>) -> Result<(), String> {
     Storage::new(state, repo, Tokens::Remote)?.remove(TOKEN)?;

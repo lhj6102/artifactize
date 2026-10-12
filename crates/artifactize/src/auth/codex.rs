@@ -390,15 +390,21 @@ impl Pending {
     }
 }
 
+/// What a sign-in asks the person to do: open `url`, and whether the browser can return to
+/// this machine's callback (when the port is taken, only a pasted redirect URL finishes it).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Prompt {
+    pub url: String,
+    pub callback: bool,
+}
+
 /// Sign in interactively and save artifactize's own tokens. The sign-in URL goes to
 /// stderr, also with --json.
 pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), String> {
-    // Check where the tokens will go before anyone signs in.
-    let storage = Storage::new(state, repo, Tokens::Codex)?;
-    let root = auth_root()?;
-    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, CALLBACK_PORT))
-        .await
-        .ok();
+    // Refuse before reading the terminal: where the tokens go and the sign-in root.
+    Storage::new(state, repo, Tokens::Codex)?;
+    auth_root()?;
     let terminal = std::io::stdin().is_terminal();
     let pasted = if terminal {
         let (send, receive) = oneshot::channel();
@@ -422,11 +428,10 @@ pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), Stri
     } else {
         None
     };
-    let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
-    sign_in(&storage, &root, listener, &redirect_uri, pasted, true, |url, callback| {
+    login_with(state, repo, pasted, true, |prompt| {
         let mut err = std::io::stderr().lock();
-        let _ = writeln!(err, "Open this URL to sign in with Codex:\n{url}");
-        if !callback {
+        let _ = writeln!(err, "Open this URL to sign in with Codex:\n{}", prompt.url);
+        if !prompt.callback {
             let _ = writeln!(
                 err,
                 "Port {CALLBACK_PORT} is in use (another Codex sign-in?), so the browser cannot return here."
@@ -439,6 +444,41 @@ pub async fn login(state: Option<&Path>, repo: Option<&Path>) -> Result<(), Stri
             );
         }
     })
+    .await
+}
+
+/// The sign-in behind `login codex` for any interface: `show` receives the prompt once the
+/// callback listener is up, `pasted` may deliver the redirect URL the browser was sent to,
+/// and `browser` hands the URL to the desktop's opener. It ends when the tokens are saved, the
+/// sign-in fails, or after five minutes; dropping the future stops it and frees the port.
+pub async fn login_with(
+    state: Option<&Path>,
+    repo: Option<&Path>,
+    pasted: Option<oneshot::Receiver<String>>,
+    browser: bool,
+    show: impl FnOnce(&Prompt),
+) -> Result<(), String> {
+    // Check where the tokens will go before anyone signs in.
+    let storage = Storage::new(state, repo, Tokens::Codex)?;
+    let root = auth_root()?;
+    let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, CALLBACK_PORT))
+        .await
+        .ok();
+    let redirect_uri = format!("http://localhost:{CALLBACK_PORT}{CALLBACK_PATH}");
+    sign_in(
+        &storage,
+        &root,
+        listener,
+        &redirect_uri,
+        pasted,
+        browser,
+        |url, callback| {
+            show(&Prompt {
+                url: url.to_string(),
+                callback,
+            })
+        },
+    )
     .await
 }
 

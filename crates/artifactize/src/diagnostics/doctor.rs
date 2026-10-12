@@ -254,8 +254,7 @@ pub async fn doctor(state: Option<&Path>, repo: Option<&Path>) -> Result<DoctorR
         ("anthropic", Backend::Anthropic),
     ] {
         let variable = llm::key_variable(backend).expect("an API-key backend");
-        let present = crate::platform::environment::var_text(variable)
-            .is_some_and(|key| !key.trim().is_empty());
+        let present = llm::key_present(backend);
         let key = format!(
             "{variable} is {} (not validated with the provider)",
             if present { "present" } else { "absent" }

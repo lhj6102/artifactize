@@ -530,6 +530,14 @@ pub fn key_variable(backend: Backend) -> Option<&'static str> {
     }
 }
 
+/// Whether an API-key backend's key is set in the environment (never its value); always
+/// `false` for codex, which signs in instead.
+pub fn key_present(backend: Backend) -> bool {
+    key_variable(backend)
+        .and_then(crate::platform::environment::var_text)
+        .is_some_and(|key| !key.trim().is_empty())
+}
+
 /// The environment variable that points the backend at a loopback test endpoint.
 pub fn base_url_variable(backend: Backend) -> &'static str {
     match backend {

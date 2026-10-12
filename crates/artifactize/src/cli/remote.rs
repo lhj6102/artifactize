@@ -101,7 +101,7 @@ pub(super) async fn execute(
             Ok(0)
         }
         RemoteCommand::Status => {
-            let Some(remote) = remote::remote(state, repo)? else {
+            let Some(status) = remote::status(state, repo).await? else {
                 if json {
                     print_json(&json!({"configured": false}))?;
                 } else {
@@ -110,51 +110,39 @@ pub(super) async fn execute(
                 }
                 return Ok(1);
             };
-            let (principal, failure) = match remote.whoami().await {
-                Ok(principal) => (Some(principal), None),
-                Err(failure) => (None, Some(failure)),
-            };
-            let reachable =
-                principal.is_some() || failure.as_ref().is_some_and(|failure| failure.responded);
             if json {
-                print_json(&json!({
-                    "configured": true,
-                    "url": remote.url,
-                    "share": remote.share,
-                    "tokenSource": remote.token_source,
-                    "reachable": reachable,
-                    "principal": principal.as_ref().map(|principal| &principal.principal),
-                    "scopes": principal.as_ref().map(|principal| &principal.scopes),
-                    "error": failure.as_ref().map(|failure| &failure.message),
-                }))?;
+                let mut value = json!(status);
+                value["configured"] = json!(true);
+                print_json(&value)?;
             } else {
                 writeln!(
                     out,
                     "Remote: {}\nShare: {}\nToken: {}\nReachable: {}",
-                    remote.url,
-                    json!(remote.share).as_str().unwrap_or_default(),
-                    json!(remote.token_source).as_str().unwrap_or_default(),
-                    if reachable { "yes" } else { "no" }
+                    status.url,
+                    json!(status.share).as_str().unwrap_or_default(),
+                    json!(status.token_source).as_str().unwrap_or_default(),
+                    if status.reachable { "yes" } else { "no" }
                 )
                 .map_err(|e| e.to_string())?;
-                match (&principal, &failure) {
+                match (&status.principal, &status.error) {
                     (Some(principal), _) => writeln!(
                         out,
                         "Principal: {} (scopes: {})",
-                        principal.principal,
-                        principal
+                        principal,
+                        status
                             .scopes
                             .iter()
+                            .flatten()
                             .map(ToString::to_string)
                             .collect::<Vec<_>>()
                             .join(", ")
                     ),
-                    (_, Some(failure)) => writeln!(out, "Error: {}", failure.message),
+                    (_, Some(error)) => writeln!(out, "Error: {error}"),
                     _ => Ok(()),
                 }
                 .map_err(|e| e.to_string())?;
             }
-            Ok(u8::from(principal.is_none()))
+            Ok(u8::from(!status.signed_in()))
         }
     }
 }
