@@ -36,9 +36,22 @@ export function plain(event: KeyboardEvent, key: string): boolean {
   );
 }
 
-/** A Ctrl (⌘) chord such as Ctrl-S, which works inside fields too, never mid-composition. */
+/** The physical key of a letter or digit, as `KeyboardEvent.code` names it. */
+function code(key: string): string | null {
+  if (/^[a-z]$/.test(key)) return `Key${key.toUpperCase()}`;
+  if (/^[0-9]$/.test(key)) return `Digit${key}`;
+  return null;
+}
+
+/**
+ * A Ctrl (⌘) chord such as Ctrl-S, which works inside fields too, never mid-composition. The
+ * physical key decides, so the chord works whatever the layout or input method reports as the
+ * character (a Hangul jamo, an uppercase letter); synthetic events without a code use the key.
+ */
 export function chord(event: KeyboardEvent, key: string): boolean {
-  return primary(event) && !event.altKey && event.key.toLowerCase() === key && !composing(event);
+  const physical = code(key);
+  const pressed = physical && event.code ? event.code === physical : event.key.toLowerCase() === key;
+  return primary(event) && !event.altKey && pressed && !composing(event);
 }
 
 /** The label of a shortcut for this platform: `Ctrl+S` or `⌘S`. */
