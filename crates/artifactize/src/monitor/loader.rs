@@ -63,6 +63,22 @@ impl Origin {
     pub fn identity(&self) -> Option<&crate::types::StateId> {
         self.identity.as_ref()
     }
+    /// The state's origin as it stands, read without a snapshot: its database file, then its
+    /// identity. A UI that keeps work outside snapshots (open reviews, drafts, claims taken)
+    /// compares it with [`Origin::replaces`] as the monitor compares snapshots.
+    pub fn read(state: &std::path::Path) -> Result<Self, String> {
+        let path = state.join(store::DATABASE);
+        let database =
+            match crate::platform::open_no_follow(std::fs::File::options().read(true), &path) {
+                Ok(file) => Some(crate::platform::file_identity(&file).map_err(|e| e.to_string())?),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.to_string()),
+            };
+        Ok(Self {
+            identity: store::read_state_id(state)?,
+            database,
+        })
+    }
 }
 
 /// One consistent read: the catalog, the scope's Runs page and the selected Run with its tree.
