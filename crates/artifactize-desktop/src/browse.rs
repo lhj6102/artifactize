@@ -8,7 +8,7 @@ use crate::{App, Failure};
 use artifactize::{
     monitor::{self, Catalog, Input, Loader, Node, Origin, Page, Scope},
     store::{RequestView, RunSummary, RunView},
-    types::{RunId, StateId},
+    types::RunId,
 };
 use serde::Deserialize;
 use specta::Type;
@@ -153,13 +153,13 @@ impl Browse {
 
     /// Read a snapshot for the shown selection on a blocking thread and accept it, unless
     /// navigation moved on meanwhile; the newer navigation's own load reads it then.
-    /// Returns the accepted snapshot's state identity, or `None` when no snapshot was taken.
+    /// Returns the accepted snapshot's origin, or `None` when no snapshot was taken.
     async fn load(
         &self,
         state: &Path,
         full: bool,
         resync: bool,
-    ) -> Result<Option<Option<StateId>>, Failure> {
+    ) -> Result<Option<Origin>, Failure> {
         let mut loader = self.loader.lock().await;
         if resync {
             loader.reset();
@@ -203,7 +203,7 @@ impl Browse {
             shown.run = None;
             shown.replaced = true;
         }
-        let identity = snapshot.origin.identity().cloned();
+        let origin = snapshot.origin.clone();
         shown.origin = snapshot.origin;
         shown.catalog = snapshot.catalog;
         shown.page.scope = snapshot.scope;
@@ -229,7 +229,7 @@ impl Browse {
         shown.error = (!unreadable.is_empty()).then(|| unreadable.join("; "));
         shown.refreshed = true;
         shown.revision += 1;
-        Ok(Some(identity))
+        Ok(Some(origin))
     }
 
     /// The shown snapshot as of `now`. Taking it clears the replaced flag.
@@ -265,8 +265,8 @@ pub async fn browse(app: tauri::State<'_, App>, navigate: Navigate) -> Result<Br
         .browse
         .load(&app.launch.state, navigate.full, navigate.resync)
         .await?;
-    if let Some(identity) = accepted {
-        app.observe(identity);
+    if let Some(origin) = accepted {
+        app.observe(origin);
     }
     Ok(app.browse.view(OffsetDateTime::now_utc()))
 }

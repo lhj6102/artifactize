@@ -8,14 +8,14 @@ mod form;
 
 pub use form::{Draft, FormView, Verdict};
 
-/// The state's identity right now, noted as the generation every Human view belongs to.
+/// The state's origin right now, noted as the generation every Human view belongs to.
 async fn current(app: &App) -> Result<u32, Failure> {
     let state = app.launch.state.clone();
-    let identity = tokio::task::spawn_blocking(move || store::read_state_id(&state))
+    let origin = tokio::task::spawn_blocking(move || monitor::Origin::read(&state))
         .await
         .map_err(|error| Failure::Read(error.to_string()))?
         .map_err(Failure::Read)?;
-    Ok(app.observe(identity))
+    Ok(app.observe(origin))
 }
 
 use crate::{App, Failure, detail::Field, status::Mark};

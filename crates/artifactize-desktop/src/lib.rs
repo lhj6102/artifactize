@@ -82,11 +82,13 @@ impl App {
         }
     }
 
-    /// Note the state identity a read found and return the state's generation. A different
-    /// identity means the state was replaced: the Human caches, claims taken here and running
-    /// jobs belong to the old state and are dropped.
-    fn observe(&self, identity: Option<artifactize::types::StateId>) -> u32 {
-        let (generation, replaced) = self.generation.observe(identity);
+    /// Note the state origin a read found and return the state's generation. A replaced state
+    /// (the monitor's [`Origin::replaces`]) drops the Human caches, claims taken here and running
+    /// jobs of the old one.
+    ///
+    /// [`Origin::replaces`]: artifactize::monitor::Origin::replaces
+    fn observe(&self, origin: artifactize::monitor::Origin) -> u32 {
+        let (generation, replaced) = self.generation.observe(origin);
         if replaced {
             self.human.reset();
         }

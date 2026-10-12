@@ -100,37 +100,33 @@ pub async fn transcript_open(
         });
     }
     let resolved = live::resolve(&app.launch.state, &view).await;
-    let mut open = app.transcripts.open.lock().expect("transcripts lock");
-    if let Some((handle, _, _)) = &current {
-        // Nothing to keep unless the same session resolves again below.
-        let kept = open.remove(handle);
-        if let (Ok(live::Resolution::Local(source)), Some(entry)) = (&resolved, kept) {
-            let reader = entry.live.clone();
-            // A reader busy with a window is replaced rather than waited for.
-            if let Ok(mut live) = reader.try_lock()
-                && live.source.reference == source.reference
-            {
-                live.source = source.clone();
-                if let Some(reader) = &mut live.reader {
-                    reader.source = source.clone();
-                }
-                live.invalidate();
-                drop(live);
-                let session = source.reference.session_id.to_string();
-                open.insert(
-                    *handle,
-                    Entry {
-                        live: entry.live,
-                        stamp,
-                    },
-                );
+    if let (Some((handle, live, _)), Ok(live::Resolution::Local(source))) = (&current, &resolved) {
+        // The same session keeps its reader, position, follow state and expanded groups, as in
+        // the terminal monitor: wait for a window job to finish with it rather than replace it.
+        let mut reader = live.lock().await;
+        if reader.source.reference == source.reference {
+            reader.source = source.clone();
+            if let Some(file) = &mut reader.reader {
+                file.source = source.clone();
+            }
+            reader.invalidate();
+            drop(reader);
+            let mut open = app.transcripts.open.lock().expect("transcripts lock");
+            // Closed meanwhile: a new reader opens below instead.
+            if let Some(entry) = open.get_mut(handle) {
+                entry.stamp = stamp;
                 return Ok(Opened {
                     handle: Some(*handle),
-                    session: Some(session),
+                    session: Some(source.reference.session_id.to_string()),
                     text: None,
                 });
             }
         }
+    }
+    let mut open = app.transcripts.open.lock().expect("transcripts lock");
+    // Another session, or none: the old reader goes.
+    if let Some((handle, _, _)) = &current {
+        open.remove(handle);
     }
     Ok(match resolved {
         Ok(live::Resolution::Local(source)) => {

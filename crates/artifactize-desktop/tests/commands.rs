@@ -451,3 +451,250 @@ fn a_publication_failure_after_local_settlement_is_saved_locally() {
         artifactize::types::RequestStatus::Green
     );
 }
+
+/// Copy the state's database files (`state.sqlite` and its sidecars) into `backup`.
+fn back_up(state: &Path, backup: &Path) {
+    fs::create_dir_all(backup).unwrap();
+    for suffix in ["", "-wal"] {
+        let name = format!("{}{suffix}", artifactize::store::DATABASE);
+        if state.join(&name).exists() {
+            fs::copy(state.join(&name), backup.join(&name)).unwrap();
+        }
+    }
+}
+
+/// Restore `backup` over the state's database files the way a backup tool does: a new file
+/// renamed into place, so the database keeps its state identity but is another file.
+fn restore(backup: &Path, state: &Path) {
+    let database = artifactize::store::DATABASE;
+    for suffix in ["-shm", "-wal"] {
+        let _ = fs::remove_file(state.join(format!("{database}{suffix}")));
+    }
+    for suffix in ["", "-wal"] {
+        let name = format!("{database}{suffix}");
+        if backup.join(&name).exists() {
+            let staged = state.join(format!("{name}.restoring"));
+            fs::copy(backup.join(&name), &staged).unwrap();
+            fs::rename(&staged, state.join(&name)).unwrap();
+        }
+    }
+}
+
+#[test]
+fn a_backup_restored_over_the_same_state_drops_the_old_reviews_and_claims() {
+    let fixture = fixture();
+    let window = window(&fixture, Mode::Review);
+    let id = saved(&fixture, "release/signoff").request.id.to_string();
+    let waiting = || {
+        invoke(
+            &window,
+            "human_waiting",
+            json!({"all": false, "reload": true}),
+        )
+        .unwrap()
+    };
+    assert_eq!(waiting()["generation"], 0);
+    let backup = fixture._root.path().join("backup");
+    back_up(&fixture.state, &backup);
+    invoke(&window, "human_open", json!({"id": id, "reload": true})).unwrap();
+    invoke(
+        &window,
+        "human_claim",
+        json!({"id": id, "job": 1, "standalone": true}),
+    )
+    .unwrap();
+    assert_eq!(
+        invoke(&window, "human_taken", json!({})).unwrap(),
+        json!([id])
+    );
+
+    let identity = artifactize::store::read_state_id(&fixture.state).unwrap();
+    restore(&backup, &fixture.state);
+    assert_eq!(
+        artifactize::store::read_state_id(&fixture.state).unwrap(),
+        identity,
+        "the restored database keeps the state's identity"
+    );
+    let restored = waiting();
+    assert_eq!(restored["generation"], 1);
+    assert_eq!(restored["rows"][0]["id"], id);
+    assert_eq!(restored["rows"][0]["claim"], "-");
+    assert_eq!(
+        invoke(&window, "human_taken", json!({})).unwrap(),
+        json!([])
+    );
+    let open = invoke(&window, "human_open", json!({"id": id, "reload": false})).unwrap();
+    assert_eq!(open["stage"], "claim");
+    assert_eq!(open["generation"], 1);
+}
+
+/// An Agent request of its own Run with a saved conversation of `rows` answers.
+async fn agent_request(fixture: &Fixture, session: &str, rows: usize) -> String {
+    let receipts = artifactize::store::Receipts::open(&fixture.state, &fixture.repo)
+        .await
+        .unwrap();
+    let run: artifactize::store::Run = serde_json::from_value(json!({
+        "id": "run-agent",
+        "repoPath": fixture.repo,
+        "stateDir": fixture.state,
+        "status": "RUNNING",
+        "createdAt": "2026-01-01T00:00:00Z",
+        "selection": {"kind": "all"},
+        "validation": null,
+        "definitions": {"artifacts": {"release": {"path": "release"}}},
+    }))
+    .unwrap();
+    let request: artifactize::store::Request = serde_json::from_value(json!({
+        "id": "run-agent-1",
+        "runId": "run-agent",
+        "evalId": "release/review",
+        "target": "release",
+        "title": "An Agent reviews the release",
+        "profile": {"kind": "agent", "backend": "openai", "model": "fixture"},
+        "requestedProfile": {"kind": "agent", "backend": "openai", "model": "fixture"},
+        "evalDefHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "payload": {"instruction": "Review."},
+        "references": {},
+        "deps": [],
+        "status": "RUNNING",
+        "result": null,
+        "error": null,
+        "completedAt": null,
+        "createdAt": "2026-01-01T00:00:00Z",
+        "startedAt": "2026-01-01T00:00:01Z",
+        "cwd": fixture.repo,
+        "sessionId": session,
+    }))
+    .unwrap();
+    receipts.create_run(&run, &[request]).await.unwrap();
+    // The recorded conversation: a review header, then one answer per row.
+    let path = artifactize::agent::session::path(&fixture.state, session).unwrap();
+    os::create_private_dir_all(path.parent().unwrap());
+    let answer = |text: String| {
+        serde_json::to_string(&artifactize::agent::session::Event {
+            at: None,
+            send: None,
+            kind: artifactize::agent::session::Kind::Answer(
+                artifactize::agent::session::Answer::Completed(text),
+            ),
+        })
+        .unwrap()
+    };
+    let lines: Vec<String> = std::iter::once(r#"{"kind":"review"}"#.to_owned())
+        .chain((0..rows).map(|row| answer(format!("row {row}"))))
+        .collect();
+    os::write_private_file(&path, lines.join("\n") + "\n");
+    "run-agent-1".into()
+}
+
+/// Read windows of `handle` until its indexing settles.
+fn window_of(window: &WebviewWindow<MockRuntime>, handle: &Value, movement: Value) -> Value {
+    let mut movement = movement;
+    loop {
+        let view = invoke(
+            window,
+            "transcript_window",
+            json!({"handle": handle, "columns": 60, "rows": 5, "movement": movement, "toggle": null, "changed": false}),
+        )
+        .unwrap();
+        movement = Value::Null;
+        if view["loading"] == json!(false)
+            && view["rows"].as_array().is_some_and(|rows| !rows.is_empty())
+        {
+            return view;
+        }
+    }
+}
+
+#[test]
+fn a_session_resolved_again_keeps_its_reader_and_position_until_it_changes() {
+    let fixture = fixture();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let id = runtime.block_on(agent_request(&fixture, "fixture-session", 40));
+    let window = window(&fixture, Mode::Monitor);
+    let opened = invoke(
+        &window,
+        "transcript_open",
+        json!({"id": id, "handle": null}),
+    )
+    .unwrap();
+    let handle = opened["handle"].clone();
+    assert_eq!(opened["session"], "fixture-session");
+    window_of(&window, &handle, Value::Null);
+    // Scroll up into history: paused, away from the bottom.
+    let paused = window_of(&window, &handle, json!({"kind": "up", "rows": 10}));
+    assert_eq!(paused["following"], json!(false));
+
+    // The request completes with the same session: its evidence stamp changes, the reader stays.
+    runtime.block_on(async {
+        let receipts = artifactize::store::Receipts::open(&fixture.state, &fixture.repo)
+            .await
+            .unwrap();
+        let mut view = artifactize::store::read_request(&fixture.state, &id)
+            .await
+            .unwrap();
+        view.request.state = artifactize::store::RequestState::completed(
+            serde_json::from_value(json!({"verdict": "GREEN"})).unwrap(),
+            artifactize::types::Timestamp::now(),
+        );
+        receipts.save_request(&view.request).await.unwrap();
+    });
+    // Resolve again while window jobs keep the reader busy: it waits for them, never replaces it.
+    let reading = {
+        let window = window.clone();
+        let handle = handle.clone();
+        std::thread::spawn(move || {
+            for _ in 0..200 {
+                invoke(
+                    &window,
+                    "transcript_window",
+                    json!({"handle": handle, "columns": 60, "rows": 5, "movement": null, "toggle": null, "changed": true}),
+                )
+                .unwrap();
+            }
+        })
+    };
+    let again = invoke(
+        &window,
+        "transcript_open",
+        json!({"id": id, "handle": handle}),
+    )
+    .unwrap();
+    reading.join().unwrap();
+    assert_eq!(
+        again["handle"], handle,
+        "an unchanged session keeps its reader"
+    );
+    let kept = window_of(&window, &handle, Value::Null);
+    assert_eq!(kept["following"], json!(false), "and its paused position");
+    assert_eq!(kept["rows"], paused["rows"]);
+
+    // Another session replaces the reader.
+    runtime.block_on(async {
+        let receipts = artifactize::store::Receipts::open(&fixture.state, &fixture.repo)
+            .await
+            .unwrap();
+        let mut view = artifactize::store::read_request(&fixture.state, &id)
+            .await
+            .unwrap();
+        view.request.session_id = Some("other-session".parse().unwrap());
+        receipts.save_request(&view.request).await.unwrap();
+    });
+    let replaced = invoke(
+        &window,
+        "transcript_open",
+        json!({"id": id, "handle": handle}),
+    )
+    .unwrap();
+    assert_ne!(replaced["handle"], handle);
+    assert_eq!(replaced["session"], "other-session");
+    assert!(invoke(
+        &window,
+        "transcript_window",
+        json!({"handle": handle, "columns": 60, "rows": 5, "movement": null, "toggle": null, "changed": false}),
+    )
+    .is_err());
+}
