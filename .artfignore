@@ -3,3 +3,6 @@
 crates/artifactize/tests/
 examples/
 website/demo/
+
+# Build output, including the end-to-end fixtures the desktop tests leave there.
+/target/
