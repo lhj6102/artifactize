@@ -142,8 +142,9 @@ Claims exist only on waiting Human requests, so `is:` matches nothing else. An u
 or value is an error that names the choices, and lists nothing.
 
 `/` edits the search; the list follows as you type. Tab completes the last term: a key, or
-after a key a value from the requests listed (repositories, evals, requests, claimants,
-tags), or a kind, status or `is:` value; the footer names the candidates. Enter keeps the
+after a key a value of the requests the rest of the search finds (repository folders, evals,
+requests, claimants, tags), or a kind, status or `is:` value; the footer names the
+candidates. Enter keeps the
 search, Esc restores the one before editing, and Ctrl-U clears it. A page lists 100 requests;
 PgDn shows older ones and PgUp newer.
 

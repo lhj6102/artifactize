@@ -251,6 +251,8 @@ pub struct Review {
     editing_query: Option<String>,
     /// Completion candidates of the query's last term, after Tab.
     candidates: Vec<String>,
+    /// Tab asked to complete the query; the next refresh completes it before searching.
+    completing: bool,
     /// Where each page shown so far starts, the current one last, and where the next starts.
     pages: Vec<u64>,
     next: Option<u64>,
@@ -317,6 +319,7 @@ impl Review {
             query,
             editing_query: None,
             candidates: Vec::new(),
+            completing: false,
             pages: vec![0],
             next: None,
             record: None,

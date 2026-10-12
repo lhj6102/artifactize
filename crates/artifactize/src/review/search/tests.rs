@@ -274,3 +274,23 @@ async fn search_pages_through_every_request_and_the_default_finds_waiting_human_
         .unwrap();
     assert_eq!(late.requests.len(), 1);
 }
+
+#[tokio::test]
+async fn suggestions_take_values_from_what_the_terms_before_the_last_find() {
+    let (_root, state) = state(3).await;
+    let reviewer: ReviewerId = "alice".parse().unwrap();
+    let values = |text: &'static str| {
+        let state = state.clone();
+        let reviewer = reviewer.clone();
+        async move { suggest(&state, text, &reviewer).await.unwrap().candidates }
+    };
+    assert_eq!(values("kind:human eval:").await, ["eval:app/signoff"]);
+    assert_eq!(values("eval:check00").await.len(), 3);
+    // The half-typed term itself never narrows its own candidates.
+    assert_eq!(values("eval:app/check001").await, ["eval:app/check001"]);
+    assert_eq!(values("status:gre").await, ["status:green"]);
+    assert!(
+        values("rep:x eval:").await.is_empty(),
+        "an invalid rest offers no values"
+    );
+}

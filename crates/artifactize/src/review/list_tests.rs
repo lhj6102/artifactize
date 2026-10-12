@@ -195,7 +195,25 @@ async fn slash_edits_the_query_tab_completes_and_esc_restores_it() {
         screen(&mut review).contains("Tab status:"),
         "the footer names the candidates"
     );
-    type_text(&mut review, "bogus").await;
+    // Values come from what the terms before the last one find, never the half-typed term.
+    press(
+        &mut review,
+        KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+    )
+    .await;
+    type_text(&mut review, "kind:agent eval:").await;
+    assert!(
+        review.listed.is_empty(),
+        "a key without its value lists nothing"
+    );
+    press(&mut review, KeyEvent::from(KeyCode::Tab)).await;
+    assert_eq!(review.query, "kind:agent eval:app/agent ");
+    press(
+        &mut review,
+        KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+    )
+    .await;
+    type_text(&mut review, "kind:agent status:bogus").await;
     let shown = screen(&mut review);
     assert!(shown.contains("Unknown status `bogus`"), "{shown}");
     assert!(review.listed.is_empty());

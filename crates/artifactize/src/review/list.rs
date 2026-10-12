@@ -7,8 +7,13 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 const SHOWN_CANDIDATES: usize = 6;
 
 impl Review {
-    /// Read the current page of the query's matches; an invalid query lists nothing.
+    /// Read the current page of the query's matches; an invalid query lists nothing. A Tab
+    /// pressed while editing completes the query first.
     pub(super) async fn search(&mut self) -> Result<(), String> {
+        if std::mem::take(&mut self.completing) {
+            let completion = search::suggest(&self.state, &self.query, &self.reviewer).await?;
+            self.complete(completion);
+        }
         let found = match &self.filter {
             Ok(query) => {
                 let start = *self.pages.last().expect("a page");
@@ -96,6 +101,36 @@ impl Review {
         shown.join(" ")
     }
 
+    /// Put a completion of the last term in place: its only candidate, or what every candidate
+    /// shares; the footer names the candidates.
+    fn complete(&mut self, completion: search::Completion) {
+        match completion.candidates.as_slice() {
+            [] => {}
+            [only] => {
+                let space = if only.ends_with(':') { "" } else { " " };
+                self.query = format!("{}{only}{space}", completion.keep);
+            }
+            many => {
+                // Extend to what every candidate shares.
+                let shared = many.iter().skip(1).fold(many[0].clone(), |shared, next| {
+                    shared
+                        .chars()
+                        .zip(next.chars())
+                        .take_while(|(a, b)| a == b)
+                        .map(|(a, _)| a)
+                        .collect()
+                });
+                let current = &self.query[completion.keep.len()..];
+                if shared.chars().count() > current.chars().count() {
+                    self.query = format!("{}{shared}", completion.keep);
+                }
+            }
+        }
+        self.candidates = completion.candidates;
+        self.filter = self.query.parse();
+        self.pages = vec![0];
+    }
+
     /// A new query starts again from the first page.
     fn requery(&mut self) -> Action {
         self.filter = self.query.parse();
@@ -171,32 +206,10 @@ impl Review {
                 self.candidates.clear();
                 self.requery()
             }
+            // The completion reads the requests the rest of the query finds, as a refresh.
             KeyCode::Tab => {
-                let completion = search::complete(&self.query, &self.entries);
-                match completion.candidates.as_slice() {
-                    [] => {}
-                    [only] => {
-                        let space = if only.ends_with(':') { "" } else { " " };
-                        self.query = format!("{}{only}{space}", completion.keep);
-                    }
-                    many => {
-                        // Extend to what every candidate shares.
-                        let shared = many.iter().skip(1).fold(many[0].clone(), |shared, next| {
-                            shared
-                                .chars()
-                                .zip(next.chars())
-                                .take_while(|(a, b)| a == b)
-                                .map(|(a, _)| a)
-                                .collect()
-                        });
-                        let current = &self.query[completion.keep.len()..];
-                        if shared.chars().count() > current.chars().count() {
-                            self.query = format!("{}{shared}", completion.keep);
-                        }
-                    }
-                }
-                self.candidates = completion.candidates;
-                self.requery()
+                self.completing = true;
+                Action::Refresh
             }
             KeyCode::Backspace => {
                 self.query.pop();

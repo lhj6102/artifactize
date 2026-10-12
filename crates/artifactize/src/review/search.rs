@@ -378,15 +378,20 @@ pub struct Completion {
     pub candidates: Vec<String>,
 }
 
-/// The candidates for the query's last term: keys whose names start with it, or after a key
-/// the values of that field among `entries` (fixed vocabularies for `kind:`, `status:`, `is:`).
-pub fn complete(text: &str, entries: &[Entry]) -> Completion {
+/// `text` split before its last term.
+fn last_term(text: &str) -> (&str, &str) {
     let start = text
         .char_indices()
         .rev()
         .find(|(_, character)| character.is_whitespace())
         .map_or(0, |(index, character)| index + character.len_utf8());
-    let (keep, term) = text.split_at(start);
+    text.split_at(start)
+}
+
+/// The candidates for the query's last term: keys whose names start with it, or after a key
+/// the values of that field among `entries` (fixed vocabularies for `kind:`, `status:`, `is:`).
+pub fn complete(text: &str, entries: &[Entry]) -> Completion {
+    let (keep, term) = last_term(text);
     let term = term.trim_start_matches('"');
     let candidates = match term.split_once(':') {
         None => {
@@ -438,6 +443,36 @@ pub fn complete(text: &str, entries: &[Entry]) -> Completion {
         keep: keep.to_owned(),
         candidates,
     }
+}
+
+/// Complete the last term of `text` from the requests the terms before it find (their first
+/// page): what the rest of the query lists, never the half-typed term itself.
+pub async fn suggest(
+    state: &Path,
+    text: &str,
+    reviewer: &ReviewerId,
+) -> Result<Completion, String> {
+    let (keep, term) = last_term(text);
+    let from_requests = term
+        .trim_start_matches('"')
+        .split_once(':')
+        .and_then(|(name, _)| Key::parse(name))
+        .is_some_and(|key| {
+            matches!(
+                key,
+                Key::Repo | Key::Eval | Key::Request | Key::Reviewer | Key::Tag
+            )
+        });
+    let entries = match keep.parse::<Query>() {
+        Ok(query) if from_requests => search(state, &query, reviewer, 0)
+            .await?
+            .requests
+            .into_iter()
+            .map(|(_, entry)| entry)
+            .collect(),
+        _ => Vec::new(),
+    };
+    Ok(complete(text, &entries))
 }
 
 /// One page of matching requests, newest Run first, and where the next page starts.
