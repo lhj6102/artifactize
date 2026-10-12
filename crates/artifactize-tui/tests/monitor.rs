@@ -94,7 +94,7 @@ impl Fixture {
         let waiting = support::os::waiting_program(root.path());
         declare(
             &beta.join("slow"),
-            json!({"name":"slow","evals":[eval("wait", runtime(&waiting, &[&release.to_string_lossy()]), "Wait.")]}),
+            json!({"name":"slow","evals":[eval("wait", runtime(&waiting, &[&support::os::path_text(&release)]), "Wait.")]}),
         );
         declare(
             &beta.join("human"),
@@ -581,7 +581,7 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
     declare(
         &repo.join("a"),
         json!({"name":"a","fingerprint":fingerprint("a"),
-            "evals":[eval("x", runtime(&check, &[&flag.to_string_lossy()]), "Check.")]}),
+            "evals":[eval("x", runtime(&check, &[&support::os::path_text(&flag)]), "Check.")]}),
     );
     declare(
         &repo.join("b"),

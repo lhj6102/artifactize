@@ -351,19 +351,17 @@ fn main() {
 
 /// A program in `directory` that prints `output` and exits with `code`.
 pub fn exiting_program(directory: &Path, code: i32, output: &str) -> String {
-    compiled_program(
+    path_text(&compiled_program(
         directory,
         "exiting",
         &format!("fn main() {{ print!({output:?}); std::process::exit({code}); }}"),
-    )
-    .to_string_lossy()
-    .into_owned()
+    ))
 }
 
 /// A program in `directory` that waits until the file named by its first argument exists, then
 /// exits 0.
 pub fn waiting_program(directory: &Path) -> String {
-    compiled_program(
+    path_text(&compiled_program(
         directory,
         "waiting",
         r#"fn main() {
@@ -373,15 +371,13 @@ pub fn waiting_program(directory: &Path) -> String {
     }
 }
 "#,
-    )
-    .to_string_lossy()
-    .into_owned()
+    ))
 }
 
 /// A program in `directory` that exits 1 while the file named by its first argument exists, and
 /// 0 once it is gone.
 pub fn fails_while_present_program(directory: &Path) -> String {
-    compiled_program(
+    path_text(&compiled_program(
         directory,
         "fails-while-present",
         r#"fn main() {
@@ -389,9 +385,7 @@ pub fn fails_while_present_program(directory: &Path) -> String {
     std::process::exit(i32::from(std::path::Path::new(&file).exists()));
 }
 "#,
-    )
-    .to_string_lossy()
-    .into_owned()
+    ))
 }
 
 /// Run `command` as the signed-in user `name`, whichever variable the system names the user by.
