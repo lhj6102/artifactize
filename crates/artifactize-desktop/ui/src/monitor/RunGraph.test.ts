@@ -138,4 +138,48 @@ describe("RunGraph", () => {
     await waitFor(() => expect(node("a:docs")).not.toBeNull());
     expect(layout).toHaveBeenCalledTimes(2);
   });
+
+  it("never lets a slower layout of another Run replace the Run shown now", async () => {
+    // Run A lays out at once; Run B's layout waits until the test releases it.
+    const runs: Record<string, Graph> = {
+      "run-a": graph("active"),
+      "run-b": { ...graph("failed"), run: "run-b", nodes: [{ id: "a:other", name: "other", light: "failed" }], edges: [] },
+    };
+    mockIPC((cmd, args) => (cmd === "run_graph" ? runs[(args as { run: string }).run] : null));
+    let release: (() => void) | null = null;
+    layout.mockImplementation(async (laid: Graph) => {
+      if (laid.run === "run-b") await new Promise<void>((done) => (release = done));
+      return new Map(laid.nodes.map((node, index) => [node.id, { x: index * 240, y: 0 }]));
+    });
+    const props = { run: "run-a", revision: 1, tree, selected: [], onselect: vi.fn(), onopen: vi.fn() };
+    const { rerender } = render(RunGraph, props);
+    await waitFor(() => expect(node("a:release")).not.toBeNull());
+    await rerender({ run: "run-b", revision: 2 });
+    await waitFor(() => expect(release).not.toBeNull());
+    await rerender({ run: "run-a", revision: 3 });
+    await waitFor(() => expect(node("a:release")).not.toBeNull());
+    release!();
+    await new Promise((done) => setTimeout(done, 50));
+    expect(node("a:other")).toBeNull();
+    expect(node("a:release")?.dataset.light).toBe("active");
+    expect(layout).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens the highlighted eval after the tree's selection left it on a live completion", async () => {
+    let served = graph("active");
+    const { rerender, onselect, onopen } = setup(() => served);
+    await waitFor(() => expect(node("a:release")).not.toBeNull());
+    await fireEvent.click(node("a:release")!);
+    const list = await screen.findByRole("listbox", { name: "Evals" });
+    await rerender({ selected: ["a:release", "e:release/signoff"] });
+    // The sign-off completes elsewhere: the tree folds the done Artifact and selects it.
+    served = graph("green");
+    await rerender({ revision: 2, selected: ["a:release"] });
+    await waitFor(() => expect(node("a:release")?.dataset.light).toBe("green"));
+    expect(screen.getByRole("option", { selected: true }).textContent).toContain("signoff");
+    onselect.mockClear();
+    await fireEvent.keyDown(list, { key: "Enter" });
+    expect(onselect).toHaveBeenCalledWith(["a:release", "e:release/signoff"]);
+    expect(onselect.mock.invocationCallOrder[0]).toBeLessThan(onopen.mock.invocationCallOrder[0]);
+  });
 });

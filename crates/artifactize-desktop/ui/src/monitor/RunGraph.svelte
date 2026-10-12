@@ -33,11 +33,32 @@
   let error = $state<string | null>(null);
   /** Lay out a graph above the limit anyway, for this Run. */
   let forced = $state(false);
+  /** Each read of the graph; only the newest one may show what it read. */
+  let reads = 0;
+  /** Layouts by Run and shape, finished or in flight, so returning to a Run reuses its own. */
+  const layouts = new Map<string, Promise<Map<string, Point>>>();
+  const KEPT = 8;
 
-  async function place(graph: RunGraph) {
+  function positions(graph: RunGraph, key: string): Promise<Map<string, Point>> {
+    const id = `${graph.run}\n${key}`;
+    let laid = layouts.get(id);
+    if (!laid) {
+      laid = layout(graph);
+      laid.catch(() => layouts.delete(id));
+      layouts.set(id, laid);
+      // Forget the oldest beyond a few Runs.
+      for (const old of [...layouts.keys()].slice(0, Math.max(layouts.size - KEPT, 0))) layouts.delete(old);
+    }
+    return laid;
+  }
+
+  /** Show `graph` as read `read`: its lights at once when its shape is laid out, else once
+   * its layout finishes, unless a newer read came meanwhile. */
+  async function place(graph: RunGraph, read: number) {
     const key = shape(graph);
     if (shown && shown.shape === key && shown.graph.run === graph.run) {
       shown = { ...shown, graph };
+      pending = null;
       return;
     }
     if (graph.nodes.length > LIMIT && !forced) {
@@ -45,27 +66,30 @@
       return;
     }
     pending = null;
-    const positions = await layout(graph);
-    shown = { graph, positions, shape: key };
+    const laid = await positions(graph, key);
+    if (read !== reads) return;
+    shown = { graph, positions: laid, shape: key };
   }
 
+  let last: string | null = null;
   $effect(() => {
     void revision;
     const at = run;
-    let current = true;
+    const read = ++reads;
+    if (at !== last) {
+      last = at;
+      forced = false;
+    }
     call(commands.runGraph(at)).then(
       (graph) => {
-        if (!current) return;
+        if (read !== reads) return;
         error = null;
-        void place(graph).catch((failure) => current && (error = message(failure)));
+        void place(graph, read).catch((failure) => read === reads && (error = message(failure)));
       },
       (failure) => {
-        if (current) error = message(failure);
+        if (read === reads) error = message(failure);
       },
     );
-    return () => {
-      current = false;
-    };
   });
 </script>
 
@@ -81,7 +105,7 @@
       class="button"
       onclick={() => {
         forced = true;
-        if (pending) void place(pending);
+        if (pending) void place(pending, reads);
       }}>Lay out all {pending.nodes.length}</button
     >
   </div>

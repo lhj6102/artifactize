@@ -1,10 +1,10 @@
 // The monitor's Run graph in the real app on CLI-made state: release waits for its Human,
 // ship waits for release, docs is GREEN. The graph lights them, follows a submission made by
-// another process live without moving any node, zooms into an Artifact's evals and opens the
-// Detail of one, and moves between connected Artifacts with the keyboard.
+// another process live without moving any node while zoomed into release, still opens the
+// highlighted eval's Detail afterwards, and moves between connected Artifacts by keyboard.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { artifactize, create, type Fixture, signoff } from "./fixture.ts";
+import { artifactize, create, createChain, type Fixture, signoff } from "./fixture.ts";
 import { type Session, start } from "./driver.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -45,7 +45,7 @@ describe("run graph", () => {
     await session?.stop();
   });
 
-  it("lights Artifacts and edges and recolours them in place after a submission", async () => {
+  it("lights Artifacts and edges, recolours them in place and opens a zoomed eval after a submission", async () => {
     await browser.$("button*=Graph").click();
     await eventually(async () => Object.keys((await graph()).nodes).length === 3, "three Artifact nodes");
     await eventually(async () => {
@@ -59,7 +59,17 @@ describe("run graph", () => {
     }, "release in progress, ship waiting, docs GREEN, the edge lit as release");
     const before = (await graph()).nodes;
 
-    // Another process signs the release off; the change hint redraws the graph.
+    // Zoom into release: its evals, the sign-off highlighted and focused.
+    await browser.$('.svelte-flow__node[data-id="a:release"]').click();
+    const evals = await browser.$('[role="listbox"][aria-label="Evals"]');
+    await evals.waitForExist({ timeout: 10000 });
+    await eventually(
+      async () => (await browser.execute((list) => (list as HTMLElement).innerText, evals)).includes("signoff"),
+      "the release evals",
+    );
+    await eventually(() => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"), "focus in the evals");
+
+    // Another process signs the release off; the change hint recolours the graph.
     const id = signoff(fixture).id;
     assert.equal(artifactize(fixture, "request", "claim", id, "--reviewer", "alice"), 0);
     assert.equal(
@@ -74,17 +84,9 @@ describe("run graph", () => {
     for (const node of ["a:release", "a:ship", "a:docs"]) {
       assert.equal(after[node].at, before[node].at, `${node} kept its place`);
     }
-  });
 
-  it("zooms into an Artifact, lists its evals and opens the Detail of one", async () => {
-    await browser.$('.svelte-flow__node[data-id="a:release"]').click();
-    const evals = await browser.$('[role="listbox"][aria-label="Evals"]');
-    await evals.waitForExist({ timeout: 10000 });
-    await eventually(
-      async () => (await browser.execute((list) => (list as HTMLElement).innerText, evals)).includes("signoff"),
-      "the release evals",
-    );
-    await eventually(() => browser.execute(() => document.activeElement?.getAttribute("aria-label") === "Evals"), "focus in the evals");
+    // The tree folded the completed Artifact; Enter still opens the highlighted sign-off's
+    // Detail (an Artifact's Detail has no Human review).
     await browser.keys(["Enter"]);
     await browser.$('[aria-label="Human review"]').waitForExist({ timeout: 10000 });
     // Back to the graph: Esc leaves Detail, a click on the list and Esc zooms out.
@@ -112,5 +114,49 @@ describe("run graph", () => {
     );
     await browser.keys(["v"]);
     await browser.$('[role="tree"]').waitForExist({ timeout: 10000 });
+  });
+});
+
+describe("run graph of many Artifacts", () => {
+  let session: Session;
+  let browser: WebdriverIO.Browser;
+  const focused = () => browser.execute(() => document.activeElement?.closest(".svelte-flow__node")?.getAttribute("data-id") ?? null);
+  const mounted = () => browser.execute(() => document.querySelectorAll(".svelte-flow__node").length);
+
+  before(async () => {
+    session = await start(createChain(85));
+    browser = session.browser;
+    await eventually(async () => (await browser.execute(() => document.body.innerText)).includes("n000"), "the Run tree", 30000);
+  });
+
+  after(async () => {
+    await session?.stop();
+  });
+
+  it("moves along the chain beyond the drawn nodes, the camera and focus following", async () => {
+    await browser.$("button*=Graph").click();
+    await eventually(async () => (await mounted()) > 0, "the graph", 30000);
+    // Zoom in until only part of the chain is drawn.
+    const zoomIn = await browser.$(".svelte-flow__controls-zoomin");
+    for (let step = 0; step < 12; step += 1) await zoomIn.click();
+    await eventually(async () => (await mounted()) < 85, "nodes outside the view are not drawn");
+    const first = await browser.execute(() => {
+      const node = [...document.querySelectorAll<HTMLElement>(".svelte-flow__node")].sort((a, b) =>
+        (a.dataset.id ?? "").localeCompare(b.dataset.id ?? ""),
+      )[0];
+      node.focus();
+      return node.dataset.id ?? "";
+    });
+    const start = Number(first.slice(3));
+    const steps = 30;
+    for (let step = 1; step <= steps; step += 1) {
+      await browser.keys(["ArrowRight"]);
+      const want = `a:n${String(start + step).padStart(3, "0")}`;
+      await eventually(async () => (await focused()) === want, `focus on ${want}`);
+    }
+    // The tree's selection is the focused node: the breadcrumb names it.
+    const crumbs = await browser.$('nav[aria-label="Breadcrumb"]').getText();
+    assert.match(crumbs, new RegExp(`n${String(start + steps).padStart(3, "0")}`));
+    assert.ok((await mounted()) < 85, "still drawing only part of the chain");
   });
 });

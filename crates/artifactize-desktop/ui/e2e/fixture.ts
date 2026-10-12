@@ -147,6 +147,38 @@ export function addRepository(fixture: Fixture, name: string): string {
   return repo;
 }
 
+/**
+ * A fresh repository whose `count` Artifacts n000 … form one chain, each referring to the one
+ * before it, all verified GREEN: a Run too large for the graph to draw every node at once.
+ */
+export function createChain(count: number): Fixture {
+  mkdirSync(scratch, { recursive: true });
+  const root = mkdtempSync(join(scratch, "fixture-"));
+  const repo = join(root, "repo");
+  const state = join(root, "state");
+  const name = (index: number) => `n${String(index).padStart(3, "0")}`;
+  for (let index = 0; index < count; index += 1) {
+    const reference = index === 0 ? "the start" : `{${name(index - 1)}}`;
+    const text = `name = "${name(index)}"
+
+[evals.check]
+title = "Check ${name(index)}"
+profile = { kind = "runtime", command = "true", args = [] }
+
+[evals.check.payload]
+instruction = """
+Check ${reference}."""
+`;
+    mkdirSync(join(repo, name(index)), { recursive: true });
+    writeFileSync(join(repo, name(index), "index.artf"), text);
+  }
+  execFileSync("git", ["init", "-q", repo]);
+  const fixture = { root, repo, state };
+  const status = artifactize(fixture, "verify", "--all", "--json");
+  if (status !== 0) throw new Error(`verify exited ${status}, expected 0 (GREEN)`);
+  return fixture;
+}
+
 if (import.meta.main) {
   const fixture = create();
   console.log(JSON.stringify(fixture));

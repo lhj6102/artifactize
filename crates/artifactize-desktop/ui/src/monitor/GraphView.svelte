@@ -41,7 +41,9 @@
   let edges = $state.raw<Edge[]>([]);
 
   $effect(() => {
-    // Lights change in place; positions only come with a new layout.
+    // Lights change in place; positions only come with a new layout. The selection is not part
+    // of a node: a node whose selection flips is drawn again and loses focus, so focus (which
+    // follows the selection) marks the selected Artifact instead.
     nodes = graph.nodes
       .filter((node) => positions.has(node.id))
       .map((node) => ({
@@ -52,7 +54,6 @@
         width: NODE.width,
         height: NODE.height,
         data: { name: node.name, light: node.light, zoomed: node.id === zoomed },
-        selected: node.id === selected[0],
         draggable: false,
         connectable: false,
         ariaLabel: `${node.name}: ${WORDS[node.light]}`,
@@ -71,6 +72,22 @@
 
   const artifact = $derived(zoomed ? (tree.find((node) => node.id === zoomed) ?? null) : null);
   const evals = $derived(artifact?.children ?? []);
+
+  $effect(() => {
+    // The tree's selection moves the highlight; when it leaves the evals (a completed
+    // Artifact folds in the tree), the highlight stays and Enter selects it again.
+    if (!zoomed || selected[0] !== zoomed) return;
+    const at = evals.findIndex((node) => node.id === selected[1]);
+    if (at >= 0) index = at;
+    else index = Math.min(index, Math.max(evals.length - 1, 0));
+  });
+
+  /** Open the Detail of the highlighted eval, which becomes the selection first. */
+  function openEval() {
+    if (!zoomed || !evals[index]) return;
+    onselect([zoomed, evals[index].id]);
+    onopen();
+  }
 
   function element(id: string): HTMLElement | null {
     return canvas?.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${CSS.escape(id)}"]`) ?? null;
@@ -95,19 +112,61 @@
     if (id) element(id)?.focus();
   }
 
+  /** The Artifact node `event` happened on. */
+  function nodeOf(event: Event): string | undefined {
+    return (event.target as HTMLElement | null)?.closest<HTMLElement>(".svelte-flow__node")?.dataset.id;
+  }
+
+  /** The node is drawn and wholly inside the canvas. */
+  function inView(id: string): boolean {
+    const box = element(id)?.getBoundingClientRect();
+    const view = canvas?.getBoundingClientRect();
+    return !!box && !!view && box.left >= view.left && box.right <= view.right && box.top >= view.top && box.bottom <= view.bottom;
+  }
+
+  const frame = () => new Promise((done) => requestAnimationFrame(done));
+
+  /**
+   * Select and focus `id`, centring it first when it is not in view: with many Artifacts only
+   * the visible ones are drawn, so a node beyond the view mounts only once the camera reaches
+   * it. Redrawing the visible set can drop focus, so it is put back until it holds.
+   */
+  async function reveal(id: string) {
+    onselect([id]);
+    const at = positions.get(id);
+    if (at && !inView(id)) {
+      const { zoom } = flow.getViewport();
+      await flow.setCenter(at.x + NODE.width / 2, at.y + NODE.height / 2, { zoom, duration: 0 });
+    }
+    for (let tries = 0; tries < 30; tries += 1) {
+      const target = element(id);
+      if (target && document.activeElement === target) {
+        await frame();
+        if (document.activeElement === element(id)) return;
+      }
+      element(id)?.focus({ preventScroll: true });
+      await frame();
+    }
+  }
+
+  /** Focus is the graph's selection, so the keys always start from the node in focus. */
+  function focusin(event: FocusEvent) {
+    const id = nodeOf(event);
+    if (id && id !== selected[0] && !zoomed) onselect([id]);
+  }
+
   /** Keys on the canvas: arrows move along edges, Enter zooms in, Esc zooms out. */
   function keydown(event: KeyboardEvent) {
-    const id = (event.target as HTMLElement | null)?.closest<HTMLElement>(".svelte-flow__node")?.dataset.id;
-    if (!id) return;
+    const focused = nodeOf(event);
+    if (!focused) return;
+    // From the selected Artifact, which focus follows; the focused node if they differ.
+    const id = selected[0] && positions.has(selected[0]) && !zoomed ? selected[0] : focused;
     const arrows: Arrow[] = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
     const arrow = arrows.find((key) => plain(event, key));
     if (arrow) {
       const next = neighbor(graph, positions, id, arrow);
-      if (next) {
-        onselect([next]);
-        element(next)?.focus();
-      }
-    } else if (plain(event, "Enter")) void zoomIn(id);
+      if (next) void reveal(next);
+    } else if (plain(event, "Enter")) void zoomIn(focused);
     else if (plain(event, "Escape") && zoomed) void zoomOut();
     else return;
     event.preventDefault();
@@ -121,7 +180,7 @@
     };
     if (plain(event, "ArrowDown") || plain(event, "j")) move(index + 1);
     else if (plain(event, "ArrowUp") || plain(event, "k")) move(index - 1);
-    else if ((plain(event, "Enter") || plain(event, "o") || plain(event, "ArrowRight")) && evals[index]) onopen();
+    else if ((plain(event, "Enter") || plain(event, "o") || plain(event, "ArrowRight")) && evals[index]) openEval();
     else if (plain(event, "Escape") || plain(event, "ArrowLeft")) void zoomOut();
     else return;
     event.preventDefault();
@@ -131,7 +190,7 @@
 
 <div class="graph" class:split={zoomed !== null}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="canvas" bind:this={canvas} onkeydown={keydown}>
+  <div class="canvas" bind:this={canvas} onkeydown={keydown} onfocusin={focusin}>
     <SvelteFlow
       bind:nodes
       bind:edges
@@ -142,6 +201,8 @@
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={true}
+      autoPanOnNodeFocus={false}
+      elevateNodesOnSelect={false}
       onlyRenderVisibleElements={graph.nodes.length > 80}
       proOptions={{ hideAttribution: true }}
       onnodeclick={({ node }) => void zoomIn(node.id)}
@@ -175,8 +236,7 @@
             }}
             ondblclick={() => {
               index = at;
-              if (zoomed) onselect([zoomed, node.id]);
-              onopen();
+              openEval();
             }}
             onkeydown={() => {}}
           >
