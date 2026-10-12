@@ -1,5 +1,5 @@
 // Drive the real app through tauri-driver and WebKitWebDriver.
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { createConnection } from "node:net";
 import { readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -15,14 +15,22 @@ function newest(directory: string): number {
 }
 
 /**
- * The app embeds ui/dist when it compiles; one built before the last `pnpm build` shows an
- * older frontend (or misses an asset, which then loads index.html instead). Say so at once
- * instead of letting tests time out.
+ * Build the app the tests drive, then check it. `cargo test -p artifactize-desktop` replaces
+ * the same binary with one built for tests (Tauri's test feature), and the app embeds ui/dist
+ * when it compiles: a run on either would mislead. Building here (a no-op when it is current)
+ * puts the normal app back; an app still older than ui/dist means `pnpm build` ran after
+ * the build, so say so at once instead of letting tests time out.
  */
 function checkBuild() {
+  const root = resolve(import.meta.dirname, "../../../..");
+  const built = spawnSync("cargo", ["build", "-p", "artifactize", "-p", "artifactize-desktop"], {
+    cwd: root,
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  if (built.status !== 0) throw new Error("cargo build -p artifactize -p artifactize-desktop failed; see its output above.");
   const dist = resolve(import.meta.dirname, "../dist");
   if (statSync(app).mtimeMs < newest(dist)) {
-    throw new Error(`${app} is older than ${dist}; run \`cargo build -p artifactize -p artifactize-desktop\` after \`pnpm build\`.`);
+    throw new Error(`${app} is older than ${dist}; run \`pnpm build\` before \`cargo build\`, not after.`);
   }
 }
 let checked = false;

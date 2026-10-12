@@ -65,7 +65,10 @@ describe("review search", () => {
 
     await type("rep");
     await eventually(async () => (await suggestions()).includes("repo:"), "the repo key");
-    await press(browser, ["ArrowDown", "Enter"], holds("kind:human repo:"), "the repo key taken");
+    const chosen = () =>
+      browser.execute(() => document.querySelector('[aria-label="Suggestions"] [aria-selected="true"]')?.textContent?.trim() ?? null);
+    await press(browser, ["ArrowDown"], async () => (await chosen()) === "repo:", "the repo key chosen");
+    await press(browser, ["Enter"], holds("kind:human repo:"), "the repo key taken");
     // A taken key offers the listed repositories' folders.
     await eventually(async () => (await suggestions()).includes("repo:other"), "the repository values");
     await type("oth");
