@@ -14,6 +14,7 @@
     type HumanView,
     type LaunchView,
     type Listed,
+    type Results,
     type Settled,
   } from "../ipc/client";
   import { Review } from "./review.svelte";
@@ -37,12 +38,14 @@
   /** Where the shown page starts, and where the pages before it started. */
   let start = $state(0);
   let previous = $state<number[]>([]);
-  let next = $state<number | null>(null);
-  let waiting = $state(true);
-  let rows = $state.raw<Listed[]>([]);
-  let loaded = $state(false);
+  /** The last search answer, replaced whole; what is shown of it is derived. */
+  let results = $state.raw<Results | null>(null);
+  const rows = $derived(results?.rows ?? []);
+  const next = $derived(results?.next ?? null);
+  const waiting = $derived(results?.waiting ?? true);
+  const invalid = $derived(results?.error ?? null);
+  const loaded = $derived(results !== null);
   let error = $state<string | null>(null);
-  let invalid = $state<string | null>(null);
   let index = $state(0);
   let review = $state<Review | null>(null);
   /** The read-only Detail of an open request that is not a Human review. */
@@ -81,11 +84,7 @@
       }
       generation = found.generation;
       const id = selected?.id;
-      rows = found.rows;
-      next = found.next;
-      waiting = found.waiting;
-      invalid = found.error;
-      loaded = true;
+      results = found;
       error = null;
       const kept = id ? rows.findIndex((row) => row.id === id) : -1;
       index = kept >= 0 ? kept : Math.min(index, Math.max(rows.length - 1, 0));

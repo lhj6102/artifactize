@@ -8,8 +8,9 @@ that makes the transition happen and checks where it leads.
 ## Screens and states
 
 - **Launch**: the window opening. It opens on the Monitor, or on Review when started with
-  `review`. The window's title bar names the repository it was started for (or "all
-  repositories"); the Monitor's breadcrumb and the Review search show it too.
+  `review`. It shows this machine: the ALL scope, whichever folder it was started from. The
+  window's title is "Artifactize". The person narrows the view inside the app, with the Scope
+  pane or the Review search.
 - **Monitor**: four panes. **Scope** lists ALL repositories and each repository and worktree;
   **Runs** lists the selected scope's Runs, newest first; **Tree** shows the selected Run's
   Artifacts and their evals, each with its verdict; **Detail** shows the selected row: for an eval its instruction, result and request, and with `t` its technical record.
@@ -32,8 +33,8 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-LAUNCH-MONITOR | Launch | start without arguments | Monitor; the title bar names the repository |
-| E-LAUNCH-REVIEW | Launch | start with `review` | Review, listing the waiting Human reviews of every repository; the title bar names the repository |
+| E-LAUNCH-MONITOR | Launch | start without arguments | Monitor on the ALL scope: every repository and worktree on this machine |
+| E-LAUNCH-REVIEW | Launch | start with `review` | Review, listing the waiting Human reviews of every repository on this machine |
 | E-SCREEN-MONITOR | any screen | Ctrl+1 | Monitor |
 | E-SCREEN-REVIEW | any screen | Ctrl+2 | Review |
 | E-SCREEN-SETTINGS | any screen | Ctrl+, | Settings |
@@ -53,7 +54,7 @@ that makes the transition happen and checks where it leads.
 
 | Edge | From | Action | To |
 | --- | --- | --- | --- |
-| E-MON-SCOPE-MOVE | Scope | `j`, `k`, ↑ or ↓ | Scope, another scope selected; Runs lists its Runs |
+| E-MON-SCOPE-MOVE | Scope | `j`, `k`, ↑ or ↓ | Scope, another scope selected (ALL, a repository or a worktree); Runs narrows to its Runs |
 | E-MON-SCOPE-RUNS | Scope | Enter or → | Runs |
 | E-MON-RUNS-MOVE | Runs | `j`, `k`, ↑ or ↓ | Runs, another Run selected; Tree shows it |
 | E-MON-RUNS-TREE | Runs | Enter or → | Tree |

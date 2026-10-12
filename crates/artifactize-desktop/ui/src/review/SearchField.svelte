@@ -19,7 +19,7 @@
     onleave: () => void;
   } = $props();
 
-  let completion = $state<Completion | null>(null);
+  let completion = $state.raw<Completion | null>(null);
   let active = $state(-1);
   /** Each request supersedes the ones before it, so a slow answer never reopens the dropdown. */
   let asked = 0;
@@ -90,7 +90,9 @@
     aria-activedescendant={open && active >= 0 ? `search-suggestion-${active}` : undefined}
     bind:value
     bind:this={input}
-    oninput={() => (value === "" || /\s$/.test(value) ? close() : void suggest())}
+    // Whether a term is still being typed (a space inside a quoted value does not end it) is
+    // the library's answer: its completion keeps the whole query when none is.
+    oninput={() => (value === "" ? close() : void suggest())}
     onkeydown={keydown}
     onblur={close}
   />

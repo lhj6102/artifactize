@@ -124,15 +124,11 @@ impl App {
 pub fn app<R: tauri::Runtime>(builder: tauri::Builder<R>, launch: Launch) -> tauri::Builder<R> {
     let specta = bindings::<R>();
     let state = launch.state.clone();
-    let title = launch.title();
     builder
         .manage(App::new(launch))
         .invoke_handler(specta.invoke_handler())
         .setup(move |app| {
             specta.mount_events(app);
-            if let Some(window) = app.get_webview_window("main") {
-                window.set_title(&title)?;
-            }
             watch::spawn(app.handle().clone(), state);
             Ok(())
         })

@@ -1,10 +1,10 @@
-// Launching and the window: the title bar names the repository, the Monitor's catalog of
+// Launching and the window: the Monitor's catalog of
 // repositories, scopes, Runs and verdicts, the screen shortcuts, and the Review screen that
 // starts on the waiting sign-offs of every repository.
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 import { addRepository, artifactize, create, type Fixture, requests } from "./fixture.ts";
-import { type Session, start, windowTitles } from "./driver.ts";
+import { type Session, start } from "./driver.ts";
 import { press } from "./keys.ts";
 
 async function eventually(check: () => Promise<boolean> | boolean, what: string, ms = 15000) {
@@ -37,16 +37,6 @@ describe("launching the Monitor", () => {
 
   after(async () => {
     await session?.stop();
-  });
-
-  // UX edges: E-LAUNCH-MONITOR
-  it("names the repository in the window's title bar", async () => {
-    assert.ok(session.display, "a private display");
-    const titles = windowTitles(session.display);
-    assert.ok(
-      titles.some((title) => title.startsWith("Artifactize — ") && title.endsWith("/repo")),
-      `no title names the repository: ${titles.join(" | ")}`,
-    );
   });
 
   // UX edges: E-MON-SCOPE-MOVE E-MON-RUNS-MOVE
@@ -101,12 +91,11 @@ describe("launching the Review screen for every repository", () => {
   });
 
   // UX edges: E-LAUNCH-REVIEW
-  it("lists the waiting Human reviews of every repository and names no single one in the title", async () => {
+  it("lists the waiting Human reviews of every repository", async () => {
     await eventually(async () => (await rows()).length === 3, "three waiting sign-offs");
     assert.equal(await query(), "kind:human status:waiting_human");
     const listed = await rows();
     for (const repository of ["other", "third"]) assert.ok(listed.some((row) => row.includes(repository)), `${repository} is listed`);
-    assert.ok(windowTitles(session.display!).some((title) => title === "Artifactize — all repositories"));
   });
 
   // UX edges: E-REVIEW-PREVIEW

@@ -1,12 +1,14 @@
 # Desktop app: user journeys
 
 What a person can do in the desktop app, from the app's real behaviour. Each journey has an id
-(`J-...`) and ends in something visible. The desktop shows and changes the same state as the
+(`J-...`) and ends in something visible. The app is about this machine, not about one
+repository: it shows every repository and worktree whose reviews are in this machine's state,
+and the person narrows it inside the app. It shows and changes the same state as the
 `artifactize` CLI; a change made by either shows in the other.
 
 ## Window
 
-- **J-LAUNCH**: the app opens on the Monitor, or on Review when started with `review`. The title bar shows the repository.
+- **J-LAUNCH**: the app opens on the Monitor, or on Review when started with `review`, showing everything on this machine (the ALL scope), whichever folder it was started from. The window is titled "Artifactize".
 - **J-SWITCH-SCREEN**: Ctrl+1 shows the Monitor, Ctrl+2 Review, Ctrl+, Settings.
 - **J-PALETTE**: Ctrl+K or the palette button opens the command palette; typing filters commands, Enter runs one, Esc closes it. It opens again after any use.
 - **J-HELP**: `?` lists the keys of the current screen.
@@ -15,7 +17,7 @@ What a person can do in the desktop app, from the app's real behaviour. Each jou
 
 ## Monitor
 
-- **J-MON-CATALOG**: the Scope pane lists ALL repositories and each repository or worktree; the Runs pane lists its Runs; the Run's Artifacts and evals show as a tree with their verdicts.
+- **J-MON-CATALOG**: the Scope pane lists ALL (this machine) and each repository and worktree; selecting one narrows the Runs pane to its Runs; the selected Run's Artifacts and evals show as a tree with their verdicts.
 - **J-MON-NAVIGATE**: arrow keys or `j`/`k` select a row, Enter or → goes one level deeper, ← or Esc back, Space or `h`/`l` fold a tree row.
 - **J-MON-DETAIL**: Enter or `o` on an eval opens its Detail: instruction, result, request, and with `t` the technical record.
 - **J-MON-ATTENTION**: `!` jumps to the next ERROR, RED or waiting Human eval; `b` follows a blocked eval to its upstream blocker.
@@ -41,7 +43,7 @@ What a person can do in the desktop app, from the app's real behaviour. Each jou
 
 ## Review
 
-- **J-REVIEW-LIST**: the Review screen lists saved requests, starting on the waiting Human reviews of every repository; the selected request previews read-only.
+- **J-REVIEW-LIST**: the Review screen lists saved requests, starting on the waiting Human reviews of every repository on this machine; the selected request previews read-only. A search narrows it to a repository, an eval or a reviewer.
 - **J-REVIEW-OPEN**: Enter opens a request (a Human review is actionable, any other request read-only); the context menu or the palette opens a Human review with Tools focused; Ctrl+O opens a request by ID.
 - **J-REVIEW-SEARCH**: `/` or Ctrl+F searches: free text and `key:value` terms (repo, eval, request, reviewer, tag, kind, status, is), all of which must match; suggestions complete keys and values; Esc closes suggestions, then clears, then returns to the list.
 - **J-REVIEW-PAGE**: PgDn and PgUp page through older and newer requests.
