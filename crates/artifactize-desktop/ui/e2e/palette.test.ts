@@ -132,6 +132,11 @@ describe("command palette", () => {
       browser.execute(() => document.querySelectorAll('[aria-label="Requests"] [role="option"]').length);
     for (let round = 0; round < 2; round += 1) {
       await openId(original.id);
+      // Esc reaches the review only once focus is inside it.
+      await eventually(
+        () => browser.execute(() => !!document.activeElement?.closest('[aria-label="Human review"]')),
+        "focus in the review",
+      );
       await press(browser, ["Escape"], async () => !(await browser.$('[aria-label="Human review"]').isExisting()), "back on the list");
       // The launch searches its own repository; a search without the repo: term finds both.
       const focused = (label: string) => () => browser.execute((name) => document.activeElement?.getAttribute("aria-label") === name, label);

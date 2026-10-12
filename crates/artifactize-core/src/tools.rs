@@ -479,7 +479,12 @@ fn preflight_executable(
         .map_err(|error| error.to_string())?;
     crate::platform::program::resolve(&program, &cwd)
         .map(|_| ())
-        .map_err(|_| format!("Tool executable is unavailable: {command}"))
+        .map_err(|_| {
+            format!(
+                "Tool executable is unavailable: {}",
+                crate::platform::path_text(Path::new(command))
+            )
+        })
 }
 
 async fn invoke(
