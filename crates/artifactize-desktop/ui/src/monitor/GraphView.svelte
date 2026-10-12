@@ -2,6 +2,7 @@
   // The laid-out Run graph and, once an Artifact is zoomed into, its evals as the tree shows
   // them. Nodes are focusable: arrows move between connected Artifacts, Enter or a click zooms
   // in, Esc zooms out. An eval selected here is the tree's selection, so Detail follows it.
+  import { GraphViewState, setGraphViewState } from "./graphView.svelte";
   import { SvelteFlow, Controls, MiniMap, useSvelteFlow, type Edge, type Node } from "@xyflow/svelte";
   import { tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -33,11 +34,13 @@
     onselect: (path: string[]) => void;
     onopen: () => void;
   } = $props();
+  const v = new GraphViewState();
+  setGraphViewState(v);
 
   const flow = useSvelteFlow();
   const nodeTypes = { artifact: ArtifactNode };
-  let canvas = $state<HTMLElement>();
-  let list = $state<HTMLElement>();
+  
+  
   // Lights change in place; positions only come with a new layout. The selection is not part
   // of a node: a node whose selection flips is drawn again and loses focus, so focus (which
   // follows the selection) marks the selected Artifact instead.
@@ -74,13 +77,13 @@
   const evals = $derived(artifact?.children ?? []);
 
   /** The eval the list was last pointed at by a key or a click. */
-  let picked = $state(0);
+  
   /** The eval of the zoomed Artifact the list points at: the tree's selection moves the
    * highlight; when it leaves the evals (a completed Artifact folds in the tree), the
    * highlight stays and Enter selects it again. */
   const index = $derived.by(() => {
     const at = zoomed && selected[0] === zoomed ? evals.findIndex((node) => node.id === selected[1]) : -1;
-    return at >= 0 ? at : Math.min(picked, Math.max(evals.length - 1, 0));
+    return at >= 0 ? at : Math.min(v.picked, Math.max(evals.length - 1, 0));
   });
 
   /** Open the Detail of the highlighted eval, which becomes the selection first. */
@@ -91,13 +94,13 @@
   }
 
   function element(id: string): HTMLElement | null {
-    return canvas?.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${CSS.escape(id)}"]`) ?? null;
+    return v.canvas?.querySelector<HTMLElement>(`.svelte-flow__node[data-id="${CSS.escape(id)}"]`) ?? null;
   }
 
   /** The node is drawn and wholly inside the canvas. */
   function inView(id: string): boolean {
     const box = element(id)?.getBoundingClientRect();
-    const view = canvas?.getBoundingClientRect();
+    const view = v.canvas?.getBoundingClientRect();
     return !!box && !!view && box.left >= view.left && box.right <= view.right && box.top >= view.top && box.bottom <= view.bottom;
   }
 
@@ -131,7 +134,7 @@
     watching = true;
     const step = () => {
       if (held !== null && hidden()) release();
-      if (held === null || !canvas?.isConnected) {
+      if (held === null || !v.canvas?.isConnected) {
         watching = false;
         return;
       }
@@ -143,15 +146,15 @@
 
   /** Put focus back on the held node, or on the canvas while it is not drawn. */
   function restore() {
-    if (held === null || !canvas || hidden()) return;
+    if (held === null || !v.canvas || hidden()) return;
     const target = element(held);
     const active = document.activeElement;
-    if (target && (lost() || active === canvas)) target.focus({ preventScroll: true });
-    else if (!target && lost()) canvas.focus({ preventScroll: true });
+    if (target && (lost() || active === v.canvas)) target.focus({ preventScroll: true });
+    else if (!target && lost()) v.canvas.focus({ preventScroll: true });
   }
 
   /** The graph's screen is not shown (another screen, or a hidden ancestor). */
-  const hidden = () => !active || !canvas || canvas.closest("[hidden]") !== null;
+  const hidden = () => !active || !v.canvas || v.canvas.closest("[hidden]") !== null;
 
   /** Give graph focus to `id` from now on; returns this handoff's number. */
   function hold(id: string): number {
@@ -210,11 +213,11 @@
     release();
     zoomed = id;
     const at = evals.findIndex((node) => node.id === selected[1]);
-    picked = Math.max(at, 0);
-    onselect(evals[picked] ? [id, evals[picked].id] : [id]);
+    v.picked = Math.max(at, 0);
+    onselect(evals[v.picked] ? [id, evals[v.picked].id] : [id]);
     void flow.fitView({ nodes: [{ id }], duration: 250, maxZoom: 1.6, padding: 0.6 });
     await tick();
-    list?.focus();
+    v.list?.focus();
   }
 
   /** Back to the whole graph, keyboard focus on the Artifact through the camera's move. */
@@ -250,7 +253,7 @@
   /** Keys on the canvas: arrows move along edges, Enter zooms in, Esc zooms out. */
   function keydown(event: KeyboardEvent) {
     // On a node, or on the canvas while the held node is not drawn.
-    const focused = nodeOf(event) ?? (event.target === canvas ? (held ?? undefined) : undefined);
+    const focused = nodeOf(event) ?? (event.target === v.canvas ? (held ?? undefined) : undefined);
     if (focused) handle(event, focused);
   }
 
@@ -272,8 +275,8 @@
 
   function listKey(event: KeyboardEvent) {
     const move = (to: number) => {
-      picked = Math.min(Math.max(to, 0), evals.length - 1);
-      if (zoomed && evals[picked]) onselect([zoomed, evals[picked].id]);
+      v.picked = Math.min(Math.max(to, 0), evals.length - 1);
+      if (zoomed && evals[v.picked]) onselect([zoomed, evals[v.picked].id]);
     };
     if (plain(event, "ArrowDown") || plain(event, "j")) move(index + 1);
     else if (plain(event, "ArrowUp") || plain(event, "k")) move(index - 1);
@@ -287,7 +290,7 @@
 
 <div class="graph" class:split={zoomed !== null}>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div class="canvas" bind:this={canvas} {@attach holdFocus} onkeydown={keydown} tabindex="-1">
+  <div class="canvas" bind:this={v.canvas} {@attach holdFocus} onkeydown={keydown} tabindex="-1">
     <SvelteFlow
       bind:nodes
       bind:edges
@@ -320,7 +323,7 @@
         <span class="muted">{artifact.right}</span>
         <button class="button small" onclick={() => void zoomOut()} title="Back to the whole graph">Zoom out <kbd>Esc</kbd></button>
       </header>
-      <ul role="listbox" aria-label="Evals" tabindex="0" bind:this={list} onkeydown={listKey}>
+      <ul role="listbox" aria-label="Evals" tabindex="0" bind:this={v.list} onkeydown={listKey}>
         {#each evals as node, at (node.id)}
           <li
             role="option"
@@ -328,11 +331,11 @@
             class:selected={at === index}
             class="weight-{node.weight}"
             onclick={() => {
-              picked = at;
+              v.picked = at;
               if (zoomed) onselect([zoomed, node.id]);
             }}
             ondblclick={() => {
-              picked = at;
+              v.picked = at;
               openEval();
             }}
             onkeydown={() => {}}

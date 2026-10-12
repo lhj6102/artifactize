@@ -107,7 +107,7 @@ pub struct LaunchView {
     pub reviewer: String,
     /// The review list's first search.
     pub search: String,
-    pub request: Option<String>,
+    pub request: Option<crate::ids::RequestKey>,
 }
 
 #[tauri::command]
@@ -119,6 +119,6 @@ pub fn launch(app: tauri::State<'_, App>) -> Result<LaunchView, Failure> {
         state: artifactize_tools::files::path_text(&launch.state),
         reviewer: launch.reviewer.to_string(),
         search: launch.search.clone(),
-        request: launch.request.as_ref().map(ToString::to_string),
+        request: launch.request.clone().map(Into::into),
     })
 }

@@ -630,12 +630,13 @@ pub async fn human_release(
 /// prompt.
 #[tauri::command]
 #[specta::specta]
-pub fn human_taken(app: tauri::State<'_, App>) -> Vec<String> {
+pub fn human_taken(app: tauri::State<'_, App>) -> Vec<RequestKey> {
     app.human
         .taken
         .lock()
         .expect("taken lock")
         .iter()
-        .map(ToString::to_string)
+        .cloned()
+        .map(RequestKey::from)
         .collect()
 }

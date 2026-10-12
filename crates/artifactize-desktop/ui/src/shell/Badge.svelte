@@ -4,10 +4,11 @@
   import { tone } from "./tone";
 
   let { counts, limit }: { counts: Count[]; limit?: number } = $props();
+  const shown = $derived(counts.slice(0, limit ?? counts.length));
 </script>
 
 <span class="badge">
-  {#each counts.slice(0, limit ?? counts.length) as count (count.mark.status)}
+  {#each shown as count (count.mark.status)}
     <span class={tone(count.mark.status)} title={count.mark.status}>{count.mark.glyph}{count.count}</span>
   {/each}
 </span>

@@ -34,7 +34,7 @@ pub enum Opened {
     Local {
         handle: TranscriptHandle,
         /// The session id, which change hints name.
-        session: String,
+        session: crate::ids::SessionKey,
     },
     /// Why the conversation cannot be shown.
     Unavailable { text: String },
@@ -92,7 +92,7 @@ pub async fn transcript_open(
             .map(|entry| (handle, entry.live.clone(), entry.stamp == stamp))
     });
     if let Some((handle, live, true)) = &current {
-        let session = live.lock().await.source.reference.session_id.to_string();
+        let session = live.lock().await.source.reference.session_id.clone().into();
         return Ok(Opened::Local {
             handle: *handle,
             session,
@@ -111,7 +111,7 @@ pub async fn transcript_open(
                 entry.stamp = stamp;
                 return Ok(Opened::Local {
                     handle: *handle,
-                    session: source.reference.session_id.to_string(),
+                    session: source.reference.session_id.clone().into(),
                 });
             }
         }
@@ -124,7 +124,7 @@ pub async fn transcript_open(
     Ok(match resolved {
         Ok(live::Resolution::Local(source)) => {
             let handle = TranscriptHandle::allocate(&app.transcripts.next);
-            let session = source.reference.session_id.to_string();
+            let session = source.reference.session_id.clone().into();
             let live = Live::new(handle.number(), source);
             open.insert(
                 handle,

@@ -1,5 +1,6 @@
 <script lang="ts">
   // Quitting with claims the standalone review took and did not submit: keep or release them.
+  import { LeaveDialogState, setLeaveDialogState } from "./leaveDialog.svelte";
   import { AlertDialog } from "bits-ui";
   import { commands, call, message, nextJob } from "../ipc/client";
   import { composing } from "../shell/keys";
@@ -9,25 +10,27 @@
     onstay,
     onleave,
   }: { taken: string[] | null; onstay: () => void; onleave: () => void } = $props();
+  const l = new LeaveDialogState();
+  setLeaveDialogState(l);
 
-  let working = $state(false);
-  let error = $state<string | null>(null);
+  
+  
 
   async function release() {
-    working = true;
+    l.working = true;
     try {
       const acted = await call(commands.humanRelease(taken ?? [], nextJob()));
-      if (acted.notice.error) error = acted.notice.text;
+      if (acted.notice.error) l.error = acted.notice.text;
       else onleave();
     } catch (failure) {
-      error = message(failure);
+      l.error = message(failure);
     } finally {
-      working = false;
+      l.working = false;
     }
   }
 
   function keydown(event: KeyboardEvent) {
-    if (working || composing(event)) return;
+    if (l.working || composing(event)) return;
     if (event.key === "k") onleave();
     else if (event.key === "u") void release();
     else return;
@@ -46,11 +49,11 @@
       <ul>
         {#each taken ?? [] as id (id)}<li><code>{id}</code></li>{/each}
       </ul>
-      {#if error}<p class="error" role="alert">{error}</p>{/if}
+      {#if l.error}<p class="error" role="alert">{l.error}</p>{/if}
       <div class="dialog-actions">
         <AlertDialog.Cancel class="button">Stay <kbd>Esc</kbd></AlertDialog.Cancel>
-        <button class="button" disabled={working} onclick={() => void release()}>Release and quit <kbd>u</kbd></button>
-        <AlertDialog.Action class="button primary" disabled={working} onclick={onleave}>Keep and quit <kbd>k</kbd></AlertDialog.Action>
+        <button class="button" disabled={l.working} onclick={() => void release()}>Release and quit <kbd>u</kbd></button>
+        <AlertDialog.Action class="button primary" disabled={l.working} onclick={onleave}>Keep and quit <kbd>k</kbd></AlertDialog.Action>
       </div>
     </AlertDialog.Content>
   </AlertDialog.Portal>

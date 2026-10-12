@@ -1,5 +1,6 @@
 <script lang="ts">
   // Every repository and worktree in the state; selecting one reads its Runs.
+  import { ScopePaneState, setScopePaneState } from "./scopePane.svelte";
   import { getAppState } from "../shell/app.svelte";
   import type { ScopeRow } from "../ipc/client";
   import Panel from "../shell/Panel.svelte";
@@ -18,17 +19,19 @@
     onfocus: () => void;
     onnext: () => void;
   } = $props();
+  const sp = new ScopePaneState();
+  setScopePaneState(sp);
   const { browse } = getAppState();
 
   const rows = $derived(browse.view?.scopes ?? []);
   /** The highlighted row: the selected scope, or a fold row the keys moved to. */
-  let cursor = $state<number | null>(null);
-  const index = $derived(cursor ?? Math.max(rows.findIndex((row) => row.selected), 0));
+  
+  const index = $derived(sp.cursor ?? Math.max(rows.findIndex((row) => row.selected), 0));
 
   async function choose(at: number) {
     const row = rows[at];
     if (!row) return;
-    cursor = row.fold ? at : null;
+    sp.cursor = row.fold ? at : null;
     if (!row.fold && !row.selected) await browse.navigate({ scope: row.scope });
   }
 

@@ -1,6 +1,7 @@
 <script lang="ts">
   // The one Human review component, shared by the monitor's Detail and the Review screen:
   // instruction first, then CLAIM → REVIEW with tools, output and the GREEN/RED fields.
+  import { HumanDetailState, setHumanDetailState } from "./humanDetail.svelte";
   import { onMount, tick } from "svelte";
   import { onStateChanged, type Settled } from "../ipc/client";
   import type { Review } from "./review.svelte";
@@ -24,12 +25,14 @@
     /** A submission settled the request, published or saved locally only. */
     onsubmitted?: (settled: Settled) => void;
   } = $props();
+  const h = new HumanDetailState();
+  setHumanDetailState(h);
 
   /** Rows the instruction keeps once tools and fields take the body. */
   const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-  let now = $state(Date.now());
-  let root = $state<HTMLElement>();
-  let instruction = $state<HTMLElement>();
+  
+  
+  
 
   const view = $derived(review.view);
   const expanded = $derived(review.expanded || review.technical);
@@ -43,13 +46,13 @@
     void review.load();
     // Waiting time and the busy spinner redraw without reading the state.
     const clock = setInterval(() => {
-      now = Date.now();
+      h.now = Date.now();
       if (!review.busy) void review.load(false);
     }, 1000);
     // A settlement or claim elsewhere shows on the next read; an open form is set aside.
     const stop = onStateChanged(() => void review.load());
     // Tools that already took focus (a reopened request with Tools focused) keep it.
-    if (root && !root.contains(document.activeElement)) root.focus();
+    if (h.root && !h.root.contains(document.activeElement)) h.root.focus();
     return () => {
       clearInterval(clock);
       stop();
@@ -69,11 +72,11 @@
       return;
     }
     await tick();
-    if (root && !root.contains(document.activeElement)) root.focus();
+    if (h.root && !h.root.contains(document.activeElement)) h.root.focus();
   }
 
   function scrollInstruction(rows: number) {
-    instruction?.scrollBy({ top: rows * 20 });
+    h.instruction?.scrollBy({ top: rows * 20 });
   }
 
   function keydown(event: KeyboardEvent) {
@@ -151,7 +154,7 @@
 <!-- The review takes focus so its letter keys work before any control is chosen; keys from
      its controls and fields bubble up here. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-<section class="human" tabindex="0" aria-label="Human review" bind:this={root} onkeydown={keydown}>
+<section class="human" tabindex="0" aria-label="Human review" bind:this={h.root} onkeydown={keydown}>
   {#if !view}
     <p class="muted">{review.notice?.text ?? "Loading…"}</p>
   {:else}
@@ -175,7 +178,7 @@
         tabindex="0"
         role="region"
         aria-label="Instruction"
-        bind:this={instruction}
+        bind:this={h.instruction}
         onfocusin={() => {
           if (!review.editing) review.area = "instruction";
         }}
@@ -250,8 +253,8 @@
     <footer>
       {#if review.busy}
         <p class="busy" role="status">
-          {SPINNER[Math.floor((now - review.busy.since) / 100) % SPINNER.length]}
-          {review.busy.label}… {Math.floor((now - review.busy.since) / 1000)}s
+          {SPINNER[Math.floor((h.now - review.busy.since) / 100) % SPINNER.length]}
+          {review.busy.label}… {Math.floor((h.now - review.busy.since) / 1000)}s
           <button class="button small" onclick={() => review.cancel()}>Cancel <kbd>Esc</kbd></button>
         </p>
       {:else if review.notice}

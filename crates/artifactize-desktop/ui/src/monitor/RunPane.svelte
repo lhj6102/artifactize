@@ -1,6 +1,7 @@
 <script lang="ts">
   // The selected Run: its headline, what needs attention, and the Artifacts and evals as a tree
   // or as a graph of Artifacts (`v` switches; the tree is the fully keyboard-driven view).
+  import { RunPaneState, setRunPaneState } from "./runPane.svelte";
   import { ContextMenu } from "bits-ui";
   import { getAppState } from "../shell/app.svelte";
   import { type Tree, visible, find } from "./tree.svelte";
@@ -36,6 +37,8 @@
     onback: () => void;
     onattention: () => void;
   } = $props();
+  const rp = new RunPaneState();
+  setRunPaneState(rp);
   const { browse } = getAppState();
 
   const run = $derived(browse.view?.run ?? null);
@@ -43,24 +46,24 @@
   const rows = $derived(visible(nodes, tree.opened));
   const upstream = $derived(tree.upstream(nodes));
   const selectedId = $derived(tree.selected.join("/"));
-  let list = $state<HTMLElement>();
-  let offscreen = $state({ above: 0, below: 0 });
+  
+  
 
   const rowId = (path: string[]) => `tree-${path.join("/").replace(/[^A-Za-z0-9_-]/g, "_")}`;
 
   /** Count marked upstream rows outside the visible part of the tree. */
   function measure() {
-    if (!list) return;
-    const view = list.closest(".body")?.getBoundingClientRect();
+    if (!rp.list) return;
+    const view = rp.list.closest(".body")?.getBoundingClientRect();
     if (!view) return;
     let above = 0;
     let below = 0;
-    for (const row of list.querySelectorAll<HTMLElement>("[data-upstream]")) {
+    for (const row of rp.list.querySelectorAll<HTMLElement>("[data-upstream]")) {
       const box = row.getBoundingClientRect();
       if (box.bottom <= view.top) above += 1;
       else if (box.top >= view.bottom) below += 1;
     }
-    offscreen = { above, below };
+    rp.offscreen = { above, below };
   }
 
   /** Count again whenever the rows or the marked upstream change. */
@@ -142,7 +145,7 @@
         {/if}
       </ul>
     {/if}
-    {#if offscreen.above > 0}<div class="offscreen">↑{offscreen.above} above</div>{/if}
+    {#if rp.offscreen.above > 0}<div class="offscreen">↑{rp.offscreen.above} above</div>{/if}
     <ContextMenu.Root>
       <ContextMenu.Trigger>
         {#snippet child({ props })}
@@ -153,7 +156,7 @@
             aria-label="Artifacts and evals"
             tabindex="0"
             aria-activedescendant={rows.length ? rowId(tree.selected) : undefined}
-            bind:this={list}
+            bind:this={rp.list}
             onscroll={measure}
             {@attach scrollTo(() => `[data-path="${CSS.escape(selectedId)}"]`)}
             {@attach remeasure}
@@ -234,7 +237,7 @@
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu.Root>
-    {#if offscreen.below > 0}<div class="offscreen">↑{offscreen.below} below</div>{/if}
+    {#if rp.offscreen.below > 0}<div class="offscreen">↑{rp.offscreen.below} below</div>{/if}
   {/if}
 </Panel>
 
