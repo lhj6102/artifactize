@@ -1,4 +1,6 @@
 //! Pure projections of saved state for the monitor screens.
+mod graph;
+pub use graph::{Graph, GraphEdge, GraphNode, Light, graph};
 mod node_id;
 pub use node_id::NodeId;
 mod states;
@@ -474,6 +476,7 @@ pub fn run_node(run: &RunView) -> Node {
         compact: String::new(),
         changed: false,
         upstream: Vec::new(),
+        dependency: false,
         children: Vec::new(),
     }
 }

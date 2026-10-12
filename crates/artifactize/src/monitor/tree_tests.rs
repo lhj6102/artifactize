@@ -1541,3 +1541,117 @@ async fn detail_shows_waits_for_as_a_section_with_pending_evals_behind_w() {
     assert!(text.contains("◐ x  running"), "{text}");
     assert!(!text.contains("w shows"), "{text}");
 }
+
+fn lit(graph: &Graph) -> Vec<(String, Light)> {
+    graph
+        .nodes
+        .iter()
+        .map(|node| (node.name.to_string(), node.light))
+        .collect()
+}
+
+fn lit_edges(graph: &Graph) -> Vec<(String, String, Light, bool)> {
+    graph
+        .edges
+        .iter()
+        .map(|edge| {
+            (
+                edge.from.to_string(),
+                edge.to.to_string(),
+                edge.light,
+                edge.dependency,
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn the_graph_lights_artifacts_with_the_five_states_of_the_tree() {
+    use Light::{Active, Blocked, Failed, Green, Waiting};
+    let started = json!({"startedAt":"2026-01-01T00:08:00Z"});
+    // code-style ← cli ← docs: statuses, then the three lights.
+    for (statuses, lights) in [
+        // A RED upstream blocks everything after it.
+        (["RED", "QUEUED", "QUEUED"], [Failed, Blocked, Blocked]),
+        // An ERROR upstream: the tree says "waits for … (retry first)", yet nothing proceeds.
+        (["ERROR", "QUEUED", "QUEUED"], [Failed, Blocked, Blocked]),
+        // Upstream in progress: downstream waits, which is not blocked.
+        (["RUNNING", "QUEUED", "QUEUED"], [Active, Waiting, Waiting]),
+        (
+            ["GREEN", "WAITING_HUMAN", "QUEUED"],
+            [Green, Active, Waiting],
+        ),
+        // Queued with nothing upstream holding it: runnable, still waiting.
+        (["GREEN", "GREEN", "QUEUED"], [Green, Green, Waiting]),
+        (["GREEN", "GREEN", "GREEN"], [Green, Green, Green]),
+    ] {
+        let nodes = chain(true, statuses.map(|status| (status, started.clone())));
+        let graph = graph(&nodes);
+        let names = ["code-style", "cli", "docs"].map(String::from);
+        assert_eq!(
+            lit(&graph),
+            names.iter().cloned().zip(lights).collect::<Vec<_>>(),
+            "{statuses:?}"
+        );
+        // Without dependency evals, each edge takes its upstream Artifact's light.
+        assert_eq!(
+            lit_edges(&graph),
+            vec![
+                ("code-style".into(), "cli".into(), lights[0], false),
+                ("cli".into(), "docs".into(), lights[1], false),
+            ],
+            "{statuses:?}"
+        );
+    }
+}
+
+#[test]
+fn a_dependency_eval_lights_its_edge_and_other_edges_follow_their_upstream() {
+    use Light::{Active, Failed, Green, Waiting};
+    // app depends on lib through a dependency eval and is gated on base by its components.
+    let definitions = definitions(
+        &[(&["base"], &[]), (&["lib"], &[]), (&["app"], &[0])],
+        vec![
+            runtime("base/check"),
+            runtime("lib/check"),
+            runtime("app/check"),
+            dependency("app/needs-lib", &["lib"]),
+        ],
+    );
+    let lit_run = |statuses: [&str; 4]| {
+        let requests = ["base/check", "lib/check", "app/check", "app/needs-lib"]
+            .into_iter()
+            .zip(statuses)
+            .map(|(eval, status)| request(eval, status, json!({})))
+            .collect();
+        let (run, requests) = saved(definitions.clone(), true, requests);
+        graph(&tree(&run, &requests, now()))
+    };
+    // lib GREEN yet its dependency eval RED: the edge shows the dependency eval.
+    let graph = lit_run(["RUNNING", "GREEN", "QUEUED", "RED"]);
+    assert_eq!(
+        lit(&graph),
+        [
+            ("base".into(), Active),
+            ("lib".into(), Green),
+            ("app".into(), Failed)
+        ]
+    );
+    assert_eq!(
+        lit_edges(&graph),
+        [
+            ("base".into(), "app".into(), Active, false),
+            ("lib".into(), "app".into(), Failed, true),
+        ]
+    );
+    // Both GREEN: the derived dependency eval and the gate edge are GREEN.
+    let graph = lit_run(["GREEN", "GREEN", "QUEUED", "GREEN"]);
+    assert_eq!(
+        lit_edges(&graph),
+        [
+            ("base".into(), "app".into(), Green, false),
+            ("lib".into(), "app".into(), Green, true),
+        ]
+    );
+    assert_eq!(graph.nodes[2].light, Waiting, "app/check is still queued");
+}

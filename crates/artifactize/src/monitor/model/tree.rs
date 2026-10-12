@@ -84,6 +84,8 @@ pub struct Node {
     pub changed: bool,
     /// Eval rows: every dependency Artifact, unmet ones first in X order.
     pub upstream: Vec<Upstream>,
+    /// A dependency eval row: its verdict derives from its `depends_on` Artifacts.
+    pub dependency: bool,
     /// Timed eval rows, so a cached tree can redraw its elapsed times.
     pub clock: Option<Clock>,
     pub children: Vec<Node>,
@@ -392,6 +394,7 @@ fn eval_node<'a>(states: &States<'a>, eval: &'a EvalId, now: OffsetDateTime) -> 
         tone,
         weight,
         name: local(eval).to_owned(),
+        dependency: states.index.dependency.contains(eval),
         marks: if states.index.dependency.contains(eval) {
             "  [dep]".into()
         } else {
@@ -597,6 +600,7 @@ fn artifact_node<'a>(
         right,
         changed: false,
         upstream: Vec::new(),
+        dependency: false,
         children,
     }
 }

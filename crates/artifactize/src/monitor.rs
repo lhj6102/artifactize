@@ -30,9 +30,10 @@ pub use evidence::{Evidence, EvidenceStamp, evidence};
 pub use fold::upstream;
 pub use loader::{Input, Loader, Origin, Page, Snapshot};
 pub use model::{
-    Activity, Busy, Clock, Completion, Detail, EvalView, Kind, Node, NodeId, NotRun, Progress,
-    Queue, RunRow, Section, Segment, Source, Status, Strip, Target, Tone, Upstream, Waits, Weight,
-    counts, detail, duration, glyph, progress, run_node, run_rows, strip, tree, upstream_index,
+    Activity, Busy, Clock, Completion, Detail, EvalView, Graph, GraphEdge, GraphNode, Kind, Light,
+    Node, NodeId, NotRun, Progress, Queue, RunRow, Section, Segment, Source, Status, Strip, Target,
+    Tone, Upstream, Waits, Weight, counts, detail, duration, glyph, graph, progress, run_node,
+    run_rows, strip, tree, upstream_index,
 };
 pub(crate) use rows::{fit, plain, width};
 pub use terminal::run;
