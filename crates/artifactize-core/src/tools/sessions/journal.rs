@@ -137,10 +137,11 @@ pub(super) fn allocate(root: &Path) -> io::Result<(platform::PrivateTempDir, std
     // The allocation lock makes an owner-less directory unambiguously abandoned.
     for entry in std::fs::read_dir(root)? {
         let entry = entry?;
-        if !entry.file_type()?.is_dir() {
+        let path = entry.path();
+        // Through the platform's no-follow classification: a link is not a directory.
+        if !matches!(platform::path_kind(&path)?, platform::FileKind::Directory) {
             continue;
         }
-        let path = entry.path();
         let record = match std::fs::read(path.join("owner.json")) {
             Ok(bytes) => Some(serde_json::from_slice::<Owner>(&bytes).map_err(io::Error::other)?),
             Err(error) if error.kind() == io::ErrorKind::NotFound => None,

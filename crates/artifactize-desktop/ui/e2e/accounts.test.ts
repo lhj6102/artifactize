@@ -106,6 +106,8 @@ describe("accounts and models", () => {
     const address = readFileSync(opened, "utf8").trim().split("\n").at(-1)!;
     const state = new URL(address).searchParams.get("state");
     assert.ok(state, "the sign-in address names a state");
+    // The same address is shown in Settings, for a browser that did not open.
+    assert.ok((await text()).includes(address), "the sign-in address is displayed");
     await browser.$("#codex-redirect").setValue(`http://localhost:1455/auth/callback?code=e2e-code&state=${state}`);
     await browser.$("button=Finish sign-in").click();
     await eventually(async () => (await status()).startsWith("Signed in"), "signed in");
