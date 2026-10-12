@@ -266,6 +266,9 @@ macro_rules! status {
             $(#[serde(rename = $text)] $variant),+
         }
         impl $name {
+            /// Every value, in declaration order.
+            pub const ALL: &[Self] = &[$(Self::$variant),+];
+
             pub fn as_str(self) -> &'static str {
                 match self {
                     $(Self::$variant => $text),+

@@ -32,6 +32,9 @@ struct Filter<'a> {
     repo: Option<&'a Path>,
     waiting: bool,
     session: Option<&'a str>,
+    statuses: &'a [crate::types::RequestStatus],
+    /// A bounded slice of the ordered requests: offset and count.
+    slice: Option<(u64, u32)>,
 }
 
 pub async fn read_requests(state: &Path, run: Option<&str>) -> Result<Vec<RequestView>, String> {
@@ -131,6 +134,25 @@ pub async fn read_waiting_originals(
     Ok(originals)
 }
 
+/// Up to `limit` requests with one of `statuses` (any status when empty) from position
+/// `offset` of every Run's requests, newest Run first, each with its Run's repository.
+pub async fn read_request_batch(
+    state: &Path,
+    statuses: &[crate::types::RequestStatus],
+    offset: u64,
+    limit: u32,
+) -> Result<Vec<(RequestView, std::path::PathBuf)>, String> {
+    read_with_repo(
+        state,
+        Filter {
+            statuses,
+            slice: Some((offset, limit)),
+            ..Filter::default()
+        },
+    )
+    .await
+}
+
 /// WAITING_HUMAN requests, newest Run first, from the canonical `repo`'s Runs or every Run.
 pub async fn read_waiting(state: &Path, repo: Option<&Path>) -> Result<Vec<RequestView>, String> {
     read(
@@ -205,6 +227,8 @@ async fn read_with_repo(
         .transpose()?;
     let repo = repo.map(|repo| crate::platform::path_text(&repo));
     let waiting = filter.waiting;
+    let statuses = filter.statuses.to_vec();
+    let slice = filter.slice;
     let session = filter
         .session
         .map(str::parse::<crate::types::SessionId>)
@@ -222,6 +246,8 @@ async fn read_with_repo(
                 repo,
                 waiting,
                 session,
+                statuses,
+                slice,
             };
             let rows = rows(&transaction, &filter)?;
             let ids: std::collections::BTreeSet<_> = rows.iter().map(|row| &row.run).collect();
@@ -272,6 +298,8 @@ pub(super) struct Query {
     pub repo: Option<String>,
     pub waiting: bool,
     pub session: Option<crate::types::SessionId>,
+    pub statuses: Vec<crate::types::RequestStatus>,
+    pub slice: Option<(u64, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -310,10 +338,28 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
     if filter.waiting {
         predicates.push("q.status='WAITING_HUMAN'".into());
     }
+    if !filter.statuses.is_empty() {
+        let marks = vec!["?"; filter.statuses.len()].join(",");
+        predicates.push(format!("q.status IN ({marks})"));
+        values.extend(
+            filter
+                .statuses
+                .iter()
+                .map(|status| rusqlite::types::Value::from(status.as_str().to_owned())),
+        );
+    }
     let predicate = if predicates.is_empty() {
         String::new()
     } else {
         format!("WHERE {}", predicates.join(" AND "))
+    };
+    let limit = match filter.slice {
+        Some((offset, count)) => {
+            values.push(i64::from(count).into());
+            values.push(i64::try_from(offset).unwrap_or(i64::MAX).into());
+            " LIMIT ? OFFSET ?"
+        }
+        None => "",
     };
     let order = if filter.run.is_some() {
         "q.ordinal"
@@ -325,7 +371,7 @@ pub(super) fn rows(db: &rusqlite::Connection, filter: &Query) -> Result<Vec<Row>
         FROM requests q JOIN runs r ON r.id=q.run_id
         LEFT JOIN executions e ON e.id=q.execution_id
         LEFT JOIN requests h ON h.id=json_extract(e.data,'$.provenance.requestId') AND h.claimed_by IS NOT NULL
-        {predicate} ORDER BY {order}"
+        {predicate} ORDER BY {order}{limit}"
     ))?;
     Ok(statement
         .query_map(rusqlite::params_from_iter(values), |row| {

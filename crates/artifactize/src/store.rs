@@ -38,7 +38,7 @@ pub use receipts::{
 };
 pub(crate) use requests::read_request_repo;
 pub use requests::{
-    RequestView, read_original, read_request, read_requests, read_run_requests,
+    RequestView, read_original, read_request, read_request_batch, read_requests, read_run_requests,
     read_session_request, read_waiting, read_waiting_originals,
 };
 
