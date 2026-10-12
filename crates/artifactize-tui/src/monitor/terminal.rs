@@ -13,6 +13,25 @@ impl Drop for InputGuard {
     }
 }
 
+/// What the next snapshot read must cover. Wanting more never lowers what is already wanted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Wanted {
+    /// No read is due.
+    Nothing,
+    /// A read that may reuse the snapshot on screen: navigation only moved within it.
+    Changes,
+    /// A read of everything.
+    Everything,
+    /// A read of everything after the reader's caches were dropped.
+    Resynced,
+}
+
+impl Wanted {
+    fn at_least(&mut self, wanted: Self) {
+        *self = (*self).max(wanted);
+    }
+}
+
 pub(crate) async fn suspend<T>(
     terminal: &mut ratatui::DefaultTerminal,
     child: impl Future<Output = T>,
@@ -69,9 +88,7 @@ async fn watch(
     let mut pending: Option<Pin<Box<dyn Future<Output = review::Outcome>>>> = None;
     let mut action = Action::Refresh;
     let mut snapshot_job = None;
-    let mut dirty = false;
-    let mut full = false;
-    let mut resync = false;
+    let mut wanted = Wanted::Nothing;
     let mut session_job: Option<
         tokio::task::JoinHandle<(super::session::Job, crate::agent::session::live::Window)>,
     > = None;
@@ -93,8 +110,11 @@ async fn watch(
                 return Ok(());
             }
             Action::Refresh | Action::Review(review::Action::Refresh) => {
-                dirty = true;
-                full |= !std::mem::take(&mut monitor.navigation);
+                wanted.at_least(if std::mem::take(&mut monitor.navigation) {
+                    Wanted::Changes
+                } else {
+                    Wanted::Everything
+                });
                 tick.reset();
             }
             Action::OpenDetail => monitor.open_detail().await,
@@ -109,11 +129,10 @@ async fn watch(
             }
             _ => {}
         }
-        if dirty && snapshot_job.is_none() {
-            snapshot_job = monitor.start_refresh(full, resync);
-            dirty = false;
-            full = false;
-            resync = false;
+        if wanted > Wanted::Nothing && snapshot_job.is_none() {
+            snapshot_job =
+                monitor.start_refresh(wanted >= Wanted::Everything, wanted == Wanted::Resynced);
+            wanted = Wanted::Nothing;
         }
         monitor.sync_peek().await;
         terminal
@@ -156,8 +175,7 @@ async fn watch(
                 snapshot_job = None;
                 let completed = crate::task::joined(outcome).map_err(|error| error.to_string())?;
                 if !monitor.finish_refresh(completed).await {
-                    dirty = true;
-                    full = true;
+                    wanted.at_least(Wanted::Everything);
                 }
                 Action::None
             }
@@ -202,14 +220,11 @@ async fn watch(
             _ = tick.tick() => Action::None,
             change = changes.next() => match change {
                 crate::changes::Change::StateInvalidated => {
-                    dirty = true;
-                    full = true;
+                    wanted.at_least(Wanted::Everything);
                     Action::None
                 }
                 crate::changes::Change::Resync => {
-                    dirty = true;
-                    full = true;
-                    resync = true;
+                    wanted.at_least(Wanted::Resynced);
                     Action::None
                 }
                 crate::changes::Change::SessionInvalidated(id) => {

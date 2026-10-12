@@ -1,7 +1,7 @@
 use std::{
     fs,
     path::PathBuf,
-    process::{Child, Command, Stdio},
+    process::{Child, Command},
     time::{Duration, Instant},
 };
 
@@ -189,13 +189,13 @@ fn finish(child: Child) -> (Option<i32>, Value) {
 #[tokio::test]
 async fn review_claims_runs_tools_and_submits_while_verify_waits() {
     let fixture = Fixture::new();
-    let child = fixture
-        .command()
-        .args(["verify", "--all", "--timeout-ms", "30000", "--json"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let child = support::os::start(fixture.command().args([
+        "verify",
+        "--all",
+        "--timeout-ms",
+        "30000",
+        "--json",
+    ]));
     let id = fixture.waiting().await;
     let mut review = Review::new(
         fixture.state.clone(),
@@ -326,11 +326,11 @@ async fn review_claims_runs_tools_and_submits_while_verify_waits() {
 #[tokio::test]
 async fn review_respects_other_claims_and_releases_its_own() {
     let fixture = Fixture::new();
-    let output = fixture
-        .command()
-        .args(["verify", "--all", "--timeout-ms", "1"])
-        .output()
-        .unwrap();
+    let output = support::os::run(
+        fixture
+            .command()
+            .args(["verify", "--all", "--timeout-ms", "1"]),
+    );
     // The Human wait times out at once; the request stays open.
     assert_eq!(output.status.code(), Some(3));
     let id = fixture.waiting().await;
@@ -396,7 +396,7 @@ fn review_rejects_unusable_options_before_taking_the_terminal() {
         (vec!["review", "missing"], "Review request not found."),
         (vec!["review", "--reviewer", " "], "reviewer id"),
     ] {
-        let output = fixture.command().args(&args).output().unwrap();
+        let output = support::os::run(fixture.command().args(&args));
         assert_eq!(output.status.code(), Some(2), "{args:?}");
         // --json reports errors on stdout.
         let text = [output.stdout, output.stderr].concat();

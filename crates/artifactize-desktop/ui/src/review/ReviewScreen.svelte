@@ -35,46 +35,24 @@
   /** The search every launch starts from: waiting Human reviews, of `--repo` when given. */
   const WAITING = "kind:human status:waiting_human";
 
-  /** Where the shown page starts, and where the pages before it started. */
-  
-  
-  /** The last search answer, replaced whole; what is shown of it is derived. */
-  
+  /** What is shown of the last search answer is derived from it. */
   const rows = $derived(r.results?.rows ?? []);
   const next = $derived(r.results?.next ?? null);
   const waiting = $derived(r.results?.waiting ?? true);
   const invalid = $derived(r.results?.error ?? null);
   const loaded = $derived(r.results !== null);
-  
-  
-  
-  /** The read-only Detail of an open request that is not a Human review. */
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  /** The state generation the list and the open review were read from. */
-  let generation: number | null = null;
-  /** Each read supersedes the ones before it, so a slow answer never shows an older query. */
-  let reads = 0;
 
   const selected = $derived(rows[r.index] ?? null);
   const page = $derived(r.previous.length + 1);
   const scope = $derived(r.query.trim() === "" ? "all requests" : r.query.trim() === WAITING ? "waiting Human reviews" : r.query.trim());
 
   async function load(reload = true) {
-    const read = ++reads;
+    const read = ++r.reads;
     try {
       const found = await call(commands.reviewSearch(r.query, r.start, reload));
-      if (read !== reads) return;
+      if (read !== r.reads) return;
+      // The state generation the list and the open review were read from.
+      const generation = r.results?.generation ?? null;
       if (generation !== null && found.generation !== generation) {
         // The state was replaced: the open review, its drafts and the Preview are of the old one.
         r.review = null;
@@ -82,7 +60,6 @@
         r.preview = null;
         r.focus = "list";
       }
-      generation = found.generation;
       const id = selected?.id;
       r.results = found;
       r.error = null;
@@ -90,25 +67,21 @@
       r.index = kept >= 0 ? kept : Math.min(r.index, Math.max(rows.length - 1, 0));
       if (reload && r.record?.request) void reopen(r.record.request);
     } catch (failure) {
-      if (read === reads) r.error = message(failure);
+      if (read === r.reads) r.error = message(failure);
     }
   }
-
-  /** The query last searched; a changed query searches again from the newest page. */
-  let searched = r.query;
-  let typing: ReturnType<typeof setTimeout> | undefined;
 
   /** Every change of the query, typed or set by a command: a pause in typing searches. */
   function setQuery(text: string) {
     r.query = text;
-    clearTimeout(typing);
-    if (text !== searched) typing = setTimeout(() => void research(), 120);
+    clearTimeout(r.typing);
+    if (text !== r.searched) r.typing = setTimeout(() => void research(), 120);
   }
 
   /** Search the query from the newest page now, unless it already was. */
   async function research() {
-    if (r.query === searched) return;
-    searched = r.query;
+    if (r.query === r.searched) return;
+    r.searched = r.query;
     r.start = 0;
     r.previous = [];
     r.index = 0;
@@ -138,7 +111,7 @@
     const stop = onStateChanged(() => void load());
     return () => {
       clearInterval(clock);
-      clearTimeout(typing);
+      clearTimeout(r.typing);
       stop();
     };
   });

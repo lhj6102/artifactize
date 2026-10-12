@@ -23,9 +23,16 @@ export class ReviewScreenState {
   field = $state<HTMLInputElement>();
   detailPane = $state<HTMLElement>();
   notice = $state<string | null>(null);
+  /** The query last searched; a changed query searches again from the newest page. */
+  searched: string;
+  /** Each read supersedes the ones before it, so a slow answer never shows an older query. */
+  reads = 0;
+  /** The pending search after a pause in typing. */
+  typing: ReturnType<typeof setTimeout> | undefined;
 
   constructor(search: string) {
     this.query = search;
+    this.searched = search;
   }
 }
 

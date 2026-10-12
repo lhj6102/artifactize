@@ -1,7 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Child, Command},
     time::{Duration, Instant},
 };
 
@@ -123,12 +123,7 @@ impl Fixture {
     }
 
     fn json(&self, repo: &Path, args: &[&str], code: i32) -> Value {
-        let output = self
-            .command(repo)
-            .args(args)
-            .arg("--json")
-            .output()
-            .unwrap();
+        let output = support::os::run(self.command(repo).args(args).arg("--json"));
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -181,13 +176,12 @@ fn finish(child: Child) -> std::process::Output {
 async fn live_verify_progress_and_runs_across_repositories() {
     let fixture = Fixture::new();
     let (_, second) = fixture.seed();
-    let child = fixture
-        .command(&fixture.beta)
-        .args(["verify", "--all", "--timeout-ms", "30000"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let child = support::os::start(fixture.command(&fixture.beta).args([
+        "verify",
+        "--all",
+        "--timeout-ms",
+        "30000",
+    ]));
     let deadline = Instant::now() + support::os::patience(Duration::from_secs(15));
     let (live, human) = loop {
         let runs = store::read_runs(&fixture.state, Some(&fixture.beta), 10, 0)
@@ -595,17 +589,17 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
             eval("y", runtime(&support::os::true_program(), &[]), "Check {b}.")]}),
     );
     let verify = |args: &[&str], code: i32| -> String {
-        let output = Command::new(support::os::cli())
-            .env("PATH", support::os::path())
-            .arg("--repo")
-            .arg(&repo)
-            .arg("--state-dir")
-            .arg(&state)
-            .arg("verify")
-            .args(args)
-            .arg("--json")
-            .output()
-            .unwrap();
+        let output = support::os::run(
+            Command::new(support::os::cli())
+                .env("PATH", support::os::path())
+                .arg("--repo")
+                .arg(&repo)
+                .arg("--state-dir")
+                .arg(&state)
+                .arg("verify")
+                .args(args)
+                .arg("--json"),
+        );
         assert_eq!(
             output.status.code(),
             Some(code),
@@ -706,10 +700,9 @@ async fn tree_gates_follow_the_runs_evidence_and_effective_statuses() {
 #[test]
 fn pty_session_restores_the_terminal_on_quit() {
     let root = support::os::tempdir();
-    let both = Command::new(support::os::cli())
-        .args(["--repo", ".", "monitor", "--all"])
-        .output()
-        .unwrap();
+    let both = support::os::run(
+        Command::new(support::os::cli()).args(["--repo", ".", "monitor", "--all"]),
+    );
     assert_eq!(both.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&both.stderr).contains("--repo or --all"));
     let state = root.path().join("state");

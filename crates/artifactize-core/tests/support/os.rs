@@ -396,6 +396,20 @@ pub fn sign_in_as<'a>(command: &'a mut Command, name: &str) -> &'a mut Command {
         .env("USERNAME", name)
 }
 
+/// Run `command` to its end and collect its output.
+pub fn run(command: &mut Command) -> std::process::Output {
+    command.output().expect("the command runs")
+}
+
+/// Start `command` with its output piped, to collect with [`finish`] once it ends.
+pub fn start(command: &mut Command) -> std::process::Child {
+    command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("the command starts")
+}
+
 /// Wait for a spawned `child` to end within the usual patience; a child that does not is killed
 /// and the test fails naming `what`.
 pub fn finish(mut child: std::process::Child, what: &str) -> std::process::Output {
