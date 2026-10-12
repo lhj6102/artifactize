@@ -22,7 +22,8 @@
   --light-green: #16833a;
   --light-active: #c99a06;
   --light-waiting: #9aa1ab;
-  --light-failed: #dc2626;
+  --light-red: #dc2626;
+  --light-error: #7c3aed;
   --light-blocked: #7f1d1d;
   --radius: 8px;
   --gap: 12px;
@@ -55,7 +56,8 @@
     --light-green: #4ac26b;
     --light-active: #e3b341;
     --light-waiting: #8b929e;
-    --light-failed: #f2675d;
+    --light-red: #f2675d;
+    --light-error: #b48cf5;
     --light-blocked: #9b2c2c;
   }
 }
@@ -70,8 +72,11 @@
 .light-waiting {
   --light: var(--light-waiting);
 }
-.light-failed {
-  --light: var(--light-failed);
+.light-red {
+  --light: var(--light-red);
+}
+.light-error {
+  --light: var(--light-error);
 }
 .light-blocked {
   --light: var(--light-blocked);

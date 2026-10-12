@@ -30,7 +30,7 @@ describe("shape", () => {
     const relit: RunGraph = {
       ...graph,
       nodes: [...graph.nodes].reverse().map((node) => ({ ...node, light: "green" })),
-      edges: graph.edges.map((edge) => ({ ...edge, light: "failed" })),
+      edges: graph.edges.map((edge) => ({ ...edge, light: "red" })),
     };
     expect(shape(relit)).toBe(shape(graph));
     expect(shape({ ...graph, edges: graph.edges.slice(1) })).not.toBe(shape(graph));

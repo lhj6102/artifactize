@@ -11,12 +11,13 @@ export const WORDS: Record<Light, string> = {
   green: "GREEN",
   active: "in progress",
   waiting: "waiting",
-  failed: "RED or ERROR",
+  red: "RED",
+  error: "ERROR",
   blocked: "blocked by upstream",
 };
 
 /** Legend order: as a Run goes, then what went wrong. */
-export const LEGEND: Light[] = ["green", "active", "waiting", "failed", "blocked"];
+export const LEGEND: Light[] = ["green", "active", "waiting", "red", "error", "blocked"];
 
 /**
  * What a layout depends on: the Artifacts and the edges between them, never their lights. A

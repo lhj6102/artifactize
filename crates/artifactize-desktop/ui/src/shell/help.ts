@@ -54,6 +54,10 @@ export const HELP: Record<"monitor" | "review", Section[]> = {
         ["Enter / click", "Zoom into the Artifact: its evals"],
         ["↑ / ↓ · Enter", "In the evals: select (Detail follows) / open Detail"],
         ["Esc", "Zoom out, then step back"],
+        [
+          "Colours",
+          "green GREEN · yellow running or waiting for a Human · grey waiting · red RED · purple ERROR · dark red blocked by an upstream RED, ERROR or block",
+        ],
       ],
     },
     HUMAN,

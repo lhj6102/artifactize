@@ -56,11 +56,19 @@ struct Fixture {
 
 /// A repository whose Run waits for the Human sign-off, made by the library's `verify`.
 fn fixture() -> Fixture {
+    fixture_with(&[])
+}
+
+/// The fixture with `extra` Artifacts beside release and ship, as `(folder, index.artf)`.
+fn fixture_with(extra: &[(&str, &str)]) -> Fixture {
     // Below the OS temp root (TMPDIR), as the CLI tests do: token storage refuses Git trees.
     let root = os::tempdir();
     let repo = root.path().join("repo");
     let state = root.path().join("state");
-    for (name, text) in [("release", RELEASE), ("ship", SHIP)] {
+    for (name, text) in [("release", RELEASE), ("ship", SHIP)]
+        .into_iter()
+        .chain(extra.iter().copied())
+    {
         fs::create_dir_all(repo.join(name)).unwrap();
         fs::write(repo.join(name).join("index.artf"), text).unwrap();
     }
@@ -825,4 +833,55 @@ fn the_run_graph_lights_artifacts_and_edges_and_follows_a_submission() {
     // Another Run than the shown one is refused.
     let missing = invoke(&monitor, "run_graph", json!({"run": "run-gone"}));
     assert_eq!(missing.unwrap_err()["kind"], "missing");
+}
+
+#[test]
+fn the_run_graph_lights_an_error_and_blocks_what_follows_it() {
+    // broken's command cannot start: ERROR, not a verdict. after refers to broken.
+    let broken = r#"name = "broken"
+
+[evals.check]
+title = "A command that is not installed"
+profile = { kind = "runtime", command = "artifactize-test-command-that-does-not-exist", args = [] }
+
+[evals.check.payload]
+instruction = """
+Run the check."""
+"#;
+    let after = r#"name = "after"
+
+[evals.check]
+title = "After broken"
+profile = { kind = "runtime", command = "true", args = [] }
+
+[evals.check.payload]
+instruction = """
+Check {broken}."""
+"#;
+    let fixture = fixture_with(&[("broken", broken), ("after", after)]);
+    let monitor = window(&fixture, Mode::Monitor);
+    let view = invoke(&monitor, "browse", json!({"navigate": STILL()})).unwrap();
+    let run = view["selectedRun"].as_str().unwrap().to_owned();
+    let graph = invoke(&monitor, "run_graph", json!({"run": run})).unwrap();
+    let light = |id: &str| {
+        graph["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|node| node["id"] == id)
+            .unwrap_or_else(|| panic!("{id} in {graph}"))["light"]
+            .clone()
+    };
+    assert_eq!(light("a:broken"), "error");
+    assert_eq!(light("a:after"), "blocked");
+    let edge = graph["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|edge| edge["source"] == "a:broken")
+        .unwrap();
+    assert_eq!(
+        edge,
+        &json!({"source": "a:broken", "target": "a:after", "light": "error", "dependency": false})
+    );
 }

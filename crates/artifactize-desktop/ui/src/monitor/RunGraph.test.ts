@@ -144,7 +144,7 @@ describe("RunGraph", () => {
     // Run A lays out at once; Run B's layout waits until the test releases it.
     const runs: Record<string, Graph> = {
       "run-a": graph("active"),
-      "run-b": { ...graph("failed"), run: "run-b", nodes: [{ id: "a:other", name: "other", light: "failed" }], edges: [] },
+      "run-b": { ...graph("red"), run: "run-b", nodes: [{ id: "a:other", name: "other", light: "red" }], edges: [] },
     };
     mockIPC((cmd, args) => (cmd === "run_graph" ? runs[(args as { run: string }).run] : null));
     let release: (() => void) | null = null;
@@ -317,5 +317,31 @@ describe("RunGraph", () => {
     // Before any frame or key: the observer has run by the next microtask checkpoint.
     await Promise.resolve();
     expect(document.activeElement).toBe(element);
+  });
+
+  it("shows ERROR apart from RED, and a legend of all six lights", async () => {
+    setup(() => ({
+      run: "run-a",
+      nodes: [
+        { id: "a:release", name: "release", light: "red" },
+        { id: "a:ship", name: "ship", light: "error" },
+        { id: "a:docs", name: "docs", light: "blocked" },
+      ],
+      edges: [{ source: "a:ship", target: "a:docs", light: "error", dependency: false }],
+    }));
+    await waitFor(() => expect(node("a:ship")).not.toBeNull());
+    expect(node("a:release")?.getAttribute("aria-label")).toBe("release: RED");
+    expect(node("a:ship")?.getAttribute("aria-label")).toBe("ship: ERROR");
+    expect(node("a:ship")?.querySelector(".light-error")).not.toBeNull();
+    expect(node("a:docs")?.getAttribute("aria-label")).toBe("docs: blocked by upstream");
+    const legend = [...screen.getByRole("list", { name: "Legend" }).querySelectorAll("li")];
+    expect(legend.map((item) => item.className.split(" ").find((name) => name.startsWith("light-")))).toEqual([
+      "light-green",
+      "light-active",
+      "light-waiting",
+      "light-red",
+      "light-error",
+      "light-blocked",
+    ]);
   });
 });

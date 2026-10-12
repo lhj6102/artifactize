@@ -268,14 +268,16 @@ export type LaunchView = {
 	request: string | null,
 };
 
-/**  How a node or edge is lit; the frontend maps each to one colour. */
+/**  How a node or edge is lit, in precedence order; the frontend maps each to one colour. */
 export type Light = 
-/**  An eval is RED or ERROR. */
-"failed" | 
-/**  Cannot proceed: an upstream Artifact failed or is itself blocked. */
-"blocked" | 
+/**  An eval's verdict is RED. */
+"red" | 
+/**  An eval failed operationally: ERROR. */
+"error" | 
 /**  Running, or waiting for its Human. */
 "active" | 
+/**  Cannot proceed: an upstream Artifact is RED, ERROR or itself blocked. */
+"blocked" | 
 /**  Runnable but still waiting: queued, or for upstream Artifacts not done yet. */
 "waiting" | 
 /**  Every eval is GREEN. */

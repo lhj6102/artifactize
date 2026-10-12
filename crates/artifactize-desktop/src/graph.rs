@@ -5,16 +5,18 @@ use artifactize::monitor;
 use serde::Serialize;
 use specta::Type;
 
-/// How a node or edge is lit; the frontend maps each to one colour.
+/// How a node or edge is lit, in precedence order; the frontend maps each to one colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Type)]
 #[serde(rename_all = "camelCase")]
 pub enum Light {
-    /// An eval is RED or ERROR.
-    Failed,
-    /// Cannot proceed: an upstream Artifact failed or is itself blocked.
-    Blocked,
+    /// An eval's verdict is RED.
+    Red,
+    /// An eval failed operationally: ERROR.
+    Error,
     /// Running, or waiting for its Human.
     Active,
+    /// Cannot proceed: an upstream Artifact is RED, ERROR or itself blocked.
+    Blocked,
     /// Runnable but still waiting: queued, or for upstream Artifacts not done yet.
     Waiting,
     /// Every eval is GREEN.
@@ -24,9 +26,10 @@ pub enum Light {
 impl From<monitor::Light> for Light {
     fn from(light: monitor::Light) -> Self {
         match light {
-            monitor::Light::Failed => Self::Failed,
-            monitor::Light::Blocked => Self::Blocked,
+            monitor::Light::Red => Self::Red,
+            monitor::Light::Error => Self::Error,
             monitor::Light::Active => Self::Active,
+            monitor::Light::Blocked => Self::Blocked,
             monitor::Light::Waiting => Self::Waiting,
             monitor::Light::Green => Self::Green,
         }
