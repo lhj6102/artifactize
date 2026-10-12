@@ -1566,15 +1566,17 @@ fn lit_edges(graph: &Graph) -> Vec<(String, String, Light, bool)> {
 }
 
 #[test]
-fn the_graph_lights_artifacts_with_the_five_states_of_the_tree() {
-    use Light::{Active, Blocked, Failed, Green, Waiting};
+fn the_graph_lights_artifacts_with_the_six_states_of_the_tree() {
+    use Light::{Active, Blocked, Error, Green, Red, Waiting};
     let started = json!({"startedAt":"2026-01-01T00:08:00Z"});
     // code-style ← cli ← docs: statuses, then the three lights.
     for (statuses, lights) in [
         // A RED upstream blocks everything after it.
-        (["RED", "QUEUED", "QUEUED"], [Failed, Blocked, Blocked]),
-        // An ERROR upstream: the tree says "waits for … (retry first)", yet nothing proceeds.
-        (["ERROR", "QUEUED", "QUEUED"], [Failed, Blocked, Blocked]),
+        (["RED", "QUEUED", "QUEUED"], [Red, Blocked, Blocked]),
+        // ERROR is its own light; downstream of it is blocked too, though the tree says
+        // "waits for … (retry first)".
+        (["ERROR", "QUEUED", "QUEUED"], [Error, Blocked, Blocked]),
+        (["GREEN", "ERROR", "QUEUED"], [Green, Error, Blocked]),
         // Upstream in progress: downstream waits, which is not blocked.
         (["RUNNING", "QUEUED", "QUEUED"], [Active, Waiting, Waiting]),
         (
@@ -1607,7 +1609,7 @@ fn the_graph_lights_artifacts_with_the_five_states_of_the_tree() {
 
 #[test]
 fn a_dependency_eval_lights_its_edge_and_other_edges_follow_their_upstream() {
-    use Light::{Active, Failed, Green, Waiting};
+    use Light::{Active, Error, Green, Red, Waiting};
     // app depends on lib through a dependency eval and is gated on base by its components.
     let definitions = definitions(
         &[(&["base"], &[]), (&["lib"], &[]), (&["app"], &[0])],
@@ -1634,14 +1636,24 @@ fn a_dependency_eval_lights_its_edge_and_other_edges_follow_their_upstream() {
         [
             ("base".into(), Active),
             ("lib".into(), Green),
-            ("app".into(), Failed)
+            ("app".into(), Red)
         ]
     );
     assert_eq!(
         lit_edges(&graph),
         [
             ("base".into(), "app".into(), Active, false),
-            ("lib".into(), "app".into(), Failed, true),
+            ("lib".into(), "app".into(), Red, true),
+        ]
+    );
+    // A dependency eval in ERROR lights its edge ERROR, and its Artifact.
+    let graph = lit_run(["RUNNING", "GREEN", "QUEUED", "ERROR"]);
+    assert_eq!(graph.nodes[2].light, Error);
+    assert_eq!(
+        lit_edges(&graph),
+        [
+            ("base".into(), "app".into(), Active, false),
+            ("lib".into(), "app".into(), Error, true),
         ]
     );
     // Both GREEN: the derived dependency eval and the gate edge are GREEN.
@@ -1654,4 +1666,85 @@ fn a_dependency_eval_lights_its_edge_and_other_edges_follow_their_upstream() {
         ]
     );
     assert_eq!(graph.nodes[2].light, Waiting, "app/check is still queued");
+}
+
+#[test]
+fn an_artifact_takes_the_first_light_of_its_evals_in_precedence_order() {
+    use Light::{Active, Blocked, Error, Green, Red, Waiting};
+    // app has two runtime evals and two dependency evals, one on base and one on lib; app's
+    // runtime evals are not gated.
+    let definitions = definitions(
+        &[(&["base"], &[]), (&["lib"], &[]), (&["app"], &[])],
+        vec![
+            runtime("base/check"),
+            runtime("lib/check"),
+            runtime("app/one"),
+            runtime("app/two"),
+            dependency("app/needs-base", &["base"]),
+            dependency("app/needs-lib", &["lib"]),
+        ],
+    );
+    let started = json!({"startedAt":"2026-01-01T00:08:00Z"});
+    let app = |statuses: [&str; 6]| {
+        let requests = [
+            "base/check",
+            "lib/check",
+            "app/one",
+            "app/two",
+            "app/needs-base",
+            "app/needs-lib",
+        ]
+        .into_iter()
+        .zip(statuses)
+        .map(|(eval, status)| request(eval, status, started.clone()))
+        .collect();
+        let (run, requests) = saved(definitions.clone(), true, requests);
+        graph(&tree(&run, &requests, now())).nodes[2].light
+    };
+    let wait = "WAIT_DEPENDENCY";
+    for (statuses, light) in [
+        // RED before ERROR.
+        (["GREEN", "GREEN", "RED", "ERROR", "GREEN", "GREEN"], Red),
+        // ERROR before in progress.
+        (
+            ["GREEN", "GREEN", "ERROR", "RUNNING", "GREEN", "GREEN"],
+            Error,
+        ),
+        (
+            ["GREEN", "GREEN", "ERROR", "WAITING_HUMAN", "GREEN", "GREEN"],
+            Error,
+        ),
+        // In progress before blocked: base RED blocks needs-base.
+        (["RED", "GREEN", "RUNNING", "GREEN", wait, "GREEN"], Active),
+        // Blocked before waiting: base RED blocks needs-base, lib running holds needs-lib.
+        (["RED", "RUNNING", "GREEN", "GREEN", wait, wait], Blocked),
+        // An ERROR upstream blocks too.
+        (["ERROR", "RUNNING", "GREEN", "GREEN", wait, wait], Blocked),
+        // Waiting before GREEN.
+        (
+            ["GREEN", "RUNNING", "GREEN", "GREEN", "GREEN", wait],
+            Waiting,
+        ),
+        (
+            ["GREEN", "GREEN", "GREEN", "GREEN", "GREEN", "GREEN"],
+            Green,
+        ),
+    ] {
+        assert_eq!(app(statuses), light, "{statuses:?}");
+    }
+}
+
+#[test]
+fn an_artifact_without_evals_is_green() {
+    let definitions = definitions(
+        &[(&["notes"], &[]), (&["app"], &[0])],
+        vec![runtime("app/check")],
+    );
+    let (run, requests) = saved(
+        definitions,
+        true,
+        vec![request("app/check", "GREEN", json!({}))],
+    );
+    let graph = graph(&tree(&run, &requests, now()));
+    assert_eq!(graph.nodes[0].light, Light::Green);
 }

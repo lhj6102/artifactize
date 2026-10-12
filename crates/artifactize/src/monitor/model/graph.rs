@@ -1,5 +1,5 @@
 //! A Run as a graph of Artifacts: one node per Artifact of the tree, one edge per Artifact an
-//! Artifact's evals depend on, each with one of five lights taken from the tree's own states.
+//! Artifact's evals depend on, each with one of six lights taken from the tree's own states.
 use std::collections::BTreeMap;
 
 use super::{
@@ -9,15 +9,19 @@ use super::{
 };
 use crate::types::ArtifactName;
 
-/// How a graph node or edge is lit, most urgent first.
+/// How a graph node or edge is lit. Declared in precedence order: an Artifact takes the first
+/// light any of its evals has (RED before ERROR before in progress before blocked before
+/// waiting before GREEN).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Light {
-    /// An eval is RED or ERROR.
-    Failed,
-    /// Cannot proceed: an upstream Artifact failed or is itself blocked.
-    Blocked,
+    /// An eval's verdict is RED.
+    Red,
+    /// An eval failed operationally: ERROR, not a verdict.
+    Error,
     /// Running, or waiting for its Human.
     Active,
+    /// Cannot proceed: an upstream Artifact is RED, ERROR or itself blocked.
+    Blocked,
     /// Runnable but still waiting: queued, for upstream Artifacts that are not done yet, or
     /// not run in a finished Run.
     Waiting,
@@ -26,10 +30,12 @@ pub enum Light {
 }
 
 impl From<Completion> for Light {
+    /// An upstream Artifact's light where the graph has not lit it (a cycle peer lit later).
     fn from(completion: Completion) -> Self {
         match completion {
             Completion::Complete => Self::Green,
-            Completion::Failed { .. } => Self::Failed,
+            Completion::Failed { verdict: true } => Self::Red,
+            Completion::Failed { verdict: false } => Self::Error,
             Completion::InProgress(Busy::Running | Busy::Human) => Self::Active,
             Completion::InProgress(Busy::Queued) => Self::Waiting,
             Completion::Waiting { blocked: true } => Self::Blocked,
@@ -42,7 +48,8 @@ impl From<&EvalView> for Light {
     fn from(view: &EvalView) -> Self {
         match view {
             EvalView::Done(_) => Self::Green,
-            EvalView::Failed { .. } => Self::Failed,
+            EvalView::Failed { verdict: true } => Self::Red,
+            EvalView::Failed { verdict: false } => Self::Error,
             EvalView::InProgress(Activity::Running | Activity::Human(_)) => Self::Active,
             EvalView::BlockedBy(_) => Self::Blocked,
             EvalView::InProgress(Activity::Queued(_))
@@ -59,15 +66,15 @@ impl From<&EvalView> for Light {
 }
 
 impl Light {
-    /// A failed or blocked Artifact holds everything downstream.
+    /// A RED, ERROR or blocked Artifact holds everything downstream.
     fn holds(self) -> bool {
-        matches!(self, Self::Failed | Self::Blocked)
+        matches!(self, Self::Red | Self::Error | Self::Blocked)
     }
 }
 
-/// An eval row's light. An eval waiting for an upstream Artifact that failed (an ERROR too,
-/// which the tree shows as "waits for … (retry … first)") or is itself blocked cannot proceed
-/// in this Run: blocked. `lights` holds the Artifacts already lit, upstream first.
+/// An eval row's light. An eval waiting for an upstream Artifact that is RED, ERROR (which the
+/// tree shows as "waits for … (retry … first)") or itself blocked cannot proceed in this Run:
+/// blocked. `lights` holds the Artifacts already lit, upstream first.
 fn eval_light(eval: &Node, view: &EvalView, lights: &BTreeMap<ArtifactName, Light>) -> Light {
     let light = Light::from(view);
     let waits = matches!(
@@ -126,13 +133,20 @@ pub fn graph(tree: &[Node]) -> Graph {
         .collect();
     let mut lights: BTreeMap<ArtifactName, Light> = BTreeMap::new();
     for (name, node, completion) in &artifacts {
-        let blocked = node.children.iter().any(|eval| match &eval.kind {
-            Kind::Eval(view) => eval_light(eval, view, &lights) == Light::Blocked,
-            Kind::Artifact { .. } => false,
-        });
-        let light = match Light::from(*completion) {
-            Light::Waiting if blocked => Light::Blocked,
-            light => light,
+        // The first light of its evals in precedence order.
+        let evals = node
+            .children
+            .iter()
+            .filter_map(|eval| match &eval.kind {
+                Kind::Eval(view) => Some(eval_light(eval, view, &lights)),
+                Kind::Artifact { .. } => None,
+            })
+            .min()
+            .unwrap_or(Light::Green);
+        // Every eval done, yet graph.rs still holds them on their own gates: not complete.
+        let light = match (evals, completion) {
+            (Light::Green, Completion::Waiting { .. }) => Light::from(*completion),
+            (light, _) => light,
         };
         lights.insert(name.clone(), light);
     }
