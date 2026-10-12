@@ -25,14 +25,6 @@
   /** A wheel step moves three rows, like the terminal's. */
   const WHEEL_ROWS = 3;
 
-  
-  
-  
-  
-  let asking = false;
-  let again: { movement: Movement | null; toggle: number | null; changed: boolean } | null = null;
-  let closed = false;
-
   function measure(): boolean {
     if (!t.pane || !t.probe) return false;
     const cell = t.probe.getBoundingClientRect();
@@ -49,16 +41,16 @@
 
   /** Ask for the window; requests made meanwhile merge into one follow-up. */
   async function ask(movement: Movement | null = null, toggle: number | null = null, changed = false) {
-    if (t.handle === null || closed) return;
-    if (asking) {
-      again = {
-        movement: movement ?? again?.movement ?? null,
-        toggle: toggle ?? again?.toggle ?? null,
-        changed: changed || (again?.changed ?? false),
+    if (t.handle === null || t.closed) return;
+    if (t.asking) {
+      t.again = {
+        movement: movement ?? t.again?.movement ?? null,
+        toggle: toggle ?? t.again?.toggle ?? null,
+        changed: changed || (t.again?.changed ?? false),
       };
       return;
     }
-    asking = true;
+    t.asking = true;
     // A reader replaced while this request was pending makes its answer, rows or failure,
     // obsolete; only the current reader's answers are shown.
     const reader = t.handle;
@@ -75,27 +67,25 @@
     } catch (error) {
       if (reader === t.handle) t.unavailable = message(error);
     } finally {
-      asking = false;
+      t.asking = false;
     }
-    const next = again;
-    again = null;
+    const next = t.again;
+    t.again = null;
     if (next) void ask(next.movement, next.toggle, next.changed);
     // Bounded indexing continues in the next window.
     else if (loading) setTimeout(() => void ask(), 30);
   }
-
-  let resolving = false;
 
   /**
    * Resolve the request's session, again whenever its state may have changed: a queued request
    * gains a session once it runs, and the backend keeps an unchanged session's reader.
    */
   async function resolve() {
-    if (closed || resolving) return;
-    resolving = true;
+    if (t.closed || t.resolving) return;
+    t.resolving = true;
     try {
       const opened = await call(commands.transcriptOpen(id, t.handle));
-      if (closed) {
+      if (t.closed) {
         if (opened.kind === "local") void commands.transcriptClose(opened.handle);
         return;
       }
@@ -109,7 +99,7 @@
     } catch (error) {
       t.unavailable = message(error);
     } finally {
-      resolving = false;
+      t.resolving = false;
     }
   }
 
@@ -135,7 +125,7 @@
   });
 
   onDestroy(() => {
-    closed = true;
+    t.closed = true;
     if (t.handle !== null) void commands.transcriptClose(t.handle);
   });
 

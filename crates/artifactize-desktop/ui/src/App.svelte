@@ -24,8 +24,7 @@
   onMount(() => {
     call(commands.launch()).then(
       (view) => {
-        app.launch = view;
-        app.screen = view.mode;
+        app.start(view);
       },
       (error) => (app.failure = message(error)),
     );
@@ -52,9 +51,9 @@
   useCommands(() => [
     { id: "app.palette", group: "App", label: "Command palette", keys: "Ctrl+K", run: () => (app.palette = true) },
     { id: "app.help", group: "App", label: "Keyboard shortcuts", keys: "?", run: () => (app.help = true) },
-    { id: "app.monitor", group: "App", label: "Show Monitor", keys: "Ctrl+1", run: () => (app.screen = "monitor") },
-    { id: "app.review", group: "App", label: "Show Review", keys: "Ctrl+2", run: () => (app.screen = "review") },
-    { id: "app.settings", group: "App", label: "Show Settings", keys: "Ctrl+,", run: () => (app.screen = "settings") },
+    { id: "app.monitor", group: "App", label: "Show Monitor", keys: "Ctrl+1", run: () => app.show("monitor") },
+    { id: "app.review", group: "App", label: "Show Review", keys: "Ctrl+2", run: () => app.show("review") },
+    { id: "app.settings", group: "App", label: "Show Settings", keys: "Ctrl+,", run: () => app.show("settings") },
     { id: "app.quit", group: "App", label: "Quit", keys: "q", run: () => void quit() },
   ]);
 
@@ -65,10 +64,10 @@
       app.palette = true;
     } else if (chord(event, "1") || chord(event, "2")) {
       event.preventDefault();
-      app.screen = chord(event, "1") ? "monitor" : "review";
+      app.show(chord(event, "1") ? "monitor" : "review");
     } else if ((event.ctrlKey || event.metaKey) && !event.altKey && (event.key === "," || event.code === "Comma")) {
       event.preventDefault();
-      app.screen = "settings";
+      app.show("settings");
     } else if (plain(event, "?")) {
       event.preventDefault();
       app.help = true;
@@ -101,7 +100,7 @@
     <button
       class="button"
       aria-pressed={app.screen === "settings"}
-      onclick={() => (app.screen = "settings")}
+      onclick={() => app.show("settings")}
       title="Accounts, keys, models and the remote store (Ctrl+,)">Settings</button
     >
     <button class="button" onclick={() => (app.palette = true)} title="Command palette">

@@ -20,6 +20,17 @@ export class AppState {
   readonly commands = new Registry();
   palette = $state(false);
   help = $state(false);
+
+  /** Show `screen`. */
+  show(screen: Screen): void {
+    this.screen = screen;
+  }
+
+  /** The backend's launch arrived: remember it and open the screen it asks for. */
+  start(launch: LaunchView): void {
+    this.launch = launch;
+    this.show(launch.mode);
+  }
 }
 
 export const [getAppState, setAppState] = createContext<AppState>();

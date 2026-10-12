@@ -153,10 +153,12 @@ be pushed. The output is `Pushed N, already in the store M, skipped K.`, or JSON
 `{"dryRun":false,"pushed":N,"existing":M,"skipped":K}`. Unlike `verify`, `push`
 fails on any remote failure, and it needs the `publish` scope.
 
-Connection errors, timeouts and 5xx answers fail open: one warning, then the process
-continues without the remote, reusing the local latest record of each key and
-reviewing locally what has none. 401/403, TLS failures, other error answers and
-invalid configuration fail closed (exit 2), with the store's own error message when
-it sends one. A lookup that fails before the Run
+Connection errors, request timeouts and 5xx answers fail open: one warning, then the
+process continues without the remote, reusing the local latest record of each key and
+reviewing locally what has none. 401/403, TLS failures, other error answers, invalid
+configuration, and a successful answer whose body cannot be read or decoded (a body
+timeout included) fail closed (exit 2). A 401/403 gets artifactize's own message that
+the store rejected the token; another 4xx answer carries the store's own error message
+when it sends one. A lookup that fails before the Run
 starts leaves no Run; a later failure records the Run as ERROR. A record that does
 not validate is ignored with a warning, and its eval is reviewed locally.
